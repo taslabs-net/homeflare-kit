@@ -43,9 +43,14 @@ Changes are versioned with [changesets](https://github.com/changesets/changesets
 bun run changeset   # describe the change; commit the file with your PR
 ```
 
-See [AGENTS.md](./AGENTS.md) for the toolchain rationale and the rules that govern
-changes here.
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the workflow and the gates, and
+[AGENTS.md](./AGENTS.md) for the toolchain rationale behind them.
+
+Found a vulnerability? Please don't open a public issue — see
+[SECURITY.md](./SECURITY.md).
 
 ## License
 
-MIT
+MIT © Timothy Schneider
