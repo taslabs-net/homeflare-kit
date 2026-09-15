@@ -1,0 +1,30 @@
+/**
+ * @homeflare/ui/styles — Kumo's stylesheet plus HomeFlare brand tokens.
+ *
+ * Import ONCE, at your app root:
+ *     import '@homeflare/ui/styles';
+ *
+ * ⛔ OPT-IN, NEVER AUTOMATIC. The JS entrypoint imports no CSS: a library that does so on
+ *   your behalf breaks any consumer whose bundler cannot handle CSS imports — a Worker
+ *   bundling for workerd, or a server-side render loading the module for its types.
+ *
+ * ★ This replaces `import '@cloudflare/kumo/styles'` — it pulls Kumo's stylesheet in
+ *   first, then layers HomeFlare tokens over it. Importing both is harmless but
+ *   redundant.
+ */
+@import '@cloudflare/kumo/styles';
+
+/**
+ * HomeFlare brand tokens.
+ *
+ * ⚠️ These are CUSTOM PROPERTIES, not overrides of Kumo's internals. Kumo owns its own
+ *   token names and may rename them between versions; anything defined here is ours and
+ *   survives a Kumo bump.
+ * ★ Kept deliberately small. A token nothing consumes is a token that goes stale, so this
+ *   grows when a second app needs the same value — not in anticipation.
+ */
+:root {
+  --hf-radius-card: 0.75rem;
+  --hf-shell-max-width: 80rem;
+  --hf-gutter: 1rem;
+}
