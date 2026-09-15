@@ -18,7 +18,8 @@
  *
  * Docs: developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/validating-json/
  */
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createRemoteJWKSet, customFetch, jwtVerify } from 'jose';
+import { breakered } from './jwks-breaker.ts';
 
 /** The header Access puts the token in. Lowercase — Headers.get is case-insensitive. */
 const ACCESS_HEADER = 'cf-access-jwt-assertion';
@@ -51,7 +52,14 @@ function keysFor(teamDomain: string): ReturnType<typeof createRemoteJWKSet> {
   const existing = jwks.get(teamDomain);
   if (existing !== undefined) return existing;
 
-  const created = createRemoteJWKSet(new URL(`${teamDomain}/cdn-cgi/access/certs`));
+  // ⛔ THE BREAKER IS NOT OPTIONAL. jose refetches on EVERY call while an endpoint is
+  //   down — measured on 6.2.12: 5 verifications against a 404ing certs endpoint made 5
+  //   outbound fetches, and no combination of cacheMaxAge or cooldownDuration changes it.
+  //   Without this, a Cloudflare Access outage turns every inbound request into an
+  //   outbound one. See jwks-breaker.ts.
+  const created = createRemoteJWKSet(new URL(`${teamDomain}/cdn-cgi/access/certs`), {
+    [customFetch]: breakered(),
+  });
   jwks.set(teamDomain, created);
   return created;
 }
