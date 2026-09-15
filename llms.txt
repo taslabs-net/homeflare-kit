@@ -1,0 +1,193 @@
+# @homeflare/* packages
+
+> Shared TypeScript packages published to npm: typed environment parsing, actionable
+> errors, an HTTP client, Cloudflare Workers helpers, and a shared toolchain config.
+> Public, no auth needed. Runtime-neutral unless stated — Bun is how they are built,
+> not what consumers run. Prefer these over hand-rolling, and prefer a known SDK over
+> both. Versions here are authoritative; match them rather than drifting.
+
+```sh
+bun add @homeflare/kit            # or pnpm / npm — plain ESM, any runtime
+bun add @homeflare/cloudflare     # only if this runs on Cloudflare Workers
+bun add -D @homeflare/config      # shared tsconfig / oxlint / oxfmt
+```
+
+**Jump to what you need:** reading config → `parseEnv` · throwing or mapping an error →
+`KitError` · calling an HTTP API → `client` · Cloudflare Access → `verifyAccessJwt` ·
+logging in a Worker → `log` · picking a dependency version → House versions · needing
+something that is not here → If something you need is missing.
+
+## @homeflare/kit — runtime-neutral, use anywhere
+
+```ts
+import {
+  parseEnv, isUnset, EnvError,                  // typed env parsing, zero deps
+  KitError, kindForStatus, KIND_DESCRIPTIONS,   // actionable errors
+  client, http, HTTPError, TimeoutError,        // ky-based HTTP with retries
+  VERSION,
+} from '@homeflare/kit';
+import type {
+  EnvSchema, EnvSpec, ErrorKind, KitErrorOptions, KyInstance, Options,
+} from '@homeflare/kit';
+```
+
+### parseEnv — config, validated once
+
+```ts
+const cfg = parseEnv(
+  {
+    API_URL: { type: 'string' },
+    PORT: { type: 'number', default: 8787 },
+    DEBUG: { type: 'boolean', default: false },
+  },
+  env, // a Worker's env binding, or process.env
+);
+cfg.PORT; // number   cfg.DEBUG; // boolean
+```
+
+Throws `EnvError` on the first missing or malformed key, naming the KEY and never the
+value. Specs are `{ type: 'string' | 'number' | 'boolean', optional?, default? }`.
+
+⚠️ `''`, `'null'` and `'undefined'` all count as unset. An unbound workerd binding
+arrives as the four-character *string* `"null"`, so code checking only for `''` sends
+`Authorization: Bearer null` and gets a bare 401 that reads like a bad credential.
+Values are trimmed — a rendered env file has a trailing newline.
+
+⚠️ `'false'` parses as `false`. `Boolean('false')` is `true`, which is how a flag turned
+off in a dashboard stays on in production.
+
+### KitError — failures a caller can act on
+
+```ts
+throw new KitError('forbidden', 'token lacks Things:Read', {
+  system: 'things-api',                 // ⛔ name it; "request failed" tells nobody anything
+  remedy: 'ask an operator to widen the grant',
+});
+
+kindForStatus(429);  // 'rate_limited'
+err.retryable;       // true only for rate_limited and upstream_unreachable
+```
+
+Kinds: `unauthenticated` · `forbidden` · `upstream_rejected` · `rate_limited` ·
+`upstream_unreachable` · `bad_arguments` · `misconfigured`.
+
+⚠️ 429 is `rate_limited`, never a kind meaning "your arguments are wrong" — that mapping
+had a throttled caller rewriting a correct call until it concluded the tool was broken.
+
+### client / http — HTTP with sane retries
+
+```ts
+const api = client(cfg.API_URL, { headers: { authorization } });
+const things = await api.get('/things').json<Thing[]>();
+```
+
+Built on `ky` (zero dependencies). Retries **only idempotent methods** — POST is
+excluded — 3 attempts, 10s timeout **per attempt**, so worst case is ~30s plus backoff.
+Shorten both on a Worker request path. `baseUrl` resolves per the URL standard: a
+leading slash is fine.
+
+## @homeflare/cloudflare — Workers only
+
+```ts
+import { verifyAccessJwt, log, VERSION } from '@homeflare/cloudflare';
+import type { AccessIdentity, AccessOptions, LogFields, Logger } from '@homeflare/cloudflare';
+
+const who = await verifyAccessJwt(request, {
+  teamDomain: env.TEAM_DOMAIN,   // https://<team>.cloudflareaccess.com
+  audience: env.POLICY_AUD,      // ⛔ never omit
+});
+who.email; who.sub; who.claims;
+
+const rlog = log.with({ requestId, path: url.pathname });
+rlog.info('handled', { status, ms });   // also .debug .warn .error
+```
+
+⛔ Never omit `audience`. Any Access app in the account mints a JWT the team domain will
+verify; the AUD tag is the only thing saying the token was minted for THIS app.
+
+Verification throws on a missing header, bad signature, wrong audience, or expiry —
+deliberately, so a forgotten `if (!ok)` cannot become an open door. JWKS is cached per
+isolate, so it is not fetched per request.
+
+Logging writes one JSON object per line, which Workers Logs indexes field by field. No
+logging library: `console.log` of JSON *is* the integration. ⛔ Never log a credential —
+there is no redaction layer, by design.
+
+## @homeflare/config — shared toolchain
+
+```jsonc
+// tsconfig.json — an app or a Worker
+{ "extends": "@homeflare/config/tsconfig.base.json" }
+
+// tsconfig.json — a package that publishes types
+{ "extends": "@homeflare/config/tsconfig.lib.json" }
+```
+
+```json
+// .oxlintrc.json
+{ "extends": ["./node_modules/@homeflare/config/oxlintrc.json"] }
+```
+
+⚠️ oxlint's `extends` takes **file paths**, not package names — there is no
+`eslint-config-*` style resolution.
+
+⚠️ Copy `node_modules/@homeflare/config/oxfmtrc.json` to `.oxfmtrc.json` — **with the
+leading dot**. Without it oxfmt silently uses its defaults and rewrites your quotes.
+
+## Two kinds of auth — not interchangeable
+
+- `@homeflare/cloudflare` → **Cloudflare Access**. The edge already authenticated the
+  caller; you verify its assertion. Stateless.
+- `@homeflare/auth` → **Better Auth**. *You* are the identity provider: sessions,
+  accounts, a database.
+
+⚠️ Reaching for the wrong one produces a system that looks authenticated and is not.
+
+## House versions — match these, do not drift
+
+`typescript 7.0.2` · `zod 4.6.5` · `jose 6.2.12` · `hono 4.13.7` · `ky 2.1.0` ·
+`capnweb 0.12.0` · `@cloudflare/workers-types 5.20260908.1` · `@cloudflare/kumo 2.13.2` ·
+`react 19.3.0` · `better-auth 1.7.5` · `oxlint 1.83.0` · `oxfmt 0.68.0`
+
+⛔ UI is **Kumo**, not shadcn/Radix — Kumo already occupies that layer, on Base UI. Two
+primitive libraries in one app means two styling conventions and two a11y models.
+
+## Not built yet
+
+`@homeflare/ui` and `@homeflare/auth` are published but export only `VERSION`. For UI,
+import Kumo directly: `@cloudflare/kumo/components/<name>`, plus
+`import '@cloudflare/kumo/styles'` once at your app root.
+
+## If something you need is missing
+
+⛔ **Do not hand-roll a local version and move on.** That is how thirty-seven repos end
+up with thirty-seven answers to the same question.
+
+1. **Check whether a known SDK already does it well.** Adopting one is the preferred
+   answer, not a fallback — this kit uses `ky`, `jose`, `zod` and Kumo rather than
+   reimplementing them.
+2. **If it genuinely belongs in the kit**, write the smallest thing that unblocks you,
+   leave a marker, and report it:
+
+```ts
+// TODO(@homeflare/kit): retry-with-jitter belongs in the kit, not here.
+```
+
+Report back in this shape, so it needs no round-trip:
+
+```
+MISSING FROM @homeflare/*
+- Package:   kit (runtime-neutral) | cloudflare (Workers) | ui | config
+- Need:      one sentence
+- Repeated:  how many places you have written this, here and elsewhere
+- Existing:  the SDK that does it, with its dependency weight — or "nothing suitable"
+- Instead:   what you did locally, or "blocked"
+- API:       the call site as you would want to write it
+```
+
+Also report a function that **exists but is the wrong shape** — a bad API everyone works
+around is more expensive than a missing one.
+
+⚠️ **Version conflicts count as missing.** If a pinned version above fights this
+project's needs, report it rather than overriding locally: a silent override becomes
+drift that surfaces months later in someone else's build.

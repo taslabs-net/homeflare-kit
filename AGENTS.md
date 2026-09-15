@@ -4,6 +4,21 @@ A bun workspace publishing five packages to npm. It is a **producer**: consuming
 applications install the published tarballs, so every decision here is judged by what a
 consumer receives, not by what is convenient in this tree.
 
+**Read only what your task needs:**
+
+| doing                                  | read                                                                    |
+| -------------------------------------- | ----------------------------------------------------------------------- |
+| adding or changing package code        | [The packages](#the-packages) · [What this repo is](#what-this-repo-is) |
+| adding a dependency                    | [One version per package](#one-version-per-packagethe-catalog)          |
+| touching the build, lint or types      | [Toolchain](#toolchain) · [Bun-native](#bun-native-not-library-native)  |
+| anything that publishes                | [docs/releasing.md](./docs/releasing.md)                                |
+| opening a PR                           | [CONTRIBUTING.md](./CONTRIBUTING.md)                                    |
+| **consuming these packages elsewhere** | [llms.txt](./llms.txt) — not this file                                  |
+
+⛔ Comments in the source carry measured facts and the incidents behind them. When a rule
+here seems arbitrary, the comment at the code says what it cost to learn. Do not delete
+them to fit a line limit — extract into a new file instead.
+
 ## The packages
 
 | package                 | holds                             | may import                          |
