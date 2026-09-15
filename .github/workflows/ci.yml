@@ -1,9 +1,12 @@
-# Verify every push and PR. Bun is the only toolchain — no node setup step, because a
-# second runtime in CI is a second thing that can disagree with a laptop.
+# Pull requests and pushes to main: is this code correct?
 #
-# ⛔ EVERY ACTION HERE IS FIRST-PARTY OR THE VENDOR'S OWN, PINNED TO A MAJOR TAG.
-#   Nothing is hand-rolled and nothing comes from an unmaintained third party: this file
-#   is the template every HomeFlare repo copies, so a bad action here propagates.
+# ★ SPLIT BY CONCERN, NOT ONE BIG JOB. Each job below answers one question and reports
+#   its own red X, so a failure names itself in the checks list rather than making you
+#   open a log to find which step died. They run in parallel; the slow one (package)
+#   gates on the fast ones so a formatting mistake does not wait on a tarball build.
+#
+# ⛔ EVERY ACTION IS FIRST-PARTY OR THE VENDOR'S OWN, PINNED TO A MAJOR TAG. This file is
+#   the template every HomeFlare repo copies, so a bad action here propagates.
 #   Versions verified against the registry 2026-09-15.
 name: ci
 
@@ -20,32 +23,84 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  # ── Stage 1: cheap, parallel, fail fast ──────────────────────────────────────
+  lint:
+    name: lint and format
     runs-on: ubuntu-latest
     steps:
-      # actions/checkout v7.0.1 is current; v5 was two majors behind.
       - uses: actions/checkout@v7
-
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
-
       # ⛔ --frozen-lockfile, always. Without it CI silently resolves a newer transitive
       #   dep than the lockfile pins, so green here stops meaning green on the machine
       #   that committed.
       - run: bun install --frozen-lockfile
-
       - run: bun run lint
+
+  types:
+    name: types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      # ⚠️ Tests can pass while failing to typecheck — measured on this repo. Separate job
+      #   so the distinction is visible in the checks list rather than buried in a step.
       - run: bun run types
 
-      # ⛔ BUILD BEFORE TEST, not after. tests/dist.test.ts guards the built artifact and
-      #   SKIPS ITSELF when dist/ is absent, so running tests first would quietly drop the
-      #   only in-repo check that catches a broken bundle.
+  test:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      # ⛔ BUILD BEFORE TEST. tests/dist.test.ts guards the built artifact and SKIPS
+      #   ITSELF when dist/ is absent, so the wrong order silently drops it.
       - run: bun run build
       - run: bun test
 
+  # ── Stage 2: the expensive one, gated on stage 1 ─────────────────────────────
+  package:
+    name: consumer smoke test
+    needs: [lint, types, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - run: bun run build
       # ⛔ THE GATE THAT MATTERS. Packs the real tarball, installs it into a scratch
       #   project and uses it under both bun and node, typechecking from the consumer's
-      #   side. Every step above this one passed on a package the estate could not
-      #   consume (measured 2026-09-15 — see tests/dist.test.ts).
+      #   side. Every other job here passed on a package the estate could not consume
+      #   (measured 2026-09-15 — see packages/kit/tests/dist.test.ts).
       - run: bun run smoke
+
+      # ★ What the packages weigh, rendered on the run's summary page. A green check says
+      #   "it passed"; this says what a consumer would actually install.
+      # ⚠️ `if: always()` so a failed smoke test still reports sizes — that is exactly
+      #   when you want them.
+      - name: Job summary
+        if: always()
+        run: bun run summary
+
+  # ── The one check a branch rule can require ──────────────────────────────────
+  # ★ A single required check that depends on all of them. Without this, adding a job
+  #   means editing the branch protection rule too, and forgetting to means the new job
+  #   is advisory without anyone noticing.
+  ci:
+    name: ci
+    if: always()
+    needs: [lint, types, test, package]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every job succeeded
+        run: |
+          [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "false" ]

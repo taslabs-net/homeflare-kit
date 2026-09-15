@@ -1,5 +1,9 @@
 # homeflare-kit
 
+[![ci](https://github.com/taslabs-net/homeflare-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/taslabs-net/homeflare-kit/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@homeflare/kit?label=%40homeflare%2Fkit)](https://www.npmjs.com/package/@homeflare/kit)
+[![license](https://img.shields.io/npm/l/@homeflare/kit)](./LICENSE)
+
 The HomeFlare shared packages. One repo, one toolchain, one release stream — so that
 every app and Worker in the estate is scaffolded the same way.
 
@@ -43,8 +47,23 @@ bun run changeset
 ★ **Bun is the toolchain, not the runtime.** Bun installs, builds and tests this code;
 consumers install the published tarball with whatever they like.
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for the workflow and [AGENTS.md](./AGENTS.md)
-for the reasoning behind the toolchain. Security: [SECURITY.md](./packages/kit/SECURITY.md).
+### Fast path for a first contribution
+
+```sh
+git clone https://github.com/taslabs-net/homeflare-kit && cd homeflare-kit
+bun install && bun run verify     # ~30s, and proves your machine is set up
+```
+
+Then: change something, `bun run changeset`, open a PR. CI reports four separate checks —
+**lint**, **types**, **tests**, **consumer smoke test** — so a red X names what broke
+without opening a log, and the run summary lists what each package weighs.
+
+★ **One rule worth knowing before you start:** `@homeflare/kit` stays runtime-neutral, so
+anything touching `bun:*`, `node:*` or a filesystem belongs in `@homeflare/cloudflare`
+instead. Everything else is in [CONTRIBUTING.md](./CONTRIBUTING.md), and the reasoning
+behind the toolchain is in [AGENTS.md](./AGENTS.md).
+
+Security: [SECURITY.md](./packages/kit/SECURITY.md) — please don't open a public issue.
 
 ## License
 

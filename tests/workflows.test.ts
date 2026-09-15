@@ -91,9 +91,28 @@ describe('workflows', () => {
     }
   });
 
-  test('ci builds before it tests, so the dist guard cannot skip itself', async () => {
-    const runs = (await stepsOf('ci')).flatMap((s) => (s.run === undefined ? [] : [s.run]));
+  test('the test job builds before it tests, so the dist guard cannot skip itself', async () => {
+    const text = await Bun.file(new URL('../.github/workflows/ci.yml', import.meta.url)).text();
+    const doc = Bun.YAML.parse(text) as {
+      jobs: Record<string, { steps: readonly Step[] }>;
+    };
+    const runs = (doc.jobs['test']?.steps ?? []).flatMap((s) =>
+      s.run === undefined ? [] : [s.run],
+    );
 
     expect(runs.indexOf('bun run build')).toBeLessThan(runs.indexOf('bun test'));
+  });
+
+  test('ci exposes one aggregate check that depends on every other job', async () => {
+    // ★ A branch rule requires the `ci` check alone. Without this aggregate, adding a
+    //   job means editing branch protection too — and forgetting leaves the new job
+    //   advisory with nothing to say so.
+    const text = await Bun.file(new URL('../.github/workflows/ci.yml', import.meta.url)).text();
+    const doc = Bun.YAML.parse(text) as {
+      jobs: Record<string, { needs?: readonly string[] }>;
+    };
+    const jobs = Object.keys(doc.jobs).filter((j) => j !== 'ci');
+
+    expect(doc.jobs['ci']?.needs).toEqual(expect.arrayContaining(jobs));
   });
 });

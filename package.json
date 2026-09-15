@@ -26,9 +26,11 @@
     "verify": "bun run check && bun run smoke",
     "changeset": "changeset",
     "version": "changeset version && bun run scripts/sync-versions.ts",
-    "release": "bun run build && changeset publish"
+    "release": "bun run build && changeset publish",
+    "summary": "bun run scripts/ci-summary.ts"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "1.0.1",
     "@changesets/cli": "3.0.3",
     "@types/bun": "1.4.2",
     "oxfmt": "0.68.0",
