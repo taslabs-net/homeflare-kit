@@ -9,7 +9,7 @@
  *   CONSUMING repo, days later, and read as that repo's bug.
  *
  * ⚠️ Node is checked as well as bun, deliberately. Bun's resolver is forgiving in ways
- *   workerd and Node are not, so a bun-only pass is not evidence the estate can consume
+ *   workerd and Node are not, so a bun-only pass is not evidence a consumer can use
  *   this. `--experimental-strip-types` runs the TS consumer file directly on Node 22+.
  *
  * ⛔ Uses `npm pack`, not a file: link. A link resolves through the working tree and

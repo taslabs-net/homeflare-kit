@@ -16,7 +16,7 @@ type Step = { readonly uses?: string; readonly run?: string };
 
 // ⚠️ NOT `as const`: test.each's signature takes a mutable array, so a readonly tuple
 //   fails to typecheck while passing at run time (TS2769).
-const workflows = ['ci', 'release', 'security'];
+const workflows = ['ci', 'release', 'security', 'approve-bot-runs'];
 
 async function stepsOf(name: string): Promise<readonly Step[]> {
   const text = await Bun.file(new URL(`../.github/workflows/${name}.yml`, import.meta.url)).text();
@@ -31,7 +31,9 @@ describe('workflows', () => {
     const steps = await stepsOf(name);
     const uses = steps.flatMap((s) => (s.uses === undefined ? [] : [s.uses]));
 
-    expect(uses.length).toBeGreaterThan(0);
+    // ⚠️ Not every workflow uses an action — approve-bot-runs is pure `gh` CLI, which is
+    //   the smaller supply-chain surface, not an omission. What matters is that any
+    //   action it DOES use is pinned.
     for (const ref of uses as readonly string[]) {
       // ⛔ `owner/repo@ref` with a real ref. A bare `owner/repo` follows the default
       //   branch, which is an unpinned supply-chain dependency.
@@ -61,6 +63,22 @@ describe('workflows', () => {
     const ref = steps.find((s) => s.uses?.startsWith('changesets/action'))?.uses;
 
     expect(ref ?? '').toMatch(/^changesets\/action@v\d+\.\d+\.\d+$/);
+  });
+
+  test('auto-approval is scoped to the release bot and its branch only', async () => {
+    // ⛔ THE TRUST BOUNDARY. Approving runs automatically is safe ONLY because all three
+    //   conditions hold together: the actor is the bot, the branch is the one only the
+    //   release workflow creates, and the run is actually parked. Losing any one of them
+    //   would auto-approve a stranger's fork PR, which is what the policy exists to stop.
+    const text = await Bun.file(
+      new URL('../.github/workflows/approve-bot-runs.yml', import.meta.url),
+    ).text();
+    const doc = Bun.YAML.parse(text) as { jobs: Record<string, { if?: string }> };
+    const condition = doc.jobs['approve']?.if ?? '';
+
+    expect(condition).toContain("actor.login == 'github-actions[bot]'");
+    expect(condition).toContain("head_branch == 'changeset-release/main'");
+    expect(condition).toContain("conclusion == 'action_required'");
   });
 
   test('dependabot config is at .github/ and covers bun plus actions', async () => {

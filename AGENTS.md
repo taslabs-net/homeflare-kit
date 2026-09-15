@@ -1,8 +1,8 @@
 # Agent guidelines — homeflare-kit
 
-This repo is the estate's shared packages. It is **standalone**: not a member of the
-`homeflare/homeflare` pnpm workspace, and the golden `AGENTS.md` there does not govern it.
-Where the two differ, the differences below are deliberate and stated with their reason.
+A bun workspace publishing five packages to npm. It is a **producer**: consuming
+applications install the published tarballs, so every decision here is judged by what a
+consumer receives, not by what is convenient in this tree.
 
 ## The packages
 
@@ -31,8 +31,8 @@ primitive libraries and two a11y models in one app.
 
 ## What this repo is
 
-This repo is a **producer**. The monorepo and every app consume it from npm as an
-ordinary dependency. That one fact settles most questions here:
+Consumers install these packages from npm as ordinary dependencies, with whatever
+package manager they use. That one fact settles most questions here:
 
 - **Bun is the toolchain, not the runtime.** Bun installs, tests, builds and formats this
   code. Consumers run the published `dist/` on workerd, on Node, under pnpm — never under
@@ -47,22 +47,11 @@ ordinary dependency. That one fact settles most questions here:
   ⚠️ The failure this prevents is a deploy-time one: a `bun:sqlite` import resolves fine
   on a laptop and fails only in workerd, where the trace names the bundler, not the file.
 
-### The bun exception, stated rather than assumed
-
-The monorepo's hard rule 7 is **pnpm only, estate-wide**, and calls `bun.lock` "a failed
-install, not a peer". That rule is about the _workspace_: a second lockfile inside it
-means two resolvers disagree about one dependency graph.
-
-This repo is outside that workspace, so there is no graph to split. `bun.lock` here never
-crosses into the monorepo — pnpm installs the published **tarball**, which contains no
-lockfile at all. The rule stays intact; this is not an exception to it so much as a place
-it does not reach.
-
 ## One version per package — the catalog
 
 The root `package.json` holds a bun **catalog**: one entry per external dependency, for
-the whole repo. Versions come from the estate's own `pnpm-workspace.yaml`, so the kit and
-the monorepo cannot disagree about what "the house version" is.
+the whole repo — so two packages can never resolve the same dependency at different
+versions, which is the drift a catalog exists to prevent.
 
 ⛔ **Only `devDependencies` may say `catalog:`.** Measured 2026-09-15: `npm pack` leaves
 the string `catalog:` untouched — only `bun pm pack` resolves it — and `changeset publish`
@@ -88,15 +77,15 @@ declares what a consumer may bring.
 | concern              | tool                        | why                                                                                     |
 | -------------------- | --------------------------- | --------------------------------------------------------------------------------------- |
 | install / run / test | `bun` 1.4.0                 | one tool, no node setup step in CI                                                      |
-| format               | `oxfmt` 0.68.0              | estate default — 16 of 90 monorepo packages, zero prettier                              |
+| format               | `oxfmt` 0.68.0              | fast, and the same config language as oxlint                                            |
 | lint                 | `oxlint` 1.83.0             | same family, same config language                                                       |
 | types                | `tsc` (TypeScript 7.0.2)    | ⚠️ the binary is `tsc`, **not** `tsgo` — that was the `@typescript/native-preview` name |
 | build (JS)           | `bun build`                 | bundles `src/index.ts` to ESM                                                           |
 | build (types)        | `tsc --emitDeclarationOnly` | ⛔ `bun build` **cannot** emit `.d.ts` — measured 2026-09-15, no such flag exists       |
 
-★ **Why the build is two tools.** It would be one with `tsdown` or `tsup`, and the
-monorepo uses neither (0 of 90 packages). Adding a bundler to avoid a second command
-would import a dependency to solve a problem `tsc` already solves.
+★ **Why the build is two tools.** It would be one with `tsdown` or `tsup`. Adding a
+bundler to avoid a second command would import a dependency to solve a problem `tsc`
+already solves.
 
 ★ **`isolatedDeclarations` is on**, which is what makes that split safe: every exported
 symbol carries an explicit type, so the `.d.ts` cannot drift from the `.js` beside it.
@@ -112,9 +101,10 @@ Bun parses these itself. Do not add a dependency for any of them:
 - **JSON / JSONC** — `await Bun.file(p).json()`
 - **SQLite** — `bun:sqlite` (⛔ subpath export only, never the main entry)
 - **tests** — `bun:test`, not vitest. `Bun.YAML.parse` reads the workflow files in
-  `tests/workflows.test.ts`; no `yaml` dependency. Vitest wins in the monorepo (43 packages) because
-  `@cloudflare/vitest-pool-workers` runs tests _inside_ workerd. This package has no
-  Worker to run inside, so that reason does not apply here.
+  `tests/workflows.test.ts`; no `yaml` dependency.
+  ⚠️ Vitest is the right choice for a package that ships a Worker, because
+  `@cloudflare/vitest-pool-workers` runs the tests _inside_ workerd. Nothing here ships a
+  Worker, so that reason does not apply.
 
 ## Releasing
 

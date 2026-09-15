@@ -50,11 +50,11 @@ export class EnvError extends Error {
  *   the four-character STRING "null", because the binding is present and String(null) is
  *   truthy. Code that checks only for '' therefore accepts it, and the request goes out
  *   as `Authorization: Bearer null`.
- * 🔴 MEASURED IN THIS ESTATE, 2026-09-02. Twenty hand-rolled clients; this guard was in
+ * 🔴 MEASURED IN PRODUCTION, 2026-09-02. Twenty hand-rolled clients; this guard was in
  *   four of them. The other sixteen surfaced a bare 401 from upstream — which reads as
  *   "the token is wrong" and sends an operator to rotate a perfectly good credential.
  *   The litellm server spent a day authenticating with nothing while /health answered 200.
- *   Ported from house/mcp-servers/packages/kit/src/http.ts, where it was paid for once.
+ *   Ported from an internal HTTP client, where this lesson was paid for once.
  */
 export function isUnset(value: string): boolean {
   return value === '' || value === 'null' || value === 'undefined';

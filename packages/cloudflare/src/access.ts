@@ -4,7 +4,7 @@
  * ★ WHY jose AND NOT A HAND-ROLLED VERIFY. Signature verification is the one place where
  *   a subtle bug is silent and total: a check that never fails looks identical to a
  *   check that always passes. jose handles JWKS fetching, `kid` matching and key
- *   rotation, and it is already in 8 estate packages. This file is the Access-specific
+ *   rotation, and it is widely deployed. This file is the Access-specific
  *   wiring around it, nothing more.
  *
  * ⚠️ THE TRAP THIS CLOSES. Cloudflare's own example does `jwtVerify(...)` inline in the

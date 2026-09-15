@@ -51,7 +51,7 @@ describe('parseEnv', () => {
     }
   });
 
-  // 🔴 THE INCIDENT THIS PREVENTS, MEASURED 2026-09-02 IN THIS ESTATE. An unbound workerd
+  // 🔴 THE INCIDENT THIS PREVENTS, MEASURED 2026-09-02 IN PRODUCTION. An unbound workerd
   //   binding arrives as the STRING "null", not undefined. Sixteen of twenty hand-rolled
   //   clients accepted it and sent `Authorization: Bearer null`; the resulting bare 401
   //   reads as "wrong token" and sends an operator to rotate a good credential.

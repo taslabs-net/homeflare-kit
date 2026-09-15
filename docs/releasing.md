@@ -14,7 +14,7 @@ hand-edited. ★ It exists because a Worker bundle has no `package.json` beside 
 at runtime, so the version has to be a literal the bundler can inline.
 
 ⚠️ **Publishing uses `NPM_TOKEN`, not OIDC** — the one place this repo departs from the
-estate's mint-never-reuse habit. Measured 2026-09-15: `changesets/action` + npm trusted
+usual preference for short-lived credentials. Measured 2026-09-15: `changesets/action` + npm trusted
 publishing 404s on PUT for **scoped** packages (changesets/action#515, open), and
 `@homeflare/kit` is scoped. Revisit when that closes. Provenance is therefore explicit
 via `NPM_CONFIG_PROVENANCE`; under OIDC it would be automatic.
@@ -67,3 +67,23 @@ the lockfile is rebuilt from the manifests, on a CI checkout that is discarded.
 ★ This is the third protocol-resolution trap in the same release path, and all three were
 invisible until a tarball was inspected: `catalog:` (npm pack), `workspace:*` (npm pack),
 and now the stale lockfile (bun pm pack). Inspect the tarball, not the manifest.
+
+## Why the release bot's runs are approved automatically
+
+⚠️ **Every run on `changeset-release/main` parks at `action_required`.** GitHub's approval
+policy is written for pull requests from forks, but it reaches `github-actions[bot]` on a
+same-repo branch too: the bot has no merged contribution history, so it reads as a
+first-time contributor. With `ci` and `secret scan` required, the release PR blocks itself
+and a human has to click Approve on every release.
+
+`.github/workflows/approve-bot-runs.yml` approves those runs, and **only** those:
+
+| condition                          | why it is load-bearing                                                                      |
+| ---------------------------------- | ------------------------------------------------------------------------------------------- |
+| actor is `github-actions[bot]`     | a human's fork PR still waits for a person                                                  |
+| branch is `changeset-release/main` | only the release workflow creates it, and branch protection stops anyone else pushing there |
+| conclusion is `action_required`    | it approves parked runs, never re-runs anything else                                        |
+
+⛔ **All three together are the trust boundary.** Dropping any one turns this into
+"approve every workflow automatically", which is exactly what the policy exists to
+prevent. `tests/workflows.test.ts` asserts all three remain.

@@ -2,8 +2,8 @@
  * Guards the dependency catalog.
  *
  * ★ THE CATALOG IS THE SINGLE-VERSION RULE, MECHANISED — one entry per package for the
- *   whole repo, mirroring the monorepo's pnpm catalog so the two cannot disagree about
- *   what "the house version" is.
+ *   whole repo, so two packages can never resolve the same dependency at different
+ *   versions.
  *
  * ⛔ BUT ONLY devDependencies MAY SAY `catalog:`. Measured 2026-09-15: `npm pack` leaves
  *   the string `catalog:` untouched — only `bun pm pack` resolves it — and
