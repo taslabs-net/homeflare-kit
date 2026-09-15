@@ -15,4 +15,12 @@
  */
 
 export { VERSION } from './version.ts';
-export { EnvError, parseEnv, type EnvSchema, type EnvSpec } from './env.ts';
+export { EnvError, isUnset, parseEnv, type EnvSchema, type EnvSpec } from './env.ts';
+export {
+  KIND_DESCRIPTIONS,
+  KitError,
+  kindForStatus,
+  type ErrorKind,
+  type KitErrorOptions,
+} from './errors.ts';
+export { client, http, HTTPError, TimeoutError, type KyInstance, type Options } from './http.ts';

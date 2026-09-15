@@ -1,7 +1,7 @@
 {
-  "name": "@homeflare/kit",
-  "version": "0.0.0",
-  "description": "Shared HomeFlare primitives. Bun-native to author, runtime-neutral to consume.",
+  "name": "homeflare-kit",
+  "private": true,
+  "description": "HomeFlare's shared packages. Bun-native to author, runtime-neutral to consume.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
   "license": "MIT",
@@ -10,51 +10,62 @@
     "type": "git",
     "url": "git+https://github.com/taslabs-net/homeflare-kit.git"
   },
-  "files": [
-    "dist",
-    "src",
-    "README.md",
-    "LICENSE"
+  "workspaces": [
+    "packages/*"
   ],
   "type": "module",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./package.json": "./package.json"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
-    "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts --outdir dist --target node --format esm --packages external --sourcemap=linked",
-    "build:types": "tsc --project tsconfig.build.json",
-    "clean": "rm -rf dist",
-    "check": "bun run lint && bun run types && bun run build && bun test",
+    "build": "bun run --filter '*' build",
+    "clean": "bun run --filter '*' clean",
     "lint": "oxfmt --check . && oxlint .",
     "lint:fix": "oxfmt . && oxlint --fix .",
-    "types": "tsc --noEmit",
+    "types": "tsc --noEmit && bun run --filter '*' types",
     "test": "bun test",
-    "prepublishOnly": "bun run scripts/sync-version.ts && bun run clean && bun run build",
-    "version": "changeset version && bun run scripts/sync-version.ts",
-    "release": "bun run build && changeset publish",
+    "check": "bun run lint && bun run types && bun run build && bun test",
+    "smoke": "bun run --filter '*' smoke",
+    "verify": "bun run check && bun run smoke",
     "changeset": "changeset",
-    "smoke": "bun run scripts/smoke.ts",
-    "verify": "bun run check && bun run smoke"
+    "version": "changeset version && bun run scripts/sync-versions.ts",
+    "release": "bun run build && changeset publish",
+    "summary": "bun run scripts/ci-summary.ts",
+    "prepare": "husky",
+    "security:scan": "gitleaks dir --redact --no-banner ."
   },
   "devDependencies": {
-    "@changesets/cli": "3.0.3",
-    "@types/bun": "1.4.2",
-    "oxfmt": "0.68.0",
-    "oxlint": "1.83.0",
-    "typescript": "7.0.2"
+    "@changesets/changelog-github": "catalog:",
+    "@changesets/cli": "catalog:",
+    "@types/bun": "catalog:",
+    "husky": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:"
   },
   "engines": {
     "bun": ">=1.4.0",
     "node": ">=22"
   },
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.0",
+  "catalog": {
+    "typescript": "7.0.2",
+    "oxlint": "1.83.0",
+    "oxfmt": "0.68.0",
+    "@types/bun": "1.4.2",
+    "husky": "9.1.7",
+    "@changesets/cli": "3.0.3",
+    "@changesets/changelog-github": "1.0.1",
+    "@cloudflare/workers-types": "5.20260908.1",
+    "@cloudflare/kumo": "2.13.2",
+    "@phosphor-icons/react": "2.1.10",
+    "zod": "4.6.5",
+    "jose": "6.2.12",
+    "hono": "4.13.7",
+    "ky": "2.1.0",
+    "capnweb": "0.12.0",
+    "better-auth": "1.7.5",
+    "better-auth-cloudflare": "0.3.1",
+    "@better-auth/drizzle-adapter": "^1.5.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "echarts": "^6.0.0"
+  }
 }

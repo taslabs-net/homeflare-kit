@@ -51,6 +51,24 @@ describe('parseEnv', () => {
     }
   });
 
+  // 🔴 THE INCIDENT THIS PREVENTS, MEASURED 2026-09-02 IN THIS ESTATE. An unbound workerd
+  //   binding arrives as the STRING "null", not undefined. Sixteen of twenty hand-rolled
+  //   clients accepted it and sent `Authorization: Bearer null`; the resulting bare 401
+  //   reads as "wrong token" and sends an operator to rotate a good credential.
+  test.each(['null', 'undefined', '', '  '])('treats %p as unset, not as a value', (raw) => {
+    expect(() => parseEnv({ TOKEN: { type: 'string' } }, { TOKEN: raw })).toThrow(EnvError);
+  });
+
+  test('a default applies when the value is the string "null"', () => {
+    const parsed = parseEnv({ PORT: { type: 'number', default: 3000 } }, { PORT: 'null' });
+    expect(parsed.PORT).toBe(3000);
+  });
+
+  test('trims surrounding whitespace — a rendered env file has a trailing newline', () => {
+    const parsed = parseEnv({ TOKEN: { type: 'string' } }, { TOKEN: '  secret\n' });
+    expect(parsed.TOKEN).toBe('secret');
+  });
+
   test('rejects a number that is not one', () => {
     expect(() => parseEnv({ PORT: { type: 'number' } }, { PORT: 'eighty' })).toThrow(EnvError);
   });

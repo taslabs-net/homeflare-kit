@@ -1,0 +1,34 @@
+{
+  "name": "@homeflare/config",
+  "version": "0.0.0",
+  "description": "Shared tsconfig, oxlint and oxfmt configuration for HomeFlare projects.",
+  "license": "MIT",
+  "author": "Timothy Schneider",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taslabs-net/homeflare-kit.git",
+    "directory": "packages/config"
+  },
+  "files": [
+    "tsconfig.base.json",
+    "tsconfig.lib.json",
+    "oxlintrc.json",
+    "oxfmtrc.json",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.lib.json": "./tsconfig.lib.json",
+    "./oxlintrc.json": "./oxlintrc.json",
+    "./oxfmtrc.json": "./oxfmtrc.json",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "echo 'config: nothing to build'",
+    "clean": "echo 'config: nothing to clean'"
+  }
+}

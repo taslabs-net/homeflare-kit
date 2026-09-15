@@ -19,7 +19,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const repo = new URL('..', import.meta.url).pathname;
+// ⚠️ '../' from scripts/ is the PACKAGE root, not the repo root. npm pack must run in
+//   the package directory: at the repo root it would pack the private workspace root,
+//   which publishes nothing and fails in a way that names neither package.
+const pkgRoot = new URL('../', import.meta.url).pathname;
 
 async function run(cmd: string[], cwd: string): Promise<string> {
   const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
@@ -27,8 +30,13 @@ async function run(cmd: string[], cwd: string): Promise<string> {
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
   ]);
-  if ((await proc.exited) !== 0) {
-    throw new Error(`${cmd.join(' ')} failed in ${cwd}\n${out}\n${err}`);
+  const code = await proc.exited;
+  if (code !== 0) {
+    // ⚠️ Name the command AND the exit code. A bare stack trace from this line says
+    //   only "smoke.ts:31", which is true of every step — packing, two installs, two
+    //   runtimes and a typecheck — and the npm steps reach the network, so a failure
+    //   here is sometimes transient rather than a real packaging fault.
+    throw new Error(`smoke: \`${cmd.join(' ')}\` exited ${code} in ${cwd}\n${out}\n${err}`);
   }
   return out;
 }
@@ -37,7 +45,7 @@ const scratch = await mkdtemp(join(tmpdir(), 'hf-kit-smoke-'));
 
 try {
   console.log('packing…');
-  const packed = (await run(['npm', 'pack', '--pack-destination', scratch], repo)).trim();
+  const packed = (await run(['npm', 'pack', '--pack-destination', scratch], pkgRoot)).trim();
   const tarball = join(scratch, packed.split('\n').at(-1) ?? '');
 
   await Bun.write(

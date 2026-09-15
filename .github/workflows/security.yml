@@ -1,0 +1,36 @@
+# Secret scanning, on its own schedule and its own check.
+#
+# ★ SEPARATE FROM ci.yml BY CONCERN. A secret scan answers a different question from "is
+#   this code correct", it runs on a schedule as well as on PRs (a rule added tomorrow
+#   can find a secret committed today), and it needs full history, which the CI jobs
+#   deliberately do not fetch.
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # ⚠️ Off the hour deliberately — :00 is when every scheduled workflow on GitHub fires
+    #   at once, and queue time is the result.
+    - cron: '37 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # ⛔ FULL HISTORY. A shallow clone scans only the tip, which misses the case
+          #   that matters most: a secret added and then removed in a later commit. It is
+          #   still in the history, still fetchable, and still compromised.
+          fetch-depth: 0
+
+      # The vendor's own action, so the binary and its rules stay in step.
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

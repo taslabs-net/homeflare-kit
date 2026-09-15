@@ -1,0 +1,9 @@
+# Every file has an owner. ★ A single owner today, but the file exists so that adding a
+# second is a one-line change rather than a policy discussion.
+* @taslabs-net
+
+# ⛔ The release path and the supply chain. A change here can publish, or can change what
+#   is published, so it never merges unreviewed.
+/.github/workflows/ @taslabs-net
+/.changeset/        @taslabs-net
+/packages/config/   @taslabs-net

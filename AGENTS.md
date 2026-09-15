@@ -1,17 +1,46 @@
-# Agent guidelines — @homeflare/kit
+# Agent guidelines — homeflare-kit
 
-This repo is the estate's shared package. It is **standalone**: it is not a member of the
+This repo is the estate's shared packages. It is **standalone**: not a member of the
 `homeflare/homeflare` pnpm workspace, and the golden `AGENTS.md` there does not govern it.
 Where the two differ, the differences below are deliberate and stated with their reason.
 
+## The packages
+
+| package                 | holds                             | may import                          |
+| ----------------------- | --------------------------------- | ----------------------------------- |
+| `@homeflare/kit`        | env parsing, HTTP                 | nothing runtime-specific, ever      |
+| `@homeflare/cloudflare` | Access JWT, structured logging    | workerd globals, `@homeflare/kit`   |
+| `@homeflare/ui`         | React components                  | Kumo, React                         |
+| `@homeflare/auth`       | Better Auth + Cloudflare adapter  | better-auth, drizzle (transitively) |
+| `@homeflare/config`     | tsconfig / oxlint / oxfmt presets | — (no code)                         |
+
+⚠️ **TWO KINDS OF AUTH, NOT INTERCHANGEABLE.** `@homeflare/cloudflare` verifies a
+Cloudflare Access assertion — the edge already authenticated the caller and you check its
+signature (jose, stateless). `@homeflare/auth` is Better Auth, where YOU are the identity
+provider: sessions, accounts, a database. Reaching for the wrong one produces a system
+that looks authenticated and is not.
+
+⛔ **The split is the point.** A Node script depending on `@homeflare/kit` must not drag
+Workers types or React into its resolution. When in doubt about where something goes, ask
+whether it would still make sense in a plain Node process; if not, it is not kit code.
+
+★ **Kumo is the design system** ([cloudflare/kumo](https://github.com/cloudflare/kumo)) —
+44 accessible components on Base UI, with its own stylesheet. ⛔ shadcn/Radix are
+deliberately absent: Kumo occupies that layer already, and taking both would mean two
+primitive libraries and two a11y models in one app.
+
 ## What this repo is
 
-`@homeflare/kit` is a **producer**. The monorepo and every app consume it from npm as an
+This repo is a **producer**. The monorepo and every app consume it from npm as an
 ordinary dependency. That one fact settles most questions here:
 
 - **Bun is the toolchain, not the runtime.** Bun installs, tests, builds and formats this
   code. Consumers run the published `dist/` on workerd, on Node, under pnpm — never under
   bun.
+- **Prefer a known SDK to hand-rolling.** `ky` for HTTP (zero deps), `jose` for JWT,
+  `zod` for validation, Kumo for UI. ⚠️ But weigh it: the logger here is ~50 lines and
+  takes no dependency, because Workers Logs already parses `console.log` JSON natively —
+  pino would add weight to reimplement what the platform does.
 - ⛔ **The published entrypoint stays runtime-neutral.** Nothing in `src/index.ts` may
   import `bun:*`, `node:*` or touch a filesystem. Runtime-specific code goes behind its
   own subpath export (`@homeflare/kit/<area>`) so a consumer opts into it explicitly.
@@ -28,6 +57,31 @@ This repo is outside that workspace, so there is no graph to split. `bun.lock` h
 crosses into the monorepo — pnpm installs the published **tarball**, which contains no
 lockfile at all. The rule stays intact; this is not an exception to it so much as a place
 it does not reach.
+
+## One version per package — the catalog
+
+The root `package.json` holds a bun **catalog**: one entry per external dependency, for
+the whole repo. Versions come from the estate's own `pnpm-workspace.yaml`, so the kit and
+the monorepo cannot disagree about what "the house version" is.
+
+⛔ **Only `devDependencies` may say `catalog:`.** Measured 2026-09-15: `npm pack` leaves
+the string `catalog:` untouched — only `bun pm pack` resolves it — and `changeset publish`
+shells out to npm. A catalogued RUNTIME dependency therefore publishes as the literal
+`"catalog:"`, and every consumer install dies with `EUNSUPPORTEDPROTOCOL`.
+(Changesets' catalog support is changesets/changesets#2213, still open.)
+
+⚠️ **Nothing but the smoke test caught this.** bun installed the workspace happily, lint,
+types and tests were all green, and the failure appeared only when the tarball was packed
+with npm and installed. `tests/catalog.test.ts` now asserts it directly.
+
+★ So published `dependencies` carry literal versions, and a test asserts each one MATCHES
+its catalog entry — the catalog stays authoritative, and drift is a failing test rather
+than a judgement call.
+
+⛔ **Peer ranges stay ranges, never `catalog:`.** A catalogued peer publishes as the
+catalog's exact version (`react: "19.3.0"` rather than `^18 || ^19`), which rejects every
+consumer on any other React for no reason. The catalog pins what WE install; a peer
+declares what a consumer may bring.
 
 ## Toolchain
 

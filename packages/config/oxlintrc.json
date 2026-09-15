@@ -1,5 +1,4 @@
 {
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "unicorn", "oxc", "import"],
   "categories": {
     "correctness": "error",
@@ -19,27 +18,9 @@
   },
   "overrides": [
     {
-      "files": ["**/tests/**", "**/*.test.ts"],
+      "files": ["**/tests/**", "**/*.test.ts", "**/scripts/**"],
       "rules": {
         "no-console": "off"
-      }
-    },
-    {
-      "files": ["**/scripts/**"],
-      "rules": {
-        "no-console": "off"
-      }
-    },
-    {
-      "files": ["packages/cloudflare/src/log.ts"],
-      "rules": {
-        "no-console": "off"
-      }
-    },
-    {
-      "files": ["tests/**"],
-      "rules": {
-        "no-await-in-loop": "off"
       }
     }
   ]
