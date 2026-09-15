@@ -10,10 +10,13 @@
     "directory": "packages/config"
   },
   "files": [
+    "dist",
+    "src",
     "tsconfig.base.json",
     "tsconfig.lib.json",
     "oxlintrc.json",
     "oxfmtrc.json",
+    "bunfig.toml",
     "README.md",
     "LICENSE"
   ],
@@ -23,13 +26,23 @@
     "./tsconfig.lib.json": "./tsconfig.lib.json",
     "./oxlintrc.json": "./oxlintrc.json",
     "./oxfmtrc.json": "./oxfmtrc.json",
+    "./bunfig.toml": "./bunfig.toml",
+    "./check": {
+      "types": "./dist/check.d.ts",
+      "default": "./dist/check.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "echo 'config: nothing to build'",
-    "clean": "echo 'config: nothing to clean'"
+    "build": "bun run build:js && bun run build:types",
+    "build:js": "bun build ./src/check.ts --outdir dist --target bun --format esm --packages external --sourcemap=linked",
+    "build:types": "tsc --project tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "types": "tsc --noEmit",
+    "test": "bun test",
+    "smoke": "echo 'config: conformance is exercised by tests/config-check.test.ts'"
   }
 }
