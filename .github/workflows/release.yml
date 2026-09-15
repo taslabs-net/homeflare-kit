@@ -56,6 +56,9 @@ jobs:
       #   that would have caught the 2026-09-15 tree-shaking bug.
       - run: bun run verify
 
+      # ⛔ publish-script is OURS, not `changeset publish`. See docs/releasing.md: npm pack
+      #   resolves neither `workspace:*` nor `catalog:`, so changesets' own publish path
+      #   would ship both literally and break every consumer install.
       - uses: changesets/action@v2.1.2
         with:
           version-script: bun run version

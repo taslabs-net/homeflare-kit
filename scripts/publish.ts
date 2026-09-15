@@ -1,0 +1,100 @@
+/**
+ * Publish every workspace package whose version is not yet on npm.
+ *
+ * ⛔ WHY NOT `changeset publish`. Measured 2026-09-15, and it would have shipped broken
+ *   packages: changesets shells out to `npm publish`, and `npm pack` does NOT resolve
+ *   either protocol bun uses.
+ *     `workspace:*` publishes literally  -> consumer install fails (bun#24687,
+ *                                           changesets/action#246, both open)
+ *     `catalog:`    publishes literally  -> EUNSUPPORTEDPROTOCOL (changesets#2213, open)
+ *   `bun pm pack` resolves both, so this packs with bun and publishes THAT TARBALL.
+ *
+ * ★ WHY NOT PLAIN `bun publish` EITHER. It resolves the protocols but has no
+ *   `--provenance` flag (checked `bun publish --help` on 1.4.0). Publishing a prebuilt
+ *   tarball with npm keeps the resolved manifest AND the attestation — each tool doing
+ *   the half it is actually good at.
+ *
+ * ⚠️ IDEMPOTENT BY DESIGN. A version already on the registry is skipped, not retried:
+ *   re-running after a partial failure must publish the remainder rather than erroring
+ *   on the ones that worked. An npm version can never be reused, so a half-done release
+ *   has to be safe to finish.
+ */
+import { Glob } from 'bun';
+
+const root = new URL('..', import.meta.url);
+const rootPkg = await Bun.file(new URL('package.json', root)).json();
+const patterns: readonly string[] = rootPkg.workspaces ?? [];
+
+type Pkg = { readonly name: string; readonly version: string; readonly dir: string };
+
+async function run(cmd: readonly string[], cwd: string): Promise<{ code: number; out: string }> {
+  const proc = Bun.spawn([...cmd], { cwd, stdout: 'pipe', stderr: 'pipe' });
+  const [out, err] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  return { code: await proc.exited, out: out + err };
+}
+
+/** Already on the registry? `npm view <pkg>@<version>` exits non-zero when not. */
+async function isPublished(pkg: Pkg): Promise<boolean> {
+  const { code } = await run(
+    ['npm', 'view', `${pkg.name}@${pkg.version}`, 'version'],
+    root.pathname,
+  );
+  return code === 0;
+}
+
+if (process.env['GITHUB_ACTIONS'] !== 'true') {
+  console.warn('⚠️  not in CI: publishing without provenance. Releases should run from CI.\n');
+}
+
+const packages: Pkg[] = [];
+
+// oxlint-disable no-await-in-loop -- a handful of packages, once per release.
+for (const pattern of patterns) {
+  for await (const relative of new Glob(`${pattern}/package.json`).scan({ cwd: root.pathname })) {
+    const manifestUrl = new URL(relative, root);
+    const m = await Bun.file(manifestUrl).json();
+    if (m.private === true) continue;
+
+    packages.push({
+      name: m.name,
+      version: m.version,
+      dir: new URL('./', manifestUrl).pathname,
+    });
+  }
+}
+
+let published = 0;
+
+for (const pkg of packages) {
+  if (await isPublished(pkg)) {
+    console.log(`= ${pkg.name}@${pkg.version} already published`);
+    continue;
+  }
+
+  // ⛔ bun packs (resolving workspace: and catalog:), npm publishes the result.
+  const packed = await run(['bun', 'pm', 'pack', '--quiet'], pkg.dir);
+  if (packed.code !== 0) throw new Error(`pack failed for ${pkg.name}\n${packed.out}`);
+
+  const tarball = packed.out.trim().split('\n').at(-1) ?? '';
+  if (!tarball.endsWith('.tgz')) throw new Error(`no tarball from ${pkg.name}: ${packed.out}`);
+
+  // ⚠️ PROVENANCE ONLY WORKS IN CI. npm mints the attestation from the runner's OIDC
+  //   identity, so on a laptop it fails with "Automatic provenance generation not
+  //   supported for provider: null" — measured 2026-09-15, before anything was pushed.
+  //   ⛔ The flag is therefore conditional, NOT dropped: a release from CI must always
+  //     be attested, and silently publishing unattested would be the worse failure.
+  const inCi = process.env['GITHUB_ACTIONS'] === 'true';
+  const flags = ['--access', 'public', ...(inCi ? ['--provenance'] : [])];
+
+  const result = await run(['npm', 'publish', tarball, ...flags], pkg.dir);
+  if (result.code !== 0) throw new Error(`publish failed for ${pkg.name}\n${result.out}`);
+
+  console.log(`+ ${pkg.name}@${pkg.version} published`);
+  published += 1;
+}
+// oxlint-enable no-await-in-loop
+
+console.log(`\n${published} package(s) published, ${packages.length - published} already current`);
