@@ -35,6 +35,14 @@ const api = client(config.API_URL);
 ⛔ **`@homeflare/kit` stays runtime-neutral** — no `bun:*`, no `node:*`, no filesystem.
 Anything Workers-specific lives in `@homeflare/cloudflare`.
 
+## For coding agents
+
+[`llms.txt`](./llms.txt) is one page to paste into an agent working in a consuming
+repo: the API surface, the house versions, the traps worth knowing, and how to report
+a gap instead of hand-rolling one locally.
+
+Working **in this repo** instead? [AGENTS.md](./AGENTS.md) is the entry point.
+
 ## Developing
 
 ```sh
