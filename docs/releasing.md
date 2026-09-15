@@ -51,3 +51,19 @@ dropped `GITHUB_TOKEN`-from-env; a v1-shaped block fails by doing nothing recogn
 
 ★ Pins verified against the registry 2026-09-15: `checkout@v7`, `setup-node@v7`,
 `setup-bun@v2`, `changesets/action@v2.1.2`.
+
+## Why the release refreshes the lockfile
+
+⛔ **`bun pm pack` reads the workspace version from `bun.lock`, not from the sibling
+`package.json`.** After `changeset version` bumps `0.0.0` → `0.1.0`, the lockfile still
+says `0.0.0`, so packing writes `"@homeflare/kit": "0.0.0"` into the tarball — a
+dependency on a version that was never published.
+
+⚠️ Measured 2026-09-15 against the real version PR. Neither `bun install` nor
+`bun install --force` rewrote the entry; only regenerating the lockfile did. So
+`scripts/publish.ts` deletes `bun.lock` and reinstalls before packing. Nothing is lost —
+the lockfile is rebuilt from the manifests, on a CI checkout that is discarded.
+
+★ This is the third protocol-resolution trap in the same release path, and all three were
+invisible until a tarball was inspected: `catalog:` (npm pack), `workspace:*` (npm pack),
+and now the stale lockfile (bun pm pack). Inspect the tarball, not the manifest.
