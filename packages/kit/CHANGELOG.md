@@ -1,5 +1,12 @@
 # @homeflare/kit
 
+## 0.1.1
+
+### Patch Changes
+
+- [#6](https://github.com/taslabs-net/homeflare-kit/pull/6) [`b68f1b7`](https://github.com/taslabs-net/homeflare-kit/commit/b68f1b7159330f5088fd666e91b55b827bb0178d) Thanks [@taslabs-net](https://github.com/taslabs-net)! - No consumer-visible change. Release tooling only: the publish step now streams npm's
+  output and confirms each version against the registry before reporting success.
+
 ## 0.1.0
 
 ### Minor Changes

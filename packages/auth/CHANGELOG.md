@@ -1,5 +1,12 @@
 # @homeflare/auth
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [[`b68f1b7`](https://github.com/taslabs-net/homeflare-kit/commit/b68f1b7159330f5088fd666e91b55b827bb0178d)]:
+  - @homeflare/kit@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes
