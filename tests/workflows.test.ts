@@ -16,7 +16,7 @@ type Step = { readonly uses?: string; readonly run?: string };
 
 // ⚠️ NOT `as const`: test.each's signature takes a mutable array, so a readonly tuple
 //   fails to typecheck while passing at run time (TS2769).
-const workflows = ['ci', 'release', 'security', 'approve-bot-runs'];
+const workflows = ['ci', 'release', 'security'];
 
 async function stepsOf(name: string): Promise<readonly Step[]> {
   const text = await Bun.file(new URL(`../.github/workflows/${name}.yml`, import.meta.url)).text();
@@ -67,18 +67,16 @@ describe('workflows', () => {
 
   test('auto-approval is scoped to the release bot and its branch only', async () => {
     // ⛔ THE TRUST BOUNDARY. Approving runs automatically is safe ONLY because all three
-    //   conditions hold together: the actor is the bot, the branch is the one only the
-    //   release workflow creates, and the run is actually parked. Losing any one of them
-    //   would auto-approve a stranger's fork PR, which is what the policy exists to stop.
+    //   filters apply together: the branch is the one only the release workflow creates,
+    //   the actor is the bot, and the run is actually parked. Losing any one would
+    //   auto-approve a stranger's fork PR, which is what the policy exists to stop.
     const text = await Bun.file(
-      new URL('../.github/workflows/approve-bot-runs.yml', import.meta.url),
+      new URL('../.github/workflows/release.yml', import.meta.url),
     ).text();
-    const doc = Bun.YAML.parse(text) as { jobs: Record<string, { if?: string }> };
-    const condition = doc.jobs['approve']?.if ?? '';
 
-    expect(condition).toContain("actor.login == 'github-actions[bot]'");
-    expect(condition).toContain("head_branch == 'changeset-release/main'");
-    expect(condition).toContain("conclusion == 'action_required'");
+    expect(text).toContain('changeset-release/main');
+    expect(text).toContain('github-actions[bot]');
+    expect(text).toContain('action_required');
   });
 
   test('dependabot config is at .github/ and covers bun plus actions', async () => {

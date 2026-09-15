@@ -22,6 +22,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: write # approve the version PR's own parked runs
   contents: write # open the version PR, push the changelog commit, create releases
   pull-requests: write # ...and keep that PR updated
   id-token: write # provenance attestation
@@ -93,3 +94,45 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           # Under a token, provenance is opt-in; under OIDC it would be automatic.
           NPM_CONFIG_PROVENANCE: 'true'
+
+      # ⛔ APPROVE THE VERSION PR'S OWN RUNS. Measured 2026-09-15: every run on
+      #   `changeset-release/main` parks at `action_required`. GitHub's approval policy is
+      #   written for fork PRs but reaches `github-actions[bot]` on a same-repo branch too,
+      #   because the bot has no merged contribution history and reads as a first-time
+      #   contributor. With `ci` and `secret scan` required, the release PR blocks itself
+      #   and a human clicks Approve on every single release.
+      # ★ DONE HERE, NOT IN A `workflow_run` LISTENER. A parked run never emits the
+      #   `completed` event that such a listener needs — measured: the listener fired only
+      #   for main's own runs and skipped. This step runs right after the PR is created or
+      #   updated, when the parked runs demonstrably exist.
+      # ⛔ THE TRUST BOUNDARY: only runs on `changeset-release/main`, only those the bot
+      #   triggered, only those actually parked. A contributor's fork PR still waits for a
+      #   person — that is what the policy is for, and this does not weaken it.
+      - name: Approve the version PR's parked runs
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ids=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?per_page=30" \
+            --jq '.workflow_runs[]
+                  | select(.head_branch == "changeset-release/main")
+                  | select(.conclusion == "action_required")
+                  | select(.actor.login == "github-actions[bot]")
+                  | .id')
+
+          if [ -z "$ids" ]; then
+            echo "No parked runs on changeset-release/main."
+            exit 0
+          fi
+
+          for id in $ids; do
+            echo "Approving parked run $id"
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve"
+          done
+
+          {
+            echo "### Version PR runs approved"
+            echo
+            echo "Approved: $(echo "$ids" | tr '\n' ' ')"
+          } >> "$GITHUB_STEP_SUMMARY"
