@@ -16,7 +16,7 @@ type Step = { readonly uses?: string; readonly run?: string };
 
 // ⚠️ NOT `as const`: test.each's signature takes a mutable array, so a readonly tuple
 //   fails to typecheck while passing at run time (TS2769).
-const workflows = ['ci', 'release'];
+const workflows = ['ci', 'release', 'security'];
 
 async function stepsOf(name: string): Promise<readonly Step[]> {
   const text = await Bun.file(new URL(`../.github/workflows/${name}.yml`, import.meta.url)).text();
@@ -42,7 +42,7 @@ describe('workflows', () => {
   test.each(workflows)('%s uses only approved publishers', async (name) => {
     // ⛔ First-party (`actions/*`) or the vendor's own action for the tool it wraps.
     //   Adding a name here is a deliberate supply-chain decision, not a convenience.
-    const approved = new Set(['actions', 'oven-sh', 'changesets']);
+    const approved = new Set(['actions', 'oven-sh', 'changesets', 'gitleaks']);
     const steps = await stepsOf(name);
 
     const uses = steps.flatMap((s) => (s.uses === undefined ? [] : [s.uses])) as readonly string[];

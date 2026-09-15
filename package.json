@@ -27,12 +27,15 @@
     "changeset": "changeset",
     "version": "changeset version && bun run scripts/sync-versions.ts",
     "release": "bun run build && changeset publish",
-    "summary": "bun run scripts/ci-summary.ts"
+    "summary": "bun run scripts/ci-summary.ts",
+    "prepare": "husky",
+    "security:scan": "gitleaks dir --redact --no-banner ."
   },
   "devDependencies": {
     "@changesets/changelog-github": "1.0.1",
     "@changesets/cli": "3.0.3",
     "@types/bun": "1.4.2",
+    "husky": "9.1.7",
     "oxfmt": "0.68.0",
     "oxlint": "1.83.0",
     "typescript": "7.0.2"

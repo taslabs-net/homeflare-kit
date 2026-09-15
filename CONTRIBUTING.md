@@ -43,6 +43,28 @@ and the word "measured" beat an assertion.
 file that does one thing. ⛔ You do not delete comments to fit — the comments are the
 expensive part.
 
+## Git hooks
+
+`bun install` installs them (husky, via `prepare`). One script per concern, in
+`scripts/hooks/`:
+
+| hook       | runs                                                                | why                         |
+| ---------- | ------------------------------------------------------------------- | --------------------------- |
+| pre-commit | `secrets` → `foreign-locks` → `format-staged` → `changeset-pending` | fast, staged files only     |
+| pre-push   | `verify`                                                            | the same gate CI runs, ~30s |
+
+⛔ **Secrets are scanned first**, by [gitleaks](https://github.com/gitleaks/gitleaks).
+Everything else can be fixed after the fact; a credential in a public repo is compromised
+the moment it is pushed.
+
+⚠️ **gitleaks is a Go binary, not an npm package** — `brew install gitleaks`, or a
+[release binary](https://github.com/gitleaks/gitleaks/releases) on Linux. The hook fails
+loudly if it is missing rather than skipping: a secret scan that quietly does nothing is
+worse than none, because it reads as coverage.
+
+★ `--no-verify` exists and is occasionally right. It skips the secret scan too, so prefer
+fixing the thing it is complaining about.
+
 ## The gates, and why each one exists
 
 | gate            | catches                                                                     |

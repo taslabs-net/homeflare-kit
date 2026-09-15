@@ -1,0 +1,8 @@
+# One script per concern, ordered by cost and by consequence.
+#
+# ⛔ SECRETS FIRST. Everything else can be fixed after the fact; a credential in a public
+#   repo is compromised the moment it is pushed.
+bun run scripts/hooks/secrets.ts || exit 1
+bun run scripts/hooks/foreign-locks.ts || exit 1
+bun run scripts/hooks/format-staged.ts || exit 1
+bun run scripts/hooks/changeset-pending.ts || exit 1
