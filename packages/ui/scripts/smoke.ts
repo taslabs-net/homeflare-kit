@@ -18,6 +18,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { packForPublish } from '../../../scripts/pack.ts';
 
 const pkgRoot = new URL('../', import.meta.url).pathname;
 
@@ -36,11 +37,11 @@ const scratch = await mkdtemp(join(tmpdir(), 'hf-ui-smoke-'));
 
 try {
   console.log('packing…');
-  // ⛔ bun pm pack, not npm pack: it resolves `catalog:` and `workspace:` specifiers.
-  const packed = (
-    await run(['bun', 'pm', 'pack', '--destination', scratch, '--quiet'], pkgRoot)
-  ).trim();
-  const tarball = packed.split('\n').at(-1) ?? '';
+  // ⛔ THE SAME PACK PATH THE RELEASE USES. When these differed, the release stripped dev
+  //   scripts and the smoke test did not — so a manifest advertising `bun run smoke`, a
+  //   command whose file never ships, passed every gate here and failed in a consumer's
+  //   install. One path, or the gate is theatre.
+  const tarball = await packForPublish(pkgRoot, scratch);
 
   await Bun.write(
     join(scratch, 'package.json'),
@@ -73,6 +74,17 @@ if (typeof VERSION !== 'string' || VERSION.length === 0) throw new Error('VERSIO
 const css = await Bun.file(Bun.resolveSync('@homeflare/ui/styles', process.cwd())).text();
 if (!css.includes("@import '@cloudflare/kumo/styles'")) throw new Error('styles missing Kumo import');
 if (!css.includes('--hf-')) throw new Error('styles missing HomeFlare tokens');
+// ⛔ The BRAND override is the point of the theme: without it Kumo's primary buttons stay
+//   blue, which is the defect an outside review caught in 0.2.0.
+if (!css.includes('--color-kumo-brand')) throw new Error('styles missing HomeFlare brand');
+if (!css.includes('--hf-accent-ink')) throw new Error('styles missing contrast-safe ink');
+
+// ⛔ A PUBLISHED MANIFEST MUST NOT ADVERTISE COMMANDS IT CANNOT RUN. 0.2.0 shipped
+//   \`smoke\`, \`build\` and \`types\`, all pointing at files the tarball does not contain.
+const manifest = await Bun.file('node_modules/@homeflare/ui/package.json').json();
+if (Object.keys(manifest.scripts ?? {}).length > 0) {
+  throw new Error('published manifest still advertises: ' + Object.keys(manifest.scripts).join(', '));
+}
 
 console.log('resolve ok', VERSION);
 `,

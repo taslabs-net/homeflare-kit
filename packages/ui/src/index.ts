@@ -22,3 +22,7 @@
  */
 
 export { VERSION } from './version.ts';
+
+// ★ For code a stylesheet cannot reach — OG images, admin widgets, email templates.
+//   Generated from theme/homeflare.yaml, the same source as the stylesheet.
+export { ACCENT, ACCENT_HOVER, ACCENT_INK } from './theme.ts';
