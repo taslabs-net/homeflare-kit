@@ -1,15 +1,19 @@
 # @homeflare/config
 
-Shared TypeScript, oxlint and oxfmt configuration for HomeFlare projects. One place to
-change a rule, rather than one copy per repo that drifts.
+Shared TypeScript, oxlint and oxfmt configuration. One place to change a rule, rather
+than one copy per repo that drifts.
+
+```sh
+bun add -D @homeflare/config
+```
 
 ## tsconfig
 
 ```jsonc
-// tsconfig.json — an app or a Worker
+// an app or a Worker
 { "extends": "@homeflare/config/tsconfig.base.json" }
 
-// tsconfig.json — a package that publishes types
+// a package that publishes types
 { "extends": "@homeflare/config/tsconfig.lib.json" }
 ```
 
@@ -17,28 +21,27 @@ change a rule, rather than one copy per repo that drifts.
 ⛔ Both are needed together — `isolatedDeclarations` alone is TS5069, even under
 `--noEmit`.
 
+The base turns on `strict`, plus the three flags that catch the most runtime bugs:
+`noUncheckedIndexedAccess` (`arr[0]` is `T | undefined`), `exactOptionalPropertyTypes`,
+and `noFallthroughCasesInSwitch`.
+
 ## oxlint
 
-⚠️ oxlint's `extends` takes **file paths**, not package names — there is no
-`eslint-config-*` style resolution. The path into `node_modules` is written out:
-
 ```json
-{
-  "extends": ["./node_modules/@homeflare/config/oxlintrc.json"],
-  "rules": {
-    // project-specific overrides go here
-  }
-}
+{ "extends": ["./node_modules/@homeflare/config/oxlintrc.json"] }
 ```
 
-## oxfmt
+⚠️ oxlint's `extends` takes **file paths**, not package names — there is no
+`eslint-config-*` style resolution, so the path into `node_modules` is written out.
 
-⚠️ The file must be named `.oxfmtrc.json` — with the leading dot. Without it, oxfmt
-silently uses its defaults, and the symptom is a formatter that rewrites your quotes.
+## oxfmt
 
 ```sh
 cp node_modules/@homeflare/config/oxfmtrc.json .oxfmtrc.json
 ```
+
+⚠️ The file must be named `.oxfmtrc.json` — **with the leading dot**. Without it oxfmt
+silently uses its defaults, and the symptom is a formatter that rewrites your quotes.
 
 ## License
 
