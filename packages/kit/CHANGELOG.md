@@ -1,5 +1,53 @@
 # @homeflare/kit
 
+## 0.2.0
+
+### Minor Changes
+
+- [#13](https://github.com/taslabs-net/homeflare-kit/pull/13) [`3b78acc`](https://github.com/taslabs-net/homeflare-kit/commit/3b78acc2a39ce0e01b8a3e55322c56d60b9844bb) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `rateLimitAware`, a ky hook that honours `x-ratelimit-reset-after`.
+
+  Measured against ky 2.1.0: `retry-after: 1` is honoured (waited 1006ms) but
+  `x-ratelimit-reset-after: 1` is **ignored** (303ms — ky's own backoff). Discord and
+  Discord-shaped APIs send the latter, with fractional seconds, and it is the more precise
+  of the two when both appear.
+
+  ```ts
+  import { client, rateLimitAware } from '@homeflare/kit';
+  const discord = client(base, rateLimitAware);
+  ```
+
+  Also exports `retryAfterMs` and `MAX_RETRY_WAIT_MS` for callers doing their own waiting.
+  The wait is capped at 30s: an uncapped sleep on a global 429 can be an hour, which is
+  indistinguishable from a hang.
+
+- [#15](https://github.com/taslabs-net/homeflare-kit/pull/15) [`1b6bd50`](https://github.com/taslabs-net/homeflare-kit/commit/1b6bd5052433cf83371e8df1cf0111aca1840712) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `upstream()` and `writableUpstream()` — a client for one API, carrying that API's
+  quirks so no caller re-derives them.
+
+  ky stays the transport; this adds only what ky has no opinion about:
+
+  - **Fails closed on a missing credential**, and distinguishes the two ways it happens: an
+    empty value means the secret did not render, `"null"` means the binding name is wrong.
+    Omitting the header instead produces a bare 401, which reads as a bad credential and
+    sends an operator to rotate a good secret.
+  - **Never follows a redirect.** An unauthenticated request is often answered with a 302 to
+    a login page; following it returns HTML with status 200, which reads as a broken API.
+  - **Per-upstream auth schemes.** Django REST Framework wants `Token <value>`; Bearer
+    returns 401 there, and a wrong scheme is indistinguishable from a wrong credential.
+  - **Reads and writes are separate functions.** `upstream()` exposes GET only. Writes need
+    `writableUpstream()`, so widening is a visible choice rather than a flag.
+
+  ```ts
+  const grafana = upstream({
+    system: 'grafana',
+    urlVar: 'GRAFANA_URL',
+    defaultUrl: 'http://127.0.0.1:3000',
+    tokenVar: 'GRAFANA_TOKEN',
+    pathPrefix: '/api',
+  });
+
+  await grafana.get('/dashboards').json<Dashboard[]>();
+  ```
+
 ## 0.1.1
 
 ### Patch Changes
