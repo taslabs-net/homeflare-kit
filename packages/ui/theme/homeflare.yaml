@@ -1,0 +1,34 @@
+# The HomeFlare theme, as data.
+#
+# ★ ONE SOURCE, THREE OUTPUTS: this file, styles/index.css (generated), and src/theme.ts
+#   (generated). Measured 2026-09-15: `#f6821f` is hardcoded in 37 files across the
+#   estate — CSS, OG-image routes, admin widgets, email templates. A stylesheet alone
+#   cannot reach the TSX ones, so the brand lives here as data and both outputs derive
+#   from it.
+#
+# ⚠️ Bun parses YAML natively (`Bun.YAML.parse`), so this costs no dependency — not in
+#   the build, and not in a consumer's tree.
+name: homeflare
+
+brand:
+  # ⛔ FILLS AND BORDERS ONLY. See `ink`.
+  accent: '#f6821f'
+  accentHover: '#e0700f'
+
+  # ⛔ USE FOR ANY ORANGE TEXT, never `accent`. #f6821f on a light background fails WCAG
+  #   contrast at body sizes, so this is darkened for light mode and lightened for dark.
+  inkLight: '#c2570a'
+  inkDark: '#fbad41'
+
+# ⛔ Kumo's default brand is blue. Overriding these re-themes Button and LinkButton
+#   variant="primary" everywhere: `bg-kumo-brand` resolves them at the use site, so no
+#   component needs touching.
+kumo:
+  color-kumo-brand: '#f6821f'
+  color-kumo-brand-hover: '#e0700f'
+
+# ⚠️ Ours, prefixed --hf-. Kumo may rename its internals between versions; these survive.
+layout:
+  hf-radius-card: 0.75rem
+  hf-shell-max-width: 80rem
+  hf-gutter: 1rem

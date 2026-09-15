@@ -20,6 +20,7 @@
  *   has to be safe to finish.
  */
 import { Glob } from 'bun';
+import { packForPublish } from './pack.ts';
 
 const root = new URL('..', import.meta.url);
 const rootPkg = await Bun.file(new URL('package.json', root)).json();
@@ -109,11 +110,9 @@ for (const pkg of packages) {
   }
 
   // ⛔ bun packs (resolving workspace: and catalog:), npm publishes the result.
-  const packed = await run(['bun', 'pm', 'pack', '--quiet'], pkg.dir);
-  if (packed.code !== 0) throw new Error(`pack failed for ${pkg.name}\n${packed.out}`);
-
-  const tarball = packed.out.trim().split('\n').at(-1) ?? '';
-  if (!tarball.endsWith('.tgz')) throw new Error(`no tarball from ${pkg.name}: ${packed.out}`);
+  // ★ The SHARED pack path — the same one the smoke tests use, so a tarball defect
+  //   cannot hide between them. See scripts/pack.ts.
+  const tarball = await packForPublish(pkg.dir, pkg.dir);
 
   // ⚠️ PROVENANCE ONLY WORKS IN CI. npm mints the attestation from the runner's OIDC
   //   identity, so on a laptop it fails with "Automatic provenance generation not

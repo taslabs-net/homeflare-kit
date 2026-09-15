@@ -15,6 +15,7 @@
     "dist",
     "src",
     "styles",
+    "theme",
     "README.md",
     "LICENSE"
   ],
@@ -26,19 +27,25 @@
       "default": "./dist/index.js"
     },
     "./styles": "./styles/index.css",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./styles/tailwind": "./styles/tailwind.css",
+    "./theme": {
+      "types": "./dist/theme.d.ts",
+      "default": "./dist/theme.js"
+    }
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts --outdir dist --target browser --format esm --packages external --sourcemap=linked",
+    "build": "bun run build:theme && bun run build:js && bun run build:types",
+    "build:js": "bun build ./src/index.ts ./src/theme.ts --outdir dist --target browser --format esm --packages external --sourcemap=linked",
     "build:types": "tsc --project tsconfig.build.json",
     "clean": "rm -rf dist",
     "test": "bun test",
     "smoke": "bun run scripts/smoke.ts",
-    "types": "tsc --noEmit"
+    "types": "tsc --noEmit",
+    "build:theme": "bun run scripts/build-theme.ts"
   },
   "devDependencies": {
     "@cloudflare/kumo": "catalog:",

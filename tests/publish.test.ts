@@ -26,8 +26,16 @@ describe('release', () => {
   test('the publish script packs with bun and publishes with npm', async () => {
     const src = await Bun.file(new URL('scripts/publish.ts', root)).text();
 
-    // bun resolves the protocols; npm carries the provenance attestation.
-    expect(src).toContain("'bun', 'pm', 'pack'");
+    // ★ The pack itself moved to scripts/pack.ts, shared with the smoke tests so the
+    //   tarball a gate inspects is the tarball a consumer receives. When they differed,
+    //   the release stripped dev scripts and the smoke test did not — so @homeflare/ui
+    //   published a manifest advertising `bun run smoke`, whose file never shipped.
+    expect(src).toContain('packForPublish');
+
+    const pack = await Bun.file(new URL('scripts/pack.ts', root)).text();
+    expect(pack).toContain("'bun', 'pm', 'pack'");
+    // ⛔ Dev scripts must not reach the tarball: they reference files it does not carry.
+    expect(pack).toContain("delete forPublish['scripts']");
     expect(src).toContain("'--provenance'");
     // ⛔ Conditional on CI, never dropped: provenance cannot be minted on a laptop
     //   (no OIDC identity), but a release FROM CI must always be attested.
