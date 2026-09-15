@@ -16,7 +16,7 @@
  *   parallel ones, so a caller who needs something not covered here uses ky directly and
  *   loses nothing.
  */
-import ky, { HTTPError, TimeoutError, type KyInstance, type Options } from 'ky';
+import ky, { HTTPError, type KyInstance, type Options, TimeoutError } from 'ky';
 
 export { HTTPError, TimeoutError };
 export type { KyInstance, Options };

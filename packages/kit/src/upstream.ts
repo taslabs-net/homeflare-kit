@@ -78,8 +78,9 @@ function credential(config: UpstreamConfig): string {
       remedy:
         `An EMPTY value means the secret did not render — a denied secret path does not ` +
         `error, it writes nothing, so check the grant rather than the file existing. ` +
-        `"null" means the binding name does not match what the deployment writes. ` +
-        (config.tokenRemedy ?? ''),
+        `"null" means the binding name does not match what the deployment writes. ${
+          config.tokenRemedy ?? ''
+        }`,
     });
   }
   return value;

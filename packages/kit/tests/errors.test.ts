@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { KIND_DESCRIPTIONS, KitError, kindForStatus, type ErrorKind } from '../src/errors.ts';
+import { type ErrorKind, KIND_DESCRIPTIONS, KitError, kindForStatus } from '../src/errors.ts';
 
 describe('kindForStatus', () => {
   // 🔴 THE MAPPING THAT WAS WRONG, measured 2026-09-07: a 429 landed as a kind whose
