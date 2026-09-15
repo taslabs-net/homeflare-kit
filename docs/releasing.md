@@ -93,3 +93,19 @@ prevent. `tests/workflows.test.ts` asserts all three remain.
 listener was written, deployed, and fired only for `main`'s own runs — skipping the
 parked ones it existed for. The release workflow already knows the branch and runs right
 after the PR is written, when the parked runs demonstrably exist.
+
+## Why the registry check polls
+
+⛔ **A publish is accepted before it is readable.** npm says so in its own output: "Your
+package is being processed and may take a few minutes to become available."
+
+⚠️ Measured 2026-09-15, and it cost a release. The verification added after the previous
+incident ran `npm view` one second after a successful, provenance-signed publish of
+`@homeflare/kit@0.1.1`, got a 404, and threw. The release aborted and the remaining four
+packages never published — a **false alarm that did real damage**, which is the failure
+mode a safety check must not have.
+
+★ The check now polls for ~60s. A version that never appears is still a hard failure —
+that is the point of the check — but one that appears late is not. ★ The publish script
+is idempotent, so the aborted run left nothing to clean up: the next release publishes
+whatever the registry is missing.
