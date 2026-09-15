@@ -34,7 +34,18 @@ describe('release', () => {
     expect(src).toContain('GITHUB_ACTIONS');
   });
 
-  test('waits for registry propagation instead of failing on the first 404', async () => {
+  test('emits CHANGESETS_OUTPUT so tags and GitHub releases get created', async () => {
+    // ⛔ THE GAP THIS CLOSES, measured 2026-09-15. With a custom publish-script,
+    //   changesets/action learns what shipped ONLY from this ndjson file. Without it the
+    //   action warns and creates nothing: npm had 0.1.0 and 0.1.1 while GitHub's Releases
+    //   page stayed empty, as if the project had never cut a release.
+    const src = await Bun.file(new URL('scripts/publish.ts', root)).text();
+
+    expect(src).toContain('CHANGESETS_OUTPUT');
+    expect(src).toContain("type: 'git-tag'");
+  });
+
+  test('a slow registry never aborts the release', async () => {
     // ⚠️ THE FALSE ALARM THIS PREVENTS, measured 2026-09-15. npm prints "Your package is
     //   being processed and may take a few minutes to become available" — a publish is
     //   ACCEPTED before it is READABLE. The first version of the check ran `npm view` one
@@ -42,8 +53,11 @@ describe('release', () => {
     //   release, and left four packages unpublished.
     const src = await Bun.file(new URL('scripts/publish.ts', root)).text();
 
-    expect(src).toContain('Bun.sleep');
-    expect(src).toContain('still does not have it');
+    // ⚠️ MEASURED TWICE, and it cost two releases: failing on an immediate 404, then
+    //   failing after a 60s poll. Both packages were fine. A publish npm ACCEPTED must
+    //   never stop the remaining packages — that turns CDN lag into a half-released
+    //   workspace, which is worse than the problem the check was added for.
+    expect(src).not.toContain('npm exited 0 but the registry');
   });
 
   test('refreshes the lockfile before packing', async () => {
