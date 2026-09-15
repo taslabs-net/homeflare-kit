@@ -1,5 +1,20 @@
 # @homeflare/config
 
+## 0.1.1
+
+### Patch Changes
+
+- [#16](https://github.com/taslabs-net/homeflare-kit/pull/16) [`38cfc99`](https://github.com/taslabs-net/homeflare-kit/commit/38cfc99a7f38cbfe013eaa9d853dd0ca93a85b55) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Ship a README and LICENSE with every package.
+
+  `@homeflare/cloudflare`, `/ui` and `/auth` declared both in `files` and had neither on
+  disk, so their npm pages were blank and the tarballs carried no licence text. npm does
+  not error on a missing `files` entry — it omits it — so every gate here stayed green.
+  `@homeflare/config` never declared `LICENSE` at all.
+
+  The `ui` and `auth` READMEs now say plainly that those packages are scaffolds exporting
+  only `VERSION`, and `ui` documents using Kumo directly in the meantime. A bare npm page
+  reads as "ready", which is the more expensive mistake.
+
 ## 0.1.0
 
 ### Minor Changes
