@@ -6,6 +6,7 @@
  *   it just omits it — so `@homeflare/cloudflare`, `/ui` and `/auth` shipped with blank
  *   npm pages and no licence text, and every gate in this repo stayed green.
  */
+import { stat } from 'node:fs/promises';
 import { describe, expect, test } from 'bun:test';
 
 const root = new URL('../', import.meta.url);
@@ -23,12 +24,16 @@ describe.each(PACKAGES)('packages/%s', (pkg) => {
     const { files = [] } = await manifest(pkg);
 
     for (const entry of files) {
-      // ⚠️ `dist` and `src` are DIRECTORIES, and Bun.file().exists() is false for one —
-      //   it answers about files. They are covered by the build and the smoke test.
-      if (entry === 'dist' || entry === 'src') continue;
+      // ⚠️ Bun.file().exists() answers about FILES and is false for a DIRECTORY, so a
+      //   `files` entry like `dist`, `src` or `styles` needs a stat, not a file check.
+      //   ⛔ Do not guess by extension: that sends README.md down the directory branch
+      //     and throws ENOTDIR. Ask the filesystem what it is.
+      const target = new URL(`packages/${pkg}/${entry}`, root).pathname;
+      const present = await stat(target)
+        .then(() => true)
+        .catch(() => false);
 
-      const exists = await Bun.file(new URL(`packages/${pkg}/${entry}`, root)).exists();
-      expect(exists).toBe(true);
+      expect(present).toBe(true);
     }
   });
 
