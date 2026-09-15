@@ -1,0 +1,60 @@
+{
+  "name": "@homeflare/kit",
+  "version": "0.0.0",
+  "description": "Shared HomeFlare primitives. Bun-native to author, runtime-neutral to consume.",
+  "homepage": "https://github.com/taslabs-net/homeflare-kit#readme",
+  "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
+  "license": "MIT",
+  "author": "Timothy Schneider",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taslabs-net/homeflare-kit.git"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun run build:js && bun run build:types",
+    "build:js": "bun build ./src/index.ts --outdir dist --target node --format esm --packages external --sourcemap=linked",
+    "build:types": "tsc --project tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "check": "bun run lint && bun run types && bun run build && bun test",
+    "lint": "oxfmt --check . && oxlint .",
+    "lint:fix": "oxfmt . && oxlint --fix .",
+    "types": "tsc --noEmit",
+    "test": "bun test",
+    "prepublishOnly": "bun run scripts/sync-version.ts && bun run clean && bun run build",
+    "version": "changeset version && bun run scripts/sync-version.ts",
+    "release": "bun run build && changeset publish",
+    "changeset": "changeset",
+    "smoke": "bun run scripts/smoke.ts",
+    "verify": "bun run check && bun run smoke"
+  },
+  "devDependencies": {
+    "@changesets/cli": "3.0.3",
+    "@types/bun": "1.4.2",
+    "oxfmt": "0.68.0",
+    "oxlint": "1.83.0",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "bun": ">=1.4.0",
+    "node": ">=22"
+  },
+  "packageManager": "bun@1.4.0"
+}

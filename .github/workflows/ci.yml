@@ -1,0 +1,51 @@
+# Verify every push and PR. Bun is the only toolchain — no node setup step, because a
+# second runtime in CI is a second thing that can disagree with a laptop.
+#
+# ⛔ EVERY ACTION HERE IS FIRST-PARTY OR THE VENDOR'S OWN, PINNED TO A MAJOR TAG.
+#   Nothing is hand-rolled and nothing comes from an unmaintained third party: this file
+#   is the template every HomeFlare repo copies, so a bad action here propagates.
+#   Versions verified against the registry 2026-09-15.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v7.0.1 is current; v5 was two majors behind.
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      # ⛔ --frozen-lockfile, always. Without it CI silently resolves a newer transitive
+      #   dep than the lockfile pins, so green here stops meaning green on the machine
+      #   that committed.
+      - run: bun install --frozen-lockfile
+
+      - run: bun run lint
+      - run: bun run types
+
+      # ⛔ BUILD BEFORE TEST, not after. tests/dist.test.ts guards the built artifact and
+      #   SKIPS ITSELF when dist/ is absent, so running tests first would quietly drop the
+      #   only in-repo check that catches a broken bundle.
+      - run: bun run build
+      - run: bun test
+
+      # ⛔ THE GATE THAT MATTERS. Packs the real tarball, installs it into a scratch
+      #   project and uses it under both bun and node, typechecking from the consumer's
+      #   side. Every step above this one passed on a package the estate could not
+      #   consume (measured 2026-09-15 — see tests/dist.test.ts).
+      - run: bun run smoke

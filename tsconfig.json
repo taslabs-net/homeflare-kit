@@ -1,0 +1,35 @@
+{
+  // Authoring config: what the editor, `bun run types` and `bun test` see.
+  // The published surface is built by tsconfig.build.json, which narrows to src/.
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "types": ["bun"],
+
+    // ⛔ Emit is the build's job, never the checker's. `bun run types` is --noEmit.
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    // ★ isolatedDeclarations is what makes the two-tool build honest: it forces every
+    //   exported symbol to carry an explicit type, so declaration emit can never
+    //   disagree with what bun build bundled. Without it the .d.ts is an inference
+    //   that drifts from the .js beside it.
+    // ⚠️ TS5069: it cannot be set without `declaration`, even under --noEmit, so both
+    //   sit here. Emit is still off — `declaration` describes what WOULD be emitted.
+    "isolatedDeclarations": true,
+    "declaration": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "tests", "*.ts"]
+}

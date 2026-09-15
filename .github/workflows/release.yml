@@ -1,0 +1,67 @@
+# Changesets -> npm. Merging to main opens (or updates) a "Version Packages" PR; merging
+# THAT PR is what publishes. No tag is pushed by hand.
+#
+# ⛔ changesets/action IS PINNED EXACTLY, not to a major. Measured 2026-09-15: the repo
+#   publishes v2.0.0 … v2.1.2 and NO floating `v2` tag, so `@v2` is a 404 at run time,
+#   not a helpful alias. Bump this deliberately.
+# ⚠️ v2 RENAMED EVERY INPUT (version -> version-script, publish -> publish-script,
+#   commit -> commit-message, title -> pr-title) and DROPPED GITHUB_TOKEN-from-env: the
+#   token is passed explicitly as `github-token` now. A v1-shaped block fails by doing
+#   nothing recognisable rather than by erroring clearly.
+# ⚠️ v2 also stopped writing .npmrc from NPM_TOKEN. actions/setup-node's registry-url is
+#   what writes it; without that step the token is present and ignored (reads as ENEEDAUTH).
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # open the version PR, push the changelog commit and tag
+  pull-requests: write # ...and keep that PR updated
+  id-token: write # provenance attestation
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # changesets reads history to build the changelog
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      # Node carries a current npm for the publish step and writes the .npmrc that
+      # NODE_AUTH_TOKEN binds to. The build itself runs on bun.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - run: bun install --frozen-lockfile
+
+      # ⛔ The gate. A version that fails here must not reach the registry, where a number
+      #   can never be reused. `verify` includes the consumer smoke test — the only step
+      #   that would have caught the 2026-09-15 tree-shaking bug.
+      - run: bun run verify
+
+      - uses: changesets/action@v2.1.2
+        with:
+          version-script: bun run version
+          publish-script: bun run release
+          commit-message: 'chore: version packages'
+          pr-title: 'chore: version packages'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          # ⚠️ Scoped automation token, not OIDC. changesets/action + npm trusted
+          #   publishing 404s on PUT for SCOPED packages (changesets/action#515,
+          #   open 2026-09-15) and @homeflare/kit is scoped. Revisit when that closes.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Under a token, provenance is opt-in; under OIDC it would be automatic.
+          NPM_CONFIG_PROVENANCE: 'true'
