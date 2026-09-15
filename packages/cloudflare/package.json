@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/cloudflare",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Cloudflare Workers helpers: Access JWT verification, typed bindings, structured logging.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/cloudflare#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
