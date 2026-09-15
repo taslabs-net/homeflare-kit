@@ -34,6 +34,18 @@ describe('release', () => {
     expect(src).toContain('GITHUB_ACTIONS');
   });
 
+  test('refreshes the lockfile before packing', async () => {
+    // ⛔ THE BUG THIS CATCHES, measured 2026-09-15 against the real version PR.
+    //   `bun pm pack` reads the workspace version from bun.lock, not from the sibling
+    //   package.json — so after a version bump it packs a dependency on the OLD version,
+    //   which does not exist on the registry. Neither `bun install` nor `--force`
+    //   rewrote the entry; only regenerating the lockfile did.
+    const src = await Bun.file(new URL('scripts/publish.ts', root)).text();
+
+    expect(src).toContain('bun.lock');
+    expect(src).toContain("'bun', 'install'");
+  });
+
   test('skips versions already on the registry, so a partial release can be finished', async () => {
     const src = await Bun.file(new URL('scripts/publish.ts', root)).text();
 

@@ -49,6 +49,24 @@ if (process.env['GITHUB_ACTIONS'] !== 'true') {
   console.warn('⚠️  not in CI: publishing without provenance. Releases should run from CI.\n');
 }
 
+/**
+ * ⛔ REFRESH THE LOCKFILE BEFORE PACKING. `bun pm pack` reads the workspace version from
+ *   bun.lock, NOT from the sibling package.json — so after `changeset version` bumps
+ *   0.0.0 -> 0.1.0, packing still writes `"@homeflare/kit": "0.0.0"` into the tarball and
+ *   publishes a dependency on a version that does not exist.
+ * ⚠️ MEASURED 2026-09-15 against the real version PR, and neither `bun install` nor
+ *   `bun install --force` fixed it — the entry is only rewritten when the lockfile is
+ *   regenerated. Hence the delete.
+ * ★ Nothing is lost: bun.lock is reconstructed from the manifests immediately below, and
+ *   this runs on a CI checkout that is thrown away.
+ */
+await Bun.file(new URL('bun.lock', root))
+  .delete()
+  .catch(() => {});
+
+const relock = await run(['bun', 'install'], root.pathname);
+if (relock.code !== 0) throw new Error(`lockfile refresh failed\n${relock.out}`);
+
 const packages: Pkg[] = [];
 
 // oxlint-disable no-await-in-loop -- a handful of packages, once per release.
