@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/kit",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Shared HomeFlare primitives. Bun-native to author, runtime-neutral to consume.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
