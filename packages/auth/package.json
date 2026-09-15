@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/auth",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Better Auth wiring for HomeFlare, with the Cloudflare adapter.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/auth#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",

@@ -1,5 +1,12 @@
 # @homeflare/cloudflare
 
+## 0.1.2
+
+### Patch Changes
+
+- Updated dependencies [[`3b78acc`](https://github.com/taslabs-net/homeflare-kit/commit/3b78acc2a39ce0e01b8a3e55322c56d60b9844bb), [`1b6bd50`](https://github.com/taslabs-net/homeflare-kit/commit/1b6bd5052433cf83371e8df1cf0111aca1840712)]:
+  - @homeflare/kit@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes
