@@ -1,0 +1,55 @@
+{
+  "name": "@homeflare/alchemy",
+  "version": "0.0.0",
+  "description": "Custom Alchemy providers for gaps the vendor SDK leaves: R2 bucket locks.",
+  "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/alchemy#readme",
+  "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
+  "license": "MIT",
+  "author": "Timothy Schneider",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taslabs-net/homeflare-kit.git",
+    "directory": "packages/alchemy"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./providers": {
+      "types": "./dist/providers.d.ts",
+      "default": "./dist/providers.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun run build:js && bun run build:types",
+    "build:js": "bun build ./src/index.ts ./src/providers.ts --outdir dist --target node --format esm --packages external --sourcemap=linked",
+    "build:types": "tsc --project tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "types": "tsc --noEmit",
+    "test": "bun test",
+    "smoke": "echo 'alchemy: providers are exercised by the consuming stack'"
+  },
+  "devDependencies": {
+    "alchemy": "2.0.0-beta.77",
+    "cloudflare": "4.5.0",
+    "effect": "4.0.0-rc.112"
+  },
+  "peerDependencies": {
+    "alchemy": ">=2.0.0-beta.77",
+    "cloudflare": ">=4.5.0",
+    "effect": ">=4.0.0-rc.112"
+  }
+}
