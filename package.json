@@ -26,7 +26,7 @@
     "verify": "bun run check && bun run smoke",
     "changeset": "changeset",
     "version": "changeset version && bun run scripts/sync-versions.ts",
-    "release": "bun run build && changeset publish",
+    "release": "bun run build && bun run scripts/publish.ts",
     "summary": "bun run scripts/ci-summary.ts",
     "prepare": "husky",
     "security:scan": "gitleaks dir --redact --no-banner ."
