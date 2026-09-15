@@ -76,7 +76,7 @@ same-repo branch too: the bot has no merged contribution history, so it reads as
 first-time contributor. With `ci` and `secret scan` required, the release PR blocks itself
 and a human has to click Approve on every release.
 
-`.github/workflows/approve-bot-runs.yml` approves those runs, and **only** those:
+The release workflow's last step approves those runs, and **only** those:
 
 | condition                          | why it is load-bearing                                                                      |
 | ---------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -87,3 +87,9 @@ and a human has to click Approve on every release.
 ⛔ **All three together are the trust boundary.** Dropping any one turns this into
 "approve every workflow automatically", which is exactly what the policy exists to
 prevent. `tests/workflows.test.ts` asserts all three remain.
+
+★ **Why it lives in `release.yml` and not a `workflow_run` listener.** Measured
+2026-09-15: a parked run never emits the `completed` event such a listener needs. The
+listener was written, deployed, and fired only for `main`'s own runs — skipping the
+parked ones it existed for. The release workflow already knows the branch and runs right
+after the PR is written, when the parked runs demonstrably exist.
