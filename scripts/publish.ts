@@ -27,7 +27,23 @@ const patterns: readonly string[] = rootPkg.workspaces ?? [];
 
 type Pkg = { readonly name: string; readonly version: string; readonly dir: string };
 
-async function run(cmd: readonly string[], cwd: string): Promise<{ code: number; out: string }> {
+/**
+ * ⛔ `stream: true` FOR ANYTHING THAT TALKS TO THE REGISTRY. Measured 2026-09-15: this
+ *   script captured npm's output and reported success from the EXIT CODE alone. It
+ *   printed "+ @homeflare/kit@0.1.0 published" five times, the workflow went green, and
+ *   nothing reached npm — the run log contained not one `npm notice` line to say so.
+ *   A step that reports success it did not verify is worse than a failing one.
+ */
+async function run(
+  cmd: readonly string[],
+  cwd: string,
+  stream = false,
+): Promise<{ code: number; out: string }> {
+  if (stream) {
+    const proc = Bun.spawn([...cmd], { cwd, stdout: 'inherit', stderr: 'inherit' });
+    return { code: await proc.exited, out: '' };
+  }
+
   const proc = Bun.spawn([...cmd], { cwd, stdout: 'pipe', stderr: 'pipe' });
   const [out, err] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -107,12 +123,57 @@ for (const pkg of packages) {
   const inCi = process.env['GITHUB_ACTIONS'] === 'true';
   const flags = ['--access', 'public', ...(inCi ? ['--provenance'] : [])];
 
-  const result = await run(['npm', 'publish', tarball, ...flags], pkg.dir);
-  if (result.code !== 0) throw new Error(`publish failed for ${pkg.name}\n${result.out}`);
+  const result = await run(['npm', 'publish', tarball, ...flags], pkg.dir, true);
+  if (result.code !== 0) throw new Error(`publish failed for ${pkg.name}`);
 
-  console.log(`+ ${pkg.name}@${pkg.version} published`);
+  // ⛔ ASK THE REGISTRY, DO NOT TRUST THE EXIT CODE. This is the check that would have
+  //   caught the silent no-op above, and it is cheap.
+  if (!(await isPublished(pkg))) {
+    throw new Error(
+      `${pkg.name}@${pkg.version}: npm exited 0 but the registry does not have it. ` +
+        'Check the npm output above — the token may lack publish rights for this scope.',
+    );
+  }
+
+  console.log(`+ ${pkg.name}@${pkg.version} published and confirmed on the registry`);
   published += 1;
 }
 // oxlint-enable no-await-in-loop
 
 console.log(`\n${published} package(s) published, ${packages.length - published} already current`);
+
+/**
+ * ★ REPORT WHAT ACTUALLY HAPPENED, on the run's summary page. A release that says only
+ *   "success" is the failure mode this script already had once: it claimed five
+ *   publishes and made none. Every row below is confirmed against the registry.
+ * ⚠️ No token, URL or credential is ever written here — a job summary is visible to
+ *   anyone who can see the run.
+ */
+const summaryPath = process.env['GITHUB_STEP_SUMMARY'];
+if (summaryPath !== undefined) {
+  const rows = await Promise.all(
+    packages.map(async (p) => {
+      const live = await isPublished(p);
+      return `| \`${p.name}\` | ${p.version} | ${live ? '✅ on npm' : '❌ MISSING'} |`;
+    }),
+  );
+
+  const summary = [
+    '## Release',
+    '',
+    '| package | version | registry |',
+    '| --- | --- | --- |',
+    ...rows,
+    '',
+    `> ${published} published this run, ${packages.length - published} already current.`,
+    '> Each row was re-checked against registry.npmjs.org after publishing.',
+    '',
+  ].join('\n');
+
+  await Bun.write(
+    summaryPath,
+    (await Bun.file(summaryPath)
+      .text()
+      .catch(() => '')) + summary,
+  );
+}

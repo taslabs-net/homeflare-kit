@@ -49,6 +49,18 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
+      # ⛔ MASK THE TOKEN BEFORE ANY STEP CAN ECHO IT. GitHub masks `secrets.*` in its own
+      #   interpolation, but a value that reaches a tool and comes back — an npm error
+      #   quoting the request, a debug dump, a crafted package name in a log line — is
+      #   NOT masked unless it was registered. `add-mask` is what registers it.
+      # ⚠️ The mask command itself must not be the thing that leaks: it is written to the
+      #   command file via an env var, never interpolated into the shell line, so the
+      #   value never appears in a `set -x` trace or a failed-command echo.
+      - name: Mask the npm token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: echo "::add-mask::$NPM_TOKEN"
+
       - run: bun install --frozen-lockfile
 
       # ⛔ The gate. A version that fails here must not reach the registry, where a number

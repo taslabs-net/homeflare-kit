@@ -1,6 +1,6 @@
 # @homeflare/kit
 
-Shared primitives for the HomeFlare estate. Bun-native to author, runtime-neutral to
+Runtime-neutral primitives: environment parsing, errors, and HTTP. Bun-native to
 consume — the published bundle runs on Cloudflare Workers, Node and Bun alike.
 
 ```sh

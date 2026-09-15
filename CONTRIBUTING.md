@@ -32,7 +32,7 @@ compiler enforces this. ★ It is not style: `bun build` cannot emit `.d.ts`, so
 come from a separate `tsc` pass, and explicit types are what stop the two from drifting.
 
 **The main entrypoint stays runtime-neutral.** ⛔ Nothing in `src/index.ts` may import
-`bun:*`, `node:*`, or touch a filesystem — the estate runs this code on Cloudflare
+`bun:*`, `node:*`, or touch a filesystem — consumers run this code on Cloudflare
 Workers. Runtime-specific code goes behind its own subpath export so a consumer opts in.
 
 **Comments carry the measurement.** `⛔` a rule and what breaks if it is broken · `⚠️` a

@@ -5,7 +5,7 @@
 [![license](https://img.shields.io/npm/l/@homeflare/kit)](./LICENSE)
 
 The HomeFlare shared packages. One repo, one toolchain, one release stream — so that
-every app and Worker in the estate is scaffolded the same way.
+every app and Worker that consumes them is scaffolded the same way.
 
 | package                                          | what it is                                                                 |
 | ------------------------------------------------ | -------------------------------------------------------------------------- |

@@ -3,7 +3,7 @@
  *
  * ★ WHY THE FULL VERIFY AND NOT JUST TESTS. This includes the consumer smoke test, which
  *   packs the real tarball and installs it — the only check that catches a package the
- *   estate cannot consume. It caught exactly that on 2026-09-15, when every other gate
+ *   consumers cannot install. It caught exactly that on 2026-09-15, when every other gate
  *   was green and the tarball held nothing but export names.
  *
  * ⚠️ IT TAKES ~30 SECONDS, and that is the trade: 30s here against a red PR and a

@@ -14,7 +14,7 @@ hand-edited. ★ It exists because a Worker bundle has no `package.json` beside 
 at runtime, so the version has to be a literal the bundler can inline.
 
 ⚠️ **Publishing uses `NPM_TOKEN`, not OIDC** — the one place this repo departs from the
-estate's mint-never-reuse habit. Measured 2026-09-15: `changesets/action` + npm trusted
+usual preference for short-lived credentials. Measured 2026-09-15: `changesets/action` + npm trusted
 publishing 404s on PUT for **scoped** packages (changesets/action#515, open), and
 `@homeflare/kit` is scoped. Revisit when that closes. Provenance is therefore explicit
 via `NPM_CONFIG_PROVENANCE`; under OIDC it would be automatic.

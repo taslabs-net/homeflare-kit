@@ -1,8 +1,8 @@
 /**
  * Errors a CALLER can act on — an agent, a retry loop, or a person reading a log.
  *
- * ★ PORTED FROM house/mcp-servers/packages/kit/src/errors.ts, where 34 packages proved
- *   the shape. Generalised: the estate version is MCP-specific (`HouseToolError`), this
+ * ★ PORTED FROM AN INTERNAL MCP TOOLKIT, where 34 packages proved
+ *   the shape. Generalised: that version is MCP-specific (`HouseToolError`), this
  *   one is not, so a Worker or a script can use the same vocabulary.
  *
  * ⛔ THE RULE THIS ENFORCES: a failure must never be silent, and never ambiguous with a
@@ -31,7 +31,7 @@ export type ErrorKind =
   /**
    * Over a rate limit. The IDENTICAL call succeeds after the stated delay.
    * 🔴 A DISTINCT KIND BECAUSE IT WAS LANDING AS `bad_arguments`, measured 2026-09-07 in
-   *   the estate: a 429 mapped to "your arguments are wrong", so a throttled agent
+   *   production: a 429 mapped to "your arguments are wrong", so a throttled agent
    *   rewrote a correct call, was throttled again, and concluded the tool was broken.
    *   This is the refusal agents meet most — Cloudflare frontier models are 20 rpm.
    */
