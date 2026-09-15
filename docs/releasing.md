@@ -94,18 +94,33 @@ listener was written, deployed, and fired only for `main`'s own runs — skippin
 parked ones it existed for. The release workflow already knows the branch and runs right
 after the PR is written, when the parked runs demonstrably exist.
 
-## Why the registry check polls
+## Why the registry check does not gate the release
 
-⛔ **A publish is accepted before it is readable.** npm says so in its own output: "Your
-package is being processed and may take a few minutes to become available."
+⛔ **A publish is accepted long before it is readable.** npm says so itself: "Your package
+is being processed and may take a few minutes to become available."
 
-⚠️ Measured 2026-09-15, and it cost a release. The verification added after the previous
-incident ran `npm view` one second after a successful, provenance-signed publish of
-`@homeflare/kit@0.1.1`, got a 404, and threw. The release aborted and the remaining four
-packages never published — a **false alarm that did real damage**, which is the failure
-mode a safety check must not have.
+⚠️ Measured twice on 2026-09-15, and it cost two releases. First the check failed on an
+immediate 404 (`kit@0.1.1`); then it polled for 60s and failed anyway
+(`cloudflare@0.1.1`). **Both packages were fine** — both are on the registry. Each time
+the abort stopped the remaining packages from publishing, turning slow propagation into a
+half-released workspace, which is worse than the problem the check was added for.
 
-★ The check now polls for ~60s. A version that never appears is still a hard failure —
-that is the point of the check — but one that appears late is not. ★ The publish script
-is idempotent, so the aborted run left nothing to clean up: the next release publishes
-whatever the registry is missing.
+★ So the check reports and never aborts. The run summary says what the registry can
+actually see (`⏳ not visible yet` is not `missing`), and the script is idempotent, so
+anything genuinely absent publishes on the next run.
+
+## Why the publish script writes CHANGESETS_OUTPUT
+
+⛔ **With a custom `publish-script`, `changesets/action` learns what shipped only from an
+ndjson file** at `$CHANGESETS_OUTPUT`. Without it the action warns and creates nothing —
+npm had 0.1.0 and 0.1.1 while GitHub's Releases page stayed empty, as if the project had
+never cut a release.
+
+One JSON object per published package, in the shape the action parses:
+
+```json
+{ "type": "git-tag", "tag": "@homeflare/kit@0.1.2", "packageName": "@homeflare/kit" }
+```
+
+★ The action turns each line into a git tag and a GitHub Release whose notes are that
+package's changelog entry — so npm, the tag, and the release all come from one source.

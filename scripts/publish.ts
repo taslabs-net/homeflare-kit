@@ -126,30 +126,37 @@ for (const pkg of packages) {
   const result = await run(['npm', 'publish', tarball, ...flags], pkg.dir, true);
   if (result.code !== 0) throw new Error(`publish failed for ${pkg.name}`);
 
-  // ⛔ ASK THE REGISTRY, DO NOT TRUST THE EXIT CODE — but give it time to answer.
-  // ⚠️ npm SAYS SO ITSELF, and the first version of this check ignored it: "Your package
-  //   is being processed and may take a few minutes to become available." A publish is
-  //   accepted before it is readable, so an immediate `npm view` returns 404 for a
-  //   package that is perfectly fine. Measured 2026-09-15: @homeflare/kit@0.1.1 was
-  //   published WITH a signed provenance statement, this check failed one second later,
-  //   the release aborted, and the remaining four packages never published — a false
-  //   alarm that did real damage.
-  // ★ So: poll for up to ~60s. A version that never appears is still a hard failure,
-  //   which is the point of the check; one that appears late is not.
-  let live = false;
-  for (let attempt = 0; attempt < 12 && !live; attempt += 1) {
-    live = await isPublished(pkg);
-    if (!live) await Bun.sleep(5_000);
+  // ⛔ VERIFICATION IS A WARNING HERE, NOT A GATE — and that is the whole lesson.
+  // ⚠️ MEASURED TWICE, 2026-09-15, AND IT COST TWO RELEASES. npm says it plainly: "Your
+  //   package is being processed and may take a few minutes to become available." A
+  //   publish is ACCEPTED long before it is READABLE. First I failed on an immediate
+  //   404 (kit@0.1.1 aborted the run); then I polled 60s and failed anyway
+  //   (cloudflare@0.1.1). Both packages were fine — both are on the registry now.
+  // ⛔ SO THE ABORT WAS ALWAYS THE BUG. A publish that npm accepted must not stop the
+  //   remaining packages from publishing: that turns a slow CDN into a half-released
+  //   workspace, which is far worse than the silent no-op the check was added for.
+  //   The end-of-run summary reports what the registry can actually see, and the script
+  //   is idempotent, so anything genuinely missing publishes on the next run.
+  // ★ npm's exit code IS trustworthy for the publish itself. The original incident that
+  //   prompted this check was a misdiagnosis on my part — CDN lag read as a failure.
+
+  // ⛔ TELL changesets/action WHAT WE PUBLISHED. It reads this ndjson file to create the
+  //   git tag and the GitHub Release for each package — with a custom publish-script it
+  //   has no other way to know. Without it the action warns "GitHub releases and git tags
+  //   cannot be created without this output", npm has the version and GitHub shows no
+  //   release at all, which is exactly what happened for 0.1.0 and 0.1.1.
+  // ★ Shape is fixed by the action: {type:"git-tag", tag, packageName}, one JSON object
+  //   per line, tag in the conventional `<name>@<version>` form.
+  const outputFile = process.env['CHANGESETS_OUTPUT'];
+  if (outputFile !== undefined) {
+    const event = { type: 'git-tag', tag: `${pkg.name}@${pkg.version}`, packageName: pkg.name };
+    const prior = await Bun.file(outputFile)
+      .text()
+      .catch(() => '');
+    await Bun.write(outputFile, `${prior}${JSON.stringify(event)}\n`);
   }
 
-  if (!live) {
-    throw new Error(
-      `${pkg.name}@${pkg.version}: npm exited 0 but the registry still does not have it ` +
-        'after 60s. Check the npm output above — the token may lack publish rights.',
-    );
-  }
-
-  console.log(`+ ${pkg.name}@${pkg.version} published and confirmed on the registry`);
+  console.log(`+ ${pkg.name}@${pkg.version} published`);
   published += 1;
 }
 // oxlint-enable no-await-in-loop
@@ -168,7 +175,10 @@ if (summaryPath !== undefined) {
   const rows = await Promise.all(
     packages.map(async (p) => {
       const live = await isPublished(p);
-      return `| \`${p.name}\` | ${p.version} | ${live ? '✅ on npm' : '❌ MISSING'} |`;
+      // ⚠️ "not visible yet" is NOT "missing". npm accepts a publish before it serves it,
+      //   so a row can read as pending on a release that worked perfectly. Say that,
+      //   rather than crying wolf on every slow propagation.
+      return `| \`${p.name}\` | ${p.version} | ${live ? '✅ on npm' : '⏳ not visible yet'} |`;
     }),
   );
 
@@ -180,7 +190,8 @@ if (summaryPath !== undefined) {
     ...rows,
     '',
     `> ${published} published this run, ${packages.length - published} already current.`,
-    '> Each row was re-checked against registry.npmjs.org after publishing.',
+    '> Re-checked against registry.npmjs.org. ⏳ means npm accepted the publish but is',
+    '> not serving it yet — it usually appears within a few minutes.',
     '',
   ].join('\n');
 
