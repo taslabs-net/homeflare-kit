@@ -48,10 +48,10 @@ expensive part.
 `bun install` installs them (husky, via `prepare`). One script per concern, in
 `scripts/hooks/`:
 
-| hook       | runs                                                                | why                         |
-| ---------- | ------------------------------------------------------------------- | --------------------------- |
-| pre-commit | `secrets` → `foreign-locks` → `format-staged` → `changeset-pending` | fast, staged files only     |
-| pre-push   | `verify`                                                            | the same gate CI runs, ~30s |
+| hook       | runs                                                                               | why                         |
+| ---------- | ---------------------------------------------------------------------------------- | --------------------------- |
+| pre-commit | `secrets` → `foreign-locks` → `format-staged` → `actionlint` → `changeset-pending` | fast, staged files only     |
+| pre-push   | `verify`                                                                           | the same gate CI runs, ~30s |
 
 ⛔ **Secrets are scanned first**, by [gitleaks](https://github.com/gitleaks/gitleaks).
 Everything else can be fixed after the fact; a credential in a public repo is compromised
@@ -61,6 +61,13 @@ the moment it is pushed.
 [release binary](https://github.com/gitleaks/gitleaks/releases) on Linux. The hook fails
 loudly if it is missing rather than skipping: a secret scan that quietly does nothing is
 worse than none, because it reads as coverage.
+
+⚠️ **actionlint is also a Go binary** (`brew install actionlint`), but unlike gitleaks the
+hook SKIPS when it is missing rather than failing. The asymmetry is deliberate: a missed
+workflow typo costs one red CI run; a missed secret costs a rotation. CI runs actionlint
+unconditionally either way.
+⛔ The npm package named `actionlint` is an unrelated wasm port with no binary — measured
+2026-09-15. The real tool is [rhysd/actionlint](https://github.com/rhysd/actionlint).
 
 ★ `--no-verify` exists and is occasionally right. It skips the secret scan too, so prefer
 fixing the thing it is complaining about.

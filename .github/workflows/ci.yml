@@ -38,6 +38,23 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run lint
 
+  workflows:
+    name: workflow lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # ⛔ THERE IS NO FIRST-PARTY actionlint ACTION, and the npm package by that name is
+      #   an unrelated wasm port with no `bin` (measured 2026-09-15). The documented CI
+      #   path is rhysd's own download script, pinned to a release rather than `main`.
+      # ★ The matcher turns actionlint's output into inline annotations on the PR diff,
+      #   so a workflow mistake is marked on the offending line rather than buried in a log.
+      - name: Install actionlint
+        run: |
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+      - name: Lint workflows
+        run: ./actionlint -color
+
   types:
     name: types
     runs-on: ubuntu-latest
@@ -98,7 +115,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [lint, types, test, package]
+    needs: [lint, workflows, types, test, package]
     runs-on: ubuntu-latest
     steps:
       - name: Verify every job succeeded

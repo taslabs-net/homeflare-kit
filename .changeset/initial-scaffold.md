@@ -3,6 +3,7 @@
 '@homeflare/cloudflare': minor
 '@homeflare/ui': minor
 '@homeflare/config': minor
+'@homeflare/auth': minor
 ---
 
 Initial release of the HomeFlare shared packages.
@@ -13,6 +14,8 @@ Initial release of the HomeFlare shared packages.
 - **@homeflare/cloudflare** — Workers helpers: Access JWT verification via `jose` with a
   per-isolate JWKS cache, and structured logging that Workers Logs indexes natively.
 - **@homeflare/ui** — React components on Cloudflare Kumo.
+- **@homeflare/auth** — Better Auth with the Cloudflare adapter. Scaffold only: the
+  dependencies resolve, the API waits for the first app that needs one.
 - **@homeflare/config** — the shared tsconfig, oxlint and oxfmt presets every HomeFlare
   project extends.
 

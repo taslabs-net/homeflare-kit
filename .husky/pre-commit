@@ -5,4 +5,5 @@
 bun run scripts/hooks/secrets.ts || exit 1
 bun run scripts/hooks/foreign-locks.ts || exit 1
 bun run scripts/hooks/format-staged.ts || exit 1
+bun run scripts/hooks/actionlint.ts || exit 1
 bun run scripts/hooks/changeset-pending.ts || exit 1

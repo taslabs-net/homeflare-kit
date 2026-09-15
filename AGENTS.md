@@ -6,12 +6,19 @@ Where the two differ, the differences below are deliberate and stated with their
 
 ## The packages
 
-| package                 | holds                             | may import                        |
-| ----------------------- | --------------------------------- | --------------------------------- |
-| `@homeflare/kit`        | env parsing, HTTP                 | nothing runtime-specific, ever    |
-| `@homeflare/cloudflare` | Access JWT, structured logging    | workerd globals, `@homeflare/kit` |
-| `@homeflare/ui`         | React components                  | Kumo, React                       |
-| `@homeflare/config`     | tsconfig / oxlint / oxfmt presets | — (no code)                       |
+| package                 | holds                             | may import                          |
+| ----------------------- | --------------------------------- | ----------------------------------- |
+| `@homeflare/kit`        | env parsing, HTTP                 | nothing runtime-specific, ever      |
+| `@homeflare/cloudflare` | Access JWT, structured logging    | workerd globals, `@homeflare/kit`   |
+| `@homeflare/ui`         | React components                  | Kumo, React                         |
+| `@homeflare/auth`       | Better Auth + Cloudflare adapter  | better-auth, drizzle (transitively) |
+| `@homeflare/config`     | tsconfig / oxlint / oxfmt presets | — (no code)                         |
+
+⚠️ **TWO KINDS OF AUTH, NOT INTERCHANGEABLE.** `@homeflare/cloudflare` verifies a
+Cloudflare Access assertion — the edge already authenticated the caller and you check its
+signature (jose, stateless). `@homeflare/auth` is Better Auth, where YOU are the identity
+provider: sessions, accounts, a database. Reaching for the wrong one produces a system
+that looks authenticated and is not.
 
 ⛔ **The split is the point.** A Node script depending on `@homeflare/kit` must not drag
 Workers types or React into its resolution. When in doubt about where something goes, ask
