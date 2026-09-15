@@ -114,25 +114,42 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          ids=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?per_page=30" \
-            --jq '.workflow_runs[]
-                  | select(.head_branch == "changeset-release/main")
-                  | select(.conclusion == "action_required")
-                  | select(.actor.login == "github-actions[bot]")
-                  | .id')
 
-          if [ -z "$ids" ]; then
-            echo "No parked runs on changeset-release/main."
+          # ⚠️ POLL, DO NOT APPROVE ONCE. Measured 2026-09-15: pushing the version PR
+          #   spawns its parked runs a second or two LATER, so a single pass approves the
+          #   PREVIOUS release's runs and leaves the new ones stuck — the exact symptom
+          #   this step exists to remove. Timestamps: runs created 18:51:51, the
+          #   single-pass step finished 18:51:54, and the PR stayed BLOCKED.
+          # ★ Bounded at ~100s. If they have not appeared by then they are not coming,
+          #   and a stuck release is better than a workflow that hangs.
+          approved=""
+          for _ in $(seq 1 20); do
+            ids=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?per_page=30" \
+              --jq '.workflow_runs[]
+                    | select(.head_branch == "changeset-release/main")
+                    | select(.conclusion == "action_required")
+                    | select(.actor.login == "github-actions[bot]")
+                    | .id')
+
+            for id in $ids; do
+              case " $approved " in
+                *" $id "*) continue ;;
+              esac
+              echo "Approving parked run $id"
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve"
+              approved="$approved $id"
+            done
+
+            sleep 5
+          done
+
+          if [ -z "$approved" ]; then
+            echo "No parked runs appeared on changeset-release/main."
             exit 0
           fi
-
-          for id in $ids; do
-            echo "Approving parked run $id"
-            gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve"
-          done
 
           {
             echo "### Version PR runs approved"
             echo
-            echo "Approved: $(echo "$ids" | tr '\n' ' ')"
+            echo "Approved:$approved"
           } >> "$GITHUB_STEP_SUMMARY"
