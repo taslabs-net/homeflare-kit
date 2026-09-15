@@ -32,17 +32,40 @@
     "security:scan": "gitleaks dir --redact --no-banner ."
   },
   "devDependencies": {
-    "@changesets/changelog-github": "1.0.1",
-    "@changesets/cli": "3.0.3",
-    "@types/bun": "1.4.2",
-    "husky": "9.1.7",
-    "oxfmt": "0.68.0",
-    "oxlint": "1.83.0",
-    "typescript": "7.0.2"
+    "@changesets/changelog-github": "catalog:",
+    "@changesets/cli": "catalog:",
+    "@types/bun": "catalog:",
+    "husky": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:"
   },
   "engines": {
     "bun": ">=1.4.0",
     "node": ">=22"
   },
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.0",
+  "catalog": {
+    "typescript": "7.0.2",
+    "oxlint": "1.83.0",
+    "oxfmt": "0.68.0",
+    "@types/bun": "1.4.2",
+    "husky": "9.1.7",
+    "@changesets/cli": "3.0.3",
+    "@changesets/changelog-github": "1.0.1",
+    "@cloudflare/workers-types": "5.20260908.1",
+    "@cloudflare/kumo": "2.13.2",
+    "@phosphor-icons/react": "2.1.10",
+    "zod": "4.6.5",
+    "jose": "6.2.12",
+    "hono": "4.13.7",
+    "ky": "2.1.0",
+    "capnweb": "0.12.0",
+    "better-auth": "1.7.5",
+    "better-auth-cloudflare": "0.3.1",
+    "@better-auth/drizzle-adapter": "^1.5.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "echarts": "^6.0.0"
+  }
 }

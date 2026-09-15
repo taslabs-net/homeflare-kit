@@ -58,6 +58,31 @@ crosses into the monorepo — pnpm installs the published **tarball**, which con
 lockfile at all. The rule stays intact; this is not an exception to it so much as a place
 it does not reach.
 
+## One version per package — the catalog
+
+The root `package.json` holds a bun **catalog**: one entry per external dependency, for
+the whole repo. Versions come from the estate's own `pnpm-workspace.yaml`, so the kit and
+the monorepo cannot disagree about what "the house version" is.
+
+⛔ **Only `devDependencies` may say `catalog:`.** Measured 2026-09-15: `npm pack` leaves
+the string `catalog:` untouched — only `bun pm pack` resolves it — and `changeset publish`
+shells out to npm. A catalogued RUNTIME dependency therefore publishes as the literal
+`"catalog:"`, and every consumer install dies with `EUNSUPPORTEDPROTOCOL`.
+(Changesets' catalog support is changesets/changesets#2213, still open.)
+
+⚠️ **Nothing but the smoke test caught this.** bun installed the workspace happily, lint,
+types and tests were all green, and the failure appeared only when the tarball was packed
+with npm and installed. `tests/catalog.test.ts` now asserts it directly.
+
+★ So published `dependencies` carry literal versions, and a test asserts each one MATCHES
+its catalog entry — the catalog stays authoritative, and drift is a failing test rather
+than a judgement call.
+
+⛔ **Peer ranges stay ranges, never `catalog:`.** A catalogued peer publishes as the
+catalog's exact version (`react: "19.3.0"` rather than `^18 || ^19`), which rejects every
+consumer on any other React for no reason. The catalog pins what WE install; a peer
+declares what a consumer may bring.
+
 ## Toolchain
 
 | concern              | tool                        | why                                                                                     |

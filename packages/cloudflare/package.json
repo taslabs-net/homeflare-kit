@@ -43,6 +43,6 @@
     "jose": "6.2.12"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260908.1"
+    "@cloudflare/workers-types": "catalog:"
   }
 }
