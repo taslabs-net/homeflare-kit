@@ -19,7 +19,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const repo = new URL('..', import.meta.url).pathname;
+// ⚠️ '../' from scripts/ is the PACKAGE root, not the repo root. npm pack must run in
+//   the package directory: at the repo root it would pack the private workspace root,
+//   which publishes nothing and fails in a way that names neither package.
+const pkgRoot = new URL('../', import.meta.url).pathname;
 
 async function run(cmd: string[], cwd: string): Promise<string> {
   const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
@@ -42,7 +45,7 @@ const scratch = await mkdtemp(join(tmpdir(), 'hf-kit-smoke-'));
 
 try {
   console.log('packing…');
-  const packed = (await run(['npm', 'pack', '--pack-destination', scratch], repo)).trim();
+  const packed = (await run(['npm', 'pack', '--pack-destination', scratch], pkgRoot)).trim();
   const tarball = join(scratch, packed.split('\n').at(-1) ?? '');
 
   await Bun.write(

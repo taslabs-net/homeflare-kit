@@ -17,7 +17,12 @@ version: 2
 updates:
   # ── The toolchain (bun.lock) ────────────────────────────────────────────────
   - package-ecosystem: bun
-    directory: /
+    # ⚠️ `directories`, not `directory`. A bun workspace keeps a dependency in the
+    #   package that declares it; pointing only at / would leave every packages/*
+    #   manifest unwatched, and the symptom is silence rather than an error.
+    directories:
+      - /
+      - /packages/*
     schedule:
       interval: weekly
       day: monday

@@ -16,3 +16,4 @@
 
 export { VERSION } from './version.ts';
 export { EnvError, parseEnv, type EnvSchema, type EnvSpec } from './env.ts';
+export { client, http, HTTPError, TimeoutError, type KyInstance, type Options } from './http.ts';

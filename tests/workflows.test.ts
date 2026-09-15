@@ -76,6 +76,21 @@ describe('workflows', () => {
     expect(ecosystems).toContain('github-actions');
   });
 
+  test('issue templates exist and force a package choice', async () => {
+    // ★ The forms exist to collect WHICH package and WHICH runtime up front; without
+    //   those two fields every report costs a round-trip.
+    const dir = new URL('../.github/ISSUE_TEMPLATE/', import.meta.url);
+
+    for (const name of ['bug.yml', 'feature.yml']) {
+      const doc = Bun.YAML.parse(await Bun.file(new URL(name, dir)).text()) as {
+        body: readonly { id?: string; validations?: { required?: boolean } }[];
+      };
+      const pkg = doc.body.find((f) => f.id === 'package');
+
+      expect(pkg?.validations?.required).toBe(true);
+    }
+  });
+
   test('ci builds before it tests, so the dist guard cannot skip itself', async () => {
     const runs = (await stepsOf('ci')).flatMap((s) => (s.run === undefined ? [] : [s.run]));
 

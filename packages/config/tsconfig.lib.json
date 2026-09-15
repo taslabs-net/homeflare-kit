@@ -1,0 +1,17 @@
+{
+  // For a package that PUBLISHES types. Adds declaration emit to the baseline.
+  //
+  //     { "extends": "@homeflare/config/tsconfig.lib.json" }
+  //
+  // ⛔ isolatedDeclarations REQUIRES every exported symbol to carry an explicit type.
+  //   ★ That is what makes a two-tool build safe: when a bundler emits the JS and tsc
+  //     emits the .d.ts separately, explicit types are the only thing keeping the two
+  //     from drifting apart.
+  // ⚠️ TS5069: isolatedDeclarations cannot be set without `declaration`, even when emit
+  //   is off. Both appear here; a build config turns `noEmit` off.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "isolatedDeclarations": true,
+    "declaration": true
+  }
+}

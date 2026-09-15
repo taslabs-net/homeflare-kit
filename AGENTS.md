@@ -1,17 +1,39 @@
-# Agent guidelines — @homeflare/kit
+# Agent guidelines — homeflare-kit
 
-This repo is the estate's shared package. It is **standalone**: it is not a member of the
+This repo is the estate's shared packages. It is **standalone**: not a member of the
 `homeflare/homeflare` pnpm workspace, and the golden `AGENTS.md` there does not govern it.
 Where the two differ, the differences below are deliberate and stated with their reason.
 
+## The packages
+
+| package                 | holds                             | may import                        |
+| ----------------------- | --------------------------------- | --------------------------------- |
+| `@homeflare/kit`        | env parsing, HTTP                 | nothing runtime-specific, ever    |
+| `@homeflare/cloudflare` | Access JWT, structured logging    | workerd globals, `@homeflare/kit` |
+| `@homeflare/ui`         | React components                  | Kumo, React                       |
+| `@homeflare/config`     | tsconfig / oxlint / oxfmt presets | — (no code)                       |
+
+⛔ **The split is the point.** A Node script depending on `@homeflare/kit` must not drag
+Workers types or React into its resolution. When in doubt about where something goes, ask
+whether it would still make sense in a plain Node process; if not, it is not kit code.
+
+★ **Kumo is the design system** ([cloudflare/kumo](https://github.com/cloudflare/kumo)) —
+44 accessible components on Base UI, with its own stylesheet. ⛔ shadcn/Radix are
+deliberately absent: Kumo occupies that layer already, and taking both would mean two
+primitive libraries and two a11y models in one app.
+
 ## What this repo is
 
-`@homeflare/kit` is a **producer**. The monorepo and every app consume it from npm as an
+This repo is a **producer**. The monorepo and every app consume it from npm as an
 ordinary dependency. That one fact settles most questions here:
 
 - **Bun is the toolchain, not the runtime.** Bun installs, tests, builds and formats this
   code. Consumers run the published `dist/` on workerd, on Node, under pnpm — never under
   bun.
+- **Prefer a known SDK to hand-rolling.** `ky` for HTTP (zero deps), `jose` for JWT,
+  `zod` for validation, Kumo for UI. ⚠️ But weigh it: the logger here is ~50 lines and
+  takes no dependency, because Workers Logs already parses `console.log` JSON natively —
+  pino would add weight to reimplement what the platform does.
 - ⛔ **The published entrypoint stays runtime-neutral.** Nothing in `src/index.ts` may
   import `bun:*`, `node:*` or touch a filesystem. Runtime-specific code goes behind its
   own subpath export (`@homeflare/kit/<area>`) so a consumer opts into it explicitly.
