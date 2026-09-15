@@ -14,7 +14,13 @@
  */
 import { fail, ok, run, stagedFiles } from './lib.ts';
 
-const files = (await stagedFiles()).filter((f) => /\.(ts|tsx|js|jsx|json|jsonc)$/.test(f));
+// ⚠️ MARKDOWN IS IN THIS LIST, and leaving it out is why a push once failed after a
+//   clean commit: `oxfmt --check .` formats .md too, so a hook that skipped it let an
+//   unformatted changeset through and the pre-push verify caught it instead. A hook must
+//   check exactly what CI checks, or it trains people to distrust it.
+const FORMATTABLE = /\.(ts|tsx|js|jsx|mjs|cjs|json|jsonc|md)$/;
+
+const files = (await stagedFiles()).filter((f) => FORMATTABLE.test(f));
 
 if (files.length === 0) {
   ok('no formattable files staged');
@@ -25,7 +31,9 @@ if ((await run(['bunx', 'oxfmt', ...files])) !== 0) {
   fail('oxfmt failed', 'bun run lint:fix');
 }
 
-if ((await run(['bunx', 'oxlint', ...files])) !== 0) {
+const code = files.filter((f) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(f));
+
+if (code.length > 0 && (await run(['bunx', 'oxlint', ...code])) !== 0) {
   fail('oxlint found problems', 'bun run lint:fix, then fix what remains by hand');
 }
 

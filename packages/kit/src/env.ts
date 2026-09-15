@@ -45,6 +45,22 @@ export class EnvError extends Error {
 }
 
 /**
+ * ⛔ THE THREE VALUES THAT MEAN "ABSENT", AND WHY IT IS NOT JUST THE EMPTY STRING.
+ *   An unbound workerd binding does NOT arrive as undefined — `fromEnvironment` produces
+ *   the four-character STRING "null", because the binding is present and String(null) is
+ *   truthy. Code that checks only for '' therefore accepts it, and the request goes out
+ *   as `Authorization: Bearer null`.
+ * 🔴 MEASURED IN THIS ESTATE, 2026-09-02. Twenty hand-rolled clients; this guard was in
+ *   four of them. The other sixteen surfaced a bare 401 from upstream — which reads as
+ *   "the token is wrong" and sends an operator to rotate a perfectly good credential.
+ *   The litellm server spent a day authenticating with nothing while /health answered 200.
+ *   Ported from house/mcp-servers/packages/kit/src/http.ts, where it was paid for once.
+ */
+export function isUnset(value: string): boolean {
+  return value === '' || value === 'null' || value === 'undefined';
+}
+
+/**
  * ⚠️ 'false' IS TRUTHY AS A STRING, and that is the bug this function exists to stop.
  *   `Boolean(env.FEATURE)` on the string 'false' is `true`, so a flag turned off in a
  *   dashboard stays on in production and nothing in the logs says why. Only the listed
@@ -72,7 +88,9 @@ export function parseEnv<const S extends EnvSchema>(
     const spec = schema[key] as EnvSpec;
     const raw = source[key];
 
-    if (raw === undefined || raw === null || raw === '') {
+    // ⛔ isUnset, not `=== ''`. See its comment: "null" is what an unbound workerd
+    //   binding actually looks like, and treating it as a value is a day-long debug.
+    if (raw === undefined || raw === null || isUnset(String(raw).trim())) {
       if (spec.default !== undefined) {
         out[key] = spec.default;
         continue;
@@ -81,7 +99,9 @@ export function parseEnv<const S extends EnvSchema>(
       throw new EnvError(key, 'required but not set');
     }
 
-    const text = String(raw);
+    // ⚠️ Trimmed: a rendered env file with a trailing newline is the common case, and an
+    //   untrimmed token fails upstream with the same unhelpful 401.
+    const text = String(raw).trim();
 
     if (spec.type === 'number') {
       const n = Number(text);

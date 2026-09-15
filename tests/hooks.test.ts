@@ -44,6 +44,18 @@ describe('husky hooks', () => {
     }
   });
 
+  test('format-staged covers every extension oxfmt checks, markdown included', async () => {
+    // ⚠️ THE GAP THIS CLOSES, measured 2026-09-15. The hook filtered to TS/JS/JSON while
+    //   `oxfmt --check .` also formats .md, so an unformatted changeset passed the commit
+    //   hook and failed the push. A hook that checks LESS than CI trains people to
+    //   distrust it, which is worse than having no hook.
+    const src = await Bun.file(
+      new URL('../scripts/hooks/format-staged.ts', import.meta.url),
+    ).text();
+
+    expect(src).toContain('md');
+  });
+
   test('pre-push runs the same gate as CI', async () => {
     expect(await hook('pre-push')).toContain('verify.ts');
   });
