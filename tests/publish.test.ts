@@ -34,6 +34,18 @@ describe('release', () => {
     expect(src).toContain('GITHUB_ACTIONS');
   });
 
+  test('waits for registry propagation instead of failing on the first 404', async () => {
+    // ⚠️ THE FALSE ALARM THIS PREVENTS, measured 2026-09-15. npm prints "Your package is
+    //   being processed and may take a few minutes to become available" — a publish is
+    //   ACCEPTED before it is READABLE. The first version of the check ran `npm view` one
+    //   second after a successful, provenance-signed publish, got a 404, aborted the
+    //   release, and left four packages unpublished.
+    const src = await Bun.file(new URL('scripts/publish.ts', root)).text();
+
+    expect(src).toContain('Bun.sleep');
+    expect(src).toContain('still does not have it');
+  });
+
   test('refreshes the lockfile before packing', async () => {
     // ⛔ THE BUG THIS CATCHES, measured 2026-09-15 against the real version PR.
     //   `bun pm pack` reads the workspace version from bun.lock, not from the sibling

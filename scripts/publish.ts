@@ -126,12 +126,26 @@ for (const pkg of packages) {
   const result = await run(['npm', 'publish', tarball, ...flags], pkg.dir, true);
   if (result.code !== 0) throw new Error(`publish failed for ${pkg.name}`);
 
-  // ⛔ ASK THE REGISTRY, DO NOT TRUST THE EXIT CODE. This is the check that would have
-  //   caught the silent no-op above, and it is cheap.
-  if (!(await isPublished(pkg))) {
+  // ⛔ ASK THE REGISTRY, DO NOT TRUST THE EXIT CODE — but give it time to answer.
+  // ⚠️ npm SAYS SO ITSELF, and the first version of this check ignored it: "Your package
+  //   is being processed and may take a few minutes to become available." A publish is
+  //   accepted before it is readable, so an immediate `npm view` returns 404 for a
+  //   package that is perfectly fine. Measured 2026-09-15: @homeflare/kit@0.1.1 was
+  //   published WITH a signed provenance statement, this check failed one second later,
+  //   the release aborted, and the remaining four packages never published — a false
+  //   alarm that did real damage.
+  // ★ So: poll for up to ~60s. A version that never appears is still a hard failure,
+  //   which is the point of the check; one that appears late is not.
+  let live = false;
+  for (let attempt = 0; attempt < 12 && !live; attempt += 1) {
+    live = await isPublished(pkg);
+    if (!live) await Bun.sleep(5_000);
+  }
+
+  if (!live) {
     throw new Error(
-      `${pkg.name}@${pkg.version}: npm exited 0 but the registry does not have it. ` +
-        'Check the npm output above — the token may lack publish rights for this scope.',
+      `${pkg.name}@${pkg.version}: npm exited 0 but the registry still does not have it ` +
+        'after 60s. Check the npm output above — the token may lack publish rights.',
     );
   }
 
