@@ -117,8 +117,14 @@ rlog.info('handled', { status, ms });   // also .debug .warn .error
 verify; the AUD tag is the only thing saying the token was minted for THIS app.
 
 Verification throws on a missing header, bad signature, wrong audience, or expiry —
-deliberately, so a forgotten `if (!ok)` cannot become an open door. JWKS is cached per
-isolate, so it is not fetched per request.
+deliberately, so a forgotten `if (!ok)` cannot become an open door.
+
+⚠️ JWKS fetches go through a circuit breaker (`breakered`, `BREAKER_COOLDOWN_MS`),
+installed at jose's own `customFetch` seam. Measured on jose 6.2.12: five verifications
+against a **404ing** certs endpoint made five outbound fetches, and no `cacheMaxAge` or
+`cooldownDuration` setting changes that — jose only records a timestamp on a *successful*
+fetch. Without the breaker, an Access outage turns every inbound request into an outbound
+one. A failing URL now latches closed for 30s, per URL.
 
 Logging writes one JSON object per line, which Workers Logs indexes field by field. No
 logging library: `console.log` of JSON *is* the integration. ⛔ Never log a credential —
@@ -163,11 +169,22 @@ leading dot**. Without it oxfmt silently uses its defaults and rewrites your quo
 ⛔ UI is **Kumo**, not shadcn/Radix — Kumo already occupies that layer, on Base UI. Two
 primitive libraries in one app means two styling conventions and two a11y models.
 
-## Not built yet
+## @homeflare/ui — styles and tokens, not a component wrapper
 
-`@homeflare/ui` and `@homeflare/auth` are published but export only `VERSION`. For UI,
-import Kumo directly: `@cloudflare/kumo/components/<name>`, plus
-`import '@cloudflare/kumo/styles'` once at your app root.
+```tsx
+import '@homeflare/ui/styles';                          // once, at your app root
+import { Button } from '@cloudflare/kumo/components/button';
+```
+
+⛔ Kumo is **not** re-exported, deliberately: a barrel pulls all 44 components into the
+module graph, so an app using a Button would ship the chart library. Import Kumo's
+components directly and granularly, as Kumo documents.
+
+⚠️ Kumo is a **peer**, so you declare it — one copy must win, or you get two stylesheets
+and two Base UI instances. `@homeflare/ui/styles` is Kumo's stylesheet plus HomeFlare
+tokens; it replaces `@cloudflare/kumo/styles`.
+
+`@homeflare/auth` is still a scaffold exporting only `VERSION`.
 
 ## If something you need is missing
 

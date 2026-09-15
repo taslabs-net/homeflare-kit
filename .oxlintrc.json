@@ -37,7 +37,7 @@
       }
     },
     {
-      "files": ["tests/**"],
+      "files": ["tests/**", "packages/*/tests/**"],
       "rules": {
         "no-await-in-loop": "off"
       }

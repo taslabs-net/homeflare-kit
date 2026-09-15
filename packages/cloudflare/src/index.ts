@@ -11,3 +11,4 @@
 export { VERSION } from './version.ts';
 export { verifyAccessJwt, type AccessIdentity, type AccessOptions } from './access.ts';
 export { log, type LogFields, type Logger } from './log.ts';
+export { BREAKER_COOLDOWN_MS, breakered } from './jwks-breaker.ts';
