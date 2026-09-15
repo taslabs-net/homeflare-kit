@@ -63,6 +63,19 @@ describe('workflows', () => {
     expect(ref ?? '').toMatch(/^changesets\/action@v\d+\.\d+\.\d+$/);
   });
 
+  test('dependabot config is at .github/ and covers bun plus actions', async () => {
+    // ⛔ .github/dependabot.yml, NOT .github/workflows/. Dependabot is a platform
+    //   feature, not an Action: misplaced, it is ignored in silence.
+    const text = await Bun.file(new URL('../.github/dependabot.yml', import.meta.url)).text();
+    const doc = Bun.YAML.parse(text) as {
+      updates: readonly { 'package-ecosystem': string }[];
+    };
+    const ecosystems = doc.updates.map((u) => u['package-ecosystem']);
+
+    expect(ecosystems).toContain('bun');
+    expect(ecosystems).toContain('github-actions');
+  });
+
   test('ci builds before it tests, so the dist guard cannot skip itself', async () => {
     const runs = (await stepsOf('ci')).flatMap((s) => (s.run === undefined ? [] : [s.run]));
 
