@@ -86,6 +86,17 @@ excluded — 3 attempts, 10s timeout **per attempt**, so worst case is ~30s plus
 Shorten both on a Worker request path. `baseUrl` resolves per the URL standard: a
 leading slash is fine.
 
+```ts
+import { rateLimitAware, retryAfterMs, MAX_RETRY_WAIT_MS } from '@homeflare/kit';
+const discord = client(base, rateLimitAware);   // honours x-ratelimit-reset-after
+```
+
+⚠️ Use `rateLimitAware` against any API sending `x-ratelimit-reset-after` (Discord, and
+anything Discord-shaped). Measured against ky 2.1.0: `retry-after: 1` is honoured
+(1006ms) but `x-ratelimit-reset-after: 1` is **ignored** (303ms — ky's own backoff). A
+429 not waited out becomes a retry storm, and a storm escalates from a throttled route
+to a throttled **token** — which takes down everything sharing that credential.
+
 ## @homeflare/cloudflare — Workers only
 
 ```ts
@@ -160,34 +171,12 @@ import Kumo directly: `@cloudflare/kumo/components/<name>`, plus
 
 ## If something you need is missing
 
-⛔ **Do not hand-roll a local version and move on.** That is how thirty-seven repos end
-up with thirty-seven answers to the same question.
+⛔ **Do not hand-roll a local version and move on** — that is how thirty-seven repos end
+up with thirty-seven answers to one question. Check whether a known SDK does it well
+first (this kit uses `ky`, `jose`, `zod` and Kumo rather than reimplementing them), then
+report it under the heading `MISSING FROM @homeflare/*`, in the shape
+[CONTRIBUTING.md#reporting-a-gap](./CONTRIBUTING.md#reporting-a-gap) gives.
 
-1. **Check whether a known SDK already does it well.** Adopting one is the preferred
-   answer, not a fallback — this kit uses `ky`, `jose`, `zod` and Kumo rather than
-   reimplementing them.
-2. **If it genuinely belongs in the kit**, write the smallest thing that unblocks you,
-   leave a marker, and report it:
-
-```ts
-// TODO(@homeflare/kit): retry-with-jitter belongs in the kit, not here.
-```
-
-Report back in this shape, so it needs no round-trip:
-
-```
-MISSING FROM @homeflare/*
-- Package:   kit (runtime-neutral) | cloudflare (Workers) | ui | config
-- Need:      one sentence
-- Repeated:  how many places you have written this, here and elsewhere
-- Existing:  the SDK that does it, with its dependency weight — or "nothing suitable"
-- Instead:   what you did locally, or "blocked"
-- API:       the call site as you would want to write it
-```
-
-Also report a function that **exists but is the wrong shape** — a bad API everyone works
-around is more expensive than a missing one.
-
-⚠️ **Version conflicts count as missing.** If a pinned version above fights this
-project's needs, report it rather than overriding locally: a silent override becomes
-drift that surfaces months later in someone else's build.
+⚠️ A function that exists but is the **wrong shape** counts, and so does a **version
+conflict** — a silent local override becomes drift that surfaces months later in someone
+else's build.

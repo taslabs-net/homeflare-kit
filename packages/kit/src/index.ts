@@ -24,3 +24,4 @@ export {
   type KitErrorOptions,
 } from './errors.ts';
 export { client, http, HTTPError, TimeoutError, type KyInstance, type Options } from './http.ts';
+export { MAX_RETRY_WAIT_MS, rateLimitAware, retryAfterMs, type HeaderBag } from './rate-limit.ts';
