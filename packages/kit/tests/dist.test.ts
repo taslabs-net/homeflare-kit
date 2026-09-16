@@ -23,6 +23,7 @@ describe.skipIf(!built)('dist/index.js', () => {
     expect(typeof mod.parseEnv).toBe('function');
     expect(typeof mod.EnvError).toBe('function');
     expect(typeof mod.VERSION).toBe('string');
+    expect(mod).not.toHaveProperty('createOpenApiApp');
   });
 
   test('the built parseEnv actually parses', async () => {

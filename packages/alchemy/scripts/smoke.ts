@@ -77,14 +77,14 @@ try {
   //   throws on load, both pass a pack-only check and fail here.
   await Bun.write(
     join(scratch, 'consumer.ts'),
-    `import { R2BucketLock } from '@homeflare/alchemy/cloudflare';
+    `import { R2BucketLock, astroWebsite, viteWebsite } from '@homeflare/alchemy/cloudflare';
 import { ForgejoOrgLabel } from '@homeflare/alchemy/forgejo';
 import { BaoAuthRoleProvider } from '@homeflare/alchemy/openbao';
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { ProxmoxAclProvider } from '@homeflare/alchemy/proxmox';
 
 for (const [name, value] of Object.entries({
-  R2BucketLock, ForgejoOrgLabel, BaoAuthRoleProvider, TalosKubeconfigProvider, ProxmoxAclProvider,
+  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthRoleProvider, TalosKubeconfigProvider, ProxmoxAclProvider,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
 }

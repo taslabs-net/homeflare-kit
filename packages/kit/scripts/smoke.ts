@@ -89,6 +89,21 @@ console.log('consumer ok', VERSION, cfg.API_URL);
   console.log('running under bun…');
   console.log(await run(['bun', 'consumer.ts'], scratch));
 
+  // ⛔ THE OPENAPI SUBPATH IS OPTIONAL. A consumer of parseEnv must not need hono.
+  //   Installing the peers here, after the main import, proves the subpath resolves
+  //   when opted into — without making the runtime-neutral smoke depend on them.
+  console.log('installing OpenAPI peers…');
+  await run(['bun', 'add', 'hono@4.13.7', '@hono/zod-openapi@1.6.3', 'zod@4.6.5'], scratch);
+  await Bun.write(
+    join(scratch, 'consumer-openapi.ts'),
+    `import { createOpenApiApp } from '@homeflare/kit/openapi';
+const app = createOpenApiApp();
+if (typeof app.fetch !== 'function') throw new Error('createOpenApiApp did not return OpenAPIHono');
+console.log('openapi ok');
+`,
+  );
+  console.log(await run(['bun', 'consumer-openapi.ts'], scratch));
+
   // ⛔ NODE HERE IS DELIBERATE AND MUST STAY. Everything else in this repo is bun-native,
   //   but @homeflare/kit promises to be RUNTIME-NEUTRAL — consumers run it on workerd and
   //   on node, not on bun. Testing only under bun would test the one runtime no consumer

@@ -3,8 +3,9 @@
  *
  * ⛔ THIS ENTRYPOINT STAYS RUNTIME-NEUTRAL. Bun is how the kit is authored, built and
  *   tested; it is not what consumers run. Consumers ship this code to Cloudflare
- *   Workers, so anything reaching for `bun:*`, `node:fs` or a filesystem belongs behind
- *   its own subpath export (`@homeflare/kit/<area>`), never here.
+ *   Workers, so anything reaching for `bun:*`, `node:fs`, Hono or a filesystem belongs
+ *   behind its own subpath export (`@homeflare/kit/<area>`), never here.
+ *   OpenAPIHono is `@homeflare/kit/openapi`.
  *   The failure this prevents is a deploy-time one: a `bun:sqlite` import that resolves
  *   fine on a laptop and fails only in workerd, where the stack trace names the bundler
  *   rather than this file.
