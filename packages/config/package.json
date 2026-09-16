@@ -43,6 +43,6 @@
     "clean": "rm -rf dist",
     "types": "tsc --noEmit",
     "test": "bun test",
-    "smoke": "echo 'config: conformance is exercised by tests/config-check.test.ts'"
+    "smoke": "bun run scripts/smoke.ts"
   }
 }

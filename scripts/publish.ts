@@ -53,10 +53,17 @@ async function run(
   return { code: await proc.exited, out: out + err };
 }
 
-/** Already on the registry? `npm view <pkg>@<version>` exits non-zero when not. */
+/**
+ * Already on the registry? Exits non-zero when not.
+ *
+ * ★ `bun pm view`, not `npm view` — same exit-code contract, one fewer runtime in the
+ *   release path. Verified 2026-09-16: an existing version exits 0, an absent one exits 1.
+ * ⚠️ `npm publish` below stays npm, and that is not an oversight: `bun publish` has no
+ *   `--provenance` flag (checked on 1.4.0), so npm is what signs the attestation.
+ */
 async function isPublished(pkg: Pkg): Promise<boolean> {
   const { code } = await run(
-    ['npm', 'view', `${pkg.name}@${pkg.version}`, 'version'],
+    ['bun', 'pm', 'view', `${pkg.name}@${pkg.version}`, 'version'],
     root.pathname,
   );
   return code === 0;
