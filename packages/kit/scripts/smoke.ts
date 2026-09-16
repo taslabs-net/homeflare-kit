@@ -18,6 +18,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { packForPublish } from '../../../scripts/pack.ts';
 
 // ⚠️ '../' from scripts/ is the PACKAGE root, not the repo root. npm pack must run in
 //   the package directory: at the repo root it would pack the private workspace root,
@@ -45,8 +46,10 @@ const scratch = await mkdtemp(join(tmpdir(), 'hf-kit-smoke-'));
 
 try {
   console.log('packing…');
-  const packed = (await run(['npm', 'pack', '--pack-destination', scratch], pkgRoot)).trim();
-  const tarball = join(scratch, packed.split('\n').at(-1) ?? '');
+  // ★ The SHARED pack path, same as the release — so the tarball this gate inspects is
+  //   the tarball a consumer receives. `bun pm pack` also resolves `catalog:` and
+  //   `workspace:` specifiers, which `npm pack` leaves literal.
+  const tarball = await packForPublish(pkgRoot, scratch);
 
   await Bun.write(
     join(scratch, 'package.json'),
@@ -81,11 +84,15 @@ console.log('consumer ok', VERSION, cfg.API_URL);
   );
 
   console.log('installing tarball…');
-  await run(['npm', 'install', '--no-audit', '--no-fund', tarball], scratch);
+  await run(['bun', 'add', tarball], scratch);
 
   console.log('running under bun…');
   console.log(await run(['bun', 'consumer.ts'], scratch));
 
+  // ⛔ NODE HERE IS DELIBERATE AND MUST STAY. Everything else in this repo is bun-native,
+  //   but @homeflare/kit promises to be RUNTIME-NEUTRAL — consumers run it on workerd and
+  //   on node, not on bun. Testing only under bun would test the one runtime no consumer
+  //   uses, and bun's resolver is forgiving in ways node's is not.
   console.log('running under node…');
   console.log(await run(['node', '--experimental-strip-types', 'consumer.ts'], scratch));
 
@@ -110,7 +117,7 @@ console.log('consumer ok', VERSION, cfg.API_URL);
   );
 
   console.log('typechecking as a nodenext consumer…');
-  await run(['npm', 'install', '--no-audit', '--no-fund', '-D', 'typescript@7.0.2'], scratch);
+  await run(['bun', 'add', '-d', 'typescript@7.0.2'], scratch);
   await run(['npx', 'tsc', '--noEmit'], scratch);
 
   console.log('\nsmoke: ok');

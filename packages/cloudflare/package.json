@@ -35,7 +35,7 @@
     "build:types": "tsc --project tsconfig.build.json",
     "clean": "rm -rf dist",
     "test": "bun test",
-    "smoke": "echo 'cloudflare: smoke covered by @homeflare/kit'",
+    "smoke": "bun run scripts/smoke.ts",
     "types": "tsc --noEmit"
   },
   "dependencies": {

@@ -36,7 +36,7 @@
     "clean": "rm -rf dist",
     "types": "tsc --noEmit",
     "test": "bun test",
-    "smoke": "echo 'auth: no published surface yet — nothing to smoke'"
+    "smoke": "bun run scripts/smoke.ts"
   },
   "dependencies": {
     "@homeflare/kit": "workspace:*",
