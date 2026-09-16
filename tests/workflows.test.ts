@@ -126,6 +126,19 @@ describe('workflows', () => {
     expect(text).toContain('has=false');
   });
 
+  test('release publishes from the npm environment', async () => {
+    // ★ Alchemy adopts this repo and declares Environment "npm". The job must
+    //   name it, or the environment is documentation and publish stays unbound.
+    const text = await Bun.file(
+      new URL('../.github/workflows/release.yml', import.meta.url),
+    ).text();
+    const doc = Bun.YAML.parse(text) as {
+      jobs: { release: { environment?: string } };
+    };
+
+    expect(doc.jobs.release.environment).toBe('npm');
+  });
+
   test('the test job builds before it tests, so the dist guard cannot skip itself', async () => {
     const text = await Bun.file(new URL('../.github/workflows/ci.yml', import.meta.url)).text();
     const doc = Bun.YAML.parse(text) as {

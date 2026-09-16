@@ -46,6 +46,10 @@ running verify on every main push failed a 5s DNS flake after `ci` on the same S
 green, and changesets never opened the Version Packages PR. Required `ci` is the merge
 gate. The tarball gate stays in release for the publish itself.
 
+★ **`release.yml` uses `environment: npm`.** Alchemy adopts this repo and declares that
+environment (`alchemy.run.ts`). The token stays a repository secret; the environment is
+the trust boundary for which job may publish.
+
 ⛔ **First-party (`actions/*`) or the vendor's own action. Nothing hand-rolled, nothing
 third-party.** `tests/workflows.test.ts` enforces the publisher allowlist and that every
 `uses:` carries a version — adding a publisher is a deliberate supply-chain decision.
