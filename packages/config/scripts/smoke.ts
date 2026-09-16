@@ -2,7 +2,7 @@
  * Consumer smoke test: pack, install, and USE every published export.
  *
  * 🔴 WHY THIS REPLACES AN `echo`. The old script pointed at an in-repo test, which cannot
- *   see what a CONSUMER sees: this package ships five JSON/TOML files behind an export
+ *   see what a CONSUMER sees: this package ships JSON/TOML files behind an export
  *   map, and a map that points at a missing file passes every in-repo check.
  * ⛔ `tsconfig.base.json` is the highest-stakes one — a project `extends` it, so a broken
  *   path breaks that project's typecheck rather than this package's.
@@ -95,13 +95,13 @@ if (!Array.isArray(problems)) throw new Error('checkProject did not return a lis
 if (problems.length === 0) throw new Error('checkProject found nothing in an unconfigured project');
 
 // Every non-code export must resolve as a real file.
-for (const name of ['oxlintrc.json', 'oxfmtrc.json', 'tsconfig.base.json', 'tsconfig.lib.json', 'tsconfig.app.json', 'bunfig.toml']) {
+for (const name of ['oxlintrc.json', 'oxlintrc.app.json', 'oxfmtrc.json', 'tsconfig.base.json', 'tsconfig.lib.json', 'tsconfig.app.json', 'bunfig.toml']) {
   const path = Bun.resolveSync('@homeflare/config/' + name, process.cwd());
   const text = await Bun.file(path).text();
   if (text.trim().length === 0) throw new Error(name + ' resolved but is empty');
 }
 
-console.log('consumer ok —', problems.length, 'conformance problems reported, 6 config files resolve');
+console.log('consumer ok —', problems.length, 'conformance problems reported, 7 config files resolve');
 `,
   );
   console.log('importing and exercising…');
