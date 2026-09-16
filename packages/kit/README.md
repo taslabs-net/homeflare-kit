@@ -28,6 +28,22 @@ config.DEBUG; // boolean — 'false' parses as false, not as a truthy string
 `parseEnv` throws `EnvError` on the first key that is missing or malformed. The error
 names the key and never the value.
 
+## OpenAPI (Workers / HTTP apps)
+
+```ts
+import { createOpenApiApp } from '@homeflare/kit/openapi';
+import { z } from '@hono/zod-openapi';
+
+const app = createOpenApiApp();
+```
+
+⛔ A **subpath**, never the main entry — Hono must not land in a Node script that only
+wanted `parseEnv`. Peers you provide: `hono` · `@hono/zod-openapi` · `zod`. Import `z`
+from `@hono/zod-openapi`, not from `zod`, or `.openapi()` is missing.
+
+The document and the request share one schema. A parallel OpenAPI registry that does not
+validate is two truths.
+
 ## Development
 
 ```sh

@@ -40,6 +40,24 @@ import { providers } from '@homeflare/alchemy/cloudflare';
 // …then provide `providers()` alongside Cloudflare.providers()
 ```
 
+## Website.Astro / Website.Vite
+
+House flags on Alchemy's own stacks — the two this estate actually ships.
+
+```ts
+import { astroWebsite, viteWebsite } from '@homeflare/alchemy/cloudflare';
+
+const site = yield * astroWebsite('subnetcalc', { rootDir });
+const app = yield * viteWebsite('aimto', { rootDir: webRoot });
+```
+
+⛔ Astro needs `disable_nodejs_process_v2` — workerd process-v2 makes every page return
+`[object Object]`. Vite / TanStack Start does not. Alchemy injects
+`@alchemy.run/frontend-frameworks/astro`; do not add `@astrojs/cloudflare`.
+
+⛔ Not Nextjs. `Website.Nextjs` hashes source and plans as **create** against a live
+Worker. Adopt that shape with `Worker`, not a helper here.
+
 ⚠️ **The rule set is REPLACE, not merge.** The API `PUT`s the whole set, so a rule omitted
 from `rules` is a rule deleted. That is the same shape as the Cloudflare API itself.
 

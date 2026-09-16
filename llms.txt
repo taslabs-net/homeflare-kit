@@ -14,7 +14,7 @@ bun add -D @homeflare/config      # shared tsconfig / oxlint / oxfmt
 
 **Jump to what you need:** reading config → `parseEnv` · throwing or mapping an error →
 `KitError` · calling an HTTP API → `client` · Cloudflare Access → `verifyAccessJwt` ·
-logging in a Worker → `log` · D1 Better Auth storage → `createD1AuthStorage` · needing
+logging in a Worker → `log` · D1 Better Auth → `createD1AuthStorage` · OpenAPI → `createOpenApiApp` · needing
 something that is not here → If something you need is missing.
 
 ## @homeflare/kit — runtime-neutral, use anywhere
@@ -171,7 +171,7 @@ Full setup, every file and the traps: the package README.
 
 `typescript 7.0.2` · `zod 4.6.5` · `jose 6.2.12` · `hono 4.13.7` · `ky 2.1.0` ·
 `capnweb 0.12.0` · `@cloudflare/workers-types 5.20260908.1` · `@cloudflare/kumo 2.13.2` ·
-`react 19.3.0` · `better-auth 1.7.5` · `oxlint 1.83.0` · `oxfmt 0.68.0`
+`react 19.3.0` · `better-auth 1.7.5` · `@hono/zod-openapi 1.6.3` · `oxlint 1.83.0` · `oxfmt 0.68.0`
 
 ⛔ UI is **Kumo**, not shadcn/Radix — Kumo already occupies that layer, on Base UI. Two
 primitive libraries in one app means two styling conventions and two a11y models.
