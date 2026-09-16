@@ -9,13 +9,12 @@
 ```sh
 bun add @homeflare/kit            # or pnpm / npm — plain ESM, any runtime
 bun add @homeflare/cloudflare     # only if this runs on Cloudflare Workers
+bun add @homeflare/auth           # you are the identity provider (Better Auth)
 bun add -D @homeflare/config      # shared tsconfig / oxlint / oxfmt
 ```
 
-**Jump to what you need:** reading config → `parseEnv` · throwing or mapping an error →
-`KitError` · calling an HTTP API → `client` · Cloudflare Access → `verifyAccessJwt` ·
-logging in a Worker → `log` · picking a dependency version → House versions · needing
-something that is not here → If something you need is missing.
+**Jump to:** `parseEnv` · `KitError` · `client` · `verifyAccessJwt` · `log` ·
+`createWorkersAuth` · House versions · If something you need is missing.
 
 ## @homeflare/kit — runtime-neutral, use anywhere
 
@@ -147,7 +146,8 @@ there is no redaction layer, by design.
 ## @homeflare/config — shared toolchain
 
 ```jsonc
-{ "extends": "@homeflare/config/tsconfig.base.json" }        // an app or Worker
+{ "extends": "@homeflare/config/tsconfig.app.json" }         // Worker app (source-publishing deps)
+{ "extends": "@homeflare/config/tsconfig.base.json" }        // owned code, full strictness
 { "extends": "@homeflare/config/tsconfig.lib.json" }         // publishes types
 ```
 
@@ -155,16 +155,16 @@ there is no redaction layer, by design.
 `bunfig.toml` have no `extends` at all, so they are copies — and a copy drifts.
 `checkProject()` from `@homeflare/config/check` reports when yours has.
 
-Full setup, every file and the traps: the package README.
+## @homeflare/auth — you are the identity provider
 
-## Two kinds of auth — not interchangeable
+```ts
+import { createWorkersAuth } from '@homeflare/auth';
+const auth = createWorkersAuth({ db, schema, waitUntil: ctx.waitUntil, secret, request, plugins });
+return auth.handler(request);
+```
 
-- `@homeflare/cloudflare` → **Cloudflare Access**. The edge already authenticated the
-  caller; you verify its assertion. Stateless.
-- `@homeflare/auth` → **Better Auth**. *You* are the identity provider: sessions,
-  accounts, a database.
-
-⚠️ Reaching for the wrong one produces a system that looks authenticated and is not.
+⛔ Official drizzle adapter only — not `better-auth-cloudflare`. Plugins, hooks, schema
+and `baseURL` stay the app's. Access JWT is `@homeflare/cloudflare`, a different kind.
 
 ## House versions — match these, do not drift
 

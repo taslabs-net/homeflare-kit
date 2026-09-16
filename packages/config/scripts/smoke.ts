@@ -63,6 +63,27 @@ export const value: string = first ?? 'fallback';
   console.log('extending tsconfig.base.json and typechecking…');
   await run(['bunx', 'tsc', '--noEmit'], scratch);
 
+  // ⛔ THE APP PRESET EXISTS BECAUSE SOURCE-PUBLISHING DEPS FAIL UNDER THE BASELINE.
+  //   `{ a?: string } = { a: undefined }` is illegal under exactOptionalPropertyTypes
+  //   and legal under tsconfig.app.json. If this compile fails, the preset is not
+  //   doing the one job it exists for.
+  await Bun.write(
+    join(scratch, 'tsconfig.json'),
+    JSON.stringify(
+      { extends: '@homeflare/config/tsconfig.app.json', include: ['optional.ts'] },
+      null,
+      2,
+    ),
+  );
+  await Bun.write(
+    join(scratch, 'optional.ts'),
+    `type Opts = { a?: string };
+export const opts: Opts = { a: undefined };
+`,
+  );
+  console.log('extending tsconfig.app.json and typechecking a source-publishing-shaped assign…');
+  await run(['bunx', 'tsc', '--noEmit'], scratch);
+
   await Bun.write(
     join(scratch, 'consumer.ts'),
     `import { checkProject } from '@homeflare/config/check';
@@ -74,13 +95,13 @@ if (!Array.isArray(problems)) throw new Error('checkProject did not return a lis
 if (problems.length === 0) throw new Error('checkProject found nothing in an unconfigured project');
 
 // Every non-code export must resolve as a real file.
-for (const name of ['oxlintrc.json', 'oxfmtrc.json', 'tsconfig.base.json', 'tsconfig.lib.json', 'bunfig.toml']) {
+for (const name of ['oxlintrc.json', 'oxfmtrc.json', 'tsconfig.base.json', 'tsconfig.lib.json', 'tsconfig.app.json', 'bunfig.toml']) {
   const path = Bun.resolveSync('@homeflare/config/' + name, process.cwd());
   const text = await Bun.file(path).text();
   if (text.trim().length === 0) throw new Error(name + ' resolved but is empty');
 }
 
-console.log('consumer ok —', problems.length, 'conformance problems reported, 5 config files resolve');
+console.log('consumer ok —', problems.length, 'conformance problems reported, 6 config files resolve');
 `,
   );
   console.log('importing and exercising…');

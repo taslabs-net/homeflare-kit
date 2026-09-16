@@ -14,6 +14,7 @@
     "src",
     "tsconfig.base.json",
     "tsconfig.lib.json",
+    "tsconfig.app.json",
     "oxlintrc.json",
     "oxfmtrc.json",
     "bunfig.toml",
@@ -24,6 +25,7 @@
   "exports": {
     "./tsconfig.base.json": "./tsconfig.base.json",
     "./tsconfig.lib.json": "./tsconfig.lib.json",
+    "./tsconfig.app.json": "./tsconfig.app.json",
     "./oxlintrc.json": "./oxlintrc.json",
     "./oxfmtrc.json": "./oxfmtrc.json",
     "./bunfig.toml": "./bunfig.toml",

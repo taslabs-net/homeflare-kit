@@ -4,10 +4,8 @@
  * 🔴 WHY THIS REPLACES AN `echo`. The old script was
  *   `echo 'auth: no published surface yet — nothing to smoke'`, which was wrong on its own
  *   terms: the package publishes an entrypoint, declares peers, and depends on
- *   better-auth and a workspace copy of @homeflare/kit. All four can break a consumer's
- *   install while every in-repo gate stays green.
- * ★ A scaffold still has a contract. This asserts the contract it HAS — that it installs,
- *   resolves and exports VERSION — rather than pretending there is nothing to check.
+ *   better-auth, the official drizzle adapter, and a workspace copy of @homeflare/kit.
+ *   All four can break a consumer's install while every in-repo gate stays green.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -42,28 +40,29 @@ try {
   );
 
   console.log('installing with its peers…');
-  await run(
-    [
-      'bun',
-      'add',
-      authTarball,
-      kitTarball,
-      '@better-auth/drizzle-adapter@^1.5.0',
-      '@cloudflare/workers-types@5.20260908.1',
-    ],
-    scratch,
-  );
+  await run(['bun', 'add', authTarball, kitTarball, 'drizzle-orm@0.45.2'], scratch);
 
   await Bun.write(
     join(scratch, 'consumer.ts'),
-    `import { VERSION } from '@homeflare/auth';
+    `import { VERSION, createWorkersAuth } from '@homeflare/auth';
 
 if (typeof VERSION !== 'string' || VERSION.length === 0) throw new Error('VERSION missing');
+if (typeof createWorkersAuth !== 'function') throw new Error('createWorkersAuth missing');
 
-// ⚠️ better-auth is a real dependency, so it must resolve from the installed tarball —
-//   a missing or mis-declared dependency fails here rather than in a consumer's app.
-const { betterAuth } = await import('better-auth');
-if (typeof betterAuth !== 'function') throw new Error('better-auth did not resolve');
+const auth = createWorkersAuth({
+  db: {},
+  schema: {},
+  waitUntil: () => undefined,
+  secret: 'a'.repeat(32),
+  request: new Request('https://auth.example/'),
+  advanced: { database: { validateSchema: false } },
+});
+if (typeof auth.handler !== 'function') throw new Error('handler missing');
+
+const manifest = await Bun.file(new URL('./node_modules/@homeflare/auth/package.json', import.meta.url)).json();
+if (manifest.dependencies?.['better-auth-cloudflare'] !== undefined) {
+  throw new Error('published auth still depends on better-auth-cloudflare');
+}
 
 console.log('consumer ok', VERSION);
 `,
