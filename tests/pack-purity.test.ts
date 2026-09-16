@@ -41,6 +41,11 @@ describe('packForPublish is pure', () => {
       ]);
 
       for (const tarball of tarballs) expect(await Bun.file(tarball).exists()).toBe(true);
+      // ⛔ bun pm pack names the file `{name}-{version}.tgz`. Two calls into the same
+      //   destination therefore share one path, and stripScripts extracts a half-written
+      //   gzip — `unexpected end of file` on Linux CI, measured 2026-09-16 (PR #40).
+      //   Distinct paths are the proof each call owns its file.
+      expect(tarballs[0]).not.toBe(tarballs[1]);
       expect(await manifestBytes()).toEqual(before);
     } finally {
       await Bun.spawn(['rm', '-rf', scratch]).exited;

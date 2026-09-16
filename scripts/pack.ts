@@ -28,29 +28,49 @@
  *   it must, because `bun pm pack` resolves `workspace:*` through the lockfile and cannot
  *   do that from a copy ("Failed to resolve workspace version", measured the same day) —
  *   and the manifest is rewritten INSIDE the resulting tarball afterwards.
- * ⚠️ Concurrent packs of one package are therefore safe: each writes its own tarball, and
- *   `bun pm pack` only reads.
+ *
+ * ⛔ Concurrent packs of one package are NOT safe just because `bun pm pack` only reads.
+ *   It always writes `{name}-{version}.tgz` into `destination`. Two callers sharing that
+ *   directory overwrite the same path, then stripScripts extracts a half-written gzip —
+ *   `gzip: stdin: unexpected end of file`. Measured 2026-09-16 on Linux CI (PR #40);
+ *   macOS usually finished both writes and hid it. Each call therefore stages into its
+ *   own subdirectory, then moves the finished tarball to a unique name in `destination`.
  */
 export async function packForPublish(dir: string, destination: string): Promise<string> {
   // ⛔ cwd is the REAL package directory — `bun pm pack` resolves `workspace:*` through the
-  //   lockfile and cannot do it from a copy. It only READS, so parallel packs are safe.
-  const proc = Bun.spawn(['bun', 'pm', 'pack', '--destination', destination, '--quiet'], {
-    cwd: dir,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  const [out, err] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
+  //   lockfile and cannot do it from a copy. It only READS the repo; the tarball itself
+  //   must still land somewhere unique, or two packs of the same version collide.
+  const root = destination.replace(/\/$/, '');
+  const staging = `${root}/.pack-${Bun.randomUUIDv7()}`;
+  const mkdir = Bun.spawn(['mkdir', '-p', staging]);
+  if ((await mkdir.exited) !== 0) throw new Error(`mkdir ${staging} failed`);
 
-  if ((await proc.exited) !== 0) throw new Error(`pack failed in ${dir}\n${out}\n${err}`);
+  try {
+    const proc = Bun.spawn(['bun', 'pm', 'pack', '--destination', staging, '--quiet'], {
+      cwd: dir,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [out, err] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
 
-  const tarball = out.trim().split('\n').at(-1) ?? '';
-  if (!tarball.endsWith('.tgz')) throw new Error(`no tarball from ${dir}: ${out}`);
+    if ((await proc.exited) !== 0) throw new Error(`pack failed in ${dir}\n${out}\n${err}`);
 
-  await stripScriptsInTarball(tarball);
-  return tarball;
+    const packed = out.trim().split('\n').at(-1) ?? '';
+    if (!packed.endsWith('.tgz')) throw new Error(`no tarball from ${dir}: ${out}`);
+
+    await stripScriptsInTarball(packed);
+
+    const name = packed.split('/').pop() ?? 'package.tgz';
+    const tarball = `${root}/${name.replace(/\.tgz$/, '')}-${Bun.randomUUIDv7()}.tgz`;
+    const moved = Bun.spawn(['mv', packed, tarball]);
+    if ((await moved.exited) !== 0) throw new Error(`mv ${packed} ${tarball} failed`);
+    return tarball;
+  } finally {
+    await Bun.spawn(['rm', '-rf', staging]).exited;
+  }
 }
 
 /**

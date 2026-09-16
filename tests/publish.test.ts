@@ -42,6 +42,9 @@ describe('release', () => {
     //   concurrently, and the second restored the already-stripped copy it had read.
     //   tests/pack-purity.test.ts proves the property; this pins the mechanism.
     expect(pack).toContain('stripScriptsInTarball');
+    // ⛔ Same-name collision: bun pm pack writes `{name}-{version}.tgz`. Concurrent
+    //   packs of one package into one destination must stage elsewhere first.
+    expect(pack).toContain('.pack-');
     expect(pack).not.toContain('Bun.write(manifestPath');
     expect(src).toContain("'--provenance'");
     // ⛔ Conditional on CI, never dropped: provenance cannot be minted on a laptop

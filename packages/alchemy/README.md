@@ -91,7 +91,8 @@ two copies load in one process.
     "effect": "4.0.0-rc.112",
     "@effect/platform-node": "4.0.0-rc.112",
     "@effect/platform-node-shared": "4.0.0-rc.112",
-    "@effect/platform-bun": "4.0.0-rc.112"
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "rolldown": "1.2.8"
   }
 }
 ```
@@ -103,6 +104,7 @@ line is not semver-compatible with itself, and two separate skews bite:
 | ---------------------------------------------------------------- | ------------------------------------------------------ |
 | `effect` → rc.115                                                | `TypeError: Config.string is not a function` at import |
 | `@effect/platform-node-shared` → rc.115 while `effect` is rc.112 | `Cannot find module 'effect/ByteSize'`                 |
+| `rolldown` → 1.2.9 via vite's `~1.2.6` (measured 2026-09-16)     | `GET …/rolldown-1.2.9.tgz - 404` at `bun add`          |
 
 The second is the nastier one: `@effect/platform-bun@rc.112` depends on
 `platform-node-shared` at `^4.0.0-rc.112`, which resolves _up_ to rc.115 — whose own peer

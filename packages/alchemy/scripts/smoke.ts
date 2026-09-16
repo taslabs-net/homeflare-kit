@@ -27,6 +27,10 @@ const PINS = {
   '@effect/platform-node': '4.0.0-rc.112',
   '@effect/platform-node-shared': '4.0.0-rc.112',
   '@effect/platform-bun': '4.0.0-rc.112',
+  // ⛔ Exact, not `~1.2.6`. Measured 2026-09-16: vite's tilde resolved to rolldown
+  //   1.2.9 and npm 404'd the tarball. 1.2.8 is the last version a green consumer
+  //   install actually fetched (#37, five minutes earlier).
+  rolldown: '1.2.8',
 };
 
 async function run(cmd: readonly string[], cwd: string): Promise<string> {
