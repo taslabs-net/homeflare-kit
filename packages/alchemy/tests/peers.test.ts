@@ -53,4 +53,14 @@ describe('peer contract', () => {
     expect(readme).toContain('overrides');
     expect(readme).toContain('@effect/platform-node-shared');
   });
+
+  test('overrides pin rolldown to an exact tarball, not a floating tilde', () => {
+    // 🔴 Measured 2026-09-16 on main CI after #39: `bun add` in the smoke scratch
+    //   (no lockfile) installed alchemy's optional peer vite@^8, whose
+    //   `rolldown: ~1.2.6` resolved to 1.2.9. The registry listed 1.2.9 and 404'd
+    //   `rolldown-1.2.9.tgz` — #37 was green five minutes earlier on 1.2.8.
+    // ⛔ A range here is the same defect: the next publish 404s the consumer install.
+    expect(smoke).toMatch(/rolldown:\s*'1\.2\.8'/);
+    expect(readme).toContain('"rolldown": "1.2.8"');
+  });
 });
