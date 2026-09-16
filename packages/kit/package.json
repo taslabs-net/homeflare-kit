@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/kit",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Runtime-neutral HomeFlare primitives: typed env parsing, actionable errors, and an HTTP client.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/kit#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
