@@ -5,16 +5,21 @@
  *   / R2 locks — systems Alchemy has none for. GitHub is first-class (`alchemy/GitHub`).
  * ★ THE USEFUL OBJECT IS Environment "npm". release.yml publishes from it.
  * ⛔ NPM_TOKEN STAYS A REPOSITORY SECRET. Putting it in the stack would write the
- *   token into `.alchemy/` state. GitHub still injects repo secrets into an
+ *   token into Alchemy state. GitHub still injects repo secrets into an
  *   environment job.
- * ⚠️ LOCAL STATE ONLY. `.alchemy/` is gitignored. Do not `alchemy deploy` on every
- *   CI push — a fresh runner looks empty and fights the last apply. First apply
- *   is `bun alchemy deploy` on a machine that can administer this repo.
+ * ★ STATE IS `Cloudflare.state()` — the account Durable Object already used by
+ *   homeflare-forgejo, homeflare-proxmox, …. Keys live in Secrets Store as
+ *   AlchemyStateStoreToken / AlchemyStateStoreEncryptionKey (Schenanigans,
+ *   measured 2026-09-16 via wrangler). Do not bootstrap a second store.
+ * ⚠️ Deploy with `--stage live`. The CLI default is `live_$USER`, which would
+ *   fork a per-laptop copy. Other HomeFlare stacks on this store use `live`.
  * ⛔ DO NOT DECLARE BRANCH PROTECTION. The `main` ruleset already owns it.
  */
 import * as Alchemy from 'alchemy';
+import * as Cloudflare from 'alchemy/Cloudflare';
 import * as GitHub from 'alchemy/GitHub';
 import * as Effect from 'effect/Effect';
+import * as Layer from 'effect/Layer';
 
 const OWNER = 'taslabs-net';
 const NAME = 'homeflare-kit';
@@ -23,8 +28,8 @@ const NAME = 'homeflare-kit';
 export default Alchemy.Stack(
   'HomeFlareKit',
   {
-    providers: GitHub.providers(),
-    state: Alchemy.localState(),
+    providers: Layer.mergeAll(Cloudflare.providers(), GitHub.providers()),
+    state: Cloudflare.state(),
   },
   Effect.gen(function* () {
     const repo = yield* GitHub.Repository(NAME, {
