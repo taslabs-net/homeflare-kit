@@ -37,6 +37,9 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # ★ Publish sits in the `npm` Environment that alchemy.run.ts declares.
+    #   NPM_TOKEN stays a repository secret — GitHub still injects it here.
+    environment: npm
     steps:
       - uses: actions/checkout@v7
         with:
