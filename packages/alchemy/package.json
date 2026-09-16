@@ -70,10 +70,5 @@
     "alchemy": "2.0.0-beta.77",
     "cloudflare": ">=4.5.0",
     "effect": "4.0.0-rc.112"
-  },
-  "peerDependenciesMeta": {
-    "cloudflare": {
-      "optional": true
-    }
   }
 }
