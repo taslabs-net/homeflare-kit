@@ -14,7 +14,7 @@ bun add -D @homeflare/config      # shared tsconfig / oxlint / oxfmt
 
 **Jump to what you need:** reading config → `parseEnv` · throwing or mapping an error →
 `KitError` · calling an HTTP API → `client` · Cloudflare Access → `verifyAccessJwt` ·
-logging in a Worker → `log` · picking a dependency version → House versions · needing
+logging in a Worker → `log` · D1 Better Auth storage → `createD1AuthStorage` · needing
 something that is not here → If something you need is missing.
 
 ## @homeflare/kit — runtime-neutral, use anywhere
@@ -147,7 +147,8 @@ there is no redaction layer, by design.
 ## @homeflare/config — shared toolchain
 
 ```jsonc
-{ "extends": "@homeflare/config/tsconfig.base.json" }        // an app or Worker
+{ "extends": "@homeflare/config/tsconfig.app.json" }         // Worker app (source-publishing deps)
+{ "extends": "@homeflare/config/tsconfig.base.json" }        // owned code, full strictness
 { "extends": "@homeflare/config/tsconfig.lib.json" }         // publishes types
 ```
 
@@ -161,8 +162,8 @@ Full setup, every file and the traps: the package README.
 
 - `@homeflare/cloudflare` → **Cloudflare Access**. The edge already authenticated the
   caller; you verify its assertion. Stateless.
-- `@homeflare/auth` → **Better Auth**. *You* are the identity provider: sessions,
-  accounts, a database.
+- `@homeflare/auth` → **Better Auth** on D1. *You* are the identity provider.
+  `createD1AuthStorage(env.DB, schema)` → `{ db, database }`. Official adapter only.
 
 ⚠️ Reaching for the wrong one produces a system that looks authenticated and is not.
 
@@ -183,7 +184,7 @@ import { Button } from '@cloudflare/kumo/components/button';
 ```
 
 ⛔ Kumo is **not** re-exported: a barrel pulls all 44 components into the module graph.
-It is a **peer**, so you declare it — one copy must win.
+It is a **peer**, so you declare it — one copy must win. ⛔ `@homeflare/auth` does **not** wrap `betterAuth()`, and is **not** `better-auth-cloudflare`.
 
 ## If something you need is missing
 

@@ -41,7 +41,7 @@ describe('catalog', () => {
     for (const [name, version] of Object.entries(catalog)) {
       // A ranged entry defeats the point: two packages resolving `^1.2.0` at different
       // times get different versions. Peer-only entries are the deliberate exception.
-      if (name === '@better-auth/drizzle-adapter' || name === 'echarts') continue;
+      if (name === 'echarts') continue;
       expect(version).toMatch(/^\d+\.\d+\.\d+/);
     }
   });

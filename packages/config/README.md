@@ -9,18 +9,22 @@ bun add -D @homeflare/config
 
 ## What it gives you
 
-| file                 | how to use it                           |
-| -------------------- | --------------------------------------- |
-| `tsconfig.base.json` | `extends` — apps and Workers            |
-| `tsconfig.lib.json`  | `extends` — packages that publish types |
-| `oxlintrc.json`      | `extends` — 36 rules, 6 plugins         |
-| `oxfmtrc.json`       | copy to `.oxfmtrc.json`                 |
-| `bunfig.toml`        | copy to `bunfig.toml`                   |
+| file                 | how to use it                                    |
+| -------------------- | ------------------------------------------------ |
+| `tsconfig.base.json` | `extends` — owned code, full strictness          |
+| `tsconfig.app.json`  | `extends` — Worker apps (source-publishing deps) |
+| `tsconfig.lib.json`  | `extends` — packages that publish types          |
+| `oxlintrc.json`      | `extends` — 36 rules, 6 plugins                  |
+| `oxfmtrc.json`       | copy to `.oxfmtrc.json`                          |
+| `bunfig.toml`        | copy to `bunfig.toml`                            |
 
 ## tsconfig
 
 ```jsonc
-// an app or a Worker
+// a Worker or app that imports packages publishing .ts (not .d.ts)
+{ "extends": "@homeflare/config/tsconfig.app.json" }
+
+// owned library code — the full baseline
 { "extends": "@homeflare/config/tsconfig.base.json" }
 
 // a package that publishes types
@@ -33,6 +37,12 @@ together — `isolatedDeclarations` alone is TS5069, even under `--noEmit`.
 The base turns on `strict` plus the flags that catch the most runtime bugs:
 `noUncheckedIndexedAccess` (`arr[0]` is `T | undefined`), `exactOptionalPropertyTypes`,
 and `noFallthroughCasesInSwitch`.
+
+⚠️ **`tsconfig.app.json` turns three of those off.** `skipLibCheck` only skips `.d.ts`.
+Measured 2026-09-16: `@cloudflare/ci@0.2.0` ships `"types": "./src/index.ts"`, and Better
+Auth plugin types do the same. Those files typecheck under _your_ flags, so the strict
+baseline fails the consumer. Use the app preset there; keep `base` / `lib` for code you
+own. Override the flags back on in a project that does not import source-publishing deps.
 
 ## oxlint
 
