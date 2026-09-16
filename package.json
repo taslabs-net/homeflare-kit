@@ -40,6 +40,12 @@
     "oxlint": "catalog:",
     "typescript": "catalog:"
   },
+  "overrides": {
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node-shared": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.112"
+  },
   "engines": {
     "bun": ">=1.4.0",
     "node": ">=22"

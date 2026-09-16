@@ -1,7 +1,7 @@
 {
   "name": "@homeflare/alchemy",
   "version": "0.0.0",
-  "description": "Custom Alchemy providers for gaps the vendor SDK leaves: R2 bucket locks.",
+  "description": "Custom Alchemy providers for Cloudflare, Proxmox, OpenBao, Forgejo and Talos.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/alchemy#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
   "license": "MIT",
@@ -24,9 +24,25 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./providers": {
-      "types": "./dist/providers.d.ts",
-      "default": "./dist/providers.js"
+    "./cloudflare": {
+      "types": "./dist/cloudflare/index.d.ts",
+      "default": "./dist/cloudflare/index.js"
+    },
+    "./forgejo": {
+      "types": "./dist/forgejo/index.d.ts",
+      "default": "./dist/forgejo/index.js"
+    },
+    "./openbao": {
+      "types": "./dist/openbao/index.d.ts",
+      "default": "./dist/openbao/index.js"
+    },
+    "./talos": {
+      "types": "./dist/talos/index.d.ts",
+      "default": "./dist/talos/index.js"
+    },
+    "./proxmox": {
+      "types": "./dist/proxmox/index.d.ts",
+      "default": "./dist/proxmox/index.js"
     },
     "./package.json": "./package.json"
   },
@@ -35,7 +51,7 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/providers.ts --outdir dist --target node --format esm --packages external --sourcemap=linked",
+    "build:js": "bun build ./src/index.ts ./src/cloudflare/index.ts ./src/forgejo/index.ts ./src/openbao/index.ts ./src/talos/index.ts ./src/proxmox/index.ts --root ./src --outdir dist --target node --format esm --packages external --sourcemap=linked",
     "build:types": "tsc --project tsconfig.build.json",
     "clean": "rm -rf dist",
     "types": "tsc --noEmit",
@@ -43,6 +59,8 @@
     "smoke": "echo 'alchemy: providers are exercised by the consuming stack'"
   },
   "devDependencies": {
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.112",
     "alchemy": "2.0.0-beta.77",
     "cloudflare": "4.5.0",
     "effect": "4.0.0-rc.112"
