@@ -40,6 +40,12 @@ is skipped, so a half-finished release is safe to re-run.
 
 ## GitHub Actions
 
+⛔ **`bun run verify` in `release.yml` runs only when this push will publish.** A feature
+merge still has `.changeset/*.md`; the version commit consumes them. Measured 2026-09-16:
+running verify on every main push failed a 5s DNS flake after `ci` on the same SHA was
+green, and changesets never opened the Version Packages PR. Required `ci` is the merge
+gate. The tarball gate stays in release for the publish itself.
+
 ⛔ **First-party (`actions/*`) or the vendor's own action. Nothing hand-rolled, nothing
 third-party.** `tests/workflows.test.ts` enforces the publisher allowlist and that every
 `uses:` carries a version — adding a publisher is a deliberate supply-chain decision.

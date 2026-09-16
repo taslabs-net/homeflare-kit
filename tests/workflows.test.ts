@@ -107,6 +107,25 @@ describe('workflows', () => {
     }
   });
 
+  test('release verify runs only when this push will publish', async () => {
+    // ⛔ THE FLAKE THIS STOPS, measured 2026-09-16. release.yml ran `bun run verify` on
+    //   every push to main. `ci` on the same SHA was already green; a 5s DNS hang in
+    //   alchemy's cluster failover test failed release and blocked the Version Packages
+    //   PR. A feature merge still has `.changeset/*.md`; the version commit consumes
+    //   them. Required `ci` gates the merge. Verify stays here for the publish.
+    const text = await Bun.file(
+      new URL('../.github/workflows/release.yml', import.meta.url),
+    ).text();
+    const doc = Bun.YAML.parse(text) as {
+      jobs: { release: { steps: readonly (Step & { if?: string })[] } };
+    };
+    const verify = doc.jobs.release.steps.find((s) => s.run === 'bun run verify');
+
+    expect(verify?.if).toBeTruthy();
+    expect(text).toContain('.changeset');
+    expect(text).toContain('has=false');
+  });
+
   test('the test job builds before it tests, so the dist guard cannot skip itself', async () => {
     const text = await Bun.file(new URL('../.github/workflows/ci.yml', import.meta.url)).text();
     const doc = Bun.YAML.parse(text) as {
