@@ -1,5 +1,22 @@
 # @homeflare/config
 
+## 0.4.0
+
+### Minor Changes
+
+- [#38](https://github.com/taslabs-net/homeflare-kit/pull/38) [`6d04e88`](https://github.com/taslabs-net/homeflare-kit/commit/6d04e881725ae7364c0d42fef536735cbdbafb34) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Worker/TanStack apps can extend the toolchain without rewriting generated OpenAPI.
+
+  **`oxlintrc.app.json`** — library oxlint with `--deny-warnings` failed on correct
+  app code (measured 2026-09-16): `console.error` is Workers Logs, Alchemy/`Worker`
+  entry files export default, tests use `!`, Kumo initials triggers fail
+  `control-has-associated-label`. Apps extend this file, not the library preset.
+
+  **oxfmt ignores merge.** `checkProject()` no longer requires a byte-identical
+  `.oxfmtrc.json`. Extra `ignorePatterns` are allowed; dropping a house ignore or
+  changing `singleQuote` is still drift. House ignores now cover `vendor/`,
+  `**/generated/**`, `**/*.gen.ts`, and OpenAPI artefacts so a copy does not
+  format generated files.
+
 ## 0.3.0
 
 ### Minor Changes
