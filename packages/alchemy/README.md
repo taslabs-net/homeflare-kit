@@ -50,12 +50,45 @@ API Key. An empty value fails closed with a message saying so, because an empty 
 a denied grant rather than a missing file, and `Bearer ` + nothing 401s in a way that reads
 like a bad credential.
 
-## Peers
+## Peers — and one override you need
 
-`alchemy` >= 2.0.0-beta.77 · `cloudflare` >= 4.5.0 · `effect` >= 4.0.0-rc.112
+```sh
+bun add @homeflare/alchemy alchemy@2.0.0-beta.77 effect@4.0.0-rc.112 \
+        @effect/platform-node@4.0.0-rc.112
+```
 
 ⚠️ Peers, not dependencies: Alchemy's resource registry and Effect's context both break if
 two copies load in one process.
+
+⛔ **Add this to your `package.json`, or the install works and the import throws:**
+
+```json
+{
+  "overrides": {
+    "effect": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node-shared": "4.0.0-rc.112",
+    "@effect/platform-bun": "4.0.0-rc.112"
+  }
+}
+```
+
+🔴 **Why, measured 2026-09-16 against a clean consumer install of 0.1.0.** Effect's `rc`
+line is not semver-compatible with itself, and two separate skews bite:
+
+| what resolves                                                    | what happens                                           |
+| ---------------------------------------------------------------- | ------------------------------------------------------ |
+| `effect` → rc.115                                                | `TypeError: Config.string is not a function` at import |
+| `@effect/platform-node-shared` → rc.115 while `effect` is rc.112 | `Cannot find module 'effect/ByteSize'`                 |
+
+The second is the nastier one: `@effect/platform-bun@rc.112` depends on
+`platform-node-shared` at `^4.0.0-rc.112`, which resolves _up_ to rc.115 — whose own peer
+is `effect@^4.0.0-rc.115`. Nothing fails at install time. An override is the only thing
+that holds the set together.
+
+⚠️ `@effect/platform-node` is **required, not optional**: Alchemy's module graph reaches
+`Cloudflare/Workers/WorkerBridge → @effect/platform-node/NodeServices` even when you only
+import the Proxmox subpath.
 
 ## License
 
