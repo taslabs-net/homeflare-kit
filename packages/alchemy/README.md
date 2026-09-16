@@ -3,8 +3,13 @@
 Custom [Alchemy](https://alchemy.run) providers for gaps the vendor SDK leaves.
 
 ```sh
-bun add @homeflare/alchemy alchemy cloudflare effect
+bun add @homeflare/alchemy alchemy@2.0.0-beta.77 effect@4.0.0-rc.112 \
+        @effect/platform-node@4.0.0-rc.112 cloudflare@4.5.0
 ```
+
+⛔ **Every one of those is required, and you also need an `overrides` block** — see
+[Peers](#peers--and-one-override-you-need) below. The install succeeds without them and
+the import throws.
 
 ★ **Why a custom provider at all.** When Alchemy has no property for something, the
 alternative is a runbook step a human runs once — and a plan can never show a missing
@@ -54,7 +59,7 @@ like a bad credential.
 
 ```sh
 bun add @homeflare/alchemy alchemy@2.0.0-beta.77 effect@4.0.0-rc.112 \
-        @effect/platform-node@4.0.0-rc.112
+        @effect/platform-node@4.0.0-rc.112 cloudflare@4.5.0
 ```
 
 ⚠️ Peers, not dependencies: Alchemy's resource registry and Effect's context both break if
@@ -89,6 +94,11 @@ that holds the set together.
 ⚠️ `@effect/platform-node` is **required, not optional**: Alchemy's module graph reaches
 `Cloudflare/Workers/WorkerBridge → @effect/platform-node/NodeServices` even when you only
 import the Proxmox subpath.
+
+⚠️ So is `cloudflare`. It was marked optional in 0.1.1, which claimed the `/cloudflare`
+subpath would degrade without it — measured 2026-09-16, the subpath does not load at all:
+`Cannot find package 'cloudflare'`. An optional peer should mean a feature is absent, not
+that an import fails.
 
 ## License
 
