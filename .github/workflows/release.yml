@@ -1,7 +1,10 @@
 # Changesets -> npm, in two stages.
 #
-#   1. a push to main opens (or updates) a "Version Packages" PR
-#   2. merging THAT PR publishes every package whose version changed
+#   1. a push to main opens (or updates) a "Version Packages" PR  (no verify)
+#   2. merging THAT PR publishes every package whose version changed (verify first)
+#
+# ⛔ Step 1 must not re-run the suite. Measured 2026-09-16: a 5s DNS flake failed
+#   `bun run verify` after `ci` on the same SHA was green, and the version PR never opened.
 #
 # ★ THE CHANGELOG IS THE RELEASE. @changesets/changelog-github writes each entry with its
 #   PR link, commit and author; changesets/action then creates a GitHub Release per
@@ -64,10 +67,24 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # ⛔ The gate. A version that fails here must not reach the registry, where a number
-      #   can never be reused. `verify` includes the consumer smoke test — the only step
-      #   that would have caught the 2026-09-15 tree-shaking bug.
+      # ⛔ VERIFY ONLY WHEN THIS PUSH WILL PUBLISH. Measured 2026-09-16: running it on
+      #   every main push failed a 5s DNS flake after `ci` on the same SHA was green, and
+      #   changesets never opened the Version Packages PR. A feature merge still has
+      #   `.changeset/*.md`; the version commit consumes them. Required `ci` is what
+      #   stops a broken feature landing. The tarball gate stays here for publish.
+      - name: Pending changesets
+        id: pending
+        run: |
+          set -euo pipefail
+          files=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' -print)
+          if [ -n "$files" ]; then
+            echo "has=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - run: bun run verify
+        if: steps.pending.outputs.has == 'false'
 
       # ⛔ publish-script is OURS, not `changeset publish`. See docs/releasing.md: npm pack
       #   resolves neither `workspace:*` nor `catalog:`, so changesets' own publish path

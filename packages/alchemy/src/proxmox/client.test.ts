@@ -55,7 +55,13 @@ const remapFetch = (
         url.port = String(port);
         return underlying(url, init);
       }
-      return underlying(input, init);
+      // ⛔ NEVER fall through to the real resolver. `.test` is reserved (RFC 2606) but
+      //   GitHub's Linux runners sometimes hang on it until node:test's 5s timeout —
+      //   measured 2026-09-16: release verify failed on "skips an unresolvable first
+      //   member" while `ci` on the same SHA passed. The file header says no live hosts.
+      return Promise.reject(
+        Object.assign(new Error(`getaddrinfo ENOTFOUND ${url.hostname}`), { code: 'ENOTFOUND' }),
+      );
     },
     { preconnect: globalThis.fetch.preconnect },
   );
