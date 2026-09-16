@@ -33,3 +33,9 @@ with nowhere to go.
   exist. The real path is `/cloudflare`.
 - `@homeflare/cloudflare`'s npm description advertised "typed bindings" — it exports none.
 - `@homeflare/kit`'s advertised "logging" — `log` lives in `@homeflare/cloudflare`.
+
+**Packing no longer edits a manifest on disk.** `packForPublish` stripped `scripts` and
+`devDependencies` from the real `package.json`, packed, then restored it — which is a race
+when two smoke tests pack the same workspace dependency in parallel. It destroyed
+`@homeflare/kit`'s `scripts` block during this branch, _after_ `verify` had passed. The
+strip now happens inside the packed tarball, so nothing in the repository is written to.
