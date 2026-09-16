@@ -12,7 +12,7 @@ every app and Worker that consumes them is scaffolded the same way.
 | [`@homeflare/kit`](./packages/kit)               | Runtime-neutral primitives: env parsing, HTTP. Runs anywhere.              |
 | [`@homeflare/cloudflare`](./packages/cloudflare) | Workers helpers: Access JWT, structured logging.                           |
 | [`@homeflare/ui`](./packages/ui)                 | React components on [Cloudflare Kumo](https://github.com/cloudflare/kumo). |
-| [`@homeflare/auth`](./packages/auth)             | Better Auth with the Cloudflare adapter. Scaffold only.                    |
+| [`@homeflare/auth`](./packages/auth)             | D1 storage for official Better Auth. Not a factory.                        |
 | [`@homeflare/config`](./packages/config)         | Shared tsconfig, oxlint and oxfmt presets.                                 |
 
 ## Using them

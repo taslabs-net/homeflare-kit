@@ -1,7 +1,7 @@
 {
   "name": "@homeflare/auth",
   "version": "0.1.5",
-  "description": "Better Auth wiring for HomeFlare, with the Cloudflare adapter.",
+  "description": "D1 storage for official Better Auth. Not an auth factory, not the community Cloudflare adapter.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/auth#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
   "license": "MIT",
@@ -38,17 +38,14 @@
     "test": "bun test",
     "smoke": "bun run scripts/smoke.ts"
   },
-  "dependencies": {
-    "@homeflare/kit": "workspace:*",
-    "better-auth": "1.7.5",
-    "better-auth-cloudflare": "0.3.1"
-  },
   "devDependencies": {
     "@better-auth/drizzle-adapter": "catalog:",
-    "@cloudflare/workers-types": "catalog:"
+    "better-auth": "catalog:",
+    "drizzle-orm": "catalog:"
   },
   "peerDependencies": {
     "@better-auth/drizzle-adapter": "^1.5.0",
-    "@cloudflare/workers-types": ">=4"
+    "better-auth": "^1.5.0",
+    "drizzle-orm": "^0.45.2 || >=1.0.0-rc.1 <2.0.0"
   }
 }

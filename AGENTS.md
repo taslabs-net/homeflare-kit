@@ -21,13 +21,13 @@ them to fit a line limit — extract into a new file instead.
 
 ## The packages
 
-| package                 | holds                             | may import                          |
-| ----------------------- | --------------------------------- | ----------------------------------- |
-| `@homeflare/kit`        | env parsing, HTTP                 | nothing runtime-specific, ever      |
-| `@homeflare/cloudflare` | Access JWT, structured logging    | workerd globals, `@homeflare/kit`   |
-| `@homeflare/ui`         | React components                  | Kumo, React                         |
-| `@homeflare/auth`       | Better Auth + Cloudflare adapter  | better-auth, drizzle (transitively) |
-| `@homeflare/config`     | tsconfig / oxlint / oxfmt presets | — (no code)                         |
+| package                 | holds                             | may import                        |
+| ----------------------- | --------------------------------- | --------------------------------- |
+| `@homeflare/kit`        | env parsing, HTTP                 | nothing runtime-specific, ever    |
+| `@homeflare/cloudflare` | Access JWT, structured logging    | workerd globals, `@homeflare/kit` |
+| `@homeflare/ui`         | React components                  | Kumo, React                       |
+| `@homeflare/auth`       | Better Auth D1 storage            | drizzle-orm, official adapter     |
+| `@homeflare/config`     | tsconfig / oxlint / oxfmt presets | — (no code)                       |
 
 ⚠️ **TWO KINDS OF AUTH, NOT INTERCHANGEABLE.** `@homeflare/cloudflare` verifies a
 Cloudflare Access assertion — the edge already authenticated the caller and you check its

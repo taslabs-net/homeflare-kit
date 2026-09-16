@@ -41,7 +41,7 @@ describe('catalog', () => {
     for (const [name, version] of Object.entries(catalog)) {
       // A ranged entry defeats the point: two packages resolving `^1.2.0` at different
       // times get different versions. Peer-only entries are the deliberate exception.
-      if (name === '@better-auth/drizzle-adapter' || name === 'echarts') continue;
+      if (name === 'echarts') continue;
       expect(version).toMatch(/^\d+\.\d+\.\d+/);
     }
   });
@@ -83,6 +83,16 @@ describe('catalog', () => {
         expect(spec).toMatch(/^[\^>~]|\|\|/);
       }
     }
+  });
+
+  test('the lockfile does not pin @cloudflare/* to the internal registry', async () => {
+    // 🔴 MEASURED 2026-09-16. Local bun install with ~/.npmrc pointing @cloudflare at
+    //   registry-gateway.cloudflare-ui.workers.dev rewrote bun.lock tarball URLs to that
+    //   host. CI has no token, so `bun install --frozen-lockfile` 401s on kumo / workers-types
+    //   / workerd. Main's lockfile uses the default registry (empty URL). A private URL
+    //   here is a laptop-only install that every consumer and every CI job cannot perform.
+    const lock = await Bun.file(new URL('bun.lock', root)).text();
+    expect(lock).not.toContain('registry-gateway.cloudflare-ui.workers.dev');
   });
 
   test('devDependencies DO use the catalog', async () => {
