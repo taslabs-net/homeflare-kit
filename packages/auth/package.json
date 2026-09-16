@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/auth",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "D1 storage for official Better Auth. Not an auth factory, not the community Cloudflare adapter.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/auth#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",

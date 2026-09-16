@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/cloudflare",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Cloudflare Workers helpers: Access identity, MCP OAuth metadata, and structured logging.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/cloudflare#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
