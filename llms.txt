@@ -152,11 +152,9 @@ there is no redaction layer, by design.
 { "extends": "@homeflare/config/tsconfig.lib.json" }         // publishes types
 ```
 
-⚠️ oxlint's `extends` takes **file paths**, not package names. `.oxfmtrc.json` and
-`bunfig.toml` have no `extends` at all, so they are copies — and a copy drifts.
-`checkProject()` from `@homeflare/config/check` reports when yours has.
-
-Full setup, every file and the traps: the package README.
+⚠️ oxlint `extends` is a file path. Apps use `oxlintrc.app.json` (Workers Logs,
+Alchemy default export). `.oxfmtrc.json` extra ignores merge; style keys do not.
+`checkProject()` reports drift. Full setup: the package README.
 
 ## Two kinds of auth — not interchangeable
 

@@ -61,4 +61,21 @@ describe('checkProject', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test('extra oxfmt ignores are a merge, not drift', async () => {
+    // ⛔ Identity comparison rewrote generated OpenAPI (measured 2026-09-16).
+    const dir = await mkdtemp(join(tmpdir(), 'hf-oxfmt-'));
+    try {
+      const house = (await Bun.file(new URL('../oxfmtrc.json', import.meta.url)).json()) as {
+        readonly ignorePatterns: readonly string[];
+      };
+      await writeFile(
+        join(dir, '.oxfmtrc.json'),
+        JSON.stringify({ ...house, ignorePatterns: [...house.ignorePatterns, 'src/generated/**'] }),
+      );
+      expect((await checkProject(dir)).join('\n')).not.toContain('.oxfmtrc.json');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

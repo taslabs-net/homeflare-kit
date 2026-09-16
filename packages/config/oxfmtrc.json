@@ -3,5 +3,17 @@
   "useTabs": false,
   "singleQuote": true,
   "semi": true,
-  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "**/coverage/**"]
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/generated/**",
+    "**/*.gen.ts",
+    "**/vendor/**",
+    "**/*.openapi.yaml",
+    "**/*.openapi.yml",
+    "**/openapi.json",
+    "**/.wrangler/**",
+    "**/worker-configuration.d.ts"
+  ]
 }

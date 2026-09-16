@@ -16,6 +16,7 @@
     "tsconfig.lib.json",
     "tsconfig.app.json",
     "oxlintrc.json",
+    "oxlintrc.app.json",
     "oxfmtrc.json",
     "bunfig.toml",
     "README.md",
@@ -27,6 +28,7 @@
     "./tsconfig.lib.json": "./tsconfig.lib.json",
     "./tsconfig.app.json": "./tsconfig.app.json",
     "./oxlintrc.json": "./oxlintrc.json",
+    "./oxlintrc.app.json": "./oxlintrc.app.json",
     "./oxfmtrc.json": "./oxfmtrc.json",
     "./bunfig.toml": "./bunfig.toml",
     "./check": {

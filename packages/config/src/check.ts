@@ -15,6 +15,7 @@
  *   ⛔ NOT JSONC. Bun's `.json()` rejects comments (measured 2026-09-15), so a project
  *     whose tsconfig carries them is reported as unreadable rather than silently skipped.
  */
+import { type OxfmtConfig, problemsInOxfmt } from './oxfmt.ts';
 
 /** One thing a project should fix, in the imperative. */
 export type Problem = string;
@@ -132,6 +133,29 @@ async function checkCopy(
 }
 
 /**
+ * House oxfmt has no `extends`. Extra ignores are a merge; style keys are not.
+ * ⛔ Identity comparison rewrote generated OpenAPI (measured 2026-09-16).
+ */
+async function checkOxfmt(projectDir: string, problems: Problem[]): Promise<void> {
+  const mine = Bun.file(`${projectDir}/.oxfmtrc.json`);
+  if (!(await mine.exists())) {
+    problems.push('.oxfmtrc.json: missing — copy it from @homeflare/config');
+    return;
+  }
+
+  let theirs: OxfmtConfig;
+  try {
+    theirs = JSON.parse(await mine.text()) as OxfmtConfig;
+  } catch {
+    problems.push('.oxfmtrc.json: unparseable');
+    return;
+  }
+
+  const preset = JSON.parse(await Bun.file(`${presetDir()}oxfmtrc.json`).text()) as OxfmtConfig;
+  problems.push(...problemsInOxfmt(preset, theirs));
+}
+
+/**
  * Check a project directory. Returns an empty array when everything is in step.
  *
  *     const problems = await checkProject(process.cwd());
@@ -142,7 +166,7 @@ export async function checkProject(projectDir: string): Promise<readonly Problem
 
   await checkExtends(projectDir, 'tsconfig.json', '@homeflare/config/tsconfig', problems);
   await checkExtends(projectDir, '.oxlintrc.json', '@homeflare/config/oxlintrc', problems);
-  await checkCopy(projectDir, '.oxfmtrc.json', (t) => JSON.parse(t) as unknown, problems);
+  await checkOxfmt(projectDir, problems);
   await checkCopy(projectDir, 'bunfig.toml', (t) => Bun.TOML.parse(t), problems);
 
   return problems;
