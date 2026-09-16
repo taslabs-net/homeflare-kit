@@ -65,13 +65,22 @@ export async function packForPublish(dir: string, destination: string): Promise<
  * ⚠️ Unpack, edit one file, repack — `tar` cannot substitute a member in place, and
  *   `--append` to a COMPRESSED archive is not supported either. The scratch directory is
  *   unique per call so concurrent packs cannot collide.
- * ⚠️ `--no-mac-metadata` keeps bsdtar from adding `._` AppleDouble members on macOS, which
- *   would otherwise ship in the published tarball and differ from what CI produces.
+ * 🔴 `--no-mac-metadata` IS A bsdtar FLAG AND GNU tar REJECTS IT. Measured 2026-09-16: it
+ *   worked on this Mac and failed on every CI runner ("Try 'tar --help'"), so the fix for
+ *   one platform broke the other. It is passed only where tar accepts it — which is also
+ *   the only place it is needed, since AppleDouble members are a macOS phenomenon.
+ * ⚠️ Without it, bsdtar adds `._` members and the published tarball differs from CI's.
  */
 async function stripScriptsInTarball(tarball: string): Promise<void> {
   const scratch = `${tarball}.rewrite-${Bun.randomUUIDv7()}`;
   const run = async (cmd: readonly string[]): Promise<void> => {
-    const p = Bun.spawn([...cmd], { stdout: 'pipe', stderr: 'pipe' });
+    const p = Bun.spawn([...cmd], {
+      // ⚠️ The portable half of the AppleDouble defence: bsdtar honours COPYFILE_DISABLE,
+      //   GNU tar ignores it, so it is safe to set everywhere.
+      env: { ...process.env, COPYFILE_DISABLE: '1' },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
     const stderr = await new Response(p.stderr).text();
     if ((await p.exited) !== 0) throw new Error(`${cmd.join(' ')} failed\n${stderr}`);
   };
@@ -91,7 +100,10 @@ async function stripScriptsInTarball(tarball: string): Promise<void> {
     delete packed['devDependencies'];
 
     await Bun.write(packedPath, `${JSON.stringify(packed, null, 2)}\n`);
-    await run(['tar', '--no-mac-metadata', '-czf', tarball, '-C', scratch, 'package']);
+    // ⚠️ COPYFILE_DISABLE is the portable half: bsdtar honours it, GNU tar ignores it.
+    //   The flag is added only on Darwin, where it exists.
+    const macOnly = process.platform === 'darwin' ? ['--no-mac-metadata'] : [];
+    await run(['tar', ...macOnly, '-czf', tarball, '-C', scratch, 'package']);
   } finally {
     await Bun.spawn(['rm', '-rf', scratch]).exited;
   }
