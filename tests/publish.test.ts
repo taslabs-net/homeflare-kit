@@ -35,7 +35,14 @@ describe('release', () => {
     const pack = await Bun.file(new URL('scripts/pack.ts', root)).text();
     expect(pack).toContain("'bun', 'pm', 'pack'");
     // ⛔ Dev scripts must not reach the tarball: they reference files it does not carry.
-    expect(pack).toContain("delete forPublish['scripts']");
+    expect(pack).toContain("delete packed['scripts']");
+    expect(pack).toContain("delete packed['devDependencies']");
+    // 🔴 AND THE STRIP HAPPENS INSIDE THE TARBALL, NEVER ON DISK. Editing the real
+    //   manifest is a race that destroyed one: two smoke tests pack @homeflare/kit
+    //   concurrently, and the second restored the already-stripped copy it had read.
+    //   tests/pack-purity.test.ts proves the property; this pins the mechanism.
+    expect(pack).toContain('stripScriptsInTarball');
+    expect(pack).not.toContain('Bun.write(manifestPath');
     expect(src).toContain("'--provenance'");
     // ⛔ Conditional on CI, never dropped: provenance cannot be minted on a laptop
     //   (no OIDC identity), but a release FROM CI must always be attested.

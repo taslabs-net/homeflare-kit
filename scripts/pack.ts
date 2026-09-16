@@ -16,35 +16,83 @@
  *   these were separate, the release stripped scripts and the smoke test did not, so the
  *   defect stayed invisible.
  */
+/**
+ * 🔴 IN-PLACE EDITING OF A SHARED MANIFEST IS A RACE, AND IT DESTROYED ONE. Measured
+ *   2026-09-16: `bun run --filter '*' smoke` runs every package's smoke test in PARALLEL,
+ *   and both @homeflare/auth and @homeflare/cloudflare pack @homeflare/kit as a workspace
+ *   dependency. Two processes stripped the same package.json, and the second restored the
+ *   ALREADY-STRIPPED copy it had read — so kit's entire `scripts` block vanished from the
+ *   working tree, survived `verify` (which had already run), and was committed.
+ *
+ * ⛔ SO THE REPOSITORY IS NEVER WRITTEN TO. The pack runs in the REAL package directory —
+ *   it must, because `bun pm pack` resolves `workspace:*` through the lockfile and cannot
+ *   do that from a copy ("Failed to resolve workspace version", measured the same day) —
+ *   and the manifest is rewritten INSIDE the resulting tarball afterwards.
+ * ⚠️ Concurrent packs of one package are therefore safe: each writes its own tarball, and
+ *   `bun pm pack` only reads.
+ */
 export async function packForPublish(dir: string, destination: string): Promise<string> {
-  const manifestPath = `${dir}/package.json`.replace(/\/+/g, '/');
-  const original = await Bun.file(manifestPath).text();
-  const forPublish = JSON.parse(original) as Record<string, unknown>;
+  // ⛔ cwd is the REAL package directory — `bun pm pack` resolves `workspace:*` through the
+  //   lockfile and cannot do it from a copy. It only READS, so parallel packs are safe.
+  const proc = Bun.spawn(['bun', 'pm', 'pack', '--destination', destination, '--quiet'], {
+    cwd: dir,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const [out, err] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
 
-  delete forPublish['scripts'];
-  delete forPublish['devDependencies'];
+  if ((await proc.exited) !== 0) throw new Error(`pack failed in ${dir}\n${out}\n${err}`);
+
+  const tarball = out.trim().split('\n').at(-1) ?? '';
+  if (!tarball.endsWith('.tgz')) throw new Error(`no tarball from ${dir}: ${out}`);
+
+  await stripScriptsInTarball(tarball);
+  return tarball;
+}
+
+/**
+ * Strip dev-only fields from the manifest INSIDE a packed tarball.
+ *
+ * 🔴 IT MUST EDIT THE PACKED COPY, NOT THE ONE ON DISK. Measured 2026-09-16: writing the
+ *   on-disk manifest into the tarball put `"@homeflare/kit": "workspace:*"` back, because
+ *   that is what the source says — and `bun add` of the tarball then failed with
+ *   "@homeflare/kit@workspace:* failed to resolve". `bun pm pack` has ALREADY replaced
+ *   those with literal versions; that resolution is the thing being preserved here.
+ *
+ * ⚠️ Unpack, edit one file, repack — `tar` cannot substitute a member in place, and
+ *   `--append` to a COMPRESSED archive is not supported either. The scratch directory is
+ *   unique per call so concurrent packs cannot collide.
+ * ⚠️ `--no-mac-metadata` keeps bsdtar from adding `._` AppleDouble members on macOS, which
+ *   would otherwise ship in the published tarball and differ from what CI produces.
+ */
+async function stripScriptsInTarball(tarball: string): Promise<void> {
+  const scratch = `${tarball}.rewrite-${Bun.randomUUIDv7()}`;
+  const run = async (cmd: readonly string[]): Promise<void> => {
+    const p = Bun.spawn([...cmd], { stdout: 'pipe', stderr: 'pipe' });
+    const stderr = await new Response(p.stderr).text();
+    if ((await p.exited) !== 0) throw new Error(`${cmd.join(' ')} failed\n${stderr}`);
+  };
 
   try {
-    await Bun.write(manifestPath, `${JSON.stringify(forPublish, null, 2)}\n`);
+    await run(['mkdir', '-p', scratch]);
+    await run(['tar', '-xzf', tarball, '-C', scratch]);
 
-    const proc = Bun.spawn(['bun', 'pm', 'pack', '--destination', destination, '--quiet'], {
-      cwd: dir,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const [out, err] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
+    const packedPath = `${scratch}/package/package.json`;
+    // ⚠️ `.text()` then `JSON.parse`, not `.json()` — the Workers-types lib that the
+    //   cloudflare and auth packages compile against narrows BunFile without it.
+    const packed = JSON.parse(await Bun.file(packedPath).text()) as Record<string, unknown>;
 
-    if ((await proc.exited) !== 0) throw new Error(`pack failed in ${dir}\n${out}\n${err}`);
+    // ⛔ Only these two come out. Everything else — above all the dependency versions bun
+    //   just resolved from the lockfile — is left exactly as packed.
+    delete packed['scripts'];
+    delete packed['devDependencies'];
 
-    const tarball = out.trim().split('\n').at(-1) ?? '';
-    if (!tarball.endsWith('.tgz')) throw new Error(`no tarball from ${dir}: ${out}`);
-    return tarball;
+    await Bun.write(packedPath, `${JSON.stringify(packed, null, 2)}\n`);
+    await run(['tar', '--no-mac-metadata', '-czf', tarball, '-C', scratch, 'package']);
   } finally {
-    // ⛔ ALWAYS restore, even when packing throws: a stripped manifest left behind would
-    //   silently break the next build in this checkout.
-    await Bun.write(manifestPath, original);
+    await Bun.spawn(['rm', '-rf', scratch]).exited;
   }
 }
