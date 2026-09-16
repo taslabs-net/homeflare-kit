@@ -1,7 +1,7 @@
 {
   "name": "@homeflare/kit",
   "version": "0.2.2",
-  "description": "Runtime-neutral HomeFlare primitives: env parsing, errors, logging, HTTP.",
+  "description": "Runtime-neutral HomeFlare primitives: typed env parsing, actionable errors, and an HTTP client.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/kit#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
   "license": "MIT",
@@ -29,16 +29,6 @@
   },
   "publishConfig": {
     "access": "public"
-  },
-  "scripts": {
-    "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts --outdir dist --target node --format esm --packages external --sourcemap=linked",
-    "build:types": "tsc --project tsconfig.build.json",
-    "clean": "rm -rf dist",
-    "test": "bun test",
-    "smoke": "bun run scripts/smoke.ts",
-    "prepublishOnly": "bun run clean && bun run build",
-    "types": "tsc --noEmit"
   },
   "dependencies": {
     "ky": "2.1.0"

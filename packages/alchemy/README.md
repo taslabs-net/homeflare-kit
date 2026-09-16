@@ -24,7 +24,7 @@ credential can delete it.
 
 ```ts
 import { R2BucketLock } from '@homeflare/alchemy';
-import { providers } from '@homeflare/alchemy/providers';
+import { providers } from '@homeflare/alchemy/cloudflare';
 
 export class BackupLock extends R2BucketLock('backup-lock', {
   bucketName: 'my-backups',
@@ -36,7 +36,7 @@ export class BackupLock extends R2BucketLock('backup-lock', {
 Add the provider layer to your stack:
 
 ```ts
-import { providers } from '@homeflare/alchemy/providers';
+import { providers } from '@homeflare/alchemy/cloudflare';
 // …then provide `providers()` alongside Cloudflare.providers()
 ```
 

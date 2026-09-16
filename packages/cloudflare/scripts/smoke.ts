@@ -47,7 +47,11 @@ try {
 
   await Bun.write(
     join(scratch, 'consumer.ts'),
-    `import { verifyAccessJwt, log, breakered, BREAKER_COOLDOWN_MS, VERSION } from '@homeflare/cloudflare';
+    `import {
+  verifyAccessJwt, accessIdentity, hasAccess,
+  serveMcpMetadata, unauthorizedResponse, wellKnownPath,
+  log, breakered, BREAKER_COOLDOWN_MS, VERSION,
+} from '@homeflare/cloudflare';
 
 if (typeof verifyAccessJwt !== 'function') throw new Error('verifyAccessJwt missing');
 if (typeof breakered !== 'function') throw new Error('breakered missing');
@@ -68,6 +72,22 @@ const fetcher = breakered(async () => {
 const opts = { headers: new Headers(), method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(5000) };
 for (let i = 0; i < 3; i += 1) await fetcher('https://team.invalid/certs', opts).catch(() => undefined);
 if (calls !== 1) throw new Error('breaker did not latch: ' + calls + ' fetches');
+
+// ⛔ The ctx.access path must work with no token anywhere near it — that is the whole
+//   reason it exists, and an app team's suite fails if jose appears in this layer.
+const who = await accessIdentity({ access: { getIdentity: async () => ({ email: 'a@b.c', groups: ['eng'] }) } });
+if (who?.email !== 'a@b.c') throw new Error('accessIdentity did not read identity');
+if (who.groups[0] !== 'eng') throw new Error('groups missing');
+if (await accessIdentity({}) !== undefined) throw new Error('should be undefined without ctx.access');
+if (hasAccess({}) !== false) throw new Error('hasAccess wrong');
+
+// ⛔ RFC 9728: the 401 must NAME the metadata document, or discovery dead-ends.
+const mcp = { resource: 'https://mcp.example.com/mcp', authorizationServer: 'https://t.cloudflareaccess.com' };
+if (wellKnownPath(mcp.resource) !== '/.well-known/oauth-protected-resource/mcp') throw new Error('well-known path wrong');
+const served = serveMcpMetadata(new Request('https://mcp.example.com/.well-known/oauth-protected-resource/mcp'), mcp);
+if (served === undefined) throw new Error('metadata not served');
+const header = unauthorizedResponse(mcp).headers.get('www-authenticate') ?? '';
+if (!header.includes('resource_metadata=')) throw new Error('401 does not point at metadata');
 
 console.log('consumer ok', VERSION);
 `,
