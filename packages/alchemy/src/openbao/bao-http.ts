@@ -14,6 +14,7 @@
 import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
+import * as Schedule from 'effect/Schedule';
 import * as Semaphore from 'effect/Semaphore';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import * as Headers from 'effect/unstable/http/Headers';
@@ -65,6 +66,19 @@ export const BaoGate = Context.Reference<Semaphore.Semaphore>('homeflare/openbao
  *   that accepts and never answers would otherwise hang the plan with no line saying why.
  */
 const TIMEOUT = '60 seconds';
+
+/**
+ * Mesh in front of a remote OpenBao drops connections under Alchemy's unbounded
+ * fan-out. Status 0 is transport, not an OpenBao 4xx — retry twice. Measured
+ * 2026-09-16 against api.v.homeflare.dev: a 585-role plan died mid-diff with
+ * `no response: (no errors given)` while the vault stayed unsealed.
+ */
+const retryTransport = <A, R>(effect: Effect.Effect<A, BaoError, R>) =>
+  Effect.retry(effect, {
+    schedule: Schedule.spaced('750 millis'),
+    times: 2,
+    while: (error: BaoError) => error.status === 0,
+  });
 
 /**
  * ⛔ EFFECT RECORDS EVERY REQUEST HEADER ON THE CLIENT SPAN and redacts only the names in
@@ -142,10 +156,12 @@ export const baoCall = (
     // ★ THE PERMIT WRAPS THE TIMEOUT, NOT THE REVERSE: a call queued behind the gate is not yet
     //   talking to OpenBao, so its wait must not count against the 60 seconds.
     const gate = yield* BaoGate;
-    const { status, text } = yield* exchange.pipe(
-      overSocket(address.socket, method, path),
-      redactingToken,
-      Semaphore.withPermits(gate, 1),
+    const { status, text } = yield* retryTransport(
+      exchange.pipe(
+        overSocket(address.socket, method, path),
+        redactingToken,
+        Semaphore.withPermits(gate, 1),
+      ),
     );
     const outcome = settle(intent, method, path, status, text);
     return 'error' in outcome ? yield* Effect.fail(outcome.error) : outcome.body;
