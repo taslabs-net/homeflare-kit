@@ -1,6 +1,6 @@
 # Agent guidelines — homeflare-kit
 
-A bun workspace publishing five packages to npm. It is a **producer**: consuming
+A bun workspace publishing shared packages to npm. It is a **producer**: consuming
 applications install the published tarballs, so every decision here is judged by what a
 consumer receives, not by what is convenient in this tree.
 
@@ -27,6 +27,7 @@ them to fit a line limit — extract into a new file instead.
 | `@homeflare/cloudflare` | Access JWT, structured logging    | workerd globals, `@homeflare/kit` |
 | `@homeflare/ui`         | React components                  | Kumo, React                       |
 | `@homeflare/auth`       | Better Auth D1 storage            | drizzle-orm, official adapter     |
+| `@homeflare/typesafe`   | TypeSafe System One client        | `@typesafe-ai/sdk` (official)     |
 | `@homeflare/config`     | tsconfig / oxlint / oxfmt presets | — (no code)                       |
 
 ⚠️ **TWO KINDS OF AUTH, NOT INTERCHANGEABLE.** `@homeflare/cloudflare` verifies a
@@ -53,7 +54,7 @@ package manager they use. That one fact settles most questions here:
   code. Consumers run the published `dist/` on workerd, on Node, under pnpm — never under
   bun.
 - **Prefer a known SDK to hand-rolling.** `ky` for HTTP (zero deps), `jose` for JWT,
-  `zod` for validation, Kumo for UI. ⚠️ But weigh it: the logger here is ~50 lines and
+  `zod` for validation, Kumo for UI, `@typesafe-ai/sdk` for System One judgments. ⚠️ But weigh it: the logger here is ~50 lines and
   takes no dependency, because Workers Logs already parses `console.log` JSON natively —
   pino would add weight to reimplement what the platform does.
 - ⛔ **The published entrypoint stays runtime-neutral.** Nothing in `src/index.ts` may

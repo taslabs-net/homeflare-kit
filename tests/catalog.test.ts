@@ -28,7 +28,7 @@ const root = new URL('../', import.meta.url);
 const rootPkg = (await Bun.file(new URL('package.json', root)).json()) as Manifest;
 const catalog = rootPkg.catalog ?? {};
 
-const PACKAGES = ['kit', 'cloudflare', 'ui', 'auth', 'config'];
+const PACKAGES = ['kit', 'cloudflare', 'ui', 'auth', 'config', 'typesafe'];
 
 async function manifest(name: string): Promise<Manifest> {
   return (await Bun.file(new URL(`packages/${name}/package.json`, root)).json()) as Manifest;
@@ -97,7 +97,7 @@ describe('catalog', () => {
 
   test('devDependencies DO use the catalog', async () => {
     // They never ship, so the protocol is safe there — and that is where the
-    // single-version rule earns its keep across five packages.
+    // single-version rule earns its keep across the published packages.
     const rootDev = rootPkg.devDependencies ?? {};
     const used = Object.values(rootDev).filter((s) => s === 'catalog:');
 
