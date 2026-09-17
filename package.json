@@ -28,12 +28,14 @@
     "version": "changeset version && bun run scripts/sync-versions.ts",
     "release": "bun run build && bun run scripts/publish.ts",
     "summary": "bun run scripts/ci-summary.ts",
+    "github:apply-ruleset": "bun run scripts/apply-main-ruleset.ts",
     "prepare": "husky",
     "security:scan": "gitleaks dir --redact --no-banner ."
   },
   "devDependencies": {
     "@changesets/changelog-github": "catalog:",
     "@changesets/cli": "catalog:",
+    "@octokit/rest": "catalog:",
     "@types/bun": "catalog:",
     "alchemy": "catalog:",
     "effect": "catalog:",
@@ -57,6 +59,7 @@
     "typescript": "7.0.2",
     "oxlint": "1.83.0",
     "oxfmt": "0.68.0",
+    "@octokit/rest": "22.0.1",
     "@types/bun": "1.4.2",
     "husky": "9.1.7",
     "@changesets/cli": "3.0.3",
