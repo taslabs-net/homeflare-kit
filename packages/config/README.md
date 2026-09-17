@@ -104,6 +104,44 @@ if (problems.length > 0) throw new Error(problems.join('\n'));
 presets, that `.oxfmtrc.json` keeps house style plus at least the house ignores, and that
 `bunfig.toml` still matches.
 
+## App releases (no npm)
+
+A HomeFlare app that does **not** publish a tarball still versions itself with Changesets
+and cuts a GitHub Release. It does not call `npm publish`.
+
+```ts
+import { runAppRelease } from '@homeflare/config/release';
+
+await runAppRelease(process.cwd());
+```
+
+`shouldRelease` proceeds only when `CHANGELOG.md` has `## <version>` (proof
+`changeset version` ran) AND no git tag `<name>@<version>` exists yet. A custom
+`publish-script` on changesets/action otherwise tags every changeset-less push to `main`
+(measured 2026-09-16/17; changesets/action#9).
+
+```ts
+import { runRequireReleaseConfig } from '@homeflare/config/require-release-config';
+
+await runRequireReleaseConfig();
+```
+
+⛔ A private `package.json` without `privatePackages.version: true` makes
+`changeset version` silently no-op. The guard fails that combination before the version
+command consumes the changeset file.
+
+⛔ A leftover `pnpm-workspace.yaml` that lists only nested packages hides the root.
+Measured 2026-09-17 on `homeflare-secrets`: `changeset version` exited 1 ("package
+homeflare-secrets which is not in the workspace") and no Version Packages PR opened.
+The workspace file must include `.` if it exists at all.
+
+⛔ Both helpers take the **app** cwd / paths. Defaulting from `import.meta.url` after
+publish would inspect `@homeflare/config` itself.
+
+Alchemy still owns `GitHub.Repository` (visibility, `deleteBranchOnMerge`, `hasWiki`) and
+`Cloudflare.state()`. The kit `main` ruleset is `scripts/apply-main-ruleset.ts`, not an
+Alchemy resource — see `docs/github-hygiene.md`.
+
 ## License
 
 MIT © Timothy Schneider
