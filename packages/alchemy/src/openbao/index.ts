@@ -9,7 +9,16 @@
  *   deliberate, visible act rather than an accident of barrelling.
  */
 export { BaoAuthRole, BaoAuthRoleProvider } from './auth-role.ts';
-export { BaoCloudflareRoleProvider } from './cloudflare-role.ts';
+export { BaoCloudflareRole, BaoCloudflareRoleProvider } from './cloudflare-role.ts';
+export {
+  CloudflarePermissionGroups,
+  permissionGroupsFromEngine,
+  permissionGroupsFromLiveRoles,
+} from './cloudflare-permission-groups.ts';
+export type { CloudflareZone, ExpandedRole } from './cloudflare-roles-expand.ts';
+export { expandAccount, expandAll, mountName } from './cloudflare-roles-expand.ts';
+export type { RolesConfig, SurfaceSpec } from './cloudflare-roles-config.ts';
+export { parseRolesConfig } from './cloudflare-roles-config.ts';
 export { BaoMount, BaoMountProvider } from './mount.ts';
 export { BaoPkiRoleProvider } from './pki-role.ts';
 export { BaoPolicy, BaoPolicyProvider } from './policy.ts';
