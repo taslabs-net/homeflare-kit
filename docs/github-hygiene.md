@@ -25,6 +25,15 @@ force-pushing over history — without requiring a second person on a one-mainta
 Raise it once a repo has more than one regular reviewer; the ruleset does not enforce
 that for you.
 
+⚠️ **Zero numeric approvals alone is insufficient.** Measured 2026-09-17: GitHub
+left `require_extra_approval_for_unattributed_changes: true` on both created and
+updated rulesets when the field was omitted. Explicit `false` was accepted and
+independently read back on all five estate rollout repos. The public REST/GraphQL
+schemas still omit it, so the helper carries a narrow, documented extension and
+verifies both approval values with a separate GET after every write. Missing or
+unexpected values fail loudly; the write may already have applied, so inspect
+the live rule before retrying.
+
 `ci` is the [aggregate check](../.github/workflows/ci.yml) every job funnels into, and
 `secret scan` is [`security.yml`](../.github/workflows/security.yml)'s gitleaks job — see
 [docs/releasing.md](./releasing.md) for why both are required and how the release bot's
@@ -113,6 +122,7 @@ reason `alchemy.run.ts` is deployed by a human running `--stage live`, not by CI
 `scripts/apply-main-ruleset.ts` (CLI, upsert decision), `scripts/github-ruleset.ts` (the
 ruleset shape and update logic), and `scripts/github-ruleset-gateway.ts` (the
 `@octokit/rest` adapter) upsert the shape above onto one named `taslabs-net` repository.
+`scripts/github-ruleset-approval.ts` checks the independently read approval policy.
 `@octokit/rest` is already a transitive dependency of `alchemy` here; this is GitHub's
 own SDK, not a hand-rolled `fetch`.
 
@@ -139,13 +149,12 @@ or `tests/github-ruleset{,-gateway}.test.ts`:
   GitHub first.
 - ★ **Upsert, not clobber.** It lists existing rulesets, and only creates one when none
   named `main` targets `branch` — re-running it converges rather than duplicating.
-- ★ **Every payload field is typed FROM `@octokit/rest`'s own resolved method
-  signatures**, never hand-typed and never cast at the call site. A field the installed
-  schema does not accept on write — like `require_extra_approval_for_unattributed_changes`,
-  which GitHub returns on read but does not document for create/update — fails to
-  compile if this script tries to send it, rather than being silently dropped or
-  rejected at request time. See the derivation comment at the top of
-  `scripts/github-ruleset.ts`.
+- ★ **Documented payload fields are typed FROM `@octokit/rest`'s own resolved method
+  signatures**, never from a separately resolved OpenAPI package or a request cast.
+  The only extension is the measured extra-approval flag, typed as literal `false`.
+  Independent readback prevents a successful request from masquerading as the intended
+  solo policy if GitHub stops accepting or returning it. See the derivation comment
+  at the top of `scripts/github-ruleset.ts` and the gateway regression tests.
 
 ## What this does not cover
 

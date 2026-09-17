@@ -37,6 +37,7 @@ describe('buildOwnedRules / buildRules', () => {
           dismiss_stale_reviews_on_push: true,
           require_code_owner_review: false,
           require_last_push_approval: false,
+          require_extra_approval_for_unattributed_changes: false,
           required_review_thread_resolution: false,
           allowed_merge_methods: ['squash', 'merge', 'rebase'],
         },
@@ -44,22 +45,21 @@ describe('buildOwnedRules / buildRules', () => {
     ]);
   });
 
-  // ⛔ Finding: the installed OpenAPI schema does not accept `required_reviewers` or
-  //   `require_extra_approval_for_unattributed_changes` on write, even though a live GET
-  //   response includes both. Sending them would be silently ignored at best; asserting
-  //   their absence here is what stops them from creeping back in as "helpful" fields.
-  test('pull_request parameters never include fields the write schema does not accept', () => {
+  // ⚠️ The public schema omits the extra-approval flag, but live writes accept false.
+  //   Keep that measured extension explicit without adding unrelated read-only fields.
+  test('pull_request parameters include only SDK fields and the measured solo-approval extension', () => {
     const pr = buildOwnedRules().find((r) => r.type === 'pull_request');
     const keys = pr?.type === 'pull_request' ? Object.keys(pr.parameters) : [];
 
     expect(keys).not.toContain('required_reviewers');
-    expect(keys).not.toContain('require_extra_approval_for_unattributed_changes');
+    expect(pr?.parameters.require_extra_approval_for_unattributed_changes).toBe(false);
     expect(keys.sort()).toEqual(
       [
         'allowed_merge_methods',
         'dismiss_stale_reviews_on_push',
         'require_code_owner_review',
         'require_last_push_approval',
+        'require_extra_approval_for_unattributed_changes',
         'required_approving_review_count',
         'required_review_thread_resolution',
       ].sort(),

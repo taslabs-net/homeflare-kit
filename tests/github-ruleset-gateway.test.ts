@@ -32,6 +32,7 @@ function fakeOctokit(options: {
 }) {
   const calls = {
     paginateParams: [] as unknown[],
+    get: [] as unknown[],
     create: [] as unknown[],
     update: [] as unknown[],
   };
@@ -40,7 +41,7 @@ function fakeOctokit(options: {
     id,
     name: 'main',
     bypass_actors: [],
-    rules: [],
+    rules: buildOwnedRules(),
     _links: { html: { href: `https://github.com/taslabs-net/x/rules/${String(id)}` } },
   });
 
@@ -52,14 +53,19 @@ function fakeOctokit(options: {
     rest: {
       repos: {
         getRepoRulesets: async () => ({ data: options.rulesets ?? [] }),
-        getRepoRuleset: async () => ({ data: options.getResponse }),
+        getRepoRuleset: async (params) => {
+          calls.get.push(params);
+          return {
+            data: options.getResponse ?? responseFor((params as { ruleset_id: number }).ruleset_id),
+          };
+        },
         createRepoRuleset: async (params) => {
           calls.create.push(params);
           return { data: responseFor(999) };
         },
         updateRepoRuleset: async (params) => {
           calls.update.push(params);
-          return { data: responseFor(7) };
+          return { data: responseFor((params as { ruleset_id: number }).ruleset_id) };
         },
       },
     },
@@ -98,6 +104,7 @@ describe('octokitGateway', () => {
     expect(sent['name']).toBe('main');
     expect(sent['bypass_actors']).toEqual([]);
     expect(sent['rules']).toEqual(buildOwnedRules());
+    expect(calls.get).toEqual([{ owner: 'taslabs-net', repo: 'homeflare-kit', ruleset_id: 999 }]);
   });
 
   test('update() sends the ruleset_id and the payload, and no live write happens without it', async () => {
@@ -110,7 +117,41 @@ describe('octokitGateway', () => {
     const sent = calls.update[0] as Record<string, unknown>;
     expect(sent['ruleset_id']).toBe(42);
     expect(sent['rules']).toEqual(buildOwnedRules());
+    expect(calls.get).toEqual([{ owner: 'taslabs-net', repo: 'homeflare-kit', ruleset_id: 42 }]);
   });
+
+  // ⛔ A success response from CREATE/UPDATE must not hide a retained/defaulted
+  // approval gate. Exercise both writes through a separate contradictory GET.
+  for (const operation of ['create', 'update'] as const) {
+    for (const extraApproval of [true, undefined]) {
+      test(`${operation} rejects persisted extra approval ${String(extraApproval)}`, async () => {
+        const { octokit, calls } = fakeOctokit({
+          getResponse: {
+            id: 7,
+            name: 'main',
+            rules: [
+              {
+                type: 'pull_request',
+                parameters: {
+                  required_approving_review_count: 0,
+                  require_extra_approval_for_unattributed_changes: extraApproval,
+                },
+              },
+            ],
+          },
+        });
+        const gateway = octokitGateway(octokit);
+        const payload = buildPayload(buildOwnedRules(), []);
+        const result =
+          operation === 'create'
+            ? gateway.create('homeflare-kit', payload)
+            : gateway.update('homeflare-kit', 7, payload);
+        await expect(result).rejects.toThrow('write may already have applied');
+        expect(calls[operation]).toHaveLength(1);
+        expect(calls.get).toHaveLength(1);
+      });
+    }
+  }
 
   test('get() finds the live required_status_checks rule and REPORTS (not silently drops) rule types it does not own', async () => {
     const { octokit } = fakeOctokit({

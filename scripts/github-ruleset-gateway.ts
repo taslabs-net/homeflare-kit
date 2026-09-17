@@ -3,6 +3,7 @@
  * (the rule shapes and update logic) to stay under the 250-line file cap — see AGENTS.md.
  */
 import type { Octokit } from '@octokit/rest';
+import { assertSoloApprovals } from './github-ruleset-approval.ts';
 import {
   OWNER,
   type RulesetDetail,
@@ -28,6 +29,13 @@ export interface RulesetGateway {
 }
 
 export function octokitGateway(octokit: Octokit): RulesetGateway {
+  // ⛔ Read independently of the write response: report success only after GitHub
+  // confirms the persisted policy, including the schema's missing approval flag.
+  const verified = async (repo: string, ruleset_id: number): Promise<RulesetDetail> => {
+    const { data } = await octokit.rest.repos.getRepoRuleset({ owner: OWNER, repo, ruleset_id });
+    assertSoloApprovals(data.rules);
+    return toDetail(data);
+  };
   return {
     // ⛔ MUST PAGINATE. Unpaginated `getRepoRulesets` returns only the first page
     //   (default 30) — a duplicate "main" ruleset sitting on page 2 would be invisible to
@@ -51,7 +59,7 @@ export function octokitGateway(octokit: Octokit): RulesetGateway {
         repo,
         ...payload,
       });
-      return toDetail(data);
+      return await verified(repo, data.id);
     },
     update: async (repo, ruleset_id, payload) => {
       const { data } = await octokit.rest.repos.updateRepoRuleset({
@@ -60,7 +68,7 @@ export function octokitGateway(octokit: Octokit): RulesetGateway {
         ruleset_id,
         ...payload,
       });
-      return toDetail(data);
+      return await verified(repo, data.id);
     },
   };
 }

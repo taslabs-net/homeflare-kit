@@ -6,13 +6,13 @@
  *   `deletion` + `non_fast_forward` + a solo-approval `pull_request` rule with stale
  *   reviews dismissed on push, `bypass_actors: []`. See docs/github-hygiene.md.
  *
- * ⛔ EVERY TYPE BELOW IS DERIVED FROM `Octokit`'s OWN resolved method signatures
- *   (`typeof _octokit.rest.repos.X`), never hand-typed and never a separate
+ * ⛔ SDK TYPES BELOW ARE DERIVED FROM `Octokit`'s OWN resolved method signatures
+ *   (`typeof _octokit.rest.repos.X`), never a separate
  *   `@octokit/openapi-types` import. Measured 2026-09-16: this tree pins TWO versions of
  *   that package transitively (27.0.0 and 29.0.1), so importing it directly can silently
  *   reconcile against a DIFFERENT schema than the one `octokit.rest.repos.X` actually
  *   uses at runtime — worse than no reconciliation at all. Deriving from the live method
- *   itself is the only way the types can never drift from what `@octokit/rest` sends.
+ *   itself keeps the documented fields aligned with the installed SDK.
  * ⛔ `Pick`-by-NAME, never `Omit`, for `RulesetPayload`. Octokit's params type is
  *   `RequestParameters & {...}`, and `RequestParameters` carries a `[k: string]: unknown`
  *   index signature — intersected in, that collapses `keyof` to plain `string`, so
@@ -20,11 +20,11 @@
  *   Measured 2026-09-16: `bun run types` passed on that version and the resulting
  *   "typed" payload had NO required fields at all. `Pick`-by-name sidesteps `keyof`
  *   entirely and keeps `name`/`enforcement` genuinely required.
- * ★ The payoff: `octokit.rest.repos.createRepoRuleset({ owner, repo, ...payload })`
- *   below type-checks with NO cast — a field this script does not model (like
- *   `require_extra_approval_for_unattributed_changes`, which the installed schema does
- *   not accept on write despite GitHub returning it on read) fails to COMPILE rather
- *   than being silently sent.
+ * ⚠️ ONE MEASURED EXTENSION: `require_extra_approval_for_unattributed_changes` is
+ *   absent from the public schema, but GitHub accepts it. On 2026-09-17, omission
+ *   left it true on both created and updated rulesets despite zero numeric approvals.
+ *   Explicit false plus a separate GET corrected all five rollout repos. Model only
+ *   that false value; the gateway verifies persisted approvals after every write.
  */
 import type { Octokit } from '@octokit/rest';
 
@@ -39,11 +39,17 @@ type RuleOfType<T extends AnyRule['type']> = Extract<AnyRule, { type: T }>;
 type RequireParameters<T> = T extends { parameters?: infer P }
   ? Omit<T, 'parameters'> & { readonly parameters: NonNullable<P> }
   : T;
+type SdkPullRequestRule = RequireParameters<RuleOfType<'pull_request'>>;
+type SoloPullRequestRule = SdkPullRequestRule & {
+  readonly parameters: SdkPullRequestRule['parameters'] & {
+    readonly require_extra_approval_for_unattributed_changes: false;
+  };
+};
 
 export type RulesetRule =
   | RequireParameters<RuleOfType<'deletion'>>
   | RequireParameters<RuleOfType<'non_fast_forward'>>
-  | RequireParameters<RuleOfType<'pull_request'>>
+  | SoloPullRequestRule
   | RequireParameters<RuleOfType<'required_status_checks'>>;
 
 export type PullRequestRuleParameters = Extract<
@@ -106,6 +112,7 @@ export function buildOwnedRules(): readonly RulesetRule[] {
         dismiss_stale_reviews_on_push: true,
         require_code_owner_review: false,
         require_last_push_approval: false,
+        require_extra_approval_for_unattributed_changes: false,
         required_review_thread_resolution: false,
         allowed_merge_methods: ['squash', 'merge', 'rebase'],
       },
