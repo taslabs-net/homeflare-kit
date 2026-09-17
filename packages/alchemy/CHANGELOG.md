@@ -1,5 +1,17 @@
 # @homeflare/alchemy
 
+## 0.2.2
+
+### Patch Changes
+
+- [#46](https://github.com/taslabs-net/homeflare-kit/pull/46) [`9bc37f8`](https://github.com/taslabs-net/homeflare-kit/commit/9bc37f8bd7b9af1fd5c62cc4bc48597251ef61ab) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `BaoMount` and `BaoAuthRole` from `@homeflare/alchemy/openbao`.
+
+  The docs already showed `import { BaoMount } from '@homeflare/alchemy/openbao'`, but the barrel only shipped the providers. Stacks constructing those resources had to import from internals.
+
+- [#48](https://github.com/taslabs-net/homeflare-kit/pull/48) [`4967118`](https://github.com/taslabs-net/homeflare-kit/commit/4967118cc887faba34b17cd48588102736be49bb) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `BaoCloudflareRole` and the Cloudflare role catalog helpers from `@homeflare/alchemy/openbao`, and retry dropped OpenBao transports.
+
+  Stacks declaring mint roles need the resource constructor plus `parseRolesConfig` / `expandAll` / `permissionGroupsFromEngine`. The barrel previously shipped only `BaoCloudflareRoleProvider`. A 585-role plan against a Mesh-fronted vault died mid-diff with an empty transport error; status-0 calls now retry twice.
+
 ## 0.2.1
 
 ### Patch Changes
