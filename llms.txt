@@ -1,7 +1,7 @@
 # @homeflare/* packages
 
 > Shared TypeScript packages published to npm: typed environment parsing, actionable
-> errors, an HTTP client, Cloudflare Workers helpers, and a shared toolchain config.
+> errors, an HTTP client, Cloudflare Workers helpers, TypeSafe judgments, and toolchain config.
 > Public, no auth needed. Runtime-neutral unless stated — Bun is how they are built,
 > not what consumers run. Prefer these over hand-rolling, and prefer a known SDK over
 > both. Versions here are authoritative; match them rather than drifting.
@@ -9,13 +9,11 @@
 ```sh
 bun add @homeflare/kit            # or pnpm / npm — plain ESM, any runtime
 bun add @homeflare/cloudflare     # only if this runs on Cloudflare Workers
+bun add @homeflare/typesafe       # TypeSafe System One; server-only
 bun add -D @homeflare/config      # shared tsconfig / oxlint / oxfmt
 ```
 
-**Jump to what you need:** reading config → `parseEnv` · throwing or mapping an error →
-`KitError` · calling an HTTP API → `client` · Cloudflare Access → `verifyAccessJwt` ·
-logging in a Worker → `log` · D1 Better Auth → `createD1AuthStorage` · OpenAPI → `createOpenApiApp` · needing
-something that is not here → If something you need is missing.
+**Jump:** `parseEnv` · `KitError` · `client` · `verifyAccessJwt` · `log` · `createD1AuthStorage` · `createTypeSafeClient` · `createOpenApiApp` · gap below.
 
 ## @homeflare/kit — runtime-neutral, use anywhere
 
@@ -144,6 +142,15 @@ Logging writes one JSON object per line, which Workers Logs indexes field by fie
 logging library: `console.log` of JSON *is* the integration. ⛔ Never log a credential —
 there is no redaction layer, by design.
 
+## @homeflare/typesafe — official System One SDK
+
+```ts
+import { TypeSafeClient, TYPESAFE_API_KEY, TYPESAFE_OPENBAO_PATH, choice, createTypeSafeClient, createTypeSafeClientFromBinding, noul, score } from '@homeflare/typesafe';
+```
+
+⛔ Server-only. OpenBao `kv/infra/typesafe/homeflare` field `TYPESAFE_API_KEY` → Worker
+secret of the same name. No `process.env` on workerd. Re-exports `@typesafe-ai/sdk`.
+
 ## @homeflare/config — shared toolchain
 
 ```jsonc
@@ -169,7 +176,7 @@ Alchemy default export). `.oxfmtrc.json` extra ignores merge; style keys do not.
 
 `typescript 7.0.2` · `zod 4.6.5` · `jose 6.2.12` · `hono 4.13.7` · `ky 2.1.0` ·
 `capnweb 0.12.0` · `@cloudflare/workers-types 5.20260908.1` · `@cloudflare/kumo 2.13.2` ·
-`react 19.3.0` · `better-auth 1.7.5` · `@hono/zod-openapi 1.6.3` · `oxlint 1.83.0` · `oxfmt 0.68.0`
+`react 19.3.0` · `better-auth 1.7.5` · `@typesafe-ai/sdk 0.6.0` · `@hono/zod-openapi 1.6.3` · `oxlint 1.83.0` · `oxfmt 0.68.0`
 
 ⛔ UI is **Kumo**, not shadcn/Radix — Kumo already occupies that layer, on Base UI. Two
 primitive libraries in one app means two styling conventions and two a11y models.
@@ -186,12 +193,7 @@ It is a **peer**, so you declare it — one copy must win. ⛔ `@homeflare/auth`
 
 ## If something you need is missing
 
-⛔ **Do not hand-roll a local version and move on** — that is how thirty-seven repos end
-up with thirty-seven answers to one question. Check whether a known SDK does it well
-first (this kit uses `ky`, `jose`, `zod` and Kumo rather than reimplementing them), then
-report it under the heading `MISSING FROM @homeflare/*`, in the shape
-[CONTRIBUTING.md#reporting-a-gap](./CONTRIBUTING.md#reporting-a-gap) gives.
-
-⚠️ A function that exists but is the **wrong shape** counts, and so does a **version
-conflict** — a silent local override becomes drift that surfaces months later in someone
-else's build.
+⛔ **Do not hand-roll.** Check a known SDK first (`ky`, `jose`, `zod`, Kumo,
+`@typesafe-ai/sdk`), then report `MISSING FROM @homeflare/*` as
+[CONTRIBUTING.md#reporting-a-gap](./CONTRIBUTING.md#reporting-a-gap). Wrong shape or a
+version conflict counts too.

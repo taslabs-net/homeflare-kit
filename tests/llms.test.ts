@@ -21,10 +21,12 @@ describe('llms.txt', () => {
     const kit = await import('../packages/kit/src/index.ts');
     const cf = await import('../packages/cloudflare/src/index.ts');
     const auth = await import('../packages/auth/src/index.ts');
+    const typesafe = await import('../packages/typesafe/src/index.ts');
 
     for (const name of Object.keys(kit)) expect(doc).toContain(name);
     for (const name of Object.keys(cf)) expect(doc).toContain(name);
     for (const name of Object.keys(auth)) expect(doc).toContain(name);
+    for (const name of Object.keys(typesafe)) expect(doc).toContain(name);
   });
 
   test('the versions it quotes match the catalog', async () => {

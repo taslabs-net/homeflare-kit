@@ -19,7 +19,7 @@
     },
     "packages/alchemy": {
       "name": "@homeflare/alchemy",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "devDependencies": {
         "@effect/platform-bun": "4.0.0-rc.112",
         "@effect/platform-node": "4.0.0-rc.112",
@@ -85,6 +85,13 @@
         "zod",
       ],
     },
+    "packages/typesafe": {
+      "name": "@homeflare/typesafe",
+      "version": "0.0.0",
+      "dependencies": {
+        "@typesafe-ai/sdk": "0.6.0",
+      },
+    },
     "packages/ui": {
       "name": "@homeflare/ui",
       "version": "0.3.0",
@@ -120,6 +127,7 @@
     "@tanstack/react-router": "1.170.35",
     "@tanstack/react-start": "1.168.52",
     "@types/bun": "1.4.2",
+    "@typesafe-ai/sdk": "0.6.0",
     "alchemy": "2.0.0-beta.77",
     "better-auth": "1.7.5",
     "capnweb": "0.12.0",
@@ -329,6 +337,8 @@
     "@homeflare/config": ["@homeflare/config@workspace:packages/config"],
 
     "@homeflare/kit": ["@homeflare/kit@workspace:packages/kit"],
+
+    "@homeflare/typesafe": ["@homeflare/typesafe@workspace:packages/typesafe"],
 
     "@homeflare/ui": ["@homeflare/ui@workspace:packages/ui"],
 
@@ -687,6 +697,8 @@
     "@types/unist": ["@types/unist@3.0.3", "", {}, "sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q=="],
 
     "@types/ws": ["@types/ws@8.18.1", "", { "dependencies": { "@types/node": "*" } }, "sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg=="],
+
+    "@typesafe-ai/sdk": ["@typesafe-ai/sdk@0.6.0", "", {}, "sha512-IddX+Q0XM+VagOUZFeP7wZjaO4SHMdvnh2zEBdrZZnXedWI3BNK1lKhMx3ayrkFWvVLbVcUHJy6AVZlY+e6Jaw=="],
 
     "@typescript/typescript-aix-ppc64": ["@typescript/typescript-aix-ppc64@7.0.2", "", { "os": "aix", "cpu": "ppc64" }, "sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ=="],
 
