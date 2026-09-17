@@ -6,69 +6,72 @@
  *   `deletion` + `non_fast_forward` + a solo-approval `pull_request` rule with stale
  *   reviews dismissed on push, `bypass_actors: []`. See docs/github-hygiene.md.
  *
- * ⛔ Split from scripts/apply-main-ruleset.ts so that file stays under the 250-line cap —
- *   this one owns the GitHub-shaped types and the SDK call, that one owns the upsert
- *   decision and the CLI.
+ * ⛔ EVERY TYPE BELOW IS DERIVED FROM `Octokit`'s OWN resolved method signatures
+ *   (`typeof _octokit.rest.repos.X`), never hand-typed and never a separate
+ *   `@octokit/openapi-types` import. Measured 2026-09-16: this tree pins TWO versions of
+ *   that package transitively (27.0.0 and 29.0.1), so importing it directly can silently
+ *   reconcile against a DIFFERENT schema than the one `octokit.rest.repos.X` actually
+ *   uses at runtime — worse than no reconciliation at all. Deriving from the live method
+ *   itself is the only way the types can never drift from what `@octokit/rest` sends.
+ * ⛔ `Pick`-by-NAME, never `Omit`, for `RulesetPayload`. Octokit's params type is
+ *   `RequestParameters & {...}`, and `RequestParameters` carries a `[k: string]: unknown`
+ *   index signature — intersected in, that collapses `keyof` to plain `string`, so
+ *   `Omit<T, 'owner' | 'repo'>` silently degrades to a type `{}` is assignable to.
+ *   Measured 2026-09-16: `bun run types` passed on that version and the resulting
+ *   "typed" payload had NO required fields at all. `Pick`-by-name sidesteps `keyof`
+ *   entirely and keeps `name`/`enforcement` genuinely required.
+ * ★ The payoff: `octokit.rest.repos.createRepoRuleset({ owner, repo, ...payload })`
+ *   below type-checks with NO cast — a field this script does not model (like
+ *   `require_extra_approval_for_unattributed_changes`, which the installed schema does
+ *   not accept on write despite GitHub returning it on read) fails to COMPILE rather
+ *   than being silently sent.
  */
 import type { Octokit } from '@octokit/rest';
 
 export const OWNER = 'taslabs-net';
 export const RULESET_NAME = 'main';
 
-export interface PullRequestRuleParameters {
-  readonly required_approving_review_count: number;
-  readonly dismiss_stale_reviews_on_push: boolean;
-  readonly required_reviewers: readonly unknown[];
-  readonly require_code_owner_review: boolean;
-  readonly require_last_push_approval: boolean;
-  readonly required_review_thread_resolution: boolean;
-  readonly require_extra_approval_for_unattributed_changes: boolean;
-  readonly allowed_merge_methods: readonly ('merge' | 'squash' | 'rebase')[];
-}
-
-export interface RequiredStatusChecksParameters {
-  readonly strict_required_status_checks_policy: boolean;
-  readonly do_not_enforce_on_create: boolean;
-  readonly required_status_checks: readonly { readonly context: string }[];
-}
+declare const _octokit: Octokit;
+type CreateParams = NonNullable<Parameters<typeof _octokit.rest.repos.createRepoRuleset>[0]>;
+type AnyRule = NonNullable<CreateParams['rules']>[number];
+type RuleOfType<T extends AnyRule['type']> = Extract<AnyRule, { type: T }>;
+/** Every rule this script builds always sends `parameters`, even where the schema allows omitting it. */
+type RequireParameters<T> = T extends { parameters?: infer P }
+  ? Omit<T, 'parameters'> & { readonly parameters: NonNullable<P> }
+  : T;
 
 export type RulesetRule =
-  | { readonly type: 'deletion' }
-  | { readonly type: 'non_fast_forward' }
-  | { readonly type: 'pull_request'; readonly parameters: PullRequestRuleParameters }
-  | {
-      readonly type: 'required_status_checks';
-      readonly parameters: RequiredStatusChecksParameters;
-    };
+  | RequireParameters<RuleOfType<'deletion'>>
+  | RequireParameters<RuleOfType<'non_fast_forward'>>
+  | RequireParameters<RuleOfType<'pull_request'>>
+  | RequireParameters<RuleOfType<'required_status_checks'>>;
 
-export interface BypassActor {
-  readonly actor_id?: number | null | undefined;
-  readonly actor_type: string;
-  readonly bypass_mode?: string | undefined;
-}
+export type PullRequestRuleParameters = Extract<
+  RulesetRule,
+  { type: 'pull_request' }
+>['parameters'];
+export type RequiredStatusChecksParameters = Extract<
+  RulesetRule,
+  { type: 'required_status_checks' }
+>['parameters'];
 
-export interface RulesetPayload {
-  readonly name: string;
-  readonly target: 'branch';
-  readonly enforcement: 'active';
-  readonly bypass_actors: readonly BypassActor[];
-  readonly conditions: {
-    readonly ref_name: { readonly include: readonly string[]; readonly exclude: readonly string[] };
-  };
-  readonly rules: readonly RulesetRule[];
-}
+export type BypassActor = NonNullable<CreateParams['bypass_actors']>[number];
+export type RulesetPayload = Pick<
+  CreateParams,
+  'name' | 'target' | 'enforcement' | 'bypass_actors' | 'conditions' | 'rules'
+>;
 
-export interface RulesetSummary {
-  readonly id: number;
-  readonly name: string;
-  readonly target?: string | undefined;
-}
+type ListItem = Awaited<ReturnType<typeof _octokit.rest.repos.getRepoRulesets>>['data'][number];
+export type RulesetSummary = Pick<ListItem, 'id' | 'name' | 'target'>;
 
+type GetData = Awaited<ReturnType<typeof _octokit.rest.repos.getRepoRuleset>>['data'];
 export interface RulesetDetail {
   readonly id: number;
   readonly name: string;
-  readonly bypassActors?: readonly BypassActor[] | undefined;
-  readonly htmlUrl?: string | undefined;
+  readonly bypassActors: readonly BypassActor[];
+  /** The LIVE `required_status_checks` rule, if this ruleset has one — `undefined` means none. */
+  readonly requiredStatusChecksRule: RulesetRule | undefined;
+  readonly htmlUrl: string | undefined;
 }
 
 /** One rule per `type`, kept exhaustive so a new `RulesetRule` variant fails to compile here. */
@@ -89,9 +92,9 @@ export function describeRule(rule: RulesetRule): string {
   }
 }
 
-/** `undefined` means OFF — no `required_status_checks` rule at all, ever, by default. */
-export function buildRules(requiredChecks: readonly string[] | undefined): readonly RulesetRule[] {
-  const rules: RulesetRule[] = [
+/** The 3 rules this script always converges to the gold standard — create, update, every time. */
+export function buildOwnedRules(): readonly RulesetRule[] {
+  return [
     { type: 'deletion' },
     { type: 'non_fast_forward' },
     {
@@ -99,41 +102,84 @@ export function buildRules(requiredChecks: readonly string[] | undefined): reado
       parameters: {
         required_approving_review_count: 0,
         dismiss_stale_reviews_on_push: true,
-        required_reviewers: [],
         require_code_owner_review: false,
         require_last_push_approval: false,
         required_review_thread_resolution: false,
-        require_extra_approval_for_unattributed_changes: false,
         allowed_merge_methods: ['squash', 'merge', 'rebase'],
       },
     },
   ];
+}
 
-  if (requiredChecks !== undefined) {
-    rules.push({
-      type: 'required_status_checks',
-      parameters: {
-        strict_required_status_checks_policy: false,
-        do_not_enforce_on_create: false,
-        required_status_checks: requiredChecks.map((context) => ({ context })),
-      },
-    });
-  }
+export function buildRequiredStatusChecksRule(requiredChecks: readonly string[]): RulesetRule {
+  return {
+    type: 'required_status_checks',
+    parameters: {
+      strict_required_status_checks_policy: false,
+      do_not_enforce_on_create: false,
+      required_status_checks: requiredChecks.map((context) => ({ context })),
+    },
+  };
+}
 
-  return rules;
+/** CREATE path only. A brand-new ruleset has no existing state, so `undefined` truly means OFF. */
+export function buildRules(requiredChecks: readonly string[] | undefined): readonly RulesetRule[] {
+  const owned = buildOwnedRules();
+  return requiredChecks === undefined
+    ? owned
+    : [...owned, buildRequiredStatusChecksRule(requiredChecks)];
+}
+
+/**
+ * UPDATE path only. ⛔ Omitting `--require-checks` must PRESERVE whatever
+ * `required_status_checks` rule is live right now, exactly — not rebuild it, not drop
+ * it. A plain rerun of this script must never be the thing that silently turns required
+ * checks off on a repo that already has them. `requiredChecks` explicit always replaces.
+ */
+export function resolveRulesForUpdate(
+  requiredChecks: readonly string[] | undefined,
+  currentRequiredStatusChecksRule: RulesetRule | undefined,
+): readonly RulesetRule[] {
+  const owned = buildOwnedRules();
+  if (requiredChecks !== undefined)
+    return [...owned, buildRequiredStatusChecksRule(requiredChecks)];
+  return currentRequiredStatusChecksRule === undefined
+    ? owned
+    : [...owned, currentRequiredStatusChecksRule];
 }
 
 export function buildPayload(
-  requiredChecks: readonly string[] | undefined,
+  rules: readonly RulesetRule[],
   bypassActors: readonly BypassActor[],
 ): RulesetPayload {
   return {
     name: RULESET_NAME,
     target: 'branch',
     enforcement: 'active',
-    bypass_actors: bypassActors,
+    bypass_actors: [...bypassActors],
     conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
-    rules: buildRules(requiredChecks),
+    rules: [...rules],
+  };
+}
+
+function currentRequiredStatusChecksRule(
+  rules: readonly AnyRule[] | undefined,
+): RulesetRule | undefined {
+  const found = (rules ?? []).find((r) => r.type === 'required_status_checks');
+  // A rule with no `parameters` cannot be preserved exactly, so treat it as absent —
+  // the same "no rule" state a repo with none at all is in.
+  return found?.parameters === undefined
+    ? undefined
+    : { type: 'required_status_checks', parameters: found.parameters };
+}
+
+function toDetail(data: GetData): RulesetDetail {
+  return {
+    id: data.id,
+    name: data.name,
+    bypassActors: data.bypass_actors ?? [],
+    requiredStatusChecksRule: currentRequiredStatusChecksRule(data.rules),
+    htmlUrl: data._links?.html?.href,
   };
 }
 
@@ -153,26 +199,20 @@ export interface RulesetGateway {
   ) => Promise<RulesetDetail>;
 }
 
-function toDetail(data: {
-  readonly id: number;
-  readonly name: string;
-  readonly bypass_actors?: readonly BypassActor[] | null;
-  readonly _links?: { readonly html?: { readonly href?: string } | null } | null;
-}): RulesetDetail {
-  return {
-    id: data.id,
-    name: data.name,
-    bypassActors: data.bypass_actors ?? undefined,
-    htmlUrl: data._links?.html?.href,
-  };
-}
-
 export function octokitGateway(octokit: Octokit): RulesetGateway {
   return {
-    list: async (repo) => {
-      const { data } = await octokit.rest.repos.getRepoRulesets({ owner: OWNER, repo });
-      return data;
-    },
+    // ⛔ MUST PAGINATE. Unpaginated `getRepoRulesets` returns only the first page
+    //   (default 30) — a duplicate "main" ruleset sitting on page 2 would be invisible to
+    //   the caller, which is exactly the gap that let a plain `.find()` silently pick
+    //   ONE ruleset instead of proving there was only one. `per_page: 100` keeps a repo
+    //   with a sane number of rulesets to a single request; `octokit.paginate` walks
+    //   every page regardless.
+    list: async (repo) =>
+      await octokit.paginate(octokit.rest.repos.getRepoRulesets, {
+        owner: OWNER,
+        repo,
+        per_page: 100,
+      }),
     get: async (repo, ruleset_id) => {
       const { data } = await octokit.rest.repos.getRepoRuleset({ owner: OWNER, repo, ruleset_id });
       return toDetail(data);
@@ -182,7 +222,7 @@ export function octokitGateway(octokit: Octokit): RulesetGateway {
         owner: OWNER,
         repo,
         ...payload,
-      } as Parameters<typeof octokit.rest.repos.createRepoRuleset>[0]);
+      });
       return toDetail(data);
     },
     update: async (repo, ruleset_id, payload) => {
@@ -191,7 +231,7 @@ export function octokitGateway(octokit: Octokit): RulesetGateway {
         repo,
         ruleset_id,
         ...payload,
-      } as Parameters<typeof octokit.rest.repos.updateRepoRuleset>[0]);
+      });
       return toDetail(data);
     },
   };

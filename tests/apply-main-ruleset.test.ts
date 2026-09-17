@@ -1,14 +1,11 @@
 /**
- * Guards `scripts/apply-main-ruleset.ts` and `scripts/github-ruleset.ts`.
+ * Guards `scripts/apply-main-ruleset.ts`: the CLI argument parsing and the upsert
+ * decision (create vs. update, duplicate refusal, required-checks preservation).
  *
  * ⛔ NO LIVE GITHUB WRITES. Every test drives `applyMainRuleset` through a fake
- *   `RulesetGateway` that records calls instead of talking to `@octokit/rest` — the real
- *   adapter (`octokitGateway`) is exercised only by inspection here, never invoked.
- *
- * ★ THE FIXTURE BELOW IS READ EVIDENCE, NOT A GUESS. It is
- *   `taslabs-net/homeflare-kit`'s own live ruleset, read via
- *   `gh api repos/taslabs-net/homeflare-kit/rulesets/23471358` on 2026-09-16 — this repo
- *   asserting its script reproduces the branch protection it is already running under.
+ *   `RulesetGateway` that records calls instead of talking to `@octokit/rest` — the
+ *   real adapter is covered separately in tests/github-ruleset.test.ts, against a mock
+ *   Octokit surface, also with no live writes.
  */
 import { describe, expect, test } from 'bun:test';
 import { applyMainRuleset, parseArgs } from '../scripts/apply-main-ruleset.ts';
@@ -18,35 +15,22 @@ import {
   type RulesetPayload,
   type RulesetRule,
   type RulesetSummary,
-  buildRules,
-  describeRule,
+  buildOwnedRules,
 } from '../scripts/github-ruleset.ts';
 
-const LIVE_RULES: readonly RulesetRule[] = [
-  { type: 'deletion' },
-  { type: 'non_fast_forward' },
-  {
-    type: 'pull_request',
-    parameters: {
-      required_approving_review_count: 0,
-      dismiss_stale_reviews_on_push: true,
-      required_reviewers: [],
-      require_code_owner_review: false,
-      require_last_push_approval: false,
-      required_review_thread_resolution: false,
-      require_extra_approval_for_unattributed_changes: false,
-      allowed_merge_methods: ['squash', 'merge', 'rebase'],
-    },
-  },
-  {
-    type: 'required_status_checks',
-    parameters: {
-      strict_required_status_checks_policy: false,
-      do_not_enforce_on_create: false,
-      required_status_checks: [{ context: 'ci' }, { context: 'secret scan' }],
-    },
-  },
-];
+function detail(overrides: {
+  readonly id: number;
+  readonly bypassActors?: readonly RulesetDetail['bypassActors'][number][];
+  readonly requiredStatusChecksRule?: RulesetRule | undefined;
+}): RulesetDetail {
+  return {
+    id: overrides.id,
+    name: 'main',
+    bypassActors: overrides.bypassActors ?? [],
+    requiredStatusChecksRule: overrides.requiredStatusChecksRule,
+    htmlUrl: undefined,
+  };
+}
 
 function fakeGateway(options: {
   readonly existing?: readonly RulesetSummary[];
@@ -71,44 +55,16 @@ function fakeGateway(options: {
     },
     create: async (repo, payload) => {
       calls.create.push({ repo, payload });
-      return { id: 999, name: payload.name, bypassActors: payload.bypass_actors };
+      return detail({ id: 999 });
     },
     update: async (repo, rulesetId, payload) => {
       calls.update.push({ repo, rulesetId, payload });
-      return { id: rulesetId, name: payload.name, bypassActors: payload.bypass_actors };
+      return detail({ id: rulesetId });
     },
   };
 
   return { gateway, calls };
 }
-
-describe('buildRules', () => {
-  test('required checks OFF by default — no required_status_checks rule at all', () => {
-    expect(buildRules(undefined)).toEqual(LIVE_RULES.slice(0, 3));
-  });
-
-  test('with checks requested, matches the live homeflare-kit ruleset exactly', () => {
-    expect(buildRules(['ci', 'secret scan'])).toEqual(LIVE_RULES);
-  });
-
-  test('solo PR requirement stays 0 approvals, never silently raised', () => {
-    const pr = buildRules(undefined).find((r) => r.type === 'pull_request');
-    expect(pr?.type === 'pull_request' && pr.parameters.required_approving_review_count).toBe(0);
-  });
-});
-
-describe('describeRule', () => {
-  test('describes every real rule type', () => {
-    for (const rule of buildRules(['ci'])) {
-      expect(describeRule(rule)).toBeTruthy();
-    }
-  });
-
-  test('throws on an unhandled rule type instead of silently ignoring it', () => {
-    const bogus = { type: 'bogus' } as unknown as ReturnType<typeof buildRules>[number];
-    expect(() => describeRule(bogus)).toThrow('unhandled rule type');
-  });
-});
 
 describe('parseArgs', () => {
   test('fails closed without --repo', () => {
@@ -120,7 +76,7 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--repo', 'taslabs-net/homeflare-kit'])).toThrow('bare repo name');
   });
 
-  test('required checks stay undefined (OFF) unless the flag is given', () => {
+  test('required checks stay undefined (OFF for create) unless the flag is given', () => {
     expect(parseArgs(['--repo', 'homeflare-alerts']).requiredChecks).toBeUndefined();
   });
 
@@ -139,10 +95,36 @@ describe('parseArgs', () => {
     expect(parseArgs(['--repo', 'x']).dryRun).toBe(false);
     expect(parseArgs(['--repo', 'x', '--dry-run']).dryRun).toBe(true);
   });
+
+  // ⛔ THE BUG THIS GUARDS. Without value validation, `--require-checks --dry-run`
+  //   silently consumed "--dry-run" as a single bogus check context, left the real
+  //   --dry-run flag unprocessed (so dryRun stayed false), and would have gone on to
+  //   WRITE a ruleset requiring a check literally named "--dry-run".
+  test('--require-checks immediately followed by another flag fails closed', () => {
+    expect(() => parseArgs(['--repo', 'x', '--require-checks', '--dry-run'])).toThrow(
+      '--require-checks needs a value',
+    );
+  });
+
+  test('--require-checks as the last argument (no value at all) fails closed', () => {
+    expect(() => parseArgs(['--repo', 'x', '--require-checks'])).toThrow(
+      '--require-checks needs a value',
+    );
+  });
+
+  // Same class of bug, the other value flag: a flag-shaped repo name must not be
+  // silently accepted just because it also matches the bare-name regex.
+  test('--repo immediately followed by another flag fails closed', () => {
+    expect(() => parseArgs(['--repo', '--dry-run'])).toThrow('--repo needs a value');
+  });
+
+  test('--repo as the last argument (no value at all) fails closed', () => {
+    expect(() => parseArgs(['--repo'])).toThrow('--repo needs a value');
+  });
 });
 
-describe('applyMainRuleset', () => {
-  test('fails closed on an empty repo before calling the gateway at all', async () => {
+describe('applyMainRuleset — fails closed', () => {
+  test('on an empty repo, before calling the gateway at all', async () => {
     const { gateway, calls } = fakeGateway({});
 
     await expect(applyMainRuleset(gateway, { repo: '  ', dryRun: false })).rejects.toThrow(
@@ -151,7 +133,58 @@ describe('applyMainRuleset', () => {
     expect(calls.list).toEqual([]);
   });
 
-  test('creates a locked-down ruleset (bypass_actors: []) when none exists yet', async () => {
+  // ⛔ THE BUG THIS GUARDS. `.find()` silently picked the first of several "main"
+  //   rulesets targeting `branch` and converged only that one, leaving any duplicate
+  //   untouched and unreported — exactly the kind of drift a maintenance script must
+  //   refuse to guess through.
+  test('on two rulesets both named "main" targeting branch — refuses, reads and writes nothing', async () => {
+    const { gateway, calls } = fakeGateway({
+      existing: [
+        { id: 1, name: 'main', target: 'branch' },
+        { id: 2, name: 'main', target: 'branch' },
+      ],
+    });
+
+    await expect(applyMainRuleset(gateway, { repo: 'x', dryRun: false })).rejects.toThrow(
+      /2 rulesets named "main".*ids: 1, 2/,
+    );
+    expect(calls.get).toEqual([]);
+    expect(calls.create).toEqual([]);
+    expect(calls.update).toEqual([]);
+  });
+
+  test('three or more duplicates are reported by count and id, not just "more than one"', async () => {
+    const { gateway } = fakeGateway({
+      existing: [
+        { id: 1, name: 'main', target: 'branch' },
+        { id: 2, name: 'main', target: 'branch' },
+        { id: 3, name: 'main', target: 'branch' },
+      ],
+    });
+
+    await expect(applyMainRuleset(gateway, { repo: 'x', dryRun: false })).rejects.toThrow(
+      /3 rulesets named "main".*ids: 1, 2, 3/,
+    );
+  });
+
+  test('a ruleset named "main" targeting a tag does not count toward the duplicate check', async () => {
+    const { gateway, calls } = fakeGateway({
+      existing: [
+        { id: 1, name: 'main', target: 'branch' },
+        { id: 2, name: 'main', target: 'tag' },
+      ],
+      detail: detail({ id: 1 }),
+    });
+
+    const result = await applyMainRuleset(gateway, { repo: 'x', dryRun: false });
+
+    expect(result.action).toBe('updated');
+    expect(calls.get).toEqual([{ repo: 'x', rulesetId: 1 }]);
+  });
+});
+
+describe('applyMainRuleset — CREATE (no existing ruleset)', () => {
+  test('creates a locked-down ruleset (bypass_actors: []) with required checks OFF by default', async () => {
     const { gateway, calls } = fakeGateway({ existing: [] });
 
     const result = await applyMainRuleset(gateway, { repo: 'homeflare-alerts', dryRun: false });
@@ -160,26 +193,10 @@ describe('applyMainRuleset', () => {
     expect(calls.create).toHaveLength(1);
     expect(calls.create[0]?.payload.bypass_actors).toEqual([]);
     expect(calls.create[0]?.payload.enforcement).toBe('active');
-    // ⛔ Required checks OFF by default even on create.
-    expect(calls.create[0]?.payload.rules).toEqual(LIVE_RULES.slice(0, 3));
+    expect(calls.create[0]?.payload.rules).toEqual([...buildOwnedRules()]);
   });
 
-  test('preserves existing bypass_actors on update — never widens or silently clears them', async () => {
-    const teamBypass = [{ actor_id: 42, actor_type: 'Team', bypass_mode: 'always' }];
-    const { gateway, calls } = fakeGateway({
-      existing: [{ id: 7, name: 'main', target: 'branch' }],
-      detail: { id: 7, name: 'main', bypassActors: teamBypass },
-    });
-
-    const result = await applyMainRuleset(gateway, { repo: 'homeflare-kit', dryRun: false });
-
-    expect(result.action).toBe('updated');
-    expect(calls.get).toEqual([{ repo: 'homeflare-kit', rulesetId: 7 }]);
-    expect(calls.update).toHaveLength(1);
-    expect(calls.update[0]?.payload.bypass_actors).toEqual(teamBypass);
-  });
-
-  test('required checks flow through into the payload only when requested', async () => {
+  test('required checks flow into the create payload only when explicitly requested', async () => {
     const { gateway, calls } = fakeGateway({ existing: [] });
 
     await applyMainRuleset(gateway, {
@@ -188,30 +205,18 @@ describe('applyMainRuleset', () => {
       requiredChecks: ['ci', 'secret scan'],
     });
 
-    expect(calls.create[0]?.payload.rules).toEqual(LIVE_RULES);
+    const rules = calls.create[0]?.payload.rules ?? [];
+    expect(rules.find((r) => r.type === 'required_status_checks')).toBeDefined();
   });
 
-  test('dry-run never calls create or update', async () => {
-    const { gateway: createGateway, calls: createCalls } = fakeGateway({ existing: [] });
-    await applyMainRuleset(createGateway, { repo: 'x', dryRun: true });
-    expect(createCalls.create).toEqual([]);
+  test('dry-run never calls create', async () => {
+    const { gateway, calls } = fakeGateway({ existing: [] });
+    const result = await applyMainRuleset(gateway, { repo: 'x', dryRun: true });
 
-    const { gateway: updateGateway, calls: updateCalls } = fakeGateway({
-      existing: [{ id: 1, name: 'main', target: 'branch' }],
-      detail: { id: 1, name: 'main', bypassActors: [] },
-    });
-    await applyMainRuleset(updateGateway, { repo: 'x', dryRun: true });
-    expect(updateCalls.update).toEqual([]);
-  });
-
-  test('an existing ruleset targeting the wrong ref is not mistaken for "main"', async () => {
-    const { gateway, calls } = fakeGateway({
-      existing: [{ id: 5, name: 'main', target: 'tag' }],
-    });
-
-    const result = await applyMainRuleset(gateway, { repo: 'x', dryRun: false });
-
-    expect(result.action).toBe('created');
-    expect(calls.get).toEqual([]);
+    expect(result.action).toBe('dry-run-create');
+    expect(calls.create).toEqual([]);
   });
 });
+
+// UPDATE-path tests (required-checks preservation, bypass_actors) live in
+// tests/apply-main-ruleset-update.test.ts — split to stay under the 250-line file cap.

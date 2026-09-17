@@ -30,14 +30,25 @@ that for you.
 [docs/releasing.md](./releasing.md) for why both are required and how the release bot's
 parked runs get approved around them.
 
-## Required checks: default OFF
+## Required checks: default OFF on CREATE, PRESERVED on UPDATE
 
 `scripts/apply-main-ruleset.ts --require-checks ctx,ctx` is the ONLY way this repo's
-helper adds a `required_status_checks` rule, and the flag has no default value. A repo
-with no green CI run yet cannot require one — that locks out the PR that would fix it,
-which is exactly what happened by hand on `taslabs-net/homeflare-alerts` (ruleset created
-2026-09-16, `enforcement: disabled`, no `required_status_checks` rule at all: read via
-`gh api repos/taslabs-net/homeflare-alerts/rulesets/23552096`).
+helper sets a `required_status_checks` rule to a NEW value, and the flag has no default.
+What omitting it does depends on whether the repo already has a `main` ruleset:
+
+- **No existing ruleset (CREATE).** Omitting the flag means OFF — no
+  `required_status_checks` rule at all. A repo with no green CI run yet cannot require
+  one without locking out the PR that would fix it, which is exactly what happened by
+  hand on `taslabs-net/homeflare-alerts` (ruleset created 2026-09-16,
+  `enforcement: disabled`, no `required_status_checks` rule: read via
+  `gh api repos/taslabs-net/homeflare-alerts/rulesets/23552096`).
+- **An existing ruleset (UPDATE).** Omitting the flag PRESERVES whatever
+  `required_status_checks` rule is live right now, byte-for-byte — it does not rebuild
+  it from this script's defaults and does not drop it. ⛔ A plain rerun with no flags is
+  a NO-OP on required checks specifically because the alternative — silently turning
+  checks a previous run (or a human) already required back off — is the ruleset
+  regressing itself. Passing `--require-checks` explicitly always replaces the rule, on
+  either path. See `resolveRulesForUpdate` in `scripts/github-ruleset.ts`.
 
 **Rollout, in order:**
 
@@ -45,9 +56,13 @@ which is exactly what happened by hand on `taslabs-net/homeflare-alerts` (rulese
 2. `bun run github:apply-ruleset -- --repo <name> --dry-run` — prints what would change,
    writes nothing.
 3. `bun run github:apply-ruleset -- --repo <name>` — applies deletion/force-push/solo-PR
-   protection with required checks still OFF.
+   protection with required checks still OFF (or preserved, on a rerun).
 4. `bun run github:apply-ruleset -- --repo <name> --require-checks "ci,secret scan"` —
    now a PR cannot merge without both.
+5. Rerunning step 3 or 4 later (a routine "make sure the ruleset still matches" check) is
+   always safe: the solo-PR/no-delete/no-force-push rules converge to the same shape,
+   `bypass_actors` is read back and preserved, and required checks are preserved or
+   replaced exactly as above — never silently dropped.
 
 ## Why branch protection is not declared in Alchemy
 
@@ -79,20 +94,36 @@ reason `alchemy.run.ts` is deployed by a human running `--stage live`, not by CI
 `taslabs-net` repository. `@octokit/rest` is already a transitive dependency of `alchemy`
 here; this is GitHub's own SDK, not a hand-rolled `fetch`.
 
-Safety properties, each backed by a test in `tests/apply-main-ruleset.test.ts`:
+Safety properties, each backed by a test in `tests/apply-main-ruleset.test.ts` or
+`tests/github-ruleset.test.ts`:
 
 - ⛔ **Fails closed without `--repo`.** No default target — a maintenance script that
   could accidentally run against the wrong repo, or none, is worse than one that refuses.
 - ⛔ **Fails closed without a token.** Reads `GITHUB_TOKEN` or `GH_TOKEN` from the
   environment at run time; nothing is ever written to source or to any state file.
-- ⛔ **`--require-checks` with no contexts is an error, not "off".** Ambiguity fails
-  closed rather than silently doing nothing.
+- ⛔ **A value flag with no value, or a flag right after it, is an error.**
+  `--require-checks --dry-run` does NOT treat `--dry-run` as a bogus check context and
+  silently drop the real `--dry-run` flag — it refuses outright, for both `--repo` and
+  `--require-checks`. `--require-checks` with a value that trims to no contexts at all
+  is the same: an error, never "off".
 - ⛔ **Never widens `bypass_actors`.** There is no flag for it. Creating a ruleset starts
   at `[]`; updating one reads the CURRENT value back from GitHub first and passes it
   through unchanged, because this script has no opinion on who may bypass a rule it did
   not add.
+- ⛔ **More than one ruleset named `main` targeting `branch` is a hard refusal, not a
+  guess.** The list is read through `octokit.paginate` (not a single unpaginated page,
+  which could hide a duplicate sitting past the first 100), and finding 2+ matches stops
+  the script before it reads OR writes either one. A human resolves the duplicate on
+  GitHub first.
 - ★ **Upsert, not clobber.** It lists existing rulesets, and only creates one when none
   named `main` targets `branch` — re-running it converges rather than duplicating.
+- ★ **Every payload field is typed FROM `@octokit/rest`'s own resolved method
+  signatures**, never hand-typed and never cast at the call site. A field the installed
+  schema does not accept on write — like `require_extra_approval_for_unattributed_changes`,
+  which GitHub returns on read but does not document for create/update — fails to
+  compile if this script tries to send it, rather than being silently dropped or
+  rejected at request time. See the derivation comment at the top of
+  `scripts/github-ruleset.ts`.
 
 ## What this does not cover
 

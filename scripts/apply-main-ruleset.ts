@@ -7,13 +7,18 @@
  *   is an operator action, not a build gate — see AGENTS.md "do not copy app-only
  *   behavior into this package producer."
  *
- * ⛔ FAILS CLOSED, THREE WAYS: no `--repo` (nothing to target), no `GITHUB_TOKEN` /
- *   `GH_TOKEN` (nothing to authenticate with), and `--require-checks` given with no
- *   contexts (an explicit flag with an empty value is a mistake, not "off").
+ * ⛔ FAILS CLOSED, FOUR WAYS: no `--repo` (nothing to target), no `GITHUB_TOKEN` /
+ *   `GH_TOKEN` (nothing to authenticate with), `--require-checks`/`--repo` given with a
+ *   missing or flag-shaped value (an explicit flag with no real value is a mistake, not
+ *   "off"), and more than one ruleset named `main` targeting `branch` (this script does
+ *   not guess which one is THE one — see `applyMainRuleset` below).
  *
- * ⛔ REQUIRED CHECKS DEFAULT OFF. A brand-new repo has no green CI run yet; requiring
- *   `ci` before one exists locks out every PR, including the one that would fix it.
- *   Pass `--require-checks ci,secret scan` only once the repo has a green run to require.
+ * ⛔ REQUIRED CHECKS DEFAULT OFF, BUT ONLY ON CREATE. A brand-new repo has no green CI
+ *   run yet; requiring `ci` before one exists locks out every PR, including the one that
+ *   would fix it. On UPDATE, omitting `--require-checks` PRESERVES whatever
+ *   `required_status_checks` rule is already live — a plain rerun must never be the
+ *   thing that silently turns required checks back off. Passing `--require-checks`
+ *   explicitly always replaces it, on either path.
  *
  * ⛔ NEVER WIDENS `bypass_actors`. There is no flag for it. Creating a ruleset starts
  *   locked down (`[]`); updating one reads the CURRENT value back from GitHub and
@@ -29,6 +34,7 @@ import {
   buildRules,
   describeRule,
   octokitGateway,
+  resolveRulesForUpdate,
 } from './github-ruleset.ts';
 
 const OWNER = 'taslabs-net';
@@ -48,7 +54,11 @@ export interface ApplyResult {
   readonly rules: readonly RulesetRule[];
 }
 
-/** Fails closed on an empty/whitespace repo BEFORE calling the gateway at all. */
+/**
+ * Fails closed, in order: an empty/whitespace repo (before calling the gateway at all),
+ * and more than one `main`-named ruleset targeting `branch` (before reading or writing
+ * either of them) — this script converges exactly one ruleset, never guesses which.
+ */
 export async function applyMainRuleset(
   gateway: RulesetGateway,
   options: RulesetOptions,
@@ -57,25 +67,49 @@ export async function applyMainRuleset(
     throw new Error(`apply-main-ruleset: --repo is required. ${USAGE}`);
   }
 
-  const rules = buildRules(options.requiredChecks);
-  const existing = (await gateway.list(options.repo)).find(
+  const candidates = (await gateway.list(options.repo)).filter(
     (r) => r.name === RULESET_NAME && (r.target === undefined || r.target === 'branch'),
   );
+  if (candidates.length > 1) {
+    const ids = candidates.map((c) => c.id).join(', ');
+    throw new Error(
+      `apply-main-ruleset: ${candidates.length} rulesets named "${RULESET_NAME}" target branch on ` +
+        `${options.repo} (ids: ${ids}) — refusing to guess which one to converge. Resolve the ` +
+        'duplicate on GitHub first.',
+    );
+  }
+  const existing = candidates[0];
 
   if (existing === undefined) {
+    // CREATE: default OFF applies here — a brand-new ruleset has nothing to preserve.
+    const rules = buildRules(options.requiredChecks);
     if (options.dryRun) return { action: 'dry-run-create', rules };
-    const created = await gateway.create(options.repo, buildPayload(options.requiredChecks, []));
+    const created = await gateway.create(options.repo, buildPayload(rules, []));
     return { action: 'created', rulesetId: created.id, htmlUrl: created.htmlUrl, rules };
   }
 
   // ⛔ Read the FULL ruleset, not the list entry — GitHub's list endpoint omits
   //   `bypass_actors`, and passing it through unread would silently narrow it to `[]`.
   const current = await gateway.get(options.repo, existing.id);
+  // UPDATE: explicit --require-checks replaces; omitted preserves the current rule exactly.
+  const rules = resolveRulesForUpdate(options.requiredChecks, current.requiredStatusChecksRule);
   if (options.dryRun) return { action: 'dry-run-update', rulesetId: existing.id, rules };
 
-  const payload = buildPayload(options.requiredChecks, current.bypassActors ?? []);
-  const updated = await gateway.update(options.repo, existing.id, payload);
+  const updated = await gateway.update(
+    options.repo,
+    existing.id,
+    buildPayload(rules, current.bypassActors),
+  );
   return { action: 'updated', rulesetId: updated.id, htmlUrl: updated.htmlUrl, rules };
+}
+
+/** A value flag (`--repo`, `--require-checks`) with nothing after it, or another flag right after it, is a mistake — never silently swallow the next flag as if it were a value. */
+function takeValue(argv: readonly string[], index: number, flag: string): string {
+  const value = argv[index + 1];
+  if (value === undefined || value.startsWith('--')) {
+    throw new Error(`apply-main-ruleset: ${flag} needs a value. ${USAGE}`);
+  }
+  return value;
 }
 
 /** Fails closed: throws rather than guessing a repo, or accepting `--require-checks` with no contexts. */
@@ -87,12 +121,12 @@ export function parseArgs(argv: readonly string[]): RulesetOptions {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--repo') {
-      repo = argv[i + 1];
+      repo = takeValue(argv, i, '--repo');
       i += 1;
     } else if (arg === '--require-checks') {
-      const raw = argv[i + 1];
+      const raw = takeValue(argv, i, '--require-checks');
       i += 1;
-      const contexts = (raw ?? '')
+      const contexts = raw
         .split(',')
         .map((c) => c.trim())
         .filter((c) => c.length > 0);
@@ -139,7 +173,7 @@ if (import.meta.main) {
     console.log(`${result.action} ${OWNER}/${options.repo}#${RULESET_NAME}${location}`);
     for (const rule of result.rules) console.log(`  - ${describeRule(rule)}`);
     if (options.requiredChecks === undefined) {
-      console.log('  (required checks OFF — pass --require-checks once CI is green)');
+      console.log('  (--require-checks omitted — created OFF, or preserved as-is on update)');
     }
   } catch (error) {
     console.error((error as Error).message);
