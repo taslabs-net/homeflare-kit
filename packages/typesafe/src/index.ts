@@ -16,15 +16,17 @@
  * ★ Transport is global `fetch`. That is what workerd provides; no Node HTTP stack.
  */
 import { TypeSafeClient, type TypeSafeClientConfig } from '@typesafe-ai/sdk';
+import { TYPESAFE_API_KEY } from './location.ts';
 import { VERSION } from './version.ts';
 
 export { VERSION };
+export { TYPESAFE_API_KEY, TYPESAFE_OPENBAO_PATH } from './location.ts';
 export { TypeSafeClient, choice, noul, score } from '@typesafe-ai/sdk';
 export type { TypeSafeClientConfig } from '@typesafe-ai/sdk';
 
 /** Worker / script binding that holds the TypeSafe API key. */
 export type TypeSafeBinding = {
-  readonly TYPESAFE_API_KEY: string;
+  readonly [TYPESAFE_API_KEY]: string;
 };
 
 export type TypeSafeClientOptions = TypeSafeClientConfig & {
@@ -45,7 +47,7 @@ export function createTypeSafeClient(config: TypeSafeClientOptions): TypeSafeCli
   });
 }
 
-/** Same constructor, from the usual Worker secret name. */
+/** Same constructor, from the `TYPESAFE_API_KEY` Worker secret / binding. */
 export function createTypeSafeClientFromBinding(env: TypeSafeBinding): TypeSafeClient {
-  return createTypeSafeClient({ apiKey: env.TYPESAFE_API_KEY });
+  return createTypeSafeClient({ apiKey: env[TYPESAFE_API_KEY] });
 }

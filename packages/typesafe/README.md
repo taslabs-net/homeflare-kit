@@ -33,8 +33,14 @@ const { answers } = await client.systemOne({
 ★ Code owns routing and thresholds. TypeSafe returns typed judgments and probabilities —
 not generated text to parse.
 
-The key itself stays in OpenBao / the Secret Store / a Worker secret. This package
-never reads a file and never logs the value.
+The value stays in OpenBao. Git only has the names:
+
+| layer                                 | placeholder                                             |
+| ------------------------------------- | ------------------------------------------------------- |
+| OpenBao path                          | `kv/infra/typesafe/homeflare` (`TYPESAFE_OPENBAO_PATH`) |
+| OpenBao field / Worker secret / `env` | `TYPESAFE_API_KEY`                                      |
+
+This package never reads the vault and never logs the value.
 
 ## License
 

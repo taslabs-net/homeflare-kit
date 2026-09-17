@@ -145,11 +145,11 @@ there is no redaction layer, by design.
 ## @homeflare/typesafe — official System One SDK
 
 ```ts
-import { TypeSafeClient, choice, createTypeSafeClient, createTypeSafeClientFromBinding, noul, score } from '@homeflare/typesafe';
+import { TypeSafeClient, TYPESAFE_API_KEY, TYPESAFE_OPENBAO_PATH, choice, createTypeSafeClient, createTypeSafeClientFromBinding, noul, score } from '@homeflare/typesafe';
 ```
 
-⛔ Server-only. Pass `apiKey` from a Worker secret (`TYPESAFE_API_KEY`). No `process.env`
-on workerd. Re-exports `@typesafe-ai/sdk` — do not wrap a second client.
+⛔ Server-only. OpenBao `kv/infra/typesafe/homeflare` field `TYPESAFE_API_KEY` → Worker
+secret of the same name. No `process.env` on workerd. Re-exports `@typesafe-ai/sdk`.
 
 ## @homeflare/config — shared toolchain
 
