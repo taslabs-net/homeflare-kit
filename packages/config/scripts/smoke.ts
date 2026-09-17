@@ -87,12 +87,27 @@ export const opts: Opts = { a: undefined };
   await Bun.write(
     join(scratch, 'consumer.ts'),
     `import { checkProject } from '@homeflare/config/check';
+import { shouldRelease, tagEvent } from '@homeflare/config/release';
+import { problemsInReleaseConfig } from '@homeflare/config/require-release-config';
 
-// The conformance checker is the one piece of CODE this package ships.
 const problems = await checkProject(process.cwd());
 if (!Array.isArray(problems)) throw new Error('checkProject did not return a list');
 // This scratch project deliberately does NOT adopt the presets, so it must report some.
 if (problems.length === 0) throw new Error('checkProject found nothing in an unconfigured project');
+
+// ⛔ These two exports are how non-npm apps cut a GitHub Release. A missing
+//   export map entry would pass every in-repo test and fail the first consumer.
+const event = tagEvent({ name: 'smoke-app', version: '0.1.0' });
+if (event.tag !== 'smoke-app@0.1.0') throw new Error('tagEvent shape drifted');
+const skipped = await shouldRelease(process.cwd(), { name: 'smoke-app', version: '0.1.0' });
+if (skipped.ok) throw new Error('shouldRelease proceeded without a CHANGELOG.md');
+// ⚠️ Scratch package.json is private with no version — that path would also try
+//   to read changeset config. The published package is public and has a version.
+const releaseProblems = await problemsInReleaseConfig({
+  pkgPath: Bun.resolveSync('@homeflare/config/package.json', process.cwd()),
+  changesetConfigPath: new URL('./missing.json', import.meta.url).pathname,
+});
+if (releaseProblems.length !== 0) throw new Error('problemsInReleaseConfig failed a public package');
 
 // Every non-code export must resolve as a real file.
 for (const name of ['oxlintrc.json', 'oxlintrc.app.json', 'oxfmtrc.json', 'tsconfig.base.json', 'tsconfig.lib.json', 'tsconfig.app.json', 'bunfig.toml']) {
