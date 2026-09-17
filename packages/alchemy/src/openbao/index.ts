@@ -8,9 +8,9 @@
  * ★ Anything unlisted is still reachable by path if you genuinely need it — that is a
  *   deliberate, visible act rather than an accident of barrelling.
  */
-export { BaoAuthRoleProvider } from './auth-role.ts';
+export { BaoAuthRole, BaoAuthRoleProvider } from './auth-role.ts';
 export { BaoCloudflareRoleProvider } from './cloudflare-role.ts';
-export { BaoMountProvider } from './mount.ts';
+export { BaoMount, BaoMountProvider } from './mount.ts';
 export { BaoPkiRoleProvider } from './pki-role.ts';
 export { BaoPolicy, BaoPolicyProvider } from './policy.ts';
 export { BaoProxmoxRole, BaoProxmoxRoleProvider } from './proxmox-role.ts';
