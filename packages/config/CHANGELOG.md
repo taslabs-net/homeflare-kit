@@ -1,5 +1,11 @@
 # @homeflare/config
 
+## 0.5.0
+
+### Minor Changes
+
+- [#51](https://github.com/taslabs-net/homeflare-kit/pull/51) [`8c84cd9`](https://github.com/taslabs-net/homeflare-kit/commit/8c84cd91c9511a73c3a29b3e1cbe18e08ce35dd8) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `shouldRelease` and `require-release-config` so non-npm app repos share one GitHub-Release gate instead of copying the scripts. The guard also fails a leftover `pnpm-workspace.yaml` that hides the root package (measured 2026-09-17 on homeflare-secrets).
+
 ## 0.4.0
 
 ### Minor Changes
