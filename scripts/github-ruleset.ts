@@ -71,6 +71,8 @@ export interface RulesetDetail {
   readonly bypassActors: readonly BypassActor[];
   /** The LIVE `required_status_checks` rule, if this ruleset has one — `undefined` means none. */
   readonly requiredStatusChecksRule: RulesetRule | undefined;
+  /** `type`s of LIVE rules this script does not manage — about to be REMOVED by an UPDATE, reported not preserved. See "Nonstandard rule types" in docs/github-hygiene.md. */
+  readonly foreignRuleTypes: readonly string[];
   readonly htmlUrl: string | undefined;
 }
 
@@ -173,66 +175,35 @@ function currentRequiredStatusChecksRule(
     : { type: 'required_status_checks', parameters: found.parameters };
 }
 
-function toDetail(data: GetData): RulesetDetail {
+const OWNED_RULE_TYPES: ReadonlySet<string> = new Set([
+  'deletion',
+  'non_fast_forward',
+  'pull_request',
+  'required_status_checks',
+]);
+
+/**
+ * `type`s of `rules` this script does NOT manage, de-duplicated, first-seen order.
+ * ⛔ Convergence is deliberate — never preserved — but the removal is reported, not silent.
+ */
+export function foreignRuleTypes(
+  rules: readonly { readonly type: string }[] | undefined,
+): readonly string[] {
+  const seen = new Set<string>();
+  for (const rule of rules ?? []) {
+    if (!OWNED_RULE_TYPES.has(rule.type)) seen.add(rule.type);
+  }
+  return [...seen];
+}
+
+/** Exported for scripts/github-ruleset-gateway.ts — the only other caller. */
+export function toDetail(data: GetData): RulesetDetail {
   return {
     id: data.id,
     name: data.name,
     bypassActors: data.bypass_actors ?? [],
     requiredStatusChecksRule: currentRequiredStatusChecksRule(data.rules),
+    foreignRuleTypes: foreignRuleTypes(data.rules),
     htmlUrl: data._links?.html?.href,
-  };
-}
-
-/**
- * The seam `apply-main-ruleset.ts` tests through: a fake `RulesetGateway` makes the
- * upsert logic testable with no live GitHub writes, while this is the only place that
- * actually calls `@octokit/rest` — GitHub's official SDK, never a hand-rolled `fetch`.
- */
-export interface RulesetGateway {
-  readonly list: (repo: string) => Promise<readonly RulesetSummary[]>;
-  readonly get: (repo: string, rulesetId: number) => Promise<RulesetDetail>;
-  readonly create: (repo: string, payload: RulesetPayload) => Promise<RulesetDetail>;
-  readonly update: (
-    repo: string,
-    rulesetId: number,
-    payload: RulesetPayload,
-  ) => Promise<RulesetDetail>;
-}
-
-export function octokitGateway(octokit: Octokit): RulesetGateway {
-  return {
-    // ⛔ MUST PAGINATE. Unpaginated `getRepoRulesets` returns only the first page
-    //   (default 30) — a duplicate "main" ruleset sitting on page 2 would be invisible to
-    //   the caller, which is exactly the gap that let a plain `.find()` silently pick
-    //   ONE ruleset instead of proving there was only one. `per_page: 100` keeps a repo
-    //   with a sane number of rulesets to a single request; `octokit.paginate` walks
-    //   every page regardless.
-    list: async (repo) =>
-      await octokit.paginate(octokit.rest.repos.getRepoRulesets, {
-        owner: OWNER,
-        repo,
-        per_page: 100,
-      }),
-    get: async (repo, ruleset_id) => {
-      const { data } = await octokit.rest.repos.getRepoRuleset({ owner: OWNER, repo, ruleset_id });
-      return toDetail(data);
-    },
-    create: async (repo, payload) => {
-      const { data } = await octokit.rest.repos.createRepoRuleset({
-        owner: OWNER,
-        repo,
-        ...payload,
-      });
-      return toDetail(data);
-    },
-    update: async (repo, ruleset_id, payload) => {
-      const { data } = await octokit.rest.repos.updateRepoRuleset({
-        owner: OWNER,
-        repo,
-        ruleset_id,
-        ...payload,
-      });
-      return toDetail(data);
-    },
   };
 }

@@ -9,9 +9,9 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { applyMainRuleset, parseArgs } from '../scripts/apply-main-ruleset.ts';
+import { type RulesetGateway } from '../scripts/github-ruleset-gateway.ts';
 import {
   type RulesetDetail,
-  type RulesetGateway,
   type RulesetPayload,
   type RulesetRule,
   type RulesetSummary,
@@ -22,12 +22,14 @@ function detail(overrides: {
   readonly id: number;
   readonly bypassActors?: readonly RulesetDetail['bypassActors'][number][];
   readonly requiredStatusChecksRule?: RulesetRule | undefined;
+  readonly foreignRuleTypes?: readonly string[];
 }): RulesetDetail {
   return {
     id: overrides.id,
     name: 'main',
     bypassActors: overrides.bypassActors ?? [],
     requiredStatusChecksRule: overrides.requiredStatusChecksRule,
+    foreignRuleTypes: overrides.foreignRuleTypes ?? [],
     htmlUrl: undefined,
   };
 }
@@ -215,6 +217,13 @@ describe('applyMainRuleset — CREATE (no existing ruleset)', () => {
 
     expect(result.action).toBe('dry-run-create');
     expect(calls.create).toEqual([]);
+  });
+
+  test('removedRuleTypes is always [] on create — nothing existed to remove', async () => {
+    const { gateway } = fakeGateway({ existing: [] });
+    const result = await applyMainRuleset(gateway, { repo: 'x', dryRun: false });
+
+    expect(result.removedRuleTypes).toEqual([]);
   });
 });
 

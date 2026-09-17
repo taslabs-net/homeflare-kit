@@ -9,9 +9,9 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { applyMainRuleset } from '../scripts/apply-main-ruleset.ts';
+import { type RulesetGateway } from '../scripts/github-ruleset-gateway.ts';
 import {
   type RulesetDetail,
-  type RulesetGateway,
   type RulesetPayload,
   type RulesetRule,
   type RulesetSummary,
@@ -22,12 +22,14 @@ function detail(overrides: {
   readonly id: number;
   readonly bypassActors?: readonly RulesetDetail['bypassActors'][number][];
   readonly requiredStatusChecksRule?: RulesetRule | undefined;
+  readonly foreignRuleTypes?: readonly string[];
 }): RulesetDetail {
   return {
     id: overrides.id,
     name: 'main',
     bypassActors: overrides.bypassActors ?? [],
     requiredStatusChecksRule: overrides.requiredStatusChecksRule,
+    foreignRuleTypes: overrides.foreignRuleTypes ?? [],
     htmlUrl: undefined,
   };
 }
@@ -167,5 +169,46 @@ describe('applyMainRuleset — UPDATE (existing ruleset)', () => {
     expect(result.action).toBe('dry-run-update');
     expect(calls.update).toEqual([]);
     expect(result.rules).toContainEqual(currentRule);
+  });
+
+  // ⛔ THE MINOR THIS GUARDS. Convergence deliberately removes a rule type this script
+  //   does not manage — that must be reported EXACTLY, not left for the operator to
+  //   discover by diffing GitHub afterward.
+  test('reports exactly which nonstandard rule types a real update will remove', async () => {
+    const { gateway, calls } = fakeGateway({
+      existing: [{ id: 7, name: 'main', target: 'branch' }],
+      detail: detail({ id: 7, foreignRuleTypes: ['creation', 'commit_message_pattern'] }),
+    });
+
+    const result = await applyMainRuleset(gateway, { repo: 'homeflare-kit', dryRun: false });
+
+    expect(result.action).toBe('updated');
+    expect(result.removedRuleTypes).toEqual(['creation', 'commit_message_pattern']);
+    // ⛔ Reporting is not preserving: the write still converges, unwatched.
+    expect(calls.update).toHaveLength(1);
+  });
+
+  test('--dry-run reports the identical removedRuleTypes a real update would, and still writes nothing', async () => {
+    const { gateway, calls } = fakeGateway({
+      existing: [{ id: 7, name: 'main', target: 'branch' }],
+      detail: detail({ id: 7, foreignRuleTypes: ['creation'] }),
+    });
+
+    const result = await applyMainRuleset(gateway, { repo: 'homeflare-kit', dryRun: true });
+
+    expect(result.action).toBe('dry-run-update');
+    expect(result.removedRuleTypes).toEqual(['creation']);
+    expect(calls.update).toEqual([]);
+  });
+
+  test('no nonstandard rule types on the live ruleset means nothing to report', async () => {
+    const { gateway } = fakeGateway({
+      existing: [{ id: 7, name: 'main', target: 'branch' }],
+      detail: detail({ id: 7 }),
+    });
+
+    const result = await applyMainRuleset(gateway, { repo: 'homeflare-kit', dryRun: false });
+
+    expect(result.removedRuleTypes).toEqual([]);
   });
 });

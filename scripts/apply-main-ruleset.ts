@@ -26,14 +26,13 @@
  *   it did not add, so it never silently grants or revokes that access.
  */
 import { Octokit } from '@octokit/rest';
+import { type RulesetGateway, octokitGateway } from './github-ruleset-gateway.ts';
 import {
   RULESET_NAME,
-  type RulesetGateway,
   type RulesetRule,
   buildPayload,
   buildRules,
   describeRule,
-  octokitGateway,
   resolveRulesForUpdate,
 } from './github-ruleset.ts';
 
@@ -52,6 +51,13 @@ export interface ApplyResult {
   readonly rulesetId?: number | undefined;
   readonly htmlUrl?: string | undefined;
   readonly rules: readonly RulesetRule[];
+  /**
+   * Nonstandard rule `type`s the LIVE ruleset carries that this write removes — always
+   * `[]` on create (nothing existed to remove). Populated from the read, before the
+   * write, and identical for a real update and its `--dry-run` twin — see "Nonstandard
+   * rule types" in docs/github-hygiene.md.
+   */
+  readonly removedRuleTypes: readonly string[];
 }
 
 /**
@@ -81,11 +87,18 @@ export async function applyMainRuleset(
   const existing = candidates[0];
 
   if (existing === undefined) {
-    // CREATE: default OFF applies here — a brand-new ruleset has nothing to preserve.
+    // CREATE: default OFF applies here — a brand-new ruleset has nothing to preserve,
+    // and nothing to remove either.
     const rules = buildRules(options.requiredChecks);
-    if (options.dryRun) return { action: 'dry-run-create', rules };
+    if (options.dryRun) return { action: 'dry-run-create', rules, removedRuleTypes: [] };
     const created = await gateway.create(options.repo, buildPayload(rules, []));
-    return { action: 'created', rulesetId: created.id, htmlUrl: created.htmlUrl, rules };
+    return {
+      action: 'created',
+      rulesetId: created.id,
+      htmlUrl: created.htmlUrl,
+      rules,
+      removedRuleTypes: [],
+    };
   }
 
   // ⛔ Read the FULL ruleset, not the list entry — GitHub's list endpoint omits
@@ -93,14 +106,25 @@ export async function applyMainRuleset(
   const current = await gateway.get(options.repo, existing.id);
   // UPDATE: explicit --require-checks replaces; omitted preserves the current rule exactly.
   const rules = resolveRulesForUpdate(options.requiredChecks, current.requiredStatusChecksRule);
-  if (options.dryRun) return { action: 'dry-run-update', rulesetId: existing.id, rules };
+  // ⛔ Computed from the READ, before any write — this write's whole `rules` array
+  //   replaces whatever is live, so a nonstandard type here is about to be REMOVED.
+  //   Reported identically whether this call actually writes or is a --dry-run.
+  const removedRuleTypes = current.foreignRuleTypes;
+  if (options.dryRun)
+    return { action: 'dry-run-update', rulesetId: existing.id, rules, removedRuleTypes };
 
   const updated = await gateway.update(
     options.repo,
     existing.id,
     buildPayload(rules, current.bypassActors),
   );
-  return { action: 'updated', rulesetId: updated.id, htmlUrl: updated.htmlUrl, rules };
+  return {
+    action: 'updated',
+    rulesetId: updated.id,
+    htmlUrl: updated.htmlUrl,
+    rules,
+    removedRuleTypes,
+  };
 }
 
 /** A value flag (`--repo`, `--require-checks`) with nothing after it, or another flag right after it, is a mistake — never silently swallow the next flag as if it were a value. */
@@ -170,6 +194,15 @@ if (import.meta.main) {
     const result = await applyMainRuleset(gateway, options);
     const location = result.htmlUrl !== undefined ? ` — ${result.htmlUrl}` : '';
 
+    // ⛔ Printed BEFORE the result line, real write or --dry-run alike — this write
+    //   replaces the whole `rules` array, and a human-added rule type this script does
+    //   not manage is never dropped in silence.
+    if (result.removedRuleTypes.length > 0) {
+      console.warn(
+        `⚠️  ${OWNER}/${options.repo}#${RULESET_NAME}: removing ${result.removedRuleTypes.length} ` +
+          `nonstandard rule type(s) this script does not manage — ${result.removedRuleTypes.join(', ')}`,
+      );
+    }
     console.log(`${result.action} ${OWNER}/${options.repo}#${RULESET_NAME}${location}`);
     for (const rule of result.rules) console.log(`  - ${describeRule(rule)}`);
     if (options.requiredChecks === undefined) {

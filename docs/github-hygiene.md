@@ -64,6 +64,27 @@ What omitting it does depends on whether the repo already has a `main` ruleset:
    `bypass_actors` is read back and preserved, and required checks are preserved or
    replaced exactly as above — never silently dropped.
 
+## Nonstandard rule types: reported, not preserved
+
+This script converges the `main` ruleset to exactly the 4 rule types above —
+`deletion`, `non_fast_forward`, `pull_request`, `required_status_checks` — because it is
+the tool that STANDARDIZES this ruleset, not one that layers onto whatever a human added
+by hand in the GitHub UI (a `commit_message_pattern` rule, say). An UPDATE's `rules`
+array is a full replace, so any rule type outside those 4 is REMOVED, not preserved —
+that is convergence working as intended, no different from an update rebuilding
+`deletion`/`non_fast_forward`/`pull_request` to the gold-standard shape every time.
+⛔ Preserving a foreign rule type is explicitly OUT OF SCOPE for this script.
+
+⛔ **That removal is never silent, and there is no prompt.** Before an UPDATE's result —
+or its `--dry-run` twin, identically — is presented, it reports the exact nonstandard
+rule type names it is removing, read from the LIVE ruleset before the write via
+`RulesetDetail.foreignRuleTypes` (`scripts/github-ruleset.ts`) and surfaced as
+`ApplyResult.removedRuleTypes`. The write proceeds regardless — convergence is the
+point, an interactive confirmation would contradict "no prompt" — but the operator sees
+exactly what is going, not a diff they have to discover on GitHub afterward. See
+`tests/apply-main-ruleset-update.test.ts` and the `foreignRuleTypes` tests in
+`tests/github-ruleset.test.ts`.
+
 ## Why branch protection is not declared in Alchemy
 
 `alchemy.run.ts` adopts this repo's `GitHub.Repository` and `GitHub.Environment` — but
@@ -89,13 +110,14 @@ reason `alchemy.run.ts` is deployed by a human running `--stage live`, not by CI
 
 ## The helper script
 
-`scripts/apply-main-ruleset.ts` (CLI, upsert decision) and `scripts/github-ruleset.ts`
-(the ruleset shape, and the `@octokit/rest` calls) upsert the shape above onto one named
-`taslabs-net` repository. `@octokit/rest` is already a transitive dependency of `alchemy`
-here; this is GitHub's own SDK, not a hand-rolled `fetch`.
+`scripts/apply-main-ruleset.ts` (CLI, upsert decision), `scripts/github-ruleset.ts` (the
+ruleset shape and update logic), and `scripts/github-ruleset-gateway.ts` (the
+`@octokit/rest` adapter) upsert the shape above onto one named `taslabs-net` repository.
+`@octokit/rest` is already a transitive dependency of `alchemy` here; this is GitHub's
+own SDK, not a hand-rolled `fetch`.
 
-Safety properties, each backed by a test in `tests/apply-main-ruleset.test.ts` or
-`tests/github-ruleset.test.ts`:
+Safety properties, each backed by a test in `tests/apply-main-ruleset{,-update}.test.ts`
+or `tests/github-ruleset{,-gateway}.test.ts`:
 
 - ⛔ **Fails closed without `--repo`.** No default target — a maintenance script that
   could accidentally run against the wrong repo, or none, is worse than one that refuses.
@@ -131,3 +153,7 @@ This is branch protection for `main` only. It does not manage collaborators, tea
 webhooks, Actions permissions, or Dependabot — each of those is either already an
 Alchemy resource (`GitHub.Secret`, `GitHub.Webhook`, …) or, like this one, not yet a
 resource at all and therefore out of scope for this document.
+
+⛔ **Preserving a rule type outside `deletion`/`non_fast_forward`/`pull_request`/
+`required_status_checks` is out of scope by design** — see "Nonstandard rule types"
+above. An UPDATE removes one, reports it, and does not ask.

@@ -11,7 +11,8 @@
  */
 import type { Octokit } from '@octokit/rest';
 import { describe, expect, test } from 'bun:test';
-import { buildOwnedRules, buildPayload, octokitGateway } from '../scripts/github-ruleset.ts';
+import { octokitGateway } from '../scripts/github-ruleset-gateway.ts';
+import { buildOwnedRules, buildPayload } from '../scripts/github-ruleset.ts';
 
 interface FakeOctokit {
   readonly paginate: (method: unknown, params: unknown) => Promise<readonly unknown[]>;
@@ -111,7 +112,7 @@ describe('octokitGateway', () => {
     expect(sent['rules']).toEqual(buildOwnedRules());
   });
 
-  test('get() finds the live required_status_checks rule and ignores rules it does not own', async () => {
+  test('get() finds the live required_status_checks rule and REPORTS (not silently drops) rule types it does not own', async () => {
     const { octokit } = fakeOctokit({
       getResponse: {
         id: 7,
@@ -144,6 +145,9 @@ describe('octokitGateway', () => {
         required_status_checks: [{ context: 'ci' }],
       },
     });
+    // ⛔ THE MINOR THIS GUARDS. "creation" is a rule type this script does not manage —
+    //   an UPDATE removes it, and this is where that fact becomes knowable, not silent.
+    expect(detail.foreignRuleTypes).toEqual(['creation']);
     expect(detail.htmlUrl).toBe('https://github.com/taslabs-net/x/rules/7');
   });
 

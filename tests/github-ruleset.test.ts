@@ -12,6 +12,7 @@ import {
   buildRequiredStatusChecksRule,
   buildRules,
   describeRule,
+  foreignRuleTypes,
   resolveRulesForUpdate,
 } from '../scripts/github-ruleset.ts';
 
@@ -161,6 +162,38 @@ describe('describeRule', () => {
   test('throws on an unhandled rule type instead of silently ignoring it', () => {
     const bogus = { type: 'bogus' } as unknown as RulesetRule;
     expect(() => describeRule(bogus)).toThrow('unhandled rule type');
+  });
+});
+
+// ⛔ THE MINOR THIS GUARDS. Convergence deliberately does NOT preserve a rule type this
+//   script does not manage — but that removal must be reported, never silent.
+describe('foreignRuleTypes', () => {
+  test('none of the 4 owned types count as foreign', () => {
+    expect(foreignRuleTypes(buildOwnedRules())).toEqual([]);
+    expect(foreignRuleTypes([...buildOwnedRules(), buildRequiredStatusChecksRule(['ci'])])).toEqual(
+      [],
+    );
+  });
+
+  test('a human-added rule type (e.g. commit_message_pattern) is reported by name', () => {
+    expect(foreignRuleTypes([{ type: 'deletion' }, { type: 'commit_message_pattern' }])).toEqual([
+      'commit_message_pattern',
+    ]);
+  });
+
+  test('de-duplicates, first-seen order, multiple foreign types', () => {
+    expect(
+      foreignRuleTypes([
+        { type: 'creation' },
+        { type: 'deletion' },
+        { type: 'commit_message_pattern' },
+        { type: 'creation' },
+      ]),
+    ).toEqual(['creation', 'commit_message_pattern']);
+  });
+
+  test('undefined rules (a ruleset read with no rules array) reports nothing foreign', () => {
+    expect(foreignRuleTypes(undefined)).toEqual([]);
   });
 });
 
