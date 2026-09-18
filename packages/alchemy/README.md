@@ -3,8 +3,8 @@
 Custom [Alchemy](https://alchemy.run) providers for gaps the vendor SDK leaves.
 
 ```sh
-bun add @homeflare/alchemy alchemy@2.0.0-beta.77 effect@4.0.0-rc.112 \
-        @effect/platform-node@4.0.0-rc.112 cloudflare@4.5.0
+bun add @homeflare/alchemy alchemy@2.0.0-beta.78 effect@4.0.0-rc.115 \
+        @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0
 ```
 
 ⛔ **Every one of those is required, and you also need an `overrides` block** — see
@@ -76,8 +76,8 @@ like a bad credential.
 ## Peers — and one override you need
 
 ```sh
-bun add @homeflare/alchemy alchemy@2.0.0-beta.77 effect@4.0.0-rc.112 \
-        @effect/platform-node@4.0.0-rc.112 cloudflare@4.5.0
+bun add @homeflare/alchemy alchemy@2.0.0-beta.78 effect@4.0.0-rc.115 \
+        @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0
 ```
 
 ⚠️ Peers, not dependencies: Alchemy's resource registry and Effect's context both break if
@@ -88,32 +88,38 @@ two copies load in one process.
 ```json
 {
   "overrides": {
-    "effect": "4.0.0-rc.112",
-    "@effect/platform-node": "4.0.0-rc.112",
-    "@effect/platform-node-shared": "4.0.0-rc.112",
-    "@effect/platform-bun": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node-shared": "4.0.0-rc.115",
+    "@effect/platform-bun": "4.0.0-rc.115",
     "rolldown": "1.2.8"
   }
 }
 ```
 
-🔴 **Why, measured 2026-09-16 against a clean consumer install of 0.1.0.** Effect's `rc`
-line is not semver-compatible with itself, and two separate skews bite:
+🔴 **Why, measured 2026-09-16 on 0.1.0 and re-checked 2026-09-17 against Alchemy 78.**
+Effect's `rc` line is not semver-compatible with itself. Alchemy 78's peer is
+`effect >= 4.0.0-rc.115`; an unlocked `@effect/platform-node-shared` still floats to the
+next rc and breaks at import. Pin the whole set.
 
-| what resolves                                                    | what happens                                           |
-| ---------------------------------------------------------------- | ------------------------------------------------------ |
-| `effect` → rc.115                                                | `TypeError: Config.string is not a function` at import |
-| `@effect/platform-node-shared` → rc.115 while `effect` is rc.112 | `Cannot find module 'effect/ByteSize'`                 |
-| `rolldown` → 1.2.9 via vite's `~1.2.6` (measured 2026-09-16)     | `GET …/rolldown-1.2.9.tgz - 404` at `bun add`          |
+| what resolves                                                 | what happens                                           |
+| ------------------------------------------------------------- | ------------------------------------------------------ |
+| Alchemy 77 + `effect` → rc.115 (measured 2026-09-16)          | `TypeError: Config.string is not a function` at import |
+| `@effect/platform-node-shared` newer than the pinned `effect` | `Cannot find module 'effect/ByteSize'`                 |
+| `rolldown` → 1.2.9 via vite's `~1.2.6` (measured 2026-09-16)  | `GET …/rolldown-1.2.9.tgz - 404` at `bun add`          |
+| no `mime` (measured 2026-09-17 against Alchemy 78)            | `Cannot find package 'mime'` from cloudflare-runtime   |
 
-The second is the nastier one: `@effect/platform-bun@rc.112` depends on
-`platform-node-shared` at `^4.0.0-rc.112`, which resolves _up_ to rc.115 — whose own peer
-is `effect@^4.0.0-rc.115`. Nothing fails at install time. An override is the only thing
-that holds the set together.
+Alchemy 78 adapted to rc.115 — that first row is why we used to pin 112, not a reason to
+stay there. The override is still the only thing that holds the set together.
 
 ⚠️ `@effect/platform-node` is **required, not optional**: Alchemy's module graph reaches
 `Cloudflare/Workers/WorkerBridge → @effect/platform-node/NodeServices` even when you only
 import the Proxmox subpath.
+
+⚠️ So is `mime`. Alchemy 78's `@alchemy.run/cloudflare-runtime` imports it and does
+not declare it. `@effect/platform-node` has `mime` as its own dependency, but a clean
+consumer install (no hoist) cannot see that copy — measured 2026-09-17, every subpath
+threw `Cannot find package 'mime'` until it was installed next to the peers.
 
 ⚠️ So is `cloudflare`. It was marked optional in 0.1.1, which claimed the `/cloudflare`
 subpath would degrade without it — measured 2026-09-16, the subpath does not load at all:

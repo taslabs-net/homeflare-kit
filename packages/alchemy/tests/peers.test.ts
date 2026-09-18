@@ -35,7 +35,8 @@ describe('peer contract', () => {
   });
 
   test('peers are pinned, because Effect rc versions are not compatible with each other', () => {
-    // ⚠️ Measured: `>=4.0.0-rc.112` resolves to rc.115, where Config.string does not exist.
+    // ⚠️ Measured 2026-09-16: `>=4.0.0-rc.112` resolved to rc.115 against Alchemy 77
+    //   and Config.string vanished. Alchemy 78 requires rc.115; pin the pair, do not range.
     for (const name of ['effect', '@effect/platform-node', 'alchemy']) {
       expect(pkg.peerDependencies[name]).toMatch(/^\d+\.\d+\.\d+/);
     }

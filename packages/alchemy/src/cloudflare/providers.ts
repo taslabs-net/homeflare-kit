@@ -1,7 +1,7 @@
 /**
  * The HomeFlare Cloudflare provider collection, in the shape `LiteLLM.providers()` has.
  *
- * ★ ONE LAYER, BUILT ONCE, so the single `Config.redacted('CLOUDFLARE_API_TOKEN')` read is shared
+ * ★ ONE LAYER, BUILT ONCE, so the single `Config.Redacted('CLOUDFLARE_API_TOKEN')` read is shared
  *   by every resource in the stack rather than repeated per resource.
  *
  * ⚠️ THIS IS NOT `alchemy/Cloudflare`'s COLLECTION AND DOES NOT REPLACE IT. A stack that declares
