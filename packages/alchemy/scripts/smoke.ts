@@ -12,8 +12,9 @@
  *     3. Even pinned, `platform-node-shared` floats to the next rc — "Cannot find
  *        module 'effect/ByteSize'". Only an override holds the set.
  *   Alchemy 78's peer is `effect >= 4.0.0-rc.115`; the pin moved with it.
- *     4. Alchemy 78's cloudflare-runtime imports `mime` without declaring it.
- *        A clean consumer install throws `Cannot find package 'mime'`.
+ *     4. Alchemy 78's cloudflare-runtime imported `mime` without declaring it.
+ *        A clean consumer install threw `Cannot find package 'mime'`. 79
+ *        declares it; the peer stays so a 78-era install line still works.
  *   ⛔ None of them failed at INSTALL. All three threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
@@ -72,7 +73,7 @@ try {
       'bun',
       'add',
       tarball,
-      'alchemy@2.0.0-beta.78',
+      'alchemy@2.0.0-beta.79',
       'effect@4.0.0-rc.115',
       '@effect/platform-node@4.0.0-rc.115',
       'cloudflare@4.5.0',

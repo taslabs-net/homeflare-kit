@@ -34,9 +34,23 @@ export async function changelogHasEntry(cwd: string, version: string): Promise<b
   return new RegExp(`^## ${escaped}$`, 'm').test(await file.text());
 }
 
+/**
+ * ⛔ DROP HUSKY GIT_DIR. `cwd` is not enough — pre-push exports GIT_DIR
+ *   and `git tag -l` then reads this checkout, not the throwaway repo.
+ *   Symptom: shouldRelease is false during verify and a test commits `init`
+ *   onto the branch being pushed.
+ */
+const gitEnv = (): NodeJS.ProcessEnv => {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_INDEX_FILE;
+  return env;
+};
+
 /** Does this exact tag already exist? Local `git tag -l`, no network. */
 export function tagExists(cwd: string, tag: string): boolean {
-  const result = Bun.spawnSync(['git', 'tag', '-l', tag], { cwd });
+  const result = Bun.spawnSync(['git', 'tag', '-l', tag], { cwd, env: gitEnv() });
   return result.stdout.toString().trim() === tag;
 }
 
