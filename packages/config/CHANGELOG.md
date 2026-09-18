@@ -1,5 +1,11 @@
 # @homeflare/config
 
+## 0.5.1
+
+### Patch Changes
+
+- [#58](https://github.com/taslabs-net/homeflare-kit/pull/58) [`e7c101f`](https://github.com/taslabs-net/homeflare-kit/commit/e7c101faada2b14466a1f0bbf1f93da46e5e06cb) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `tagExists` now ignores husky's `GIT_DIR`, so a pre-push verify cannot read this checkout's tags (or commit into it) from the throwaway release-gate repo.
+
 ## 0.5.0
 
 ### Minor Changes
