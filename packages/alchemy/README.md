@@ -3,7 +3,7 @@
 Custom [Alchemy](https://alchemy.run) providers for gaps the vendor SDK leaves.
 
 ```sh
-bun add @homeflare/alchemy alchemy@2.0.0-beta.78 effect@4.0.0-rc.115 \
+bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
         @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0
 ```
 
@@ -76,7 +76,7 @@ like a bad credential.
 ## Peers — and one override you need
 
 ```sh
-bun add @homeflare/alchemy alchemy@2.0.0-beta.78 effect@4.0.0-rc.115 \
+bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
         @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0
 ```
 
@@ -116,10 +116,9 @@ stay there. The override is still the only thing that holds the set together.
 `Cloudflare/Workers/WorkerBridge → @effect/platform-node/NodeServices` even when you only
 import the Proxmox subpath.
 
-⚠️ So is `mime`. Alchemy 78's `@alchemy.run/cloudflare-runtime` imports it and does
-not declare it. `@effect/platform-node` has `mime` as its own dependency, but a clean
-consumer install (no hoist) cannot see that copy — measured 2026-09-17, every subpath
-threw `Cannot find package 'mime'` until it was installed next to the peers.
+⚠️ So is `mime`. Alchemy 78's `@alchemy.run/cloudflare-runtime` imported it without
+declaring it (measured 2026-09-17). 79 declares it; the peer stays so a consumer
+that followed the 78 README does not drop a required line.
 
 ⚠️ So is `cloudflare`. It was marked optional in 0.1.1, which claimed the `/cloudflare`
 subpath would degrade without it — measured 2026-09-16, the subpath does not load at all:
