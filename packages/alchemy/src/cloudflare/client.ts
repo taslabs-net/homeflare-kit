@@ -66,7 +66,7 @@ const EMPTY_TOKEN =
 export const CloudflareApiLive = Layer.effect(
   CloudflareApi,
   Effect.gen(function* () {
-    const token = yield* Config.redacted('CLOUDFLARE_API_TOKEN').pipe(
+    const token = yield* Config.Redacted('CLOUDFLARE_API_TOKEN').pipe(
       Effect.catchTag('ConfigError', () => Effect.die(new Error(MISSING_TOKEN))),
     );
     const value = Redacted.value(token);
