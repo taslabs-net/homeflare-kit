@@ -1,5 +1,11 @@
 # @homeflare/alchemy
 
+## 0.3.0
+
+### Minor Changes
+
+- [#54](https://github.com/taslabs-net/homeflare-kit/pull/54) [`d526365`](https://github.com/taslabs-net/homeflare-kit/commit/d526365a51deac968e5b0076e88b2e68b866534f) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Bump Alchemy to 2.0.0-beta.78 and Effect to 4.0.0-rc.115. Consumers must move the override set with it — Alchemy 78's peer is `effect >= rc.115`. Effect rc.115 renamed `Config.redacted` to `Config.Redacted`. `mime@4.1.0` is now a required peer: Alchemy's cloudflare-runtime imports it and does not declare it.
+
 ## 0.2.2
 
 ### Patch Changes
