@@ -20,7 +20,7 @@ export { expandAccount, expandAll, mountName } from './cloudflare-roles-expand.t
 export type { RolesConfig, SurfaceSpec } from './cloudflare-roles-config.ts';
 export { parseRolesConfig } from './cloudflare-roles-config.ts';
 export { BaoMount, BaoMountProvider } from './mount.ts';
-export { BaoPkiRoleProvider } from './pki-role.ts';
+export { BaoPkiRole, BaoPkiRoleProvider } from './pki-role.ts';
 export { BaoPolicy, BaoPolicyProvider } from './policy.ts';
 export { BaoProxmoxRole, BaoProxmoxRoleProvider } from './proxmox-role.ts';
 export { BaoSshRoleProvider } from './ssh-role.ts';
