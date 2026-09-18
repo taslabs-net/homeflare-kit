@@ -23,4 +23,4 @@ export { BaoMount, BaoMountProvider } from './mount.ts';
 export { BaoPkiRole, BaoPkiRoleProvider } from './pki-role.ts';
 export { BaoPolicy, BaoPolicyProvider } from './policy.ts';
 export { BaoProxmoxRole, BaoProxmoxRoleProvider } from './proxmox-role.ts';
-export { BaoSshRoleProvider } from './ssh-role.ts';
+export { BaoSshRole, BaoSshRoleProvider } from './ssh-role.ts';
