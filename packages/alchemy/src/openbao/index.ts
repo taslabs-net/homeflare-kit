@@ -8,6 +8,7 @@
  * ★ Anything unlisted is still reachable by path if you genuinely need it — that is a
  *   deliberate, visible act rather than an accident of barrelling.
  */
+export { BaoAuthMethod, BaoAuthMethodProvider } from './auth-method.ts';
 export { BaoAuthRole, BaoAuthRoleProvider } from './auth-role.ts';
 export { BaoCloudflareRole, BaoCloudflareRoleProvider } from './cloudflare-role.ts';
 export {
