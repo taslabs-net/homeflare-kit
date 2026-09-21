@@ -28,7 +28,7 @@ const INLINE_FLAG = /^--?[a-z0-9-]*(?:token|password|passwd|passphrase|secret|ap
 /** A flag whose NEXT argv element is the secret: `--token abc`. */
 const BARE_FLAG = /^--?(?:[a-z0-9]+-)*(?:token|password|passwd|passphrase|secret|api-?key)$/i;
 
-const PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
+export const PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
 
 /** Paths of every string leaf in a plist value holding a private key. */
 const keyLeaves = (value: PlistValue, path: string): string[] => {
