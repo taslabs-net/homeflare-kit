@@ -64,6 +64,61 @@ from `rules` is a rule deleted. That is the same shape as the Cloudflare API its
 ⛔ **Deletion is refused by design.** Removing a lock is removing a retention floor, which
 is the one operation this resource exists to make hard. It retains on destroy.
 
+## OpenBao — `@homeflare/alchemy/openbao`
+
+Vault objects as resources — `BaoMount`, `BaoAuthMethod`, `BaoPolicy`, `BaoAuthRole`,
+`BaoPkiRole`, `BaoSshRole`, `BaoCloudflareRole`, `BaoProxmoxRole`, `BaoPlugin` — plus an AppRole
+login for scripts. Every call resolves `BAO_ADDR` / `BAO_AGENT_ADDR` / `BAO_NAMESPACE` /
+`BAO_TOKEN` (or the `VAULT_*` twins) the way the `bao` CLI does. A stack provides each
+`Bao*Provider()` it uses, plus `FetchHttpClient.layer`.
+
+⛔ **Metadata only.** Alchemy stores props and attributes unencrypted, so no secret, CA key or
+plugin `env` is declarable. Every family defaults to `retain` on destroy.
+
+### appRoleLogin / revokeSelf
+
+```ts
+import { BaoLoginError, appRoleLogin, revokeSelf } from '@homeflare/alchemy/openbao';
+
+const login = await appRoleLogin({ roleId, secretId }); // mount defaults to `approle`
+try {
+  use(login.clientToken, login.accessor, login.policies, login.leaseDurationSeconds);
+} finally {
+  await revokeSelf(login.clientToken);
+}
+```
+
+- ⛔ The login never sends `BAO_TOKEN`, and a `BaoLoginError` never contains the credential.
+  OpenBao can echo a secret_id back in an error, so every error string is redacted.
+- ⚠️ `clientToken` is non-enumerable: `console.log(login)` leaves it out, and so does a spread.
+- ⚠️ A value with leading or trailing whitespace is refused, not trimmed. `Bun.file().text()`
+  keeps a file's trailing newline.
+- `reason` is `input`, `refused`, `unreachable` or `response`. Pass `env` to use something other
+  than `process.env`. `appRoleLoginEffect` / `revokeSelfEffect` are the same calls as Effects.
+
+### BaoPlugin
+
+```ts
+import { BaoPlugin } from '@homeflare/alchemy/openbao';
+
+export const plugins = Effect.gen(function* () {
+  yield* BaoPlugin('plugin-cloudflare', {
+    name: 'openbao-plugin-secrets-cloudflare',
+    type: 'secret', // 'secret' | 'auth' | 'database'
+    command: 'openbao-plugin-secrets-cloudflare', // a bare file name in plugin_directory
+    sha256: '<hex sha256 of that file>',
+    version: 'v0.1.2', // canonical semver
+  });
+});
+```
+
+- ⛔ It registers a binary that is already in `plugin_directory`. It does not copy the binary.
+- ⚠️ **Declare `version` if the binary reports its own.** OpenBao files an unversioned
+  registration under the self-reported version, and reconcile then refuses because the read-back
+  finds nothing.
+- ⚠️ A new `sha256` does not restart running mounts. Reload with `sys/plugins/reload/backend`.
+- The deploying token needs `sudo` on `sys/plugins/catalog/*`.
+
 ## Credentials
 
 `CLOUDFLARE_API_TOKEN` is read from the environment at call time, never at module scope.

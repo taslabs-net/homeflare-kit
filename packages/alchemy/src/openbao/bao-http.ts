@@ -190,6 +190,8 @@ export const baoRead = (path: string) =>
  * ⚠️ ROLE BODIES STAY ALL-STRING ON PURPOSE. `bao write k=v` put every value in the JSON body as a
  *   string — MEASURED with `-output-curl-string`, see ssh-role-form.ts — and the form files still
  *   build exactly that body, so the server parses the same request it was always sent.
+ *   ⛔ EXCEPT A MAP FIELD: sdk v2.6.2 refuses a string for a TypeMap with a 400, so Bao.SshRole
+ *   sends its two maps as objects (the ⛔ on mapValue in ssh-role-form.ts, measured 2026-09-21).
  */
 export const baoWrite = (
   method: 'POST' | 'PUT',

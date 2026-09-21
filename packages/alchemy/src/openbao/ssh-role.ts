@@ -209,10 +209,9 @@ export const BaoSshRoleProvider = () =>
             yield* baoWrite('PUT', path, writeBody(form));
           }
           /**
-           * ⚠️ RE-READ RATHER THAN ECHO THE DECLARATION. The write is the only place the
-           *   JSON-string encoding of `default_extensions` could be wrong (see the ⛔ on
-           *   mapValue), and a provider that returned its own props would record a role it
-           *   had never confirmed.
+           * ⚠️ RE-READ RATHER THAN ECHO THE DECLARATION. The map encoding in the write was
+           *   wrong once already, unseen until 2026-09-21 (the ⛔ on mapValue), and a provider
+           *   that returned its own props would record a role it had never confirmed.
            */
           const after = yield* readRole(form);
           if (after === undefined) {

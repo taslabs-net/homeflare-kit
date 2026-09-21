@@ -159,26 +159,28 @@ export const attributesOf = (
 };
 
 /**
- * ⛔ THE MAPS CROSS THE WIRE AS A JSON STRING, AND THAT IS THE CORRECT SHAPE. MEASURED with
- *   `bao write -output-curl-string` against the live v2.6.2 (no write was sent): the CLI
- *   puts every `k=v` value in the body as a string, so `default_extensions` leaves as
- *   `"{\"permit-pty\":\"\"}"` and never as an object. OpenBao's own OpenAPI types that field
- *   `object`/`format: map` — a `framework` TypeMap, which JSON-decodes a string value.
- *   ⚠️ THAT DECODE IS REASONED, NOT MEASURED: writing to the live engine was out of bounds,
- *   so the round trip was never executed. If a first deploy lands a role whose
- *   default_extensions came out EMPTY, this is the line that was wrong, and the fix is to
- *   send the map as a JSON object in writeBody rather than as this string — the HTTP body
- *   can now carry either.
+ * ⛔ THE MAPS CROSS THE WIRE AS JSON OBJECTS. A JSON STRING IS REJECTED, SO EVERY WRITE FAILED.
+ *   History: `bao write -output-curl-string` showed the CLI sending `k=v` values as strings,
+ *   so this once sent `"{\"permit-pty\":\"\"}"` on the reasoning that a `framework` TypeMap
+ *   JSON-decodes a string. ⚠️ IT DOES NOT. MEASURED 2026-09-21 against sdk v2.6.2 itself (a Go
+ *   probe of framework.FieldData.Validate, no server): TypeMap is `mapstructure.WeakDecode`
+ *   (framework/field_data.go:271-276), which refuses a string with "expected type
+ *   'map[string]interface {}', got unconvertible type 'string'" — and framework/backend.go:
+ *   281-285 answers that with a 400 before the handler runs. `"{}"` fails the same way, so every
+ *   Bao.SshRole write, not only those with extensions, would have been refused. It went unseen
+ *   because the adopted roles already matched and no write was ever sent. The same probe
+ *   accepted the object form and every other field of writeBody as sent.
  */
-const mapValue = (map: Readonly<Record<string, string>>) => JSON.stringify(extMap(map));
+const mapValue = (map: Readonly<Record<string, string>>) => extMap(map);
 
 /**
  * ⛔ EVERY MANAGED FIELD IS SENT ON EVERY WRITE, INCLUDING THE FALSE ONES. The role write is
  *   a full replace (see ssh-role.ts), so an omitted field is not "left alone" — it is reset.
- *   Sending the resolved form makes the body and the declaration the same statement. All
- *   strings, exactly the `k=v` pairs `bao write` sent, for `PUT <mount>/roles/<name>`.
+ *   Sending the resolved form makes the body and the declaration the same statement. Strings,
+ *   exactly the `k=v` pairs `bao write` sent, for `PUT <mount>/roles/<name>` — except the two
+ *   maps, which must be objects (the ⛔ on mapValue).
  */
-export const writeBody = (form: BaoSshRoleForm): Record<string, string> => ({
+export const writeBody = (form: BaoSshRoleForm): Record<string, unknown> => ({
   key_type: 'ca',
   allowed_users: form.allowedUsers.join(','),
   default_user: form.defaultUser,

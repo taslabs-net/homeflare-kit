@@ -88,12 +88,12 @@ try {
     join(scratch, 'consumer.ts'),
     `import { R2BucketLock, astroWebsite, viteWebsite } from '@homeflare/alchemy/cloudflare';
 import { ForgejoOrgLabel } from '@homeflare/alchemy/forgejo';
-import { BaoAuthMethod, BaoAuthRoleProvider } from '@homeflare/alchemy/openbao';
+import { BaoAuthMethod, BaoAuthRoleProvider, BaoPlugin, appRoleLogin } from '@homeflare/alchemy/openbao';
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { ProxmoxAclProvider } from '@homeflare/alchemy/proxmox';
 
 for (const [name, value] of Object.entries({
-  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, TalosKubeconfigProvider, ProxmoxAclProvider,
+  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoPlugin, appRoleLogin, TalosKubeconfigProvider, ProxmoxAclProvider,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
 }
