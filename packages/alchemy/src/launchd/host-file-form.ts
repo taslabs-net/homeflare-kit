@@ -46,9 +46,12 @@ const identityProblems = (name: string, value: string | number | undefined): str
     : [`${name} ${JSON.stringify(value)} is not a valid user or group name`];
 };
 
-export const fileProblems = (props: HostFileProps): string[] => {
+/**
+ * An absolute, normalised path, or the reasons it is not. ★ Shared with sudo-allowlist.ts, so a
+ *   path the sudo runner may touch as root obeys exactly the rule a declared file does.
+ */
+export const pathProblems = (path: string): string[] => {
   const found: string[] = [];
-  const { path } = props;
   if (!path.startsWith('/')) found.push('path must be absolute');
   // ★ One spelling per file: `a/./b`, `a//b` and `a/../b` would each be a second resource for the
   //   same inode, and `..` is how a derived path walks out of the directory it was meant for.
@@ -62,6 +65,11 @@ export const fileProblems = (props: HostFileProps): string[] => {
     found.push('path must be normalised (no trailing slash, no empty, "." or ".." segments)');
   }
   if (path.includes('\x00')) found.push('path contains NUL');
+  return found;
+};
+
+export const fileProblems = (props: HostFileProps): string[] => {
+  const found = pathProblems(props.path);
   const mode = props.mode ?? DEFAULT_MODE;
   if (!Number.isSafeInteger(mode) || mode < 0 || mode > 0o7777) found.push('mode must be 0–0o7777');
   found.push(...identityProblems('owner', props.owner));

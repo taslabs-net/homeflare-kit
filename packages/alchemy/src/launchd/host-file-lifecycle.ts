@@ -102,7 +102,8 @@ export const reconcileFile = async (
     throw refuse(
       props.path,
       `owner ${String(props.owner)} is not the deploying user; only root may chown. Deploy as root ` +
-        'or through a privileged HostRunner (privileged: true). This provider never calls sudo.',
+        'or through a privileged HostRunner (sudoRunner() with this path under a prefix). This ' +
+        'provider never calls sudo itself.',
     );
   }
   const stat = await runner.stat(props.path);

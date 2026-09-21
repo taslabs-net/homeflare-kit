@@ -119,6 +119,23 @@ delete-first.
 - ⛔ **No silent sudo:** the system domain needs a deploy started as root, or a `privileged` runner.
 - ⚠️ `org.nixos.*` jobs are never adopted. Guide and nix-darwin cutover: [docs/launchd.md](./docs/launchd.md).
 
+### Deploying as yourself — `sudoRunner()`
+
+```ts
+launchdProviders(sudoRunner({ prefixes: ['/Library/LaunchDaemons', '/opt/example'] }));
+```
+
+The deploy runs as you. Only `launchctl bootstrap | bootout | kickstart` in the system domain, and
+`install` / `rm` of a file under a declared prefix, go through `sudo -n`, in exact argv shapes. Each
+one is logged (argv only, never content) before it runs. A plan never calls sudo.
+
+- ⛔ **Opt-in, never a fallback**, and it never prompts: if sudo needs a password, the call fails at
+  once and says to run `sudo -v`, or to grant exactly these commands `NOPASSWD`.
+- ⚠️ Refused before sudo is asked: any other argv, a prefix that is not a real directory only root
+  may write, a path outside every prefix that needs root, a symlink on the way, a file you could
+  not read back, and another user's `gui/<uid>`.
+- Full list, sudoers cautions and limits: [docs/launchd-sudo.md](./docs/launchd-sudo.md).
+
 ## Caddy — `@homeflare/alchemy/caddy`
 
 `CaddyConfig` declares a running Caddy's config as Caddyfile text, applied through Caddy's own admin

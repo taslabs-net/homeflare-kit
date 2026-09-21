@@ -61,8 +61,9 @@ export const assertMayWrite = (runner: HostRunner, label: string, domain: Parsed
   if (domain.kind === 'system') {
     throw refuse(
       label,
-      'the system domain needs root. Run the deploy as root, or provide a HostRunner that is ' +
-        'deliberately privileged (privileged: true). This provider never calls sudo.',
+      'the system domain needs root. Run the deploy as root, or pass a deliberately privileged ' +
+        'HostRunner: sudoRunner() elevates exactly the calls this needs. This provider never ' +
+        'calls sudo itself.',
     );
   }
   if (domain.uid !== runner.effectiveUid()) {

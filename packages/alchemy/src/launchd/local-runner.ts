@@ -5,7 +5,8 @@
  *   the published dist also loads under node (the package's smoke test and the kit's AGENTS.md:
  *   consumers run dist/, not src/), and both runtimes implement these modules.
  * ⛔ NO ELEVATION, EVER. `privileged` is false; a system-domain write succeeds only when the whole
- *   deploy was started as root. See the ⛔ on HostRunner.privileged for why nothing here calls sudo.
+ *   deploy was started as root. See the ⛔ on HostRunner.privileged for why nothing here calls sudo;
+ *   the opt-in elevating runner is sudo-runner.ts, which wraps this one.
  * ⛔ NO SHELL. `exec` spawns argv directly, so a label, path or argument can never be re-parsed
  *   as shell syntax.
  */
@@ -21,13 +22,15 @@ export type LocalRunnerOptions = {
   readonly execTimeoutMs?: number;
 };
 
-const code = (cause: unknown): string | undefined =>
+/** The errno code of a thrown fs error (`ENOENT`, `EACCES`, …), if it has one. */
+export const errnoCode = (cause: unknown): string | undefined =>
   typeof cause === 'object' && cause !== null && 'code' in cause
     ? String((cause as { code: unknown }).code)
     : undefined;
 
 /** ENOENT and ENOTDIR both mean "nothing is at this path". */
-const absent = (cause: unknown): boolean => code(cause) === 'ENOENT' || code(cause) === 'ENOTDIR';
+const absent = (cause: unknown): boolean =>
+  errnoCode(cause) === 'ENOENT' || errnoCode(cause) === 'ENOTDIR';
 
 const run = (argv: readonly string[], timeoutMs: number): Promise<ExecResult> =>
   new Promise((resolve, reject) => {
