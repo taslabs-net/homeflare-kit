@@ -88,13 +88,13 @@ try {
     join(scratch, 'consumer.ts'),
     `import { R2BucketLock, astroWebsite, viteWebsite } from '@homeflare/alchemy/cloudflare';
 import { ForgejoOrgLabel } from '@homeflare/alchemy/forgejo';
-import { BaoAuthMethod, BaoAuthRoleProvider, BaoPlugin, appRoleLogin } from '@homeflare/alchemy/openbao';
+import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles } from '@homeflare/alchemy/openbao';
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { ProxmoxAclProvider } from '@homeflare/alchemy/proxmox';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist } from '@homeflare/alchemy/launchd';
 
 for (const [name, value] of Object.entries({
-  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoPlugin, appRoleLogin, TalosKubeconfigProvider, ProxmoxAclProvider,
+  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider,
   HostFile, LaunchdJob, launchdProviders,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');

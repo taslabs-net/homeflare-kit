@@ -1,0 +1,102 @@
+/**
+ * A role on a `jwt` or `oidc` auth mount — `auth/<mount>/role/<name>`: which tokens may log in,
+ * how the entity is named, and what the resulting OpenBao token carries. METADATA ONLY.
+ *
+ * ⛔ NO SECRET IN PROPS OR ATTRIBUTES — see policy.ts. A role holds claim names, audiences, redirect
+ *   URIs and policy names. The mount's OIDC client secret is config, not role, and stays out of
+ *   Alchemy entirely (the ⛔ in jwt-config.ts).
+ * ⛔ HUMANS GET A NON-ADMIN DEFAULT (machine-access plan, "Admin boundary"): a human role's
+ *   `tokenPolicies` should not include an admin policy, and admin needs login MFA
+ *   (mfa-enforcement.ts). This resource does not know which policy is admin, so it cannot refuse —
+ *   the stack that declares the role owns that line.
+ * ⚠️ DELETING A ROLE DOES NOT REVOKE THE TOKENS IT ISSUED. path_role.go:478 pathRoleDelete removes the
+ *   storage entry and nothing else; those tokens live to their TTL.
+ *
+ * ★ REPLACE SEMANTICS (REPLACE.md): `mount` or `name` changed → `replace`, create-first. The new
+ *   path cannot collide with the old, so no `deleteFirst`. Under the default `retain` the old role
+ *   stays live, and still admits logins, until removed by hand.
+ * ★ `defaultRemovalPolicy: 'retain'`, like every Bao.* family.
+ */
+import { Resource } from 'alchemy';
+import { isResolved } from 'alchemy/Diff';
+import * as Provider from 'alchemy/Provider';
+import * as Effect from 'effect/Effect';
+import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { baoDelete } from './bao-http.ts';
+import {
+  type BaoJwtRoleAttributes,
+  type BaoJwtRoleProps,
+  attributesOf,
+  matches,
+  mountOf,
+  problems,
+  rolePath,
+  writeBody,
+} from './jwt-role-form.ts';
+import { type RoleSpec, planRole, readRoleAt, reconcileRole } from './role-reconcile.ts';
+
+export type {
+  BaoJwtCallbackMode,
+  BaoJwtRoleAttributes,
+  BaoJwtRoleProps,
+  BaoJwtRoleType,
+} from './jwt-role-form.ts';
+
+export interface BaoJwtRole extends Resource<
+  'Bao.JwtRole',
+  BaoJwtRoleProps,
+  BaoJwtRoleAttributes,
+  never,
+  HttpClient.HttpClient
+> {}
+
+export const BaoJwtRole = Resource<BaoJwtRole>('Bao.JwtRole', {
+  defaultRemovalPolicy: 'retain',
+});
+
+export const jwtRoleSpec = (props: BaoJwtRoleProps): RoleSpec<BaoJwtRoleAttributes> => ({
+  attributesOf: (live) => attributesOf(props, live),
+  body: writeBody(props),
+  family: 'Bao.JwtRole',
+  matches: (attributes) => matches(attributes, props),
+  path: rolePath(props),
+  problems: problems(props),
+});
+
+export const BaoJwtRoleProvider = () =>
+  Provider.effect(
+    BaoJwtRole,
+    Effect.succeed(
+      BaoJwtRole.Provider.of({
+        /**
+         * ⛔ `bao list auth/<mount>/role` IS NOT A LIST OF THINGS THIS OWNS — every role answers,
+         *   including the hand-made admin lanes. Returning them invites adopt-then-delete.
+         */
+        list: () => Effect.succeed([]),
+
+        read: Effect.fn(function* ({ olds }) {
+          const found = yield* readRoleAt(jwtRoleSpec(olds));
+          return found?.attributes;
+        }),
+
+        /** ⛔ IT COMPARES THE LIVE ROLE, NOT THE STORED DIGEST — a hand-widened audience is drift. */
+        diff: Effect.fn(function* ({ news, output }) {
+          if (output === undefined || !isResolved(news)) return undefined;
+          if (mountOf(news) !== output.mount || news.name !== output.name) {
+            return { action: 'replace' } as const;
+          }
+          return { action: yield* planRole(jwtRoleSpec(news)) } as const;
+        }),
+
+        reconcile: Effect.fn(function* ({ news }) {
+          return yield* reconcileRole(jwtRoleSpec(news));
+        }),
+
+        /** Idempotent as Alchemy requires — a missing role deletes as success. */
+        delete: Effect.fn(function* ({ output }) {
+          yield* baoDelete(rolePath(output));
+          return undefined;
+        }),
+      }),
+    ),
+  );

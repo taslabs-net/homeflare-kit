@@ -14,6 +14,7 @@
  */
 import { accountResource, bucketResource, zoneResource } from './cloudflare-group-scope.ts';
 import type { AccountSpec, RoleTemplate, RolesConfig } from './cloudflare-roles-config.ts';
+import { trimRuns } from './mount-path.ts';
 
 /** A zone as the expansion needs it — what cfhf.py load_account listed (cfhf.py:134-146). */
 export interface CloudflareZone {
@@ -73,11 +74,7 @@ export interface ExpandedRole {
 }
 
 /** cfroles.py:18-20 — `example.com` → `homeflare-dev`. */
-export const slug = (name: string) =>
-  name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+export const slug = (name: string) => trimRuns(name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), '-');
 
 /**
  * cfroles.py:23-38. ⛔ THE `-internal` SUFFIX IS WHAT KEEPS TWO ZONES OF ONE NAME APART. Slugging

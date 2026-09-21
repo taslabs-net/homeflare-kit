@@ -1,7 +1,8 @@
 import { sha256 } from './digest.ts';
+import { trimTrailingSlashes } from './mount-path.ts';
 
 /** Mount path without a trailing slash — props and `sys/mounts/<path>` use this shape. */
-export const mountPath = (path: string) => path.replace(/\/+$/, '');
+export const mountPath = (path: string) => trimTrailingSlashes(path);
 
 const DURATION = /^(\d+)([smhd])$/;
 
@@ -46,6 +47,13 @@ export interface BaoMountProps {
   maxLeaseTtl?: string;
   /** KV only — sent as `options.version` on enable, as `-version=2` was. Immutable after create. */
   version?: 1 | 2;
+  /**
+   * The path this mount lives at NOW, when `path` is where it should move to. Moves it with
+   * `sys/remount`, keeping every secret. Without it, a changed `path` fails the plan — see
+   * mount-move.ts. ⛔ Every lease under the old path is revoked, and policies are not rewritten.
+   * Harmless to leave declared after the move: once state holds `path`, it is ignored.
+   */
+  remountFrom?: string;
 }
 
 export interface BaoMountAttributes {

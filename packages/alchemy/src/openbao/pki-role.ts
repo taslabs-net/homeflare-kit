@@ -44,12 +44,13 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { baoDelete, baoRead, baoWrite } from './bao-http.ts';
-import { mountPath, parseDuration } from './mount-form.ts';
+import { mountPath } from './mount-form.ts';
 import {
   type BaoPkiRoleAttributes,
   type BaoPkiRoleProps,
   attributesOf,
   matches,
+  problems,
   rolePath,
   writeBody,
 } from './pki-role-form.ts';
@@ -74,12 +75,6 @@ const readRole = (props: BaoPkiRoleProps) =>
     if (live === undefined) return undefined;
     return attributesOf(props, live);
   });
-
-/** Duration props `bao write` must never see — reconcile turns these into a refusal. */
-const badDurations = (props: BaoPkiRoleProps) =>
-  [['ttl', props.ttl] as const, ['maxTtl', props.maxTtl] as const].filter(
-    ([, text]) => parseDuration(text) === undefined,
-  );
 
 export const BaoPkiRoleProvider = () =>
   Provider.effect(
@@ -111,18 +106,20 @@ export const BaoPkiRoleProvider = () =>
            * ⚠️ A ROLE IS IDENTIFIED BY MOUNT **AND** NAME. Moving a declaration to another
            *   engine is a different object under a different CA, never an in-place edit —
            *   `replace`, so Alchemy creates the new one and retires the old.
+           * ⛔ A RENAME WAS NOT CAUGHT UNTIL 2026-09-21 (REPLACE.md): only the mount was compared,
+           *   so a new `name` read nothing at the new path, planned `update`, wrote the new role,
+           *   and left the old one issuing certificates under no state record at all.
            */
-          if (mountPath(news.mount ?? 'pki') !== output.mount)
+          if (mountPath(news.mount ?? 'pki') !== output.mount || news.name !== output.name)
             return { action: 'replace' } as const;
           /**
            * ⚠️ A DECLARATION reconcile WOULD REFUSE MUST NEVER PLAN AS noop. An empty
            *   allowedDomains, or a duration OpenBao cannot parse, can compare equal to a
            *   live role already in that state — and a noop there hides the refusal behind a
            *   clean plan until the next deploy. Route it to reconcile, which says why.
+           *   (The full list is `problems` in pki-role-form.ts.)
            */
-          if (news.allowedDomains.length === 0 || badDurations(news).length > 0) {
-            return { action: 'update' } as const;
-          }
+          if (problems(news).length > 0) return { action: 'update' } as const;
           const live = yield* readRole(news);
           if (live === undefined) return { action: 'update' } as const;
           return matches(live, news)
@@ -136,24 +133,12 @@ export const BaoPkiRoleProvider = () =>
            * ⛔ AN EMPTY allowedDomains IS A REFUSAL, NOT AN EMPTY ROLE. `allow_any_name` is
            *   false on every live role, so a role with no allowed domains can issue NOTHING —
            *   and an unresolved or mistyped prop reads exactly like an author who meant it.
-           *   policy.ts refuses an empty fragment directory for the same reason.
+           *   policy.ts refuses an empty fragment directory for the same reason. The other
+           *   refusals — an unparseable duration, noStore with generateLease — are in `problems`.
            */
-          if (news.allowedDomains.length === 0) {
-            return yield* Effect.die(
-              new Error(
-                `Bao.PkiRole ${path}: allowedDomains is empty. With allow_any_name false ` +
-                  'that role can issue no certificate at all.',
-              ),
-            );
-          }
-          const bad = badDurations(news);
+          const bad = problems(news);
           if (bad.length > 0) {
-            return yield* Effect.die(
-              new Error(
-                `Bao.PkiRole ${path}: ${bad.map(([k, v]) => `${k}=${v}`).join(', ')} ` +
-                  'is not a duration OpenBao parses (expect 30m, 720h, 8760h or 0).',
-              ),
-            );
+            return yield* Effect.die(new Error(`Bao.PkiRole ${path}: ${bad.join(' ')}`));
           }
           const live = yield* readRole(news);
           if (live === undefined || !matches(live, news)) {
