@@ -13,12 +13,16 @@
  *   dependents are updated in the same graph, and only then is the old generation deleted. The
  *   engine hands that delete the OLD generation's attributes (Apply.ts deleteOldGenerations and the
  *   GC pass both pass `output: old.attr`), and every delete here reads `output`, never `news`.
+ *   ⛔ A new path that collides with ANOTHER live object is refused at plan instead (`judgeMove`).
  * ⚠️ UNDER `retain` THE OLD OBJECT STAYS LIVE. Apply.ts:2164-2173 skips the old generation's delete
  *   and logs "Retaining replaced resource (removal policy: retain)". The plan still says `replace`
  *   and the apply says what it kept, so it is no longer silent, but the old object is unmanaged
  *   from then on. Remove it by hand, or opt into `RemovalPolicy.destroy()`.
  */
 import * as Effect from 'effect/Effect';
+import { baoRead } from './bao-http.ts';
+
+const exact = (identity: string): string => identity;
 
 /**
  * A string prop of a diff's `news`, once that one prop is resolved; `undefined` while it is still an
@@ -33,6 +37,13 @@ export const declaredString = (news: unknown, key: string): string | undefined =
   if (typeof news !== 'object' || news === null) return undefined;
   const value: unknown = (news as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : undefined;
+};
+
+/** True while an optional prop is declared but is not yet a value: an Output of a changing upstream. */
+export const isPendingProp = (news: unknown, key: string): boolean => {
+  if (typeof news !== 'object' || news === null) return false;
+  const value: unknown = (news as Record<string, unknown>)[key];
+  return value !== undefined && typeof value !== 'string';
 };
 
 /** A role's API path from a diff's `news`, once both `mount` and `name` are resolved. */
@@ -57,9 +68,9 @@ export const declaredRolePath = (
 export const policyKey = (name: string): string => name.trim().toLowerCase();
 
 /**
- * Whether the declared identity names a different object than the one in state: `true` → plan
- * `replace`; `false` → the same object; `undefined` → not knowable yet, because the declared side is
- * still an Output. `key` is how the SERVER keys the object (`policyKey`); the default is exact,
+ * Whether the declared identity names a different object than the one in state: `true` → moved (the
+ * diff asks `judgeMove`, which also reads the target); `false` → the same object; `undefined` → not
+ * knowable yet, because the declared side is still an Output. `key` is how the SERVER keys the object (`policyKey`); the default is exact,
  * which is right for a mount path (vault/routing/router.go folds no case) and for both plugins'
  * roles (each stores `roles/<name>` verbatim).
  *
@@ -71,8 +82,63 @@ export const policyKey = (name: string): string => name.trim().toLowerCase();
 export const isMoved = (
   stored: string,
   declared: string | undefined,
-  key: (identity: string) => string = (identity) => identity,
+  key: (identity: string) => string = exact,
 ): boolean | undefined => (declared === undefined ? undefined : key(stored) !== key(declared));
+
+/**
+ * The role path a resource last wrote, or last tried to: its attributes once a write finished, else
+ * the props of the create or replacement that did not (`output` is undefined for both).
+ */
+export const triedRolePath = (
+  output: { readonly mount: string; readonly name: string } | undefined,
+  olds: unknown,
+  rolePath: (mount: string, name: string) => string,
+): string | undefined =>
+  output === undefined ? declaredRolePath(olds, rolePath) : rolePath(output.mount, output.name);
+
+/**
+ * The diff's first question, asked before `isResolved(news)`: the move from the identity this
+ * resource last wrote or tried (`tried`) to the declared one, or undefined when both name the same
+ * object or either is still unknown. `pathOf` is the API path an identity is read at.
+ *
+ * ⛔ A MOVE ONTO AN OBJECT THAT ALREADY EXISTS FAILS THE PLAN. MEASURED 2026-09-21 through the engine
+ *   (rename-occupied.test.ts): two policies that swapped names under `RemovalPolicy.destroy()` each
+ *   planned `replace`, each new generation wrote over the other's live policy, and each old
+ *   generation's delete then removed the name the other had just written. The deploy was green and
+ *   both policies were gone, every grant revoked. A shift (a → b while b → c), and a move onto the
+ *   name of a resource leaving the stack, were measured ending the same way. So was reverting a
+ *   move whose new generation failed: the old generation still holds the name, and its delete runs
+ *   after the revert has rewritten it. That is why `tried` falls back to the props of an unfinished
+ *   write.
+ * ⚠️ THE DIFF CANNOT SEE THE REMOVAL POLICY, SO THIS REFUSES UNDER `retain` TOO, where a swap, or a
+ *   move back onto a retained old generation, would have been harmless. The cost is a move in two
+ *   deploys through a free name, or removing the target by hand. The alternative is a green deploy
+ *   that deletes what it has just written.
+ * ★ ONE PLAN-TIME READ, OF A PATH THE NEW GENERATION'S RECONCILE READS ANYWAY. A 404, a missing mount
+ *   included, is free; a refused read fails the plan, as any other diff read does.
+ */
+export const judgeMove = (
+  family: string,
+  tried: string | undefined,
+  declared: string | undefined,
+  pathOf: (identity: string) => string,
+  key: (identity: string) => string = exact,
+) =>
+  Effect.gen(function* () {
+    if (tried === undefined || declared === undefined || key(tried) === key(declared)) {
+      return undefined;
+    }
+    if ((yield* baoRead(pathOf(declared))) === undefined) return { from: tried, to: declared };
+    return yield* Effect.die(
+      new Error(
+        `${family}: ${tried} → ${declared} would land on an object that already exists at ` +
+          `${declared}. Under RemovalPolicy.destroy() a resource moving off that name (a swap, a ` +
+          'shift, or a reverted move that did not finish) deletes it after this one writes it. ' +
+          'Nothing was written. Move through a name nothing holds, in two deploys, or remove ' +
+          `${declared} by hand first.`,
+      ),
+    );
+  });
 
 /**
  * Reconcile's guard: an `update` whose prior attributes name another object.
@@ -83,8 +149,8 @@ export const isMoved = (
  *   generation's attributes.
  * ★ THE FAILED DEPLOY SETTLES ITSELF. Apply has already committed the row as `updating`, with the new
  *   props and the OLD attributes. By the next plan the upstream Output has landed, so the diff sees
- *   both names and answers `replace`. The old object is then deleted, or retained, by the removal
- *   policy, with no hand repair.
+ *   both names and answers `replace` (or refuses, if the new name is already taken: `judgeMove`).
+ *   The old object is then deleted, or retained, by the removal policy, with no hand repair.
  */
 export const refuseMovedUpdate = (family: string, from: string, to: string) =>
   Effect.die(

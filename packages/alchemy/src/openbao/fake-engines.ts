@@ -1,13 +1,20 @@
 /**
- * Fakes of the three stores behind Bao.Policy, Bao.CloudflareRole and Bao.ProxmoxRole, for fake-bao.
- * Each keys its objects the way the real server does. That is the point: a rename test is only as
- * good as the fake's idea of "the same object".
+ * Fakes of the three stores behind Bao.Policy, Bao.CloudflareRole and Bao.ProxmoxRole, for fake-bao,
+ * plus Bao.Policy's provider over fake fragment directories. Each store keys its objects the way the
+ * real server does. That is the point: a rename test is only as good as the fake's idea of "the
+ * same object".
  *
  * ⛔ TEST-ONLY — see fake-bao.ts. No provider imports this file.
  */
+import * as Effect from 'effect/Effect';
+import * as FileSystem from 'effect/FileSystem';
+import * as Layer from 'effect/Layer';
+import * as Path from 'effect/Path';
+import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import type { Reply, Seen } from './fake-bao.ts';
 import { parseDuration } from './mount-form.ts';
 import { trimTrailing } from './mount-path.ts';
+import { BaoPolicyProvider } from './policy.ts';
 import { policyKey } from './rename.ts';
 
 type Stored = Record<string, unknown>;
@@ -86,3 +93,27 @@ export const proxmoxRoles = (): Store =>
     ...(body['ttl'] === undefined ? {} : { ttl: Number(body['ttl']) }),
     ...(body['max_ttl'] === undefined ? {} : { max_ttl: Number(body['max_ttl']) }),
   }));
+
+/**
+ * Bao.Policy's provider over fragment directories that exist only here: `…/empty` holds no file,
+ * `…/two` holds two, and any other directory one. Each file is one grant named after its own path,
+ * so a directory's content is its name.
+ */
+export const fakePolicyProviders = Layer.mergeAll(
+  BaoPolicyProvider().pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        FileSystem.layerNoop({
+          readDirectory: (dir) =>
+            Effect.succeed(
+              dir.endsWith('/empty') ? [] : dir.endsWith('/two') ? ['a.hcl', 'b.hcl'] : ['a.hcl'],
+            ),
+          readFileString: (path) =>
+            Effect.succeed(`path "${path}" {\n  capabilities = ["read"]\n}`),
+        }),
+        Path.layer,
+      ),
+    ),
+  ),
+  FetchHttpClient.layer,
+);

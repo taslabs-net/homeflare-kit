@@ -8,49 +8,24 @@ import { describe, it } from 'node:test';
 import * as Output from 'alchemy/Output';
 import * as RemovalPolicy from 'alchemy/RemovalPolicy';
 import * as Effect from 'effect/Effect';
-import * as FileSystem from 'effect/FileSystem';
-import * as Layer from 'effect/Layer';
-import * as Path from 'effect/Path';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import { type Fake, type Seen, fakeBao } from './fake-bao.ts';
-import { aclPolicies } from './fake-engines.ts';
-import { type StackBody, fakeStack } from './fake-stack.ts';
-import { BaoPolicy, BaoPolicyProvider } from './policy.ts';
+import type { Fake } from './fake-bao.ts';
+import { aclPolicies, fakePolicyProviders } from './fake-engines.ts';
+import { type FakeStack, type StackBody, withFakeStack, writesOf as writes } from './fake-stack.ts';
+import { BaoPolicy } from './policy.ts';
 
-/** One grant per fragment file, named after its path, so a directory's content is its name. */
-const files = Layer.mergeAll(
-  FileSystem.layerNoop({
-    readDirectory: (dir) => Effect.succeed(dir.endsWith('/two') ? ['a.hcl', 'b.hcl'] : ['a.hcl']),
-    readFileString: (path) => Effect.succeed(`path "${path}" {\n  capabilities = ["read"]\n}`),
-  }),
-  Path.layer,
-);
-const providers = Layer.mergeAll(
-  BaoPolicyProvider().pipe(Layer.provide(files)),
-  FetchHttpClient.layer,
-);
-
-/** A fake policy store and a stack over it; `body` runs inside, and the fake stops after. */
-const withStack = async (
-  body: (stack: ReturnType<typeof fakeStack>, bao: Fake, live: () => string[]) => Promise<void>,
-) => {
+/** A fake policy store and a stack over it; `live` lists the policy names the store holds. */
+const withStack = (body: (stack: FakeStack, bao: Fake, live: () => string[]) => Promise<void>) => {
   const store = aclPolicies();
-  const bao = fakeBao(store);
-  try {
-    await body(fakeStack(providers, { BAO_ADDR: bao.address }), bao, () =>
+  return withFakeStack(fakePolicyProviders, store, (stack, bao) =>
+    body(stack, bao, () =>
       [...store.live.keys()].map((path) => path.replace('sys/policies/acl/', '')).sort(),
-    );
-  } finally {
-    bao.stop();
-  }
+    ),
+  );
 };
 
 type Removal = typeof RemovalPolicy.destroy;
 const policy = (name: string, removal: Removal = RemovalPolicy.retain): StackBody =>
   Effect.asVoid(BaoPolicy('Policy', { fragments: '/policies/app', name }).pipe(removal()));
-
-const writes = (seen: Seen[]) =>
-  seen.filter((each) => each.method !== 'GET').map((each) => `${each.method} ${each.path}`);
 
 describe('Bao.Policy rename, through the engine', () => {
   it('plans replace, writes the new name first, then deletes the OLD name under destroy', async () => {

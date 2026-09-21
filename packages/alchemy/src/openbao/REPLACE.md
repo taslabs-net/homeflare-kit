@@ -4,9 +4,9 @@ Audited 2026-09-21, against `alchemy@2.0.0-beta.79` and OpenBao v2.6.2 source, i
 Every kit provider must answer `replace` correctly (vault consolidation plan, "Replace freely").
 
 ★ **Measured, not only read.** `fake-stack.ts` runs beta.79's own `Plan.make` and `apply` over an
-in-memory state store against the fake engines in `fake-engines.ts`. `policy-rename.test.ts` and
-`role-rename.test.ts` deploy, rename, and deploy again, then check the plan and every call that
-reached the fake.
+in-memory state store against the fake engines in `fake-engines.ts`. `policy-rename.test.ts`,
+`role-rename.test.ts` and `rename-occupied.test.ts` deploy, rename, and deploy again, then check
+the plan and every call that reached the fake.
 
 ## What Alchemy does with each answer
 
@@ -44,20 +44,20 @@ stayed live. `destroy` could not help, because nothing recorded the old one.
 
 ## Answers, by resource
 
-| Resource                  | Identity change | Answer now                                                                                                                               | Other changes                                                                               |
-| ------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `Bao.Mount`               | `path`          | ⛔ **fails the plan**, unless `remountFrom` names the old path. Then it is an in-place `update` that moves the mount with `sys/remount`. | `type` → `replace` that **fails at apply** (below). Description and TTLs → `update` (tune). |
-| `Bao.AuthMethod`          | `path`          | Same as `Bao.Mount` (`auth/` prefix). The accessor survives the move.                                                                    | `type` → `replace` that **fails at apply** (below)                                          |
-| `Bao.AuthRole`            | `name`          | `replace`. Before 2026-09-21 it was `update`, and the old role was orphaned.                                                             | `update`                                                                                    |
-| `Bao.PkiRole`             | `mount`, `name` | `replace`. Before, only a `mount` change was caught; a `name` change orphaned the old role.                                              | `update` (full-replace write)                                                               |
-| `Bao.JwtRole`             | `mount`, `name` | `replace`                                                                                                                                | `update` (merge write; every managed field is sent)                                         |
-| `Bao.KubernetesRole`      | `mount`, `name` | `replace`                                                                                                                                | `update`                                                                                    |
-| `Bao.JwtAuthConfig`       | `mount`         | `replace`. The old delete is a no-op because there is no delete endpoint.                                                                | `update` (full-replace write)                                                               |
-| `Bao.MfaTotpMethod`       | `name`          | ⛔ **fails the plan**: a new id would strand every enrolled secret                                                                       | `update` (the upsert keeps the id)                                                          |
-| `Bao.MfaLoginEnforcement` | `name`          | `replace`. Its delete is **refused** (openbao#4030)                                                                                      | `update`                                                                                    |
-| `Bao.Policy`              | `name`          | `replace` (batch 3A). Compared as OpenBao keys it, trimmed and lowercased, so `Admin` → `admin` is the same policy: `noop`.              | `update` (fragments digest)                                                                 |
-| `Bao.CloudflareRole`      | `mount`, `name` | `replace` (batch 3A). Exact; a trailing `/` on the mount is the same path.                                                               | `update`                                                                                    |
-| `Bao.ProxmoxRole`         | `mount`, `name` | `replace` (batch 3A). ⛔ **Fails the plan** if the rename also changes `mintUser`, unless `allowMintUserChange` names the old one.       | `update`. A `mintUser` change at the same path is refused at apply, never replaced.         |
+| Resource                  | Identity change | Answer now                                                                                                                                                                         | Other changes                                                                               |
+| ------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `Bao.Mount`               | `path`          | ⛔ **fails the plan**, unless `remountFrom` names the old path. Then it is an in-place `update` that moves the mount with `sys/remount`.                                           | `type` → `replace` that **fails at apply** (below). Description and TTLs → `update` (tune). |
+| `Bao.AuthMethod`          | `path`          | Same as `Bao.Mount` (`auth/` prefix). The accessor survives the move.                                                                                                              | `type` → `replace` that **fails at apply** (below)                                          |
+| `Bao.AuthRole`            | `name`          | `replace`. Before 2026-09-21 it was `update`, and the old role was orphaned.                                                                                                       | `update`                                                                                    |
+| `Bao.PkiRole`             | `mount`, `name` | `replace`. Before, only a `mount` change was caught; a `name` change orphaned the old role.                                                                                        | `update` (full-replace write)                                                               |
+| `Bao.JwtRole`             | `mount`, `name` | `replace`                                                                                                                                                                          | `update` (merge write; every managed field is sent)                                         |
+| `Bao.KubernetesRole`      | `mount`, `name` | `replace`                                                                                                                                                                          | `update`                                                                                    |
+| `Bao.JwtAuthConfig`       | `mount`         | `replace`. The old delete is a no-op because there is no delete endpoint.                                                                                                          | `update` (full-replace write)                                                               |
+| `Bao.MfaTotpMethod`       | `name`          | ⛔ **fails the plan**: a new id would strand every enrolled secret                                                                                                                 | `update` (the upsert keeps the id)                                                          |
+| `Bao.MfaLoginEnforcement` | `name`          | `replace`. Its delete is **refused** (openbao#4030)                                                                                                                                | `update`                                                                                    |
+| `Bao.Policy`              | `name`          | `replace` (batch 3A). Compared as OpenBao keys it, trimmed and lowercased, so `Admin` → `admin` is the same policy: `noop`. ⛔ **Fails the plan** onto a name that exists (below). | `update` (fragments digest)                                                                 |
+| `Bao.CloudflareRole`      | `mount`, `name` | `replace` (batch 3A). Exact; a trailing `/` on the mount is the same path. ⛔ **Fails the plan** onto a role that exists (below).                                                  | `update`                                                                                    |
+| `Bao.ProxmoxRole`         | `mount`, `name` | `replace` (batch 3A). ⛔ **Fails the plan** onto a role that exists, or if the rename also changes `mintUser` unless `allowMintUserChange` names the old one.                      | `update`. A `mintUser` change at the same path is refused at apply, never replaced.         |
 
 `hostAppRoles` makes no resources, but its names are identities: renaming a host or a class
 renames the role. With the logical id taken from the role name, as the README does, the old id
@@ -74,8 +74,28 @@ leaves the stack: that is an orphan delete, not a `replace`. With a stable logic
   wrote. The engine plans `update`, and reconcile, seeing the old attributes name another
   object, **refuses before any write**. The row is left `updating`, with the new props and the
   old attributes. The next deploy sees both names and plans `replace`. Measured, for all three.
-- `Bao.ProxmoxRole` defers the same way while `mintUser` is pending on a rename, because the
-  re-scope guard cannot be checked.
+- `Bao.ProxmoxRole` defers the same way while `mintUser` or `allowMintUserChange` is pending on a
+  rename, because the re-scope guard cannot be checked. Measured for `allowMintUserChange`.
+
+## A move onto an object that already exists fails the plan
+
+⛔ All three read the new path at plan (`judgeMove`, `rename.ts`) and refuse the move if anything
+is there. 🔴 Measured before the guard: two policies that swapped names under
+`RemovalPolicy.destroy()` both planned `replace`. Each new generation wrote over the other's live
+policy, and each old generation's delete then removed the name the other had just written. The
+deploy was green, and both policies were gone, every grant revoked. Measured the same way:
+
+- a shift (`a → b` while `b → c`) deleted `b`, and a move onto the name of a resource leaving the
+  stack deleted the name it moved onto;
+- reverting a move whose new generation failed. The old generation still holds the name, and its
+  delete runs after the revert rewrites it. So the diff compares against the props of an
+  unfinished create or replacement when there are no attributes yet. Declaring the new name again
+  finishes the move instead.
+
+⚠️ The diff cannot see the removal policy, so this refuses under `retain` too, where a swap would
+have been harmless. So would a move back onto a retained old generation. Move in two deploys
+through a name nothing holds, or remove the target by hand first. A change of policy-name case, or
+a trailing `/` on a mount, is the same object, so it is not a move and is never refused.
 
 ## What `retain` means for these three
 
@@ -97,8 +117,8 @@ retained."). It is live and unmanaged from then on:
 `declareCloudflareRoles` does, never reaches the `replace`: the old id leaves the stack as an
 orphan delete, which `retain` also keeps live.
 
-⚠️ A rename onto a name that already exists live takes that object over and rewrites it, as a fresh
-declaration would: these families' `read` never answers `Unowned`.
+⚠️ A NEW declaration (a new logical id) of a name that already exists still takes that object over
+and rewrites it: these families' `read` never answers `Unowned`, so Alchemy adopts it.
 
 ## Why the moves fail instead of replacing
 

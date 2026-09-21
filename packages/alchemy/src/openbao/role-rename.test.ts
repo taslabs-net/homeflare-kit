@@ -14,9 +14,9 @@ import { groupKey } from './cloudflare-group-scope.ts';
 import { CloudflarePermissionGroups } from './cloudflare-permission-groups.ts';
 import { BaoCloudflareRole, BaoCloudflareRoleProvider } from './cloudflare-role.ts';
 import type { BaoCloudflareRoleProps } from './cloudflare-role-form.ts';
-import { type Seen, fakeBao } from './fake-bao.ts';
+import type { Seen } from './fake-bao.ts';
 import { type Store, cloudflareRoles, proxmoxRoles } from './fake-engines.ts';
-import { type StackBody, fakeStack } from './fake-stack.ts';
+import { type StackBody, withFakeStack, writesOf as writes } from './fake-stack.ts';
 import { BaoProxmoxRole, BaoProxmoxRoleProvider } from './proxmox-role.ts';
 import type { BaoProxmoxRoleProps } from './proxmox-role-form.ts';
 
@@ -33,22 +33,12 @@ const providers = Layer.mergeAll(
 
 type Removal = typeof RemovalPolicy.destroy;
 
-const withStack = async (
+const withStack = (
   store: Store,
   body: (deploy: (body: StackBody) => Promise<unknown>, seen: Seen[]) => Promise<void>,
-) => {
-  const bao = fakeBao(store);
-  try {
-    const stack = fakeStack(providers, { BAO_ADDR: bao.address });
-    await body(stack.deploy, bao.seen);
-  } finally {
-    bao.stop();
-  }
-};
+) => withFakeStack(providers, store, (stack, bao) => body(stack.deploy, bao.seen));
 
 const livePaths = (store: Store) => [...store.live.keys()].sort();
-const writes = (seen: Seen[]) =>
-  seen.filter((each) => each.method !== 'GET').map((each) => `${each.method} ${each.path}`);
 
 const CF: BaoCloudflareRoleProps = {
   description: 'Read DNS records on one zone. (zone: example.com)',
@@ -112,7 +102,7 @@ describe('Bao.CloudflareRole move, through the engine', () => {
 
 const PVE: BaoProxmoxRoleProps = {
   maxTtl: '6h',
-  mintUser: 'hf-read@pve',
+  mintUser: 'reader@pve',
   mount: 'proxmox-lab',
   name: 'read',
   ttl: '1h',
@@ -142,8 +132,8 @@ describe('Bao.ProxmoxRole move, through the engine', () => {
     await withStack(store, async (deploy, seen) => {
       await deploy(pve({}));
       seen.length = 0;
-      const moved = pve({ mintUser: 'hf-provision@pve', name: 'provision' });
-      await assert.rejects(deploy(moved), /allowMintUserChange: 'hf-read@pve'/);
+      const moved = pve({ mintUser: 'provisioner@pve', name: 'provision' });
+      await assert.rejects(deploy(moved), /allowMintUserChange: 'reader@pve'/);
       assert.deepEqual(writes(seen), []);
       assert.deepEqual(livePaths(store), ['proxmox-lab/roles/read']);
     });
@@ -154,15 +144,12 @@ describe('Bao.ProxmoxRole move, through the engine', () => {
     await withStack(store, async (deploy) => {
       await deploy(pve({}));
       const allowed = pve({
-        allowMintUserChange: 'hf-read@pve',
-        mintUser: 'hf-provision@pve',
+        allowMintUserChange: 'reader@pve',
+        mintUser: 'provisioner@pve',
         name: 'provision',
       });
       assert.deepEqual(await deploy(allowed), { Role: 'replace' });
-      assert.equal(
-        store.live.get('proxmox-lab/roles/provision')?.['mint_user'],
-        'hf-provision@pve',
-      );
+      assert.equal(store.live.get('proxmox-lab/roles/provision')?.['mint_user'], 'provisioner@pve');
     });
   });
 
@@ -171,7 +158,7 @@ describe('Bao.ProxmoxRole move, through the engine', () => {
     await withStack(store, async (deploy, seen) => {
       await deploy(pve({}));
       seen.length = 0;
-      await assert.rejects(deploy(pve({ mintUser: 'hf-provision@pve' })), /re-scopes mint_user/);
+      await assert.rejects(deploy(pve({ mintUser: 'provisioner@pve' })), /re-scopes mint_user/);
       assert.deepEqual(writes(seen), []);
     });
   });

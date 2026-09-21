@@ -7,8 +7,8 @@ import * as Path from 'effect/Path';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { sha256 } from './digest.ts';
 import { isEmptyAssembly } from './policy-assembly.ts';
-import { deletePolicy, readPolicy, writePolicy } from './policy-wire.ts';
-import { declaredString, isMoved, policyKey, refuseMovedUpdate } from './rename.ts';
+import { deletePolicy, policyPath, readPolicy, writePolicy } from './policy-wire.ts';
+import { declaredString, isMoved, judgeMove, policyKey, refuseMovedUpdate } from './rename.ts';
 
 /**
  * An OpenBao ACL policy, assembled from the HCL fragments that declare it.
@@ -144,21 +144,23 @@ export const BaoPolicyProvider = () =>
          *   OpenBao UI is exactly the drift the check-* gates exist to catch, and a
          *   provider that trusted its own state would report `noop` straight through it.
          */
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined) return undefined;
+        diff: Effect.fn(function* ({ news, olds, output }) {
           /**
-           * ⛔ A RENAMED POLICY IS A `replace`, DECIDED BEFORE ANY READ (rename.ts). Until 2026-09-21
-           *   this read the new name, found nothing and planned `update`: the new policy was written
-           *   and the old one kept every grant under no state record. Names compare as OpenBao keys
-           *   them (`policyKey`), so a change of case is the same policy, never a replace.
+           * ⛔ A RENAMED POLICY IS A `replace`, DECIDED BEFORE ANY OTHER READ (rename.ts). Until
+           *   2026-09-21 this read the new name, found nothing and planned `update`: the new policy
+           *   was written and the old one kept every grant under no state record. Names compare as
+           *   OpenBao keys them (`policyKey`), so a change of case is the same policy, never a
+           *   replace. ⛔ A rename onto a policy that already exists fails the plan (`judgeMove`).
            * ⚠️ UNDER THE DEFAULT `retain` THE OLD POLICY STAYS LIVE, GRANTS AND ALL, for every token,
            *   role and group that still names it. Under `destroy` they lose those grants at the
            *   delete, so a role outside this graph that names the old policy must move in the same
            *   PR (REPLACE.md).
            */
-          if (isMoved(output.name, declaredString(news, 'name'), policyKey) === true) {
-            return { action: 'replace' } as const;
-          }
+          const tried = output?.name ?? declaredString(olds, 'name');
+          const declared = declaredString(news, 'name');
+          const move = yield* judgeMove('Bao.Policy', tried, declared, policyPath, policyKey);
+          if (output === undefined) return undefined;
+          if (move !== undefined) return { action: 'replace' } as const;
           // ⚠️ A prop can still be an unresolved Output or Config at plan time. Docker's
           //   own providers guard with isResolved and skip rather than guess; a diff that
           //   read a Config as a string would compare a placeholder to real HCL.

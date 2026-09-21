@@ -40,17 +40,25 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
-import { baoDelete, baoRead, baoWrite } from './bao-http.ts';
+import { baoDelete, baoWrite } from './bao-http.ts';
 import {
   type BaoProxmoxRoleAttributes,
   type BaoProxmoxRoleProps,
-  attributesOf,
   matches,
   rescopeRefusal,
   rolePath,
   writeBody,
 } from './proxmox-role-form.ts';
-import { declaredRolePath, declaredString, isMoved, refuseMovedUpdate } from './rename.ts';
+import { readRole } from './proxmox-role-wire.ts';
+import {
+  declaredRolePath,
+  declaredString,
+  isMoved,
+  isPendingProp,
+  judgeMove,
+  refuseMovedUpdate,
+  triedRolePath,
+} from './rename.ts';
 
 export type { BaoProxmoxRoleAttributes, BaoProxmoxRoleProps };
 
@@ -65,21 +73,6 @@ export interface BaoProxmoxRole extends Resource<
 export const BaoProxmoxRole = Resource<BaoProxmoxRole>('Bao.ProxmoxRole', {
   defaultRemovalPolicy: 'retain',
 });
-
-/**
- * ⚠️ A missing MOUNT and a missing ROLE both read as undefined here, because both answer 404:
- *   an absent role is a read that found nothing, and a path under no mount is OpenBao's
- *   unsupported-path error, which is also a 404 (sdk/logical/response_util.go). They are not the
- *   same failure — one is a typo in `mount`, the other is a role that has yet to be created — so
- *   reconcile lets OpenBao's own `errors` through on the write rather than inventing a message.
- *   A bad mount says "no handler for route".
- */
-const readRole = (props: Pick<BaoProxmoxRoleProps, 'mount' | 'name'>) =>
-  Effect.gen(function* () {
-    const live = yield* baoRead(rolePath(props.mount, props.name));
-    if (live === undefined) return undefined;
-    return attributesOf(props, live);
-  });
 
 export const BaoProxmoxRoleProvider = () =>
   Provider.effect(
@@ -105,28 +98,32 @@ export const BaoProxmoxRoleProvider = () =>
          *   says everything is fine — exactly the drift the hand-written check-* gates exist to
          *   catch, and exactly what a provider that trusted its own state would walk past.
          */
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined) return undefined;
-          const before = rolePath(output.mount, output.name);
-          const after = declaredRolePath(news, rolePath);
+        diff: Effect.fn(function* ({ news, olds, output }) {
           /**
            * ⛔ A NEW `mount` OR `name` IS A `replace` (rename.ts). It is a DIFFERENT path, so none of
            *   the reasons below apply. Until 2026-09-21 it planned `update` and left the old role
            *   minting under no state record. Under the default `retain` the old role still mints;
-           *   under `destroy` its consumers fail at the delete (REPLACE.md).
+           *   under `destroy` its consumers fail at the delete (REPLACE.md). ⛔ A move onto a role
+           *   that already exists fails the plan (`judgeMove`).
            * ⛔ THE RE-SCOPE GUARD TRAVELS WITH THE RENAME, checked here because the new generation's
-           *   reconcile finds no live role to compare. While `mintUser` is still an Output it cannot
-           *   be checked, so the diff defers, and reconcile refuses the resulting `update`.
+           *   reconcile finds no live role to compare. While `mintUser` or `allowMintUserChange` is
+           *   still an Output it cannot be checked, so the diff defers, and reconcile refuses the
+           *   resulting `update`.
            */
-          if (after !== undefined && isMoved(before, after) === true) {
+          const tried = triedRolePath(output, olds, rolePath);
+          const declared = declaredRolePath(news, rolePath);
+          const move = yield* judgeMove('Bao.ProxmoxRole', tried, declared, (path) => path);
+          if (output === undefined) return undefined;
+          if (move !== undefined) {
             const mintUser = declaredString(news, 'mintUser');
-            if (mintUser === undefined) return undefined;
+            if (mintUser === undefined || isPendingProp(news, 'allowMintUserChange'))
+              return undefined;
             const from = (yield* readRole(output))?.mintUser ?? output.mintUser;
             const allow = declaredString(news, 'allowMintUserChange');
             const refusal = rescopeRefusal(from, mintUser, allow);
             if (refusal === undefined) return { action: 'replace' } as const;
             return yield* Effect.die(
-              new Error(`Bao.ProxmoxRole ${before} → ${after}: the rename ${refusal}`),
+              new Error(`Bao.ProxmoxRole ${move.from} → ${move.to}: the rename ${refusal}`),
             );
           }
           if (!isResolved(news)) return undefined;

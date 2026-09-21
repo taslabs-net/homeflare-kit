@@ -38,7 +38,13 @@ import {
   readCloudflareRole,
   writeCloudflareRole,
 } from './cloudflare-role-wire.ts';
-import { declaredRolePath, isMoved, refuseMovedUpdate } from './rename.ts';
+import {
+  declaredRolePath,
+  isMoved,
+  judgeMove,
+  refuseMovedUpdate,
+  triedRolePath,
+} from './rename.ts';
 
 export type { BaoCloudflareRoleAttributes, BaoCloudflareRoleProps };
 
@@ -113,9 +119,10 @@ export const BaoCloudflareRoleProvider = () =>
          *   OpenBao UI changes what every future token can do while the digest in Postgres still
          *   says everything is fine.
          *
-         * ⛔ A NEW `mount` OR `name` IS A `replace`, DECIDED BEFORE ANY READ (rename.ts). Until
+         * ⛔ A NEW `mount` OR `name` IS A `replace`, DECIDED BEFORE ANY OTHER READ (rename.ts). Until
          *   2026-09-21 this read the new path, found it absent and planned `update`: reconcile wrote
-         *   the new role and the old one stayed live and mintable under no state record.
+         *   the new role and the old one stayed live and mintable under no state record. ⛔ A move
+         *   onto a role that already exists fails the plan (`judgeMove`).
          * ⚠️ UNDER THE DEFAULT `retain` THE OLD ROLE STILL MINTS for any token whose policy reaches its
          *   `creds/<name>`. Under `destroy` every consumer still minting from the old path fails at
          *   the delete, so move them in the same PR (REPLACE.md).
@@ -123,12 +130,12 @@ export const BaoCloudflareRoleProvider = () =>
          *   (homeflare-openbao's declareCloudflareRoles does). There a rename is a new logical id,
          *   and the old id leaves the stack as an orphan delete, which `retain` keeps live.
          */
-        diff: Effect.fn(function* ({ news, output }) {
+        diff: Effect.fn(function* ({ news, olds, output }) {
+          const tried = triedRolePath(output, olds, rolePath);
+          const declared = declaredRolePath(news, rolePath);
+          const move = yield* judgeMove('Bao.CloudflareRole', tried, declared, (path) => path);
           if (output === undefined) return undefined;
-          const before = rolePath(output.mount, output.name);
-          if (isMoved(before, declaredRolePath(news, rolePath)) === true) {
-            return { action: 'replace' } as const;
-          }
+          if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           /**
            * ⚠️ A DECLARATION reconcile WOULD REFUSE MUST NEVER PLAN AS noop — route it to reconcile,

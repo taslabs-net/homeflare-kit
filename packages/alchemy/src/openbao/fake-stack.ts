@@ -20,6 +20,7 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { BaoEnvironment } from './bao-address.ts';
 import { BaoEnv } from './bao-http.ts';
+import { type Fake, type Reply, type Seen, fakeBao } from './fake-bao.ts';
 
 /** The planned action for each resource, deletions included, keyed by FQN. */
 export type Planned = Readonly<Record<string, string>>;
@@ -88,3 +89,24 @@ export const fakeStack = <ROut, E, RIn>(
 
   return { deploy: (body) => Effect.runPromise(deploy(body) as Effect.Effect<Planned>) };
 };
+
+/**
+ * A fake engine answering with `answer`, and one stack over it, for one test. The fake stops however
+ * `body` ends.
+ */
+export const withFakeStack = async <ROut, E, RIn>(
+  providers: Layer.Layer<ROut, E, RIn>,
+  answer: (seen: Seen) => Reply,
+  body: (stack: FakeStack, bao: Fake) => Promise<void>,
+): Promise<void> => {
+  const bao = fakeBao(answer);
+  try {
+    await body(fakeStack(providers, { BAO_ADDR: bao.address }), bao);
+  } finally {
+    bao.stop();
+  }
+};
+
+/** Every call that changed something, as `METHOD /v1/path`, in order. */
+export const writesOf = (seen: readonly Seen[]): string[] =>
+  seen.filter((each) => each.method !== 'GET').map((each) => `${each.method} ${each.path}`);
