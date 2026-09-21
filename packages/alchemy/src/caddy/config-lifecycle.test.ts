@@ -3,6 +3,7 @@
  * rolled back, drift, and the refusals that must happen before anything is sent.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { CaddyAdmin } from './admin.ts';
 import { type FakeCaddy, fakeCaddy } from './fake-caddy.ts';
 import { configDigest } from './digest.ts';
 import { diffConfig, readLive, reconcileConfig } from './config-lifecycle.ts';
@@ -17,9 +18,19 @@ afterEach(() => {
   fake = undefined;
 });
 
+/**
+ * ★ Addressed as a Caddy on its DEFAULT :2019 behind a forward (`hostHeader`), so a Caddyfile with
+ *   no `admin` line — the common case — passes the guard. A Caddy reached on any other port needs
+ *   `admin <address>` declared, or the first load would move it (admin-guard.ts).
+ */
 const setup = (running?: unknown) => {
-  fake = fakeCaddy(running === undefined ? {} : { running });
-  return { admin: localCaddyAdmin({ address: fake.address, retries: 0 }), caddy: fake };
+  fake = fakeCaddy({ listenPort: 2019, ...(running === undefined ? {} : { running }) });
+  const admin = localCaddyAdmin({
+    address: fake.address,
+    hostHeader: '127.0.0.1:2019',
+    retries: 0,
+  });
+  return { admin, caddy: fake };
 };
 
 const loads = (caddy: FakeCaddy) => caddy.seen.filter((call) => call.path === '/load');
@@ -81,6 +92,21 @@ describe('a config Caddy refuses', () => {
     expect(configDigest(caddy.running)).toBe(configDigest(caddy.adapt(SITE)));
   });
 
+  test('a load answered 200 that Caddy did not apply fails the deploy (the read-back)', async () => {
+    const { admin, caddy } = setup();
+    await reconcileConfig(admin, { caddyfile: SITE });
+    // ⚠️ A concurrent writer, or a 200 that carried no change: state must not record OTHER.
+    const swallowing: CaddyAdmin = {
+      ...admin,
+      request: (call) =>
+        call.path === '/load' ? Promise.resolve({ body: '', status: 200 }) : admin.request(call),
+    };
+    await expect(reconcileConfig(swallowing, { caddyfile: OTHER })).rejects.toThrow(
+      /after the load Caddy runs config \w+, not the \w+ this Caddyfile adapts to/,
+    );
+    expect(configDigest(caddy.running)).toBe(configDigest(caddy.adapt(SITE)));
+  });
+
   test('a Caddyfile that does not adapt is refused before any load', async () => {
     const { admin, caddy } = setup();
     await expect(reconcileConfig(admin, { caddyfile: 'SYNTAX_ERROR' })).rejects.toThrow(
@@ -98,6 +124,15 @@ describe('refused before anything is sent', () => {
     const { admin, caddy } = setup();
     await expect(reconcileConfig(admin, { caddyfile })).rejects.toThrow(/Caddy\.Config at http/);
     expect(caddy.seen).toHaveLength(0);
+  });
+
+  test.each([
+    ['only a comment', '# the template rendered nothing'],
+    ['only global options', 'admin localhost:2019'],
+  ])('a Caddyfile of %s adapts to no apps, and is never loaded', async (_, caddyfile) => {
+    const { admin, caddy } = setup();
+    await expect(reconcileConfig(admin, { caddyfile })).rejects.toThrow(/adapts to no apps/);
+    expect(loads(caddy)).toHaveLength(0);
   });
 
   test('a Caddyfile that would turn the admin API off is never loaded', async () => {
@@ -139,6 +174,18 @@ describe('drift', () => {
     caddy.running = JSON.parse(JSON.stringify(caddy.adapt(OTHER))) as unknown;
     expect((await readLive(admin)).configSha256).not.toBe(attributes.configSha256);
     expect(await diffConfig(admin, { caddyfile: SITE }, attributes)).toEqual({ action: 'update' });
+  });
+
+  test('state that lags the live config → update, so the stored digest is refreshed', async () => {
+    const { admin, attributes } = await applied();
+    const stale = { ...attributes, configSha256: configDigest({ apps: { before: true } }) };
+    expect(await diffConfig(admin, { caddyfile: SITE }, stale)).toEqual({ action: 'update' });
+  });
+
+  test('the transport now reaches Caddy at another endpoint → update (load there)', async () => {
+    const { admin, attributes } = await applied();
+    const moved = { ...attributes, endpoint: 'unix:///run/caddy/admin.sock' };
+    expect(await diffConfig(admin, { caddyfile: SITE }, moved)).toEqual({ action: 'update' });
   });
 
   test('a new sourceFile → update, so state records the file this config mirrors', async () => {

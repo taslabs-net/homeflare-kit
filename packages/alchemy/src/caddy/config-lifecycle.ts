@@ -34,6 +34,18 @@ const short = (digest: string): string => digest.slice(0, 12);
 type Desired = { readonly digest: string; readonly warnings: readonly string[] };
 
 /**
+ * ⛔ A CONFIG WITH NO APPS SERVES NOTHING. A Caddyfile of only comments or only global options
+ *   passes the empty-text check (config-form.ts) yet adapts to `{}` or `{"admin":…}` — MEASURED
+ *   2026-09-21 on a throwaway Caddy 2.11.4 — and loading it stops every server: the same outage,
+ *   from the same templating bug, that the empty check exists to prevent.
+ */
+const servesNothing = (config: unknown): boolean => {
+  const apps =
+    typeof config === 'object' && config !== null ? (config as { apps?: unknown }).apps : undefined;
+  return typeof apps !== 'object' || apps === null || Object.keys(apps).length === 0;
+};
+
+/**
  * Validate the props, adapt the Caddyfile on the running Caddy, and check its `admin` block.
  * ★ Every refusal happens HERE, before anything is loaded — and diff calls this at plan time, so a
  *   Caddyfile that does not adapt, carries a literal secret, or would strand the admin API fails the
@@ -46,6 +58,9 @@ export const desiredConfig = async (
   const found = configProblems(props);
   if (found.length > 0) throw refuse(admin, found.join('; '));
   const adapted = await adaptCaddyfile(admin, props.caddyfile);
+  if (servesNothing(adapted.config)) {
+    throw refuse(admin, 'the Caddyfile adapts to no apps — loading it would stop every site');
+  }
   const guard = adminProblems(adapted.config, admin.listener);
   if (guard.length > 0) throw refuse(admin, guard.join('; '));
   return { digest: configDigest(adapted.config), warnings: adapted.warnings };

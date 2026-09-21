@@ -34,8 +34,16 @@ const withProvider = <A>(
   use: (p: Effect.Success<typeof CaddyConfig.Provider>) => Effect.Effect<A, unknown>,
   address?: string,
 ) => {
-  fake = address === undefined ? fakeCaddy({ running: { apps: { legacy: true } } }) : undefined;
-  const admin = localCaddyAdmin({ address: address ?? (fake as FakeCaddy).address, retries: 0 });
+  // ★ A Caddy on its default :2019 behind a forward, as in config-lifecycle.test.ts.
+  fake =
+    address === undefined
+      ? fakeCaddy({ listenPort: 2019, running: { apps: { legacy: true } } })
+      : undefined;
+  const admin = localCaddyAdmin({
+    address: address ?? (fake as FakeCaddy).address,
+    hostHeader: '127.0.0.1:2019',
+    retries: 0,
+  });
   return Effect.runPromise(
     Effect.gen(function* () {
       return yield* use(yield* CaddyConfig.Provider);

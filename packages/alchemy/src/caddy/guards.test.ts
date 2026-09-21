@@ -62,6 +62,9 @@ describe('caddyfileSecretProblems', () => {
     ['a JWT', `header X-Id ${JWT}`],
     ['a bcrypt hash in basic_auth', `basic_auth {\n  admin ${BCRYPT}\n}`],
     ['a PEM private key', 'x {\n-----BEGIN EC PRIVATE KEY-----\n}'],
+    // ⛔ An adapt-time default is spliced in whenever the variable is unset: it is a literal.
+    ['a literal default for a dns token', 'dns cloudflare {$CF_API_TOKEN:abcdef0123456789}'],
+    ['a token-shaped default anywhere', `respond "{$GREETING:${GITHUB_TOKEN}}"`],
   ])('refuses %s', (_, caddyfile) => {
     const found = caddyfileSecretProblems(caddyfile);
     expect(found.length).toBeGreaterThan(0);
@@ -78,6 +81,7 @@ describe('caddyfileSecretProblems', () => {
     ['env placeholder', 'tls {\n  dns cloudflare {env.CF_API_TOKEN}\n}'],
     ['file placeholder', 'client_secret {file./run/secrets/oidc}'],
     ['adapt-time env (the name only)', 'dns cloudflare {$CF_API_TOKEN}'],
+    ['an adapt-time default that is not a secret', 'reverse_proxy {$UPSTREAM:127.0.0.1:8080}'],
     ['a placeholder bearer', 'header_up Authorization "Bearer {env.UPSTREAM_TOKEN}"'],
     ['a forwarded header', 'header_up Authorization {http.request.header.Authorization}'],
     ['a block opener', 'dns cloudflare {\n  api_token {env.CF}\n}'],
@@ -95,20 +99,36 @@ describe('adminProblems', () => {
   const unix: CaddyAdminListener = { kind: 'unix', path: '/run/caddy/admin.sock' };
   const admin = (block: object) => ({ admin: block, apps: {} });
 
+  const v6: CaddyAdminListener = { hostHeader: '[::1]:2019', kind: 'tcp', port: 2019 };
+  const named: CaddyAdminListener = { hostHeader: 'localhost:2019', kind: 'tcp', port: 2019 };
+
   test.each([
     [{}, tcp],
     [{ listen: 'localhost:2019' }, tcp],
     [{ listen: '127.0.0.1:2019', origins: ['127.0.0.1:2019'] }, tcp],
-    [{ listen: 'tcp/[::1]:2019' }, tcp],
+    [{ listen: 'tcp/[::1]:2019' }, v6],
+    [{ listen: '127.0.0.1:2019' }, named],
     [{ listen: 'unix//run/caddy/admin.sock|0660' }, unix],
     [{ origins: ['http://127.0.0.1:2019'] }, tcp],
   ])('allows %j', (block, transport) => {
     expect(adminProblems(admin(block), transport)).toEqual([]);
   });
 
-  test('no admin block at all, and an empty config, pass', () => {
+  test('no admin block at all, and an empty config, pass at Caddy’s default listener', () => {
     expect(adminProblems({ apps: {} }, tcp)).toEqual([]);
     expect(adminProblems(null, tcp)).toEqual([]);
+  });
+
+  /**
+   * ⛔ No `admin` address means DefaultAdminListen (localhost:2019) after the load — so a Caddy
+   *   reached anywhere else would move away from the provider (admin.go replaceLocalAdminServer).
+   */
+  test.each([
+    ['a unix socket', unix],
+    ['another port', { hostHeader: '127.0.0.1:2999', kind: 'tcp', port: 2999 } as const],
+    ['[::1] (localhost binds IPv4)', v6],
+  ])('no admin address is refused for a Caddy reached on %s', (_, transport) => {
+    expect(adminProblems({ apps: {} }, transport).join(' ')).toMatch(/declare `admin <address>`/);
   });
 
   test.each([
@@ -117,12 +137,17 @@ describe('adminProblems', () => {
     [{ listen: '0.0.0.0:2019' }, tcp, /not loopback/],
     [{ listen: '192.0.2.5:2019' }, tcp, /not loopback/],
     [{ listen: 'localhost:2020' }, tcp, /moves the admin API/],
+    [{ listen: 'tcp/[::1]:2019' }, tcp, /moves the admin API/],
+    [{ listen: '127.0.0.2:2019' }, tcp, /moves the admin API/],
+    [{ listen: 'localhost:2019' }, v6, /moves the admin API/],
+    [{ listen: 'unix//run/caddy/admin.sock', enforce_origin: true }, unix, /sends no Origin/],
     [{ listen: 'unix//run/caddy/admin.sock' }, tcp, /moves the admin API/],
     [{ listen: 'unix//run/other.sock' }, unix, /moves the admin API/],
     [{ listen: '{env.CADDY_ADMIN}' }, tcp, /placeholder/],
     [{ origins: ['caddy.example:2019'] }, tcp, /do not allow Host 127\.0\.0\.1:2019/],
     [{ origins: ['https://127.0.0.1:2019'] }, tcp, /do not allow Host/],
     [{ origins: [] }, tcp, /do not allow Host/],
+    [{}, { hostHeader: 'caddy.example:2019', kind: 'tcp', port: 2019 } as const, /default origins/],
     [{ remote: { listen: ':2021' } }, tcp, /network-facing/],
     [{ config: { load: { module: 'http' } } }, tcp, /pull its config/],
   ])('refuses %j', (block, transport, reason) => {

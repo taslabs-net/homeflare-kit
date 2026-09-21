@@ -4,6 +4,7 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CaddyUnreachableError } from './admin.ts';
@@ -60,6 +61,17 @@ describe('parseAdminAddress', () => {
     expect(() => parseAdminAddress(address)).toThrow(reason);
   });
 
+  test('the Host always carries the port, as Caddy compares host:port (a default port too)', () => {
+    expect(parseAdminAddress('http://127.0.0.1').listener).toEqual({
+      hostHeader: '127.0.0.1:80',
+      kind: 'tcp',
+      port: 80,
+    });
+    expect(parseAdminAddress('http://[::1]:2019').listener).toMatchObject({
+      hostHeader: '[::1]:2019',
+    });
+  });
+
   test('hostHeader is what Caddy checks: its port is the listener port, not the dialled one', () => {
     const parsed = parseAdminAddress('http://127.0.0.1:12019', '127.0.0.1:2019');
     expect(parsed.listener).toEqual({ hostHeader: '127.0.0.1:2019', kind: 'tcp', port: 2019 });
@@ -89,6 +101,14 @@ describe('requests', () => {
     expect(await readRunningConfig(named)).toBeNull();
   });
 
+  test('a caller cannot override the Host and Origin the checks depend on', async () => {
+    fake = fakeCaddy();
+    const admin = localCaddyAdmin({ address: fake.address, retries: 0 });
+    const headers = { Host: 'evil.example:2019', Origin: 'http://evil.example:2019' };
+    expect((await admin.request({ headers, method: 'GET', path: '/config/' })).status).toBe(200);
+    expect(fake.seen[0]?.headers.get('host')).toBe(`127.0.0.1:${String(fake.port)}`);
+  });
+
   test('over a unix socket, with no Origin', async () => {
     const path = socketPath('req');
     fake = fakeCaddy({ running: { apps: {} }, unix: path });
@@ -107,6 +127,27 @@ describe('requests', () => {
     expect(await readRunningConfig(admin)).toBeNull();
     clearTimeout(late);
     rmSync(path, { force: true });
+  });
+
+  test('a connection that was ACCEPTED is never re-sent, however many retries remain', async () => {
+    // ⛔ It may have reached Caddy: re-sending a `POST /load` could apply it twice.
+    let accepted = 0;
+    const server = createServer((socket) => {
+      accepted += 1;
+      socket.on('data', () => socket.destroy());
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as { port: number };
+    const admin = localCaddyAdmin({
+      address: `http://127.0.0.1:${String(port)}`,
+      retries: 3,
+      retryDelayMs: 1,
+    });
+    const failure = admin.request({ body: 'x', method: 'POST', path: '/load' });
+    await expect(failure).rejects.toThrow(/Caddy admin POST \/load/);
+    await expect(failure).rejects.not.toBeInstanceOf(CaddyUnreachableError);
+    expect(accepted).toBe(1);
+    server.close();
   });
 
   test('gives up after the retries with CaddyUnreachableError, naming the address', async () => {

@@ -8,9 +8,25 @@
  *   · `admin off` (`disabled`): nothing can manage this Caddy through its API again.
  *   · a `listen` off loopback (`:2019`, `0.0.0.0:2019`, a LAN address): the unauthenticated API is
  *     on the network. Decision 23: never expose :2019.
- *   · a `listen` on another port or socket than the transport's: the provider loses Caddy.
- *   · `origins` without the Host the transport sends: every later call answers 403 (admin.go
- *     checkHost; MEASURED on the mini's Caddy 2.11.4 — `host not allowed`).
+ *   · a `listen` on another port, socket or loopback ADDRESS than the transport's: the provider
+ *     loses Caddy. Go binds exactly the literal address given (`[::1]:2019` is not reachable at
+ *     `127.0.0.1:2019`), and a hostname binds its first IPv4 address (net ListenConfig.Listen,
+ *     `addrs.first(isIPv4)`), so `localhost:2019` is `127.0.0.1:2019`. MEASURED 2026-09-21 on a
+ *     throwaway Caddy 2.11.4: after loading `admin [::1]:<p>`, `127.0.0.1:<p>` refused the
+ *     connection; after `admin localhost:<p>`, `[::1]:<p>` did.
+ *   · NO `admin` address at all: Caddy falls back to DefaultAdminListen — `localhost:2019`, or
+ *     `$CADDY_ADMIN` in ITS environment (admin.go replaceLocalAdminServer), which this side cannot
+ *     see. A Caddy reached any other way (a socket, another port) moves there on the first load.
+ *     Refused unless the transport is at that default; declaring `admin <address>` is the fix.
+ *   · a Host the new config does not allow: `origins` without it, or — with no `origins` — a Host
+ *     outside Caddy's loopback defaults (`localhost`, `[::1]`, `127.0.0.1` at the listen port).
+ *     Every later call answers 403 (admin.go allowedOrigins / checkHost; MEASURED on the mini's
+ *     Caddy 2.11.4 — `host not allowed`). The transport also sends `Origin: http://<Host>`, which
+ *     Caddy checks against the same list (originAllowed), so one check covers both.
+ *   · `enforce_origin` over a unix socket: this transport, like Caddy's CLI (cmd/commandfuncs.go
+ *     AdminAPIRequest), sends no Origin there, and a unix listener has no default origins — so
+ *     checkOrigin answers 403 to every call. MEASURED 2026-09-21 on a throwaway Caddy 2.11.4:
+ *     `client is not allowed to access from origin ''`, and that Caddy could not be managed again.
  *   · `remote`: a second, network-facing admin listener (mTLS on :2021) — declare that deliberately,
  *     not through this resource.
  *   · `config.load`: Caddy pulls its config from elsewhere, replacing this one on a timer.
@@ -24,16 +40,20 @@ type AdminBlock = {
   disabled?: boolean;
   listen?: string;
   origins?: string[];
+  enforce_origin?: boolean;
   remote?: unknown;
   config?: { load?: unknown };
 };
 
+/** Caddy's compiled-in admin port (admin.go DefaultAdminListen `localhost:2019`). */
+const DEFAULT_ADMIN_PORT = 2019;
+
 const LOOPBACK_HOST = /^(?:localhost|127(?:\.\d{1,3}){3}|\[?::1\]?)$/;
 
+type Listen = { kind: 'tcp'; host: string; port: number } | { kind: 'unix'; path: string };
+
 /** Caddy network address → a listener, or a description of why it is not one we can check. */
-const parseListen = (
-  listen: string,
-): { kind: 'tcp'; host: string; port: number } | { kind: 'unix'; path: string } | string => {
+const parseListen = (listen: string): Listen | string => {
   if (listen.includes('{')) return 'a placeholder, which cannot be checked before it runs';
   const unix = /^unix(?:gram|packet)?\/(.+?)(?:\|[0-7]{3,4})?$/.exec(listen);
   if (unix !== null) return { kind: 'unix', path: unix[1] ?? '' };
@@ -47,6 +67,34 @@ const parseListen = (
   return { host: address.slice(0, colon), kind: 'tcp', port };
 };
 
+const unbracket = (host: string): string => host.replace(/^\[(.*)\]$/, '$1');
+
+/**
+ * Whether a transport sending `hostHeader` reaches a listener bound to `listenHost`.
+ * ★ The Host stands in for the dial address: they are the same unless `hostHeader` was set for a
+ *   forward, where it should name the far side's address anyway. `localhost` on the transport's
+ *   side may resolve to either family (node tries both), so it reaches any loopback listener; a
+ *   literal address reaches only itself.
+ */
+const reaches = (hostHeader: string, listenHost: string): boolean => {
+  const dialled = unbracket(hostHeader.slice(0, hostHeader.lastIndexOf(':')));
+  const listening = unbracket(listenHost);
+  return (
+    dialled === 'localhost' || dialled === (listening === 'localhost' ? '127.0.0.1' : listening)
+  );
+};
+
+const sameListener = (listen: Listen, transport: CaddyAdminListener): boolean =>
+  listen.kind === 'tcp'
+    ? transport.kind === 'tcp' &&
+      listen.port === transport.port &&
+      reaches(transport.hostHeader, listen.host)
+    : transport.kind === 'unix' && listen.path === transport.path;
+
+/** Caddy's allowed Hosts for a loopback listener with no `origins` (admin.go allowedOrigins). */
+const defaultOrigins = (port: number): string[] =>
+  ['localhost', '[::1]', '127.0.0.1'].map((host) => `${host}:${String(port)}`);
+
 const originHost = (origin: string): string | undefined => {
   if (!origin.includes('://')) return origin;
   try {
@@ -56,6 +104,30 @@ const originHost = (origin: string): string | undefined => {
   } catch {
     return undefined;
   }
+};
+
+const listenProblem = (admin: AdminBlock, transport: CaddyAdminListener): string | undefined => {
+  if (admin.listen === undefined) {
+    const atDefault =
+      transport.kind === 'tcp' &&
+      transport.port === DEFAULT_ADMIN_PORT &&
+      reaches(transport.hostHeader, 'localhost');
+    return atDefault
+      ? undefined
+      : 'no `admin` address: Caddy would fall back to its default listener (localhost:2019, or ' +
+          '$CADDY_ADMIN), away from where this provider reaches it — declare `admin <address>`';
+  }
+  const listen = parseListen(admin.listen);
+  const shown = JSON.stringify(admin.listen);
+  if (typeof listen === 'string') {
+    return `admin listen ${shown} is ${listen}; declare a literal loopback address`;
+  }
+  if (listen.kind === 'tcp' && !LOOPBACK_HOST.test(listen.host)) {
+    return `admin listen ${shown} is not loopback — it would put the admin API on the network`;
+  }
+  return sameListener(listen, transport)
+    ? undefined
+    : `admin listen ${shown} moves the admin API away from where this provider reaches it`;
 };
 
 /** Refusals for the adapted config's `admin` block, given where the transport reaches Caddy. */
@@ -74,33 +146,25 @@ export const adminProblems = (adapted: unknown, transport: CaddyAdminListener): 
       '`admin.config.load` makes Caddy pull its config from elsewhere, replacing this one',
     );
   }
-  if (admin.listen !== undefined) {
-    const listen = parseListen(admin.listen);
-    const shown = JSON.stringify(admin.listen);
-    if (typeof listen === 'string') {
-      found.push(`admin listen ${shown} is ${listen}; declare a literal loopback address`);
-    } else if (listen.kind === 'tcp' && !LOOPBACK_HOST.test(listen.host)) {
-      found.push(
-        `admin listen ${shown} is not loopback — it would put the admin API on the network`,
-      );
-    } else if (
-      listen.kind !== transport.kind ||
-      (listen.kind === 'tcp' && transport.kind === 'tcp' && listen.port !== transport.port) ||
-      (listen.kind === 'unix' && transport.kind === 'unix' && listen.path !== transport.path)
-    ) {
-      found.push(
-        `admin listen ${shown} moves the admin API away from where this provider reaches it`,
-      );
-    }
-  }
-  if (admin.origins !== undefined && transport.kind === 'tcp') {
-    const allowed = admin.origins.map(originHost);
+  const moved = listenProblem(admin, transport);
+  if (moved !== undefined) found.push(moved);
+  if (transport.kind === 'tcp') {
+    const allowed = admin.origins?.map(originHost) ?? defaultOrigins(transport.port);
     if (!allowed.includes(transport.hostHeader)) {
+      const which =
+        admin.origins === undefined
+          ? `Caddy's default origins (no \`origins\` declared) ${JSON.stringify(allowed)}`
+          : `admin origins ${JSON.stringify(admin.origins)}`;
       found.push(
-        `admin origins ${JSON.stringify(admin.origins)} do not allow Host ${transport.hostHeader}, ` +
-          'which this provider sends — Caddy would refuse it every call after this one',
+        `${which} do not allow Host ${transport.hostHeader}, which this provider sends — ` +
+          'Caddy would refuse it every call after this one',
       );
     }
+  } else if (admin.enforce_origin === true) {
+    found.push(
+      '`enforce_origin` over a unix socket: this transport (like the Caddy CLI) sends no Origin ' +
+        'there, so Caddy would answer 403 to every call',
+    );
   }
   return found;
 };

@@ -14,6 +14,7 @@
  * ⚠️ `{$NAME}` IS NOT ONE OF THEM. It is substituted at ADAPT time (caddyfile/parse.go
  *   replaceEnvVars), so the value lands in the adapted JSON — readable at `GET /config/` and
  *   written to `autosave.json`. It is not refused (the prop holds only the name), but it is worse.
+ *   `{$NAME:default}` is different: the default IS in the prop, and is checked as a literal.
  * ⚠️ A TRIPWIRE, NOT A SCANNER. It catches the names and shapes people actually type; a secret in
  *   an innocent-looking argument passes. Nothing here makes a secret safe to declare.
  */
@@ -49,6 +50,17 @@ const SHAPES: readonly (readonly [RegExp, string])[] = [
 
 const PLACEHOLDER = /\{[^{}\s]+\}/g;
 const AUTH_SCHEME = /^(?:bearer|basic|token|digest)$/i;
+
+/**
+ * ⛔ `{$NAME:default}` IS A LITERAL. Caddy splices the default in at ADAPT time whenever NAME is
+ *   unset (caddyfile/parse.go replaceEnvVars: SplitN on `:`), so a secret typed as the default is
+ *   in the prop, the state and the adapted JSON. MEASURED 2026-09-21 on a throwaway Caddy 2.11.4:
+ *   `respond "{$UNSET:literal-default}"` adapted to the body `literal-default`. So each line is
+ *   checked as Caddy sees it with every such variable unset. The RUNTIME replacer has no default
+ *   syntax (replacer.go looks the whole key up), so `{env.X}` stays the safe form.
+ */
+const ENV_DEFAULT = /\{\$[^{}\s:]*:([^}]*)\}/g;
+const withDefaults = (line: string): string => line.replace(ENV_DEFAULT, '$1');
 
 /** One line's tokens: whitespace-separated, "double-quoted" and `backquoted` kept whole, # comments dropped. */
 export const tokensOf = (line: string): string[] => {
@@ -115,7 +127,7 @@ export const caddyfileSecretProblems = (caddyfile: string): string[] => {
   const found: string[] = [];
   if (PRIVATE_KEY.test(caddyfile)) found.push('the Caddyfile holds a PEM private key');
   for (const [index, line] of caddyfile.split('\n').entries()) {
-    found.push(...lineProblems(tokensOf(line), `line ${String(index + 1)}`));
+    found.push(...lineProblems(tokensOf(withDefaults(line)), `line ${String(index + 1)}`));
   }
   return found.map((problem) => `${problem}: ${ALTERNATIVE}`);
 };

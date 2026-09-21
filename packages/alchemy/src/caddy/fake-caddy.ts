@@ -12,7 +12,10 @@
  * ★ THE TOY ADAPTER. A Caddyfile here is lines; each becomes a route. Keywords steer the fake:
  *   `SYNTAX_ERROR` fails the adapt; `PROVISION_ERROR` adapts but fails the load; a TAB anywhere is
  *   "not formatted" (the warning real Caddy gives unformatted input); `admin <listen>`,
- *   `admin off` and `origins <a> <b>` set the adapted `admin` block.
+ *   `admin off` and `origins <a> <b>` set the adapted `admin` block. With no site lines there are
+ *   no apps at all, as real Caddy adapts a Caddyfile of only comments or global options.
+ * ★ `listenPort` is the port Caddy BELIEVES it listens on — its Host check uses it — while the
+ *   fake really listens on an ephemeral one: a Caddy on its default :2019 behind a forward.
  */
 export type Seen = {
   readonly method: string;
@@ -58,7 +61,9 @@ const toyAdapt = (text: string): { config?: unknown; error?: string; warnings: u
     ? [{ file: 'Caddyfile', line: 1, message: 'Caddyfile input is not formatted' }]
     : [];
   const config = {
-    apps: { http: { servers: { srv0: { routes, listen: [':443'] } } } },
+    ...(routes.length === 0
+      ? {}
+      : { apps: { http: { servers: { srv0: { routes, listen: [':443'] } } } } }),
     ...(Object.keys(admin).length === 0 ? {} : { admin }),
   };
   return { config, warnings };
@@ -83,17 +88,16 @@ const goEncode = (value: unknown): string => {
 };
 
 export const fakeCaddy = (
-  options: { unix?: string; running?: unknown; origins?: string[] } = {},
+  options: { unix?: string; running?: unknown; origins?: string[]; listenPort?: number } = {},
 ): FakeCaddy => {
   const seen: Seen[] = [];
   let port = 0;
   const state: { running: unknown } = { running: options.running ?? null };
   const allowedHosts = () =>
-    options.origins ?? [
-      `localhost:${String(port)}`,
-      `[::1]:${String(port)}`,
-      `127.0.0.1:${String(port)}`,
-    ];
+    options.origins ??
+    ['localhost', '[::1]', '127.0.0.1'].map(
+      (host) => `${host}:${String(options.listenPort ?? port)}`,
+    );
 
   const handle = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);

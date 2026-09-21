@@ -58,7 +58,7 @@ export const providers = Layer.mergeAll(caddyProviders(), launchdProviders());
 
 | step    | what happens                                                                                                                             |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| plan    | `POST /adapt` the Caddyfile (side-effect free): a syntax error, a literal secret or an unsafe `admin` block fails the **plan**           |
+| plan    | `POST /adapt` the Caddyfile (side-effect free): a syntax error, a literal secret, no apps or an unsafe `admin` block fails the **plan**  |
 | apply   | `POST /load` with `text/caddyfile`, then `GET /config/` must hash to what `/adapt` produced; skipped when Caddy already runs it          |
 | refused | Caddy keeps the old config (it rolls back itself); the deploy fails with Caddy's reason and says whether the old config is still running |
 | read    | the digest of `GET /config/` — with no state, a running Caddy is **adopted** (its live config becomes the baseline)                      |
@@ -95,7 +95,9 @@ before any admin API exists to load into. What bounds the cost:
 
 After every successful load (ours included) Caddy writes the config JSON to `autosave.json`
 (`$XDG_CONFIG_HOME/caddy/`, else `~/Library/Application Support/Caddy/` on macOS, `~/.config/caddy/`
-on Linux), unless the Caddyfile says `persist_config off`.
+on Linux), unless the Caddyfile says `persist_config off`. ⚠️ A daemon started with no `HOME` and no
+`XDG_CONFIG_HOME` falls back to `./caddy/` under its working directory (storage.go AppConfigDir):
+set `XDG_CONFIG_HOME` in the launchd job so autosave lands where you expect.
 
 - **Without `--resume`** (the mini's Caddy today): a restart loads `--config`. The file and the
   running config agree after every successful deploy; see the ⚠️ above for a failed one.
@@ -106,7 +108,9 @@ on Linux), unless the Caddyfile says `persist_config off`.
 - `--watch` reloads the file on change; our `/load` right after is then a no-op ("config is
   unchanged").
 - `sourceFile` rides as `Caddy-Config-Source-File`, as `caddy reload` sends it. Without it a load
-  makes Caddy forget its source file, and SIGUSR1 stops reloading from it.
+  makes Caddy forget its source file, and SIGUSR1 stops reloading from it. The header only KEEPS the
+  file Caddy started with (caddy.go ClearLastConfigIfDifferent); it never sets a new one. ⚠️ Under
+  `--resume` with an autosave, Caddy records no source file at all, so SIGUSR1 has nothing to reload.
 
 ## Secrets
 
@@ -118,6 +122,8 @@ resolves in its own process, so the value never enters the state, the adapted JS
 - `{file./path}` — the file's contents (trailing newline trimmed), read when the placeholder runs.
 - ⚠️ `{$NAME}` is substituted at **adapt** time: the value is in the adapted JSON, readable at
   `GET /config/` and written to `autosave.json`. Not refused, but worse.
+- ⛔ `{$NAME:default}` puts the default in the prop, and Caddy uses it whenever `NAME` is unset. The
+  tripwire checks the default as a literal.
 - `basic_auth` replaces placeholders in the hash too: `admin {env.ADMIN_HASH}`.
 
 The tripwire refuses a PEM private key, a literal after `dns`/`acme_dns <provider>`, a secret-named
@@ -139,8 +145,13 @@ bcrypt/argon2 hashes). It never echoes what it found. It is a tripwire, not a sc
 - **Another host's Caddy** (SSH later): forward its socket or port to loopback here and point a
   `localCaddyAdmin()` at it, or implement `CaddyAdmin` over your own route. Never expose :2019.
 - **A Caddyfile cannot strand the provider.** Before loading, the adapted `admin` block is refused
-  if it turns the API off, listens off loopback or somewhere the transport does not reach, sets
-  `origins` without the transport's Host, enables `remote`, or pulls config with `config.load`.
+  if it turns the API off, listens off loopback or somewhere the transport does not reach (another
+  port, socket or loopback address: `[::1]` is not `127.0.0.1`, and `localhost` binds IPv4), allows
+  no Host the transport sends (its `origins`, or Caddy's loopback defaults when there are none), sets
+  `enforce_origin` over a unix socket (no Origin is sent there), enables `remote`, or pulls config.
+- ⛔ **No `admin` address means Caddy's default** (`localhost:2019`, or `$CADDY_ADMIN`) after the
+  load. That is refused unless the transport is at that default: a Caddy reached on a socket or
+  another port declares `admin <address>` in its Caddyfile.
 
 ## Adoption
 
@@ -152,8 +163,9 @@ of whatever ran before. ⚠️ Review the plan: the Caddy on this loopback admin
 
 ⛔ Delete never touches Caddy, under either removal policy. There is no "less config" to fall back
 to, and an empty config stops every server. `retain` is the default; with `destroy`, delete still
-only forgets. It never calls `/stop` or `DELETE /config/`. An empty Caddyfile is refused for the
-same reason. To empty a Caddy, do it by hand at its admin API.
+only forgets. It never calls `/stop` or `DELETE /config/`. An empty Caddyfile, or one that adapts
+to no apps (only comments or global options), is refused for the same reason. To empty a Caddy, do
+it by hand at its admin API.
 
 ## Traps
 

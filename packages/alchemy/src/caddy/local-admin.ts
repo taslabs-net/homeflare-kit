@@ -95,7 +95,10 @@ export const parseAdminAddress = (
     throw refuse(address, 'no path, query or credentials — the API lives at the root');
   }
   const port = url.port === '' ? 80 : Number(url.port);
-  const host = hostHeader ?? url.host;
+  // ⚠️ NOT `url.host`: WHATWG URL drops a default port (`http://127.0.0.1:80` has host
+  //   `127.0.0.1`), and Caddy compares the Host against `host:port` (admin.go allowedOrigins), so
+  //   a portless Host is a 403 on every call. The Caddy CLI always sends the port (JoinHostPort).
+  const host = hostHeader ?? `${url.hostname}:${String(port)}`;
   return {
     listener: {
       hostHeader: host,

@@ -50,6 +50,8 @@ export const configProblems = (props: CaddyConfigProps): string[] => {
    * ⛔ AN EMPTY CADDYFILE IS NOT "NOTHING TO DO". It adapts to a config with no apps, and loading
    *   it stops every server Caddy runs — every site down, on a templating bug that rendered ''.
    *   Emptying Caddy is a deliberate act for a person at the admin API, not a declaration.
+   *   Text that is not empty but serves nothing (only comments, only global options) is caught
+   *   after `/adapt`, where it shows as no apps (config-lifecycle.ts servesNothing).
    */
   if (props.caddyfile.trim() === '') {
     found.push('caddyfile is empty — loading it would stop every site Caddy serves');
