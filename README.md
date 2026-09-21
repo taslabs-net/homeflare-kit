@@ -7,16 +7,16 @@
 The HomeFlare shared packages. One repo, one toolchain, one release stream — so that
 every app and Worker that consumes them is scaffolded the same way.
 
-| package                                          | what it is                                                                       |
-| ------------------------------------------------ | -------------------------------------------------------------------------------- |
-| [`@homeflare/kit`](./packages/kit)               | Runtime-neutral primitives: env parsing, HTTP. Runs anywhere.                    |
-| [`@homeflare/cloudflare`](./packages/cloudflare) | Workers helpers: Access JWT, structured logging.                                 |
-| [`@homeflare/ui`](./packages/ui)                 | React components on [Cloudflare Kumo](https://github.com/cloudflare/kumo).       |
-| [`@homeflare/auth`](./packages/auth)             | D1 storage for official Better Auth. Not a factory.                              |
-| [`@homeflare/typesafe`](./packages/typesafe)     | Official TypeSafe System One SDK, Worker key required.                           |
-| [`@homeflare/alchemy`](./packages/alchemy)       | Custom Alchemy providers: Cloudflare, Proxmox, OpenBao, Forgejo, Talos, launchd. |
-| [`@homeflare/site`](./packages/site)             | One typed site config; hostnames and addresses derived, the rest pinned.         |
-| [`@homeflare/config`](./packages/config)         | Shared tsconfig, oxlint and oxfmt presets.                                       |
+| package                                          | what it is                                                                              |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| [`@homeflare/kit`](./packages/kit)               | Runtime-neutral primitives: env parsing, HTTP. Runs anywhere.                           |
+| [`@homeflare/cloudflare`](./packages/cloudflare) | Workers helpers: Access JWT, structured logging.                                        |
+| [`@homeflare/ui`](./packages/ui)                 | React components on [Cloudflare Kumo](https://github.com/cloudflare/kumo).              |
+| [`@homeflare/auth`](./packages/auth)             | D1 storage for official Better Auth. Not a factory.                                     |
+| [`@homeflare/typesafe`](./packages/typesafe)     | Official TypeSafe System One SDK, Worker key required.                                  |
+| [`@homeflare/alchemy`](./packages/alchemy)       | Custom Alchemy providers: Cloudflare, Proxmox, OpenBao, Forgejo, Talos, launchd, Caddy. |
+| [`@homeflare/site`](./packages/site)             | One typed site config; hostnames and addresses derived, the rest pinned.                |
+| [`@homeflare/config`](./packages/config)         | Shared tsconfig, oxlint and oxfmt presets.                                              |
 
 ## Using them
 

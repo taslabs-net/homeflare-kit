@@ -10,6 +10,7 @@
  *     import { TalosCluster } from '@homeflare/alchemy/talos';
  *     import { ProxmoxAcl } from '@homeflare/alchemy/proxmox';
  *     import { LaunchdJob } from '@homeflare/alchemy/launchd';
+ *     import { CaddyConfig } from '@homeflare/alchemy/caddy';
  *
  * ★ WHY THESE EXIST AT ALL. When Alchemy has no resource for something, the alternative
  *   is a runbook step a human runs once — and a plan can never show a missing runbook
