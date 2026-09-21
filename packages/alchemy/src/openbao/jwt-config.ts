@@ -10,6 +10,11 @@
  *
  * ★ REPLACE SEMANTICS (REPLACE.md): `mount` changed → `replace`: the new mount gets the config;
  *   the old one keeps its own until that mount is disabled. There is no identity but the mount.
+ * ⛔ A MOVE ONTO A MOUNT WHOSE CONFIG EXISTS FAILS THE PLAN, like every other family's move onto an
+ *   occupied path (rename-identity.ts). With no delete, nothing is lost to a swap, which MEASURED
+ *   2026-09-21 ended with each config where it was declared. But the new generation writes over
+ *   the config it lands on, which changes who can log in on that mount: an issuer or key set
+ *   someone else manages, silently replaced. Move through a mount with no config instead.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
@@ -22,11 +27,12 @@ import {
   attributesOf,
   configPath,
   matches,
-  mountOf,
   problems,
   wouldErase,
   writeBody,
 } from './jwt-config-form.ts';
+import { declaredOr } from './rename.ts';
+import { type Identity, guardRename, judgeRename } from './rename-identity.ts';
 import { type RoleSpec, planRole, readRoleAt, reconcileRole } from './role-reconcile.ts';
 
 export type { BaoJwtAuthConfigAttributes, BaoJwtAuthConfigProps } from './jwt-config-form.ts';
@@ -42,6 +48,16 @@ export interface BaoJwtAuthConfig extends Resource<
 export const BaoJwtAuthConfig = Resource<BaoJwtAuthConfig>('Bao.JwtAuthConfig', {
   defaultRemovalPolicy: 'retain',
 });
+
+/** The identity is the mount alone; a trailing `/` is the same mount (`configPath` trims it). */
+const IDENTITY: Identity<BaoJwtAuthConfigAttributes> = {
+  declared: (props) => {
+    const mount = declaredOr(props, 'mount', 'jwt');
+    return mount === undefined ? undefined : configPath({ mount });
+  },
+  family: 'Bao.JwtAuthConfig',
+  recorded: (output) => configPath(output),
+};
 
 export const jwtConfigSpec = (
   props: BaoJwtAuthConfigProps,
@@ -67,14 +83,19 @@ export const BaoJwtAuthConfigProvider = () =>
           return found?.attributes;
         }),
 
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined || !isResolved(news)) return undefined;
-          if (mountOf(news) !== output.mount) return { action: 'replace' } as const;
+        diff: Effect.fn(function* ({ news, olds, output }) {
+          // ⛔ The mount first, before isResolved; onto a mount with a config fails the plan.
+          const move = yield* judgeRename(IDENTITY, olds, news, output);
+          if (output === undefined) return undefined;
+          if (move !== undefined) return { action: 'replace' } as const;
+          if (!isResolved(news)) return undefined;
           return { action: yield* planRole(jwtConfigSpec(news)) } as const;
         }),
 
         /** ⛔ Refuses, before writing, a live config that carries an OIDC client (wouldErase). */
-        reconcile: Effect.fn(function* ({ news }) {
+        reconcile: Effect.fn(function* ({ news, output }) {
+          // ⛔ An `update` across a move the diff could not see — refused before any write.
+          yield* guardRename(IDENTITY, news, output);
           return yield* reconcileRole(jwtConfigSpec(news));
         }),
 

@@ -5,17 +5,11 @@
  *   sdk v2.6.2 framework.FieldData.Validate on the approle role fields (path_role.go:166-167,
  *   TypeDurationSecond): `secret_id_ttl: "2160h"` validates and parses to 7776000 seconds. A role
  *   read hands back that integer, which attributesOf renders as `90d` — the same role.
- * And what the diff calls a rename (a `replace`): only a change the server would not fold away.
+ * (What the diff calls a rename is pinned in rename-families.test.ts, `foldName`.)
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import {
-  type BaoAuthRoleProps,
-  attributesOf,
-  isRename,
-  matches,
-  writeBody,
-} from './auth-role-form.ts';
+import { type BaoAuthRoleProps, attributesOf, matches, writeBody } from './auth-role-form.ts';
 
 const PROPS: BaoAuthRoleProps = {
   bindSecretId: true,
@@ -45,13 +39,5 @@ describe('auth role secret_id TTL', () => {
     assert.equal(attributes.secretIdTtl, '90d');
     assert.equal(matches(attributes, PROPS), true);
     assert.equal(matches(attributesOf(PROPS, { ...live, secret_id_ttl: 0 }), PROPS), false);
-  });
-});
-
-describe('auth role rename', () => {
-  it('is a rename only when the lower-cased names differ, as the server stores them', () => {
-    assert.equal(isRename('pve-node--node-a', 'pve-node--node-b'), true);
-    assert.equal(isRename('Host-Cert', 'host-cert'), false);
-    assert.equal(isRename('host-cert', 'host-cert'), false);
   });
 });

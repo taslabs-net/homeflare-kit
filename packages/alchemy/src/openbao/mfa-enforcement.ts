@@ -19,9 +19,12 @@
  *   default `retain` it never runs; with `destroy`, set `retain` to drop it from state and leave it
  *   live — which is what the server would do anyway.
  *
- * ★ REPLACE SEMANTICS (REPLACE.md): `name` changed → `replace`, create-first (names are per
- *   namespace; the new one cannot collide). Under `retain` BOTH enforcements then apply — fail
- *   closed. Under `destroy` the old one's delete is refused, so the deploy stops after creating.
+ * ★ REPLACE SEMANTICS (REPLACE.md): `name` changed → `replace`, create-first. Under `retain` BOTH
+ *   enforcements then apply — fail closed. Under `destroy` the old one's delete is refused, so the
+ *   deploy stops after creating. ⛔ A rename onto an enforcement that exists fails the plan
+ *   (rename-identity.ts): the upsert by name would otherwise rewrite, in place, what someone else's
+ *   enforcement demands. MEASURED 2026-09-21: a swap of two under `destroy` wrote each over the
+ *   other, then stopped on the two refused deletes.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
@@ -38,7 +41,8 @@ import {
   problems,
   writeBody,
 } from './mfa-enforcement-form.ts';
-import { authAccessors, readEnforcement, writeEnforcement } from './mfa-wire.ts';
+import { authAccessors, enforcementPath, readEnforcement, writeEnforcement } from './mfa-wire.ts';
+import { guardRename, judgeRename, nameIdentity } from './rename-identity.ts';
 
 export type {
   BaoMfaLoginEnforcementAttributes,
@@ -58,6 +62,12 @@ export const BaoMfaLoginEnforcement = Resource<BaoMfaLoginEnforcement>('Bao.MfaL
 });
 
 type Env = HttpClient.HttpClient;
+
+/** Exact: the identity store indexes enforcements by (namespace, name) as given. */
+const IDENTITY = nameIdentity<BaoMfaLoginEnforcementAttributes>(
+  'Bao.MfaLoginEnforcement',
+  enforcementPath,
+);
 
 const refuse = (name: string, message: string): Effect.Effect<never> =>
   Effect.die(new Error(`Bao.MfaLoginEnforcement ${name}: ${message}`));
@@ -119,13 +129,18 @@ export const BaoMfaLoginEnforcementProvider = () =>
         }),
 
         /** ⛔ IT COMPARES THE LIVE ENFORCEMENT — a target removed by hand is drift, not a noop. */
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined || !isResolved(news)) return undefined;
-          if (news.name !== output.name) return { action: 'replace' } as const;
+        diff: Effect.fn(function* ({ news, olds, output }) {
+          // ⛔ The name first, before isResolved; onto an enforcement that exists fails the plan.
+          const move = yield* judgeRename(IDENTITY, olds, news, output);
+          if (output === undefined) return undefined;
+          if (move !== undefined) return { action: 'replace' } as const;
+          if (!isResolved(news)) return undefined;
           return { action: yield* planEnforcement(news) } as const;
         }),
 
-        reconcile: Effect.fn(function* ({ news }) {
+        reconcile: Effect.fn(function* ({ news, output }) {
+          // ⛔ An `update` across a rename the diff could not see — refused before any write.
+          yield* guardRename(IDENTITY, news, output);
           return yield* reconcileEnforcement(news);
         }),
 
