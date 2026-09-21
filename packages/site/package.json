@@ -1,0 +1,53 @@
+{
+  "name": "@homeflare/site",
+  "version": "0.0.0",
+  "description": "One typed site config: base values, pinned names, and every hostname and address derived from them.",
+  "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/site#readme",
+  "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
+  "license": "MIT",
+  "author": "Timothy Schneider",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taslabs-net/homeflare-kit.git",
+    "directory": "packages/site"
+  },
+  "files": [
+    "dist",
+    "src",
+    "site.example.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./load": {
+      "types": "./dist/load.d.ts",
+      "default": "./dist/load.js"
+    },
+    "./site.example.json": "./site.example.json",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun run build:js && bun run build:types",
+    "build:js": "bun build ./src/index.ts ./src/load.ts --root ./src --outdir dist --target node --format esm --packages external --splitting --sourcemap=linked",
+    "build:types": "tsc --project tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "types": "tsc --noEmit",
+    "test": "bun test",
+    "smoke": "bun run scripts/smoke.ts"
+  },
+  "devDependencies": {
+    "effect": "catalog:"
+  },
+  "peerDependencies": {
+    "effect": "4.0.0-rc.115"
+  }
+}

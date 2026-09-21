@@ -14,6 +14,8 @@ every app and Worker that consumes them is scaffolded the same way.
 | [`@homeflare/ui`](./packages/ui)                 | React components on [Cloudflare Kumo](https://github.com/cloudflare/kumo). |
 | [`@homeflare/auth`](./packages/auth)             | D1 storage for official Better Auth. Not a factory.                        |
 | [`@homeflare/typesafe`](./packages/typesafe)     | Official TypeSafe System One SDK, Worker key required.                     |
+| [`@homeflare/alchemy`](./packages/alchemy)       | Custom Alchemy providers: Cloudflare, Proxmox, OpenBao, Forgejo, Talos.    |
+| [`@homeflare/site`](./packages/site)             | One typed site config; hostnames and addresses derived, the rest pinned.   |
 | [`@homeflare/config`](./packages/config)         | Shared tsconfig, oxlint and oxfmt presets.                                 |
 
 ## Using them
