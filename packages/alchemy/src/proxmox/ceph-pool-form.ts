@@ -192,9 +192,9 @@ const numeric = (value: number | undefined) => (value === undefined ? undefined 
  * the way storage.ts's `mutable` serves both of its forms. `name` is the path's last segment on an
  * update and is not repeated here.
  *
- * ⚠️ SAFE TO RE-APPLY TO A POOL THAT ALREADY MATCHES, which reconcile relies on. MEASURED in
- *   PVE::Ceph::Tools::set_pool (Tools.pm:293-300): it reads `osd pool get all` first and SKIPS
- *   every setting whose value did not change, so re-sending the declared set costs one mon read.
+ * ⚠️ SAFE TO RE-APPLY TO A POOL THAT ALREADY MATCHES (reconcile leaned on it until update-guard.ts).
+ *   MEASURED in PVE::Ceph::Tools::set_pool (Tools.pm:293-300): it reads `osd pool get all` first
+ *   and SKIPS every unchanged setting, so the undrifted fields that ride along cost one mon read.
  * ⛔ BUT A SETTING THAT DID CHANGE AND CANNOT BE APPLIED KILLS THE WHOLE PUT. Tools.pm:310 dies
  *   with "Could not set: <fields>" if any parameter is left unapplied, so a pool carrying Ceph's
  *   `nosizechange` fails an entire update over one field. That is why the `no*` flags are reported

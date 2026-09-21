@@ -156,6 +156,12 @@ with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:20
 - ★ **Managed Caddies run `--resume` with their own `XDG_CONFIG_HOME`**, so a restart runs the last
   config Caddy accepted — and after one, SIGUSR1 has no file to reload. Why, and the rest: same doc.
 
+## Adopt verifier — `hf-adopt-verify` / `@homeflare/alchemy/verify`
+
+⛔ `adopted` in a plan is printed for a match and for a drift alike. Before a gated deploy, run
+`bunx --bun hf-adopt-verify --config alchemy.run.ts --stage live`: Alchemy's planner, no writes,
+each row's own diff, exit 0 only when all are no-ops. [docs/adopt-verify.md](./docs/adopt-verify.md)
+
 ## Credentials
 
 `CLOUDFLARE_API_TOKEN` is read from the environment at call time, never at module scope.

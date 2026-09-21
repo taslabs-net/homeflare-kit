@@ -22,6 +22,7 @@ import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { pve } from './client.ts';
 import type { ApiTarget, PbsTarget, PveRole, PveTarget } from './credentials.ts';
+import { formToSend } from './update-guard.ts';
 
 /**
  * ★ WHY SEVERAL FAMILIES HERE DECLARE `defaultRemovalPolicy: 'retain'`, WRITTEN ONCE.
@@ -150,7 +151,7 @@ export const pveOperations = <Props extends WithApiTarget, Attributes>(
             spec.collection(news),
             spec.createForm(news),
           );
-        } else if (spec.updateForm !== undefined && !spec.matches(live, news)) {
+        } else if (spec.updateForm !== undefined) {
           /**
            * ⛔ ADOPTING AN OBJECT THAT ALREADY MATCHES MUST NOT WRITE TO IT, AND WITHOUT THE
            *   `matches` GUARD IT DID. Alchemy's `adopted` action is NOT a read: Apply.ts routes it
@@ -171,13 +172,12 @@ export const pveOperations = <Props extends WithApiTarget, Attributes>(
            *   A field deliberately left OUT of `matches` is one this resource does not manage, so
            *   its drift is not this provider's to repair.
            *
-           * ⚠️ AN EMPTY FORM IS ALSO NOT A WRITE. `updateForm` can legitimately answer `{}` — a
-           *   storage declaring only `storage`, `type` and its locator has no mutable field at all
-           *   — and PUTting an empty body is a pointless write at best and a 400 that reads as a
-           *   broken provider at worst.
+           * ★ THE PREDICATE LIVES IN update-guard.ts NOW, with the ⚠️ on why an empty form is not a
+           *   write either, because CephPool and PbsDatastore write their own reconcile and need
+           *   the same one — CephPool did not have it (see that file).
            */
-          const form = spec.updateForm(news);
-          if (Object.keys(form).length > 0) {
+          const form = formToSend(spec.matches, live, news, spec.updateForm(news));
+          if (form !== undefined) {
             yield* pve(news.target, 'provision', 'PUT', spec.path(news), form);
           }
         }
