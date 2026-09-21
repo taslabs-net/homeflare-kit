@@ -29,6 +29,14 @@ describe('mountProblem', () => {
       assert.notEqual(mountProblem(mount), undefined, mount);
     }
   });
+
+  it('trims long runs of slashes in linear time (no polynomial regex on caller input)', () => {
+    const run = '/'.repeat(200_000);
+    const started = performance.now();
+    assert.equal(loginPath(`${run}approle${run}`), 'auth/approle/login');
+    assert.notEqual(mountProblem(`${run}a${run}x`), undefined);
+    assert.ok(performance.now() - started < 1_000, 'slash trimming took over a second');
+  });
 });
 
 describe('redact', () => {

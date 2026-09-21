@@ -13,6 +13,7 @@
  */
 import { sha256 } from './digest.ts';
 import { parseDuration, ttlSeconds } from './mount-form.ts';
+import { sshMountOf as mountOf } from './mount-path.ts';
 
 export interface BaoSshRoleProps {
   /** Role name, as `<mount>/roles/{name}` takes it. */
@@ -76,8 +77,7 @@ export interface BaoSshRoleAttributes extends Omit<BaoSshRoleForm, 'maxTtl' | 't
   digest: string;
 }
 
-/** Mount path without a trailing slash; `ssh` when the caller did not say. */
-export const mountOf = (mount: string | undefined) => (mount ?? 'ssh').replace(/\/+$/, '');
+export { mountOf };
 
 export const readPath = (mount: string | undefined, name: string) =>
   `${mountOf(mount)}/roles/${name}`;
