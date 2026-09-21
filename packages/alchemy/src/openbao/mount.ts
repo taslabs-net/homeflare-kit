@@ -7,21 +7,22 @@
  *
  * ★ `defaultRemovalPolicy: 'retain'` — disabling a mount destroys every secret under it.
  *   Opt in with `.pipe(RemovalPolicy.destroy())`; see resource.ts in house/proxmox.
+ *
+ * ★ REPLACE SEMANTICS (audited 2026-09-21, see src/openbao/REPLACE.md):
+ *   · `type` changed → `replace` (create-first; retain keeps the old mount, below).
+ *   · `path` changed → FAILS the plan unless `remountFrom` names the old path, which is an
+ *     in-place `update` that moves the mount and its data (mount-move.ts). It used to be an
+ *     `update` that enabled an EMPTY mount at the new path.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
-import {
-  type BaoMountAttributes,
-  type BaoMountProps,
-  attributesOf,
-  matches,
-  mountPath,
-  wantsTune,
-} from './mount-form.ts';
-import { disableMount, enableMount, readMountData, tuneMount } from './mount-wire.ts';
+import { type BaoMountAttributes, type BaoMountProps, matches } from './mount-form.ts';
+import { planMove } from './mount-move.ts';
+import { readMount, reconcileMount } from './mount-reconcile.ts';
+import { disableMount } from './mount-wire.ts';
 
 export type { BaoMountAttributes, BaoMountProps };
 
@@ -36,13 +37,6 @@ export interface BaoMount extends Resource<
 export const BaoMount = Resource<BaoMount>('Bao.Mount', {
   defaultRemovalPolicy: 'retain',
 });
-
-const readMount = (props: BaoMountProps) =>
-  Effect.gen(function* () {
-    const live = yield* readMountData(props.path);
-    if (live === undefined) return undefined;
-    return attributesOf(props, live);
-  });
 
 export const BaoMountProvider = () =>
   Provider.effect(
@@ -64,6 +58,13 @@ export const BaoMountProvider = () =>
 
         diff: Effect.fn(function* ({ news, output }) {
           if (output === undefined || !isResolved(news)) return undefined;
+          /**
+           * ⛔ A CHANGED PATH IS DECIDED HERE, BEFORE ANY READ OF THE NEW PATH — reading it would
+           *   find nothing and plan `update`, which is how an empty mount used to get enabled.
+           */
+          const move = planMove('Bao.Mount', output.path, news.path, news.remountFrom);
+          if (move.kind === 'refuse') return yield* Effect.die(new Error(move.message));
+          if (move.kind === 'move') return { action: 'update' } as const;
           const live = yield* readMount(news);
           if (live === undefined) return { action: 'update' } as const;
           /**
@@ -91,32 +92,10 @@ export const BaoMountProvider = () =>
         /**
          * ★ A REFUSED ENABLE OR TUNE FAILS THE EFFECT WITH OpenBao's OWN `errors`, naming the
          *   method and path — the job the per-command exit-code checks used to do by hand.
+         *   The body, and the move, live in mount-reconcile.ts.
          */
-        reconcile: Effect.fn(function* ({ news }) {
-          let live = yield* readMount(news);
-          if (live === undefined) {
-            yield* enableMount(news);
-            if (wantsTune(news)) yield* tuneMount(news);
-          } else if (!matches(live, news)) {
-            if (live.type !== news.type) {
-              return yield* Effect.die(
-                new Error(
-                  `Bao.Mount ${mountPath(news.path)}: live type ${live.type} != ${news.type}. ` +
-                    'Secrets engine type is immutable — replace manually.',
-                ),
-              );
-            }
-            yield* tuneMount(news);
-          }
-          live = yield* readMount(news);
-          if (live === undefined) {
-            return yield* Effect.die(
-              new Error(
-                `Bao.Mount ${mountPath(news.path)}: write returned no error but the mount is still absent.`,
-              ),
-            );
-          }
-          return live;
+        reconcile: Effect.fn(function* ({ news, output }) {
+          return yield* reconcileMount(news, output?.path);
         }),
 
         /**

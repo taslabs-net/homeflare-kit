@@ -66,60 +66,18 @@ is the one operation this resource exists to make hard. It retains on destroy.
 
 ## OpenBao — `@homeflare/alchemy/openbao`
 
-Vault objects as resources — `BaoMount`, `BaoAuthMethod`, `BaoPolicy`, `BaoAuthRole`,
-`BaoPkiRole`, `BaoSshRole`, `BaoCloudflareRole`, `BaoProxmoxRole`, `BaoPlugin` — plus an AppRole
-login for scripts. Every call resolves `BAO_ADDR` / `BAO_AGENT_ADDR` / `BAO_NAMESPACE` /
-`BAO_TOKEN` (or the `VAULT_*` twins) the way the `bao` CLI does. A stack provides each
+Vault objects as resources — mounts (with `remountFrom` moves), auth methods, policies, AppRole,
+JWT/OIDC and Kubernetes roles, JWT auth config, login MFA (TOTP method + enforcement), PKI, SSH,
+Cloudflare and Proxmox roles, plugins — plus `assertBaoIdentity` (call it first), the pure
+`hostAppRoles` generator, and an AppRole login for scripts. A stack provides each
 `Bao*Provider()` it uses, plus `FetchHttpClient.layer`.
 
-⛔ **Metadata only.** Alchemy stores props and attributes unencrypted, so no secret, CA key or
-plugin `env` is declarable. Every family defaults to `retain` on destroy.
+⛔ **Metadata only.** Alchemy stores props and attributes unencrypted, so no secret, CA key,
+plugin `env` or OIDC client secret is declarable. Every family defaults to `retain` on destroy.
 
-### appRoleLogin / revokeSelf
-
-```ts
-import { BaoLoginError, appRoleLogin, revokeSelf } from '@homeflare/alchemy/openbao';
-
-const login = await appRoleLogin({ roleId, secretId }); // mount defaults to `approle`
-try {
-  use(login.clientToken, login.accessor, login.policies, login.leaseDurationSeconds);
-} finally {
-  await revokeSelf(login.clientToken);
-}
-```
-
-- ⛔ The login never sends `BAO_TOKEN`, and a `BaoLoginError` never contains the credential.
-  OpenBao can echo a secret_id back in an error, so every error string is redacted.
-- ⚠️ `clientToken` is a getter over a private field: `console.log(login)` prints `[Getter]` at
-  most (Bun) or nothing (Node), and JSON, a spread and `structuredClone` carry no token.
-- ⚠️ A value with leading or trailing whitespace is refused, not trimmed. `Bun.file().text()`
-  keeps a file's trailing newline.
-- `reason` is `input`, `refused`, `unreachable` or `response`. Pass `env` to use something other
-  than `process.env`. `appRoleLoginEffect` / `revokeSelfEffect` are the same calls as Effects.
-
-### BaoPlugin
-
-```ts
-import { BaoPlugin } from '@homeflare/alchemy/openbao';
-import * as Effect from 'effect/Effect';
-
-export const plugins = Effect.gen(function* () {
-  yield* BaoPlugin('plugin-example', {
-    name: 'openbao-plugin-secrets-example',
-    type: 'secret', // 'secret' | 'auth' | 'database'
-    command: 'openbao-plugin-secrets-example', // a bare file name in plugin_directory
-    sha256: '<hex sha256 of that file>',
-    version: 'v0.1.2', // canonical semver
-  });
-});
-```
-
-- ⛔ It registers a binary that is already in `plugin_directory`. It does not copy the binary.
-- ⚠️ **If the binary reports its own version, declare exactly that one.** OpenBao refuses any
-  other ("plugin version mismatch"), and files an unversioned registration under the reported
-  one, so reconcile then refuses because the read-back finds nothing.
-- ⚠️ A new `sha256` does not restart running mounts. Reload with `sys/plugins/reload/backend`.
-- The deploying token needs `sudo` on `sys/plugins/catalog/*`.
+★ **Usage lives beside the code**, so it ships in the tarball with it:
+[src/openbao/README.md](./src/openbao/README.md). What each resource does on a rename is in
+[src/openbao/REPLACE.md](./src/openbao/REPLACE.md) — read it before changing a path or name.
 
 ## Credentials
 

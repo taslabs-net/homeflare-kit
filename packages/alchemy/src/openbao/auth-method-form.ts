@@ -18,6 +18,13 @@ export interface BaoAuthMethodProps {
   defaultLeaseTtl?: string;
   /** Max lease TTL, e.g. `8760h`. */
   maxLeaseTtl?: string;
+  /**
+   * The path this method lives at NOW, when `path` is where it should move to — `sys/remount`
+   * from `auth/<remountFrom>`, keeping every role. Without it a changed `path` fails the plan
+   * (mount-move.ts). ⚠️ Every token issued through the method is revoked by the move, and login
+   * URLs, policies and MFA enforcements by accessor are not rewritten (the accessor is kept).
+   */
+  remountFrom?: string;
 }
 
 export interface BaoAuthMethodAttributes {

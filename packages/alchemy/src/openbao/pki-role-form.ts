@@ -1,5 +1,13 @@
-import { sha256 } from './digest.ts';
-import { mountPath, parseDuration, ttlSeconds } from './mount-form.ts';
+import { mountPath, parseDuration } from './mount-form.ts';
+import {
+  type BaoPkiRoleCanonical,
+  DEFAULT_KEY_USAGE,
+  canonicalFromLive,
+  canonicalFromProps,
+  digestOf,
+} from './pki-role-canonical.ts';
+
+export type { BaoPkiRoleCanonical };
 
 /** ★ MEASURED: the OpenAPI enum for `key_type` is exactly these four, lowercase. */
 export type BaoPkiKeyType = 'any' | 'ec' | 'ed25519' | 'rsa';
@@ -56,34 +64,29 @@ export interface BaoPkiRoleProps {
   cnValidations?: readonly BaoPkiCnValidation[];
   /** Signature hash bits; `0` auto-detects from key length. One live role pins 256. */
   signatureBits?: number;
-}
-
-/**
- * The managed field set, normalised so both sides of a diff are byte-comparable.
- *
- * ⚠️ KEY ORDER IS THE DIGEST. The props side and the live side are both built by the single
- *   canonical() literal below, so `JSON.stringify` emits the same key order for each. Two
- *   hand-written object literals would drift apart and produce a forever-diff nobody could
- *   read from the plan output.
- */
-export interface BaoPkiRoleCanonical {
-  allowBareDomains: boolean;
-  allowGlobDomains: boolean;
-  allowIpSans: boolean;
-  allowLocalhost: boolean;
-  allowSubdomains: boolean;
-  allowWildcardCertificates: boolean;
-  allowedDomains: readonly string[];
-  clientFlag: boolean;
-  cnValidations: readonly string[];
-  extKeyUsage: readonly string[];
-  keyBits: number;
-  keyType: string;
-  /** ⚠️ `-1` means the duration prop did not parse — reconcile refuses rather than writing it. */
-  maxTtlSeconds: number;
-  serverFlag: boolean;
-  signatureBits: number;
-  ttlSeconds: number;
+  /**
+   * ★ THE SIX BELOW (added 2026-09-21) default to OpenBao's OWN values, not closed ones — a role this
+   *   resource wrote before they were props carries exactly those, so it still plans `noop`. The
+   *   write already sent them implicitly; see the header of pki-role-canonical.ts.
+   */
+  /** A request must carry a common_name. Default true. */
+  requireCn?: boolean;
+  /** Only valid host names in the CN and DNS SANs. Default true. */
+  enforceHostnames?: boolean;
+  /**
+   * Key usages minus the `KeyUsage` prefix. Default `DigitalSignature, KeyAgreement,
+   * KeyEncipherment`. ⚠️ `[]` is a real value — it removes every key usage — and is sent as such.
+   */
+  keyUsage?: readonly string[];
+  /** Allowed domains may use identity templates (`{{identity.entity.name}}`). Default false. */
+  allowedDomainsTemplate?: boolean;
+  /**
+   * Do not store issued certificates. Default false. ⛔ They can then be neither listed nor
+   *   revoked. ⚠️ Implies `generateLease: false`; declaring both true is refused (see problems).
+   */
+  noStore?: boolean;
+  /** Attach an OpenBao lease to every issued certificate. Default false — leases slow startup. */
+  generateLease?: boolean;
 }
 
 export interface BaoPkiRoleAttributes extends BaoPkiRoleCanonical {
@@ -96,84 +99,6 @@ export interface BaoPkiRoleAttributes extends BaoPkiRoleCanonical {
   digest: string;
 }
 
-const sorted = (values: readonly string[]) => [...values].sort();
-
-/** ⚠️ Case-folded for the COMPARE only; the write keeps the author's casing.
- *   Why, and what was never measured, is in the pki-role.ts header. */
-const foldedUsages = (values: readonly string[]) => sorted(values.map((v) => v.toLowerCase()));
-
-/** The one literal that fixes key order for both sides of the diff. */
-const canonical = (input: BaoPkiRoleCanonical): BaoPkiRoleCanonical => ({
-  allowBareDomains: input.allowBareDomains,
-  allowGlobDomains: input.allowGlobDomains,
-  allowIpSans: input.allowIpSans,
-  allowLocalhost: input.allowLocalhost,
-  allowSubdomains: input.allowSubdomains,
-  allowWildcardCertificates: input.allowWildcardCertificates,
-  allowedDomains: sorted(input.allowedDomains),
-  clientFlag: input.clientFlag,
-  cnValidations: sorted(input.cnValidations),
-  extKeyUsage: foldedUsages(input.extKeyUsage),
-  keyBits: input.keyBits,
-  keyType: input.keyType,
-  maxTtlSeconds: input.maxTtlSeconds,
-  serverFlag: input.serverFlag,
-  signatureBits: input.signatureBits,
-  ttlSeconds: input.ttlSeconds,
-});
-
-const seconds = (text: string) => parseDuration(text) ?? -1;
-
-export const canonicalFromProps = (props: BaoPkiRoleProps): BaoPkiRoleCanonical =>
-  canonical({
-    allowBareDomains: props.allowBareDomains ?? false,
-    allowGlobDomains: props.allowGlobDomains ?? false,
-    allowIpSans: props.allowIpSans ?? false,
-    allowLocalhost: props.allowLocalhost ?? false,
-    allowSubdomains: props.allowSubdomains ?? false,
-    allowWildcardCertificates: props.allowWildcardCertificates ?? false,
-    allowedDomains: props.allowedDomains,
-    clientFlag: props.clientFlag ?? true,
-    cnValidations: props.cnValidations ?? ['hostname'],
-    extKeyUsage: props.extKeyUsage ?? [],
-    keyBits: props.keyBits ?? 0,
-    keyType: props.keyType ?? 'rsa',
-    maxTtlSeconds: seconds(props.maxTtl),
-    serverFlag: props.serverFlag ?? true,
-    signatureBits: props.signatureBits ?? 0,
-    ttlSeconds: seconds(props.ttl),
-  });
-
-const bool = (value: unknown, fallback: boolean) => (typeof value === 'boolean' ? value : fallback);
-
-const int = (value: unknown, fallback: number) =>
-  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-
-const list = (value: unknown): readonly string[] =>
-  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
-
-const str = (value: unknown, fallback: string) => (typeof value === 'string' ? value : fallback);
-
-export const canonicalFromLive = (live: Record<string, unknown>): BaoPkiRoleCanonical =>
-  canonical({
-    allowBareDomains: bool(live['allow_bare_domains'], false),
-    allowGlobDomains: bool(live['allow_glob_domains'], false),
-    allowIpSans: bool(live['allow_ip_sans'], false),
-    allowLocalhost: bool(live['allow_localhost'], false),
-    allowSubdomains: bool(live['allow_subdomains'], false),
-    allowWildcardCertificates: bool(live['allow_wildcard_certificates'], false),
-    allowedDomains: list(live['allowed_domains']),
-    clientFlag: bool(live['client_flag'], true),
-    cnValidations: list(live['cn_validations']),
-    extKeyUsage: list(live['ext_key_usage']),
-    keyBits: int(live['key_bits'], 0),
-    keyType: str(live['key_type'], 'rsa'),
-    maxTtlSeconds: ttlSeconds(live['max_ttl']) ?? -1,
-    serverFlag: bool(live['server_flag'], true),
-    signatureBits: int(live['signature_bits'], 0),
-    ttlSeconds: ttlSeconds(live['ttl']) ?? -1,
-  });
-
 /** ⚠️ Same rendering auth-role-form.ts uses, so `720h` and `2592000` read alike in a plan. */
 const ttlText = (value: number) => {
   if (value < 0) return '';
@@ -182,8 +107,6 @@ const ttlText = (value: number) => {
   if (value !== 0 && value % 60 === 0) return `${String(value / 60)}m`;
   return `${String(value)}s`;
 };
-
-export const digestOf = (form: BaoPkiRoleCanonical) => sha256(JSON.stringify(form));
 
 export const rolePath = (props: { name: string; mount?: string }) =>
   `${mountPath(props.mount ?? 'pki')}/roles/${props.name}`;
@@ -216,6 +139,10 @@ export const attributesOf = (
  * ★ `ext_key_usage` is OMITTED when empty rather than sent as `ext_key_usage=`. The write
  *   replaces the whole role, so an absent field already lands on the `[]` default, and
  *   omitting sidesteps how an empty value would be encoded.
+ * ⚠️ `key_usage` CANNOT BE OMITTED THAT WAY — its default is NOT empty — so it is always sent, and
+ *   an empty declaration goes over as `""`. That encoding is now READ, not guessed: for a
+ *   comma-string-slice field, go-secure-stdlib parseutil.ParseCommaStringSlice (:389-392)
+ *   answers `""` with an empty list.
  *
  * ★ THE BODY FOR `PUT <mount>/roles/<name>`, ALL STRINGS — the same `k=v` pairs `bao write` sent.
  */
@@ -237,6 +164,12 @@ export const writeBody = (props: BaoPkiRoleProps): Record<string, string> => {
     signature_bits: String(form.signatureBits),
     ttl: props.ttl,
     max_ttl: props.maxTtl,
+    require_cn: String(form.requireCn),
+    enforce_hostnames: String(form.enforceHostnames),
+    key_usage: (props.keyUsage ?? DEFAULT_KEY_USAGE).join(','),
+    allowed_domains_template: String(form.allowedDomainsTemplate),
+    no_store: String(form.noStore),
+    generate_lease: String(form.generateLease),
   };
   const usages = props.extKeyUsage ?? [];
   if (usages.length > 0) body['ext_key_usage'] = usages.join(',');
@@ -246,3 +179,36 @@ export const writeBody = (props: BaoPkiRoleProps): Record<string, string> => {
 /** True when live already matches the declaration on every managed field. */
 export const matches = (attributes: BaoPkiRoleAttributes, props: BaoPkiRoleProps) =>
   attributes.digest === digestOf(canonicalFromProps(props));
+
+/**
+ * Declarations reconcile must refuse rather than write. diff routes any of these to `update` so the
+ * refusal is seen on the next deploy, never hidden behind a `noop`.
+ *
+ * ⚠️ `noStore` WITH `generateLease` IS NOT AN ERROR ON THE SERVER — pathRoleCreate stores
+ *   generate_lease false and adds a warning (path_roles.go:1250-1256) — so the role would read back
+ *   different from its declaration and plan `update` forever. Refused here instead.
+ */
+export const problems = (props: BaoPkiRoleProps): readonly string[] => {
+  const found: string[] = [];
+  if (props.allowedDomains.length === 0) {
+    found.push(
+      'allowedDomains is empty. With allow_any_name false that role can issue no certificate at all.',
+    );
+  }
+  const bad = [
+    ['ttl', props.ttl],
+    ['maxTtl', props.maxTtl],
+  ].filter(([, text]) => parseDuration(text ?? '') === undefined);
+  if (bad.length > 0) {
+    found.push(
+      `${bad.map(([k, v]) => `${k ?? ''}=${v ?? ''}`).join(', ')} is not a duration OpenBao ` +
+        'parses (expect 30m, 720h, 8760h or 0).',
+    );
+  }
+  if (props.noStore === true && props.generateLease === true) {
+    found.push(
+      'noStore and generateLease are both true; OpenBao keeps no_store and drops the lease.',
+    );
+  }
+  return found;
+};

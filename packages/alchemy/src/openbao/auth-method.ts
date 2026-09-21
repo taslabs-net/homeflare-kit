@@ -7,6 +7,10 @@
  * ★ `defaultRemovalPolicy: 'retain'` — disabling a method destroys every role under it
  *   and revokes tokens minted through those roles. Opt in with
  *   `.pipe(RemovalPolicy.destroy())`.
+ *
+ * ★ REPLACE SEMANTICS (audited 2026-09-21, see REPLACE.md): `type` changed → `replace`; `path`
+ *   changed → FAILS unless `remountFrom` names the old path (then an in-place move). It used to
+ *   plan `update` and enable an empty method at the new path, exactly as Bao.Mount did.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
@@ -16,17 +20,11 @@ import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import {
   type BaoAuthMethodAttributes,
   type BaoAuthMethodProps,
-  attributesOf,
-  authPath,
   matches,
-  wantsTune,
 } from './auth-method-form.ts';
-import {
-  disableAuthMethod,
-  enableAuthMethod,
-  readAuthMethodData,
-  tuneAuthMethod,
-} from './auth-method-wire.ts';
+import { readMethod, reconcileAuthMethod } from './auth-method-reconcile.ts';
+import { disableAuthMethod } from './auth-method-wire.ts';
+import { planMove } from './mount-move.ts';
 
 export type { BaoAuthMethodAttributes, BaoAuthMethodProps };
 
@@ -41,13 +39,6 @@ export interface BaoAuthMethod extends Resource<
 export const BaoAuthMethod = Resource<BaoAuthMethod>('Bao.AuthMethod', {
   defaultRemovalPolicy: 'retain',
 });
-
-const readMethod = (props: BaoAuthMethodProps) =>
-  Effect.gen(function* () {
-    const live = yield* readAuthMethodData(props.path);
-    if (live === undefined) return undefined;
-    return attributesOf(props, live);
-  });
 
 export const BaoAuthMethodProvider = () =>
   Provider.effect(
@@ -67,6 +58,14 @@ export const BaoAuthMethodProvider = () =>
 
         diff: Effect.fn(function* ({ news, output }) {
           if (output === undefined || !isResolved(news)) return undefined;
+          /**
+           * ⛔ A CHANGED PATH FAILS HERE unless `remountFrom` names the old one — the same trap
+           *   Bao.Mount had: reading the new path finds nothing, plans `update`, and enables an
+           *   EMPTY method beside the retained one, with every role left behind (mount-move.ts).
+           */
+          const move = planMove('Bao.AuthMethod', output.path, news.path, news.remountFrom);
+          if (move.kind === 'refuse') return yield* Effect.die(new Error(move.message));
+          if (move.kind === 'move') return { action: 'update' } as const;
           const live = yield* readMethod(news);
           if (live === undefined) return { action: 'update' } as const;
           /**
@@ -79,31 +78,9 @@ export const BaoAuthMethodProvider = () =>
           return { action: 'update' } as const;
         }),
 
-        reconcile: Effect.fn(function* ({ news }) {
-          let live = yield* readMethod(news);
-          if (live === undefined) {
-            yield* enableAuthMethod(news);
-            if (wantsTune(news)) yield* tuneAuthMethod(news);
-          } else if (!matches(live, news)) {
-            if (live.type !== news.type) {
-              return yield* Effect.die(
-                new Error(
-                  `Bao.AuthMethod ${authPath(news.path)}: live type ${live.type} != ${news.type}. ` +
-                    'Auth method type is immutable — replace manually.',
-                ),
-              );
-            }
-            yield* tuneAuthMethod(news);
-          }
-          live = yield* readMethod(news);
-          if (live === undefined) {
-            return yield* Effect.die(
-              new Error(
-                `Bao.AuthMethod ${authPath(news.path)}: write returned no error but the method is still absent.`,
-              ),
-            );
-          }
-          return live;
+        /** The body, and the move, live in auth-method-reconcile.ts. */
+        reconcile: Effect.fn(function* ({ news, output }) {
+          return yield* reconcileAuthMethod(news, output?.path);
         }),
 
         /**
