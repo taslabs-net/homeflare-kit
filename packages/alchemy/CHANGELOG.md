@@ -1,5 +1,81 @@
 # @homeflare/alchemy
 
+## 0.10.0
+
+### Minor Changes
+
+- [#84](https://github.com/taslabs-net/homeflare-kit/pull/84) [`eb2fd8b`](https://github.com/taslabs-net/homeflare-kit/commit/eb2fd8b0a7f332731316ceedfa9af3a619616e95) Thanks [@taslabs-net](https://github.com/taslabs-net)! - ⚠️ **BEHAVIOUR CHANGE — three silent takeovers in 0.9.0's ownership rule closed, and `sudoRunner()`
+  refuses more.** Found by an adversarial review of 0.9.0, each measured through Alchemy's own plan
+  and apply before the fix, and each now refused, writing nothing. It narrows two 0.9.0 notes: crash
+  recovery without `--adopt` needs a row that can prove the object ours, and `--adopt` at apply
+  never covers a fresh replace's new generation.
+
+  - **A `Bao.*` create killed before its ownership check no longer resumes onto someone else's object.**
+    Apply writes the `creating` row before `reconcile` runs, and drops any prop still an `Output`
+    from it. With the name an Output, the next deploy "resumed" that create and wrote over another
+    owner's role (all nine role and MFA families, and `Bao.Mount` by path). With a knob an Output,
+    `Bao.Mount` and `Bao.AuthMethod` read the missing prop as "not managed", adopted another owner's
+    mount and tuned it. A state row now proves an object ours only when it carries every value the
+    declaration names, and a resume is let through only when the family's own `read` proves the
+    object that generation's — for every `Bao.*` family and `ProxmoxLxc`. **So a create killed
+    while a prop was still an Output now needs `--adopt` to resume.**
+  - **An interrupted `Bao.*` replace no longer writes over what another owner put at its new
+    identity since**, unless `--adopt`.
+  - **`--adopt` at apply now covers a create or an interrupted generation, never a fresh replace's
+    new generation**, for every `Bao.*` family, `HostFile` and `LaunchdJob`. The planner never
+    offers adoption there, yet a deploy-wide `--adopt` let a `HostFile` whose path changed overwrite
+    a file it did not own at the new path.
+  - **`sudoRunner()` also refuses** (⚠️ a prefix 0.9.0 accepted can now fail): a directory _above_ the
+    prefix, from `/` down, that root does not own alone (whoever may write the prefix's parent can
+    swap the prefix itself; a root-owned symlink such as `/etc` is still followed), and any ACL entry
+    from `/` down to the file that grants a write right (read with `ls -lden`, as the operator; deny
+    entries pass; unreadable ACLs refuse). Both run before sudo and, through `checkWrite`, at plan
+    time.
+
+  `docs/ownership.md` and `docs/launchd-sudo.md` carry the details and the limits.
+
+- [#83](https://github.com/taslabs-net/homeflare-kit/pull/83) [`01c54cf`](https://github.com/taslabs-net/homeflare-kit/commit/01c54cfcf3892388369e4c01765ca5f69d843e8b) Thanks [@taslabs-net](https://github.com/taslabs-net)! - **New: `hf-adopt-verify` and `@homeflare/alchemy/verify` — prove a deploy's adoptions are no-ops
+  before it runs.** Alchemy prints `adopted` for an object that already matches and for one that
+  drifts alike (beta.79 `Plan.ts` turns the diff's `noop` into an update after the adoption probe),
+  and the deploy reconciles both. The verifier plans the stack with Alchemy's own planner, with
+  every provider watched and every write path refused. For each row without a state row it reports
+  the provider's `read`, its own `diff` before the engine forced it, and the declared fields that
+  differ (names only). It exits `0` only when all are no-ops, `1` when any is not, `2` when the plan
+  could not be computed.
+
+  ```sh
+  bunx --bun hf-adopt-verify --config alchemy.run.ts --stage live [--all] [--json]
+  ```
+
+  `verifyStack(target)` and `verifySession({ stack, context })` are the same thing as functions.
+
+  **Fix: adopting a `Proxmox.CephPool` that already matches no longer writes.** Its reconcile PUT
+  `setpool` whenever the pool existed, so every adoption forked a `cephsetpool` worker under the
+  provision token. On TB4 that was six tasks, one per pool, on 2026-09-13 and 2026-09-20. It now
+  skips the PUT when its own `matches` holds, like every other PVE/PBS family. The predicate is
+  shared in one place (`update-guard.ts`). `docs/adopted-deploys.md` traces what a deploy of an
+  adopted row does for every family the Proxmox and PBS stacks use.
+
+- [#80](https://github.com/taslabs-net/homeflare-kit/pull/80) [`66d9374`](https://github.com/taslabs-net/homeflare-kit/commit/66d937416287b8b657da4091eecdd3824666087a) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `@homeflare/alchemy/proxmox` now exports `ProxmoxLxc` as a Resource. It declares a Proxmox VE container: you can adopt one that runs today, or create one from a template.
+
+  - **The props are PVE's own keys and spellings**, taken from `/nodes/{node}/lxc/{vmid}/config`: `hostname`, `cores`, `memory`, `swap`, `rootfs`, `mpN`, `netN`, `devN`, `features`, `unprivileged`, `onboot`, `startup`, `description`, `tags`, and the rest. To adopt a guest, paste its `pvesh get` output. An undeclared key is unmanaged. A key declared as `''` is removed, where PVE allows that. `password`, `ssh-public-keys` and `env` are typed `never`.
+  - **Values are compared as PVE stores them.** Key order and written-out defaults are ignored. A MAC PVE generated is ignored, and a NIC write keeps the live MAC. `storage:GiB` equals the volume it allocated. An existing volume is always written back with its live volume id.
+  - **Changes are made in place.** Config changes use one `PUT …/config` carrying the config `digest`. A larger disk uses `PUT …/resize`. Create, resize and delete wait for their PVE task. If nothing differs, nothing is written, including on the first deploy after an adoption.
+  - **Nothing plans a replace.** These changes fail the plan with a sentence, and nothing is written: a new `vmid`, a `node` the guest is not on, another `ostemplate`, an `unprivileged` flip, a smaller disk, another storage, or detaching a mount point.
+  - **Keys only root@pam can write are refused at plan.** These are `devN`, bind or device mounts, features other than `nesting`, and any feature on a privileged guest. PVE never treats an API token as `root@pam`, so the refusal prints the `pct set` to run on the node instead.
+  - **A read failure is not "absent".** A config read counts as absent only when it answers 500 and the cluster lists the vmid nowhere. Any other failure fails the plan. A vmid held by another node, or by a QEMU VM, fails the plan and says where it is. After HA or `pct migrate` has moved a guest, setting `node` to where it is now is an update that writes nothing.
+  - **Nothing is adopted without `adopt(true)` or `--adopt`, not even a guest that matches the declaration.** This is the rule of `docs/ownership.md`, which every `Bao.*` family, `HostFile` and `LaunchdJob` follow. Matching is not proof of ownership: once state claims a guest, `RemovalPolicy.destroy()` deletes it and its volumes. Without adoption on, the plan fails with "Cannot adopt". A create interrupted after its POST still resumes without `--adopt` when the guest matches what it declared.
+  - **An adoption's plan always says `adopted`.** Alchemy prints no diff for it, so a warning names each key a deploy would write.
+  - **A create only ever allocates.** A create naming an existing volume id (rather than `storage:GiB`) is refused, because PVE would unpack the template onto that volume; so is any key the resource does not manage. A deploy that planned a create never takes over a guest it then finds at that vmid. Without adoption on, it fails and forgets its `creating` row. With it on, a matching guest is recorded with no write and any other is refused. A guest the cluster lost while state still holds it plans `update` with a warning that the deploy creates it again, or fails the plan when it cannot be created.
+  - **State keeps managed keys only.** The `config` attribute is an allowlist, so a key a newer PVE adds (such as `entrypoint`) is not stored.
+  - **It retains by default.** Dropping the declaration leaves the guest running. Only `RemovalPolicy.destroy()` deletes it, only while the guest still matches its last declaration, and it never forces the delete or stops the guest first.
+
+  Breaking, for anyone who deep-imported the old provider-only version: `storage` is gone (declare `rootfs: 'storage:GiB'`), `ostemplate` is optional, the attributes are now `{ node, vmid, config, rawKeys }`, and `hostname` no longer defaults to `ct<vmid>`. The guide is `docs/proxmox-lxc.md`.
+
+### Patch Changes
+
+- [#82](https://github.com/taslabs-net/homeflare-kit/pull/82) [`462368f`](https://github.com/taslabs-net/homeflare-kit/commit/462368fa263ef541bac7c0e70070fb656b4fcda7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The ownership and `ProxmoxLxc` guides now say how to read an adoption's plan before it writes. `alchemy plan` has no `--adopt` flag in alchemy 2.0.0-beta.79, so without adoption on it stops at "Cannot adopt" before any resource can warn what taking the object over would write. Run `alchemy deploy --adopt --dry-run` instead, or declare `.pipe(adopt(true))` and run `alchemy plan`. The LXC guide also warns that a drift warning does not stop the deploy: `deploy --adopt --yes` writes a `net0` declared without the live `tag=` without it, and the guest leaves its VLAN.
+
 ## 0.9.0
 
 ### Minor Changes
