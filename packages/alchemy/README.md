@@ -162,16 +162,16 @@ with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:20
 PVE and PBS objects over the PVE API, and `ProxmoxLxc` for containers. What the subpath never does
 to a guest, and why: [docs/proxmox.md](./docs/proxmox.md).
 
+## Adopt verifier — `hf-adopt-verify` / `@homeflare/alchemy/verify`
+
+⛔ A plan prints `adopted` for a match and for a drift alike. Before a gated deploy run
+`bunx --bun hf-adopt-verify --config alchemy.run.ts --stage live`: Alchemy's planner, no writes,
+each row's own diff, exit 0 only when all are no-ops. [docs/adopt-verify.md](./docs/adopt-verify.md)
+
 ## Credentials
 
-`CLOUDFLARE_API_TOKEN` is read from the environment at call time, never at module scope.
-`MeshNode` instead resolves credentials and the account the way `Cloudflare.providers()` does
-(an Alchemy profile, or `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` in CI).
-
-⛔ **Mint a short-lived, scoped token** — do not reuse a long-lived one, and never a Global
-API Key. An empty value fails closed with a message saying so, because an empty render is
-a denied grant rather than a missing file, and `Bearer ` + nothing 401s in a way that reads
-like a bad credential.
+⛔ **Mint a short-lived, scoped token** — never a long-lived one, never a Global API Key. How each
+subpath reads its credential, and why an empty one fails closed: [docs/credentials.md](./docs/credentials.md).
 
 ## Peers — and one override you need
 

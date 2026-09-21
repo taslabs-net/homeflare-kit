@@ -65,6 +65,7 @@ import {
 } from './pbs-datastore-form.ts';
 import { guardBackend, guardPath, settle } from './pbs-datastore-guard.ts';
 import type { PveRequirements } from './resource.ts';
+import { formToSend } from './update-guard.ts';
 
 export type { PbsDatastoreAttributes, PbsTarget };
 
@@ -210,9 +211,9 @@ export const PbsDatastoreProvider = () =>
           } else {
             yield* guardPath(live, news);
             yield* guardBackend(live, news);
-            // ⚠️ An empty form is not a write — resource.ts skips one for the same reason.
-            const form = updateForm(news);
-            if (!matches(live, news) && Object.keys(form).length > 0) {
+            // ⚠️ An empty form is not a write, and a match is not one either — update-guard.ts.
+            const form = formToSend(matches, live, news, updateForm(news));
+            if (form !== undefined) {
               yield* pve(news.target, 'provision', 'PUT', object(news), form);
             }
           }

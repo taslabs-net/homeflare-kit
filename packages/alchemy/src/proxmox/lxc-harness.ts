@@ -6,7 +6,8 @@
  * ⛔ THE SHELL'S OPENBAO VARIABLES ARE REPLACED FOR THE LIFE OF EACH RUN. `mint` reads
  *   `BAO_AGENT_ADDR` before `BAO_ADDR`, and `BAO_TOKEN` rides every mint as a header; a developer
  *   shell with either set would otherwise send its real token to the fake, or its mint to a real
- *   agent. All three are pointed at the fake and restored afterwards.
+ *   agent. fake-bao-env.ts clears every BAO_* / VAULT_*, points BAO_ADDR at the fake, and
+ *   restores them afterwards.
  * ★ WARNINGS ARE CAPTURED, because the drift warning in lxc.ts is the only thing a cold adoption
  *   plan says about a declaration that does not match yet (the plan itself reads `adopted`).
  * ★ ONE ARTIFACT STORE ACROSS A PLAN AND ITS APPLY, and `--adopt` as the AdoptPolicy service, as
@@ -26,6 +27,7 @@ import * as Layer from 'effect/Layer';
 import * as Logger from 'effect/Logger';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import type { PveTarget } from './credentials.ts';
+import { withFakeBao } from './fake-bao-env.ts';
 import { FAKE_BAO, FAKE_MEMBER, type FakePve } from './fake-pve-lxc.ts';
 import { ProxmoxLxcProvider } from './lxc.ts';
 
@@ -88,21 +90,7 @@ export type Run = {
   readonly warnings: readonly string[];
 };
 
-const withBaoEnv = async <A>(body: () => Promise<A>): Promise<A> => {
-  const names = ['BAO_ADDR', 'BAO_AGENT_ADDR', 'BAO_TOKEN'] as const;
-  const saved = names.map((name) => [name, process.env[name]] as const);
-  process.env['BAO_ADDR'] = FAKE_BAO;
-  process.env['BAO_AGENT_ADDR'] = FAKE_BAO;
-  process.env['BAO_TOKEN'] = 'test-token';
-  try {
-    return await body();
-  } finally {
-    for (const [name, value] of saved) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-  }
-};
+const withBaoEnv = <A>(body: () => Promise<A>): Promise<A> => withFakeBao(FAKE_BAO, body);
 
 export const lxcEngine = (fake: FakePve) => {
   const rows: Record<string, Record<string, Record<string, State.ResourceState>>> = {};

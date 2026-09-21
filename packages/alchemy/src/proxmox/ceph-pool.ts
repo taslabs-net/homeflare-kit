@@ -53,6 +53,7 @@ import {
 import { confirmAbsent, settle } from './ceph-pool-settle.ts';
 import { pve } from './client.ts';
 import { type PveRequirements, type PveSpec, pveOperations } from './resource.ts';
+import { formToSend } from './update-guard.ts';
 import { bool, int, num, text } from './values.ts';
 
 export type { CephPoolAttributes, CephPoolProps };
@@ -160,9 +161,15 @@ export const ProxmoxCephPoolProvider = () =>
               createBody(news),
             );
           } else {
-            // ⚠️ An empty form is not a write — resource.ts skips one for the same reason.
-            const form = updateBody(news);
-            if (Object.keys(form).length > 0) {
+            /**
+             * ⛔ ONLY WHEN `matches` IS FALSE. This PUT used to fire whenever the pool existed, so
+             *   adopting a pool that already matched — Plan.ts forces reconcile after the probe —
+             *   sent `setpool` and forked a worker on the live cluster. PVE skipping the unchanged
+             *   settings (ceph-pool-form.ts) made it harmless to Ceph, not free: it is still a
+             *   provision-lease write and a task in the cluster's list. update-guard.ts has the rest.
+             */
+            const form = formToSend(spec.matches, live, news, updateBody(news));
+            if (form !== undefined) {
               upid = yield* pve<string>(news.target, 'provision', 'PUT', object(news), form);
             }
           }

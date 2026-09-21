@@ -15,6 +15,8 @@ alchemy deploy --adopt            # every resource in this deploy
 
 ⚠️ Only `deploy` declares `--adopt` in alchemy 2.0.0-beta.79, so `alchemy plan` fails "Cannot
 adopt" before any resource can say what taking the object over would write. `--dry-run` shows it.
+★ Even then every adoption prints `adopted`, drift or not. `hf-adopt-verify` plans with adoption on,
+never writes, and prints each row's own diff and an exit code: [adopt-verify.md](./adopt-verify.md).
 
 ```ts
 import { adopt } from 'alchemy/AdoptPolicy';

@@ -97,11 +97,13 @@ import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider } from '@homeflare/alchemy/proxmox';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
+import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
   R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
+  parseVerifyArgs, verifySession, verifyStack,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
 }
@@ -131,12 +133,25 @@ try {
 }
 if (!refused) throw new Error('localCaddyAdmin from dist accepted a non-loopback address');
 
-console.log('all seven subpaths import and resolve');
+if (parseVerifyArgs(['--stage', 'live'], {}).kind !== 'run') {
+  throw new Error('parseVerifyArgs from dist did not parse');
+}
+
+console.log('all eight subpaths import and resolve');
 `,
   );
 
   console.log('importing every subpath…');
   console.log(await run(['bun', 'consumer.ts'], scratch));
+
+  // ⛔ THE BIN THROUGH npm's OWN LINK, under node — the runtime the published dist targets. A
+  //   `bin` pointing at a missing file, a lost shebang or a dist that cannot load its imports all
+  //   pass the import above and fail here. Under bun it also needs `@effect/platform-bun`, as the
+  //   Alchemy CLI does, which a consumer of this README does not install — so node is the check.
+  console.log('running hf-adopt-verify --help under node…');
+  const help = await run(['node', 'node_modules/.bin/hf-adopt-verify', '--help'], scratch);
+  if (!help.includes('Usage: hf-adopt-verify'))
+    throw new Error('hf-adopt-verify --help printed no usage');
 
   console.log('\nalchemy smoke: ok');
 } finally {
