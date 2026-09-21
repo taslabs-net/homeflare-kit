@@ -1,16 +1,20 @@
 # Ownership — nothing is adopted without `--adopt`
 
 A live object this stack holds **no state for** is never taken over silently. That holds for every
-`Bao.*` family, `HostFile`, `LaunchdJob` and `CaddyConfig`, and it holds even when the live object
-is **identical** to the declaration: identical is not ours. Another stack, a person or an old
+`Bao.*` family, `HostFile`, `LaunchdJob`, `CaddyConfig` and `ProxmoxLxc`, and it holds even when the
+live object is **identical** to the declaration: identical is not ours. Another stack, a person or an old
 script put it there, and once state claims it, a delete under `RemovalPolicy.destroy()` removes it
 from its real owner. (Decided 2026-09-21; the Bao families adopted silently until 0.9.0.)
 
 To take an object over, say so:
 
 ```sh
+alchemy deploy --adopt --dry-run  # read it first: `alchemy plan` has no --adopt (beta.79)
 alchemy deploy --adopt            # every resource in this deploy
 ```
+
+⚠️ Only `deploy` declares `--adopt` in alchemy 2.0.0-beta.79, so `alchemy plan` fails "Cannot
+adopt" before any resource can say what taking the object over would write. `--dry-run` shows it.
 
 ```ts
 import { adopt } from 'alchemy/AdoptPolicy';
@@ -59,7 +63,8 @@ and a live object. The next deploy finishes it **without** `--adopt`:
   it also matches that row's props. If it does not, it may have lost a race to someone else, so it
   is `Unowned`: the plan says `Cannot resume creating`, and `--adopt` resumes it.
 - **An interrupted replace.** Alchemy never probes a `replacing` row; it calls `diff`. For a row
-  with no attributes, every Bao family's `diff` first asks its own `read` the recovery question —
+  with no attributes, every Bao family's and `ProxmoxLxc`'s `diff` first asks its own `read` the
+  recovery question —
   recorded instance, whole row, matching object (`provingResumes`, `src/ownership/resume.ts`) — and
   only a "yes" leaves a note in Alchemy's per-deploy `Artifacts` bag that lets the apply's own
   object through.
@@ -100,3 +105,7 @@ a declaration, so Apply leaves its object in place with a note instead of deleti
   wrote, so this needs a kill between the write and the commit.
 - ⚠️ **`CaddyConfig` keeps its own probe.** A running config identical to the declaration reads as
   ours, because adopting it changes nothing Caddy serves ([caddy.md](./caddy.md#adoption)).
+  `ProxmoxLxc` does not share that exception: its delete removes a guest and its volumes
+  ([proxmox-lxc.md](./proxmox-lxc.md#adopting-what-the-plan-says)).
+- ⚠️ **The other `@homeflare/alchemy/proxmox` resources do not follow this rule yet.** Those built
+  on `pveHandlers` (`src/proxmox/resource.ts`) still read a live object with no state as ours.
