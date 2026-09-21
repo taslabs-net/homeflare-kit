@@ -212,11 +212,14 @@ describe('the barrel', () => {
       'LaunchdJob',
       'LaunchdJobProvider',
       'PlistError',
+      'SudoRefusedError',
       'canActAsRoot',
       'hostRunnerLayer',
       'launchdProviders',
       'localRunner',
       'renderPlist',
+      // ★ The opt-in elevating runner; makeSudoRunner and the allowlist internals stay off.
+      'sudoRunner',
     ]);
   });
 });

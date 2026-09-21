@@ -1,0 +1,110 @@
+# Deploying a Mac host as yourself — `sudoRunner()`
+
+A host stack that declares system daemons needs root for a handful of calls. `sudoRunner()` lets
+the deploy run as you (the operator) and sends **only those calls** through `sudo -n`, in fixed
+argv shapes, logging each one. It is an explicit opt-in: nothing falls back to it, and
+`localRunner()` stays the default and never elevates.
+
+```ts
+import { launchdProviders, sudoRunner } from '@homeflare/alchemy/launchd';
+
+const runner = sudoRunner({
+  // ⛔ Required: the directories root may write. Only directories root owns.
+  prefixes: ['/Library/LaunchDaemons', '/opt/example'],
+  // log: (line) => …, // default: one line on stderr per privileged call
+});
+// Provide launchdProviders(runner) alongside the stack's other provider layers.
+```
+
+## What runs as root: the whole list
+
+Each is `/usr/bin/sudo -n -- <argv>`, every program by absolute path, never through a shell.
+
+| when                             | argv                                                                  |
+| -------------------------------- | --------------------------------------------------------------------- |
+| a system job is bootstrapped     | `/bin/launchctl bootstrap system <prefix>/<label>.plist`              |
+| a system job is booted out       | `/bin/launchctl bootout system/<label>`                               |
+| (your own code, via `exec`)      | `/bin/launchctl kickstart [-k] [-p] system/<label>`                   |
+| a file under a prefix is written | `/usr/bin/install -S -m <0644> [-o <uid>] [-g <gid>] <staged> <path>` |
+| a file under a prefix is removed | `/bin/rm -f -- <path>`                                                |
+
+- A file's bytes never reach argv or the log: they are written, as you, to a `0600` file in a
+  fresh `0700` temp directory. `install` copies that file (and only that file) into place, and
+  the temp directory is removed afterwards, whether or not the install succeeded.
+- `install` writes a temp file beside the target and renames it (install(1) on macOS 27.2), so the
+  target is never torn. `-S` adds the fsync.
+- Owner and group are numeric ids, resolved by the provider before the call.
+
+## What stays as you
+
+- `launchctl print` and `print-disabled`. launchctl(1): "Anyone may read or query the system
+  domain"; measured on macOS 27.2, too (see `src/launchd/launchctl.ts`).
+- User and group lookups, `id -G`, every file read and `lstat`.
+- Files outside every prefix, and your own `gui/<uid>` jobs.
+
+★ So **a plan never calls sudo.** `read` and `diff` are reads; only an apply elevates.
+
+## Refused before sudo is asked
+
+- Any other argv. That includes a bare `bootout system` (which removes the whole system domain),
+  `bootstrap system <directory>` (which loads every plist in it), `rm -r`, `install -d`, a label
+  under `org.nixos.`, `com.apple.` or `homebrew.mxcl.`, and any argv whose program is `sudo`.
+- A path outside every prefix that needs root: another user as the owner, say.
+- A symlink or missing directory between the prefix and the file, or anything but a regular file
+  at the path. ⚠️ `install src <directory>` copies _into_ the directory, and a symlink to one does
+  the same.
+- A file you could not read back. Both providers read every write back, and read again at every
+  plan, as you. A root-only `0600` would be installed, then fail with `EACCES` and stay on disk
+  with no state. Membership comes from `id -G`, because macOS caps `getgroups()` at 16 (measured
+  2026-09-21: 16 against 18).
+- Another user's `gui/<uid>` or `user/<uid>` domain. Only the system domain is elevated.
+
+## When sudo wants a password
+
+`sudo -n` never prompts. It fails at once, and the error says so: `a password is required, and
+this runner never prompts`. The command did not run. You have two options.
+
+1. **`sudo -v` just before the deploy.** This caches a ticket. By default it lasts 5 minutes and
+   is tied to one terminal (sudoers(5): `timestamp_timeout`, `timestamp_type`).
+   ⚠️ A deploy that outlives the ticket fails at its next privileged call. Every step is
+   idempotent (Alchemy requires `delete` to be), so `sudo -v` and deploying again converges. The
+   exception is a `LaunchdJob` label or domain change: it is delete-first, so if it fails between
+   the delete and the create, the job is down until you redeploy.
+2. **A `NOPASSWD` sudoers rule for exactly the shapes above.**
+   - ⛔ **That rule is root-equivalent.** Anyone who may `install` into `/Library/LaunchDaemons`
+     and `launchctl bootstrap system` can run any program as root. The allowlist protects you
+     from mistakes, not from the account that holds the rule.
+   - ⛔ **Never use wildcards in the arguments.** sudoers(5): in arguments, `*` also matches spaces
+     and `/`, so `/bin/rm -f -- /opt/example/*` matches `../../etc/x` and two paths at once. Use
+     `^…$` regular expressions (sudo 1.9.10 and later; macOS 27.2 ships 1.9.17p2) and forbid
+     `..`. Check the file with `visudo -c -f <file>` before you install it.
+   - ⚠️ The kit ships no tested rule. Nothing here has run sudo.
+
+⚠️ The error text sudo prints is **reasoned, not measured**. It comes from sudoers(5) and sudo(8)
+for sudo 1.9.17p2. A sudo refusal the runner does not recognise comes back as a failed command,
+with sudo's own stderr.
+
+## The log
+
+Each privileged call logs one line before it runs:
+
+```text
+homeflare/launchd sudo -n ["/bin/launchctl","bootstrap","system","/Library/LaunchDaemons/com.example.exporter.plist"]
+```
+
+The argv is written as JSON, so a space in a path cannot hide a second argument. The line holds
+the argv only, never file content. ⛔ A custom `log` should keep every line: the log is the only
+record of what ran as root.
+
+## Limits
+
+- ⚠️ **Moving a job from `system` to another user's `gui/<uid>` passes the plan and fails at
+  apply**, after the old job was already removed. The runner reports `privileged: true`, so the
+  plan-time check lets it through, and the refusal only comes at the write. Do that move as a
+  remove, then an add.
+- ⚠️ **Under a prefix, the runner writes as root.** An omitted owner is root, and an omitted group
+  is the directory's group (a new file's group on macOS).
+- ⚠️ **The checks guard against a mistaken declaration, not against a hostile one.** They run as
+  you, just before the call, so someone who can already write inside a prefix could swap a path in
+  between. Declare only directories that root owns.
+- ⛔ **macOS hosts.** Every argv shape was checked against macOS 27.2 man pages.

@@ -112,8 +112,11 @@ The `system` domain, and another user's `gui/<uid>`, need root. The provider ref
 unless the runner is root (`effectiveUid() === 0`) or was deliberately built with
 `privileged: true`. `localRunner()` — the default — is never privileged and never calls `sudo`, so:
 
-- **system daemons:** start the whole deploy as root; or pass `launchdProviders(yourRunner)` where
-  `yourRunner` is a `HostRunner` you wrote that already holds root (a root helper, say).
+- **system daemons, deployed as yourself:** `launchdProviders(sudoRunner({ prefixes }))` sends only
+  the privileged calls through `sudo -n`, from a fixed allowlist, logging each. It never prompts.
+  See [launchd-sudo.md](./launchd-sudo.md).
+- **system daemons, deployed as root:** start the whole deploy as root; or pass
+  `launchdProviders(yourRunner)` where `yourRunner` is a `HostRunner` that already holds root.
 - **your own agents** (`gui/<your uid>`): no root needed.
 
 Reading (`launchctl print`, `print-disabled`) needs no root. ⚠️ A `HostFile` whose mode hides it
@@ -163,5 +166,5 @@ Nix job is booted out first. Per job:
 `HostRunner` (see `src/launchd/runner.ts`) is `exec(argv)` (never through a shell), `readFile`,
 `stat` (lstat), `writeFileAtomic`, `removeFile`, `lookupUser`, `lookupGroup`, `sleep`, plus
 `privileged` and `effectiveUid()`. `localRunner()` implements it with `node:fs` and
-`node:child_process`; tests use an in-memory fake, so nothing in the test suite runs `launchctl` or
-writes outside a temp directory.
+`node:child_process`; `sudoRunner()` wraps it and elevates the allowlist. Tests use an in-memory
+fake, so nothing in the test suite runs `launchctl` or `sudo`, or writes outside a temp directory.

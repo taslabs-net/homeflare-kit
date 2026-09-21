@@ -48,13 +48,15 @@ export type HostUser = { readonly uid: number; readonly gid: number; readonly ho
 
 export interface HostRunner {
   /**
-   * ⛔ DECLARED, NEVER INFERRED. `true` only when every call this runner makes already runs with
-   *   root's authority — a runner that talks to a root helper, say. The providers refuse
+   * ⛔ DECLARED, NEVER INFERRED. `true` only when this runner can do every root-needing call the
+   *   providers make of it: every call already runs as root (a runner that talks to a root helper,
+   *   say), or the runner elevates exactly those calls (sudoRunner). The providers refuse
    *   system-domain writes unless `effectiveUid()` is 0 or this is `true`, so claiming it falsely
    *   turns that refusal into an EACCES halfway through a deploy.
-   * ⛔ THE KIT NEVER ELEVATES. No runner here calls `sudo`: a deploy that prompts for a password
-   *   mid-plan, or silently uses a cached sudo ticket, is exactly the "no silent sudo" failure. A
-   *   consumer who wants elevation writes that runner deliberately and sets this flag.
+   * ⛔ THE KIT NEVER ELEVATES SILENTLY. localRunner() never calls `sudo`: a deploy that prompts for
+   *   a password mid-plan, or quietly borrows a cached sudo ticket, is exactly the "no silent sudo"
+   *   failure. sudoRunner() does call `sudo -n`, but only when a stack passes it explicitly, only
+   *   for the argv shapes in sudo-allowlist.ts, and logging each one (decided 2026-09-21).
    */
   readonly privileged: boolean;
   /** The uid file writes and launchctl calls run as. */

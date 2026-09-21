@@ -15,7 +15,7 @@ import {
 import { jobSecretProblems } from './secret-tripwire.ts';
 
 /** ★ Labels become file names: no `/`, no leading dot, nothing a path could re-interpret. */
-const LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
+export const LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
 
 /**
  * ⛔ LABELS OTHER TOOLS OWN ARE NEVER DECLARED HERE. nix-darwin (`org.nixos.*`) rewrites its plists

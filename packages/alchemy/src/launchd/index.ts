@@ -24,3 +24,5 @@ export { PlistError, renderPlist } from './plist.ts';
 export { launchdProviders } from './providers.ts';
 export type { ExecResult, FileStat, HostRunner, HostUser, WriteOptions } from './runner.ts';
 export { HostRunnerService, canActAsRoot, hostRunnerLayer } from './runner.ts';
+export type { SudoRunnerOptions } from './sudo-runner.ts';
+export { SudoRefusedError, sudoRunner } from './sudo-runner.ts';
