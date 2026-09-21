@@ -19,8 +19,9 @@
     },
     "packages/alchemy": {
       "name": "@homeflare/alchemy",
-      "version": "0.4.1",
+      "version": "0.6.0",
       "devDependencies": {
+        "@distilled.cloud/cloudflare": "1.0.0-rc.12",
         "@effect/platform-bun": "4.0.0-rc.115",
         "@effect/platform-node": "4.0.0-rc.115",
         "alchemy": "2.0.0-beta.79",
@@ -29,6 +30,7 @@
         "mime": "4.1.0",
       },
       "peerDependencies": {
+        "@distilled.cloud/cloudflare": "1.0.0-rc.12",
         "@effect/platform-node": "4.0.0-rc.115",
         "alchemy": "2.0.0-beta.79",
         "cloudflare": ">=4.5.0",
@@ -89,7 +91,7 @@
     },
     "packages/site": {
       "name": "@homeflare/site",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "effect": "catalog:",
       },

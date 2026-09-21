@@ -42,6 +42,18 @@ describe('peer contract', () => {
     }
   });
 
+  test('the distilled SDK peer is exactly the version alchemy itself pins', async () => {
+    // ★ MeshNode calls `@distilled.cloud/cloudflare` directly, the SDK alchemy's own Cloudflare
+    //   providers use. alchemy pins it as a plain dependency; a different peer here would load a
+    //   second copy, and a stale one would break the next alchemy bump at import, not at install.
+    const installed = (await Bun.file(
+      new URL('../node_modules/alchemy/package.json', import.meta.url),
+    ).json()) as { dependencies: Record<string, string> };
+    const pinned = installed.dependencies['@distilled.cloud/cloudflare'];
+    expect(pinned).toMatch(/^\d+\.\d+\.\d+/);
+    expect(pkg.peerDependencies['@distilled.cloud/cloudflare']).toBe(pinned ?? '');
+  });
+
   test('no peer is marked optional', () => {
     // ⛔ An optional peer should mean a FEATURE is absent without it. Every peer here is
     //   needed for its subpath to load at all — `cloudflare` was marked optional in 0.1.1

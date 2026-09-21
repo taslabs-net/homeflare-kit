@@ -4,7 +4,8 @@ Custom [Alchemy](https://alchemy.run) providers for gaps the vendor SDK leaves.
 
 ```sh
 bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
-        @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0
+        @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0 \
+        @distilled.cloud/cloudflare@1.0.0-rc.12
 ```
 
 ⛔ **Every one of those is required, and you also need an `overrides` block** — see
@@ -23,8 +24,7 @@ An R2 bucket's lock rules, declared rather than applied by hand. A lock rule is 
 credential can delete it.
 
 ```ts
-import { R2BucketLock } from '@homeflare/alchemy';
-import { providers } from '@homeflare/alchemy/cloudflare';
+import { R2BucketLock } from '@homeflare/alchemy/cloudflare';
 
 export class BackupLock extends R2BucketLock('backup-lock', {
   bucketName: 'my-backups',
@@ -39,6 +39,35 @@ Add the provider layer to your stack:
 import { providers } from '@homeflare/alchemy/cloudflare';
 // …then provide `providers()` alongside Cloudflare.providers()
 ```
+
+⚠️ **The rule set is REPLACE, not merge.** The API `PUT`s the whole set, so a rule omitted
+from `rules` is a rule deleted. That is the same shape as the Cloudflare API itself.
+
+⛔ **It retains on destroy.** Removing a lock is removing a retention floor, which is the one
+operation this resource exists to make hard: dropping the declaration leaves the lock in place,
+and only an explicit `RemovalPolicy.destroy()` reaches the unlocking `delete`.
+
+## MeshNode
+
+A Cloudflare Mesh node (a `warp_connector`), declared **without its token in state**. Alchemy's
+`Cloudflare.Tunnel.WarpConnector` stores the node token in plaintext state on every read and has
+no `ha`; this one never reads the token, and `ha` is a create-only prop.
+
+```ts
+import { MeshNode, providers } from '@homeflare/alchemy/cloudflare';
+
+const door = yield * MeshNode('vault-door', { name: 'door-a', ha: false });
+// door.id → the node id for the Gateway rules and for fetchMeshNodeToken
+```
+
+- **`name`** renames in place (`PATCH`); **`ha`** is required and replaces the node (delete-first
+  while the name stays). Existing nodes are adopted by exact name, `Unowned` until `adopt(true)`.
+- The account and credentials come from Alchemy's own Cloudflare environment, the same as
+  `Cloudflare.providers()`.
+- **`fetchMeshNodeToken({ accountId, id })`** returns the token `Redacted`, on demand, for a
+  one-off enrolment step. ⛔ Write it to a root-owned `0600` file on the node and nowhere else.
+
+Guide, the enrolment step and every replace case: [docs/mesh-node.md](./docs/mesh-node.md).
 
 ## Website.Astro / Website.Vite
 
@@ -57,12 +86,6 @@ const app = yield * viteWebsite('aimto', { rootDir: webRoot });
 
 ⛔ Not Nextjs. `Website.Nextjs` hashes source and plans as **create** against a live
 Worker. Adopt that shape with `Worker`, not a helper here.
-
-⚠️ **The rule set is REPLACE, not merge.** The API `PUT`s the whole set, so a rule omitted
-from `rules` is a rule deleted. That is the same shape as the Cloudflare API itself.
-
-⛔ **Deletion is refused by design.** Removing a lock is removing a retention floor, which
-is the one operation this resource exists to make hard. It retains on destroy.
 
 ## OpenBao — `@homeflare/alchemy/openbao`
 
@@ -93,6 +116,8 @@ delete-first.
 ## Credentials
 
 `CLOUDFLARE_API_TOKEN` is read from the environment at call time, never at module scope.
+`MeshNode` instead resolves credentials and the account the way `Cloudflare.providers()` does
+(an Alchemy profile, or `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` in CI).
 
 ⛔ **Mint a short-lived, scoped token** — do not reuse a long-lived one, and never a Global
 API Key. An empty value fails closed with a message saying so, because an empty render is
@@ -103,7 +128,8 @@ like a bad credential.
 
 ```sh
 bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
-        @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0
+        @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0 \
+        @distilled.cloud/cloudflare@1.0.0-rc.12
 ```
 
 ⚠️ Peers, not dependencies: Alchemy's resource registry and Effect's context both break if

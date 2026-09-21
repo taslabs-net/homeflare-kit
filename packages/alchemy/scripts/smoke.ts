@@ -15,6 +15,9 @@
  *     4. Alchemy 78's cloudflare-runtime imported `mime` without declaring it.
  *        A clean consumer install threw `Cannot find package 'mime'`. 79
  *        declares it; the peer stays so a 78-era install line still works.
+ *   `/cloudflare` also imports `@distilled.cloud/cloudflare` (MeshNode). It is alchemy's own
+ *   dependency, so a hoisting installer hides a missing peer and a strict one (pnpm) does
+ *   not; the install below names it, as the README does.
  *   ⛔ None of them failed at INSTALL. All three threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
@@ -78,6 +81,7 @@ try {
       '@effect/platform-node@4.0.0-rc.115',
       'cloudflare@4.5.0',
       'mime@4.1.0',
+      '@distilled.cloud/cloudflare@1.0.0-rc.12',
     ],
     scratch,
   );
@@ -86,7 +90,7 @@ try {
   //   throws on load, both pass a pack-only check and fail here.
   await Bun.write(
     join(scratch, 'consumer.ts'),
-    `import { R2BucketLock, astroWebsite, viteWebsite } from '@homeflare/alchemy/cloudflare';
+    `import { MeshNode, MeshNodeError, MeshNodeProvider, R2BucketLock, astroWebsite, fetchMeshNodeToken, providers, viteWebsite } from '@homeflare/alchemy/cloudflare';
 import { ForgejoOrgLabel } from '@homeflare/alchemy/forgejo';
 import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles } from '@homeflare/alchemy/openbao';
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
@@ -94,6 +98,7 @@ import { ProxmoxAclProvider } from '@homeflare/alchemy/proxmox';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist } from '@homeflare/alchemy/launchd';
 
 for (const [name, value] of Object.entries({
+  MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
   R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider,
   HostFile, LaunchdJob, launchdProviders,
 })) {
@@ -104,6 +109,12 @@ for (const [name, value] of Object.entries({
 //   (a Bun-only API in dist, a node: builtin that fails to resolve) fails here, not in a stack.
 if (!renderPlist({ Label: 'com.example.smoke' }).includes('<string>com.example.smoke</string>')) {
   throw new Error('renderPlist from dist did not render');
+}
+
+// ★ MeshNode's error type through the PUBLISHED file: a distilled SDK missing from the install
+//   (it is a peer, like alchemy) throws at the import above, not in a stack days later.
+if (new MeshNodeError({ message: 'smoke' }).message !== 'smoke') {
+  throw new Error('MeshNodeError from dist did not construct');
 }
 
 console.log('all six subpaths import and resolve');
