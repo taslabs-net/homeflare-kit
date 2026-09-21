@@ -8,12 +8,15 @@
  *   `RemovalPolicy.destroy()`, and the sentence's way back (drop the row, adopt) works while a
  *   plain revert does not. Deleting `defaultRemovalPolicy`, or turning `deleteFirst` off in
  *   mesh-node-form.ts, fails at least one test here.
+ * ⛔ AND THE SENTENCES NEVER SEND AN OPERATOR THE WRONG WAY: a node holding a create-first
+ *   replace's NEW name is not called the old node, and `adopt(true)` alone, which does nothing to
+ *   a `replacing` row, is never offered as the way back from inside a replace.
  */
 import { describe, expect, test } from 'bun:test';
 import { adopt } from 'alchemy/AdoptPolicy';
 import * as RemovalPolicy from 'alchemy/RemovalPolicy';
 import * as Effect from 'effect/Effect';
-import { fakeMesh } from './fake-mesh.ts';
+import { fakeFailure, fakeMesh } from './fake-mesh.ts';
 import { engine, failureOf, writes } from './mesh-node-harness.ts';
 import { MeshNode } from './mesh-node.ts';
 
@@ -99,5 +102,50 @@ describe('MeshNode removal policy (the real engine)', () => {
       ['door-b', true],
     ]);
     expect(writes(fake)).toEqual(['POST', 'POST']);
+  });
+
+  test('`ha` and `name` into a name another node holds: not called the old node, and nothing deletes it', async () => {
+    const fake = fakeMesh();
+    const stack = engine(fake);
+    await stack.deploy(door(false));
+    const other = fake.seed({ name: 'door-b', ha: false });
+    const refused = failureOf(await stack.deploy(door(true, 'door-b')));
+    expect(refused).toContain(`"door-b" already exists (${other.id})`);
+    expect(refused).toContain('If this deploy changed `ha` and kept the name');
+    expect(refused).toContain('Otherwise it is another node: do not delete it.');
+    // ★ destroy() reaches only the old generation, never the name holder: refused again.
+    const optedIn = door(true, 'door-b').pipe(RemovalPolicy.destroy());
+    expect(failureOf(await stack.deploy(optedIn))).toContain('already exists');
+    // ⚠️ adopt(true) alone does not act on the `replacing` row either.
+    const adopted = door(true, 'door-b').pipe(adopt(true));
+    expect(failureOf(await stack.deploy(adopted))).toContain('already exists');
+    expect(liveNodes(fake).map((node) => node.name)).toEqual(['door-a', 'door-b']);
+    expect(writes(fake)).toEqual(['POST']);
+  });
+
+  test('a lost-response retry inside an opted-in replace names state rm, which adopt(true) alone is not', async () => {
+    let lose = false;
+    const fake = fakeMesh({
+      onCreate: (name) => {
+        if (!lose) return undefined;
+        lose = false;
+        // What a retried POST meets: the node its first, lost-response attempt created.
+        fake.seed({ name, ha: true });
+        return fakeFailure(409, 1013, 'Tunnel with name already exists');
+      },
+    });
+    const stack = engine(fake);
+    await stack.deploy(door(false));
+    lose = true;
+    const raced = failureOf(await stack.deploy(door(true).pipe(RemovalPolicy.destroy())));
+    expect(raced).toContain('appeared between');
+    expect(raced).toContain("after a replace drop this resource's state row (alchemy state rm");
+    expect(stack.status(DOOR)).toBe('replacing');
+    expect(failureOf(await stack.deploy(door(true).pipe(adopt(true))))).toContain('already exists');
+
+    stack.forget(DOOR);
+    expect(failureOf(await stack.deploy(door(true).pipe(adopt(true))))).toBe('');
+    expect(liveNodes(fake)).toMatchObject([{ name: 'door-a', ha: true }]);
+    expect(writes(fake)).toEqual(['POST', 'DELETE', 'POST']);
   });
 });

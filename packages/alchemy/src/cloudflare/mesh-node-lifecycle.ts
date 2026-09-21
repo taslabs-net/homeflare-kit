@@ -68,26 +68,42 @@ const nameTaken = (name: string, holder: string) =>
   });
 
 /**
+ * ★ HOW TO TAKE A NODE OVER WHILE THIS RESOURCE HAS A STATE ROW, WRITTEN ONCE. The plan asks
+ *   `read` to adopt only for a resource with NO row (Plan.ts, `oldState === undefined`) or for an
+ *   interrupted create's `creating` row. A replace's `replacing` row gets neither, so `adopt(true)`
+ *   alone changes nothing there and the create refuses again (measured in mesh-node-policy.test.ts).
+ *   `alchemy state rm` is Alchemy's "Delete state records without deleting cloud resources".
+ */
+const REOWN =
+  "drop this resource's state row (alchemy state rm, which leaves the node alone), then deploy " +
+  'under adopt(true)';
+
+/**
  * 🔴 THE REFUSAL AN `ha` CHANGE MEETS UNDER THE DEFAULT, SO IT NAMES EVERY WAY ON. The plan says
  *   `replace` (delete-first), the engine skips that delete because of `retain`, and the old node
- *   still holds the name here. (A node made outside the stack is caught earlier, by the plan's
- *   adoption probe in `read`, so reaching this line is usually a replace.)
+ *   still holds the name here. A node made outside the stack is caught earlier, by the plan's
+ *   adoption probe in `read`.
+ * ⛔ BUT THE HOLDER IS NOT ALWAYS THE OLD NODE, AND `create` CANNOT TELL: the engine passes it no
+ *   `olds` (Apply.ts, the replace branch). An `ha` + `name` change is a create-first replace, and
+ *   there the holder of the NEW name is some other node, which `RemovalPolicy.destroy()` never
+ *   touches. So the old-node advice is conditional, and the other case says not to delete it: a
+ *   sentence that called any holder "the old node" would send an operator to delete a live node
+ *   and cut its replicas off the Mesh (measured 2026-09-21 in mesh-node-policy.test.ts).
  * ⚠️ REVERTING `ha` DOES NOT UNDO IT. The failed deploy leaves a `replacing` row, and the next
- *   plan resumes that replace whatever the props say (Plan.ts, the `replacing` branch), so it
- *   refuses again. Dropping the row and adopting is the way back. All measured in
- *   mesh-node-policy.test.ts against the real engine.
+ *   plan resumes that replace (Plan.ts, the `replacing` branch), so it refuses again. Dropping the
+ *   row and adopting is the way back. All measured in mesh-node-policy.test.ts.
  */
 const oldNodeHoldsName = (name: string, holder: string) =>
   new MeshNodeError({
     message:
       `Mesh node "${name}" already exists (${holder}) and is not the node this resource tracks, ` +
-      'so it is left alone. After an `ha` change it is the old node: MeshNode defaults to ' +
-      'RemovalPolicy.retain, which kept it, and HA cannot change in place while names are unique ' +
-      'per account. To replace it (a new id, token and Mesh IP per replica), deploy once with ' +
-      '.pipe(RemovalPolicy.destroy()), which deletes it first, or delete it by hand. To keep it, ' +
-      "reverting `ha` is not enough: drop this resource's state row (alchemy state rm), then " +
-      'deploy the original declaration under adopt(true). If this stack never managed it, adopt ' +
-      'it with adopt(true) after checking its HA badge.',
+      'so it is left alone: names are unique per account. If this deploy changed `ha` and kept ' +
+      "the name, it is this resource's old node, kept by MeshNode's default " +
+      'RemovalPolicy.retain because HA cannot change in place. To replace it (a new id, token and ' +
+      'Mesh IP per replica), deploy once with .pipe(RemovalPolicy.destroy()), which deletes it ' +
+      `first, or delete it by hand. To keep it, reverting \`ha\` is not enough: ${REOWN}, with ` +
+      'the original `ha`. Otherwise it is another node: do not delete it. Choose another name, ' +
+      `or, if it is meant to be this one, check its HA badge, then ${REOWN}.`,
   });
 
 /**
@@ -97,6 +113,9 @@ const oldNodeHoldsName = (name: string, holder: string) =>
  *   first attempt made. The lookup is repeated so the sentence names that node instead of blaming
  *   another tunnel type; it is still not adopted here (see above), because a concurrent creator
  *   looks the same and its `ha` is unknown.
+ * ⚠️ `adopt(true)` ALONE ONLY RECOVERS A FIRST CREATE. Inside a replace (any `ha` change, either
+ *   order) the row is `replacing`, which the plan never probes, so the sentence names `REOWN` for
+ *   that case (measured in mesh-node-policy.test.ts).
  */
 const raced = (accountId: string, name: string) =>
   findNodeByName(accountId, name).pipe(
@@ -111,8 +130,10 @@ const raced = (accountId: string, name: string) =>
               message:
                 `Mesh node "${name}" (${holder.id}) appeared between this deploy's lookup and its ` +
                 'create. The likeliest cause is this deploy itself: the SDK retries a create whose ' +
-                'response was lost. If so, adopt it with adopt(true), after checking its HA badge ' +
-                'matches the declared `ha`; otherwise another creator raced this one.',
+                'response was lost. If so, check its HA badge matches the declared `ha`, then ' +
+                'adopt it: adopt(true) after a first create, but after a replace ' +
+                `${REOWN}, because adopt(true) alone does not act on a replace's row. ` +
+                'Otherwise another creator raced this one.',
             }),
       ),
     ),

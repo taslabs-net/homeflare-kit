@@ -82,14 +82,23 @@ node, which still holds the name, and the create **refuses** with a sentence and
 never quietly reuses the old node, because that node still has the old `ha`. Measured through
 Alchemy's own plan/apply in `mesh-node-policy.test.ts`:
 
-| you want             | do                                                                                                                   |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| the replace          | Deploy once with `.pipe(RemovalPolicy.destroy())`: delete, then create. Then drop it.                                |
-| the replace, by hand | Delete the old node yourself, then deploy again.                                                                     |
-| to keep the old node | `alchemy state rm <stack>/<stage>/<id>` (state only, not the node), then deploy the old declaration + `adopt(true)`. |
+| you want             | do                                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| the replace          | Deploy once with `.pipe(RemovalPolicy.destroy())`: delete, then create. Then drop it.                                 |
+| the replace, by hand | Delete the old node yourself, then deploy again.                                                                      |
+| to keep the old node | `alchemy state rm <stack>/<stage>/<fqn>` (state only, not the node), then deploy the old declaration + `adopt(true)`. |
 
 ⚠️ **Reverting `ha` is not enough.** The refused deploy leaves a `replacing` row, and the next
 plan resumes that replace whatever the props say, so it refuses again.
+
+⚠️ **`adopt(true)` alone does nothing to a `replacing` row.** The plan asks `read` to adopt only
+when a resource has no row, or after an interrupted first create. So every way back from inside a
+replace starts with `alchemy state rm`.
+
+⛔ **The old-node advice holds only when the name stayed.** After an `ha` + `name` change (a
+create-first replace), a node already holding the new name is another node, not the old one.
+`RemovalPolicy.destroy()` never touches it, and the refusal says not to delete it: choose another
+name, or check its HA badge, drop the row and adopt it.
 
 ⚠️ Never deploy with `DISTILLED_DEBUG_HTTP` set: distilled prints the start of every response,
 and the create response carries the node's `token` field (Cloudflare's HA page says so).
@@ -107,7 +116,8 @@ never matched, and a name that matches two live nodes is refused.
 An interrupted create (the node was made, its state was not saved) is found the same way on the
 next plan, so it too needs `adopt(true)`. ⚠️ distilled retries a create after a lost response or a
 5xx, and the retry is answered code 1013 by the node the first attempt made: the error then names
-that node's id. It is never adopted silently, because a concurrent creator looks the same.
+that node's id. It is never adopted silently, because a concurrent creator looks the same. Inside
+a replace, drop the row before `adopt(true)`, as above.
 
 ⚠️ **Adoption records the declared `ha`.** No documented read returns a node's HA flag:
 `GET /warp_connector/{id}` has no such field. Check the node's **HA** badge in the dashboard
