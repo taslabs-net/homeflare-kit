@@ -3,7 +3,6 @@
  * way the engine calls them; caddyWithFile's registration; and the barrel, the public API.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { Unowned } from 'alchemy/AdoptPolicy';
 import * as Output from 'alchemy/Output';
 import { Stack } from 'alchemy/Stack';
 import * as Effect from 'effect/Effect';
@@ -52,37 +51,23 @@ const withProvider = <A>(
 };
 
 describe('CaddyConfigProvider', () => {
-  test('read with no state ADOPTS: plain attributes of the live config, never Unowned', async () => {
-    const probe = await withProvider((provider) =>
-      handler('read', provider.read)({ ...ids, olds: { caddyfile: SITE }, output: undefined }),
-    );
-    expect(Unowned.is(probe)).toBe(false);
-    expect(probe).toMatchObject({ endpoint: fake?.address });
-  });
-
-  test('reconcile applies; delete then sends nothing at all', async () => {
+  test('reconcile applies over its own state; delete then sends nothing at all', async () => {
     await withProvider((provider) =>
       Effect.gen(function* () {
-        yield* provider.reconcile({
+        const output = yield* provider.reconcile({
           ...ids,
           bindings: [] as never,
           news: { caddyfile: SITE },
-          olds: undefined,
-          output: undefined,
+          olds: { caddyfile: SITE },
+          // ★ State from an earlier deploy: the running `legacy` config is this stack's to replace.
+          output: { configSha256: 'earlier', endpoint: fake?.address ?? '' },
           session: undefined as never,
         });
+        expect(fake?.seen.some((call) => call.path === '/load')).toBe(true);
         const before = fake?.seen.length;
-        const output = yield* handler(
-          'read',
-          provider.read,
-        )({
-          ...ids,
-          olds: { caddyfile: SITE },
-          output: undefined,
-        });
         yield* provider.delete({ ...ids, olds: { caddyfile: SITE }, output } as never);
-        // ★ Only the read above talked to Caddy: delete never unloads, never stops.
-        expect(fake?.seen.length).toBe((before ?? 0) + 1);
+        // ★ Delete never unloads, never stops: not one more call reached Caddy.
+        expect(fake?.seen.length).toBe(before);
       }),
     );
   });

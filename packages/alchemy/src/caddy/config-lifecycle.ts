@@ -9,9 +9,11 @@
  *   · live ≠ stored — DRIFT: a hand `curl` to the API, or a restart that loaded a different file
  *     (or an `autosave.json` holding someone else's change, under `--resume`).
  *   · declared = live — nothing to load, whatever the state says.
+ * With NO state there is no stored digest, and the question is whose config is running: see
+ * `claimable` below, which both the adoption probe and the apply ask.
  */
 import type { Diff } from 'alchemy/Diff';
-import type { CaddyAdmin } from './admin.ts';
+import { type CaddyAdmin, CaddyUnreachableError } from './admin.ts';
 import {
   CaddyAdminError,
   adaptCaddyfile,
@@ -66,15 +68,74 @@ export const desiredConfig = async (
   return { digest: configDigest(adapted.config), warnings: adapted.warnings };
 };
 
+const attributesOf = (
+  admin: CaddyAdmin,
+  running: unknown,
+  sourceFile?: string,
+): CaddyConfigAttributes => ({
+  configSha256: configDigest(running),
+  endpoint: admin.endpoint,
+  ...(sourceFile === undefined ? {} : { sourceFile }),
+});
+
 /** What is running now, as attributes. `sourceFile` is carried over, never discovered. */
 export const readLive = async (
   admin: CaddyAdmin,
   sourceFile?: string,
-): Promise<CaddyConfigAttributes> => ({
-  configSha256: configDigest(await readRunningConfig(admin)),
-  endpoint: admin.endpoint,
-  ...(sourceFile === undefined ? {} : { sourceFile }),
-});
+): Promise<CaddyConfigAttributes> =>
+  attributesOf(admin, await readRunningConfig(admin), sourceFile);
+
+/**
+ * ⛔ WITH NO STATE, A RUNNING CONFIG IS THIS STACK'S ONLY IF IT IS THE DECLARED ONE (decision,
+ *   2026-09-21: CaddyConfig must not adopt silently — the house rule HostFile and LaunchdJob keep).
+ *   Anything else was put there by a person, another tool or another stack, and loading over it
+ *   replaces every site it serves. ★ A config that serves nothing (`null`, or no apps) is claimable
+ *   too: there is nothing to take over, as an empty R2 lock rule set reads as no lock.
+ */
+export const claimable = (running: unknown, declaredDigest: string): boolean =>
+  servesNothing(running) || configDigest(running) === declaredDigest;
+
+export type Probe = {
+  readonly attributes: CaddyConfigAttributes;
+  /** The live config IS the declared one: adopting it changes nothing. */
+  readonly ours: boolean;
+  /** Why the declaration could not be compared, when it could not — the Caddy is then not ours. */
+  readonly unchecked?: string;
+};
+
+/**
+ * The adoption probe — `read` with no state: `undefined` when Caddy serves nothing (plan a create),
+ * else the live attributes and whether they are provably ours (the provider brands the rest
+ * `Unowned`, and the plan refuses them without `--adopt`).
+ * ⛔ IT NEVER THROWS OVER THE DECLARATION. The engine also runs this read to recover an interrupted
+ *   create, with THAT deploy's props (Plan.ts, `status: "creating"`) — so a Caddyfile that failed to
+ *   adapt then would fail every later plan, the one carrying the fix included. What cannot be
+ *   compared is "not proven ours", with the reason; the next diff or apply validates the Caddyfile.
+ */
+export const probeLive = async (
+  admin: CaddyAdmin,
+  caddyfile: string | undefined,
+  sourceFile?: string,
+): Promise<Probe | undefined> => {
+  const running = await readRunningConfig(admin);
+  if (servesNothing(running)) return undefined;
+  const attributes = attributesOf(admin, running, sourceFile);
+  if (caddyfile === undefined) {
+    return { attributes, ours: false, unchecked: 'the stored Caddyfile is not plain text' };
+  }
+  try {
+    const want = await desiredConfig(admin, { caddyfile });
+    return { attributes, ours: claimable(running, want.digest) };
+  } catch (cause) {
+    // ⚠️ Unreachable mid-probe is still "no Caddy" (config.ts plans without it), not "not ours".
+    if (cause instanceof CaddyUnreachableError) throw cause;
+    return {
+      attributes,
+      ours: false,
+      unchecked: cause instanceof Error ? cause.message : String(cause),
+    };
+  }
+};
 
 /**
  * ★ NEVER `replace`. Nothing in the props names a different object: a new Caddyfile is a reload of
@@ -94,6 +155,7 @@ export const diffConfig = async (
     news.sourceFile === output.sourceFile &&
     // ⚠️ A stack whose transport now reaches ANOTHER Caddy (a new address) must load there; the
     //   old one keeps what it has — the same as a delete, which never unloads (see config.ts).
+    //   Planned as an update, but the state does not vouch for that Caddy: see Authority.
     admin.endpoint === output.endpoint;
   return converged ? { action: 'noop' } : { action: 'update' };
 };
@@ -106,13 +168,40 @@ export type Applied = {
   readonly loaded: boolean;
 };
 
-/** Load the Caddyfile unless Caddy already runs it, then read it back and insist it matches. */
+/**
+ * What this apply may load over — config.ts decides from the state and `--adopt`:
+ *   · `takeOver` — any running config: the state was applied to THIS Caddy (an update, drift
+ *     correction, or a create the engine adopted), or the deploy runs with `--adopt`.
+ *   · otherwise only a claimable one — plus, as `stored`, the digest the state last recorded: a
+ *     Caddy reached at a NEW endpoint that runs exactly that is the same config under another name.
+ */
+export type Authority = { readonly takeOver: boolean; readonly stored?: string };
+
+/**
+ * Load the Caddyfile unless Caddy already runs it, then read it back and insist it matches.
+ * ⛔ WITHOUT `takeOver`, A CONFIG THE STACK CANNOT CLAIM IS NEVER LOADED OVER. The engine's adoption
+ *   probe cannot guard every create: it is skipped while `news` holds an Output — ALWAYS on
+ *   caddyWithFile's first deploy (`sourceFile` is its HostFile's path) — and a Caddy that was down at
+ *   plan time read as nothing. Nor does state vouch for a Caddy the transport NOW reaches at another
+ *   endpoint (diff plans that as an update). Refused here, before any `/load`, like HostFile's.
+ */
 export const reconcileConfig = async (
   admin: CaddyAdmin,
   props: CaddyConfigProps,
+  authority: Authority,
 ): Promise<Applied> => {
   const want = await desiredConfig(admin, props);
-  const before = configDigest(await readRunningConfig(admin));
+  const running = await readRunningConfig(admin);
+  const before = configDigest(running);
+  const known = before === authority.stored || claimable(running, want.digest);
+  if (!authority.takeOver && !known) {
+    throw refuse(
+      admin,
+      `Caddy runs config ${short(before)}, which this stack did not load, and the Caddyfile adapts ` +
+        `to ${short(want.digest)} — loading it would replace every site that config serves. ` +
+        'Deploy with --adopt to take this Caddy over, or point caddyProviders() at the Caddy you meant.',
+    );
+  }
   let warnings = want.warnings;
   const loaded = before !== want.digest;
   if (loaded) {

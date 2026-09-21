@@ -14,9 +14,13 @@
  *     still an Output, Alchemy skips the adoption probe, and the check runs at apply instead.)
  *   · A Caddyfile that adapts but that Caddy then REFUSES (a port in use, a missing cert file) is
  *     on disk when `/load` fails. Caddy keeps serving the old config, the deploy fails with Caddy's
- *     reason — and a RESTART before the fix would load the refused file. Fix and redeploy, or run
- *     Caddy with `--resume` (docs/caddy.md): it restarts from `autosave.json`, the last config Caddy
- *     ACCEPTED, and the file is only the first-boot fallback.
+ *     reason — and a Caddy started without `--resume` would load the refused file on its next
+ *     restart. Managed Caddies run with `--resume` (decision, 2026-09-21; docs/caddy.md): they
+ *     restart from `autosave.json`, the last config Caddy ACCEPTED, and the file is only the
+ *     first-boot fallback.
+ *   · The skipped probe is also why the ADOPTION check of a first deploy happens at apply: a Caddy
+ *     running a config this stack did not load is refused before `/load` unless the deploy runs
+ *     with `--adopt` (config-lifecycle.ts reconcileConfig) — after this file is written.
  * ⛔ SECRETS ARE REFUSED HERE, AT DECLARATION, before the HostFile exists: its `content` is a prop
  *   too, and would carry a literal into state even if the CaddyConfig then refused it.
  * ★ BOTH RETAIN. Removing this from a stack must not delete the file a restart needs.

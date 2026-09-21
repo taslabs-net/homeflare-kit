@@ -123,13 +123,16 @@ delete-first.
 
 `CaddyConfig` declares a running Caddy's config as Caddyfile text, applied through Caddy's own admin
 API: `POST /load` (graceful reload; Caddy keeps the old config if it refuses the new one, and the
-deploy says why), `GET /config/` for drift. A running Caddy is adopted on first read.
-`caddyWithFile()` also writes the file Caddy starts from, with `HostFile`; `caddyProviders()` provides
-the transport, `http://127.0.0.1:2019` by default.
+deploy says why), `GET /config/` for drift. `caddyWithFile()` also writes the file Caddy starts from,
+with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:2019` by default.
 
+- ⛔ **Nothing is adopted silently:** a running Caddy whose config is not the declared one plans as
+  `Unowned`, and the deploy needs `--adopt`.
 - ⛔ **No secrets in the Caddyfile** (state is unencrypted): `{env.NAME}` / `{file./path}` placeholders.
 - ⛔ **The admin API stays on loopback or a unix socket**, and a Caddyfile that would move it is refused.
-- ⛔ **Delete never unloads or stops Caddy.** Order of file and load, `--resume`: [docs/caddy.md](./docs/caddy.md).
+- ⛔ **Delete never unloads or stops Caddy.** Order of file and load: [docs/caddy.md](./docs/caddy.md).
+- ★ **Managed Caddies run `--resume` with their own `XDG_CONFIG_HOME`**, so a restart runs the last
+  config Caddy accepted — and after one, SIGUSR1 has no file to reload. Why, and the rest: same doc.
 
 ## Credentials
 
