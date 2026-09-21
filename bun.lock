@@ -19,7 +19,7 @@
     },
     "packages/alchemy": {
       "name": "@homeflare/alchemy",
-      "version": "0.3.1",
+      "version": "0.4.1",
       "devDependencies": {
         "@effect/platform-bun": "4.0.0-rc.115",
         "@effect/platform-node": "4.0.0-rc.115",
@@ -63,7 +63,7 @@
     },
     "packages/config": {
       "name": "@homeflare/config",
-      "version": "0.5.0",
+      "version": "0.5.1",
     },
     "packages/kit": {
       "name": "@homeflare/kit",
@@ -86,6 +86,16 @@
         "hono",
         "zod",
       ],
+    },
+    "packages/site": {
+      "name": "@homeflare/site",
+      "version": "0.0.0",
+      "devDependencies": {
+        "effect": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
     },
     "packages/typesafe": {
       "name": "@homeflare/typesafe",
@@ -345,6 +355,8 @@
     "@homeflare/config": ["@homeflare/config@workspace:packages/config"],
 
     "@homeflare/kit": ["@homeflare/kit@workspace:packages/kit"],
+
+    "@homeflare/site": ["@homeflare/site@workspace:packages/site"],
 
     "@homeflare/typesafe": ["@homeflare/typesafe@workspace:packages/typesafe"],
 

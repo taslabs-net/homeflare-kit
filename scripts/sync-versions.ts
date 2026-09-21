@@ -14,8 +14,32 @@
  * ⛔ src/version.ts IS GENERATED in every package. Never hand-edit one; changesets owns
  *   the number and this script owns the file. Runs from `bun run version` (the changesets
  *   bump) so a release can never ship a stale literal.
+ *
+ * ⛔ A package's `site.example.json` carries the version too, as `deriveVersion`.
+ *   @homeflare/site refuses any site whose `deriveVersion` differs from the installed
+ *   package, so an example left one version behind would refuse to load the moment a
+ *   consumer copied it — and its own test fails the Version Packages PR.
  */
 import { Glob } from 'bun';
+
+/**
+ * Rewrite `"deriveVersion": "…"` in place. ★ A regex, not parse-and-stringify: the file is
+ *   formatted for people, and re-serialising it would reflow every line of the example.
+ */
+async function syncExample(exampleUrl: URL, version: string): Promise<boolean> {
+  const file = Bun.file(exampleUrl);
+  if (!(await file.exists())) return false;
+  const pattern = /("deriveVersion"\s*:\s*")[^"]*(")/g;
+  const text = await file.text();
+  const matches = text.match(pattern)?.length ?? 0;
+  if (matches !== 1) {
+    // ⚠️ Zero or two means the file changed shape; guessing which to rewrite is worse
+    //   than stopping the release here.
+    throw new Error(`${exampleUrl.pathname}: expected one "deriveVersion", found ${matches}`);
+  }
+  await Bun.write(exampleUrl, text.replace(pattern, `$1${version}$2`));
+  return true;
+}
 
 const root = new URL('..', import.meta.url);
 const rootPkg = await Bun.file(new URL('package.json', root)).json();
@@ -48,7 +72,12 @@ for (const pattern of patterns) {
         `export const VERSION: string = '${manifest.version}';\n`,
     );
 
-    console.log(`${manifest.name} -> ${manifest.version}`);
+    const example = new URL('site.example.json', new URL('./', manifestUrl));
+    const withExample = (await syncExample(example, manifest.version))
+      ? ' (+ site.example.json)'
+      : '';
+
+    console.log(`${manifest.name} -> ${manifest.version}${withExample}`);
     synced += 1;
   }
   // oxlint-enable no-await-in-loop
