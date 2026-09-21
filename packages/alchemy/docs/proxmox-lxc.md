@@ -162,6 +162,14 @@ Proxmox.Lxc pve1/100: live config differs from the declaration in memory, net1 -
 - **A warning** means fix the declaration, or accept the named writes. Keys are named, values are
   not.
 
+⛔ **A warning does not stop the deploy.** `deploy --adopt --yes` writes each named key onto the
+live guest. A `net0` declared without the live `tag=` is written without it, and the guest leaves
+its VLAN. Only the plan you read makes an adoption zero-change.
+
+⚠️ **`alchemy plan` has no `--adopt` flag** (2.0.0-beta.79: only `deploy` declares it). Without
+adoption on, the plan stops at "Cannot adopt" before `diff` can warn. To read the adoption's plan,
+run `alchemy deploy --adopt --dry-run`, or declare `.pipe(adopt(true))` and run `alchemy plan`.
+
 A deploy that planned a **create** never takes over a guest it then finds at that vmid (the plan
 skips its adoption read while a prop is an unresolved Output, and a guest can appear after the
 plan). Without adoption on, the deploy fails and forgets its `creating` row, so the next plan asks.

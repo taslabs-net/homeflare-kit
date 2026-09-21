@@ -9,8 +9,12 @@ from its real owner. (Decided 2026-09-21; the Bao families adopted silently unti
 To take an object over, say so:
 
 ```sh
+alchemy deploy --adopt --dry-run  # read it first: `alchemy plan` has no --adopt (beta.79)
 alchemy deploy --adopt            # every resource in this deploy
 ```
+
+⚠️ Only `deploy` declares `--adopt` in alchemy 2.0.0-beta.79, so `alchemy plan` fails "Cannot
+adopt" before any resource can say what taking the object over would write. `--dry-run` shows it.
 
 ```ts
 import { adopt } from 'alchemy/AdoptPolicy';
