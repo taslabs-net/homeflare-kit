@@ -114,6 +114,11 @@ describe('identity', () => {
     ]);
   });
 
+  test('an expectation naming no field refuses — it would match anything', () => {
+    expect(refusal(() => compareIdentity({}, observed)).code).toBe('identity');
+    expect(refusal(() => assertIdentity({}, {})).code).toBe('identity');
+  });
+
   test('an unknown account alias throws rather than skipping the account check', () => {
     expect(refusal(() => expectedIdentity(site, { account: 'typo' })).code).toBe('unknown-key');
   });

@@ -22,7 +22,7 @@ import * as Schema from 'effect/Schema';
 import { checkoutProblem, readCheckout } from './checkout.ts';
 import { decodeStrict, formatIssues, validateSite } from './decode.ts';
 import { SiteError } from './errors.ts';
-import { ENV_OVERRIDES, SITE_FILE_VAR, pickOverrides } from './overrides.ts';
+import { ENV_OVERRIDES, GUARD_FIELDS, SITE_FILE_VAR, pickOverrides } from './overrides.ts';
 import { type Site, SiteSchema } from './schema.ts';
 
 export { ENV_OVERRIDES, SITE_FILE_VAR } from './overrides.ts';
@@ -36,7 +36,10 @@ export interface LoadSiteOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   /** Resolves a relative `HF_SITE_FILE`. Defaults to `process.cwd()`. */
   readonly cwd?: string;
-  /** Skip the committed-on-`main` check — what a consumer's `--site-dev` flag sets. */
+  /**
+   * Skip the committed-on-`main` check and accept `HF_SITE_*` overrides — what a
+   * consumer's `--site-dev` flag sets. Without it, any accepted override refuses.
+   */
   readonly siteDev?: boolean;
   /** The branch a reviewed site file lives on. Defaults to `main`. */
   readonly branch?: string;
@@ -163,11 +166,20 @@ export async function loadSite(options: LoadSiteOptions = {}): Promise<LoadedSit
       refused.map(
         (name) =>
           `${name}: not in ENV_OVERRIDES — records, lists and guard fields ` +
-          '(version, deriveVersion, kind, vault.clusterName) are never overridable',
+          `(${GUARD_FIELDS.join(', ')}) are never overridable`,
       ),
     );
   }
   const names = Object.keys(accepted);
+  // ⛔ An override is an unreviewed value: same switch as the checkout guard (overrides.ts).
+  if (names.length > 0 && options.siteDev !== true) {
+    throw new SiteError(
+      'override',
+      'HF_SITE_* overrides change reviewed values, so they need --site-dev (siteDev: true); ' +
+        'unset them, or edit the site file on a branch',
+      names,
+    );
+  }
   const site = names.length === 0 ? fromFile : withOverrides(json, accepted);
 
   return { site: validateSite(site, options), file, overrides: names };

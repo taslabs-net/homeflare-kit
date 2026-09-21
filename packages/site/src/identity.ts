@@ -54,11 +54,20 @@ const FIELDS = ['vaultClusterName', 'vaultNamespace', 'cloudflareAccountId'] as 
  * Every field the expectation sets and the observation does not match.
  * ⛔ An expected field the caller did not observe COUNTS AS A MISMATCH. "We did not check"
  *   must never read the same as "it matched".
+ * ⛔ An expectation that sets NO field throws `identity`. Compared field by field, `{}`
+ *   matches every system there is, so a caller that built it by mistake (a wrong spread, a
+ *   renamed key) would pass the guard on any vault and any account.
  */
 export function compareIdentity(
   expected: Identity,
   observed: Identity,
 ): readonly IdentityMismatch[] {
+  if (FIELDS.every((field) => expected[field] === undefined)) {
+    throw new SiteError(
+      'identity',
+      'refusing to plan: the expected identity names no field, so it would match any system',
+    );
+  }
   const mismatches: IdentityMismatch[] = [];
   for (const field of FIELDS) {
     const want = expected[field];

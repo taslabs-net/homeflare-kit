@@ -2,7 +2,7 @@
  * The loader refuses a site file that is not committed, unmodified, on `main` —
  * unless `siteDev` says otherwise. Uses a real throwaway git repository.
  */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, test } from 'bun:test';
@@ -102,5 +102,62 @@ describe('checkout guard (sequential: each step changes the repo)', () => {
     await writeFile(join(repo, '.gitignore'), 'private.site.json\n');
     await writeFile(ignored, JSON.stringify(example()));
     expect(checkoutProblem(await readCheckout(ignored), 'main')).toContain('not committed');
+  });
+
+  test('clean on main, but an HF_SITE_* override: refused without siteDev', async () => {
+    // ⛔ An override is an unreviewed value, like an uncommitted edit.
+    expect(await codeFor(false)).toBe('loaded');
+    const error = await loadSite({
+      env: { HF_SITE_FILE: file, HF_SITE_APEX: 'example.net' },
+    }).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(SiteError);
+    expect((error as SiteError).code).toBe('override');
+    expect((error as SiteError).issues).toEqual(['HF_SITE_APEX']);
+  });
+
+  test('skip-worktree hides an edit from git status: still refused', async () => {
+    // ⚠️ Measured 2026-09-21: status printed nothing and a status-only guard loaded this.
+    await git(repo, 'update-index', '--skip-worktree', 'live.site.json');
+    await writeFile(file, JSON.stringify({ ...example(), apex: 'example.net' }));
+    expect(await codeFor(false)).toContain('uncommitted changes');
+    await git(repo, 'update-index', '--no-skip-worktree', 'live.site.json');
+    await git(repo, 'checkout', '--quiet', '--', 'live.site.json');
+    expect(await codeFor(false)).toBe('loaded');
+  });
+
+  test('a committed symlink to a file outside the repo: refused', async () => {
+    // ⚠️ git tracks the link's target path, not the bytes behind it.
+    const outside = await mkdtemp(join(tmpdir(), 'hf-site-outside-'));
+    const target = join(outside, 'target.site.json');
+    await writeFile(target, JSON.stringify(example()));
+    const link = join(repo, 'linked.site.json');
+    await symlink(target, link);
+    await git(repo, 'add', 'linked.site.json');
+    await git(repo, 'commit', '--quiet', '-m', 'link');
+    try {
+      expect(checkoutProblem(await readCheckout(link), 'main')).toContain('not inside');
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  test('an exported GIT_DIR is not the file’s repository', async () => {
+    // ⚠️ Git exports GIT_DIR to hooks, and it beats `git -C`. Without the loader dropping
+    //   it, a file outside any repo would be judged by THIS throwaway repo: "on main".
+    const outside = await mkdtemp(join(tmpdir(), 'hf-site-nogit-'));
+    const stray = join(outside, 'stray.site.json');
+    await writeFile(stray, JSON.stringify(example()));
+    const saved = process.env['GIT_DIR'];
+    process.env['GIT_DIR'] = join(repo, '.git');
+    try {
+      expect(await readCheckout(stray)).toBeUndefined();
+    } finally {
+      if (saved === undefined) delete process.env['GIT_DIR'];
+      else process.env['GIT_DIR'] = saved;
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });

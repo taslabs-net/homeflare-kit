@@ -37,6 +37,20 @@ describe('vault addresses', () => {
     expect(d.vault.lanAddr).toBe('http://hub.mgmt.example.com:8200');
   });
 
+  test('schemes and ports come from the site, never from a default in derive', () => {
+    // ⚠️ The example uses `http` and 8200 everywhere, so a rule that hard-coded either
+    //   passed every other test here (mutation-tested 2026-09-21). Non-defaults catch it.
+    let input = withPath(example(), ['vault', 'lan'], { host: 'hub', port: 8443, scheme: 'https' });
+    input = withPath(input, ['vault', 'port'], 8300);
+    input = withPath(input, ['vault', 'cliCallbackPort'], 18250);
+    input = withPath(input, ['services', 'grafana'], { host: 'n1', port: 3443, scheme: 'https' });
+    const built = derive(decodeSite(input));
+    expect(built.vault.lanAddr).toBe('https://hub.mgmt.example.com:8443');
+    expect(built.vault.meshAddr).toBe('https://198.18.0.2:8300');
+    expect(built.vault.oidcRedirects[1]).toBe('http://localhost:18250/oidc/callback');
+    expect(built.serviceUrl('grafana')).toBe('https://n1.mgmt.example.com:3443');
+  });
+
   test('OIDC redirects: the UI callback on the vault host, then the CLI listener', () => {
     // ★ Matches what the live OpenBao OIDC client registers (UI host, not the API host).
     expect(d.vault.oidcRedirects).toEqual([
@@ -169,7 +183,7 @@ describe('inventory', () => {
     expect(unknownPrincipals(site, ['n1', '192.0.2.99'])).toEqual(['192.0.2.99']);
     const stale = withPath(example(), ['pinned', 'sshPrincipals', 'ssh-host.host'], ['n9']);
     expect(pinnedPrincipalIssues(decodeSite(stale))).toEqual([
-      'pinned.sshPrincipals.ssh-host.host: "n9" is not in the inventory',
+      'pinned.sshPrincipals["ssh-host.host"]: "n9" is not in the inventory',
     ]);
   });
 });

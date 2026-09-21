@@ -3,7 +3,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { SITE_TOKENS, decodeSite, renderTokens, tokenValues } from '../src/index.ts';
-import { example } from './fixture.ts';
+import { example, withPath } from './fixture.ts';
 
 const site = decodeSite(example());
 
@@ -42,6 +42,13 @@ describe('renderTokens', () => {
     expect(
       renderTokens('BAO_ADDR=https://<vault-api-host> (UI: <vault-host>, on <apex>)', site),
     ).toBe('BAO_ADDR=https://api.v.example.com (UI: v.example.com, on example.com)');
+  });
+
+  test('one pass: a value that contains a token is not substituted again', () => {
+    const odd = decodeSite(withPath(example(), ['paths', 'estateRoot'], '/opt/<apex>'));
+    expect(renderTokens('root=<estate-root> on <apex>', odd)).toBe(
+      'root=/opt/<apex> on example.com',
+    );
   });
 
   test('leaves <cluster> and unknown brackets alone', () => {

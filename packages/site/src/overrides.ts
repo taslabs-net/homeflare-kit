@@ -14,9 +14,16 @@
  *   So only scalar leaves under plain structs are listed, and tests/overrides.test.ts
  *   proves each one changes exactly its own path and nothing else.
  *
- * ⛔ GUARD FIELDS ARE NEVER OVERRIDABLE: `version`, `deriveVersion`, `kind` and
- *   `vault.clusterName`. An exported `HF_SITE_KIND=live` would defeat the stage guard, and
- *   an overridden cluster name would make the identity check compare against itself.
+ * ⛔ GUARD FIELDS ARE NEVER OVERRIDABLE: `version`, `deriveVersion`, `kind`,
+ *   `vault.clusterName` and `vault.namespace`. An exported `HF_SITE_KIND=live` would defeat
+ *   the stage guard, and an overridden cluster name or namespace would make the identity
+ *   check compare against itself: a client that takes its namespace from the site would
+ *   switch namespace AND expectation together, and plan into the other one "matching".
+ *
+ * ⛔ AND OVERRIDES ARE DEV-ONLY. An override is an unreviewed value, exactly like an
+ *   uncommitted edit to the file, so `loadSite` accepts one only with `siteDev` — the same
+ *   switch as the checkout guard. A stray `HF_SITE_APEX` left in a shell would otherwise
+ *   plan a rename of every derived hostname against live state.
  *
  * ⚠️ `HF_` IS ALSO HUGGING FACE'S PREFIX (`HF_TOKEN`, `HF_HOME`). Only `HF_SITE_*` is read,
  *   and only the names below ever reach the provider.
@@ -27,7 +34,6 @@ export const ENV_OVERRIDES: Readonly<Record<string, readonly string[]>> = {
   HF_SITE_APEX: ['apex'],
   HF_SITE_VAULT_LABEL: ['vault', 'label'],
   HF_SITE_VAULT_API_LABEL: ['vault', 'apiLabel'],
-  HF_SITE_VAULT_NAMESPACE: ['vault', 'namespace'],
   HF_SITE_VAULT_PORT: ['vault', 'port'],
   HF_SITE_VAULT_MESH_ADDRESS: ['vault', 'meshAddress'],
   HF_SITE_VAULT_OIDC_MOUNT: ['vault', 'oidcMount'],
@@ -39,6 +45,15 @@ export const ENV_OVERRIDES: Readonly<Record<string, readonly string[]>> = {
   HF_SITE_GITHUB_OWNER: ['github', 'owner'],
   HF_SITE_PATHS_ESTATE_ROOT: ['paths', 'estateRoot'],
 };
+
+/** Site paths no variable may ever set. `tests/overrides.test.ts` holds the list to this. */
+export const GUARD_FIELDS: readonly string[] = [
+  'version',
+  'deriveVersion',
+  'kind',
+  'vault.clusterName',
+  'vault.namespace',
+];
 
 /** Locates the file; read by `loadSite`, never passed to the provider. */
 export const SITE_FILE_VAR = 'HF_SITE_FILE';

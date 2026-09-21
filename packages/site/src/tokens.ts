@@ -45,11 +45,16 @@ export function tokenValues(site: Site): Readonly<Record<ValuedToken, string>> {
 
 /**
  * Replace every single-valued token in `text` with its value for `site`.
- * ★ Longest token first, so a future token that contains another is never half-replaced.
+ * ★ ONE PASS, longest token first in the alternation. A value is never read again, so a
+ *   value that itself contains a token stays literal. ⚠️ Measured 2026-09-21: the earlier
+ *   token-by-token loop rendered an estate root of `/opt/<apex>` as `/opt/example.com`.
  */
 export function renderTokens(text: string, site: Site): string {
-  const values = Object.entries(tokenValues(site)).sort(([a], [b]) => b.length - a.length);
-  let out = text;
-  for (const [token, value] of values) out = out.replaceAll(token, value);
-  return out;
+  const values: Readonly<Record<string, string>> = tokenValues(site);
+  const tokens = Object.keys(values).sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(
+    tokens.map((t) => t.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+    'g',
+  );
+  return text.replaceAll(pattern, (token) => values[token] ?? token);
 }

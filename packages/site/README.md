@@ -33,8 +33,9 @@ d.vault.publicAddr; // https://api.v.example.com
   `kind`, replace every value.
 - **Plain JSON**, not JSONC — Nix, jq and Python read the same file.
 - ⛔ **Reviewed values only.** Unless `siteDev` is set (your `--site-dev` flag), the file
-  must be committed, unmodified, on `main` (`branch` to change it). `readCheckout` and
-  `checkoutProblem` expose the same check.
+  must be committed, unmodified, on `main` (`branch` to change it). "Unmodified" is by
+  blob hash, so `--skip-worktree` cannot hide an edit, and a symlink is judged by the
+  file it points at. `readCheckout` and `checkoutProblem` expose the same check.
 - `SITE_FILE_VAR` is `HF_SITE_FILE`; `SITE_EXAMPLE` is the example's path.
 - Workers (no filesystem, no env): `decodeSite(json)` from the main entry. It runs
   `validateSite` (references, then the derive-version guard) itself.
@@ -43,6 +44,9 @@ d.vault.publicAddr; // https://api.v.example.com
 
 `ENV_OVERRIDES` lists the only `HF_SITE_*` variables accepted — scalars such as
 `HF_SITE_APEX` or `HF_SITE_VAULT_PORT`. Anything else under `HF_SITE_` is refused.
+⛔ **Overrides need `siteDev`**: an override is an unreviewed value, like an uncommitted
+edit, so a stray `HF_SITE_APEX` in a shell refuses a reviewed load instead of renaming
+every derived hostname.
 
 ⚠️ **Measured on effect 4.0.0-rc.115**, and each is a test:
 
@@ -51,7 +55,9 @@ d.vault.publicAddr; // https://api.v.example.com
 - An override inside a record or list **replaces** the whole collection (and upper-cases
   its key), so collections are never overridable.
 - `HF_SITE_X_API` shadows `x`: a field named like another plus `_…` breaks the decode.
-- ⛔ Guard fields — `version`, `deriveVersion`, `kind`, `vault.clusterName` — never.
+- ⛔ Guard fields — `version`, `deriveVersion`, `kind`, `vault.clusterName`,
+  `vault.namespace` — never: an overridden identity field moves the identity check's
+  expectation along with the client.
 
 ## Derived names
 
@@ -96,7 +102,8 @@ is no fallback host: a plausible default is how a typo becomes a DNS record.
 - `assertStage(site, 'live')` refuses unless `kind` is `live`.
 - `expectedIdentity(site, { account })`, `compareIdentity`, `assertIdentity`: hand in the
   observed `cluster_name` (from `sys/health`), namespace and Cloudflare account id; any
-  mismatch — or anything expected but not observed — refuses. Pure: fetches nothing.
+  mismatch — or anything expected but not observed — refuses, and so does an expectation
+  naming no field (it would match any system). Pure: fetches nothing.
 
 ## Doc placeholders
 

@@ -9,6 +9,7 @@ import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import { decodeSite } from '../src/index.ts';
 import { ENV_OVERRIDES, loadSite } from '../src/load.ts';
+import { GUARD_FIELDS } from '../src/overrides.ts';
 import { EXAMPLE_PATH, example, readPath, withPath } from './fixture.ts';
 
 /** A valid value, different from the example's, for each overridable path. */
@@ -16,7 +17,6 @@ const ALTERNATIVES: Readonly<Record<string, string>> = {
   HF_SITE_APEX: 'example.net',
   HF_SITE_VAULT_LABEL: 'vault',
   HF_SITE_VAULT_API_LABEL: 'edge',
-  HF_SITE_VAULT_NAMESPACE: 'ns1',
   HF_SITE_VAULT_PORT: '8300',
   HF_SITE_VAULT_MESH_ADDRESS: '198.18.0.9',
   HF_SITE_VAULT_OIDC_MOUNT: 'sso',
@@ -61,10 +61,17 @@ describe('the list stays safe', () => {
   });
 
   test('guard fields are never overridable', () => {
+    // ⛔ The identity check compares clusterName AND namespace; either one overridable
+    //   lets an exported variable move the expectation along with the client.
+    expect(GUARD_FIELDS).toEqual([
+      'version',
+      'deriveVersion',
+      'kind',
+      'vault.clusterName',
+      'vault.namespace',
+    ]);
     const paths = Object.values(ENV_OVERRIDES).map((p) => p.join('.'));
-    for (const guard of ['version', 'deriveVersion', 'kind', 'vault.clusterName']) {
-      expect(paths).not.toContain(guard);
-    }
+    for (const guard of GUARD_FIELDS) expect(paths).not.toContain(guard);
   });
 
   test('every name is HF_SITE_ + the constant-cased path', () => {

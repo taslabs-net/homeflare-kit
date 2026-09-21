@@ -32,7 +32,7 @@ const EXCESS = 'Expected no excess property';
  * `pinned.certificates["vault.origin"].0` — a key that itself holds a dot is bracketed,
  * or the path would read as two levels that do not exist.
  */
-function joinPath(segments: readonly string[]): string {
+export function joinPath(segments: readonly string[]): string {
   return segments
     .map((segment, i) => {
       if (segment.includes('.')) return `[${JSON.stringify(segment)}]`;

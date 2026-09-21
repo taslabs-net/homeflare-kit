@@ -7,6 +7,7 @@
  *   silently drops the old address, and the break-glass path goes with it (measured on
  *   this estate 2026-08-12: "name is not a listed principal" on the only way in).
  */
+import { joinPath } from './decode.ts';
 import { derive } from './derive.ts';
 import type { Site } from './schema.ts';
 
@@ -45,7 +46,9 @@ export function pinnedPrincipalIssues(site: Site): readonly string[] {
   const issues: string[] = [];
   for (const [key, list] of Object.entries(site.pinned.sshPrincipals)) {
     for (const entry of unknownPrincipals(site, list)) {
-      issues.push(`pinned.sshPrincipals.${key}: "${entry}" is not in the inventory`);
+      // ★ Bracketed like decode errors: `ssh-host.host` is one key, not two levels.
+      const path = joinPath(['pinned', 'sshPrincipals', key]);
+      issues.push(`${path}: "${entry}" is not in the inventory`);
     }
   }
   return issues;

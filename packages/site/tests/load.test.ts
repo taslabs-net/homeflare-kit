@@ -133,6 +133,7 @@ describe('environment overrides', () => {
           HF_SITE_FILE: EXAMPLE_PATH,
           HF_SITE_KIND: 'live',
           HF_SITE_VAULT_CLUSTER_NAME: 'x',
+          HF_SITE_VAULT_NAMESPACE: 'other',
           HF_SITE_NETWORKS_MGMT: '192.0.2.0/24',
         },
         siteDev: true,
@@ -143,6 +144,7 @@ describe('environment overrides', () => {
       'HF_SITE_KIND',
       'HF_SITE_NETWORKS_MGMT',
       'HF_SITE_VAULT_CLUSTER_NAME',
+      'HF_SITE_VAULT_NAMESPACE',
     ]);
   });
 
