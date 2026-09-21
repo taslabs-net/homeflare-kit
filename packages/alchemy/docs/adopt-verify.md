@@ -95,8 +95,7 @@ a compiled stack (`src/verify/fake-engine.ts`).
 
 - ⚠️ **`noop` covers what the family compares.** A family's `diff` and its `reconcile` guard share
   one predicate (`matches`). A field that `matches` leaves out is never written on a no-op
-  adoption and never reported. `Proxmox.Lxc` `net0` and `Proxmox.CephPool` `target_size_ratio`
-  are the known cases.
+  adoption and never reported. `Proxmox.CephPool` `target_size_ratio` is the known case.
 - ⚠️ **`changed` is a hint, not the verdict.** It compares same-named keys. A family whose
   attributes rename or normalise a field shows nothing there, and its `diff` still decides.
 - ⚠️ **Reads are what `alchemy plan` does.** A kit PVE/PBS read mints a lease through OpenBao,

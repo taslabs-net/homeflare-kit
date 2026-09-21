@@ -1,9 +1,9 @@
 /**
- * Public barrel: control-plane Resource constructors, not guests or NIC apply.
+ * Public barrel: control-plane Resource constructors and `ProxmoxLxc`, not QEMU or NIC apply.
  *
- * ⛔ Lxc/Vm stay Provider-only. A Resource export would let a stack declare
- *   guests before storage/SDN exist. NodeNetwork/NetworkApply stay off the
- *   barrel for the same reason — they stage interfaces.new.
+ * ⛔ Vm stays Provider-only. NodeNetwork/NetworkApply stay off the barrel — they stage
+ *   interfaces.new. ★ Lxc is a Resource since 2026-09-21: adopt-first, refuse-not-replace,
+ *   retain on destroy (lxc.ts).
  */
 import { expect, test } from 'bun:test';
 import { PbsDatastore, ProxmoxStorage } from './index.ts';
@@ -20,6 +20,7 @@ const resourceExports = [
   'ProxmoxGroup',
   'ProxmoxHaResource',
   'ProxmoxHaRule',
+  'ProxmoxLxc',
   'ProxmoxMetricServer',
   'ProxmoxNotificationTarget',
   'ProxmoxRole',
@@ -39,8 +40,7 @@ test('control-plane Resource constructors are on the public barrel', () => {
   }
 });
 
-test('guests and NIC apply stay Provider-only', () => {
-  expect(src).not.toMatch(/export \{ ProxmoxLxc[, }]/);
+test('QEMU and NIC apply stay Provider-only', () => {
   expect(src).not.toMatch(/export \{ ProxmoxVm[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxNodeNetwork[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxNetworkApply[, }]/);

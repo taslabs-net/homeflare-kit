@@ -1,0 +1,12 @@
+# Proxmox — `@homeflare/alchemy/proxmox`
+
+PVE and PBS objects over the PVE API, each call on a short-lived token minted from an OpenBao
+mount. `ProxmoxLxc` adopts a live container from its own config (a paste of `pvesh get …/config`)
+or creates one from a template.
+
+- ⛔ **It never replaces or destroys a guest by default.** A move, a smaller disk, an unprivileged
+  flip or another template fails the plan. Destroy retains unless `RemovalPolicy.destroy()`.
+- ⛔ **It adopts nothing without `--adopt` or `adopt(true)`**, a matching guest included
+  ([ownership.md](./ownership.md)): under `destroy`, a claimed guest's disks go with it.
+- ⛔ **root@pam-only keys** (`devN`, bind mounts, features beyond `nesting`) are refused at plan,
+  with the `pct set` to run instead. Guide: [proxmox-lxc.md](./proxmox-lxc.md).

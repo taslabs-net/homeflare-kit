@@ -5,18 +5,17 @@
  * ★ A STUB `fetch`, NOT A SERVER. client.test.ts remaps hosts onto Bun.serve to test failover;
  *   here the question is only which calls a lifecycle makes, and a stub answers every URL without
  *   a socket, so nothing can reach a real host whatever the environment says.
- * ⛔ AND THE ENVIRONMENT IS EMPTIED ANYWAY. `leased` mints through credentials.ts `mint`, which
- *   reads BAO_* / VAULT_* from `process.env`; `withoutBao` removes them for the test's duration
- *   and restores them after, so a token in the shell running the tests is never read — the rule
- *   credentials.test.ts keeps by passing an explicit environment.
+ * ⛔ AND THE ENVIRONMENT IS EMPTIED ANYWAY (`withoutBao`, fake-bao-env.ts), so a token in the
+ *   shell running the tests is never read.
  * ⚠️ `lease_duration: 0` KEEPS THE LEASE CACHE COLD (lease-cache.ts `timeToLive`), so no fake
  *   credential outlives the test that minted it.
  * ⛔ TEST-ONLY. No provider imports this file.
  */
 import * as Layer from 'effect/Layer';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import { resetLastGoodForTest } from './members.ts';
 import type { PveTarget } from './credentials.ts';
+import { withFakeBao } from './fake-bao-env.ts';
+import { resetLastGoodForTest } from './members.ts';
 
 export const FAKE_TARGET: PveTarget = {
   members: ['pve.test'],
@@ -71,18 +70,6 @@ export const fakePve = (answer: PveAnswer): FakePve => {
   };
 };
 
-const BAO_VARIABLES = /^(BAO|VAULT)_/;
-
-/** Run `body` with no BAO_* or VAULT_* in the environment, then put them back. */
-export const withoutBao = async <A>(body: () => Promise<A>): Promise<A> => {
-  const saved = Object.entries(process.env).filter(([name]) => BAO_VARIABLES.test(name));
-  for (const [name] of saved) delete process.env[name];
-  process.env['BAO_ADDR'] = 'http://bao.invalid';
-  try {
-    return await body();
-  } finally {
-    delete process.env['BAO_ADDR'];
-    for (const [name, value] of saved) process.env[name] = value;
-    resetLastGoodForTest();
-  }
-};
+/** Run `body` against the stub's OpenBao (fake-bao-env.ts), then forget the member failover state. */
+export const withoutBao = <A>(body: () => Promise<A>): Promise<A> =>
+  withFakeBao('http://bao.invalid', body).finally(resetLastGoodForTest);

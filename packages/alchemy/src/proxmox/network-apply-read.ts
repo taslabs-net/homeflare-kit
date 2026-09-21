@@ -194,6 +194,8 @@ export const awaitTask = (
   credential: PveCredential,
   node: string,
   upid: string,
+  // ★ A CALLER WHOSE TASK IS SLOWER THAN A RELOAD SAYS SO: an LXC create unpacks a template.
+  attempts: number = ATTEMPTS,
 ) =>
   Effect.gen(function* () {
     /**
@@ -206,7 +208,7 @@ export const awaitTask = (
      *   and a perfectly good reload would stop the deploy. Raw removes the assumption.
      */
     const path = `nodes/${node}/tasks/${upid}/status`;
-    for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       /**
        * ⛔ A FAILED POLL IS NOT A FAILED RELOAD, AND CALLING IT ONE WOULD BE THE WORST KIND OF
        *   WRONG. If the member serving the poll is the node being reloaded, `ifreload -a` can drop

@@ -43,22 +43,25 @@ API token on the cluster, just as it does for `alchemy plan`.
 | `Proxmox.SdnZone`              | `cluster/sdn/zones/{zone}`                                      | provision ¹ | shared path — no write                                                                               |
 | `Proxmox.SdnVnet`              | `cluster/sdn/vnets/{vnet}`                                      | provision ¹ | shared path — no write                                                                               |
 | `Proxmox.SdnSubnet`            | `cluster/sdn/vnets/{vnet}/subnets/{id}`                         | read        | shared path — no write                                                                               |
-| `Proxmox.Lxc`                  | `nodes/{node}/lxc/{vmid}/config`                                | read        | shared path — no write ³                                                                             |
+| `Proxmox.Lxc` ³                | `nodes/{node}/lxc/{vmid}/config`                                | read        | own: GET, `judge` finds no drift so no `PUT …/config`, GET — no write                                |
 | `Pbs.PruneJob`                 | `config/prune/{id}`                                             | read (PBS)  | shared path — no write                                                                               |
 | `Pbs.SyncJob`                  | `config/sync/{id}`                                              | read (PBS)  | shared path — no write                                                                               |
 | `Pbs.VerifyJob`                | `config/verify/{id}`                                            | read (PBS)  | shared path — no write                                                                               |
 | `Proxmox.Acl`                  | `access/acl` (whole list, filtered)                             | provision ¹ | shared path, then its own `bound` check — no write                                                   |
 | `Pbs.Datastore`                | `config/datastore/{name}`                                       | read (PBS)  | own: GET, path/backend guards, PUT skipped on `matches`, settle GET — no write                       |
 | `Proxmox.SdnApply`             | 5 × `cluster/sdn/*?pending=1` + fabrics `?pending` / `?running` | read        | own: counts staged objects; zero returns at once — **no `PUT /cluster/sdn`**                         |
-| `Proxmox.CephPool`             | `nodes/{node}/ceph/pool/{name}/status?verbose=1`                | read        | own: GET, **PUT skipped on `matches` (was: always `PUT nodes/{node}/ceph/pool/{name}`)**, settle GET |
+| `Proxmox.CephPool` ⁴           | `nodes/{node}/ceph/pool/{name}/status?verbose=1`                | read        | own: GET, **PUT skipped on `matches` (was: always `PUT nodes/{node}/ceph/pool/{name}`)**, settle GET |
 
 ¹ These object reads are gated on an allocate privilege, so the family reads with the provision
 lease (`readRole`, resource.ts). That is still a read.
 ² The PVE notification endpoints: `smtp` (the mail target), `sendmail`, `gotify`, `webhook`. The
 secrets are never props (notification-target.ts), so no write is ever needed to "reset" them.
-³ `updateForm` sends `net0`, but `matches` does not compare it. A declared `net0` that differs from
-the live one is never written on a no-op adoption and never reported. The same is true of
-`Proxmox.CephPool` `target_size_ratio`.
+³ Rewritten 2026-09-21 (PR 80, [proxmox-lxc.md](./proxmox-lxc.md)): its own reconcile, and its
+probe answers `Unowned`, so the deploy needs `--adopt`. Its `diff` also logs the keys a deploy
+would write, by name. Pinned by `src/proxmox/lxc-adopt.test.ts` ("deploys with no write").
+⁴ `updateBody` sends `target_size_ratio`, but `matches` does not compare it (float equality). A
+declared ratio that differs from the live one is never written on a no-op adoption and never
+reported as a diff.
 
 ## Before the fix: `Proxmox.CephPool`
 

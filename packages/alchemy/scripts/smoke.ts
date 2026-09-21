@@ -94,14 +94,14 @@ try {
 import { ForgejoOrgLabel } from '@homeflare/alchemy/forgejo';
 import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles } from '@homeflare/alchemy/openbao';
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
-import { ProxmoxAclProvider } from '@homeflare/alchemy/proxmox';
+import { ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider } from '@homeflare/alchemy/proxmox';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
-  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider,
+  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
   parseVerifyArgs, verifySession, verifyStack,
 })) {
