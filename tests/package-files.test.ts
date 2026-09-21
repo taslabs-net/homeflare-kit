@@ -10,7 +10,14 @@ import { stat } from 'node:fs/promises';
 import { describe, expect, test } from 'bun:test';
 
 const root = new URL('../', import.meta.url);
-const PACKAGES = ['kit', 'cloudflare', 'ui', 'auth', 'config'];
+/**
+ * Every workspace package, DISCOVERED. ⚠️ The hand list this replaced had drifted: neither
+ * @homeflare/typesafe nor @homeflare/alchemy was in it, so nothing checked that they ship
+ * their README, LICENSE or a smoke test that can fail.
+ */
+const PACKAGES: string[] = await Array.fromAsync(
+  new Bun.Glob('packages/*/package.json').scan({ cwd: root.pathname }),
+).then((paths) => paths.map((path) => path.split('/')[1] ?? '').sort());
 
 async function manifest(
   name: string,

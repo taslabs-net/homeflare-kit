@@ -21,15 +21,16 @@ them to fit a line limit — extract into a new file instead.
 
 ## The packages
 
-| package                 | holds                                            | may import                                                                                |
-| ----------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `@homeflare/kit`        | env parsing, HTTP                                | nothing runtime-specific, ever                                                            |
-| `@homeflare/cloudflare` | Access JWT, structured logging                   | workerd globals, `@homeflare/kit`                                                         |
-| `@homeflare/ui`         | React components                                 | Kumo, React                                                                               |
-| `@homeflare/auth`       | Better Auth D1 storage                           | drizzle-orm, official adapter                                                             |
-| `@homeflare/typesafe`   | TypeSafe System One client                       | `@typesafe-ai/sdk` (official)                                                             |
-| `@homeflare/config`     | tsconfig / oxlint / oxfmt presets                | — (no code)                                                                               |
-| `@homeflare/alchemy`    | custom Alchemy providers, one subpath per system | alchemy, effect, vendor SDKs; host access (`node:*`, `launchctl`) only behind its subpath |
+| package                 | holds                                            | may import                                                                                                   |
+| ----------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `@homeflare/kit`        | env parsing, HTTP                                | nothing runtime-specific, ever                                                                               |
+| `@homeflare/cloudflare` | Access JWT, structured logging                   | workerd globals, `@homeflare/kit`                                                                            |
+| `@homeflare/ui`         | React components                                 | Kumo, React                                                                                                  |
+| `@homeflare/auth`       | Better Auth D1 storage                           | drizzle-orm, official adapter                                                                                |
+| `@homeflare/typesafe`   | TypeSafe System One client                       | `@typesafe-ai/sdk` (official)                                                                                |
+| `@homeflare/alchemy`    | custom Alchemy providers, one subpath per system | `alchemy`, `effect` (pinned peers), vendor SDKs; host access (`node:*`, `launchctl`) only behind its subpath |
+| `@homeflare/site`       | typed site config + `derive()`                   | `effect` (pinned peer); `node:*` only in `/load`                                                             |
+| `@homeflare/config`     | tsconfig / oxlint / oxfmt presets                | — (no code)                                                                                                  |
 
 ⚠️ **TWO KINDS OF AUTH, NOT INTERCHANGEABLE.** `@homeflare/cloudflare` verifies a
 Cloudflare Access assertion — the edge already authenticated the caller and you check its
