@@ -17,6 +17,9 @@
  * ★ `listenPort` is the port Caddy BELIEVES it listens on — its Host check uses it — while the
  *   fake really listens on an ephemeral one: a Caddy on its default :2019 behind a forward.
  */
+import type { CaddyAdmin } from './admin.ts';
+import { localCaddyAdmin } from './local-admin.ts';
+
 export type Seen = {
   readonly method: string;
   readonly path: string;
@@ -157,4 +160,20 @@ export const fakeCaddy = (
     seen,
     stop: () => void server.stop(true),
   };
+};
+
+/**
+ * A fake Caddy on its DEFAULT :2019 behind a forward (`hostHeader`), and the transport to it.
+ * ★ Addressed that way so a Caddyfile with no `admin` line — the common case — passes the guard.
+ *   A Caddy reached on any other port needs `admin <address>` declared, or the first load would
+ *   move it (admin-guard.ts).
+ */
+export const fakeDefaultCaddy = (running?: unknown): { admin: CaddyAdmin; caddy: FakeCaddy } => {
+  const caddy = fakeCaddy({ listenPort: 2019, ...(running === undefined ? {} : { running }) });
+  const admin = localCaddyAdmin({
+    address: caddy.address,
+    hostHeader: '127.0.0.1:2019',
+    retries: 0,
+  });
+  return { admin, caddy };
 };

@@ -89,17 +89,6 @@ export const writeBody = (props: BaoAuthRoleProps): Record<string, string> => {
   return body;
 };
 
-/**
- * Whether a changed `name` names a DIFFERENT role — the diff's `replace` question.
- *
- * ⚠️ CASE-INSENSITIVELY, BECAUSE THE SERVER IS. AppRole stores `role/<lowercased name>` (openbao
- *   v2.6.2 builtin/credential/approle/path_role.go:1485, and roleEntry reads the same key, :1537),
- *   so `Host` → `host` is the SAME role: a `replace` there would write it, then — under `destroy` —
- *   delete the old generation, which is that same role.
- */
-export const isRename = (from: string, to: string): boolean =>
-  from.toLowerCase() !== to.toLowerCase();
-
 const samePolicies = (want: readonly string[], have: readonly string[]) =>
   want.length === have.length && want.every((policy, index) => policy === have[index]);
 

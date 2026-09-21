@@ -24,9 +24,18 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
-import { type BaoPluginAttributes, type BaoPluginProps, matches, resolve } from './plugin-form.ts';
+import {
+  type BaoPluginAttributes,
+  type BaoPluginProps,
+  type BaoPluginType,
+  matches,
+  resolve,
+  versionedPath,
+} from './plugin-form.ts';
 import { readEntry, reconcilePlugin } from './plugin-reconcile.ts';
 import { deregisterPlugin } from './plugin-wire.ts';
+import { declaredOr, declaredString } from './rename.ts';
+import { type Identity, guardRename, judgeRename } from './rename-identity.ts';
 
 export type { BaoPluginAttributes, BaoPluginProps, BaoPluginType } from './plugin-form.ts';
 
@@ -41,6 +50,24 @@ export interface BaoPlugin extends Resource<
 export const BaoPlugin = Resource<BaoPlugin>('Bao.Plugin', {
   defaultRemovalPolicy: 'retain',
 });
+
+/**
+ * ⛔ NAME, TYPE AND VERSION ARE THE CATALOG KEY, so the identity is the versioned path a read and a
+ *   delete address. Exact: the catalog stores `<type>/<name>/<version>` as given, and the version
+ *   is already canonical (`problems`). ⚠️ An unversioned name that is a builtin reads back as
+ *   present (plugin-wire.ts), so a move onto one fails the plan, as reconcile would refuse anyway.
+ */
+const IDENTITY: Identity<BaoPluginAttributes> = {
+  declared: (props) => {
+    const type = declaredString(props, 'type') as BaoPluginType | undefined;
+    const name = declaredString(props, 'name');
+    const version = declaredOr(props, 'version', '');
+    if (type === undefined || name === undefined || version === undefined) return undefined;
+    return versionedPath(type, name, version);
+  },
+  family: 'Bao.Plugin',
+  recorded: (output) => versionedPath(output.type, output.name, output.version),
+};
 
 export const BaoPluginProvider = () =>
   Provider.effect(
@@ -60,21 +87,18 @@ export const BaoPluginProvider = () =>
         }),
 
         /** ⛔ IT COMPARES THE LIVE ENTRY, NOT THE STORED DIGEST — a hand re-register is drift. */
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined || !isResolved(news)) return undefined;
-          const form = resolve(news);
+        diff: Effect.fn(function* ({ news, olds, output }) {
           /**
-           * ⛔ NAME, TYPE AND VERSION ARE THE CATALOG KEY, so changing one is a different entry,
-           *   not an edit. Writing the new key would leave the old registration in place under a
-           *   state record that no longer names it.
+           * ⛔ A NEW NAME, TYPE OR VERSION IS A DIFFERENT ENTRY, not an edit: `replace`, judged
+           *   before `isResolved(news)`. Writing the new key in place would leave the old
+           *   registration under a state record that no longer names it. ⛔ A move onto an entry
+           *   that is already registered fails the plan (rename-identity.ts).
            */
-          if (
-            output.name !== form.name ||
-            output.type !== form.type ||
-            output.version !== form.version
-          ) {
-            return { action: 'replace' } as const;
-          }
+          const move = yield* judgeRename(IDENTITY, olds, news, output);
+          if (output === undefined) return undefined;
+          if (move !== undefined) return { action: 'replace' } as const;
+          if (!isResolved(news)) return undefined;
+          const form = resolve(news);
           const found = yield* readEntry(form);
           if (found === undefined) return { action: 'update' } as const;
           return matches(found.attributes, form)
@@ -83,7 +107,9 @@ export const BaoPluginProvider = () =>
         }),
 
         /** The refusals — declarative, builtin, self-reported version — live in plugin-reconcile.ts. */
-        reconcile: Effect.fn(function* ({ news }) {
+        reconcile: Effect.fn(function* ({ news, output }) {
+          // ⛔ An `update` across a move the diff could not see — refused before any write.
+          yield* guardRename(IDENTITY, news, output);
           return yield* reconcilePlugin(news);
         }),
 

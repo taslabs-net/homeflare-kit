@@ -1,8 +1,14 @@
-# Peers — why each pin, measured
+# Peers — and why each pin exists
 
-The evidence behind the install line and the `overrides` block in the
-[README](../README.md#peers--and-one-override-you-need). The README says what to write; this file
-says what broke when it was not written.
+The install line for `@homeflare/alchemy`, and why every peer on it and every entry in the
+`overrides` block is required. The block itself, which every consumer copies, is in the
+[README](../README.md#peers--and-one-override-you-need).
+
+```sh
+bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
+        @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0 \
+        @distilled.cloud/cloudflare@1.0.0-rc.12
+```
 
 🔴 **Why, measured 2026-09-16 on 0.1.0 and re-checked 2026-09-17 against Alchemy 78.**
 Effect's `rc` line is not semver-compatible with itself. Alchemy 78's peer is

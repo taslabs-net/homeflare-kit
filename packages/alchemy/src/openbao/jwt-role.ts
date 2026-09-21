@@ -14,7 +14,8 @@
  *
  * ★ REPLACE SEMANTICS (REPLACE.md): `mount` or `name` changed → `replace`, create-first. The new
  *   path cannot collide with the old, so no `deleteFirst`. Under the default `retain` the old role
- *   stays live, and still admits logins, until removed by hand.
+ *   stays live, and still admits logins, until removed by hand. ⛔ A move onto a role that already
+ *   exists fails the plan (rename-identity.ts).
  * ★ `defaultRemovalPolicy: 'retain'`, like every Bao.* family.
  */
 import { Resource } from 'alchemy';
@@ -28,11 +29,11 @@ import {
   type BaoJwtRoleProps,
   attributesOf,
   matches,
-  mountOf,
   problems,
   rolePath,
   writeBody,
 } from './jwt-role-form.ts';
+import { foldName, guardRename, judgeRename, roleIdentity } from './rename-identity.ts';
 import { type RoleSpec, planRole, readRoleAt, reconcileRole } from './role-reconcile.ts';
 
 export type {
@@ -53,6 +54,18 @@ export interface BaoJwtRole extends Resource<
 export const BaoJwtRole = Resource<BaoJwtRole>('Bao.JwtRole', {
   defaultRemovalPolicy: 'retain',
 });
+
+/**
+ * The name folded, as the server keys it (`foldName`): `name` is a TypeLowerCaseString
+ * (builtin/credential/jwt/path_role.go:77), so the handler reads it lowercased before it ever builds
+ * `role/<name>` (:289). `App` → `app` is the same role, never a move; `problems` refuses the case.
+ */
+const IDENTITY = roleIdentity<BaoJwtRoleAttributes>(
+  'Bao.JwtRole',
+  (mount, name) => rolePath({ mount, name }),
+  'jwt',
+  foldName,
+);
 
 export const jwtRoleSpec = (props: BaoJwtRoleProps): RoleSpec<BaoJwtRoleAttributes> => ({
   attributesOf: (live) => attributesOf(props, live),
@@ -80,15 +93,18 @@ export const BaoJwtRoleProvider = () =>
         }),
 
         /** ⛔ IT COMPARES THE LIVE ROLE, NOT THE STORED DIGEST — a hand-widened audience is drift. */
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined || !isResolved(news)) return undefined;
-          if (mountOf(news) !== output.mount || news.name !== output.name) {
-            return { action: 'replace' } as const;
-          }
+        diff: Effect.fn(function* ({ news, olds, output }) {
+          // ⛔ The identity first, before isResolved; onto a role that exists fails the plan.
+          const move = yield* judgeRename(IDENTITY, olds, news, output);
+          if (output === undefined) return undefined;
+          if (move !== undefined) return { action: 'replace' } as const;
+          if (!isResolved(news)) return undefined;
           return { action: yield* planRole(jwtRoleSpec(news)) } as const;
         }),
 
-        reconcile: Effect.fn(function* ({ news }) {
+        reconcile: Effect.fn(function* ({ news, output }) {
+          // ⛔ An `update` across a move the diff could not see — refused before any write.
+          yield* guardRename(IDENTITY, news, output);
           return yield* reconcileRole(jwtRoleSpec(news));
         }),
 

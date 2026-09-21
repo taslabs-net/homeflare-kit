@@ -2,7 +2,7 @@
  * Fakes of the three stores behind Bao.Policy, Bao.CloudflareRole and Bao.ProxmoxRole, for fake-bao,
  * plus Bao.Policy's provider over fake fragment directories. Each store keys its objects the way the
  * real server does. That is the point: a rename test is only as good as the fake's idea of "the
- * same object".
+ * same object". `store` is shared with fake-engines-roles.ts, which fakes the batch-2 families.
  *
  * ⛔ TEST-ONLY — see fake-bao.ts. No provider imports this file.
  */
@@ -17,26 +17,33 @@ import { trimTrailing } from './mount-path.ts';
 import { BaoPolicyProvider } from './policy.ts';
 import { policyKey } from './rename.ts';
 
-type Stored = Record<string, unknown>;
+export type Stored = Record<string, unknown>;
 
 /** An answer for fake-bao that also exposes what it holds, keyed by API path (no `/v1/`). */
 export type Store = ((seen: Seen) => Reply) & { readonly live: Map<string, Stored> };
 
-const ABSENT: Reply = { json: { errors: [] }, status: 404 };
+export const ABSENT: Reply = { json: { errors: [] }, status: 404 };
 
-const store = (
-  write: (path: string, body: Record<string, string>, before: Stored | undefined) => Stored,
-  key: (path: string) => string = (path) => path,
+/**
+ * A store of objects by API path. `key` turns a request path (and a write's body) into the key the
+ * server would store it under.
+ */
+export const store = <B extends Stored = Record<string, string>>(
+  write: (path: string, body: B, before: Stored | undefined) => Stored,
+  key: (path: string, body?: B) => string = (path) => path,
 ): Store => {
   const live = new Map<string, Stored>();
   const answer = (seen: Seen): Reply => {
-    const path = key(seen.path.replace(/^\/v1\//, ''));
-    if (seen.method === 'PUT') {
-      const body = JSON.parse(seen.body) as Record<string, string>;
+    const raw = seen.path.replace(/^\/v1\//, '');
+    // ★ `bao write` sends PUT, and the identity endpoints are called with POST. Both write.
+    if (seen.method === 'PUT' || seen.method === 'POST') {
+      const body = JSON.parse(seen.body) as B;
+      const path = key(raw, body);
       live.set(path, write(path, body, live.get(path)));
       return { status: 204 };
     }
-    // ★ A delete answers 204 whether or not the object existed, as all three do.
+    const path = key(raw);
+    // ★ A delete answers 204 whether or not the object existed, as every engine here does.
     if (seen.method === 'DELETE') {
       live.delete(path);
       return { status: 204 };
@@ -47,7 +54,7 @@ const store = (
   return Object.assign(answer, { live });
 };
 
-const lastSegment = (path: string) => path.split('/').at(-1) ?? '';
+export const lastSegment = (path: string): string => path.split('/').at(-1) ?? '';
 
 /**
  * `sys/policies/acl/<name>`. It strips the policy's trailing newline on write (measured on the live

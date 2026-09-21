@@ -50,15 +50,8 @@ import {
   writeBody,
 } from './proxmox-role-form.ts';
 import { readRole } from './proxmox-role-wire.ts';
-import {
-  declaredRolePath,
-  declaredString,
-  isMoved,
-  isPendingProp,
-  judgeMove,
-  refuseMovedUpdate,
-  triedRolePath,
-} from './rename.ts';
+import { declaredString, isPendingProp } from './rename.ts';
+import { guardRename, judgeRename, roleIdentity } from './rename-identity.ts';
 
 export type { BaoProxmoxRoleAttributes, BaoProxmoxRoleProps };
 
@@ -73,6 +66,9 @@ export interface BaoProxmoxRole extends Resource<
 export const BaoProxmoxRole = Resource<BaoProxmoxRole>('Bao.ProxmoxRole', {
   defaultRemovalPolicy: 'retain',
 });
+
+/** Exact: the plugin stores `roles/<name>` verbatim. */
+const IDENTITY = roleIdentity<BaoProxmoxRoleAttributes>('Bao.ProxmoxRole', rolePath);
 
 export const BaoProxmoxRoleProvider = () =>
   Provider.effect(
@@ -110,9 +106,7 @@ export const BaoProxmoxRoleProvider = () =>
            *   still an Output it cannot be checked, so the diff defers, and reconcile refuses the
            *   resulting `update`.
            */
-          const tried = triedRolePath(output, olds, rolePath);
-          const declared = declaredRolePath(news, rolePath);
-          const move = yield* judgeMove('Bao.ProxmoxRole', tried, declared, (path) => path);
+          const move = yield* judgeRename(IDENTITY, olds, news, output);
           if (output === undefined) return undefined;
           if (move !== undefined) {
             const mintUser = declaredString(news, 'mintUser');
@@ -151,10 +145,7 @@ export const BaoProxmoxRoleProvider = () =>
         reconcile: Effect.fn(function* ({ news, output }) {
           const path = rolePath(news.mount, news.name);
           // ⛔ An `update` across a move the diff could not see — refused before any read or write.
-          const before = output === undefined ? path : rolePath(output.mount, output.name);
-          if (isMoved(before, path) === true) {
-            return yield* refuseMovedUpdate('Bao.ProxmoxRole', before, path);
-          }
+          yield* guardRename(IDENTITY, news, output);
           const live = yield* readRole(news);
           /**
            * ⛔ A mint_user CHANGE RE-SCOPES EVERY CREDENTIAL THE ROLE WILL EVER MINT, SILENTLY.

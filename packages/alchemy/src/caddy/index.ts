@@ -6,7 +6,8 @@
  *   the digest, the guards and the admin calls are internals; an `export *` would publish them.
  * ⛔ THE ADMIN API STAYS ON LOOPBACK OR A UNIX SOCKET. It has no authentication; localCaddyAdmin()
  *   refuses any other address, and a Caddyfile that would move or expose it is refused before load.
- * Guide, order of file and load, `--resume` and secrets: docs/caddy.md.
+ * ⛔ NOTHING IS ADOPTED SILENTLY: a running config that is not the declared one needs `--adopt`.
+ * Guide, order of file and load, adoption, `--resume` and secrets: docs/caddy.md.
  */
 export type {
   CaddyAdmin,

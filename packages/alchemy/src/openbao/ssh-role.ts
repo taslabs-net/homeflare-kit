@@ -43,12 +43,13 @@ import {
   type BaoSshRoleProps,
   attributesOf,
   badDurations,
-  extMap,
   matches,
   readPath,
   resolve,
   writeBody,
 } from './ssh-role-form.ts';
+import { wouldErase } from './ssh-role-erase.ts';
+import { guardRename, judgeRename, roleIdentity } from './rename-identity.ts';
 
 export type { BaoSshRoleAttributes, BaoSshRoleProps };
 
@@ -64,6 +65,9 @@ export const BaoSshRole = Resource<BaoSshRole>('Bao.SshRole', {
   defaultRemovalPolicy: 'retain',
 });
 
+/** Exact: the engine stores `roles/<name>` verbatim (builtin/logical/ssh/path_roles.go:602). */
+const IDENTITY = roleIdentity<BaoSshRoleAttributes>('Bao.SshRole', readPath, 'ssh');
+
 /** Live role, plus the raw body — reconcile needs the raw half to see what it would erase. */
 const readRole = (form: BaoSshRoleForm) =>
   Effect.gen(function* () {
@@ -71,51 +75,6 @@ const readRole = (form: BaoSshRoleForm) =>
     if (live === undefined) return undefined;
     return { attributes: attributesOf(form, live), live };
   });
-
-/**
- * Fields this resource deliberately does not model, mapped to the value OpenBao's own write
- * puts there when nobody says otherwise. The templating flags change how a principal is
- * DERIVED at signing time, which is a different kind of decision from which principals
- * exist; the rest are issuance mechanics. MEASURED against all three live roles — every one
- * of them sits on exactly these values, so the guard below fires on nothing that exists.
- */
-const UNMANAGED_DEFAULTS: Readonly<Record<string, unknown>> = {
-  algorithm_signer: 'default',
-  allow_commas_in_identity_templates: false,
-  allow_user_key_ids: false,
-  allowed_domains_template: false,
-  allowed_users_template: false,
-  default_extensions_template: false,
-  default_user_template: false,
-  issuer_ref: 'default',
-  key_id_format: '',
-  not_before_duration: 30,
-};
-
-/**
- * ⚠️ ABSENT AND EMPTY BOTH COUNT AS "NEVER SET". A role this resource wrote omits these
- *   fields entirely, so a stricter test would refuse on the provider's own output and
- *   deadlock the update after next.
- */
-const isDefault = (live: Record<string, unknown>, field: string) =>
-  live[field] === undefined || live[field] === '' || live[field] === UNMANAGED_DEFAULTS[field];
-
-/**
- * ⛔ THE FIELDS A WRITE WOULD SILENTLY DESTROY. Because the write is a full replace, a role
- *   someone tuned by hand — `allowed_user_key_lengths` (a minimum RSA size), a
- *   `key_id_format` the audit trail is grepped by, a `not_before_duration` widened to
- *   survive clock skew, a non-default issuer — loses all of it the moment this resource
- *   decides to update. A vanished key-length floor is a security regression that no plan
- *   output would ever mention, and a vanished backdating window breaks signing on exactly
- *   the skewed host it was added for. So reconcile refuses instead of writing.
- */
-const wouldErase = (live: Record<string, unknown>): readonly string[] => {
-  const lost = Object.keys(UNMANAGED_DEFAULTS).filter((field) => !isDefault(live, field));
-  if (Object.keys(extMap(live['allowed_user_key_lengths'])).length > 0) {
-    lost.push('allowed_user_key_lengths');
-  }
-  return lost.sort();
-};
 
 const refuse = (message: string) => Effect.die(new Error(message));
 
@@ -147,18 +106,19 @@ export const BaoSshRoleProvider = () =>
          *   at risk when something actually writes; if every managed field already matches,
          *   the honest answer is `noop` and nothing gets destroyed.
          */
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined || !isResolved(news)) return undefined;
-          const form = resolve(news);
+        diff: Effect.fn(function* ({ news, olds, output }) {
           /**
            * ⛔ A RENAMED ROLE IS A NEW PATH, NOT AN EDIT. `ssh/roles/x` and `ssh-host/roles/x`
            *   are different mounts with different CAs. Without this, changing `name` or
            *   `mount` would write the new role and leave the old one signing certificates
-           *   for as long as anyone remembered its name.
+           *   for as long as anyone remembered its name. Judged before `isResolved(news)`, and
+           *   ⛔ a move onto a role that exists fails the plan (rename-identity.ts).
            */
-          if (output.mount !== form.mount || output.name !== form.name) {
-            return { action: 'replace' } as const;
-          }
+          const move = yield* judgeRename(IDENTITY, olds, news, output);
+          if (output === undefined) return undefined;
+          if (move !== undefined) return { action: 'replace' } as const;
+          if (!isResolved(news)) return undefined;
+          const form = resolve(news);
           const found = yield* readRole(form);
           if (found === undefined) return { action: 'update' } as const;
           return matches(found.attributes, form)
@@ -166,9 +126,11 @@ export const BaoSshRoleProvider = () =>
             : ({ action: 'update' } as const);
         }),
 
-        reconcile: Effect.fn(function* ({ news }) {
+        reconcile: Effect.fn(function* ({ news, output }) {
           const form = resolve(news);
           const path = readPath(form.mount, form.name);
+          // ⛔ An `update` across a move the diff could not see — refused before any write.
+          yield* guardRename(IDENTITY, news, output);
 
           const bad = badDurations(form);
           if (bad.length > 0) {

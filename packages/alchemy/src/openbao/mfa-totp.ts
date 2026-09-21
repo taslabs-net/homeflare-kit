@@ -31,6 +31,7 @@ import {
   writeBody,
 } from './mfa-totp-form.ts';
 import { deleteTotp, findTotp, writeTotp } from './mfa-wire.ts';
+import { declaredString } from './rename.ts';
 
 export type {
   BaoMfaTotpMethodAttributes,
@@ -50,8 +51,8 @@ export const BaoMfaTotpMethod = Resource<BaoMfaTotpMethod>('Bao.MfaTotpMethod', 
   defaultRemovalPolicy: 'retain',
 });
 
-const refuse = (props: BaoMfaTotpMethodProps, message: string): Effect.Effect<never> =>
-  Effect.die(new Error(`Bao.MfaTotpMethod ${props.name}: ${message}`));
+const refuse = (name: string, message: string): Effect.Effect<never> =>
+  Effect.die(new Error(`Bao.MfaTotpMethod ${name}: ${message}`));
 
 export const readTotp = (
   props: BaoMfaTotpMethodProps,
@@ -75,13 +76,13 @@ export const reconcileTotp = (
 ): Effect.Effect<BaoMfaTotpMethodAttributes, BaoError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const bad = problems(props);
-    if (bad.length > 0) return yield* refuse(props, bad.join('; '));
+    if (bad.length > 0) return yield* refuse(props.name, bad.join('; '));
     const live = yield* readTotp(props);
     if (live === undefined || !matches(live, props)) yield* writeTotp(writeBody(props));
     const after = yield* readTotp(props);
     if (after === undefined)
-      return yield* refuse(props, 'the write succeeded but no method has that name.');
-    if (!matches(after, props)) return yield* refuse(props, 'the method read back different.');
+      return yield* refuse(props.name, 'the write succeeded but no method has that name.');
+    if (!matches(after, props)) return yield* refuse(props.name, 'the method read back different.');
     return after;
   });
 
@@ -97,14 +98,26 @@ export const BaoMfaTotpMethodProvider = () =>
           return yield* readTotp(olds);
         }),
 
+        /**
+         * ⛔ THE NAME IS JUDGED BEFORE `isResolved(news)`. Until 2026-09-21 it came after, so a
+         *   rename landing with a pending `issuer` (or any other Output) planned `update`, and the
+         *   upsert by name wrote a SECOND method: the header's stranding, reached through a green
+         *   plan. MEASURED through the engine (rename-families.test.ts).
+         */
         diff: Effect.fn(function* ({ news, output }) {
+          const name = declaredString(news, 'name');
+          if (output !== undefined && name !== undefined) {
+            const rename = renameProblem(output.name, name);
+            if (rename !== undefined) return yield* refuse(name, rename);
+          }
           if (output === undefined || !isResolved(news)) return undefined;
-          const rename = renameProblem(output.name, news.name);
-          if (rename !== undefined) return yield* refuse(news, rename);
           return { action: yield* planTotp(news) } as const;
         }),
 
-        reconcile: Effect.fn(function* ({ news }) {
+        /** ⛔ A rename the diff could not see (the name was an Output), refused before any write. */
+        reconcile: Effect.fn(function* ({ news, output }) {
+          const rename = output === undefined ? undefined : renameProblem(output.name, news.name);
+          if (rename !== undefined) return yield* refuse(news.name, rename);
           return yield* reconcileTotp(news);
         }),
 
