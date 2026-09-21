@@ -6,8 +6,12 @@
  *   provider needs but a consumer should not depend on. An `export *` here would publish
  *   every helper as API and make the next refactor a breaking change.
  * ★ Control-plane Resource constructors (Storage, SDN, access, HA, backup,
- *   metrics, PBS) sit next to their Providers. Guests and NIC apply stay
+ *   metrics, PBS) sit next to their Providers. NIC apply and QEMU stay
  *   Provider-only so a stack cannot declare them by accident.
+ * ★ `ProxmoxLxc` JOINED THEM 2026-09-21, AND IT WAS KEPT OFF UNTIL IT COULD NOT HURT A GUEST.
+ *   The provider-only version diffed four fields and would have planned a create over any read
+ *   failure. The Resource now adopts from the live config, refuses every change PVE cannot make
+ *   in place, and retains on destroy (lxc.ts).
  * ★ Anything else unlisted is still reachable by path if you genuinely need
  *   it — that is a deliberate, visible act rather than an accident of barrelling.
  */
@@ -23,7 +27,7 @@ export { ProxmoxFirewallAliasProvider } from './firewall-alias.ts';
 export { ProxmoxGroup, ProxmoxGroupProvider } from './group.ts';
 export { ProxmoxHaResource, ProxmoxHaResourceProvider } from './ha-resource.ts';
 export { ProxmoxHaRule, ProxmoxHaRuleProvider } from './ha-rule.ts';
-export { ProxmoxLxcProvider } from './lxc.ts';
+export { type LxcAttributes, type LxcProps, ProxmoxLxc, ProxmoxLxcProvider } from './lxc.ts';
 export { ProxmoxMetricServer, ProxmoxMetricServerProvider } from './metric-server.ts';
 export { ProxmoxNetworkApplyProvider } from './network-apply.ts';
 export { ProxmoxNodeNetworkProvider } from './node-network.ts';

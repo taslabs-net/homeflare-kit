@@ -1,8 +1,8 @@
 # Ownership — nothing is adopted without `--adopt`
 
 A live object this stack holds **no state for** is never taken over silently. That holds for every
-`Bao.*` family, `HostFile`, `LaunchdJob` and `CaddyConfig`, and it holds even when the live object
-is **identical** to the declaration: identical is not ours. Another stack, a person or an old
+`Bao.*` family, `HostFile`, `LaunchdJob`, `CaddyConfig` and `ProxmoxLxc`, and it holds even when the
+live object is **identical** to the declaration: identical is not ours. Another stack, a person or an old
 script put it there, and once state claims it, a delete under `RemovalPolicy.destroy()` removes it
 from its real owner. (Decided 2026-09-21; the Bao families adopted silently until 0.9.0.)
 
@@ -79,3 +79,7 @@ session both share one.
   wrote, so this needs a kill between the write and the commit.
 - ⚠️ **`CaddyConfig` keeps its own probe.** A running config identical to the declaration reads as
   ours, because adopting it changes nothing Caddy serves ([caddy.md](./caddy.md#adoption)).
+  `ProxmoxLxc` does not share that exception: its delete removes a guest and its volumes
+  ([proxmox-lxc.md](./proxmox-lxc.md#adopting-what-the-plan-says)).
+- ⚠️ **The other `@homeflare/alchemy/proxmox` resources do not follow this rule yet.** Those built
+  on `pveHandlers` (`src/proxmox/resource.ts`) still read a live object with no state as ours.

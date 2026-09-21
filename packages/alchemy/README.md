@@ -106,7 +106,8 @@ plugin `env` or OIDC client secret is declarable. Every family defaults to `reta
 
 ⛔ **Nothing is adopted without `--adopt`** (0.9.0), for every family and even when the live object
 is identical to the declaration; an interrupted create of this stack's own still resumes. The
-same rule holds for `HostFile`, `LaunchdJob` and `CaddyConfig`: [docs/ownership.md](./docs/ownership.md).
+same rule holds for `HostFile`, `LaunchdJob`, `CaddyConfig` and `ProxmoxLxc`:
+[docs/ownership.md](./docs/ownership.md).
 
 ★ **Usage lives beside the code**, so it ships in the tarball with it:
 [src/openbao/README.md](./src/openbao/README.md). What each resource does on a rename is in
@@ -155,6 +156,11 @@ with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:20
 - ⛔ **Delete never unloads or stops Caddy.** Order of file and load: [docs/caddy.md](./docs/caddy.md).
 - ★ **Managed Caddies run `--resume` with their own `XDG_CONFIG_HOME`**, so a restart runs the last
   config Caddy accepted — and after one, SIGUSR1 has no file to reload. Why, and the rest: same doc.
+
+## Proxmox — `@homeflare/alchemy/proxmox`
+
+PVE and PBS objects over the PVE API, and `ProxmoxLxc` for containers. What the subpath never does
+to a guest, and why: [docs/proxmox.md](./docs/proxmox.md).
 
 ## Credentials
 
