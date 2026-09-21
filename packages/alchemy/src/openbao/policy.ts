@@ -8,7 +8,8 @@ import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { sha256 } from './digest.ts';
 import { isEmptyAssembly } from './policy-assembly.ts';
 import { deletePolicy, policyPath, readPolicy, writePolicy } from './policy-wire.ts';
-import { declaredString, isMoved, judgeMove, policyKey, refuseMovedUpdate } from './rename.ts';
+import { policyKey } from './rename.ts';
+import { guardRename, judgeRename, nameIdentity } from './rename-identity.ts';
 
 /**
  * An OpenBao ACL policy, assembled from the HCL fragments that declare it.
@@ -99,6 +100,9 @@ export const BaoPolicy = Resource<BaoPolicy>('Bao.Policy', {
   defaultRemovalPolicy: 'retain',
 });
 
+/** A policy is its name, keyed as OpenBao keys it (`policyKey`). */
+const IDENTITY = nameIdentity<BaoPolicyAttributes>('Bao.Policy', policyPath, policyKey);
+
 /** `path "..."` grant count — the same number the apply script prints. */
 const grantsOf = (hcl: string) => (hcl.match(/^path /gm) ?? []).length;
 
@@ -156,9 +160,7 @@ export const BaoPolicyProvider = () =>
            *   delete, so a role outside this graph that names the old policy must move in the same
            *   PR (REPLACE.md).
            */
-          const tried = output?.name ?? declaredString(olds, 'name');
-          const declared = declaredString(news, 'name');
-          const move = yield* judgeMove('Bao.Policy', tried, declared, policyPath, policyKey);
+          const move = yield* judgeRename(IDENTITY, olds, news, output);
           if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
           // ⚠️ A prop can still be an unresolved Output or Config at plan time. Docker's
@@ -175,9 +177,7 @@ export const BaoPolicyProvider = () =>
         reconcile: Effect.fn(function* ({ news, output }) {
           const name = news.name;
           // ⛔ An `update` across a rename the diff could not see — refused before any write.
-          if (output !== undefined && isMoved(output.name, name, policyKey) === true) {
-            return yield* refuseMovedUpdate(`Bao.Policy ${name}`, output.name, name);
-          }
+          yield* guardRename(IDENTITY, news, output);
           const { joined, parts } = yield* assemble(news.fragments);
           /**
            * ⛔ AN EMPTY ASSEMBLY IS A REFUSAL, NOT AN EMPTY POLICY. `bao policy write` with

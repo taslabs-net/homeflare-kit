@@ -80,7 +80,18 @@ describe('hostAppRoles', () => {
     }
   });
 
-  it('refuses unknown classes, duplicate hosts and names that would blur the separator', () => {
+  it('gives a host in two classes one role per class', () => {
+    const hosts = [
+      { class: 'pve-node', name: 'node-c' },
+      { class: 'operator-signer', name: 'node-c' },
+    ];
+    assert.deepEqual(
+      hostAppRoles({ ...INPUT, hosts }).map((role) => role.name),
+      ['operator-signer--node-c', 'pve-node--node-c'],
+    );
+  });
+
+  it('refuses unknown classes, a host twice in one class and names that blur the separator', () => {
     const bad = [
       { class: 'nope', name: 'node-c' },
       { class: 'pve-node', name: 'node-a' },
@@ -93,7 +104,7 @@ describe('hostAppRoles', () => {
       (error: unknown) => {
         assert.ok(error instanceof Error);
         assert.match(error.message, /unknown class `nope`/);
-        assert.match(error.message, /`node-a` is listed twice/);
+        assert.match(error.message, /`node-a` is listed twice in class `pve-node`/);
         assert.match(error.message, /`node--x` is not lowercase/);
         assert.match(error.message, /`Node-Y` is not lowercase/);
         return true;

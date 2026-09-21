@@ -44,7 +44,6 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { baoDelete, baoRead, baoWrite } from './bao-http.ts';
-import { mountPath } from './mount-form.ts';
 import {
   type BaoPkiRoleAttributes,
   type BaoPkiRoleProps,
@@ -54,6 +53,7 @@ import {
   rolePath,
   writeBody,
 } from './pki-role-form.ts';
+import { guardRename, judgeRename, roleIdentity } from './rename-identity.ts';
 
 export type { BaoPkiRoleAttributes, BaoPkiRoleProps };
 
@@ -68,6 +68,13 @@ export interface BaoPkiRole extends Resource<
 export const BaoPkiRole = Resource<BaoPkiRole>('Bao.PkiRole', {
   defaultRemovalPolicy: 'retain',
 });
+
+/** Exact: the engine stores `role/<name>` verbatim (builtin/logical/pki/path_roles.go:963). */
+const IDENTITY = roleIdentity<BaoPkiRoleAttributes>(
+  'Bao.PkiRole',
+  (mount, name) => rolePath({ mount, name }),
+  'pki',
+);
 
 const readRole = (props: BaoPkiRoleProps) =>
   Effect.gen(function* () {
@@ -100,18 +107,21 @@ export const BaoPkiRoleProvider = () =>
          *   fields is also what stops a field being added to props and quietly forgotten in
          *   the comparison.
          */
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined || !isResolved(news)) return undefined;
+        diff: Effect.fn(function* ({ news, olds, output }) {
           /**
            * ⚠️ A ROLE IS IDENTIFIED BY MOUNT **AND** NAME. Moving a declaration to another
            *   engine is a different object under a different CA, never an in-place edit —
-           *   `replace`, so Alchemy creates the new one and retires the old.
+           *   `replace`, so Alchemy creates the new one and retires the old. Judged before
+           *   `isResolved(news)`, and ⛔ a move onto a role that exists fails the plan
+           *   (rename-identity.ts).
            * ⛔ A RENAME WAS NOT CAUGHT UNTIL 2026-09-21 (REPLACE.md): only the mount was compared,
            *   so a new `name` read nothing at the new path, planned `update`, wrote the new role,
            *   and left the old one issuing certificates under no state record at all.
            */
-          if (mountPath(news.mount ?? 'pki') !== output.mount || news.name !== output.name)
-            return { action: 'replace' } as const;
+          const move = yield* judgeRename(IDENTITY, olds, news, output);
+          if (output === undefined) return undefined;
+          if (move !== undefined) return { action: 'replace' } as const;
+          if (!isResolved(news)) return undefined;
           /**
            * ⚠️ A DECLARATION reconcile WOULD REFUSE MUST NEVER PLAN AS noop. An empty
            *   allowedDomains, or a duration OpenBao cannot parse, can compare equal to a
@@ -127,8 +137,10 @@ export const BaoPkiRoleProvider = () =>
             : ({ action: 'update' } as const);
         }),
 
-        reconcile: Effect.fn(function* ({ news }) {
+        reconcile: Effect.fn(function* ({ news, output }) {
           const path = rolePath(news);
+          // ⛔ An `update` across a move the diff could not see — refused before any write.
+          yield* guardRename(IDENTITY, news, output);
           /**
            * ⛔ AN EMPTY allowedDomains IS A REFUSAL, NOT AN EMPTY ROLE. `allow_any_name` is
            *   false on every live role, so a role with no allowed domains can issue NOTHING —

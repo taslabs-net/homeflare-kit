@@ -38,13 +38,7 @@ import {
   readCloudflareRole,
   writeCloudflareRole,
 } from './cloudflare-role-wire.ts';
-import {
-  declaredRolePath,
-  isMoved,
-  judgeMove,
-  refuseMovedUpdate,
-  triedRolePath,
-} from './rename.ts';
+import { guardRename, judgeRename, roleIdentity } from './rename-identity.ts';
 
 export type { BaoCloudflareRoleAttributes, BaoCloudflareRoleProps };
 
@@ -65,6 +59,9 @@ export interface BaoCloudflareRole extends Resource<
 export const BaoCloudflareRole = Resource<BaoCloudflareRole>('Bao.CloudflareRole', {
   defaultRemovalPolicy: 'retain',
 });
+
+/** Exact: a trailing `/` on the mount is the same path (`rolePath` trims it). */
+const IDENTITY = roleIdentity<BaoCloudflareRoleAttributes>('Bao.CloudflareRole', rolePath);
 
 export const BaoCloudflareRoleProvider = () =>
   Provider.effect(
@@ -131,9 +128,7 @@ export const BaoCloudflareRoleProvider = () =>
          *   and the old id leaves the stack as an orphan delete, which `retain` keeps live.
          */
         diff: Effect.fn(function* ({ news, olds, output }) {
-          const tried = triedRolePath(output, olds, rolePath);
-          const declared = declaredRolePath(news, rolePath);
-          const move = yield* judgeMove('Bao.CloudflareRole', tried, declared, (path) => path);
+          const move = yield* judgeRename(IDENTITY, olds, news, output);
           if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
@@ -153,10 +148,7 @@ export const BaoCloudflareRoleProvider = () =>
         reconcile: Effect.fn(function* ({ news, output }) {
           const path = rolePath(news.mount, news.name);
           // ⛔ An `update` across a move the diff could not see — refused before any write.
-          const before = output === undefined ? path : rolePath(output.mount, output.name);
-          if (isMoved(before, path) === true) {
-            return yield* refuseMovedUpdate('Bao.CloudflareRole', before, path);
-          }
+          yield* guardRename(IDENTITY, news, output);
           const refusal = refusalOf(news);
           if (refusal !== undefined) {
             return yield* Effect.die(new Error(`Bao.CloudflareRole ${path}: ${refusal}.`));

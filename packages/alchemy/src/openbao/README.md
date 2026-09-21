@@ -14,6 +14,9 @@ plus `FetchHttpClient.layer`.
   secret, a CA key, a plugin `env` or an OIDC client secret.
 - Every family defaults to `retain` on destroy. For what a rename does, read
   [REPLACE.md](./REPLACE.md) before you change any resource's path or name.
+- ⛔ A rename or move onto a name or path that already exists fails the plan, before anything is
+  written (every family but the mounts, whose moves are below). Move through a free name, in two
+  deploys, or remove the target first.
 
 ## assertBaoIdentity: call it first
 
@@ -70,9 +73,10 @@ export const hostRoles = Effect.gen(function* () {
 - A role is named `<class>--<host>`. Class and host names may contain only lowercase letters,
   digits and single hyphens.
 - It refuses `secretIdTtl` 0 (a secret_id that never expires), empty policies, `root`, unknown
-  classes and duplicate hosts.
+  classes and a host listed twice in one class. A host in several classes gets one role per class.
 - ⚠️ Renaming a host or class makes a new role. Under `retain` the old one stays live and keeps
-  admitting its secret_ids (REPLACE.md).
+  admitting its secret_ids (REPLACE.md). Under `destroy` its secret_ids go, but tokens it already
+  issued run to their TTL: deleting a role revokes no token.
 
 ## BaoJwtRole / BaoKubernetesRole / BaoJwtAuthConfig
 

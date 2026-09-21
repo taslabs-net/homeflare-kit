@@ -9,7 +9,8 @@
  *   and nothing else (path_role.go:239-256).
  *
  * ★ REPLACE SEMANTICS (REPLACE.md): `mount` or `name` changed → `replace`, create-first (the new
- *   path cannot collide). Under the default `retain` the old role stays live until removed by hand.
+ *   path cannot collide with the old). Under the default `retain` the old role stays live until
+ *   removed by hand. ⛔ A move onto a role that already exists fails the plan (rename-identity.ts).
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
@@ -22,11 +23,11 @@ import {
   type BaoKubernetesRoleProps,
   attributesOf,
   matches,
-  mountOf,
   problems,
   rolePath,
   writeBody,
 } from './kubernetes-role-form.ts';
+import { foldName, guardRename, judgeRename, roleIdentity } from './rename-identity.ts';
 import { type RoleSpec, planRole, readRoleAt, reconcileRole } from './role-reconcile.ts';
 
 export type {
@@ -46,6 +47,14 @@ export interface BaoKubernetesRole extends Resource<
 export const BaoKubernetesRole = Resource<BaoKubernetesRole>('Bao.KubernetesRole', {
   defaultRemovalPolicy: 'retain',
 });
+
+/** The name folded, as the server stores it (`foldName`). */
+const IDENTITY = roleIdentity<BaoKubernetesRoleAttributes>(
+  'Bao.KubernetesRole',
+  (mount, name) => rolePath({ mount, name }),
+  'kubernetes',
+  foldName,
+);
 
 export const kubernetesRoleSpec = (
   props: BaoKubernetesRoleProps,
@@ -72,15 +81,18 @@ export const BaoKubernetesRoleProvider = () =>
         }),
 
         /** ⛔ IT COMPARES THE LIVE ROLE, NOT THE STORED DIGEST. */
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined || !isResolved(news)) return undefined;
-          if (mountOf(news) !== output.mount || news.name !== output.name) {
-            return { action: 'replace' } as const;
-          }
+        diff: Effect.fn(function* ({ news, olds, output }) {
+          // ⛔ The identity first, before isResolved; onto a role that exists fails the plan.
+          const move = yield* judgeRename(IDENTITY, olds, news, output);
+          if (output === undefined) return undefined;
+          if (move !== undefined) return { action: 'replace' } as const;
+          if (!isResolved(news)) return undefined;
           return { action: yield* planRole(kubernetesRoleSpec(news)) } as const;
         }),
 
-        reconcile: Effect.fn(function* ({ news }) {
+        reconcile: Effect.fn(function* ({ news, output }) {
+          // ⛔ An `update` across a move the diff could not see — refused before any write.
+          yield* guardRename(IDENTITY, news, output);
           return yield* reconcileRole(kubernetesRoleSpec(news));
         }),
 

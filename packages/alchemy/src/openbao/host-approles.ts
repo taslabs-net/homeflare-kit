@@ -96,14 +96,24 @@ export const hostAppRoles = (input: HostAppRolesInput): readonly BaoAuthRoleProp
   const problems = Object.entries(input.classes).flatMap(([name, spec]) =>
     classProblems(name, spec),
   );
+  /**
+   * ⛔ DEDUPED ON THE ROLE NAME, NOT THE HOST NAME. A host may sit in several classes (one machine
+   *   that is both a signer and a node), and each class gives it its own role: `<class>--<host>`
+   *   differs, so nothing collides. Until 2026-09-21 this keyed on the host alone and refused that
+   *   estate outright. What it must still refuse is the same host twice in ONE class: two
+   *   declarations of one role name, so one AppRole that two resources would each claim.
+   */
   const seen = new Set<string>();
   const roles: BaoAuthRoleProps[] = [];
   for (const host of input.hosts) {
     if (!NAME.test(host.name)) {
       problems.push(`host \`${host.name}\` is not lowercase letters, digits, single hyphens`);
     }
-    if (seen.has(host.name)) problems.push(`host \`${host.name}\` is listed twice`);
-    seen.add(host.name);
+    const name = hostRoleName(host.class, host.name);
+    if (seen.has(name)) {
+      problems.push(`host \`${host.name}\` is listed twice in class \`${host.class}\``);
+    }
+    seen.add(name);
     const spec = input.classes[host.class];
     if (spec === undefined) {
       problems.push(`host \`${host.name}\` names unknown class \`${host.class}\``);
@@ -111,7 +121,7 @@ export const hostAppRoles = (input: HostAppRolesInput): readonly BaoAuthRoleProp
     }
     roles.push({
       bindSecretId: true,
-      name: hostRoleName(host.class, host.name),
+      name,
       secretIdNumUses: spec.secretIdNumUses ?? 0,
       secretIdTtl: spec.secretIdTtl,
       tokenMaxTtl: spec.tokenMaxTtl,

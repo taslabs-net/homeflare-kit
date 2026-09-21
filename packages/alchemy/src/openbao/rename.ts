@@ -1,6 +1,7 @@
 /**
- * Rename safety for the families whose identity is a name, or a mount and a name: Bao.Policy,
- * Bao.CloudflareRole and Bao.ProxmoxRole. REPLACE.md has the audit and what each answer does.
+ * Rename safety for the families whose identity is a name, a mount and a name, or a catalog key:
+ * the primitives. rename-identity.ts builds each family's diff and reconcile step from them, and
+ * REPLACE.md has the audit and what each answer does.
  *
  * ⛔ THE BUG THIS CLOSES, REPRODUCED 2026-09-21 AGAINST alchemy@2.0.0-beta.79's OWN PLAN AND APPLY
  *   (fake-stack.ts): a Bao.Policy deployed as `old`, then redeclared as `new` under
@@ -46,12 +47,26 @@ export const isPendingProp = (news: unknown, key: string): boolean => {
   return value !== undefined && typeof value !== 'string';
 };
 
-/** A role's API path from a diff's `news`, once both `mount` and `name` are resolved. */
+/**
+ * An optional string prop: `fallback` when it is absent, undefined while it is still an Output.
+ * ⚠️ Not `declaredString(…) ?? fallback`, which would read a pending mount as the default mount.
+ */
+export const declaredOr = (news: unknown, key: string, fallback: string): string | undefined =>
+  isPendingProp(news, key) ? undefined : (declaredString(news, key) ?? fallback);
+
+/**
+ * A role's API path from a diff's `news`, once both `mount` and `name` are resolved. `defaultMount`
+ * is what an absent `mount` means; without one, an absent mount is unknown.
+ */
 export const declaredRolePath = (
   news: unknown,
   rolePath: (mount: string, name: string) => string,
+  defaultMount?: string,
 ): string | undefined => {
-  const mount = declaredString(news, 'mount');
+  const mount =
+    defaultMount === undefined
+      ? declaredString(news, 'mount')
+      : declaredOr(news, 'mount', defaultMount);
   const name = declaredString(news, 'name');
   return mount === undefined || name === undefined ? undefined : rolePath(mount, name);
 };
@@ -84,17 +99,6 @@ export const isMoved = (
   declared: string | undefined,
   key: (identity: string) => string = exact,
 ): boolean | undefined => (declared === undefined ? undefined : key(stored) !== key(declared));
-
-/**
- * The role path a resource last wrote, or last tried to: its attributes once a write finished, else
- * the props of the create or replacement that did not (`output` is undefined for both).
- */
-export const triedRolePath = (
-  output: { readonly mount: string; readonly name: string } | undefined,
-  olds: unknown,
-  rolePath: (mount: string, name: string) => string,
-): string | undefined =>
-  output === undefined ? declaredRolePath(olds, rolePath) : rolePath(output.mount, output.name);
 
 /**
  * The diff's first question, asked before `isResolved(news)`: the move from the identity this
