@@ -38,6 +38,13 @@ import {
   readCloudflareRole,
   writeCloudflareRole,
 } from './cloudflare-role-wire.ts';
+import {
+  declaredRolePath,
+  isMoved,
+  judgeMove,
+  refuseMovedUpdate,
+  triedRolePath,
+} from './rename.ts';
 
 export type { BaoCloudflareRoleAttributes, BaoCloudflareRoleProps };
 
@@ -112,14 +119,24 @@ export const BaoCloudflareRoleProvider = () =>
          *   OpenBao UI changes what every future token can do while the digest in Postgres still
          *   says everything is fine.
          *
-         * ⚠️ NO `replace`, EVEN FOR A NAME OR MOUNT CHANGE. A different path is a different object,
-         *   so diff reads the new path, finds it absent and plans `update`; reconcile creates it and
-         *   the old role is left live, retained and unmanaged — the same outcome apply-roles.py's
-         *   UNTRACKED report had. declareCloudflareRoles puts mount and name in the resource id, so
-         *   a rename there is a new resource anyway.
+         * ⛔ A NEW `mount` OR `name` IS A `replace`, DECIDED BEFORE ANY OTHER READ (rename.ts). Until
+         *   2026-09-21 this read the new path, found it absent and planned `update`: reconcile wrote
+         *   the new role and the old one stayed live and mintable under no state record. ⛔ A move
+         *   onto a role that already exists fails the plan (`judgeMove`).
+         * ⚠️ UNDER THE DEFAULT `retain` THE OLD ROLE STILL MINTS for any token whose policy reaches its
+         *   `creds/<name>`. Under `destroy` every consumer still minting from the old path fails at
+         *   the delete, so move them in the same PR (REPLACE.md).
+         * ★ A STACK THAT PUTS mount AND name IN THE LOGICAL ID never reaches this branch
+         *   (homeflare-openbao's declareCloudflareRoles does). There a rename is a new logical id,
+         *   and the old id leaves the stack as an orphan delete, which `retain` keeps live.
          */
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined || !isResolved(news)) return undefined;
+        diff: Effect.fn(function* ({ news, olds, output }) {
+          const tried = triedRolePath(output, olds, rolePath);
+          const declared = declaredRolePath(news, rolePath);
+          const move = yield* judgeMove('Bao.CloudflareRole', tried, declared, (path) => path);
+          if (output === undefined) return undefined;
+          if (move !== undefined) return { action: 'replace' } as const;
+          if (!isResolved(news)) return undefined;
           /**
            * ⚠️ A DECLARATION reconcile WOULD REFUSE MUST NEVER PLAN AS noop — route it to reconcile,
            *   which says why (pki-role.ts has the same guard).
@@ -133,8 +150,13 @@ export const BaoCloudflareRoleProvider = () =>
             : ({ action: 'update' } as const);
         }),
 
-        reconcile: Effect.fn(function* ({ news }) {
+        reconcile: Effect.fn(function* ({ news, output }) {
           const path = rolePath(news.mount, news.name);
+          // ⛔ An `update` across a move the diff could not see — refused before any write.
+          const before = output === undefined ? path : rolePath(output.mount, output.name);
+          if (isMoved(before, path) === true) {
+            return yield* refuseMovedUpdate('Bao.CloudflareRole', before, path);
+          }
           const refusal = refusalOf(news);
           if (refusal !== undefined) {
             return yield* Effect.die(new Error(`Bao.CloudflareRole ${path}: ${refusal}.`));

@@ -40,15 +40,25 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
-import { baoDelete, baoRead, baoWrite } from './bao-http.ts';
+import { baoDelete, baoWrite } from './bao-http.ts';
 import {
   type BaoProxmoxRoleAttributes,
   type BaoProxmoxRoleProps,
-  attributesOf,
   matches,
+  rescopeRefusal,
   rolePath,
   writeBody,
 } from './proxmox-role-form.ts';
+import { readRole } from './proxmox-role-wire.ts';
+import {
+  declaredRolePath,
+  declaredString,
+  isMoved,
+  isPendingProp,
+  judgeMove,
+  refuseMovedUpdate,
+  triedRolePath,
+} from './rename.ts';
 
 export type { BaoProxmoxRoleAttributes, BaoProxmoxRoleProps };
 
@@ -63,21 +73,6 @@ export interface BaoProxmoxRole extends Resource<
 export const BaoProxmoxRole = Resource<BaoProxmoxRole>('Bao.ProxmoxRole', {
   defaultRemovalPolicy: 'retain',
 });
-
-/**
- * ⚠️ A missing MOUNT and a missing ROLE both read as undefined here, because both answer 404:
- *   an absent role is a read that found nothing, and a path under no mount is OpenBao's
- *   unsupported-path error, which is also a 404 (sdk/logical/response_util.go). They are not the
- *   same failure — one is a typo in `mount`, the other is a role that has yet to be created — so
- *   reconcile lets OpenBao's own `errors` through on the write rather than inventing a message.
- *   A bad mount says "no handler for route".
- */
-const readRole = (props: BaoProxmoxRoleProps) =>
-  Effect.gen(function* () {
-    const live = yield* baoRead(rolePath(props.mount, props.name));
-    if (live === undefined) return undefined;
-    return attributesOf(props, live);
-  });
 
 export const BaoProxmoxRoleProvider = () =>
   Provider.effect(
@@ -103,8 +98,35 @@ export const BaoProxmoxRoleProvider = () =>
          *   says everything is fine — exactly the drift the hand-written check-* gates exist to
          *   catch, and exactly what a provider that trusted its own state would walk past.
          */
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined || !isResolved(news)) return undefined;
+        diff: Effect.fn(function* ({ news, olds, output }) {
+          /**
+           * ⛔ A NEW `mount` OR `name` IS A `replace` (rename.ts). It is a DIFFERENT path, so none of
+           *   the reasons below apply. Until 2026-09-21 it planned `update` and left the old role
+           *   minting under no state record. Under the default `retain` the old role still mints;
+           *   under `destroy` its consumers fail at the delete (REPLACE.md). ⛔ A move onto a role
+           *   that already exists fails the plan (`judgeMove`).
+           * ⛔ THE RE-SCOPE GUARD TRAVELS WITH THE RENAME, checked here because the new generation's
+           *   reconcile finds no live role to compare. While `mintUser` or `allowMintUserChange` is
+           *   still an Output it cannot be checked, so the diff defers, and reconcile refuses the
+           *   resulting `update`.
+           */
+          const tried = triedRolePath(output, olds, rolePath);
+          const declared = declaredRolePath(news, rolePath);
+          const move = yield* judgeMove('Bao.ProxmoxRole', tried, declared, (path) => path);
+          if (output === undefined) return undefined;
+          if (move !== undefined) {
+            const mintUser = declaredString(news, 'mintUser');
+            if (mintUser === undefined || isPendingProp(news, 'allowMintUserChange'))
+              return undefined;
+            const from = (yield* readRole(output))?.mintUser ?? output.mintUser;
+            const allow = declaredString(news, 'allowMintUserChange');
+            const refusal = rescopeRefusal(from, mintUser, allow);
+            if (refusal === undefined) return { action: 'replace' } as const;
+            return yield* Effect.die(
+              new Error(`Bao.ProxmoxRole ${move.from} → ${move.to}: the rename ${refusal}`),
+            );
+          }
+          if (!isResolved(news)) return undefined;
           const live = yield* readRole(news);
           if (live === undefined) return { action: 'update' } as const;
           if (matches(live, news)) return { action: 'noop' } as const;
@@ -126,7 +148,13 @@ export const BaoProxmoxRoleProvider = () =>
           return { action: 'update' } as const;
         }),
 
-        reconcile: Effect.fn(function* ({ news }) {
+        reconcile: Effect.fn(function* ({ news, output }) {
+          const path = rolePath(news.mount, news.name);
+          // ⛔ An `update` across a move the diff could not see — refused before any read or write.
+          const before = output === undefined ? path : rolePath(output.mount, output.name);
+          if (isMoved(before, path) === true) {
+            return yield* refuseMovedUpdate('Bao.ProxmoxRole', before, path);
+          }
           const live = yield* readRole(news);
           /**
            * ⛔ A mint_user CHANGE RE-SCOPES EVERY CREDENTIAL THE ROLE WILL EVER MINT, SILENTLY.
@@ -137,20 +165,15 @@ export const BaoProxmoxRoleProvider = () =>
            *   move unless the declaration NAMES THE VALUE IT IS REPLACING. Creating a role never
            *   trips this — there is nothing to re-scope — and the permission expires by itself
            *   once the change lands, because live then equals the declaration.
+           * ⚠️ A RENAME CREATES A NEW ROLE, SO IT NEVER REACHES THIS CHECK. The diff asks the same
+           *   question of the role being replaced (`rescopeRefusal`, proxmox-role-form.ts).
            */
-          if (
-            live !== undefined &&
-            live.mintUser !== news.mintUser &&
-            news.allowMintUserChange !== live.mintUser
-          ) {
-            return yield* Effect.die(
-              new Error(
-                `Bao.ProxmoxRole ${rolePath(news.mount, news.name)}: live mint_user ` +
-                  `${live.mintUser} != declared ${news.mintUser}. Every token this role mints ` +
-                  'inherits the ACL of that PVE user. To re-scope deliberately, declare ' +
-                  `allowMintUserChange: '${live.mintUser}'.`,
-              ),
-            );
+          const rescope =
+            live === undefined
+              ? undefined
+              : rescopeRefusal(live.mintUser, news.mintUser, news.allowMintUserChange);
+          if (rescope !== undefined) {
+            return yield* Effect.die(new Error(`Bao.ProxmoxRole ${path}: ${rescope}`));
           }
           if (live === undefined || !matches(live, news)) {
             const write = writeBody(news);
@@ -164,18 +187,18 @@ export const BaoProxmoxRoleProvider = () =>
             if (!write.ok) {
               return yield* Effect.die(
                 new Error(
-                  `Bao.ProxmoxRole ${rolePath(news.mount, news.name)}: unparseable duration ` +
+                  `Bao.ProxmoxRole ${path}: unparseable duration ` +
                     `${write.bad.join(', ')}. Use 30s / 5m / 1h / 1d, or 0.`,
                 ),
               );
             }
-            yield* baoWrite('PUT', rolePath(news.mount, news.name), write.body);
+            yield* baoWrite('PUT', path, write.body);
           }
           const after = yield* readRole(news);
           if (after === undefined) {
             return yield* Effect.die(
               new Error(
-                `Bao.ProxmoxRole ${rolePath(news.mount, news.name)}: write returned no error ` +
+                `Bao.ProxmoxRole ${path}: write returned no error ` +
                   'but the role is still absent.',
               ),
             );
@@ -197,7 +220,9 @@ export const BaoProxmoxRoleProvider = () =>
          *   So this is an availability change for every consumer of `creds/<name>` and NOT a
          *   containment action: to contain a leaked credential, revoke the lease (which deletes
          *   the PVE token) or delete the token in PVE. Deleting the role only hides the door it
-         *   came through. REASONED from Vault lease semantics; not exercised here.
+         *   came through. The plugin's own test pins this (homeflare-openbao-plugins,
+         *   TestDeletingARoleLeavesItsOutstandingLeasesRevocable): the delete is one storage
+         *   delete, and each lease stays revocable without the role.
          *
          * ⚠️ IDEMPOTENT AS ALCHEMY REQUIRES — already gone is success. It used to get that by
          *   going through `baoReadText`, which discarded the exit code entirely, so a REFUSED

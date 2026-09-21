@@ -1,43 +1,24 @@
 /**
- * Bao.Policy's calls against a fake that behaves like OpenBao where it matters: it STRIPS the
- * policy's trailing newline on write (measured on the live server — see digest.ts), answers 404 for
- * a policy it does not have, and 204 for a delete whether or not the policy existed.
+ * Bao.Policy's calls against a fake that behaves like OpenBao where it matters (fake-engines.ts): it
+ * STRIPS the policy's trailing newline on write (measured on the live server — see digest.ts),
+ * answers 404 for a policy it does not have, and 204 for a delete whether or not it existed.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { BaoError } from './bao-status.ts';
 import { sha256 } from './digest.ts';
-import { type Seen, run, runFailure, withFake } from './fake-bao.ts';
+import { run, runFailure, withFake } from './fake-bao.ts';
+import { aclPolicies } from './fake-engines.ts';
 import { deletePolicy, readPolicy, writePolicy } from './policy-wire.ts';
 
 const PREFIX = '/v1/sys/policies/acl/';
-
-const policyStore = () => {
-  const policies = new Map<string, string>();
-  return (seen: Seen) => {
-    const name = seen.path.slice(PREFIX.length);
-    if (seen.method === 'PUT') {
-      const { policy } = JSON.parse(seen.body) as { policy: string };
-      policies.set(name, policy.replace(/\n+$/, ''));
-      return { status: 204 };
-    }
-    if (seen.method === 'DELETE') {
-      policies.delete(name);
-      return { status: 204 };
-    }
-    const policy = policies.get(name);
-    return policy === undefined
-      ? { json: { errors: [] }, status: 404 }
-      : { json: { data: { name, policy } }, status: 200 };
-  };
-};
 
 /** Two fragments, each followed by a newline — exactly how policy.ts assembles them. */
 const ASSEMBLED = 'path "kv/data/a" {\n  capabilities = ["read"]\n}\n' + 'path "kv/data/b" {}\n';
 
 describe('policy wire', () => {
   it('reads a policy that was never written as absent', async () => {
-    await withFake(policyStore(), async (bao) => {
+    await withFake(aclPolicies(), async (bao) => {
       assert.equal(await run({ BAO_ADDR: bao.address }, readPolicy('zz-new-policy')), '');
     });
   });
@@ -45,7 +26,7 @@ describe('policy wire', () => {
   // ⛔ THE FOREVER-DIFF. Live text comes back one newline short; the digests must still agree, or
   //    every plan says `update` and reconcile rewrites a policy that already matches.
   it('round-trips through the stripped newline with equal digests', async () => {
-    await withFake(policyStore(), async (bao) => {
+    await withFake(aclPolicies(), async (bao) => {
       const env = { BAO_ADDR: bao.address };
       await run(env, writePolicy('homeflare-llm', ASSEMBLED));
       assert.equal(bao.seen[0]?.method, 'PUT');
