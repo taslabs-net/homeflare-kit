@@ -15,7 +15,7 @@ import {
   fileProblems,
 } from './host-file-form.ts';
 import { sha256Hex } from './job-form.ts';
-import { type HostRunner, canActAsRoot } from './runner.ts';
+import { type HostRunner, type WriteOptions, canActAsRoot } from './runner.ts';
 
 type Desired = {
   readonly bytes: Uint8Array;
@@ -72,29 +72,52 @@ export const readFileAttributes = async (
   };
 };
 
+const writeOptionsOf = (want: Desired): WriteOptions => ({
+  mode: want.mode,
+  ...(want.uid === undefined ? {} : { uid: want.uid }),
+  ...(want.gid === undefined ? {} : { gid: want.gid }),
+});
+
 const matches = (live: HostFileAttributes, want: Desired): boolean =>
   live.sha256 === want.sha256 &&
   live.mode === want.mode &&
   (want.uid === undefined || live.uid === want.uid) &&
   (want.gid === undefined || live.gid === want.gid);
 
+/**
+ * ★ A PLAN THAT WILL WRITE ASKS THE RUNNER FIRST (`checkWrite`, when it has one): sudoRunner's
+ *   refusals — a setuid or group-writable root file, a directory under a prefix another user may
+ *   change — then fail the plan, before any resource is applied, instead of halfway through it.
+ */
 export const diffFile = async (
   runner: HostRunner,
   news: HostFileProps,
   output: HostFileAttributes,
 ): Promise<Diff> => {
-  // ★ Create-before-delete: two paths can hold two files at once, so nothing forces deleteFirst.
-  if (news.path !== output.path) return { action: 'replace' };
   const want = await desiredFile(runner, news);
-  if (want.sha256 !== output.sha256) return { action: 'update' };
+  const writes = async (diff: Diff): Promise<Diff> => {
+    await runner.checkWrite?.(news.path, writeOptionsOf(want));
+    return diff;
+  };
+  // ★ Create-before-delete: two paths can hold two files at once, so nothing forces deleteFirst.
+  if (news.path !== output.path) return writes({ action: 'replace' });
+  if (want.sha256 !== output.sha256) return writes({ action: 'update' });
   const live = await readFileAttributes(runner, news.path);
-  return live !== undefined && matches(live, want) ? { action: 'noop' } : { action: 'update' };
+  return live !== undefined && matches(live, want)
+    ? { action: 'noop' }
+    : writes({ action: 'update' });
 };
 
+/**
+ * `adopt` is what `--adopt` / `adopt(…)` resolve to for this resource (ownership/adopt.ts). It lets a
+ * CREATE take over a file already at the path — the takeover the plan's probe would have allowed,
+ * had it run — and nothing else: a move onto an occupied path stays refused.
+ */
 export const reconcileFile = async (
   runner: HostRunner,
   props: HostFileProps,
   output?: HostFileAttributes,
+  adopt = false,
 ): Promise<HostFileAttributes> => {
   const want = await desiredFile(runner, props);
   // ⛔ NO SILENT SUDO: handing a file to another user is root's call (chown(2)), so say so up front.
@@ -120,11 +143,14 @@ export const reconcileFile = async (
   const prior = moved ? undefined : output;
   /**
    * ⛔ A FILE THIS RESOURCE DOES NOT OWN IS NEVER OVERWRITTEN. With no prior state for this path,
-   *   the engine's adoption probe has already refused anything it found — except at the new path of
-   *   a replace, where it reads nothing. A path typo there would otherwise overwrite, say, a system
-   *   file that a fresh declaration of the same path would have been refused as `Unowned`.
+   *   the engine's adoption probe has already refused anything it found — except where it never
+   *   looked: the new path of a replace, and a create whose props still held an Output at plan
+   *   time. A path typo there would otherwise overwrite, say, a system file that a fresh
+   *   declaration of the same path would have been refused as `Unowned`. ★ With adoption on, a
+   *   create takes it over, as the probe would have let it (decided 2026-09-21).
    */
-  if (prior === undefined && before !== undefined && !matches(before, want)) {
+  const takeOver = adopt && output === undefined;
+  if (prior === undefined && before !== undefined && !matches(before, want) && !takeOver) {
     throw refuse(
       props.path,
       'already exists and is not this resource. Remove it, or declare it as a new resource and ' +
@@ -132,11 +158,7 @@ export const reconcileFile = async (
     );
   }
   if (before === undefined || !matches(before, want)) {
-    await runner.writeFileAtomic(props.path, want.bytes, {
-      mode: want.mode,
-      ...(want.uid === undefined ? {} : { uid: want.uid }),
-      ...(want.gid === undefined ? {} : { gid: want.gid }),
-    });
+    await runner.writeFileAtomic(props.path, want.bytes, writeOptionsOf(want));
   }
   // ⚠️ READ BACK, never echo the declaration: a umask, an ACL or a runner that ignored `uid` shows
   //   up here as a refusal instead of as a forever-`update`.

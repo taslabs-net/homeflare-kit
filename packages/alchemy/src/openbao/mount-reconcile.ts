@@ -4,6 +4,7 @@
  */
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type { Claim } from '../ownership/adopt.ts';
 import type { BaoError } from './bao-status.ts';
 import {
   type BaoMountAttributes,
@@ -37,22 +38,31 @@ const moveTarget = (props: BaoMountProps): MoveTarget => ({
 /**
  * Converge one mount. `stated` is the path in Alchemy's state (undefined on a first reconcile).
  * Dies on a refusal; fails with OpenBao's own error on a refused call.
+ * ⛔ `claim` (mount.ts always passes it) refuses, before any write, a first reconcile that would take
+ *   over a live mount: the one at the path, or the `remountFrom` source it would move
+ *   (ownership/adopt.ts).
  */
 export const reconcileMount = (
   news: BaoMountProps,
   stated: string | undefined,
   options?: RemountOptions,
+  claim?: Claim,
 ): Effect.Effect<BaoMountAttributes, BaoError | RemountError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const move = planMove('Bao.Mount', stated, news.path, news.remountFrom);
     if (move.kind === 'refuse') return yield* Effect.die(new Error(move.message));
+    const first = stated === undefined ? claim : undefined;
+    if (first !== undefined && move.kind === 'move') {
+      const source = yield* readMount({ ...news, path: move.from });
+      if (source !== undefined) yield* first(`Bao.Mount ${move.from} (the remountFrom source)`);
+    }
     if (move.kind === 'move') yield* performMove(moveTarget(news), move.from, options);
 
     let live = yield* readMount(news);
     if (live === undefined) {
       yield* enableMount(news);
       if (wantsTune(news)) yield* tuneMount(news);
-    } else if (!matches(live, news)) {
+    } else {
       if (live.type !== news.type) {
         return yield* Effect.die(
           new Error(
@@ -61,7 +71,8 @@ export const reconcileMount = (
           ),
         );
       }
-      yield* tuneMount(news);
+      if (first !== undefined) yield* first(`Bao.Mount ${mountPath(news.path)}`);
+      if (!matches(live, news)) yield* tuneMount(news);
     }
     live = yield* readMount(news);
     if (live === undefined) {

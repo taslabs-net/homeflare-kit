@@ -9,8 +9,9 @@ argv shapes, logging each one. It is an explicit opt-in: nothing falls back to i
 import { launchdProviders, sudoRunner } from '@homeflare/alchemy/launchd';
 
 const runner = sudoRunner({
-  // ⛔ Required: the directories root may write. Each must be a real directory that root owns
-  //   and only root may write; that is checked at every privileged call.
+  // ⛔ Required: the directories root may write. Each — and every directory below it on the way
+  //   to a file — must be a real directory that root owns and only root may write; that is
+  //   checked at every privileged call.
   prefixes: ['/Library/LaunchDaemons', '/opt/example'],
   // log: (line) => …, // default: one line on stderr per privileged call
 });
@@ -45,6 +46,12 @@ Each is `/usr/bin/sudo -n -- <argv>`, every program by absolute path, never thro
 
 ★ So **a plan never calls sudo.** `read` and `diff` are reads; only an apply elevates.
 
+★ **A plan that will write runs the checks below first** (`HostRunner.checkWrite`): a `HostFile`
+or `LaunchdJob` diff that plans an update or a replace asks the runner, as you, whether it would
+refuse that write. A refusal then fails the plan before any resource is applied, instead of the
+apply halfway through. A create has no diff, so its refusal still comes at the write — before
+sudo.
+
 ## Refused before sudo is asked
 
 - Any other argv. That includes a bare `bootout system` (which removes the whole system domain),
@@ -57,6 +64,13 @@ Each is `/usr/bin/sudo -n -- <argv>`, every program by absolute path, never thro
   the next boot.
 - A prefix that is missing, a symlink, not owned by root, or writable by group or other. ⛔ A
   symlinked prefix makes root write wherever it points, a path the log never names.
+- **A directory between the prefix and the file** that is not owned by root, or that group or
+  other may write (checked since 0.9.0). ⛔ Its owner, or anyone who may write it, could swap
+  what lies under it for a symlink between the check and the call.
+- **A root-owned file that would be group- or world-writable, setuid or setgid** (`mode & 0o6022`;
+  an omitted owner is root). ⛔ Anyone in that class could rewrite a file root installed (a
+  daemon's config, a script it runs), and a setuid root file runs as root for whoever executes it.
+  A file handed to another user (`owner`) is theirs to change, so its mode is theirs too.
 - A path outside every prefix that needs root: another user as the owner, say.
 - A symlink or missing directory between the prefix and the file, or anything but a regular file
   at the path. ⚠️ `install src <directory>` copies _into_ the directory, and a symlink to one does
@@ -115,8 +129,7 @@ record of what ran as root.
   remove, then an add.
 - ⚠️ **Under a prefix, the runner writes as root.** An omitted owner is root, and an omitted group
   is the directory's group (a new file's group on macOS).
-- ⚠️ **The checks guard against a mistaken declaration, not against a hostile one.** They run as
-  you, just before the call. The prefix itself must be root-only, but a directory _below_ it that
-  another user owns is not checked for that, and that user could swap what lies under it in
-  between. Keep every directory under a prefix root-owned, too. ACLs are not read, only mode bits.
+- ⚠️ **The checks run as you, just before the call.** Every directory from the prefix down must be
+  root-only, so no other user can swap a path in between; root itself still could. ACLs are not
+  read, only mode bits.
 - ⛔ **macOS hosts.** Every argv shape was checked against macOS 27.2 man pages.

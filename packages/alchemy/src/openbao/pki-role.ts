@@ -43,6 +43,9 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { refuseTakeover } from '../ownership/adopt.ts';
+import { ownedRead } from '../ownership/probe.ts';
+import { noteResume } from '../ownership/resume.ts';
 import { baoDelete, baoRead, baoWrite } from './bao-http.ts';
 import {
   type BaoPkiRoleAttributes,
@@ -95,8 +98,13 @@ export const BaoPkiRoleProvider = () =>
          */
         list: () => Effect.succeed([]),
 
-        read: Effect.fn(function* ({ olds }) {
-          return yield* readRole(olds);
+        /** ⛔ Stateless: `Unowned` unless our own interrupted create made it (ownership/probe.ts). */
+        read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
+          const found = yield* readRole(olds);
+          const ours = Effect.sync(
+            () => found !== undefined && problems(olds).length === 0 && matches(found, olds),
+          );
+          return yield* ownedRead({ fqn, instanceId, output }, found, ours);
         }),
 
         /**
@@ -107,7 +115,7 @@ export const BaoPkiRoleProvider = () =>
          *   fields is also what stops a field being added to props and quietly forgotten in
          *   the comparison.
          */
-        diff: Effect.fn(function* ({ news, olds, output }) {
+        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
           /**
            * ⚠️ A ROLE IS IDENTIFIED BY MOUNT **AND** NAME. Moving a declaration to another
            *   engine is a different object under a different CA, never an in-place edit —
@@ -119,7 +127,7 @@ export const BaoPkiRoleProvider = () =>
            *   and left the old one issuing certificates under no state record at all.
            */
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return undefined;
+          if (output === undefined) return yield* noteResume(instanceId);
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           /**
@@ -137,7 +145,7 @@ export const BaoPkiRoleProvider = () =>
             : ({ action: 'update' } as const);
         }),
 
-        reconcile: Effect.fn(function* ({ news, output }) {
+        reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
           const path = rolePath(news);
           // ⛔ An `update` across a move the diff could not see — refused before any write.
           yield* guardRename(IDENTITY, news, output);
@@ -153,6 +161,8 @@ export const BaoPkiRoleProvider = () =>
             return yield* Effect.die(new Error(`Bao.PkiRole ${path}: ${bad.join(' ')}`));
           }
           const live = yield* readRole(news);
+          if (live !== undefined)
+            yield* refuseTakeover({ fqn, instanceId, output }, `Bao.PkiRole ${path}`);
           if (live === undefined || !matches(live, news)) {
             yield* baoWrite('PUT', path, writeBody(news));
           }

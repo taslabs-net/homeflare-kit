@@ -21,7 +21,7 @@ import {
 } from './job-form.ts';
 import { identityProblems, jobProblems } from './job-validate.ts';
 import { type ServiceStatus, isDisabled, printService } from './launchctl.ts';
-import { type HostRunner, canActAsRoot } from './runner.ts';
+import { type HostRunner, type WriteOptions, canActAsRoot } from './runner.ts';
 
 export type Location = {
   readonly domain: ParsedDomain;
@@ -30,6 +30,22 @@ export type Location = {
 };
 
 export type Identity = Pick<LaunchdJobProps, 'label' | 'domain'>;
+
+/**
+ * ⚠️ launchd refuses a daemon plist that is not root:wheel or is group/world-writable ("bad
+ *   ownership/permissions"), so the system domain always writes 0644 root:wheel. An agent's plist
+ *   belongs to its user. REASONED from launchd's documented behaviour, not measured here (no
+ *   bootstrap was run to write this); the nix-darwin daemons on the reference host are 0644 root.
+ */
+export const plistWriteOptions = (domain: ParsedDomain): WriteOptions =>
+  domain.kind === 'system' ? { gid: 0, mode: 0o644, uid: 0 } : { mode: 0o644, uid: domain.uid };
+
+/**
+ * PLAN TIME, for a plan that will write the plist: the runner's own pre-write refusals
+ * (HostRunner.checkWrite — sudoRunner's directory and mode checks), reading only.
+ */
+export const checkPlistWrite = async (runner: HostRunner, location: Location): Promise<void> =>
+  runner.checkWrite?.(location.plistPath, plistWriteOptions(location.domain));
 
 export const refuse = (label: string, message: string): Error =>
   new Error(`Launchd.Job ${label}: ${message}`);
@@ -150,4 +166,5 @@ export const assertReplaceable = async (
   assertMayWrite(runner, old.label, oldDomain);
   const { location, status } = await preflight(runner, next);
   await assertUnclaimed(runner, next.label, location, status, renderedSha256);
+  await checkPlistWrite(runner, location);
 };

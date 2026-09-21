@@ -22,6 +22,9 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { claimFor } from '../ownership/adopt.ts';
+import { ownedRead } from '../ownership/probe.ts';
+import { noteResume } from '../ownership/resume.ts';
 import { type BaoMountAttributes, type BaoMountProps, matches } from './mount-form.ts';
 import { planMove } from './mount-move.ts';
 import { readMount, reconcileMount } from './mount-reconcile.ts';
@@ -55,12 +58,16 @@ export const BaoMountProvider = () =>
          */
         list: () => Effect.succeed([]),
 
-        read: Effect.fn(function* ({ olds }) {
-          return yield* readMount(olds);
+        /** ⛔ Stateless: `Unowned` unless our own interrupted create made it (ownership/probe.ts). */
+        read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
+          const found = yield* readMount(olds);
+          const ours = Effect.sync(() => found !== undefined && matches(found, olds));
+          return yield* ownedRead({ fqn, instanceId, output }, found, ours);
         }),
 
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined || !isResolved(news)) return undefined;
+        diff: Effect.fn(function* ({ instanceId, news, output }) {
+          if (output === undefined) return yield* noteResume(instanceId);
+          if (!isResolved(news)) return undefined;
           /**
            * ⛔ A CHANGED PATH IS DECIDED HERE, BEFORE ANY READ OF THE NEW PATH — reading it would
            *   find nothing and plan `update`, which is how an empty mount used to get enabled.
@@ -98,8 +105,9 @@ export const BaoMountProvider = () =>
          *   method and path — the job the per-command exit-code checks used to do by hand.
          *   The body, and the move, live in mount-reconcile.ts.
          */
-        reconcile: Effect.fn(function* ({ news, output }) {
-          return yield* reconcileMount(news, output?.path);
+        reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
+          const claim = claimFor({ fqn, instanceId, output });
+          return yield* reconcileMount(news, output?.path, undefined, claim);
         }),
 
         /**

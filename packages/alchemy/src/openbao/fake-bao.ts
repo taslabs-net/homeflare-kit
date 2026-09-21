@@ -82,3 +82,37 @@ export const runFailure = <A, E>(
   env: BaoEnvironment,
   effect: Effect.Effect<A, E, HttpClient.HttpClient>,
 ) => Effect.runPromise(provided(env, Effect.flip(effect)));
+
+/**
+ * An injected crash between a write and its commit. Once armed, `crashNext()` fails the first read
+ * that follows a write with a 500 — a reconcile whose write landed and whose read-back, and so the
+ * engine's commit, never did — and `crashNext('write')` lands the next write and then answers it
+ * 500, for a reconcile that reads nothing back (Bao.Policy). Either leaves the `creating` /
+ * `replacing` row a killed deploy leaves.
+ */
+export const crashAfterWrite = () => {
+  let armed: 'read-back' | 'write' | undefined;
+  let wrote = false;
+  const CRASH: Reply = { json: { errors: ['injected: the deploy died here'] }, status: 500 };
+  return {
+    crashNext: (at: 'read-back' | 'write' = 'read-back') => {
+      armed = at;
+      wrote = false;
+    },
+    wrap:
+      (answer: (seen: Seen) => Reply) =>
+      (seen: Seen): Reply => {
+        if (armed === 'write' && seen.method !== 'GET') {
+          armed = undefined;
+          answer(seen);
+          return CRASH;
+        }
+        if (armed !== undefined && seen.method !== 'GET') wrote = true;
+        if (armed !== undefined && wrote && seen.method === 'GET') {
+          armed = undefined;
+          return CRASH;
+        }
+        return answer(seen);
+      },
+  };
+};

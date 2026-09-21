@@ -21,6 +21,9 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { refuseTakeover } from '../ownership/adopt.ts';
+import { ownedRead } from '../ownership/probe.ts';
+import { noteResume } from '../ownership/resume.ts';
 import { groupKey, scopeOfResource } from './cloudflare-group-scope.ts';
 import { CloudflarePermissionGroups, type GroupRef } from './cloudflare-permission-groups.ts';
 import { resolvePolicies } from './cloudflare-policy.ts';
@@ -106,9 +109,15 @@ export const BaoCloudflareRoleProvider = () =>
          */
         list: () => Effect.succeed([]),
 
-        read: Effect.fn(function* ({ olds }) {
+        /** ⛔ Stateless: `Unowned` unless our own interrupted create made it (ownership/probe.ts). */
+        read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
           const live = yield* readCloudflareRole(olds.mount, olds.name);
-          return live === undefined ? undefined : attributesOf(olds, live);
+          const found = live === undefined ? undefined : attributesOf(olds, live);
+          const ours = Effect.gen(function* () {
+            if (live === undefined || refusalOf(olds) !== undefined) return false;
+            return differences(olds, yield* resolved(olds), live).length === 0;
+          });
+          return yield* ownedRead({ fqn, instanceId, output }, found, ours);
         }),
 
         /**
@@ -127,9 +136,9 @@ export const BaoCloudflareRoleProvider = () =>
          *   (homeflare-openbao's declareCloudflareRoles does). There a rename is a new logical id,
          *   and the old id leaves the stack as an orphan delete, which `retain` keeps live.
          */
-        diff: Effect.fn(function* ({ news, olds, output }) {
+        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return undefined;
+          if (output === undefined) return yield* noteResume(instanceId);
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           /**
@@ -145,7 +154,7 @@ export const BaoCloudflareRoleProvider = () =>
             : ({ action: 'update' } as const);
         }),
 
-        reconcile: Effect.fn(function* ({ news, output }) {
+        reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
           const path = rolePath(news.mount, news.name);
           // ⛔ An `update` across a move the diff could not see — refused before any write.
           yield* guardRename(IDENTITY, news, output);
@@ -155,6 +164,9 @@ export const BaoCloudflareRoleProvider = () =>
           }
           const policies = yield* resolved(news);
           const live = yield* readCloudflareRole(news.mount, news.name);
+          if (live !== undefined) {
+            yield* refuseTakeover({ fqn, instanceId, output }, `Bao.CloudflareRole ${path}`);
+          }
           /**
            * ⛔ ADOPTING A ROLE THAT ALREADY MATCHES MUST NOT REWRITE IT. Alchemy's `adopted` action
            *   routes through reconcile (policy.ts has the Apply.ts reading), so without this guard

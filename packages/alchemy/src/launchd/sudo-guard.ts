@@ -5,10 +5,14 @@
  * ⛔ WHAT IS LOGGED IS WHAT IS WRITTEN. A symlinked directory under a prefix would make
  *   `install` or `rm`, running as root, act on a path the log never named. So every directory
  *   between the prefix and the file must be a real directory.
- * ⚠️ These checks run before the privileged call, so they guard against a mistaken declaration, not
- *   against someone who can already write inside a prefix and swap a path in between. The prefix
- *   itself is checked to be root-only (prefixProblem); a directory BELOW it that another user owns
- *   is not, and that user could swap what lies under it in that window.
+ * ⛔ EVERY DIRECTORY FROM THE PREFIX DOWN IS ROOT'S ALONE (decided 2026-09-21). A directory below
+ *   the prefix that another user owns, or that group or other may write, lets that user swap what
+ *   lies under it — a symlink where the file was — between these checks and the privileged call.
+ *   So each one must be owned by root and not group/other-writable (rootOnlyProblem), exactly as
+ *   the prefix itself must.
+ * ⚠️ These checks run before the privileged call, as the deploying user. They guard against a
+ *   mistaken declaration and against every user but root; root itself could still change a path
+ *   in that window, and ACLs are not read.
  */
 import type { FileStat, HostRunner, WriteOptions } from './runner.ts';
 import { SudoRefusedError } from './sudo-allowlist.ts';
@@ -33,8 +37,8 @@ export const betweenDirs = (prefix: string, path: string): string[] => {
 export type Expect = 'file' | 'file-or-absent';
 
 /**
- * ⛔ THE PREFIX ITSELF MUST BE A DIRECTORY ONLY ROOT CAN CHANGE, checked at every call rather than
- *   trusted from the declaration. A symlinked prefix makes root write wherever it points, which the
+ * ⛔ THE PREFIX, AND EVERY DIRECTORY BELOW IT ON THE WAY TO THE FILE, MUST BE A DIRECTORY ONLY ROOT
+ *   CAN CHANGE, checked at every call rather than trusted from the declaration. A symlinked prefix makes root write wherever it points, which the
  *   log never names (`/opt/example` -> `/etc` turns a HostFile at `/opt/example/sudoers` into
  *   `/etc/sudoers`). A prefix another user owns or may write lets that user swap a directory below
  *   it for a symlink between this check and the privileged call.
@@ -43,7 +47,7 @@ export type Expect = 'file' | 'file-or-absent';
  * ★ MEASURED 2026-09-21 on macOS 27.2 (`ls -ldn`): /Library/LaunchDaemons, /private/etc, /opt and
  *   /usr/local are uid 0, mode 0755, so the prefixes a host stack declares pass as they are.
  */
-const prefixProblem = (stat: FileStat | undefined): string | undefined => {
+const rootOnlyProblem = (stat: FileStat | undefined): string | undefined => {
   if (stat === undefined) return 'is missing';
   if (stat.kind !== 'directory') return `is a ${stat.kind}, not a directory`;
   if (stat.uid !== 0) return `is owned by uid ${String(stat.uid)}, not root`;
@@ -65,7 +69,7 @@ export const assertPlainPath = async (
 ): Promise<'file' | 'absent'> => {
   const dirs = betweenDirs(prefix, path);
   const [prefixStat, ...stats] = await Promise.all([prefix, ...dirs].map((dir) => base.stat(dir)));
-  const bad = prefixProblem(prefixStat);
+  const bad = rootOnlyProblem(prefixStat);
   if (bad !== undefined) {
     throw refuse(
       path,
@@ -74,11 +78,20 @@ export const assertPlainPath = async (
     );
   }
   for (const [index, stat] of stats.entries()) {
+    const dir = String(dirs[index]);
     if (stat?.kind !== 'directory') {
       throw refuse(
         path,
-        `${String(dirs[index])} is ${stat === undefined ? 'missing' : `a ${stat.kind}`}; root ` +
+        `${dir} is ${stat === undefined ? 'missing' : `a ${stat.kind}`}; root ` +
           'writes only through real directories under a declared prefix.',
+      );
+    }
+    const below = rootOnlyProblem(stat);
+    if (below !== undefined) {
+      throw refuse(
+        path,
+        `${dir} ${below}. Every directory from the prefix ${prefix} down to the file must be one ` +
+          'that root owns and only root may write. Nothing ran as root.',
       );
     }
   }
@@ -86,6 +99,47 @@ export const assertPlainPath = async (
   if (target === undefined && expect === 'file-or-absent') return 'absent';
   if (target?.kind === 'file') return 'file';
   throw refuse(path, `is ${target === undefined ? 'missing' : `a ${target.kind}`}, not a file`);
+};
+
+/**
+ * ⛔ A ROOT-OWNED FILE UNDER A PREFIX IS ROOT'S TO CHANGE, AND ONLY ROOT'S (decided 2026-09-21).
+ *   Group- or world-writable, anyone in that class rewrites a file root installed — a daemon's
+ *   config, a script a LaunchDaemon runs as root — which is root by another name. Setuid or setgid,
+ *   it runs as root (or its group) for whoever executes it. install(1) would apply either, as root.
+ * ★ Root-owned is an omitted owner (the runner installs as root under a prefix) or uid 0. A file
+ *   handed to another user is that user's to change; the sticky bit changes nothing on a file.
+ */
+export const modeProblem = (options: WriteOptions): string | undefined => {
+  if (options.uid !== undefined && options.uid !== 0) return undefined;
+  const found: string[] = [];
+  if ((options.mode & 0o6000) !== 0) found.push('setuid/setgid');
+  if ((options.mode & 0o022) !== 0) found.push('writable by group or other');
+  if (found.length === 0) return undefined;
+  return `mode ${options.mode.toString(8).padStart(4, '0')} is ${found.join(' and ')} on a root-owned file`;
+};
+
+/**
+ * Every check a write under `prefix` meets before anything is staged or run as root: the mode, the
+ * path (assertPlainPath) and the read-back (assertReadableBack). ★ Reads only, as the deploying
+ *   user — so sudoRunner's `checkWrite` runs it at PLAN time too, and a plan still never calls sudo.
+ */
+export const assertInstallable = async (
+  base: HostRunner,
+  prefix: string,
+  path: string,
+  options: WriteOptions,
+  groups: readonly number[] | undefined,
+): Promise<void> => {
+  const mode = modeProblem(options);
+  if (mode !== undefined) {
+    throw refuse(
+      path,
+      `${mode}. Declare a mode without those bits (0644, 0640, 0755), or give the file to its ` +
+        'real owner. Nothing ran as root.',
+    );
+  }
+  await assertPlainPath(base, prefix, path, 'file-or-absent');
+  await assertReadableBack(base, path, options, groups);
 };
 
 /**

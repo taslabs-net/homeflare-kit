@@ -21,6 +21,8 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { claimFor } from '../ownership/adopt.ts';
+import { noteResume } from '../ownership/resume.ts';
 import {
   type BaoJwtAuthConfigAttributes,
   type BaoJwtAuthConfigProps,
@@ -33,7 +35,7 @@ import {
 } from './jwt-config-form.ts';
 import { declaredOr } from './rename.ts';
 import { type Identity, guardRename, judgeRename } from './rename-identity.ts';
-import { type RoleSpec, planRole, readRoleAt, reconcileRole } from './role-reconcile.ts';
+import { type RoleSpec, planRole, readOwnedRole, reconcileRole } from './role-reconcile.ts';
 
 export type { BaoJwtAuthConfigAttributes, BaoJwtAuthConfigProps } from './jwt-config-form.ts';
 
@@ -78,25 +80,25 @@ export const BaoJwtAuthConfigProvider = () =>
       BaoJwtAuthConfig.Provider.of({
         list: () => Effect.succeed([]),
 
-        read: Effect.fn(function* ({ olds }) {
-          const found = yield* readRoleAt(jwtConfigSpec(olds));
-          return found?.attributes;
+        /** ⛔ Stateless: `Unowned` unless our own interrupted create made it (ownership/probe.ts). */
+        read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
+          return yield* readOwnedRole({ fqn, instanceId, output }, jwtConfigSpec(olds));
         }),
 
-        diff: Effect.fn(function* ({ news, olds, output }) {
+        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
           // ⛔ The mount first, before isResolved; onto a mount with a config fails the plan.
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return undefined;
+          if (output === undefined) return yield* noteResume(instanceId);
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           return { action: yield* planRole(jwtConfigSpec(news)) } as const;
         }),
 
         /** ⛔ Refuses, before writing, a live config that carries an OIDC client (wouldErase). */
-        reconcile: Effect.fn(function* ({ news, output }) {
+        reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
           // ⛔ An `update` across a move the diff could not see — refused before any write.
           yield* guardRename(IDENTITY, news, output);
-          return yield* reconcileRole(jwtConfigSpec(news));
+          return yield* reconcileRole(jwtConfigSpec(news), claimFor({ fqn, instanceId, output }));
         }),
 
         /** ⚠️ Writes nothing — there is no delete endpoint (header). */

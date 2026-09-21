@@ -15,6 +15,8 @@
  */
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type { Claim, Owner } from '../ownership/adopt.ts';
+import { ownedRead } from '../ownership/probe.ts';
 import { baoRead, baoWrite } from './bao-http.ts';
 import type { BaoError } from './bao-status.ts';
 
@@ -40,6 +42,21 @@ export const readRoleAt = <A>(
     live === undefined ? undefined : { attributes: spec.attributesOf(live), live },
   );
 
+/**
+ * `read`: the live attributes — `Unowned` with no state unless our own interrupted create wrote
+ * them, which is `planRole`'s `noop` against that create's props (ownership/probe.ts).
+ */
+export const readOwnedRole = <A extends object>(
+  ask: Owner,
+  spec: RoleSpec<A>,
+): Effect.Effect<A | undefined, BaoError, HttpClient.HttpClient> =>
+  Effect.flatMap(readRoleAt(spec), (found) => {
+    const ours = Effect.sync(
+      () => found !== undefined && spec.problems.length === 0 && spec.matches(found.attributes),
+    );
+    return ownedRead(ask, found?.attributes, ours);
+  });
+
 /** `update` or `noop` — the part of a diff after the identity checks. */
 export const planRole = <A>(
   spec: RoleSpec<A>,
@@ -53,12 +70,18 @@ export const planRole = <A>(
 const refuse = (spec: { readonly family: string; readonly path: string }, message: string) =>
   Effect.die(new Error(`${spec.family} ${spec.path}: ${message}`));
 
+/**
+ * ⛔ `claim` — every provider passes it — refuses, before any write, a create that finds a live
+ *   object this stack holds no state for (ownership/adopt.ts).
+ */
 export const reconcileRole = <A>(
   spec: RoleSpec<A>,
+  claim?: Claim,
 ): Effect.Effect<A, BaoError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     if (spec.problems.length > 0) return yield* refuse(spec, spec.problems.join('; '));
     const found = yield* readRoleAt(spec);
+    if (found !== undefined && claim !== undefined) yield* claim(`${spec.family} ${spec.path}`);
     if (found === undefined || !spec.matches(found.attributes)) {
       const lost = found === undefined ? [] : (spec.wouldErase?.(found.live) ?? []);
       if (lost.length > 0) {

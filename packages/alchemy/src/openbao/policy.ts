@@ -5,6 +5,9 @@ import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Path from 'effect/Path';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { refuseTakeover } from '../ownership/adopt.ts';
+import { ownedRead } from '../ownership/probe.ts';
+import { noteResume } from '../ownership/resume.ts';
 import { sha256 } from './digest.ts';
 import { isEmptyAssembly } from './policy-assembly.ts';
 import { deletePolicy, policyPath, readPolicy, writePolicy } from './policy-wire.ts';
@@ -138,9 +141,16 @@ export const BaoPolicyProvider = () =>
         list: () => Effect.succeed([]),
 
         // ★ '' means genuinely absent (a 404); a refusal fails. policy-wire.ts has the history.
-        read: Effect.fn(function* ({ olds }) {
+        // ⛔ With no attributes in state, a live policy is `Unowned` unless it is the one our own
+        //   interrupted create wrote: these fragments, byte for byte (ownership/probe.ts).
+        read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
           const live = yield* readPolicy(olds.name);
-          return live.length === 0 ? undefined : attributesOf(olds.name, live, 0);
+          const found = live.length === 0 ? undefined : attributesOf(olds.name, live, 0);
+          const ours = Effect.map(
+            assemble(olds.fragments),
+            (a) => sha256(a.joined) === found?.digest,
+          );
+          return yield* ownedRead({ fqn, instanceId, output }, found, ours);
         }),
 
         /**
@@ -148,7 +158,7 @@ export const BaoPolicyProvider = () =>
          *   OpenBao UI is exactly the drift the check-* gates exist to catch, and a
          *   provider that trusted its own state would report `noop` straight through it.
          */
-        diff: Effect.fn(function* ({ news, olds, output }) {
+        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
           /**
            * ⛔ A RENAMED POLICY IS A `replace`, DECIDED BEFORE ANY OTHER READ (rename.ts). Until
            *   2026-09-21 this read the new name, found nothing and planned `update`: the new policy
@@ -161,7 +171,7 @@ export const BaoPolicyProvider = () =>
            *   PR (REPLACE.md).
            */
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return undefined;
+          if (output === undefined) return yield* noteResume(instanceId);
           if (move !== undefined) return { action: 'replace' } as const;
           // ⚠️ A prop can still be an unresolved Output or Config at plan time. Docker's
           //   own providers guard with isResolved and skip rather than guess; a diff that
@@ -174,7 +184,7 @@ export const BaoPolicyProvider = () =>
             : ({ action: 'update' } as const);
         }),
 
-        reconcile: Effect.fn(function* ({ news, output }) {
+        reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
           const name = news.name;
           // ⛔ An `update` across a rename the diff could not see — refused before any write.
           yield* guardRename(IDENTITY, news, output);
@@ -207,6 +217,8 @@ export const BaoPolicyProvider = () =>
            *   sibling PVE provider does exactly this in pveOperations.reconcile.
            */
           const current = yield* readPolicy(name);
+          if (current.length > 0)
+            yield* refuseTakeover({ fqn, instanceId, output }, `Bao.Policy ${name}`);
           if (current.length > 0 && sha256(current) === sha256(joined)) {
             return attributesOf(name, joined, parts);
           }

@@ -31,6 +31,9 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { type Claim, claimFor } from '../ownership/adopt.ts';
+import { ownedRead } from '../ownership/probe.ts';
+import { noteResume } from '../ownership/resume.ts';
 import type { BaoError } from './bao-status.ts';
 import {
   type BaoMfaLoginEnforcementAttributes,
@@ -96,14 +99,21 @@ export const planEnforcement = (
     return live !== undefined && matches(live, props, resolved) ? 'noop' : 'update';
   });
 
-/** Write when live differs, then prove it by reading back. */
+/**
+ * Write when live differs, then prove it by reading back.
+ * ⛔ `claim` (the provider passes it): a create never takes over an enforcement it finds by name.
+ */
 export const reconcileEnforcement = (
   props: BaoMfaLoginEnforcementProps,
+  claim?: Claim,
 ): Effect.Effect<BaoMfaLoginEnforcementAttributes, BaoError, Env> =>
   Effect.gen(function* () {
     const { bad, resolved } = yield* resolveTargets(props);
     if (bad.length > 0) return yield* refuse(props.name, bad.join('; '));
     const live = yield* readLive(props.name);
+    if (live !== undefined && claim !== undefined) {
+      yield* claim(`Bao.MfaLoginEnforcement ${props.name}`);
+    }
     if (live === undefined || !matches(live, props, resolved)) {
       yield* writeEnforcement(props.name, writeBody(canonicalFromProps(props, resolved)));
     }
@@ -124,24 +134,27 @@ export const BaoMfaLoginEnforcementProvider = () =>
         /** ⛔ The namespace's enforcement listing is not a list of things this owns. */
         list: () => Effect.succeed([]),
 
-        read: Effect.fn(function* ({ olds }) {
-          return yield* readLive(olds.name);
+        /** ⛔ Stateless: `Unowned` unless our own interrupted create made it (ownership/probe.ts). */
+        read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
+          const found = yield* readLive(olds.name);
+          const ours = Effect.map(planEnforcement(olds), (plan) => plan === 'noop');
+          return yield* ownedRead({ fqn, instanceId, output }, found, ours);
         }),
 
         /** ⛔ IT COMPARES THE LIVE ENFORCEMENT — a target removed by hand is drift, not a noop. */
-        diff: Effect.fn(function* ({ news, olds, output }) {
+        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
           // ⛔ The name first, before isResolved; onto an enforcement that exists fails the plan.
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return undefined;
+          if (output === undefined) return yield* noteResume(instanceId);
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           return { action: yield* planEnforcement(news) } as const;
         }),
 
-        reconcile: Effect.fn(function* ({ news, output }) {
+        reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
           // ⛔ An `update` across a rename the diff could not see — refused before any write.
           yield* guardRename(IDENTITY, news, output);
-          return yield* reconcileEnforcement(news);
+          return yield* reconcileEnforcement(news, claimFor({ fqn, instanceId, output }));
         }),
 
         /** ⛔ REFUSED — read the header: in 2.6.2 the delete does not survive a restart. */

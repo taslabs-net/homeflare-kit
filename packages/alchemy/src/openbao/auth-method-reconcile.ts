@@ -6,6 +6,7 @@
  */
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type { Claim } from '../ownership/adopt.ts';
 import {
   type BaoAuthMethodAttributes,
   type BaoAuthMethodProps,
@@ -36,22 +37,32 @@ const moveTarget = (props: BaoAuthMethodProps): MoveTarget => ({
   wire: (path) => `auth/${authPath(path)}`,
 });
 
-/** Converge one auth method. `stated` is the path in Alchemy's state, if any. */
+/**
+ * Converge one auth method. `stated` is the path in Alchemy's state, if any.
+ * ⛔ `claim`: the same first-reconcile takeover refusal as reconcileMount's (auth-method.ts passes it).
+ */
 export const reconcileAuthMethod = (
   news: BaoAuthMethodProps,
   stated: string | undefined,
   options?: RemountOptions,
+  claim?: Claim,
 ): Effect.Effect<BaoAuthMethodAttributes, BaoError | RemountError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const move = planMove('Bao.AuthMethod', stated, news.path, news.remountFrom);
     if (move.kind === 'refuse') return yield* Effect.die(new Error(move.message));
+    const first = stated === undefined ? claim : undefined;
+    if (first !== undefined && move.kind === 'move') {
+      const source = yield* readMethod({ ...news, path: move.from });
+      if (source !== undefined)
+        yield* first(`Bao.AuthMethod ${move.from} (the remountFrom source)`);
+    }
     if (move.kind === 'move') yield* performMove(moveTarget(news), move.from, options);
 
     let live = yield* readMethod(news);
     if (live === undefined) {
       yield* enableAuthMethod(news);
       if (wantsTune(news)) yield* tuneAuthMethod(news);
-    } else if (!matches(live, news)) {
+    } else {
       if (live.type !== news.type) {
         return yield* Effect.die(
           new Error(
@@ -60,7 +71,8 @@ export const reconcileAuthMethod = (
           ),
         );
       }
-      yield* tuneAuthMethod(news);
+      if (first !== undefined) yield* first(`Bao.AuthMethod ${authPath(news.path)}`);
+      if (!matches(live, news)) yield* tuneAuthMethod(news);
     }
     live = yield* readMethod(news);
     if (live === undefined) {

@@ -13,9 +13,9 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import { BaoAuthRole, BaoAuthRoleProvider } from './auth-role.ts';
-import type { Seen } from './fake-bao.ts';
+import type { Reply, Seen } from './fake-bao.ts';
 import { type Estate, fakeEstate } from './fake-engines-roles.ts';
-import { type FakeStack, type StackBody, withFakeStack } from './fake-stack.ts';
+import { type FakeStack, type StackBody, fakeStack, withFakeStack } from './fake-stack.ts';
 import { BaoJwtAuthConfig, BaoJwtAuthConfigProvider } from './jwt-config.ts';
 import { BaoJwtRole, BaoJwtRoleProvider } from './jwt-role.ts';
 import { BaoKubernetesRole, BaoKubernetesRoleProvider } from './kubernetes-role.ts';
@@ -38,12 +38,18 @@ export const familyProviders = Layer.mergeAll(
   FetchHttpClient.layer,
 );
 
-/** One stack over a fresh estate: every family's provider, and every call the fake saw. */
+/**
+ * One stack over a fresh estate: every family's provider, and every call the fake saw — plus
+ * `owner`, a SECOND stack over the same fake with its own state: another owner of the same names.
+ */
 export const withEstate = (
-  body: (stack: FakeStack, estate: Estate, seen: Seen[]) => Promise<void>,
+  body: (stack: FakeStack, estate: Estate, seen: Seen[], owner: FakeStack) => Promise<void>,
+  answer: (estate: Estate) => (seen: Seen) => Reply = (estate) => estate,
 ): Promise<void> => {
   const estate = fakeEstate();
-  return withFakeStack(familyProviders, estate, (stack, bao) => body(stack, estate, bao.seen));
+  return withFakeStack(familyProviders, answer(estate), (stack, bao) =>
+    body(stack, estate, bao.seen, fakeStack(familyProviders, { BAO_ADDR: bao.address }, 'Owner')),
+  );
 };
 
 /** The row for one family, by name. */
