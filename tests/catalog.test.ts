@@ -28,7 +28,28 @@ const root = new URL('../', import.meta.url);
 const rootPkg = (await Bun.file(new URL('package.json', root)).json()) as Manifest;
 const catalog = rootPkg.catalog ?? {};
 
-const PACKAGES = ['kit', 'cloudflare', 'ui', 'auth', 'config', 'typesafe'];
+/**
+ * Every published workspace package, DISCOVERED rather than listed.
+ * ⚠️ A hand list here went stale silently: @homeflare/alchemy was never in it, so none of
+ *   these checks had ever looked at its manifest. Same lesson as scripts/sync-versions.ts.
+ */
+const PACKAGES: readonly string[] = await Array.fromAsync(
+  new Bun.Glob('packages/*/package.json').scan({ cwd: root.pathname }),
+).then((paths) => paths.map((path) => path.split('/')[1] ?? '').sort());
+
+/**
+ * Peers pinned EXACTLY, on purpose, per package. ⛔ Each entry is a measured exception to
+ * "peer ranges stay ranges", not a convenience:
+ * - Effect release candidates break each other (measured 2026-09-16: `>=4.0.0-rc.112`
+ *   resolved to rc.115 and `Config.string` vanished), and Alchemy's betas pin one rc.
+ *   packages/alchemy/tests/peers.test.ts and packages/site/tests/contract.test.ts hold
+ *   the per-package reasoning.
+ * - `mime` is pinned by @homeflare/alchemy alongside the Alchemy 78/79 install line.
+ */
+const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
+  alchemy: ['@effect/platform-node', 'alchemy', 'effect', 'mime'],
+  site: ['effect'],
+};
 
 async function manifest(name: string): Promise<Manifest> {
   return (await Bun.file(new URL(`packages/${name}/package.json`, root)).json()) as Manifest;
@@ -78,11 +99,19 @@ describe('catalog', () => {
     //   catalog pins what WE install, a peer declares what a consumer may bring.
     for (const pkg of PACKAGES) {
       const peers = (await manifest(pkg)).peerDependencies ?? {};
+      const exact = EXACT_PEERS[pkg] ?? [];
 
-      for (const [, spec] of Object.entries(peers)) {
-        expect(spec).toMatch(/^[\^>~]|\|\|/);
+      for (const [name, spec] of Object.entries(peers)) {
+        if (exact.includes(name)) expect(spec).toMatch(/^\d+\.\d+\.\d+/);
+        else expect(spec).toMatch(/^[\^>~]|\|\|/);
       }
     }
+  });
+
+  test('the package list is discovered, and covers every package', () => {
+    expect(PACKAGES).toContain('alchemy');
+    expect(PACKAGES).toContain('site');
+    expect(PACKAGES.length).toBeGreaterThanOrEqual(8);
   });
 
   test('the lockfile does not pin @cloudflare/* to the internal registry', async () => {

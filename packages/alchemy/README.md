@@ -79,6 +79,17 @@ plugin `env` or OIDC client secret is declarable. Every family defaults to `reta
 [src/openbao/README.md](./src/openbao/README.md). What each resource does on a rename is in
 [src/openbao/REPLACE.md](./src/openbao/REPLACE.md) — read it before changing a path or name.
 
+## launchd — `@homeflare/alchemy/launchd`
+
+`LaunchdJob` and `HostFile` declare a Mac host's daemons and their config files. launchd has no SDK,
+so the provider renders the plist and drives `launchctl`, all through one injectable `HostRunner`;
+`launchdProviders()` provides both. An update restarts the job; a `label`/`domain` change replaces it
+delete-first.
+
+- ⛔ **No secrets in props** (state is unencrypted): declare the path a secret renderer writes.
+- ⛔ **No silent sudo:** the system domain needs a deploy started as root, or a `privileged` runner.
+- ⚠️ `org.nixos.*` jobs are never adopted. Guide and nix-darwin cutover: [docs/launchd.md](./docs/launchd.md).
+
 ## Credentials
 
 `CLOUDFLARE_API_TOKEN` is read from the environment at call time, never at module scope.

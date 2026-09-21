@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "deriveVersion": "0.0.0",
+  "kind": "example",
+  "apex": "example.com",
+  "zones": { "mgmt": "mgmt", "lab": "lab" },
+  "networks": {
+    "mgmt": "192.0.2.0/24",
+    "lab": "198.51.100.0/24",
+    "services": "203.0.113.0/24",
+    "storage": "198.18.4.0/24"
+  },
+  "hosts": {
+    "hub": {
+      "zone": "mgmt",
+      "aliases": ["gateway"],
+      "legs": { "mgmt": 250, "services": 250 }
+    },
+    "n1": { "zone": "mgmt", "legs": { "mgmt": 11, "lab": 11 } },
+    "n2": { "zone": "mgmt", "legs": { "mgmt": 12, "lab": 12 } },
+    "n3": { "zone": "mgmt", "legs": { "mgmt": 13, "lab": 13 } },
+    "backup": { "zone": "lab", "legs": { "mgmt": 7, "storage": 7 } },
+    "docs": { "zone": "apex" }
+  },
+  "clusters": { "c1": { "members": ["n1", "n2", "n3"] } },
+  "products": {
+    "alerts": {},
+    "wiki": { "label": "kb" },
+    "shop": { "domain": "shop.example.net" }
+  },
+  "services": {
+    "grafana": { "host": "hub", "port": 3000, "scheme": "http" }
+  },
+  "cloudflare": {
+    "accounts": {
+      "main": {
+        "id": "00000000000000000000000000000001",
+        "zones": ["example.com", "example.org"],
+        "surfaces": ["dns", "platform", "security", "access"]
+      },
+      "lab": {
+        "id": "00000000000000000000000000000002",
+        "zones": ["example.net"],
+        "surfaces": ["dns"]
+      }
+    },
+    "access": { "team": "example-team" }
+  },
+  "github": { "owner": "example-org" },
+  "paths": { "estateRoot": "/opt/example" },
+  "vault": {
+    "label": "v",
+    "apiLabel": "api",
+    "clusterName": "example-vault",
+    "meshAddress": "198.18.0.2",
+    "lan": { "host": "hub", "port": 8200, "scheme": "http" }
+  },
+  "pinned": {
+    "names": { "alerts.d1": "example-alerts", "alerts.worker": "example-alerts-api" },
+    "certificates": { "vault.origin": ["v.example.com", "api.v.example.com"] },
+    "adopted": {
+      "access.admin-policy": "00000000-0000-4000-8000-000000000001",
+      "backup.datastore": "example-store"
+    },
+    "policies": { "access.admins": ["alice@example.com"] },
+    "sshPrincipals": {
+      "ssh-host.host": [
+        "example.com",
+        "mgmt.example.com",
+        "hub",
+        "gateway",
+        "192.0.2.250",
+        "n1",
+        "n2",
+        "n3",
+        "192.0.2.11",
+        "198.51.100.11"
+      ]
+    }
+  }
+}
