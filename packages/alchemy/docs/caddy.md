@@ -24,10 +24,12 @@ export const edge = Effect.gen(function* () {
   yield* LaunchdJob('caddy-daemon', {
     label: 'com.example.caddy',
     domain: 'system',
+    // --resume: a restart runs the last config Caddy accepted (see Managed Caddies below).
     // --envfile: a file a secret renderer (openbao-agent) writes; {env.CF_API_TOKEN} reads it.
     programArguments: [
       '/usr/local/bin/caddy',
       'run',
+      '--resume',
       '--config',
       file.path,
       '--adapter',
@@ -35,6 +37,8 @@ export const edge = Effect.gen(function* () {
       '--envfile',
       '/usr/local/etc/caddy.env',
     ],
+    // ⛔ Here, not in the envfile: Caddy fixes its autosave path before it reads --envfile.
+    environment: { XDG_CONFIG_HOME: '/usr/local/var/caddy-edge' },
     runAtLoad: true,
     keepAlive: true,
   });
@@ -56,15 +60,15 @@ export const providers = Layer.mergeAll(caddyProviders(), launchdProviders());
 | `endpoint`     | where the admin API was reached                                                      |
 | `sourceFile`   | as applied                                                                           |
 
-| step    | what happens                                                                                                                             |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| plan    | `POST /adapt` the Caddyfile (side-effect free): a syntax error, a literal secret, no apps or an unsafe `admin` block fails the **plan**  |
-| apply   | `POST /load` with `text/caddyfile`, then `GET /config/` must hash to what `/adapt` produced; skipped when Caddy already runs it          |
-| refused | Caddy keeps the old config (it rolls back itself); the deploy fails with Caddy's reason and says whether the old config is still running |
-| read    | the digest of `GET /config/` — with no state, a running Caddy is **adopted** (its live config becomes the baseline)                      |
-| drift   | live ≠ stored → `update`: a hand `curl` to the API, or a restart that loaded a different file                                            |
-| replace | never — a new Caddyfile is a reload of the same Caddy                                                                                    |
-| delete  | ⛔ nothing. See [Removing it](#removing-it)                                                                                              |
+| step    | what happens                                                                                                                                       |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| plan    | `POST /adapt` the Caddyfile (side-effect free): a syntax error, a literal secret, no apps or an unsafe `admin` block fails the **plan**            |
+| apply   | `POST /load` with `text/caddyfile`, then `GET /config/` must hash to what `/adapt` produced; skipped when Caddy already runs it                    |
+| refused | Caddy keeps the old config (it rolls back itself); the deploy fails with Caddy's reason and says whether the old config is still running           |
+| read    | the digest of `GET /config/`; with no state, the adoption probe — ⛔ a config that is not the declared one needs `--adopt` ([Adoption](#adoption)) |
+| drift   | live ≠ stored → `update`: a hand `curl` to the API, or a restart that loaded a different file                                                      |
+| replace | never — a new Caddyfile is a reload of the same Caddy                                                                                              |
+| delete  | ⛔ nothing. See [Removing it](#removing-it)                                                                                                        |
 
 The digests compare adapted JSON, not bytes: `/adapt` answers Go struct order, `GET /config/` sorted
 keys with `<>&` escaped and a trailing newline. `digest.ts` erases all three. ★ Measured 2026-09-21
@@ -86,31 +90,42 @@ before any admin API exists to load into. What bounds the cost:
   `/adapt` fails the plan. On the very first deploy the path is still an Output, Alchemy skips the
   adoption probe, and the check runs at apply instead.
 - ⚠️ **A Caddyfile that adapts but that Caddy refuses** (a port in use, a missing cert file) is on
-  disk when `/load` fails. Caddy keeps serving the old config — but a **restart before the fix loads
-  the refused file**. Fix and redeploy, or run Caddy with `--resume` (below).
+  disk when `/load` fails. Caddy keeps serving the old config, and a managed Caddy's restart runs its
+  autosave, not the refused file (below). Without `--resume` a **restart before the fix loads the
+  refused file**: fix and redeploy.
 - ⛔ Secrets are refused at declaration, before the HostFile exists (its `content` is a prop too).
 - ★ Both resources retain: removing them from a stack leaves the file a restart needs.
 
-## Autosave and `--resume`
+## Managed Caddies: `--resume` and their own config dir
 
-After every successful load (ours included) Caddy writes the config JSON to `autosave.json`
-(`$XDG_CONFIG_HOME/caddy/`, else `~/Library/Application Support/Caddy/` on macOS, `~/.config/caddy/`
-on Linux), unless the Caddyfile says `persist_config off`. ⚠️ A daemon started with no `HOME` and no
-`XDG_CONFIG_HOME` falls back to `./caddy/` under its working directory (storage.go AppConfigDir):
-set `XDG_CONFIG_HOME` in the launchd job so autosave lands where you expect.
+★ **Decision, 2026-09-21.** A Caddy this package manages runs `caddy run --resume --config <file>`
+with `XDG_CONFIG_HOME` set to a directory of its own, so a restart runs the last config Caddy
+**accepted**. After every successful load (ours included) Caddy writes the config JSON to
+`$XDG_CONFIG_HOME/caddy/autosave.json`; `--resume` starts from it, and from `--config` only when no
+autosave exists (cmd/commandfuncs.go cmdRun). Read in caddyserver/caddy v2.11.4:
 
-- **Without `--resume`** (the mini's Caddy today): a restart loads `--config`. The file and the
-  running config agree after every successful deploy; see the ⚠️ above for a failed one.
-- **With `caddy run --resume --config <file>`**: a restart loads `autosave.json` — the last config
-  Caddy **accepted** — and `--config` only when no autosave exists. A refused file on disk can then
-  never take sites down. The trade: a hand change through the API also survives a restart; the next
-  plan reports it as drift and the deploy puts the declaration back.
-- `--watch` reloads the file on change; our `/load` right after is then a no-op ("config is
-  unchanged").
-- `sourceFile` rides as `Caddy-Config-Source-File`, as `caddy reload` sends it. Without it a load
-  makes Caddy forget its source file, and SIGUSR1 stops reloading from it. The header only KEEPS the
-  file Caddy started with (caddy.go ClearLastConfigIfDifferent); it never sets a new one. ⚠️ Under
-  `--resume` with an autosave, Caddy records no source file at all, so SIGUSR1 has nothing to reload.
+- ★ **A refused Caddyfile on disk cannot take sites down.** The file is the first-boot fallback: a
+  new host, or an autosave someone deleted.
+- ★ **Its own directory,** so nothing else (a Homebrew service, a person's `caddy run`) writes the
+  autosave it resumes from. With neither `HOME` nor `XDG_CONFIG_HOME` a daemon would use `./caddy/`
+  under its working directory (storage.go AppConfigDir).
+- ⛔ **Set `XDG_CONFIG_HOME` in the job's `environment`, not the envfile.** The autosave path is
+  fixed when the binary starts (storage.go `var ConfigAutosavePath`), before `--envfile` is read.
+- ⛔ **No `persist_config off`** in a managed Caddyfile. It stops the autosave, so `--resume` starts
+  from a stale one (the last config before it) or, with none, from the file.
+- ⚠️ **A hand change through the API survives a restart.** The next plan reports it as drift, and the
+  deploy puts the declaration back.
+- ⚠️ **SIGUSR1 is not a way to change config.** After a resumed start Caddy records no source file
+  (cmdRun calls `SetLastConfig` only after loading `--config`), so SIGUSR1 is ignored with the log
+  line `last config unknown`. Our `Caddy-Config-Source-File` header keeps a source Caddy already
+  has (caddy.go ClearLastConfigIfDifferent) and never sets one. After a first boot from the file,
+  SIGUSR1 still reloads it: the text the deploy wrote. Change config by deploying. Editing the file
+  and running `caddy reload` is a hand `/load`, which the next plan reports as drift.
+- ⛔ **No `--watch`.** After a resumed start it has no file to watch, and falls back to a `Caddyfile`
+  in the working directory (cmd/main.go watchConfigFile).
+
+A Caddy not yet moved over (no `--resume`) restarts from `--config`: see the ⚠️ in
+[Order](#order-file-then-load).
 
 ## Secrets
 
@@ -133,31 +148,33 @@ bcrypt/argon2 hashes). It never echoes what it found. It is a tripwire, not a sc
 
 ## The admin endpoint
 
-⛔ The admin API has no authentication. `localCaddyAdmin()` accepts only `http://` loopback
-(`127.0.0.0/8`, `localhost`, `[::1]`) or `unix:///path`; the default is `http://127.0.0.1:2019`.
-
-- **Host and Origin.** Caddy refuses a request whose `Host` is not an allowed origin (DNS-rebinding
-  guard; measured on Caddy 2.11.4: `403 host not allowed`), and checks `Origin` when one is sent or
-  `enforce_origin` is on. The transport sends both as the Caddy CLI does. A unix socket skips the
-  Host check entirely.
-- **`admin { origins … }`** narrowed, or **an SSH-forwarded port** (Caddy checks the Host against
-  ITS port): pass `hostHeader: 'localhost:2019'`.
-- **Another host's Caddy** (SSH later): forward its socket or port to loopback here and point a
-  `localCaddyAdmin()` at it, or implement `CaddyAdmin` over your own route. Never expose :2019.
-- **A Caddyfile cannot strand the provider.** Before loading, the adapted `admin` block is refused
-  if it turns the API off, listens off loopback or somewhere the transport does not reach (another
-  port, socket or loopback address: `[::1]` is not `127.0.0.1`, and `localhost` binds IPv4), allows
-  no Host the transport sends (its `origins`, or Caddy's loopback defaults when there are none), sets
-  `enforce_origin` over a unix socket (no Origin is sent there), enables `remote`, or pulls config.
-- ⛔ **No `admin` address means Caddy's default** (`localhost:2019`, or `$CADDY_ADMIN`) after the
-  load. That is refused unless the transport is at that default: a Caddy reached on a socket or
-  another port declares `admin <address>` in its Caddyfile.
+⛔ The admin API has no authentication: `localCaddyAdmin()` accepts only `http://` loopback or
+`unix:///path` (default `http://127.0.0.1:2019`), and a Caddyfile whose `admin` block would move,
+expose or lock out the API is refused before it loads. Host/Origin checks, narrowed `origins`, SSH
+forwards and every refusal: [caddy-admin.md](./caddy-admin.md).
 
 ## Adoption
 
-With no state, `read` reports the running Caddy's live config as plain (owned) attributes, so the
-first deploy adopts it silently and its forced update loads the declared Caddyfile — a full replace
-of whatever ran before. ⚠️ Review the plan: the Caddy on this loopback admin API is the one you get.
+★ **Nothing is adopted silently** (decision, 2026-09-21) — the rule `HostFile` and `LaunchdJob` keep.
+With no state, `read` is Alchemy's adoption probe, and what the Caddy runs decides:
+
+| running                             | read      | plan                                                       |
+| ----------------------------------- | --------- | ---------------------------------------------------------- |
+| the declared config (same digest)   | ours      | adopted; the forced update loads nothing                   |
+| nothing (`null`, or no apps)        | absent    | create — nothing to take over, as an empty R2 lock is none |
+| anything else                       | `Unowned` | refused unless the deploy runs with `--adopt`              |
+| a Caddyfile that cannot be compared | `Unowned` | the same, with a warning saying why                        |
+| no Caddy answering                  | absent    | create, with a warning; the apply checks again             |
+
+- ⚠️ **Alchemy skips the probe while the props hold an Output** — always on `caddyWithFile()`'s first
+  deploy, whose `sourceFile` is the HostFile's path. So the apply of a create checks too, and fails
+  before any `/load` unless the deploy runs with `--adopt`. The HostFile is written by then (a file
+  already at the path is the HostFile's own `Unowned`); under `--resume` a restart still runs the
+  autosave.
+- ★ **That apply-time check resolves adoption as the planner does:** a resource-scoped `adopt(…)`,
+  else `--adopt`. So `.pipe(adopt(false))` still refuses under `--adopt`, and `adopt(true)` works.
+- ★ **An uncomparable Caddyfile is `Unowned`, not an error**: the same read recovers an interrupted
+  create with that deploy's props, and a throw would fail every later plan, the fixed one included.
 
 ## Removing it
 
@@ -177,4 +194,6 @@ it by hand at its admin API.
   its launchd job has Caddy listening. The transport retries a refused connection (`retries`,
   `retryDelayMs`; default 2 × 500 ms) — raise them, or rerun the deploy.
 - ⚠️ One `CaddyAdmin` per stack: the transport picks the Caddy, not a prop. Pointing it at another
-  Caddy plans an update that loads there; the old one keeps what it had.
+  Caddy plans an update; the old one keeps what it had. ⛔ State vouches only for the Caddy it was
+  applied to, so the apply loads there only if it serves nothing, runs the declared config or the
+  one last stored — anything else needs `--adopt`.
