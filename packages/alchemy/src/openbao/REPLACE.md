@@ -10,8 +10,10 @@ provider must answer `replace` correctly (vault consolidation plan, "Replace fre
 - **`replace`**: create-first by default. The new generation is created, dependents are updated in
   the same graph, then the old generation is deleted (`Apply.ts`, delete-first comment near :1180).
 - **`deleteFirst: true`**: tears the old one down first. It is only for identities that cannot
-  coexist, such as a unique physical name. No `Bao.*` provider needs it: every identity here is an
-  API path, and a new path never collides with the old one.
+  coexist, such as a unique physical name. No `Bao.*` provider uses it. A rename is a new API
+  path, which never collides with the old one. ⚠️ A mount or auth method whose `type` changes
+  keeps its path, so the two generations DO collide. It deliberately stays create-first, and the
+  create fails (see the table).
 - **`retain`**, the default for every `Bao.*` family, **keeps the old generation of a replace**
   (`Apply.ts:2164-2173`, "Retaining replaced resource"). ⚠️ So under the default, a replaced role
   **stays live** and still admits logins. Opt into `RemovalPolicy.destroy()` where that matters
@@ -27,20 +29,22 @@ kept working for their whole TTL.
 
 ## Touched in this batch
 
-| Resource                  | Identity change | Answer now                                                                                                                               | Other changes                                               |
-| ------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `Bao.Mount`               | `path`          | ⛔ **fails the plan**, unless `remountFrom` names the old path. Then it is an in-place `update` that moves the mount with `sys/remount`. | `type` → `replace`. Description and TTLs → `update` (tune). |
-| `Bao.AuthMethod`          | `path`          | Same as `Bao.Mount` (`auth/` prefix). The accessor survives the move.                                                                    | `type` → `replace`                                          |
-| `Bao.AuthRole`            | `name`          | `replace`. Before 2026-09-21 it was `update`, and the old role was orphaned.                                                             | `update`                                                    |
-| `Bao.PkiRole`             | `mount`, `name` | `replace`. Before, only a `mount` change was caught; a `name` change orphaned the old role.                                              | `update` (full-replace write)                               |
-| `Bao.JwtRole`             | `mount`, `name` | `replace`                                                                                                                                | `update` (merge write; every managed field is sent)         |
-| `Bao.KubernetesRole`      | `mount`, `name` | `replace`                                                                                                                                | `update`                                                    |
-| `Bao.JwtAuthConfig`       | `mount`         | `replace`. The old delete is a no-op because there is no delete endpoint.                                                                | `update` (full-replace write)                               |
-| `Bao.MfaTotpMethod`       | `name`          | ⛔ **fails the plan**: a new id would strand every enrolled secret                                                                       | `update` (the upsert keeps the id)                          |
-| `Bao.MfaLoginEnforcement` | `name`          | `replace`. Its delete is **refused** (openbao#4030)                                                                                      | `update`                                                    |
+| Resource                  | Identity change | Answer now                                                                                                                               | Other changes                                                                               |
+| ------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `Bao.Mount`               | `path`          | ⛔ **fails the plan**, unless `remountFrom` names the old path. Then it is an in-place `update` that moves the mount with `sys/remount`. | `type` → `replace` that **fails at apply** (below). Description and TTLs → `update` (tune). |
+| `Bao.AuthMethod`          | `path`          | Same as `Bao.Mount` (`auth/` prefix). The accessor survives the move.                                                                    | `type` → `replace` that **fails at apply** (below)                                          |
+| `Bao.AuthRole`            | `name`          | `replace`. Before 2026-09-21 it was `update`, and the old role was orphaned.                                                             | `update`                                                                                    |
+| `Bao.PkiRole`             | `mount`, `name` | `replace`. Before, only a `mount` change was caught; a `name` change orphaned the old role.                                              | `update` (full-replace write)                                                               |
+| `Bao.JwtRole`             | `mount`, `name` | `replace`                                                                                                                                | `update` (merge write; every managed field is sent)                                         |
+| `Bao.KubernetesRole`      | `mount`, `name` | `replace`                                                                                                                                | `update`                                                                                    |
+| `Bao.JwtAuthConfig`       | `mount`         | `replace`. The old delete is a no-op because there is no delete endpoint.                                                                | `update` (full-replace write)                                                               |
+| `Bao.MfaTotpMethod`       | `name`          | ⛔ **fails the plan**: a new id would strand every enrolled secret                                                                       | `update` (the upsert keeps the id)                                                          |
+| `Bao.MfaLoginEnforcement` | `name`          | `replace`. Its delete is **refused** (openbao#4030)                                                                                      | `update`                                                                                    |
 
 `hostAppRoles` makes no resources, but its names are identities: renaming a host or a class
-renames the role, and `Bao.AuthRole` then plans a `replace`.
+renames the role. With the logical id taken from the role name, as the README does, the old id
+leaves the stack: that is an orphan delete, not a `replace`. With a stable logical id,
+`Bao.AuthRole` plans a `replace`. Under the default `retain`, both leave the old role live.
 
 ## Why the moves fail instead of replacing
 
@@ -53,6 +57,15 @@ renames the role, and `Bao.AuthRole` then plans a `replace`.
   (`entity.MFASecrets[id]`). The safe rename adds a second method, lists both on the enforcement
   (any one passing is enough), enrols everyone, then drops the old method.
 
+## Why a type change fails instead of replacing
+
+The plan says `replace`, but the new generation reads the same path, finds the old type there,
+and its reconcile dies with "type is immutable" before any write. So the deploy fails, and
+nothing is disabled under either removal policy. Change a type by hand. ⛔ `deleteFirst` would
+make it succeed, but under `destroy` it disables the mount first, and a mistyped `type` would
+take every secret with it. (Corrected 2026-09-21: the first audit listed this as a clean
+`replace`.)
+
 ## The plan's three exceptions, mapped
 
 1. **`retain` resources orphan the old generation on a replace.** That applies to all of the
@@ -62,7 +75,8 @@ renames the role, and `Bao.AuthRole` then plans a `replace`.
    AppRole means a new role_id), login URLs and CLI `-path` flags naming an auth mount or role,
    policies naming a mount path, and third-party OIDC clients holding a redirect URI. Rotate or
    move them in the same PR.
-3. **Unique names need `deleteFirst`.** None here: see above.
+3. **Unique names need `deleteFirst`.** Only a mount's `type` change keeps its unique path, and
+   it fails on purpose instead (above).
 
 ## Audited, not touched in this batch (open)
 

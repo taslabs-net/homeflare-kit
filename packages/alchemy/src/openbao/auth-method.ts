@@ -8,9 +8,11 @@
  *   and revokes tokens minted through those roles. Opt in with
  *   `.pipe(RemovalPolicy.destroy())`.
  *
- * ★ REPLACE SEMANTICS (audited 2026-09-21, see REPLACE.md): `type` changed → `replace`; `path`
- *   changed → FAILS unless `remountFrom` names the old path (then an in-place move). It used to
- *   plan `update` and enable an empty method at the new path, exactly as Bao.Mount did.
+ * ★ REPLACE SEMANTICS (audited 2026-09-21, see REPLACE.md): `type` changed → plans `replace`, whose
+ *   create half dies on the still-occupied path before any write, so the apply fails and nothing is
+ *   disabled (auth-method-reconcile.ts); `path` changed → FAILS unless `remountFrom` names the old
+ *   path (then an in-place move). It used to plan `update` and enable an empty method at the new
+ *   path, exactly as Bao.Mount did.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';

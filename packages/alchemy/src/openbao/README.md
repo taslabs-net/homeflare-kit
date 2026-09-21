@@ -31,6 +31,8 @@ export const guarded = Effect.gen(function* () {
   that is not the expected one, and a namespace the cluster does not have.
 - ⚠️ It fails with a `BaoIdentityError` whose message starts with `REFUSING:`. The `reason` is
   `input`, `mismatch`, `unconfirmed` or `unreachable`. `assertBaoIdentity` is the Promise form.
+- ⚠️ It catches a mis-set address, not an impostor. Any server can repeat a `cluster_name`;
+  TLS is what proves which server answered.
 
 ## BaoMount / BaoAuthMethod: moving a path
 
@@ -69,7 +71,8 @@ export const hostRoles = Effect.gen(function* () {
   digits and single hyphens.
 - It refuses `secretIdTtl` 0 (a secret_id that never expires), empty policies, `root`, unknown
   classes and duplicate hosts.
-- ⚠️ Renaming a host or class is a `replace`. Under `retain` the old role stays live (REPLACE.md).
+- ⚠️ Renaming a host or class makes a new role. Under `retain` the old one stays live and keeps
+  admitting its secret_ids (REPLACE.md).
 
 ## BaoJwtRole / BaoKubernetesRole / BaoJwtAuthConfig
 
@@ -102,6 +105,7 @@ export const machines = Effect.gen(function* () {
 ```
 
 - ⛔ `roleType` is required. OpenBao's default is `oidc`, even when it rewrites a `jwt` role.
+- ⛔ `aliasNameSource` is required too. Changing it on a live role moves every pod to a new entity.
 - Every managed field is sent on every write, so a value someone set by hand cannot sit
   unnoticed behind a green plan. `verbose_oidc_logging` and `oidc_disable_confirmation` are
   always sent as `false`.

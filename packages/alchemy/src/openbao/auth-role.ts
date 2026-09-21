@@ -17,6 +17,7 @@ import {
   type BaoAuthRoleAttributes,
   type BaoAuthRoleProps,
   attributesOf,
+  isRename,
   matches,
   readPath,
   writeBody,
@@ -75,14 +76,8 @@ export const BaoAuthRoleProvider = () =>
            *   generation of a replace (Apply.ts:2164-2173). For per-host roles (host-approles.ts),
            *   opt into `RemovalPolicy.destroy()` or destroy the old role's accessors by hand.
            */
-          /**
-           * ⚠️ CASE-INSENSITIVELY, BECAUSE THE SERVER IS. AppRole stores `role/<lowercased name>`
-           *   (approle path_role.go:1485), so `Host` → `host` is the SAME role: a `replace` there would
-           *   write it, then — under `destroy` — delete the old generation, which is that same role.
-           */
-          if (news.name.toLowerCase() !== output.name.toLowerCase()) {
-            return { action: 'replace' } as const;
-          }
+          // ⚠️ Case-insensitively, because the server is — the ⚠️ on isRename in auth-role-form.ts.
+          if (isRename(output.name, news.name)) return { action: 'replace' } as const;
           const live = yield* readRole(news);
           if (live === undefined) return { action: 'update' } as const;
           if (matches(live, news)) return { action: 'noop' } as const;

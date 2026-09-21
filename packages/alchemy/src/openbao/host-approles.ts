@@ -23,8 +23,11 @@
  * ⛔ `bindSecretId` IS ALWAYS TRUE. A role that logs in on role_id alone makes the role_id — which
  *   is not treated as a secret — the whole credential.
  * ⚠️ A RENAMED HOST OR CLASS IS A NEW ROLE: a new role_id, and a new secret_id to push to the host
- *   in the same change. Bao.AuthRole plans that as a `replace`, and under the default `retain` the
- *   old role stays live — see the ⚠️ in auth-role.ts before renaming.
+ *   in the same change. What Alchemy calls it depends on the logical id. Keyed by the role name (as
+ *   the README does), the old id VANISHES from the stack, so it is an orphan delete, not a
+ *   `replace`. Keyed by something stable, Bao.AuthRole plans a `replace`. Either way the default
+ *   `retain` leaves the old role LIVE, its secret_ids still logging in (alchemy Plan.ts:2040 and
+ *   Apply.ts:2152-2173 honour retain on both paths) — see the ⚠️ in auth-role.ts before renaming.
  */
 import type { BaoAuthRoleProps } from './auth-role-form.ts';
 import { parseDuration } from './mount-form.ts';

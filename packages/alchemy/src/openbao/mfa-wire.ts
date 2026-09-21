@@ -13,6 +13,14 @@
  *   write both creates and updates. The listing (`key_info`, one entry per id, :63-69) answers the
  *   methods of this namespace AND its parents (login_mfa.go:652-713), so the match also requires
  *   this namespace's `namespace_path`.
+ * ⛔ THE NAME INDEX IGNORES THE TYPE, SO THIS LISTS EVERY TYPE. login_mfa.go's `name` index is
+ *   (namespace_id, name) across all methods (:1642-1655, :1818), and handleMFAMethodUpdateCommon
+ *   then sets `mConfig.Type = "totp"` on whatever it found (identity/mfa.go:228). A TOTP write under
+ *   the name of a Duo or Okta method would silently CONVERT that method — and every enforcement
+ *   naming its id would start demanding a TOTP code nobody is enrolled for. The per-type listing
+ *   (`.../method/totp?list=true`) cannot see the clash, so this reads the global one
+ *   (`identity/mfa/method?list=true`, store.go:335) and refuses a same-named method of
+ *   another type. ⚠️ The deploying token needs `list` on `identity/mfa/method`.
  * ⚠️ AN UPDATE BY A STALE `method_id` IS A SILENT NO-OP: the handler returns nil for an unknown id
  *   (identity/mfa.go:172-183), which HTTP answers 204. So this never writes by id.
  */
@@ -24,6 +32,8 @@ import type { BaoError } from './bao-status.ts';
 import { mountPath } from './mount-form.ts';
 
 export const TOTP_PATH = 'identity/mfa/method/totp';
+/** Every MFA method of every type — the only listing that can see a name clash across types. */
+export const METHODS_PATH = 'identity/mfa/method';
 export const enforcementPath = (name: string): string => `identity/mfa/login-enforcement/${name}`;
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -39,20 +49,29 @@ export const ownNamespacePath: Effect.Effect<string> = Effect.gen(function* () {
 
 export type TotpEntry = { readonly id: string; readonly live: Record<string, unknown> };
 
-/** The TOTP method named `name` in this namespace, or undefined. */
+/**
+ * The TOTP method named `name` in this namespace, or undefined. Dies when the name belongs to a
+ * method of ANOTHER type here — writing would convert it (the ⛔ above).
+ */
 export const findTotp = (
   name: string,
 ): Effect.Effect<TotpEntry | undefined, BaoError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
-    const listing = yield* baoRead(`${TOTP_PATH}?list=true`);
+    const listing = yield* baoRead(`${METHODS_PATH}?list=true`);
     const info = record(listing?.['key_info']) ?? {};
     const own = yield* ownNamespacePath;
     for (const [id, raw] of Object.entries(info)) {
       const live = record(raw);
-      if (live === undefined) continue;
-      if (live['name'] === name && live['type'] === 'totp' && live['namespace_path'] === own) {
-        return { id, live };
+      if (live === undefined || live['name'] !== name || live['namespace_path'] !== own) continue;
+      if (live['type'] !== 'totp') {
+        return yield* Effect.die(
+          new Error(
+            `Bao.MfaTotpMethod ${name}: that name belongs to a ${String(live['type'])} method ` +
+              `(${id}) in this namespace, and a TOTP write would convert it. Pick another name.`,
+          ),
+        );
       }
+      return { id, live };
     }
     return undefined;
   });

@@ -73,6 +73,30 @@ describe('jwt role form', () => {
     assert.deepEqual(body['token_policies'], ['ci-app-deploy']);
   });
 
+  it('sends every token_* field at its default — the write merges, so an omitted one stays stale', () => {
+    const bare: BaoJwtRoleProps = {
+      boundSubject: 'repo:example-org/app:ref:refs/heads/main',
+      name: 'bare',
+      roleType: 'jwt',
+      tokenPolicies: [],
+      userClaim: 'sub',
+    };
+    const token = Object.fromEntries(
+      Object.entries(writeBody(bare)).filter(([key]) => key.startsWith('token_')),
+    );
+    assert.deepEqual(token, {
+      token_bound_cidrs: [],
+      token_explicit_max_ttl: '0',
+      token_max_ttl: '0',
+      token_no_default_policy: false,
+      token_num_uses: 0,
+      token_period: '0',
+      token_policies: [],
+      token_ttl: '0',
+      token_type: 'default',
+    });
+  });
+
   it('plans update for drift on a managed field, including the two fixed-false ones', () => {
     const drifted: [string, unknown][] = [
       ['verbose_oidc_logging', true],

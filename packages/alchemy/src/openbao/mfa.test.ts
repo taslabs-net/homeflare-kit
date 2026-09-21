@@ -8,6 +8,7 @@ import { describe, it } from 'node:test';
 import { type Reply, type Seen, run, withFake } from './fake-bao.ts';
 import { planEnforcement, reconcileEnforcement } from './mfa-enforcement.ts';
 import { planTotp, reconcileTotp } from './mfa-totp.ts';
+import { renameProblem } from './mfa-totp-form.ts';
 
 const ENV = (address: string) => ({ BAO_ADDR: address, BAO_NAMESPACE: 'team-a' });
 const TOTP = { issuer: 'vault-example', name: 'admin-totp' };
@@ -82,6 +83,20 @@ describe('Bao.MfaTotpMethod', () => {
         assert.equal(writes(bao.seen).length, 1);
       },
     );
+  });
+
+  it('refuses a rename at plan time — a new id would strand every enrolled secret', () => {
+    assert.equal(renameProblem('admin-totp', 'admin-totp'), undefined);
+    assert.match(renameProblem('admin-totp', 'admin-otp') ?? '', /strand every enrolled secret/);
+  });
+
+  it('refuses a name another method type holds here — a TOTP write would convert it', async () => {
+    await withFake(totpFake(listing(stored('team-a/', { type: 'duo' }))), async (bao) => {
+      await assert.rejects(run(ENV(bao.address), reconcileTotp(TOTP)), /belongs to a duo method/);
+      assert.equal(writes(bao.seen).length, 0);
+      // ★ The GLOBAL listing — the per-type one cannot see a Duo method at all.
+      assert.equal(bao.seen[0]?.path, '/v1/identity/mfa/method?list=true');
+    });
   });
 
   it('plans update on drift, and refuses a bad declaration before any call', async () => {

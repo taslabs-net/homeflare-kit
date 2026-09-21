@@ -11,11 +11,15 @@
  *   · Roles are stored under the LOWER-CASED name (:396, backend.go:361), so a mixed-case name
  *     would read back as a different string. Refused, not folded.
  *   · `audience` is omitted from a read when empty (:206-208); read as `''`.
- * ⚠️ `aliasNameSource` DECIDES WHO A POD IS. `serviceaccount_uid` (OpenBao's default, and this
- *   resource's) names the entity alias by the service account's UID; `serviceaccount_name` by
- *   `<namespace>/<name>` (backend.go:30-34). Changing it on a live role re-names every pod's alias,
- *   so their next logins land on NEW entities and attribution splits. The machine-access plan
- *   chose `serviceaccount_name` for k8s pods; say so explicitly per role.
+ * ⚠️ `aliasNameSource` DECIDES WHO A POD IS. `serviceaccount_uid` (OpenBao's default) names the
+ *   entity alias by the service account's UID; `serviceaccount_name` by `<namespace>/<name>`
+ *   (backend.go:30-34). Changing it on a live role re-names every pod's alias, so their next logins
+ *   land on NEW entities and attribution splits.
+ * ⛔ SO IT IS REQUIRED, NOT DEFAULTED (review 2026-09-21). Every field is sent on every write, so a
+ *   default here would be WRITTEN: adopting a hand-made `serviceaccount_name` role with the prop
+ *   left out would plan a bare `update` and silently re-key every pod onto new entities. The
+ *   machine-access plan chose `serviceaccount_name`; the server's default is the other one — a
+ *   choice this important is made in the declaration, the way Bao.JwtRole's `roleType` is.
  */
 import {
   type BaoTokenForm,
@@ -44,8 +48,8 @@ export interface BaoKubernetesRoleProps extends BaoTokenProps {
   boundServiceAccountNamespaceSelector?: string;
   /** The `aud` a service account token must carry. Default none. */
   audience?: string;
-  /** Default `serviceaccount_uid` — read the ⚠️ above before changing it on a live role. */
-  aliasNameSource?: BaoKubernetesAliasSource;
+  /** ⛔ Required — read the ⚠️ and ⛔ above before changing it on a live role. */
+  aliasNameSource: BaoKubernetesAliasSource;
 }
 
 export interface BaoKubernetesRoleCanonical extends BaoTokenForm {
@@ -80,7 +84,7 @@ const canonical = (input: BaoKubernetesRoleCanonical): BaoKubernetesRoleCanonica
 export const canonicalFromProps = (props: BaoKubernetesRoleProps): BaoKubernetesRoleCanonical =>
   canonical({
     ...tokenFormOfProps(props),
-    aliasNameSource: props.aliasNameSource ?? 'serviceaccount_uid',
+    aliasNameSource: props.aliasNameSource,
     audience: props.audience ?? '',
     boundServiceAccountNames: props.boundServiceAccountNames,
     boundServiceAccountNamespaceSelector: props.boundServiceAccountNamespaceSelector ?? '',
@@ -117,7 +121,7 @@ export const matches = (
 ): boolean => attributes.digest === sha256(JSON.stringify(canonicalFromProps(props)));
 
 export const writeBody = (props: BaoKubernetesRoleProps): Record<string, unknown> => ({
-  alias_name_source: props.aliasNameSource ?? 'serviceaccount_uid',
+  alias_name_source: props.aliasNameSource,
   audience: props.audience ?? '',
   bound_service_account_names: [...props.boundServiceAccountNames],
   bound_service_account_namespace_selector: props.boundServiceAccountNamespaceSelector ?? '',

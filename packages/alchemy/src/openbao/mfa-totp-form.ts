@@ -130,6 +130,17 @@ export const writeBody = (props: BaoMfaTotpMethodProps): Record<string, unknown>
   };
 };
 
+/**
+ * The diff's refusal for a changed name, or undefined when the name is unchanged. Never a
+ * `replace`: the ⛔ on a rename in mfa-totp.ts says why.
+ */
+export const renameProblem = (from: string, to: string): string | undefined =>
+  from === to
+    ? undefined
+    : `renaming from \`${from}\` would strand every enrolled secret. Declare the new method as a ` +
+      'second resource, list both ids on the enforcement, enrol, then remove the old one ' +
+      '(mfa-totp.ts).';
+
 export const problems = (props: BaoMfaTotpMethodProps): readonly string[] => {
   const found: string[] = [];
   const form = canonicalFromProps(props);

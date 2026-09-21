@@ -9,7 +9,10 @@
  *   Opt in with `.pipe(RemovalPolicy.destroy())`; see resource.ts in house/proxmox.
  *
  * ★ REPLACE SEMANTICS (audited 2026-09-21, see src/openbao/REPLACE.md):
- *   · `type` changed → `replace` (create-first; retain keeps the old mount, below).
+ *   · `type` changed → plans `replace`, and the APPLY FAILS, destroying nothing: the new
+ *     generation's path is the old one's, still occupied, so its reconcile dies "type is
+ *     immutable" before any write (mount-reconcile.ts). Change a type by hand. ⛔ Not `deleteFirst`
+ *     on purpose — under `destroy` that would disable the mount, every secret with it, on a typo.
  *   · `path` changed → FAILS the plan unless `remountFrom` names the old path, which is an
  *     in-place `update` that moves the mount and its data (mount-move.ts). It used to be an
  *     `update` that enabled an EMPTY mount at the new path.
@@ -78,8 +81,9 @@ export const BaoMountProvider = () =>
            *   it is true the engine logs "Retaining replaced resource (removal policy: retain)"
            *   and skips the delete entirely. Every mount this package declares carries the retain
            *   default (see the ★ on the resource below), so a wrong `type` string cannot disable a
-           *   live mount. What it CAN do is try to enable a second mount at an occupied path,
-           *   which OpenBao refuses loudly — a failed deploy, not a lost shelf.
+           *   live mount. What it CAN do is fail: the new generation reads the SAME path, finds the
+           *   old type there and dies before any write (mount-reconcile.ts) — a failed deploy, not a
+           *   lost shelf (corrected 2026-09-21; this said OpenBao refused a second enable).
            * ⚠️ THAT SAFETY IS THE DECORATION'S, NOT THIS LINE'S. A caller who opts into
            *   `.pipe(RemovalPolicy.destroy())` gets the destructive replace, which is the correct
            *   meaning of opting in and is worth knowing before you type it on a mount.

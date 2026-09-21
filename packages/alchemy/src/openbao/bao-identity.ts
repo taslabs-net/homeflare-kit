@@ -16,8 +16,12 @@
  *     stripped for this one call, whatever BAO_NAMESPACE says.
  *   · The query asks for 200 when sealed, uninitialised or standby (`sealedcode`, `uninitcode`,
  *     `standbyok`, :78-110), so the body is always there to read and the refusal can say WHICH.
- *   ⛔ NO TOKEN IS SENT. Until this check passes, the server has not proved it is ours, and a token
- *     sent to an impostor is a token handed over.
+ *   ⛔ NO TOKEN IS SENT. Until this check passes, the server has not even claimed to be ours, and a
+ *     token sent to the wrong server is a token handed over.
+ * ⚠️ IT CATCHES A MISTARGET, NOT AN IMPOSTOR (review 2026-09-21). `cluster_name` is answered to
+ *   anyone, unauthenticated, so a hostile server can echo the expected one; passing proves the
+ *   address is configured right, never who answers. TLS to a trusted certificate is what
+ *   authenticates the server — keep an https BAO_ADDR on anything that is not loopback or a socket.
  * ★ THE NAMESPACE IS CHECKED TWICE. Locally first: the namespace every later call will send (the
  *   same bao-address.ts resolution) must BE the expected one. Then remotely: unauthenticated
  *   `sys/internal/ui/mounts` with that namespace header answers 200 when the namespace exists and

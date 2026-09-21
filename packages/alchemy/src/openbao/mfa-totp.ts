@@ -27,6 +27,7 @@ import {
   attributesOf,
   matches,
   problems,
+  renameProblem,
   writeBody,
 } from './mfa-totp-form.ts';
 import { deleteTotp, findTotp, writeTotp } from './mfa-wire.ts';
@@ -98,14 +99,8 @@ export const BaoMfaTotpMethodProvider = () =>
 
         diff: Effect.fn(function* ({ news, output }) {
           if (output === undefined || !isResolved(news)) return undefined;
-          if (news.name !== output.name) {
-            return yield* refuse(
-              news,
-              `renaming from \`${output.name}\` would strand every enrolled secret. Declare the new ` +
-                'method as a second resource, list both ids on the enforcement, enrol, then remove ' +
-                'the old one (mfa-totp.ts).',
-            );
-          }
+          const rename = renameProblem(output.name, news.name);
+          if (rename !== undefined) return yield* refuse(news, rename);
           return { action: yield* planTotp(news) } as const;
         }),
 

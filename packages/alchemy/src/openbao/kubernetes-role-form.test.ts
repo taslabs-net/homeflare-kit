@@ -58,9 +58,9 @@ describe('kubernetes role form', () => {
     assert.equal(body['alias_name_source'], 'serviceaccount_name');
   });
 
-  it("defaults the alias source to OpenBao's own, serviceaccount_uid", () => {
-    const { aliasNameSource: _, ...rest } = POD;
-    assert.equal(writeBody(rest)['alias_name_source'], 'serviceaccount_uid');
+  it('sends the declared alias source, whichever it is — there is no default to fall back on', () => {
+    const uid = { ...POD, aliasNameSource: 'serviceaccount_uid' as const };
+    assert.equal(writeBody(uid)['alias_name_source'], 'serviceaccount_uid');
   });
 
   it('refuses empty names, a mixed `*`, no namespaces, and upper case', () => {

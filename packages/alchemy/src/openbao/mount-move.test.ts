@@ -127,6 +127,19 @@ describe('reconcileMount', () => {
   });
 });
 
+describe('a type change (REPLACE.md)', () => {
+  it("fails the replacement's create on the occupied path, before any write", async () => {
+    const live = liveTable('sys/mounts', { kv: 'kv' });
+    await withFake(live.answer, async (bao) => {
+      // ★ A replacement's new generation reconciles with no state: `stated` is undefined.
+      const replacement = reconcileMount({ path: 'kv', type: 'pki' }, undefined);
+      await assert.rejects(run({ BAO_ADDR: bao.address }, replacement), /immutable/);
+      assert.deepEqual(posts(bao.seen), []);
+      assert.deepEqual([...live.table.entries()], [['kv/', 'kv']]);
+    });
+  });
+});
+
 describe('reconcileAuthMethod', () => {
   it('moves an auth method through sys/remount with the auth/ prefix', async () => {
     const live = liveTable('sys/auth', { jwt: 'jwt' });
