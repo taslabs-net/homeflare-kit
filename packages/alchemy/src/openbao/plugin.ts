@@ -26,7 +26,7 @@ import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { claimFor } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import {
   type BaoPluginAttributes,
   type BaoPluginProps,
@@ -97,7 +97,7 @@ export const BaoPluginProvider = () =>
         }),
 
         /** ⛔ IT COMPARES THE LIVE ENTRY, NOT THE STORED DIGEST — a hand re-register is drift. */
-        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
+        diff: Effect.fn(function* ({ news, olds, output }) {
           /**
            * ⛔ A NEW NAME, TYPE OR VERSION IS A DIFFERENT ENTRY, not an edit: `replace`, judged
            *   before `isResolved(news)`. Writing the new key in place would leave the old
@@ -105,7 +105,8 @@ export const BaoPluginProvider = () =>
            *   that is already registered fails the plan (rename-identity.ts).
            */
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return yield* noteResume(instanceId);
+          // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
+          if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           const form = resolve(news);
@@ -132,5 +133,5 @@ export const BaoPluginProvider = () =>
           return undefined;
         }),
       }),
-    ),
+    ).pipe(Effect.map(provingResumes)),
   );

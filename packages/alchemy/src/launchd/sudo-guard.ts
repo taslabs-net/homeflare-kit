@@ -10,11 +10,18 @@
  *   lies under it — a symlink where the file was — between these checks and the privileged call.
  *   So each one must be owned by root and not group/other-writable (rootOnlyProblem), exactly as
  *   the prefix itself must.
+ * ⛔ AND EVERY DIRECTORY ABOVE THE PREFIX (red team, 2026-09-21). Whoever may write the prefix's
+ *   parent may rename the prefix away and put a symlink in its place between these checks and the
+ *   privileged call — the same swap one level up. So `/` down to the prefix's parent must be
+ *   root-only too (a root-owned symlink among them, `/etc` -> `private/etc`, is root's own and is
+ *   followed; its target is root's choice, and not walked).
+ * ⛔ AND NO ACL THAT SAYS OTHERWISE (sudo-acl.ts): mode bits are not the whole answer on macOS.
  * ⚠️ These checks run before the privileged call, as the deploying user. They guard against a
  *   mistaken declaration and against every user but root; root itself could still change a path
- *   in that window, and ACLs are not read.
+ *   in that window.
  */
 import type { FileStat, HostRunner, WriteOptions } from './runner.ts';
+import { assertNoAclGrants } from './sudo-acl.ts';
 import { SudoRefusedError } from './sudo-allowlist.ts';
 
 const refuse = (path: string, message: string): Error =>
@@ -27,6 +34,12 @@ export const betweenDirs = (prefix: string, path: string): string[] => {
     .split('/')
     .slice(0, -1);
   return parts.map((_, index) => `${prefix}/${parts.slice(0, index + 1).join('/')}`);
+};
+
+/** The directories strictly above `prefix`: `/`, then each one down to the prefix's parent. */
+export const aboveDirs = (prefix: string): string[] => {
+  const parts = prefix.split('/').slice(1, -1);
+  return ['/', ...parts.map((_, index) => `/${parts.slice(0, index + 1).join('/')}`)];
 };
 
 /**
@@ -43,7 +56,7 @@ export type Expect = 'file' | 'file-or-absent';
  *   `/etc/sudoers`). A prefix another user owns or may write lets that user swap a directory below
  *   it for a symlink between this check and the privileged call.
  * ⚠️ lstat of the prefix itself: a symlink ABOVE it (`/etc` -> `/private/etc` on macOS) is the
- *   system's and is followed, as every path lookup does. ACLs are not read; mode bits only.
+ *   system's and is followed, as every path lookup does — when root owns it (aboveDirs).
  * ★ MEASURED 2026-09-21 on macOS 27.2 (`ls -ldn`): /Library/LaunchDaemons, /private/etc, /opt and
  *   /usr/local are uid 0, mode 0755, so the prefixes a host stack declares pass as they are.
  */
@@ -67,6 +80,17 @@ export const assertPlainPath = async (
   path: string,
   expect: Expect,
 ): Promise<'file' | 'absent'> => {
+  const above = aboveDirs(prefix);
+  for (const [index, stat] of (await Promise.all(above.map((dir) => base.stat(dir)))).entries()) {
+    const up = stat?.kind === 'symlink' && stat.uid === 0 ? undefined : rootOnlyProblem(stat);
+    if (up !== undefined) {
+      throw refuse(
+        path,
+        `${String(above[index])}, above the declared prefix ${prefix}, ${up}. Whoever may change it ` +
+          'may swap the prefix itself; every directory from / down must be root-only. Nothing ran as root.',
+      );
+    }
+  }
   const dirs = betweenDirs(prefix, path);
   const [prefixStat, ...stats] = await Promise.all([prefix, ...dirs].map((dir) => base.stat(dir)));
   const bad = rootOnlyProblem(prefixStat);
@@ -95,6 +119,7 @@ export const assertPlainPath = async (
       );
     }
   }
+  await assertNoAclGrants(base, path, [...above, prefix, ...dirs]);
   const target = await base.stat(path);
   if (target === undefined && expect === 'file-or-absent') return 'absent';
   if (target?.kind === 'file') return 'file';

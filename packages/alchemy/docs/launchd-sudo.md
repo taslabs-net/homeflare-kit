@@ -9,9 +9,9 @@ argv shapes, logging each one. It is an explicit opt-in: nothing falls back to i
 import { launchdProviders, sudoRunner } from '@homeflare/alchemy/launchd';
 
 const runner = sudoRunner({
-  // ⛔ Required: the directories root may write. Each — and every directory below it on the way
-  //   to a file — must be a real directory that root owns and only root may write; that is
-  //   checked at every privileged call.
+  // ⛔ Required: the directories root may write. Each — every directory above it, and every
+  //   directory below it on the way to a file — must be one that root owns and only root may
+  //   write, by mode bits and by ACL; that is checked at every privileged call.
   prefixes: ['/Library/LaunchDaemons', '/opt/example'],
   // log: (line) => …, // default: one line on stderr per privileged call
 });
@@ -67,6 +67,17 @@ sudo.
 - **A directory between the prefix and the file** that is not owned by root, or that group or
   other may write (checked since 0.9.0). ⛔ Its owner, or anyone who may write it, could swap
   what lies under it for a symlink between the check and the call.
+- **A directory above the prefix**, from `/` down, that is not owned by root or that group or other
+  may write (red team, 2026-09-21). ⛔ Whoever may change the prefix's parent may rename the prefix
+  away and put a symlink in its place: the same swap, one level up. A root-owned symlink among them
+  (`/etc` -> `private/etc`) is root's own and is followed.
+- **An ACL from `/` down to the file that grants a write right** (`add_file`, `add_subdirectory`,
+  `delete_child`, `delete`, `write`, `append`, `writesecurity`, `chown`), read with `ls -lden` as
+  you. ⛔ On macOS an ACL entry can hand another user exactly the swap the mode bits forbid, and an
+  inheritable `allow write` hands them every file root installs there. Deny entries (a home
+  folder's `everyone deny delete`) and read-only rights refuse nothing; ACLs that cannot be read
+  refuse. Measured 2026-09-21: `/Library/LaunchDaemons`, `/private/etc`, `/opt` and `/usr/local`,
+  and everything above them, carry none.
 - **A root-owned file that would be group- or world-writable, setuid or setgid** (`mode & 0o6022`;
   an omitted owner is root). ⛔ Anyone in that class could rewrite a file root installed (a
   daemon's config, a script it runs), and a setuid root file runs as root for whoever executes it.
@@ -129,7 +140,8 @@ record of what ran as root.
   remove, then an add.
 - ⚠️ **Under a prefix, the runner writes as root.** An omitted owner is root, and an omitted group
   is the directory's group (a new file's group on macOS).
-- ⚠️ **The checks run as you, just before the call.** Every directory from the prefix down must be
-  root-only, so no other user can swap a path in between; root itself still could. ACLs are not
-  read, only mode bits.
+- ⚠️ **The checks run as you, just before the call.** Every directory from `/` down to the file
+  must be root-only, by mode bits and by ACL, so no other user can swap a path in between; root
+  itself still could. The target of a root-owned symlink above the prefix is root's choice and is
+  not walked.
 - ⛔ **macOS hosts.** Every argv shape was checked against macOS 27.2 man pages.

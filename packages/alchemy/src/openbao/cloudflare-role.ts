@@ -23,7 +23,7 @@ import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { refuseTakeover } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import { groupKey, scopeOfResource } from './cloudflare-group-scope.ts';
 import { CloudflarePermissionGroups, type GroupRef } from './cloudflare-permission-groups.ts';
 import { resolvePolicies } from './cloudflare-policy.ts';
@@ -136,9 +136,10 @@ export const BaoCloudflareRoleProvider = () =>
          *   (homeflare-openbao's declareCloudflareRoles does). There a rename is a new logical id,
          *   and the old id leaves the stack as an orphan delete, which `retain` keeps live.
          */
-        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
+        diff: Effect.fn(function* ({ news, olds, output }) {
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return yield* noteResume(instanceId);
+          // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
+          if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           /**
@@ -211,5 +212,5 @@ export const BaoCloudflareRoleProvider = () =>
           return undefined;
         }),
       });
-    }),
+    }).pipe(Effect.map(provingResumes)),
   );

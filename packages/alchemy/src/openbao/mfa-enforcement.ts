@@ -33,7 +33,7 @@ import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { type Claim, claimFor } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import type { BaoError } from './bao-status.ts';
 import {
   type BaoMfaLoginEnforcementAttributes,
@@ -142,10 +142,11 @@ export const BaoMfaLoginEnforcementProvider = () =>
         }),
 
         /** ⛔ IT COMPARES THE LIVE ENFORCEMENT — a target removed by hand is drift, not a noop. */
-        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
+        diff: Effect.fn(function* ({ news, olds, output }) {
           // ⛔ The name first, before isResolved; onto an enforcement that exists fails the plan.
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return yield* noteResume(instanceId);
+          // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
+          if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           return { action: yield* planEnforcement(news) } as const;
@@ -167,5 +168,5 @@ export const BaoMfaLoginEnforcementProvider = () =>
           );
         }),
       }),
-    ),
+    ).pipe(Effect.map(provingResumes)),
   );

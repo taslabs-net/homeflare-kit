@@ -21,7 +21,7 @@ import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { claimFor } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import {
   type BaoAuthMethodAttributes,
   type BaoAuthMethodProps,
@@ -64,8 +64,9 @@ export const BaoAuthMethodProvider = () =>
           return yield* ownedRead({ fqn, instanceId, output }, found, ours);
         }),
 
-        diff: Effect.fn(function* ({ instanceId, news, output }) {
-          if (output === undefined) return yield* noteResume(instanceId);
+        diff: Effect.fn(function* ({ news, output }) {
+          // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
+          if (output === undefined) return undefined;
           if (!isResolved(news)) return undefined;
           /**
            * ⛔ A CHANGED PATH FAILS HERE unless `remountFrom` names the old one — the same trap
@@ -102,5 +103,5 @@ export const BaoAuthMethodProvider = () =>
           return undefined;
         }),
       }),
-    ),
+    ).pipe(Effect.map(provingResumes)),
   );

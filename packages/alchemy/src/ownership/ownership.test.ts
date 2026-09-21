@@ -1,10 +1,11 @@
 /**
- * The engine-facing edges of ownership/: which instance a read is about, what a resume note is
- * worth without a shared bag, and that a `settled` check that cannot run never fails the plan.
- * The families' end-to-end behaviour is pinned through the engine in openbao/adopt-*.test.ts.
+ * The engine-facing edges of ownership/: which instance a read is about, whether its row carries
+ * the whole declaration, what a resume note is worth without a shared bag or a proof, and that a
+ * `settled` check that cannot run never fails the plan. whole.test.ts has the hole walk itself;
+ * the families' end-to-end behaviour is pinned through the engine in openbao/adopt-*.test.ts.
  */
 import { describe, expect, test } from 'bun:test';
-import { Unowned } from 'alchemy/AdoptPolicy';
+import { AdoptPolicy, Unowned } from 'alchemy/AdoptPolicy';
 import { Artifacts, makeScopedArtifacts } from 'alchemy/Artifacts';
 import { InMemoryService } from 'alchemy/State/InMemoryState';
 import type { ResourceState } from 'alchemy/State/ResourceState';
@@ -13,13 +14,22 @@ import { Stack } from 'alchemy/Stack';
 import * as Effect from 'effect/Effect';
 import { refuseTakeover } from './adopt.ts';
 import { ownedRead } from './probe.ts';
-import { noteResume, resumes } from './resume.ts';
-import { forgetRefusedCreate, recordedInstance } from './rows.ts';
+import { noteResume, noteUnfinished, resumes } from './resume.ts';
+import { forgetRefusedCreate, isCreate, recordedInstance } from './rows.ts';
 
-const row = (fqn: string, instanceId: string, old?: unknown): ResourceState =>
-  ({ fqn, instanceId, old, status: old === undefined ? 'creating' : 'replacing' }) as never;
+const row = (fqn: string, instanceId: string, old?: unknown, props: unknown = { name: 'a' }) =>
+  ({
+    fqn,
+    instanceId,
+    old,
+    props,
+    status: old === undefined ? 'creating' : 'replacing',
+  }) as unknown as ResourceState;
 
-/** A stack `s` at stage `test` whose store holds `rows`, and `Z` declared `renamedFrom('X')`. */
+/**
+ * A stack `s` at stage `test` whose store holds `rows`: `A` and `B` declared with a `name`, and `Z`
+ * declared `renamedFrom('X')`.
+ */
 const withStore = <A>(rows: Record<string, ResourceState>, effect: Effect.Effect<A>): Promise<A> =>
   Effect.runPromise(
     effect.pipe(
@@ -28,7 +38,11 @@ const withStore = <A>(rows: Record<string, ResourceState>, effect: Effect.Effect
         actions: {},
         bindings: {},
         name: 's',
-        resources: { Z: { FormerFqns: ['X'] } },
+        resources: {
+          A: { Props: { name: 'a' } },
+          B: { Props: { name: 'b' } },
+          Z: { FormerFqns: ['X'], Props: { name: 'a' } },
+        },
         stage: 'test',
       } as never),
     ),
@@ -37,18 +51,35 @@ const withStore = <A>(rows: Record<string, ResourceState>, effect: Effect.Effect
 describe('recordedInstance', () => {
   test('is the row at the FQN, any generation of its `old` chain, or a renamedFrom row', async () => {
     const rows = { A: row('A', 'new', row('A', 'older')), X: row('X', 'moved') };
-    expect(await withStore(rows, recordedInstance('A', 'new'))).toBe(true);
-    expect(await withStore(rows, recordedInstance('A', 'older'))).toBe(true);
-    expect(await withStore(rows, recordedInstance('Z', 'moved'))).toBe(true);
+    expect(await withStore(rows, recordedInstance('A', 'new'))).toBe('whole');
+    expect(await withStore(rows, recordedInstance('A', 'older'))).toBe('whole');
+    expect(await withStore(rows, recordedInstance('Z', 'moved'))).toBe('whole');
   });
 
   test("the probe's freshly minted instance is never recorded", async () => {
-    expect(await withStore({ A: row('A', 'mine') }, recordedInstance('A', 'probe'))).toBe(false);
-    expect(await withStore({}, recordedInstance('A', 'mine'))).toBe(false);
+    expect(await withStore({ A: row('A', 'mine') }, recordedInstance('A', 'probe'))).toBe('absent');
+    expect(await withStore({}, recordedInstance('A', 'mine'))).toBe('absent');
+  });
+
+  test('a row missing a declared prop (an Output stripped at commit) is partial', async () => {
+    const holed = { A: row('A', 'mine', undefined, {}) };
+    expect(await withStore(holed, recordedInstance('A', 'mine'))).toBe('partial');
+    // ★ No longer declared (an orphan's delete): nothing to compare, so never whole.
+    expect(await withStore({ C: row('C', 'mine') }, recordedInstance('C', 'mine'))).toBe('partial');
   });
 
   test('fails closed with no Stack or State in context', async () => {
-    expect(await Effect.runPromise(recordedInstance('A', 'mine'))).toBe(false);
+    expect(await Effect.runPromise(recordedInstance('A', 'mine'))).toBe('absent');
+  });
+});
+
+describe('isCreate', () => {
+  test("is this instance's `creating` row — never a replace's `replacing` one", async () => {
+    const rows = { A: row('A', 'mine'), B: row('B', 'new', row('B', 'older')) };
+    expect(await withStore(rows, isCreate('A', 'mine'))).toBe(true);
+    expect(await withStore(rows, isCreate('B', 'new'))).toBe(false);
+    expect(await withStore(rows, isCreate('A', 'other'))).toBe(false);
+    expect(await Effect.runPromise(isCreate('A', 'mine'))).toBe(false);
   });
 });
 
@@ -83,11 +114,15 @@ describe('ownedRead', () => {
     expect(Unowned.is(probed)).toBe(true);
   });
 
-  test('the recovery read is ours only when settled', async () => {
+  test('the recovery read is ours only when settled, over a row with the whole declaration', async () => {
     expect(Unowned.is(await withStore(rows, ownedRead(ask(), found, Effect.succeed(true))))).toBe(
       false,
     );
     expect(Unowned.is(await withStore(rows, ownedRead(ask(), found, Effect.succeed(false))))).toBe(
+      true,
+    );
+    const holed = { A: row('A', 'mine', undefined, {}) };
+    expect(Unowned.is(await withStore(holed, ownedRead(ask(), found, Effect.succeed(true))))).toBe(
       true,
     );
   });
@@ -105,12 +140,32 @@ describe('resume notes and refuseTakeover', () => {
   const inBag = <A>(effect: Effect.Effect<A>) =>
     Effect.runPromise(effect.pipe(Effect.provideService(Artifacts, bag)));
 
+  const ours = Effect.succeed({ name: 'a' });
+
   test('a note is read back for its own instance only, and nothing is noted without a bag', async () => {
-    await inBag(noteResume('mine'));
+    await inBag(noteResume('mine', ours));
     expect(await inBag(resumes('mine'))).toBe(true);
     expect(await inBag(resumes('other'))).toBe(false);
-    await Effect.runPromise(noteResume('mine'));
+    await Effect.runPromise(noteResume('mine', ours));
     expect(await Effect.runPromise(resumes('mine'))).toBe(false);
+  });
+
+  test('nothing is noted unless the read proves the object ours', async () => {
+    const fresh = makeScopedArtifacts(new Map(), 'A');
+    const unproven = [
+      Effect.succeed(undefined),
+      Effect.succeed(Unowned({ name: 'a' })),
+      Effect.fail(new Error('403')),
+      Effect.die(new TypeError('olds.name is undefined')),
+    ];
+    for (const read of unproven) {
+      await Effect.runPromise(
+        noteResume('mine', read).pipe(Effect.provideService(Artifacts, fresh)),
+      );
+    }
+    expect(
+      await Effect.runPromise(resumes('mine').pipe(Effect.provideService(Artifacts, fresh))),
+    ).toBe(false);
   });
 
   test('refuses a create with no note and no adoption; state or a note lets it through', async () => {
@@ -119,7 +174,27 @@ describe('resume notes and refuseTakeover', () => {
       /Thing a: already exists.*--adopt/s,
     );
     await Effect.runPromise(refuseTakeover({ ...owner, output: {} }, 'Thing a'));
-    await inBag(noteResume('mine'));
+    await inBag(noteResume('mine', ours));
     await inBag(refuseTakeover(owner, 'Thing a'));
+  });
+
+  test("--adopt covers a create or an unfinished generation, never a fresh replace's", async () => {
+    const rows = { A: row('A', 'mine'), B: row('B', 'new', row('B', 'older')) };
+    const adopting = <A>(effect: Effect.Effect<A>, bag = makeScopedArtifacts(new Map(), 'B')) =>
+      withStore(
+        rows,
+        effect.pipe(
+          Effect.provideService(AdoptPolicy, true),
+          Effect.provideService(Artifacts, bag),
+        ),
+      );
+    await adopting(refuseTakeover({ fqn: 'A', instanceId: 'mine', output: undefined }, 'Thing a'));
+    const fresh = { fqn: 'B', instanceId: 'new', output: undefined };
+    await expect(adopting(refuseTakeover(fresh, 'Thing b'))).rejects.toThrow(
+      /Thing b: already exists.*new identity of a replace, which --adopt does not cover/s,
+    );
+    const seen = makeScopedArtifacts(new Map(), 'B');
+    await adopting(noteUnfinished('new'), seen);
+    await adopting(refuseTakeover(fresh, 'Thing b'), seen);
   });
 });

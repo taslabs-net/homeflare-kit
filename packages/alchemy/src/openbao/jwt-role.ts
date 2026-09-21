@@ -24,7 +24,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { claimFor } from '../ownership/adopt.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import { baoDelete } from './bao-http.ts';
 import {
   type BaoJwtRoleAttributes,
@@ -95,10 +95,11 @@ export const BaoJwtRoleProvider = () =>
         }),
 
         /** ⛔ IT COMPARES THE LIVE ROLE, NOT THE STORED DIGEST — a hand-widened audience is drift. */
-        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
+        diff: Effect.fn(function* ({ news, olds, output }) {
           // ⛔ The identity first, before isResolved; onto a role that exists fails the plan.
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return yield* noteResume(instanceId);
+          // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
+          if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           return { action: yield* planRole(jwtRoleSpec(news)) } as const;
@@ -116,5 +117,5 @@ export const BaoJwtRoleProvider = () =>
           return undefined;
         }),
       }),
-    ),
+    ).pipe(Effect.map(provingResumes)),
   );

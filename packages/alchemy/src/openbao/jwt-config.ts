@@ -22,7 +22,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { claimFor } from '../ownership/adopt.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import {
   type BaoJwtAuthConfigAttributes,
   type BaoJwtAuthConfigProps,
@@ -85,10 +85,11 @@ export const BaoJwtAuthConfigProvider = () =>
           return yield* readOwnedRole({ fqn, instanceId, output }, jwtConfigSpec(olds));
         }),
 
-        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
+        diff: Effect.fn(function* ({ news, olds, output }) {
           // ⛔ The mount first, before isResolved; onto a mount with a config fails the plan.
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return yield* noteResume(instanceId);
+          // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
+          if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           return { action: yield* planRole(jwtConfigSpec(news)) } as const;
@@ -104,5 +105,5 @@ export const BaoJwtAuthConfigProvider = () =>
         /** ⚠️ Writes nothing — there is no delete endpoint (header). */
         delete: () => Effect.void,
       }),
-    ),
+    ).pipe(Effect.map(provingResumes)),
   );

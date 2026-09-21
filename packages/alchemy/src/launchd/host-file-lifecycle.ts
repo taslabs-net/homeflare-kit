@@ -109,9 +109,12 @@ export const diffFile = async (
 };
 
 /**
- * `adopt` is what `--adopt` / `adopt(…)` resolve to for this resource (ownership/adopt.ts). It lets a
- * CREATE take over a file already at the path — the takeover the plan's probe would have allowed,
- * had it run — and nothing else: a move onto an occupied path stays refused.
+ * `adopt` is whether adoption is on AND this apply is a create or an unfinished generation of our
+ * own (ownership/adopt.ts adoptsAtApply). It lets such a generation take over a file already at the
+ * path — the takeover the plan's probe would have allowed, had it run. ⛔ A move onto an occupied
+ *   path stays refused, both ways the engine drives one: an `update` across the move (`moved`,
+ *   below), and a fresh replace's new generation, which the caller never marks adoptable (its
+ *   `output` is undefined too, so this function cannot tell it from a create by itself).
  */
 export const reconcileFile = async (
   runner: HostRunner,

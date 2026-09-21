@@ -17,6 +17,10 @@
  * ★ THE RECOVERY READ STILL ADOPTS WHAT THE INTERRUPTED CREATE MADE — the instance is ours by the
  *   state row, and the object is proven ours when it matches that row's props (`settled`). One that
  *   does not match may have lost a race to someone else: `Unowned`, as Plan.ts itself asks.
+ * ⛔ ONLY WHEN THE ROW'S PROPS ARE THE WHOLE DECLARATION (whole.ts). A row written while a prop was
+ *   still an Output has a hole there, and "matches" against a hole proves nothing — nor had that
+ *   deploy's plan ever asked whose object it was, because Alchemy skips the probe for an Output.
+ *   Such a create resumes with `--adopt`.
  */
 import { Unowned } from 'alchemy/AdoptPolicy';
 import * as Effect from 'effect/Effect';
@@ -26,7 +30,7 @@ import { recordedInstance } from './rows.ts';
 /**
  * A family's `read` answer. With attributes in state it is `found` as is. Without, it is the probe
  * or the recovery read (header): `found` is ours only when the state store records this instance
- * AND `settled` — the family's own "live matches these props" — says so.
+ * with its whole declaration AND `settled` — the family's own "live matches these props" — says so.
  * ⛔ `settled` NEVER FAILS THE READ. The recovery read runs with the INTERRUPTED deploy's props, so
  *   a declaration that cannot be evaluated any more (a fragments directory since moved, a group
  *   name since renamed) would fail every later plan, the fix included. It reads as "not proven
@@ -39,7 +43,15 @@ export const ownedRead = <A extends object, E, R>(
 ): Effect.Effect<A | undefined, never, R> =>
   Effect.gen(function* () {
     if (found === undefined || ask.output !== undefined) return found;
-    if (!(yield* recordedInstance(ask.fqn, ask.instanceId))) return Unowned(found);
+    const recorded = yield* recordedInstance(ask.fqn, ask.instanceId);
+    if (recorded === 'absent') return Unowned(found);
+    if (recorded === 'partial') {
+      yield* Effect.logWarning(
+        `${ask.fqn}: the interrupted create's state row lacks part of the declaration (a prop ` +
+          'was still an Output when it was written), so the live object is not proven ours',
+      );
+      return Unowned(found);
+    }
     const unproven = (reason: unknown) =>
       Effect.as(
         Effect.logWarning(

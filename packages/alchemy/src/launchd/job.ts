@@ -28,7 +28,8 @@ import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { adoptEnabled } from '../ownership/adopt.ts';
+import { adoptsAtApply } from '../ownership/adopt.ts';
+import { noteUnfinished } from '../ownership/resume.ts';
 import { lift, resolvedString } from './host-effect.ts';
 import type { LaunchdJobAttributes, LaunchdJobProps } from './job-form.ts';
 import { deleteJob, diffJob, readJob, reconcileJob, replaceDiff } from './job-lifecycle.ts';
@@ -69,8 +70,9 @@ export const LaunchdJobProvider = () =>
             return output === undefined ? Unowned(found) : found;
           }),
 
-        diff: ({ news, output }) => {
-          if (output === undefined) return Effect.succeed(undefined);
+        diff: ({ instanceId, news, output }) => {
+          // ★ An unfinished generation of our own: `--adopt` may resume it (ownership/resume.ts).
+          if (output === undefined) return noteUnfinished(instanceId);
           if (isResolved(news)) return lift(() => diffJob(runner, news, output));
           /**
            * ⛔ A RENAME MUST BE SEEN EVEN WHILE OTHER PROPS ARE UNRESOLVED. Returning undefined
@@ -91,8 +93,9 @@ export const LaunchdJobProvider = () =>
         },
 
         // ★ `--adopt` reaches the apply too: the probe never ran for a create with an Output prop.
-        reconcile: ({ fqn, news, output }) =>
-          Effect.flatMap(adoptEnabled(fqn), (adopt) =>
+        //   ⛔ A create or an unfinished generation — never a fresh replace's, never offered it.
+        reconcile: ({ fqn, instanceId, news, output }) =>
+          Effect.flatMap(adoptsAtApply({ fqn, instanceId, output }), (adopt) =>
             lift(() => reconcileJob(runner, news, output, adopt)),
           ),
 

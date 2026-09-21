@@ -105,7 +105,8 @@ Cloudflare and Proxmox roles, plugins — plus `assertBaoIdentity` (call it firs
 plugin `env` or OIDC client secret is declarable. Every family defaults to `retain` on destroy.
 
 ⛔ **Nothing is adopted without `--adopt`** (0.9.0), for every family and even when the live object
-is identical to the declaration; an interrupted create of this stack's own still resumes. The
+is identical to the declaration; an interrupted create of this stack's own still resumes when its
+state row can prove it (a create killed while a prop was still an `Output` needs `--adopt`). The
 same rule holds for `HostFile`, `LaunchdJob` and `CaddyConfig`: [docs/ownership.md](./docs/ownership.md).
 
 ★ **Usage lives beside the code**, so it ships in the tarball with it:

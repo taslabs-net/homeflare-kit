@@ -19,7 +19,8 @@ import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { adoptEnabled } from '../ownership/adopt.ts';
+import { adoptsAtApply } from '../ownership/adopt.ts';
+import { noteUnfinished } from '../ownership/resume.ts';
 import { lift, resolvedString } from './host-effect.ts';
 import type { HostFileAttributes, HostFileProps } from './host-file-form.ts';
 import { deleteFile, diffFile, readFileAttributes, reconcileFile } from './host-file-lifecycle.ts';
@@ -46,8 +47,9 @@ export const HostFileProvider = () =>
             return output === undefined ? Unowned(found) : found;
           }),
 
-        diff: ({ news, output }) => {
-          if (output === undefined) return Effect.succeed(undefined);
+        diff: ({ instanceId, news, output }) => {
+          // ★ An unfinished generation of our own: `--adopt` may resume it (ownership/resume.ts).
+          if (output === undefined) return noteUnfinished(instanceId);
           if (isResolved(news)) return lift(() => diffFile(runner, news, output));
           // ⛔ A new path is a replace even while `content` is unresolved (an Output templated in):
           //   the engine's default would be an update, which writes the new path and never
@@ -59,8 +61,9 @@ export const HostFileProvider = () =>
         },
 
         // ★ `--adopt` reaches the apply too: the probe never ran for a create with an Output prop.
-        reconcile: ({ fqn, news, output }) =>
-          Effect.flatMap(adoptEnabled(fqn), (adopt) =>
+        //   ⛔ A create or an unfinished generation — never a fresh replace's, never offered it.
+        reconcile: ({ fqn, instanceId, news, output }) =>
+          Effect.flatMap(adoptsAtApply({ fqn, instanceId, output }), (adopt) =>
             lift(() => reconcileFile(runner, news, output, adopt)),
           ),
 

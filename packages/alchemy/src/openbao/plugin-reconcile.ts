@@ -40,14 +40,17 @@ const refuse = (form: BaoPluginForm, message: string) =>
  *   nothing, or finds an OLDER genuinely-unversioned entry. The Cloudflare engine reports one
  *   (`framework.Backend.RunningVersion`). REASONED FROM SOURCE, not measured against a server.
  * ⚠️ THE WRITE HAS ALREADY LANDED when this fires, so the catalog holds a registration no state
- *   record names. Declaring the reported version adopts it on the next deploy (same sha256 and
- *   command, so reconcile matches and writes nothing); declaring a DIFFERENT version is refused by
- *   the server itself (setInternal :1219-1221, "plugin version mismatch").
+ *   record names. Declaring the reported version and deploying once with `--adopt` adopts it (same
+ *   sha256 and command, so reconcile matches and writes nothing); declaring a DIFFERENT version is
+ *   refused by the server itself (setInternal :1219-1221, "plugin version mismatch").
+ * ⚠️ `--adopt`, NOT A SILENT RESUME (2026-09-21): the row this create left names the UNVERSIONED
+ *   entry, so it cannot prove the versioned one ours (docs/ownership.md).
  */
 const SELF_REPORTED =
   'the write succeeded but the read-back does not match. If the binary reports its own version, ' +
   'OpenBao filed the registration under it (plugin_catalog.go setInternal) — declare `version` ' +
-  'as exactly the version the binary reports; that adopts the entry this write just made.';
+  'as exactly the version the binary reports, and deploy once with --adopt: that adopts the ' +
+  'entry this write just made.';
 
 /**
  * Register when the live entry differs, then prove it by reading back. Dies on a refusal.
