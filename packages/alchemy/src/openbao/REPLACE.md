@@ -1,7 +1,12 @@
 # Replace semantics: the `Bao.*` providers
 
-Audited 2026-09-21, against `alchemy@2.0.0-beta.79` and OpenBao v2.6.2 source. Every kit
-provider must answer `replace` correctly (vault consolidation plan, "Replace freely").
+Audited 2026-09-21, against `alchemy@2.0.0-beta.79` and OpenBao v2.6.2 source, in two batches.
+Every kit provider must answer `replace` correctly (vault consolidation plan, "Replace freely").
+
+★ **Measured, not only read.** `fake-stack.ts` runs beta.79's own `Plan.make` and `apply` over an
+in-memory state store against the fake engines in `fake-engines.ts`. `policy-rename.test.ts` and
+`role-rename.test.ts` deploy, rename, and deploy again, then check the plan and every call that
+reached the fake.
 
 ## What Alchemy does with each answer
 
@@ -9,6 +14,12 @@ provider must answer `replace` correctly (vault consolidation plan, "Replace fre
   (its path) is unchanged.
 - **`replace`**: create-first by default. The new generation is created, dependents are updated in
   the same graph, then the old generation is deleted (`Apply.ts`, delete-first comment near :1180).
+  ★ That delete gets the **old** generation's attributes (`output: old.attr`), so a provider that
+  deletes by `output` deletes the old path. Measured: `PUT` of the new path, then `DELETE` of the
+  old one.
+- **No answer** (`undefined`, which every diff returns while `news` holds a pending Output): the
+  engine plans `update` if any prop changed (`Plan.ts`, `havePropsChanged`). ⚠️ That is the bug
+  class below whenever the identity changed too.
 - **`deleteFirst: true`**: tears the old one down first. It is only for identities that cannot
   coexist, such as a unique physical name. No `Bao.*` provider uses it. A rename is a new API
   path, which never collides with the old one. ⚠️ A mount or auth method whose `type` changes
@@ -27,7 +38,11 @@ state record, so no later plan would mention it. For a mount this meant an **emp
 beside the retained one that held every secret. For an AppRole it meant the old role's secret_ids
 kept working for their whole TTL.
 
-## Touched in this batch
+🔴 Reproduced through the engine on 2026-09-21 for `Bao.Policy` under `RemovalPolicy.destroy()`:
+deploy `app-old`, redeclare it as `app-new`, deploy. The plan said `update`, and both policies
+stayed live. `destroy` could not help, because nothing recorded the old one.
+
+## Answers, by resource
 
 | Resource                  | Identity change | Answer now                                                                                                                               | Other changes                                                                               |
 | ------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -40,11 +55,50 @@ kept working for their whole TTL.
 | `Bao.JwtAuthConfig`       | `mount`         | `replace`. The old delete is a no-op because there is no delete endpoint.                                                                | `update` (full-replace write)                                                               |
 | `Bao.MfaTotpMethod`       | `name`          | ⛔ **fails the plan**: a new id would strand every enrolled secret                                                                       | `update` (the upsert keeps the id)                                                          |
 | `Bao.MfaLoginEnforcement` | `name`          | `replace`. Its delete is **refused** (openbao#4030)                                                                                      | `update`                                                                                    |
+| `Bao.Policy`              | `name`          | `replace` (batch 3A). Compared as OpenBao keys it, trimmed and lowercased, so `Admin` → `admin` is the same policy: `noop`.              | `update` (fragments digest)                                                                 |
+| `Bao.CloudflareRole`      | `mount`, `name` | `replace` (batch 3A). Exact; a trailing `/` on the mount is the same path.                                                               | `update`                                                                                    |
+| `Bao.ProxmoxRole`         | `mount`, `name` | `replace` (batch 3A). ⛔ **Fails the plan** if the rename also changes `mintUser`, unless `allowMintUserChange` names the old one.       | `update`. A `mintUser` change at the same path is refused at apply, never replaced.         |
 
 `hostAppRoles` makes no resources, but its names are identities: renaming a host or a class
 renames the role. With the logical id taken from the role name, as the README does, the old id
 leaves the stack: that is an orphan delete, not a `replace`. With a stable logical id,
 `Bao.AuthRole` plans a `replace`. Under the default `retain`, both leave the old role live.
+
+## When the new identity is not known at plan
+
+- **Only another prop is pending** (say `fragments` is an Output of an upstream that is also
+  changing). `Bao.Policy`, `Bao.CloudflareRole` and `Bao.ProxmoxRole` judge the identity props
+  before `isResolved(news)` (`rename.ts`), so the rename still plans `replace`. Measured.
+- **The identity itself is pending.** Then the diff defers: it never answers `replace` on an
+  unknown identity, because under `destroy` a replace onto the same path deletes what it just
+  wrote. The engine plans `update`, and reconcile, seeing the old attributes name another
+  object, **refuses before any write**. The row is left `updating`, with the new props and the
+  old attributes. The next deploy sees both names and plans `replace`. Measured, for all three.
+- `Bao.ProxmoxRole` defers the same way while `mintUser` is pending on a rename, because the
+  re-scope guard cannot be checked.
+
+## What `retain` means for these three
+
+Under the default `retain` the old generation is kept, and the apply says so ("Replaced resource
+retained."). It is live and unmanaged from then on:
+
+- **`Bao.Policy`**: the old policy keeps every grant, for every token, role and group that still
+  names it. Under `destroy` they lose those grants at the delete. ⚠️ Only a role that takes the
+  policy's `name` Output follows the rename in the same graph. A role that names the policy as a
+  literal string (`tokenPolicies: ['deploy']`) keeps the old name, so change it in the same PR.
+- **`Bao.CloudflareRole`**: the old role still mints, for any token whose ACL reaches its
+  `creds/<name>`. Under `destroy` every consumer still minting from the old path fails. Tokens
+  already minted are leases and live to their own expiry either way.
+- **`Bao.ProxmoxRole`**: the same, and the old role keeps minting under its old `mint_user`. The
+  plugin's delete leaves outstanding leases revocable (its own
+  `TestDeletingARoleLeavesItsOutstandingLeasesRevocable`).
+
+★ A stack that puts `mount` and `name` in the logical id, as homeflare-openbao's
+`declareCloudflareRoles` does, never reaches the `replace`: the old id leaves the stack as an
+orphan delete, which `retain` also keeps live.
+
+⚠️ A rename onto a name that already exists live takes that object over and rewrites it, as a fresh
+declaration would: these families' `read` never answers `Unowned`.
 
 ## Why the moves fail instead of replacing
 
@@ -78,10 +132,12 @@ take every secret with it. (Corrected 2026-09-21: the first audit listed this as
 3. **Unique names need `deleteFirst`.** Only a mount's `type` change keeps its unique path, and
    it fails on purpose instead (above).
 
-## Audited, not touched in this batch (open)
+## Open
 
-- ⚠️ `Bao.Policy`, `Bao.CloudflareRole` and `Bao.ProxmoxRole` still compare only the live object
-  at the declared `name` (and `mount`). A rename plans `update` and orphans the old object, which
-  is the same bug class as above. `Bao.ProxmoxRole` deliberately never answers `replace` for a
-  `mint_user` change (its own comment), and that choice is sound. The rename case is separate.
-- `Bao.SshRole` and `Bao.Plugin` already answer `replace` on an identity change.
+- ⚠️ **Nine families still check the identity after `isResolved(news)`**: `Bao.AuthRole`,
+  `Bao.PkiRole`, `Bao.JwtRole`, `Bao.KubernetesRole`, `Bao.JwtAuthConfig`, `Bao.MfaTotpMethod`,
+  `Bao.MfaLoginEnforcement`, `Bao.SshRole` and `Bao.Plugin`. A rename that lands in the same
+  deploy as any pending Output plans `update`, and none of their reconciles has the moved-update
+  guard. For `Bao.MfaTotpMethod` that writes a second method and strands every enrolment. The
+  helpers in `rename.ts` close it the same way. (`Bao.Mount` and `Bao.AuthMethod` are safe: their
+  reconcile re-plans the move from the stated path.)

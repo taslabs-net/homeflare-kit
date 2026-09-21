@@ -8,6 +8,7 @@ import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { sha256 } from './digest.ts';
 import { isEmptyAssembly } from './policy-assembly.ts';
 import { deletePolicy, readPolicy, writePolicy } from './policy-wire.ts';
+import { declaredString, isMoved, policyKey, refuseMovedUpdate } from './rename.ts';
 
 /**
  * An OpenBao ACL policy, assembled from the HCL fragments that declare it.
@@ -91,6 +92,8 @@ export interface BaoPolicy extends Resource<
  *   orphaned resource; a caller that means it opts in with `.pipe(RemovalPolicy.destroy())`. This
  *   is Terraform's `prevent_destroy`, not a stubbed operation — a delete that silently did nothing
  *   would lie to whoever read the plan.
+ * ⚠️ `retain` ALSO KEEPS THE OLD GENERATION OF A RENAME. A new `name` plans `replace`, and under
+ *   `retain` the old policy is left live and unmanaged (rename.ts, REPLACE.md).
  */
 export const BaoPolicy = Resource<BaoPolicy>('Bao.Policy', {
   defaultRemovalPolicy: 'retain',
@@ -142,10 +145,24 @@ export const BaoPolicyProvider = () =>
          *   provider that trusted its own state would report `noop` straight through it.
          */
         diff: Effect.fn(function* ({ news, output }) {
+          if (output === undefined) return undefined;
+          /**
+           * ⛔ A RENAMED POLICY IS A `replace`, DECIDED BEFORE ANY READ (rename.ts). Until 2026-09-21
+           *   this read the new name, found nothing and planned `update`: the new policy was written
+           *   and the old one kept every grant under no state record. Names compare as OpenBao keys
+           *   them (`policyKey`), so a change of case is the same policy, never a replace.
+           * ⚠️ UNDER THE DEFAULT `retain` THE OLD POLICY STAYS LIVE, GRANTS AND ALL, for every token,
+           *   role and group that still names it. Under `destroy` they lose those grants at the
+           *   delete, so a role outside this graph that names the old policy must move in the same
+           *   PR (REPLACE.md).
+           */
+          if (isMoved(output.name, declaredString(news, 'name'), policyKey) === true) {
+            return { action: 'replace' } as const;
+          }
           // ⚠️ A prop can still be an unresolved Output or Config at plan time. Docker's
           //   own providers guard with isResolved and skip rather than guess; a diff that
           //   read a Config as a string would compare a placeholder to real HCL.
-          if (output === undefined || !isResolved(news)) return undefined;
+          if (!isResolved(news)) return undefined;
           const { joined } = yield* assemble(news.fragments);
           const live = yield* readPolicy(news.name);
           return live.length > 0 && sha256(live) === sha256(joined)
@@ -153,8 +170,12 @@ export const BaoPolicyProvider = () =>
             : ({ action: 'update' } as const);
         }),
 
-        reconcile: Effect.fn(function* ({ news }) {
+        reconcile: Effect.fn(function* ({ news, output }) {
           const name = news.name;
+          // ⛔ An `update` across a rename the diff could not see — refused before any write.
+          if (output !== undefined && isMoved(output.name, name, policyKey) === true) {
+            return yield* refuseMovedUpdate(`Bao.Policy ${name}`, output.name, name);
+          }
           const { joined, parts } = yield* assemble(news.fragments);
           /**
            * ⛔ AN EMPTY ASSEMBLY IS A REFUSAL, NOT AN EMPTY POLICY. `bao policy write` with

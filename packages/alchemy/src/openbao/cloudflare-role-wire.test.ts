@@ -1,7 +1,8 @@
 /**
- * Bao.CloudflareRole's calls against a fake that behaves like the Cloudflare engine where it matters:
- * a write parses the duration text into seconds and re-marshals `policies` (path_roles.go:117-146,
- * :199-210), a role never written is a 404, and a delete answers 204 whether or not it existed.
+ * Bao.CloudflareRole's calls against a fake that behaves like the Cloudflare engine where it matters
+ * (fake-engines.ts): a write parses the duration text into seconds and re-marshals `policies`
+ * (path_roles.go:117-146, :199-210), a role never written is a 404, and a delete answers 204
+ * whether or not it existed.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -13,8 +14,8 @@ import {
   readCloudflareRole,
   writeCloudflareRole,
 } from './cloudflare-role-wire.ts';
-import { type Reply, type Seen, run, runFailure, withFake } from './fake-bao.ts';
-import { parseDuration } from './mount-form.ts';
+import { run, runFailure, withFake } from './fake-bao.ts';
+import { cloudflareRoles } from './fake-engines.ts';
 
 const PROPS: BaoCloudflareRoleProps = {
   description: 'Read DNS records on one zone. (zone: example.com)',
@@ -34,36 +35,9 @@ const PROPS: BaoCloudflareRoleProps = {
 
 const PATH = '/v1/cloudflare-acme-dns/roles/example-com-dns-read';
 
-/** The engine's role store, reduced to what these calls can observe. */
-const roleStore = () => {
-  const roles = new Map<string, Record<string, unknown>>();
-  return (seen: Seen): Reply => {
-    if (seen.method === 'PUT') {
-      const body = JSON.parse(seen.body) as Record<string, string>;
-      roles.set(seen.path, {
-        description: body['description'],
-        max_ttl: parseDuration(body['max_ttl'] ?? ''),
-        name: seen.path.split('/').at(-1),
-        // ★ Re-marshalled, as json.Marshal of the stored structs would be.
-        policies: JSON.stringify(JSON.parse(body['policies'] ?? 'null')),
-        ttl: parseDuration(body['ttl'] ?? ''),
-      });
-      return { status: 204 };
-    }
-    if (seen.method === 'DELETE') {
-      roles.delete(seen.path);
-      return { status: 204 };
-    }
-    const role = roles.get(seen.path);
-    return role === undefined
-      ? { json: { errors: [] }, status: 404 }
-      : { json: { data: role }, status: 200 };
-  };
-};
-
 describe('Cloudflare role wire', () => {
   it('reads a role that was never written as absent', async () => {
-    await withFake(roleStore(), async (bao) => {
+    await withFake(cloudflareRoles(), async (bao) => {
       const env = { BAO_ADDR: bao.address };
       assert.equal(await run(env, readCloudflareRole(PROPS.mount, PROPS.name)), undefined);
       assert.deepEqual([bao.seen[0]?.method, bao.seen[0]?.path], ['GET', PATH]);
@@ -71,7 +45,7 @@ describe('Cloudflare role wire', () => {
   });
 
   it('writes the four fields and reads them back with no difference', async () => {
-    await withFake(roleStore(), async (bao) => {
+    await withFake(cloudflareRoles(), async (bao) => {
       const env = { BAO_ADDR: bao.address };
       const { policies } = resolvePolicies(
         PROPS.policies,
