@@ -18,7 +18,8 @@
  * ⛔ ENVIRONMENT IS NON-SECRET ONLY — see the ⛔ on LaunchdJobProps.environment.
  * ⛔ NO SILENT SUDO — see assertMayWrite in job-preflight.ts.
  * ⚠️ NOTHING IS ADOPTED WITHOUT `--adopt`. A label already loaded, or a plist already on disk, reads
- *   as `Unowned`, so Alchemy refuses to take it over unless asked. Labels under `org.nixos.`,
+ *   as `Unowned`, so Alchemy refuses to take it over unless asked — and reconcile, where the plan
+ *   never asked, honours the same `--adopt` / `adopt(…)` (docs/ownership.md). Labels under `org.nixos.`,
  *   `com.apple.` and `homebrew.mxcl.` are refused outright (job-validate.ts) — declare a new label
  *   and cut over instead (docs/launchd.md).
  */
@@ -27,6 +28,7 @@ import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
+import { adoptEnabled } from '../ownership/adopt.ts';
 import { lift, resolvedString } from './host-effect.ts';
 import type { LaunchdJobAttributes, LaunchdJobProps } from './job-form.ts';
 import { deleteJob, diffJob, readJob, reconcileJob, replaceDiff } from './job-lifecycle.ts';
@@ -88,7 +90,11 @@ export const LaunchdJobProvider = () =>
             : Effect.succeed(undefined);
         },
 
-        reconcile: ({ news, output }) => lift(() => reconcileJob(runner, news, output)),
+        // ★ `--adopt` reaches the apply too: the probe never ran for a create with an Output prop.
+        reconcile: ({ fqn, news, output }) =>
+          Effect.flatMap(adoptEnabled(fqn), (adopt) =>
+            lift(() => reconcileJob(runner, news, output, adopt)),
+          ),
 
         delete: ({ output }) => lift(() => deleteJob(runner, output)),
       });

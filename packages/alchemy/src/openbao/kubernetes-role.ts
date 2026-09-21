@@ -17,6 +17,8 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { claimFor } from '../ownership/adopt.ts';
+import { noteResume } from '../ownership/resume.ts';
 import { baoDelete } from './bao-http.ts';
 import {
   type BaoKubernetesRoleAttributes,
@@ -28,7 +30,7 @@ import {
   writeBody,
 } from './kubernetes-role-form.ts';
 import { foldName, guardRename, judgeRename, roleIdentity } from './rename-identity.ts';
-import { type RoleSpec, planRole, readRoleAt, reconcileRole } from './role-reconcile.ts';
+import { type RoleSpec, planRole, readOwnedRole, reconcileRole } from './role-reconcile.ts';
 
 export type {
   BaoKubernetesAliasSource,
@@ -75,25 +77,28 @@ export const BaoKubernetesRoleProvider = () =>
         /** ⛔ The mount's role listing is not a list of things this owns. */
         list: () => Effect.succeed([]),
 
-        read: Effect.fn(function* ({ olds }) {
-          const found = yield* readRoleAt(kubernetesRoleSpec(olds));
-          return found?.attributes;
+        /** ⛔ Stateless: `Unowned` unless our own interrupted create made it (ownership/probe.ts). */
+        read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
+          return yield* readOwnedRole({ fqn, instanceId, output }, kubernetesRoleSpec(olds));
         }),
 
         /** ⛔ IT COMPARES THE LIVE ROLE, NOT THE STORED DIGEST. */
-        diff: Effect.fn(function* ({ news, olds, output }) {
+        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
           // ⛔ The identity first, before isResolved; onto a role that exists fails the plan.
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return undefined;
+          if (output === undefined) return yield* noteResume(instanceId);
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           return { action: yield* planRole(kubernetesRoleSpec(news)) } as const;
         }),
 
-        reconcile: Effect.fn(function* ({ news, output }) {
+        reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
           // ⛔ An `update` across a move the diff could not see — refused before any write.
           yield* guardRename(IDENTITY, news, output);
-          return yield* reconcileRole(kubernetesRoleSpec(news));
+          return yield* reconcileRole(
+            kubernetesRoleSpec(news),
+            claimFor({ fqn, instanceId, output }),
+          );
         }),
 
         /** Idempotent as Alchemy requires — a missing role deletes as success. */

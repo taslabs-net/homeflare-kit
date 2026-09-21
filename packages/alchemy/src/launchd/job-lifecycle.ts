@@ -28,7 +28,9 @@ import {
   assertReplaceable,
   assertUnclaimed,
   assertValid,
+  checkPlistWrite,
   locate,
+  plistWriteOptions,
   preflight,
   refuse,
 } from './job-preflight.ts';
@@ -94,19 +96,29 @@ export const diffJob = async (
   }
   assertValid(news);
   const desired = renderJob(news).sha256;
+  // ★ A plan that will write the plist asks the runner first (checkPlistWrite, HostRunner.checkWrite).
+  const update = async (): Promise<Diff> => {
+    await checkPlistWrite(runner, await locate(runner, news));
+    return { action: 'update' };
+  };
   // ⛔ BOTH digests: the stored one catches a bootstrap that failed after the write landed, the live
   //   one catches a hand edit. Either alone would report `noop` over a job that is not what we say.
-  if (desired !== output.plistSha256) return { action: 'update' };
+  if (desired !== output.plistSha256) return update();
   const live = await readJob(runner, news);
-  if (live === undefined || !live.loaded || live.plistSha256 !== desired)
-    return { action: 'update' };
+  if (live === undefined || !live.loaded || live.plistSha256 !== desired) return update();
   return { action: 'noop' };
 };
 
+/**
+ * `adopt` is what `--adopt` / `adopt(…)` resolve to for this resource (ownership/adopt.ts): it lets
+ * a CREATE take over a job already on the host, as the plan's probe would have. A rename onto an
+ * occupied label stays refused, as it is at plan time (assertReplaceable).
+ */
 export const reconcileJob = async (
   runner: HostRunner,
   props: LaunchdJobProps,
   output: LaunchdJobAttributes | undefined,
+  adopt = false,
 ): Promise<LaunchdJobAttributes> => {
   assertValid(props);
   const { location, status } = await preflight(runner, props);
@@ -121,8 +133,9 @@ export const reconcileJob = async (
   const renamed =
     output !== undefined && (output.label !== props.label || output.domain !== props.domain);
   const prior = renamed ? undefined : output;
-  // ⛔ No prior state for THIS identity: whatever is there already belongs to someone else.
-  if (prior === undefined) {
+  // ⛔ No prior state for THIS identity: whatever is there already belongs to someone else —
+  //   unless adoption is on for a create, where the probe was skipped (a prop still an Output).
+  if (prior === undefined && !(adopt && output === undefined)) {
     await assertUnclaimed(runner, props.label, location, status, rendered.sha256);
   }
   if (renamed) await deleteJob(runner, output);
@@ -138,18 +151,11 @@ export const reconcileJob = async (
   ) {
     return attributesOf(props, location, rendered.sha256, status);
   }
-  /**
-   * ⚠️ launchd refuses a daemon plist that is not root:wheel or is group/world-writable ("bad
-   *   ownership/permissions"), so the system domain always writes 0644 root:wheel. An agent's plist
-   *   belongs to its user. REASONED from launchd's documented behaviour, not measured here (no
-   *   bootstrap was run to write this); the nix-darwin daemons on the reference host are 0644 root.
-   */
+  // ⚠️ Owner and mode are launchd's rule, not a choice: see plistWriteOptions (job-preflight.ts).
   await runner.writeFileAtomic(
     location.plistPath,
     rendered.bytes,
-    location.domain.kind === 'system'
-      ? { gid: 0, mode: 0o644, uid: 0 }
-      : { mode: 0o644, uid: location.domain.uid },
+    plistWriteOptions(location.domain),
   );
   await bootoutIfLoaded(runner, location.target);
   const failed = async (detail: string): Promise<never> => {

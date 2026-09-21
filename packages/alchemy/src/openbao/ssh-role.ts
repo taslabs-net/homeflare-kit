@@ -36,6 +36,9 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { refuseTakeover } from '../ownership/adopt.ts';
+import { ownedRead } from '../ownership/probe.ts';
+import { noteResume } from '../ownership/resume.ts';
 import { baoDelete, baoRead, baoWrite } from './bao-http.ts';
 import {
   type BaoSshRoleAttributes,
@@ -91,9 +94,13 @@ export const BaoSshRoleProvider = () =>
          */
         list: () => Effect.succeed([]),
 
-        read: Effect.fn(function* ({ olds }) {
+        /** ⛔ Stateless: `Unowned` unless our own interrupted create made it (ownership/probe.ts). */
+        read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
           const found = yield* readRole(resolve(olds));
-          return found?.attributes;
+          const ours = Effect.sync(
+            () => found !== undefined && matches(found.attributes, resolve(olds)),
+          );
+          return yield* ownedRead({ fqn, instanceId, output }, found?.attributes, ours);
         }),
 
         /**
@@ -106,7 +113,7 @@ export const BaoSshRoleProvider = () =>
          *   at risk when something actually writes; if every managed field already matches,
          *   the honest answer is `noop` and nothing gets destroyed.
          */
-        diff: Effect.fn(function* ({ news, olds, output }) {
+        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
           /**
            * ⛔ A RENAMED ROLE IS A NEW PATH, NOT AN EDIT. `ssh/roles/x` and `ssh-host/roles/x`
            *   are different mounts with different CAs. Without this, changing `name` or
@@ -115,7 +122,7 @@ export const BaoSshRoleProvider = () =>
            *   ⛔ a move onto a role that exists fails the plan (rename-identity.ts).
            */
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return undefined;
+          if (output === undefined) return yield* noteResume(instanceId);
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           const form = resolve(news);
@@ -126,7 +133,7 @@ export const BaoSshRoleProvider = () =>
             : ({ action: 'update' } as const);
         }),
 
-        reconcile: Effect.fn(function* ({ news, output }) {
+        reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
           const form = resolve(news);
           const path = readPath(form.mount, form.name);
           // ⛔ An `update` across a move the diff could not see — refused before any write.
@@ -157,6 +164,8 @@ export const BaoSshRoleProvider = () =>
           }
 
           const found = yield* readRole(form);
+          if (found !== undefined)
+            yield* refuseTakeover({ fqn, instanceId, output }, `Bao.SshRole ${path}`);
           if (found === undefined || !matches(found.attributes, form)) {
             if (found !== undefined) {
               const lost = wouldErase(found.live);

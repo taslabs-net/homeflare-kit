@@ -4,6 +4,7 @@
  */
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type { Claim } from '../ownership/adopt.ts';
 import type { BaoError } from './bao-status.ts';
 import {
   type BaoPluginAttributes,
@@ -48,9 +49,13 @@ const SELF_REPORTED =
   'OpenBao filed the registration under it (plugin_catalog.go setInternal) — declare `version` ' +
   'as exactly the version the binary reports; that adopts the entry this write just made.';
 
-/** Register when the live entry differs, then prove it by reading back. Dies on a refusal. */
+/**
+ * Register when the live entry differs, then prove it by reading back. Dies on a refusal.
+ * ⛔ `claim` (the provider passes it): a create never takes over an entry already registered.
+ */
 export const reconcilePlugin = (
   props: BaoPluginProps,
+  claim?: Claim,
 ): Effect.Effect<BaoPluginAttributes, BaoError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const form = resolve(props);
@@ -58,6 +63,9 @@ export const reconcilePlugin = (
     if (bad.length > 0) return yield* refuse(form, bad.join('; '));
 
     const found = yield* readEntry(form);
+    if (found !== undefined && claim !== undefined) {
+      yield* claim(`Bao.Plugin ${versionedPath(form.type, form.name, form.version)}`);
+    }
     if (found !== undefined && !matches(found.attributes, form)) {
       /**
        * ⛔ A DECLARATIVE OR OCI ENTRY BELONGS TO THE SERVER'S CONFIG FILE (`plugin` stanzas with

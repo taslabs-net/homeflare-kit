@@ -9,7 +9,8 @@
  * - delete — removes the file.
  *
  * ⛔ NEVER A SECRET — see host-file-form.ts. Secret files stay rendered by openbao-agent.
- * ⚠️ NOTHING IS ADOPTED WITHOUT `--adopt`: a file already at the path reads as `Unowned`.
+ * ⚠️ NOTHING IS ADOPTED WITHOUT `--adopt`: a file already at the path reads as `Unowned`, and where
+ *   the plan never asked, reconcile refuses it unless adoption is on (docs/ownership.md).
  * ★ IT LIVES IN THE launchd SUBPATH because the two travel together: a Mac host stack declares a
  *   daemon's config file and the daemon that reads it, through the same HostRunner.
  */
@@ -18,6 +19,7 @@ import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
+import { adoptEnabled } from '../ownership/adopt.ts';
 import { lift, resolvedString } from './host-effect.ts';
 import type { HostFileAttributes, HostFileProps } from './host-file-form.ts';
 import { deleteFile, diffFile, readFileAttributes, reconcileFile } from './host-file-lifecycle.ts';
@@ -56,7 +58,11 @@ export const HostFileProvider = () =>
           );
         },
 
-        reconcile: ({ news, output }) => lift(() => reconcileFile(runner, news, output)),
+        // ★ `--adopt` reaches the apply too: the probe never ran for a create with an Output prop.
+        reconcile: ({ fqn, news, output }) =>
+          Effect.flatMap(adoptEnabled(fqn), (adopt) =>
+            lift(() => reconcileFile(runner, news, output, adopt)),
+          ),
 
         delete: ({ output }) => lift(() => deleteFile(runner, output)),
       });

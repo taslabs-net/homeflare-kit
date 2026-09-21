@@ -5,7 +5,7 @@
  * Caddy the stack declared `.pipe(adopt(false))`.
  * ★ Registered through the REAL `Resource` (caddyWithFile under a Stack), not a hand-built map: the
  *   lookup reads what Alchemy records at registration, so an upgrade that stops recording `Adopt`
- *   in `Stack.resources` fails here (host-effect.ts adoptEnabled).
+ *   in `Stack.resources` fails here (ownership/adopt.ts adoptEnabled).
  */
 import { afterEach, expect, test } from 'bun:test';
 import { push } from 'alchemy';

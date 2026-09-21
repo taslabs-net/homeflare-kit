@@ -139,17 +139,19 @@ retained."). It is live and unmanaged from then on:
 `declareCloudflareRoles` does, never reaches the `replace`: the old id leaves the stack as an
 orphan delete, which `retain` also keeps live.
 
-## A new declaration of a live name: the swap the guard cannot see
+## A new declaration of a live name: refused unless adopted
 
-⚠️ A NEW logical id whose name already exists takes that object over and rewrites it: these
-families' `read` never answers `Unowned`, so Alchemy silently adopts it. Nothing moved, so
-`judgeMove` never runs. 🔴 Measured (`rename-adoption.test.ts`): under `destroy` the old owner's
-delete then runs after the adoption wrote, and removes the object the new id now claims, in a
-green deploy. It happened when a logical id changed with the name kept, to each of the nine
-batch-2 families whose delete runs (a TOTP method and its enrolments included), and when a new
-`Bao.AuthRole` took a name another one moved off in the same deploy. Change a logical id with
-Alchemy's `renamedFrom('<old id>')`, which migrates the state row and plans an `update`. Take a
-freed name in the deploy after the move.
+⛔ A NEW logical id whose name already exists now FAILS THE PLAN (0.9.0): with no state, `read`
+answers `Unowned` for any live object, identical or not (`src/ownership/probe.ts`,
+[docs/ownership.md](../../docs/ownership.md)). Nothing moved, so `judgeMove` never runs; the
+probe is what catches it. 🔴 Measured before (`rename-adoption.test.ts`): the families' `read`
+answered plain attributes, so Alchemy silently adopted the object, and under `destroy` the old
+owner's delete then ran after the adoption wrote and removed the object the new id claimed, in a
+green deploy — for each of the nine batch-2 families whose delete runs (a TOTP method and its
+enrolments included), and when a new `Bao.AuthRole` took a name another one moved off in the same
+deploy. ⚠️ `--adopt` is exactly that takeover again, on purpose. Change a logical id with Alchemy's
+`renamedFrom('<old id>')`, which migrates the state row and plans an `update`. Take a freed name
+in the deploy after the move.
 
 ## Why the moves fail instead of replacing
 

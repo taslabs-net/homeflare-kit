@@ -104,6 +104,10 @@ Cloudflare and Proxmox roles, plugins — plus `assertBaoIdentity` (call it firs
 ⛔ **Metadata only.** Alchemy stores props and attributes unencrypted, so no secret, CA key,
 plugin `env` or OIDC client secret is declarable. Every family defaults to `retain` on destroy.
 
+⛔ **Nothing is adopted without `--adopt`** (0.9.0), for every family and even when the live object
+is identical to the declaration; an interrupted create of this stack's own still resumes. The
+same rule holds for `HostFile`, `LaunchdJob` and `CaddyConfig`: [docs/ownership.md](./docs/ownership.md).
+
 ★ **Usage lives beside the code**, so it ships in the tarball with it:
 [src/openbao/README.md](./src/openbao/README.md). What each resource does on a rename is in
 [src/openbao/REPLACE.md](./src/openbao/REPLACE.md) — read it before changing a path or name.
@@ -131,9 +135,10 @@ one is logged (argv only, never content) before it runs. A plan never calls sudo
 
 - ⛔ **Opt-in, never a fallback**, and it never prompts: if sudo needs a password, the call fails at
   once and says to run `sudo -v`, or to grant exactly these commands `NOPASSWD`.
-- ⚠️ Refused before sudo is asked: any other argv, a prefix that is not a real directory only root
-  may write, a path outside every prefix that needs root, a symlink on the way, a file you could
-  not read back, and another user's `gui/<uid>`.
+- ⚠️ Refused before sudo is asked: any other argv, a prefix — or any directory below it on the way
+  to the file — that is not a real directory only root may write, a root-owned file that would be
+  group/world-writable, setuid or setgid, a path outside every prefix that needs root, a file you
+  could not read back, and another user's `gui/<uid>`. A plan that will write runs the same checks.
 - Full list, sudoers cautions and limits: [docs/launchd-sudo.md](./docs/launchd-sudo.md).
 
 ## Caddy — `@homeflare/alchemy/caddy`

@@ -73,6 +73,13 @@ export interface HostRunner {
    * ⚠️ The parent directory must exist; creating it would invent an owner and mode nobody declared.
    */
   writeFileAtomic(path: string, bytes: Uint8Array, options: WriteOptions): Promise<void>;
+  /**
+   * PLAN TIME: refuse, reading only and writing nothing, a write this runner would refuse at
+   * apply — so the plan shows it before any resource is applied. Optional: a runner without it
+   * refuses at the write. ★ sudoRunner implements it with the checks it makes before `sudo -n`;
+   *   ⛔ it never elevates, so a plan still never calls sudo.
+   */
+  checkWrite?(path: string, options: WriteOptions): Promise<void>;
   /** Remove a file. Idempotent: nothing at `path` is success. */
   removeFile(path: string): Promise<void>;
   /** A user by name or numeric id, or `undefined` when the host has none. */

@@ -20,6 +20,9 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { type Claim, claimFor } from '../ownership/adopt.ts';
+import { ownedRead } from '../ownership/probe.ts';
+import { noteResume } from '../ownership/resume.ts';
 import type { BaoError } from './bao-status.ts';
 import {
   type BaoMfaTotpMethodAttributes,
@@ -70,14 +73,19 @@ export const planTotp = (
     return live !== undefined && matches(live, props) ? 'noop' : 'update';
   });
 
-/** Upsert by name when live differs, then prove it by reading back. */
+/**
+ * Upsert by name when live differs, then prove it by reading back.
+ * ⛔ `claim` (the provider passes it): a create never takes over a method it finds by that name.
+ */
 export const reconcileTotp = (
   props: BaoMfaTotpMethodProps,
+  claim?: Claim,
 ): Effect.Effect<BaoMfaTotpMethodAttributes, BaoError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const bad = problems(props);
     if (bad.length > 0) return yield* refuse(props.name, bad.join('; '));
     const live = yield* readTotp(props);
+    if (live !== undefined && claim !== undefined) yield* claim(`Bao.MfaTotpMethod ${props.name}`);
     if (live === undefined || !matches(live, props)) yield* writeTotp(writeBody(props));
     const after = yield* readTotp(props);
     if (after === undefined)
@@ -94,8 +102,13 @@ export const BaoMfaTotpMethodProvider = () =>
         /** ⛔ The namespace's method listing is not a list of things this owns. */
         list: () => Effect.succeed([]),
 
-        read: Effect.fn(function* ({ olds }) {
-          return yield* readTotp(olds);
+        /** ⛔ Stateless: `Unowned` unless our own interrupted create made it (ownership/probe.ts). */
+        read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
+          const found = yield* readTotp(olds);
+          const ours = Effect.sync(
+            () => found !== undefined && problems(olds).length === 0 && matches(found, olds),
+          );
+          return yield* ownedRead({ fqn, instanceId, output }, found, ours);
         }),
 
         /**
@@ -104,21 +117,22 @@ export const BaoMfaTotpMethodProvider = () =>
          *   upsert by name wrote a SECOND method: the header's stranding, reached through a green
          *   plan. MEASURED through the engine (rename-families.test.ts).
          */
-        diff: Effect.fn(function* ({ news, output }) {
+        diff: Effect.fn(function* ({ instanceId, news, output }) {
           const name = declaredString(news, 'name');
           if (output !== undefined && name !== undefined) {
             const rename = renameProblem(output.name, name);
             if (rename !== undefined) return yield* refuse(name, rename);
           }
-          if (output === undefined || !isResolved(news)) return undefined;
+          if (output === undefined) return yield* noteResume(instanceId);
+          if (!isResolved(news)) return undefined;
           return { action: yield* planTotp(news) } as const;
         }),
 
         /** ⛔ A rename the diff could not see (the name was an Output), refused before any write. */
-        reconcile: Effect.fn(function* ({ news, output }) {
+        reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
           const rename = output === undefined ? undefined : renameProblem(output.name, news.name);
           if (rename !== undefined) return yield* refuse(news.name, rename);
-          return yield* reconcileTotp(news);
+          return yield* reconcileTotp(news, claimFor({ fqn, instanceId, output }));
         }),
 
         /** ⛔ Read the header first. Idempotent: an unknown id deletes as success. */

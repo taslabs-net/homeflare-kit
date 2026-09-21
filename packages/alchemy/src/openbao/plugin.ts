@@ -24,11 +24,15 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { claimFor } from '../ownership/adopt.ts';
+import { ownedRead } from '../ownership/probe.ts';
+import { noteResume } from '../ownership/resume.ts';
 import {
   type BaoPluginAttributes,
   type BaoPluginProps,
   type BaoPluginType,
   matches,
+  problems,
   resolve,
   versionedPath,
 } from './plugin-form.ts';
@@ -81,13 +85,19 @@ export const BaoPluginProvider = () =>
          */
         list: () => Effect.succeed([]),
 
-        read: Effect.fn(function* ({ olds }) {
-          const found = yield* readEntry(resolve(olds));
-          return found?.attributes;
+        /** ⛔ Stateless: `Unowned` unless our own interrupted create made it (ownership/probe.ts). */
+        read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
+          const form = resolve(olds);
+          const found = yield* readEntry(form);
+          const ours = Effect.sync(
+            () =>
+              found !== undefined && problems(form).length === 0 && matches(found.attributes, form),
+          );
+          return yield* ownedRead({ fqn, instanceId, output }, found?.attributes, ours);
         }),
 
         /** ⛔ IT COMPARES THE LIVE ENTRY, NOT THE STORED DIGEST — a hand re-register is drift. */
-        diff: Effect.fn(function* ({ news, olds, output }) {
+        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
           /**
            * ⛔ A NEW NAME, TYPE OR VERSION IS A DIFFERENT ENTRY, not an edit: `replace`, judged
            *   before `isResolved(news)`. Writing the new key in place would leave the old
@@ -95,7 +105,7 @@ export const BaoPluginProvider = () =>
            *   that is already registered fails the plan (rename-identity.ts).
            */
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return undefined;
+          if (output === undefined) return yield* noteResume(instanceId);
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           const form = resolve(news);
@@ -107,10 +117,10 @@ export const BaoPluginProvider = () =>
         }),
 
         /** The refusals — declarative, builtin, self-reported version — live in plugin-reconcile.ts. */
-        reconcile: Effect.fn(function* ({ news, output }) {
+        reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
           // ⛔ An `update` across a move the diff could not see — refused before any write.
           yield* guardRename(IDENTITY, news, output);
-          return yield* reconcilePlugin(news);
+          return yield* reconcilePlugin(news, claimFor({ fqn, instanceId, output }));
         }),
 
         /**

@@ -172,7 +172,7 @@ export type Applied = {
  * What this apply may load over — config.ts decides from the state and the adopt setting:
  *   · `takeOver` — any running config: the state was applied to THIS Caddy (an update, drift
  *     correction, or a create the engine adopted), or adoption is on (`--adopt`, or the
- *     resource's own `adopt(true)` — host-effect.ts adoptEnabled).
+ *     resource's own `adopt(true)` — ownership/adopt.ts adoptEnabled).
  *   · otherwise only a claimable one — plus, as `stored`, the digest the state last recorded: a
  *     Caddy reached at a NEW endpoint that runs exactly that is the same config under another name.
  */

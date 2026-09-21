@@ -126,7 +126,9 @@ you deploy as.
 ## Adoption: nothing is taken over silently
 
 `read` with no prior state reports anything it finds — a loaded label, a plist, a file — as
-`Unowned`, so Alchemy refuses to take it over without `--adopt`.
+`Unowned`, so Alchemy refuses to take it over without `--adopt`. Where the plan never asked (a prop
+still an `Output`), `reconcile` refuses the same takeover, and `--adopt` or the resource's own
+`adopt(true)` lets a create through there too. The whole rule: [ownership.md](./ownership.md).
 
 Labels under `org.nixos.`, `com.apple.` and `homebrew.mxcl.` are **refused outright**. nix-darwin
 rewrites its plists on every activation and unloads any it no longer lists, macOS owns

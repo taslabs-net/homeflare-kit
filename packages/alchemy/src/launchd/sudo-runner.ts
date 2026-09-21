@@ -21,12 +21,12 @@
  * ★ `install -S`: install(1) on macOS 27.2 (read 2026-09-21) always writes a temp file in the
  *   target directory and renames it, so the file is never torn, and -S adds the fsync that
  *   localRunner's `handle.sync()` does.
- * ⚠️ REASONED, NOT MEASURED: sudo's failure text. The kit never runs sudo. The strings below follow
- *   sudoers(5) for sudo 1.9.17p2 on macOS 27.2 ("a password is required": -n was given but a
- *   password was needed) and sudo(8) (sudo exits 1 when it fails itself).
+ * ⚠️ REASONED, NOT MEASURED: sudo's failure text (sudo-said.ts has the strings and their sources).
+ * ⛔ EVERY CHECK BEFORE SUDO ALSO RUNS AT PLAN TIME (`checkWrite`, 2026-09-21): the mode, the
+ *   directories from the prefix down, the read-back. Reads only, as the operator — never sudo.
  */
-import { type LocalRunnerOptions, errnoCode, localRunner } from './local-runner.ts';
-import type { ExecResult, HostRunner } from './runner.ts';
+import { type LocalRunnerOptions, localRunner } from './local-runner.ts';
+import type { ExecResult, HostRunner, WriteOptions } from './runner.ts';
 import {
   INSTALL,
   RM,
@@ -38,7 +38,8 @@ import {
   privilegedProblem,
   routeExec,
 } from './sudo-allowlist.ts';
-import { assertPlainPath, assertReadableBack, operatorGroups } from './sudo-guard.ts';
+import { assertInstallable, assertPlainPath, operatorGroups } from './sudo-guard.ts';
+import { sudoRefusal, undeclared } from './sudo-said.ts';
 import { type Staged, stageFile } from './sudo-stage.ts';
 
 export { SudoRefusedError };
@@ -66,31 +67,6 @@ export type SudoDeps = {
   readonly log: (line: string) => void;
 };
 
-/**
- * ⚠️ ANCHORED TO sudo'S OWN MESSAGE FORMS (`sudo: …` lines, `Sorry, user …`), so a launchctl or
- *   install error that happens to say "not allowed" is never reported as "the command did not run".
- *   The refusals are the three a sudoers denial prints: the command not allowed, the user not in
- *   sudoers, and the user not allowed on this host (`<user> is not allowed to run sudo on <host>.`).
- *   REASONED from sudo 1.9's sudoers plugin, like the rest (header).
- */
-const PASSWORD =
-  /^sudo: (?:a password is required|a terminal is required|sorry, you must have a tty)/m;
-const NOT_ALLOWED =
-  /^(?:Sorry, user \S+ (?:is not allowed to execute|may not run sudo)|\S+ is not (?:in the sudoers file|allowed to run sudo on ))/m;
-
-/** ★ An EACCES outside every prefix is almost always a directory the stack forgot to declare. */
-const undeclared =
-  (path: string, prefixes: readonly string[]) =>
-  (cause: unknown): never => {
-    const code = errnoCode(cause);
-    if (code !== 'EACCES' && code !== 'EPERM') throw cause;
-    throw new Error(
-      `sudoRunner ${path}: ${code} as the deploying user, and the path is under no declared prefix ` +
-        `(${prefixes.join(', ')}). If root owns its directory, declare that directory as a prefix.`,
-      { cause },
-    );
-  };
-
 export const makeSudoRunner = (prefixList: readonly string[], deps: SudoDeps): HostRunner => {
   const prefixes = checkPrefixes(prefixList);
   const { base } = deps;
@@ -113,20 +89,33 @@ export const makeSudoRunner = (prefixList: readonly string[], deps: SudoDeps): H
     await before?.();
     deps.log(`homeflare/launchd sudo -n ${shown}`);
     const result = await base.exec([SUDO, '-n', '--', ...argv]);
-    if (result.exitCode !== 1) return result;
-    if (PASSWORD.test(result.stderr)) {
-      throw new SudoRefusedError(
-        `sudo -n ${shown}: a password is required, and this runner never prompts. Run \`sudo -v\` ` +
-          'in the deploying terminal just before the deploy, or grant exactly these commands ' +
-          'NOPASSWD (docs/launchd-sudo.md). The command did not run.',
-      );
-    }
-    if (NOT_ALLOWED.test(result.stderr)) {
-      throw new SudoRefusedError(
-        `sudo -n ${shown}: sudoers does not let the deploying user run this. The command did not run.`,
-      );
-    }
+    const refused = sudoRefusal(shown, result);
+    if (refused !== undefined) throw refused;
     return result;
+  };
+
+  /**
+   * Every refusal a write can meet before sudo is asked — as the deploying user, reading only — so
+   * the same checks run at plan time (`checkWrite`) and at the write. `undefined` outside every
+   * prefix, where the operator writes; else the prefix and the mode as `install -m` takes it.
+   */
+  const vetWrite = async (path: string, options: WriteOptions) => {
+    const prefix = prefixOf(path, prefixes);
+    const operator = base.effectiveUid();
+    if (prefix === undefined) {
+      if (options.uid !== undefined && options.uid !== operator && operator !== 0) {
+        throw new SudoRefusedError(
+          `sudoRunner ${path}: owner ${String(options.uid)} needs root, and the path is under no ` +
+            `declared prefix (${prefixes.join(', ')}). Declare its directory, or deploy as root. ` +
+            'Nothing was written.',
+        );
+      }
+      return undefined;
+    }
+    const mode = octalMode(options.mode);
+    if (mode === undefined) throw new SudoRefusedError(`sudoRunner ${path}: mode must be 0–0o7777`);
+    await assertInstallable(base, prefix, path, options, await deps.groups());
+    return { mode, prefix };
   };
 
   /** A privileged file operation: anything but exit 0 is an error. ⚠️ stderr names paths only. */
@@ -139,6 +128,10 @@ export const makeSudoRunner = (prefixList: readonly string[], deps: SudoDeps): H
   };
 
   return {
+    // ★ The plan-time half of vetWrite: the providers' diffs call it, and it never elevates.
+    checkWrite: async (path, options) => {
+      await vetWrite(path, options);
+    },
     effectiveUid: () => base.effectiveUid(),
     exec: async (argv) => {
       const route = routeExec(argv, base.effectiveUid());
@@ -177,23 +170,11 @@ export const makeSudoRunner = (prefixList: readonly string[], deps: SudoDeps): H
     sleep: (ms) => base.sleep(ms),
     stat: (path) => base.stat(path),
     writeFileAtomic: async (path, bytes, options) => {
-      const prefix = prefixOf(path, prefixes);
-      const operator = base.effectiveUid();
-      if (prefix === undefined) {
-        if (options.uid !== undefined && options.uid !== operator && operator !== 0) {
-          throw new SudoRefusedError(
-            `sudoRunner ${path}: owner ${String(options.uid)} needs root, and the path is under no ` +
-              `declared prefix (${prefixes.join(', ')}). Declare its directory, or deploy as root. ` +
-              'Nothing was written.',
-          );
-        }
+      const vetted = await vetWrite(path, options);
+      if (vetted === undefined) {
         return base.writeFileAtomic(path, bytes, options).catch(undeclared(path, prefixes));
       }
-      const mode = octalMode(options.mode);
-      if (mode === undefined)
-        throw new SudoRefusedError(`sudoRunner ${path}: mode must be 0–0o7777`);
-      await assertPlainPath(base, prefix, path, 'file-or-absent');
-      await assertReadableBack(base, path, options, await deps.groups());
+      const { mode } = vetted;
       const staged = await deps.stage(bytes);
       try {
         await mustSucceed(

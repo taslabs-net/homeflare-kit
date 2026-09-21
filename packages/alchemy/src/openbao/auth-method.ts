@@ -19,6 +19,9 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import { claimFor } from '../ownership/adopt.ts';
+import { ownedRead } from '../ownership/probe.ts';
+import { noteResume } from '../ownership/resume.ts';
 import {
   type BaoAuthMethodAttributes,
   type BaoAuthMethodProps,
@@ -54,12 +57,16 @@ export const BaoAuthMethodProvider = () =>
          */
         list: () => Effect.succeed([]),
 
-        read: Effect.fn(function* ({ olds }) {
-          return yield* readMethod(olds);
+        /** ⛔ Stateless: `Unowned` unless our own interrupted create made it (ownership/probe.ts). */
+        read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
+          const found = yield* readMethod(olds);
+          const ours = Effect.sync(() => found !== undefined && matches(found, olds));
+          return yield* ownedRead({ fqn, instanceId, output }, found, ours);
         }),
 
-        diff: Effect.fn(function* ({ news, output }) {
-          if (output === undefined || !isResolved(news)) return undefined;
+        diff: Effect.fn(function* ({ instanceId, news, output }) {
+          if (output === undefined) return yield* noteResume(instanceId);
+          if (!isResolved(news)) return undefined;
           /**
            * ⛔ A CHANGED PATH FAILS HERE unless `remountFrom` names the old one — the same trap
            *   Bao.Mount had: reading the new path finds nothing, plans `update`, and enables an
@@ -81,8 +88,9 @@ export const BaoAuthMethodProvider = () =>
         }),
 
         /** The body, and the move, live in auth-method-reconcile.ts. */
-        reconcile: Effect.fn(function* ({ news, output }) {
-          return yield* reconcileAuthMethod(news, output?.path);
+        reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
+          const claim = claimFor({ fqn, instanceId, output });
+          return yield* reconcileAuthMethod(news, output?.path, undefined, claim);
         }),
 
         /**

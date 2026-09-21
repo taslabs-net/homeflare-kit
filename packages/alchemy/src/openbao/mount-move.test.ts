@@ -5,7 +5,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { reconcileAuthMethod } from './auth-method-reconcile.ts';
-import { type Reply, type Seen, run, withFake } from './fake-bao.ts';
+import { type Seen, run, withFake } from './fake-bao.ts';
+import { liveTable } from './fake-mounts.ts';
 import { planMove } from './mount-move.ts';
 import { reconcileMount } from './mount-reconcile.ts';
 
@@ -31,40 +32,6 @@ describe('planMove', () => {
     assert.deepEqual(planMove('Bao.Mount', undefined, 'kv2', 'kv'), { from: 'kv', kind: 'move' });
   });
 });
-
-/** A fake with a live table under `prefix` (`sys/mounts` or `sys/auth`) that sys/remount edits. */
-const liveTable = (prefix: string, initial: Record<string, string>) => {
-  const table = new Map(Object.entries(initial).map(([path, type]) => [`${path}/`, type]));
-  const entry = (type: string) => ({ config: { default_lease_ttl: 0, max_lease_ttl: 0 }, type });
-  const answer = (seen: Seen): Reply => {
-    const path = seen.path.replace(/^\/v1\//, '');
-    if (path === 'sys/remount' && seen.method === 'POST') {
-      const { from, to } = JSON.parse(seen.body) as { from: string; to: string };
-      const key = `${from.replace(/^auth\//, '')}/`;
-      const type = table.get(key);
-      if (type === undefined) return { json: { errors: ['no matching mount'] }, status: 400 };
-      table.delete(key);
-      table.set(`${to.replace(/^auth\//, '')}/`, type);
-      return { json: { data: { migration_id: 'm-1' } }, status: 200 };
-    }
-    if (path.startsWith('sys/remount/status/')) {
-      return { json: { data: { migration_info: { status: 'success' } } }, status: 200 };
-    }
-    if (path === prefix) {
-      return { json: { data: Object.fromEntries(table) }, status: 200 };
-    }
-    const mount = path.slice(prefix.length + 1).replace(/\/tune$/, '');
-    if (seen.method === 'POST') {
-      if (!path.endsWith('/tune')) table.set(`${mount}/`, 'enabled-by-test');
-      return { status: 204 };
-    }
-    const type = table.get(`${mount}/`);
-    return type === undefined
-      ? { json: { errors: [`No secret engine mount at ${mount}/`] }, status: 400 }
-      : { json: { data: entry(type) }, status: 200 };
-  };
-  return { answer, table };
-};
 
 const posts = (seen: Seen[]) =>
   seen.filter((each) => each.method === 'POST').map((each) => each.path);

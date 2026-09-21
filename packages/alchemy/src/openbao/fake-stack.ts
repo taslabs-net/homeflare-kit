@@ -16,6 +16,8 @@
  *   in the shell running the tests is never read. No provider imports this file.
  */
 import * as Alchemy from 'alchemy';
+import { AdoptPolicy } from 'alchemy/AdoptPolicy';
+import { provideFreshArtifactStore } from 'alchemy/Artifacts';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { BaoEnvironment } from './bao-address.ts';
@@ -28,9 +30,12 @@ export type Planned = Readonly<Record<string, string>>;
 /** A stack body: resource declarations, as an `alchemy.run.ts` would write them. */
 export type StackBody = Effect.Effect<unknown, unknown, unknown>;
 
+/** What the CLI would set for one deploy: `adopt` is `--adopt` (the AdoptPolicy service). */
+export type DeployOptions = { readonly adopt?: boolean };
+
 export interface FakeStack {
   /** Plan, then apply, `body`. Resolves to the plan; rejects with the apply's failure. */
-  readonly deploy: (body: StackBody) => Promise<Planned>;
+  readonly deploy: (body: StackBody, options?: DeployOptions) => Promise<Planned>;
 }
 
 type Node = { readonly action: string };
@@ -72,22 +77,30 @@ export const fakeStack = <ROut, E, RIn>(
   ) => Effect.Effect<PlanView, unknown, never>;
   const apply = Alchemy.apply as unknown as (planned: PlanView) => Effect.Effect<unknown, unknown>;
 
-  const deploy = (body: StackBody) =>
+  /**
+   * ★ ONE ARTIFACT STORE ACROSS PLAN AND APPLY, as Deploy.ts's evalStack provides — the channel a
+   *   diff uses to tell reconcile it resumes an interrupted create (ownership/resume.ts).
+   * ★ `--adopt` reaches registration, plan and apply alike, as the Alchemist session provides it.
+   */
+  const deploy = (body: StackBody, options: DeployOptions = {}) =>
     Effect.gen(function* () {
       const compiled = yield* stack(name, { providers, state }, body);
       return yield* Effect.gen(function* () {
         const planned = yield* plan(compiled);
         yield* apply(planned);
         return actionsOf(planned);
-      }).pipe(Effect.provide(Layer.succeedContext(compiled.services)));
+      }).pipe(provideFreshArtifactStore, Effect.provide(Layer.succeedContext(compiled.services)));
     }).pipe(
+      options.adopt === undefined ? (e) => e : Effect.provideService(AdoptPolicy, options.adopt),
       Effect.provideService(Alchemy.Stage, 'test'),
       Effect.provideService(BaoEnv, env),
       Effect.provide(state),
       Effect.scoped,
     );
 
-  return { deploy: (body) => Effect.runPromise(deploy(body) as Effect.Effect<Planned>) };
+  return {
+    deploy: (body, options) => Effect.runPromise(deploy(body, options) as Effect.Effect<Planned>),
+  };
 };
 
 /**
