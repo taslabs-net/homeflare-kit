@@ -91,14 +91,22 @@ import { ForgejoOrgLabel } from '@homeflare/alchemy/forgejo';
 import { BaoAuthMethod, BaoAuthRoleProvider, BaoPlugin, appRoleLogin } from '@homeflare/alchemy/openbao';
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { ProxmoxAclProvider } from '@homeflare/alchemy/proxmox';
+import { HostFile, LaunchdJob, launchdProviders, renderPlist } from '@homeflare/alchemy/launchd';
 
 for (const [name, value] of Object.entries({
   R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoPlugin, appRoleLogin, TalosKubeconfigProvider, ProxmoxAclProvider,
+  HostFile, LaunchdJob, launchdProviders,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
 }
 
-console.log('all five subpaths import and resolve');
+// ★ Render once through the PUBLISHED file, so a launchd subpath that imports but cannot run
+//   (a Bun-only API in dist, a node: builtin that fails to resolve) fails here, not in a stack.
+if (!renderPlist({ Label: 'com.example.smoke' }).includes('<string>com.example.smoke</string>')) {
+  throw new Error('renderPlist from dist did not render');
+}
+
+console.log('all six subpaths import and resolve');
 `,
   );
 
