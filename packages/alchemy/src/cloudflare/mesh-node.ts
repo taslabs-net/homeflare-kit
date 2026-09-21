@@ -8,9 +8,8 @@
  *   credential that lets any Linux host join the account's Mesh as that node — into plaintext
  *   state on every read, and it cannot create an HA node. See mesh-node-form.ts.
  *
- * ★ REMOVAL POLICY: Alchemy's default, `destroy`. An `ha` change is a delete-first replace
- *   (mesh-node-form.ts), and under `retain` the old node would keep the name the new one needs;
- *   the create then refuses with a sentence rather than guessing (mesh-node-lifecycle.ts).
+ * ★ REMOVAL POLICY: `retain` BY DEFAULT — see the ★ on `MeshNode` below, and what it does to an
+ *   `ha` replace in mesh-node-lifecycle.ts.
  */
 import { Credentials } from '@distilled.cloud/cloudflare/Credentials';
 import * as Cloudflare from 'alchemy/Cloudflare';
@@ -37,7 +36,23 @@ export interface MeshNode extends Resource<
   Providers
 > {}
 
-export const MeshNode: ResourceClass<MeshNode> = Resource<MeshNode>('Cloudflare.MeshNode');
+/**
+ * ★ `defaultRemovalPolicy: 'retain'`, LIKE EVERY KIT RESOURCE WHOSE DELETION BREAKS ITS CONSUMERS
+ *   (the `Bao.*` families, `R2BucketLock`, the Proxmox storage families; the reasoning is written
+ *   once in proxmox/resource.ts). Deleting a node cuts every enrolled replica off the Mesh, and
+ *   nothing brings it back: a new node has a new id, a new token and a new Mesh IP per replica, so
+ *   each host must be re-enrolled by hand and every Gateway rule or allow-list that pins the old
+ *   Mesh IP breaks. So dropping the declaration, or `alchemy destroy`, leaves the node live.
+ * ⚠️ IT ALSO SKIPS THE OLD NODE'S DELETE IN A REPLACE (Apply.ts, `deleteOldGenerations` and the
+ *   GC's `retainOldGeneration`, beta.79). A same-name `ha` change therefore REFUSES, deleting
+ *   nothing, until that deploy opts in with `.pipe(RemovalPolicy.destroy())`; a create-first
+ *   replace leaves the old node live and unmanaged. Both measured in mesh-node-policy.test.ts.
+ * ⛔ `delete` STAYS FULLY IMPLEMENTED. Retain is Terraform's `prevent_destroy`, not a stub: it runs
+ *   the moment a declaration opts in with `.pipe(RemovalPolicy.destroy())`.
+ */
+export const MeshNode: ResourceClass<MeshNode> = Resource<MeshNode>('Cloudflare.MeshNode', {
+  defaultRemovalPolicy: 'retain',
+});
 
 /** What every call below needs: the account, credentials and HTTP — Alchemy's own trio. */
 export type MeshNodeServices =

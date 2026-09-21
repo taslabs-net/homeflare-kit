@@ -62,6 +62,10 @@ const door = yield * MeshNode('vault-door', { name: 'door-a', ha: false });
 
 - **`name`** renames in place (`PATCH`); **`ha`** is required and replaces the node (delete-first
   while the name stays). Existing nodes are adopted by exact name, `Unowned` until `adopt(true)`.
+- ⛔ **It retains on destroy** (deleting a node cuts every replica off the Mesh), so a same-name
+  `ha` change refuses, writing nothing, until that deploy pipes `RemovalPolicy.destroy()`.
+- ★ **A door (a node with no routes) is `ha: false`.** HA fails over routes, and each replica has
+  its own Mesh IP; a second door is a second `MeshNode`.
 - The account and credentials come from Alchemy's own Cloudflare environment, the same as
   `Cloudflare.providers()`.
 - **`fetchMeshNodeToken({ accountId, id })`** returns the token `Redacted`, on demand, for a

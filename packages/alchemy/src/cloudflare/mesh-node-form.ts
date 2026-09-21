@@ -31,8 +31,13 @@ export interface MeshNodeProps {
    *   `ha`. So a change REPLACES the node — a new id, a new token, a new Mesh IP per replica —
    *   and a default would silently fix an irreversible choice. The API's own default is `false`;
    *   the dashboard's is `true`. Say which one you mean.
-   * ⚠️ `ha` NEEDS MASQUE on the node's device profile, and a node without routes gains little
-   *   from it: each replica keeps its own Mesh IP (same page, "When to use").
+   * ★ A NODE WITH NO ROUTES — A DOOR — IS `ha: false`, AND A SECOND DOOR IS A SECOND NODE. HA
+   *   fails over the CIDR routes a node advertises; "Nodes without routes do not benefit from HA
+   *   failover", because the node's Mesh IP is tied to the individual replica (same page, "When to
+   *   use" and "Considerations", read 2026-09-21). After a failover the promoted replica answers
+   *   on its own Mesh IP, so nothing that dials a door's first replica follows it. Declare the
+   *   second door as its own `MeshNode` (own name, token, Mesh IP) and have callers list both.
+   * ⚠️ `ha` NEEDS MASQUE on the node's device profile (same page).
    */
   readonly ha: boolean;
 }
@@ -80,6 +85,11 @@ export const validateMeshNode = (props: MeshNodeProps): MeshNodeError | undefine
  *   the name the old one holds, so create-first would fail with code 1013 (or, worse, a
  *   create path that "converged" on the old node would record an `ha` it does not have).
  *   Create-first when the name changes in the same edit, because then nothing collides.
+ *   ⚠️ UNDER THE DEFAULT `retain` (mesh-node.ts) the engine skips the old node's delete in both
+ *   orders: delete-first then REFUSES at the create (mesh-node-lifecycle.ts) until the deploy
+ *   opts in with `RemovalPolicy.destroy()`, and create-first leaves the old node live, unmanaged.
+ *   The answer here is the same under both policies: `diff` is not handed the policy (Provider.ts,
+ *   its input), and delete-first is exactly what lets the opted-in deploy reuse the name.
  * - Name changed alone → `update` (a PATCH rename).
  * - Otherwise → no opinion; the engine compares props.
  *

@@ -55,18 +55,39 @@ export const readMeshNode = (
  * ⛔ NEVER CONVERGE ON A NODE THIS RESOURCE DID NOT FIND BY ITS OWN ID. Alchemy's WarpConnector
  *   answers `DuplicateTunnelName` by re-reading the node that holds the name and returning it.
  *   Here that would be wrong in exactly the case that matters: an `ha` replace whose old node is
- *   still alive (a `retain` removal policy skips the delete-first teardown) would "create" by
- *   silently re-using the old node and record the new `ha` on it. Adoption belongs to `read` and
- *   `adopt(true)`. An interrupted create is recovered through `read` too, which returns the node
- *   `Unowned`, so the engine asks for `adopt(true)` there as well (as it does for WarpConnector).
+ *   still alive (the default `retain` skips the delete-first teardown, mesh-node.ts) would
+ *   "create" by silently re-using the old node and record the new `ha` on it. Adoption belongs to
+ *   `read` and `adopt(true)`. An interrupted create is recovered through `read` too, which returns
+ *   the node `Unowned`, so the engine asks for `adopt(true)` there as well (as for WarpConnector).
  */
 const nameTaken = (name: string, holder: string) =>
   new MeshNodeError({
     message:
-      `A Mesh node named "${name}" already exists (${holder}) and this stack did not create it. ` +
-      'Adopt it with adopt(true) if it is meant to be this one. If it is the old generation of ' +
-      'an `ha` replace kept by a `retain` removal policy, delete it first: HA cannot be changed ' +
-      'in place, and names are unique per account.',
+      `A tunnel named "${name}" already exists (${holder}). Names are unique per account, and ` +
+      'this resource never takes over a node it did not create by its own id.',
+  });
+
+/**
+ * 🔴 THE REFUSAL AN `ha` CHANGE MEETS UNDER THE DEFAULT, SO IT NAMES EVERY WAY ON. The plan says
+ *   `replace` (delete-first), the engine skips that delete because of `retain`, and the old node
+ *   still holds the name here. (A node made outside the stack is caught earlier, by the plan's
+ *   adoption probe in `read`, so reaching this line is usually a replace.)
+ * ⚠️ REVERTING `ha` DOES NOT UNDO IT. The failed deploy leaves a `replacing` row, and the next
+ *   plan resumes that replace whatever the props say (Plan.ts, the `replacing` branch), so it
+ *   refuses again. Dropping the row and adopting is the way back. All measured in
+ *   mesh-node-policy.test.ts against the real engine.
+ */
+const oldNodeHoldsName = (name: string, holder: string) =>
+  new MeshNodeError({
+    message:
+      `Mesh node "${name}" already exists (${holder}) and is not the node this resource tracks, ` +
+      'so it is left alone. After an `ha` change it is the old node: MeshNode defaults to ' +
+      'RemovalPolicy.retain, which kept it, and HA cannot change in place while names are unique ' +
+      'per account. To replace it (a new id, token and Mesh IP per replica), deploy once with ' +
+      '.pipe(RemovalPolicy.destroy()), which deletes it first, or delete it by hand. To keep it, ' +
+      "reverting `ha` is not enough: drop this resource's state row (alchemy state rm), then " +
+      'deploy the original declaration under adopt(true). If this stack never managed it, adopt ' +
+      'it with adopt(true) after checking its HA badge.',
   });
 
 /**
@@ -100,7 +121,7 @@ const raced = (accountId: string, name: string) =>
 const createFresh = (accountId: string, news: MeshNodeProps) =>
   Effect.gen(function* () {
     const existing = yield* findNodeByName(accountId, news.name);
-    if (existing !== undefined) return yield* Effect.fail(nameTaken(news.name, existing.id));
+    if (existing !== undefined) return yield* Effect.fail(oldNodeHoldsName(news.name, existing.id));
     const node = yield* createNode(accountId, news.name, news.ha).pipe(
       Effect.catchTag('DuplicateTunnelName', () => raced(accountId, news.name)),
     );

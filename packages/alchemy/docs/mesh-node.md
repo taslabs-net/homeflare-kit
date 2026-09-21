@@ -40,14 +40,30 @@ The account and credentials come from Alchemy's own Cloudflare environment
 `DNS.Record` resources that refer to it. `providers()` builds that layer itself, so the provider
 works whether or not the stack also merges `Cloudflare.providers()`.
 
+⛔ **Removal policy: `retain` by default**, like the kit's other resources whose deletion breaks
+their consumers. Dropping the declaration or `alchemy destroy` leaves the node live and only drops
+it from state. Opt a declaration into deletion with `.pipe(RemovalPolicy.destroy())`.
+
+### Choosing `ha`: a door is `ha: false`
+
+HA fails over the CIDR **routes** a node advertises. A node with no routes (a door: callers dial
+its Mesh IP) gains nothing from it, because the Mesh IP belongs to each replica: "Nodes without
+routes do not benefit from HA failover" (Cloudflare's Mesh HA page, read 2026-09-21). After a
+failover the promoted replica answers on its own Mesh IP, so nothing dialling the first one
+follows it.
+
+So a door is `ha: false`, and **a second door is a second `MeshNode`** with its own name, token
+and Mesh IP. Callers list both addresses. Keep `ha: true` for a subnet gateway with routes, on a
+device profile that uses MASQUE.
+
 ## What each change does
 
-| change                   | answer                      | what happens on Cloudflare                                                |
-| ------------------------ | --------------------------- | ------------------------------------------------------------------------- |
-| `name`                   | `update`                    | `PATCH`. The id, token, enrolled replicas and Mesh IPs all survive.       |
-| `ha`, same `name`        | `replace`, **delete-first** | The old node is deleted, then the new one is created under the same name. |
-| `ha` and `name` together | `replace`, create-first     | The new node is created, then the old one is deleted.                     |
-| account (provider env)   | `replace`, create-first     | Names are unique per account, so the two generations cannot collide.      |
+| change                   | answer                      | what happens on Cloudflare                                                                  |
+| ------------------------ | --------------------------- | ------------------------------------------------------------------------------------------- |
+| `name`                   | `update`                    | `PATCH`. The id, token, enrolled replicas and Mesh IPs all survive.                         |
+| `ha`, same `name`        | `replace`, **delete-first** | `retain` (default): **refused**, nothing written. `destroy`: old deleted, then new created. |
+| `ha` and `name` together | `replace`, create-first     | The new node is created. Under `retain` the old one stays live.                             |
+| account (provider env)   | `replace`, create-first     | As above; names are unique per account, so the two cannot collide.                          |
 
 ⛔ **An `ha` replace is an outage for that node.** The new node has a new id and a new token, and
 each replica gets a new Mesh IP. Re-enrol every replica with the new token, and update anything
@@ -59,10 +75,21 @@ just-deleted node frees its name at once. If it does not, the create fails with 
 sentence; deploy again once the name is free. An invalid declaration is refused at plan time,
 before anything is deleted.
 
-⚠️ **Removal policy.** The default is Alchemy's `destroy`, so removing the declaration deletes the
-node. Under `RemovalPolicy.retain()` the delete-first teardown is skipped, the old node keeps its
-name, and the create **refuses** with a sentence. It never quietly reuses the old node, because
-that node would still have the old `ha`.
+### An `ha` change under `retain`
+
+`retain` also skips the old node's delete inside a replace. So a same-name `ha` change keeps the old
+node, which still holds the name, and the create **refuses** with a sentence and writes nothing. It
+never quietly reuses the old node, because that node still has the old `ha`. Measured through
+Alchemy's own plan/apply in `mesh-node-policy.test.ts`:
+
+| you want             | do                                                                                                                   |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| the replace          | Deploy once with `.pipe(RemovalPolicy.destroy())`: delete, then create. Then drop it.                                |
+| the replace, by hand | Delete the old node yourself, then deploy again.                                                                     |
+| to keep the old node | `alchemy state rm <stack>/<stage>/<id>` (state only, not the node), then deploy the old declaration + `adopt(true)`. |
+
+⚠️ **Reverting `ha` is not enough.** The refused deploy leaves a `replacing` row, and the next
+plan resumes that replace whatever the props say, so it refuses again.
 
 ⚠️ Never deploy with `DISTILLED_DEBUG_HTTP` set: distilled prints the start of every response,
 and the create response carries the node's `token` field (Cloudflare's HA page says so).
