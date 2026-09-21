@@ -66,6 +66,8 @@ const door = yield * MeshNode('vault-door', { name: 'door-a', ha: false });
   `Cloudflare.providers()`.
 - **`fetchMeshNodeToken({ accountId, id })`** returns the token `Redacted`, on demand, for a
   one-off enrolment step. ⛔ Write it to a root-owned `0600` file on the node and nowhere else.
+  It refuses the Global API Key, an empty API token, and a set `DISTILLED_DEBUG_HTTP` (distilled
+  would print the token).
 
 Guide, the enrolment step and every replace case: [docs/mesh-node.md](./docs/mesh-node.md).
 

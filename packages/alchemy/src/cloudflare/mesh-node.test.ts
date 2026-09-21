@@ -10,16 +10,9 @@ import { describe, expect, test } from 'bun:test';
 import { Unowned } from 'alchemy/AdoptPolicy';
 import type { StackServices } from 'alchemy/Stack';
 import * as Effect from 'effect/Effect';
-import * as Layer from 'effect/Layer';
-import {
-  FAKE_ACCOUNT,
-  FAKE_API_TOKEN,
-  type FakeMesh,
-  fakeMesh,
-  fakeProviderLayer,
-} from './fake-mesh.ts';
-import { MeshNode, MeshNodeProvider } from './mesh-node.ts';
-import type { MeshNodeAttributes, MeshNodeProps } from './mesh-node-form.ts';
+import type * as Layer from 'effect/Layer';
+import { FAKE_ACCOUNT, FAKE_API_TOKEN, fakeMesh } from './fake-mesh.ts';
+import { diff, extra, ids, read, reconcile, run, stored, tokenReads } from './mesh-node-harness.ts';
 import { providers } from './providers.ts';
 
 // ⛔ Compile-time: a stack's `providers` must be `Layer<…, never, StackServices>`. Adding MeshNode
@@ -27,32 +20,6 @@ import { providers } from './providers.ts';
 type Built = Layer.Success<ReturnType<typeof providers>>;
 const _stackShaped: Layer.Layer<Built, never, StackServices> = providers();
 void _stackShaped;
-
-const ids = { fqn: 'stack/door', id: 'door', instanceId: 'i-1' };
-const extra = { bindings: [] as never, session: undefined as never };
-
-type P = Effect.Success<typeof MeshNode.Provider>;
-const handler = <F>(name: string, fn: F | undefined): F => {
-  if (fn === undefined) throw new Error(`provider has no ${name} handler`);
-  return fn;
-};
-
-const run = <A, E>(fake: FakeMesh, use: (p: P) => Effect.Effect<A, E>, accountId?: string) =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      return yield* use(yield* MeshNode.Provider);
-    }).pipe(
-      Effect.provide(
-        MeshNodeProvider().pipe(Layer.provideMerge(fakeProviderLayer(fake, accountId))),
-      ),
-    ),
-  );
-
-const reconcile = (p: P, news: MeshNodeProps, output?: MeshNodeAttributes) =>
-  p.reconcile({ ...ids, ...extra, news, olds: undefined, output });
-const read = (p: P, olds: MeshNodeProps, output?: MeshNodeAttributes) =>
-  handler('read', p.read)({ ...ids, olds, output });
-const tokenReads = (fake: FakeMesh) => fake.seen.filter((s) => s.path.endsWith('/token')).length;
 
 describe('MeshNodeProvider', () => {
   test('create sends ha, and the attributes carry no token', async () => {
@@ -80,13 +47,7 @@ describe('MeshNodeProvider', () => {
     const props = { name: 'door-a', ha: false };
     const [owned, probe] = await run(fake, (p) =>
       Effect.gen(function* () {
-        const output = {
-          id: node.id,
-          accountId: FAKE_ACCOUNT,
-          name: 'door-a',
-          status: undefined,
-          ha: false,
-        };
+        const output = stored(FAKE_ACCOUNT, { id: node.id });
         return [yield* read(p, props, output), yield* read(p, props)] as const;
       }),
     );
@@ -179,53 +140,19 @@ describe('MeshNodeProvider', () => {
 
   test('diff reads the account from the provider environment', async () => {
     const fake = fakeMesh();
-    const output = {
-      id: 'x',
-      accountId: FAKE_ACCOUNT,
-      name: 'door-a',
-      status: undefined,
-      ha: false,
-    };
-    const diff = (p: P) =>
-      handler(
-        'diff',
-        p.diff,
-      )({
-        ...ids,
-        news: { name: 'door-a', ha: false },
-        olds: { name: 'door-a', ha: false },
-        newBindings: [] as never,
-        oldBindings: [] as never,
-        output,
-      });
-    expect(await run(fake, diff)).toBeUndefined();
-    expect(await run(fake, diff, '00000000000000000000000000000002')).toEqual({
+    const props = { name: 'door-a', ha: false };
+    const plan = (p: Parameters<typeof diff>[0]) => diff(p, props, props, stored(FAKE_ACCOUNT));
+    expect(await run(fake, plan)).toBeUndefined();
+    expect(await run(fake, plan, '00000000000000000000000000000002')).toEqual({
       action: 'replace',
     });
   });
 
   test('an invalid declaration fails the PLAN, before a delete-first replace tears anything down', async () => {
     const fake = fakeMesh();
-    const output = {
-      id: 'x',
-      accountId: FAKE_ACCOUNT,
-      name: 'door-a',
-      status: undefined,
-      ha: false,
-    };
     const failure = await run(fake, (p) =>
       Effect.flip(
-        handler(
-          'diff',
-          p.diff,
-        )({
-          ...ids,
-          news: { name: 'door-a ', ha: true },
-          olds: { name: 'door-a', ha: false },
-          newBindings: [] as never,
-          oldBindings: [] as never,
-          output,
-        }),
+        diff(p, { name: 'door-a ', ha: true }, { name: 'door-a', ha: false }, stored(FAKE_ACCOUNT)),
       ),
     );
     expect(String(failure)).toContain('whitespace');

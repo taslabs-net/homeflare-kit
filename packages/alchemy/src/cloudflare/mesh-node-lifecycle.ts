@@ -57,7 +57,8 @@ export const readMeshNode = (
  *   Here that would be wrong in exactly the case that matters: an `ha` replace whose old node is
  *   still alive (a `retain` removal policy skips the delete-first teardown) would "create" by
  *   silently re-using the old node and record the new `ha` on it. Adoption belongs to `read` and
- *   `adopt(true)`; an interrupted create is recovered by the engine through `read` too.
+ *   `adopt(true)`. An interrupted create is recovered through `read` too, which returns the node
+ *   `Unowned`, so the engine asks for `adopt(true)` there as well (as it does for WarpConnector).
  */
 const nameTaken = (name: string, holder: string) =>
   new MeshNodeError({
@@ -68,19 +69,40 @@ const nameTaken = (name: string, holder: string) =>
       'in place, and names are unique per account.',
   });
 
+/**
+ * 🔴 A 1013 AFTER A CLEAN LOOKUP IS USUALLY THIS DEPLOY'S OWN NODE. distilled retries a POST on
+ *   a transport error or a 5xx (core `isTransientError`, measured in its source 2026-09-21), so a
+ *   create that succeeded but lost its response is sent again and answered 1013 by the node the
+ *   first attempt made. The lookup is repeated so the sentence names that node instead of blaming
+ *   another tunnel type; it is still not adopted here (see above), because a concurrent creator
+ *   looks the same and its `ha` is unknown.
+ */
+const raced = (accountId: string, name: string) =>
+  findNodeByName(accountId, name).pipe(
+    Effect.flatMap((holder) =>
+      Effect.fail(
+        holder === undefined
+          ? // ⚠️ No live warp_connector of that name: another tunnel TYPE holds it (a cloudflared
+            //   tunnel), or — UNMEASURED — a node deleted moments ago (a delete-first `ha`
+            //   replace) still reserves it.
+            nameTaken(name, 'not a live Mesh node: another tunnel type, or a just-deleted node')
+          : new MeshNodeError({
+              message:
+                `Mesh node "${name}" (${holder.id}) appeared between this deploy's lookup and its ` +
+                'create. The likeliest cause is this deploy itself: the SDK retries a create whose ' +
+                'response was lost. If so, adopt it with adopt(true), after checking its HA badge ' +
+                'matches the declared `ha`; otherwise another creator raced this one.',
+            }),
+      ),
+    ),
+  );
+
 const createFresh = (accountId: string, news: MeshNodeProps) =>
   Effect.gen(function* () {
     const existing = yield* findNodeByName(accountId, news.name);
     if (existing !== undefined) return yield* Effect.fail(nameTaken(news.name, existing.id));
-    // ⚠️ code 1013 without a live warp_connector of that name: another tunnel TYPE may hold it
-    //   (a cloudflared tunnel), one was created after the lookup above, or — UNMEASURED — a node
-    //   deleted moments ago (a delete-first `ha` replace) may still reserve its name.
     const node = yield* createNode(accountId, news.name, news.ha).pipe(
-      Effect.catchTag('DuplicateTunnelName', () =>
-        Effect.fail(
-          nameTaken(news.name, 'not a live Mesh node: another tunnel type, or a just-deleted node'),
-        ),
-      ),
+      Effect.catchTag('DuplicateTunnelName', () => raced(accountId, news.name)),
     );
     return attributesOf(node, accountId, news.ha);
   });

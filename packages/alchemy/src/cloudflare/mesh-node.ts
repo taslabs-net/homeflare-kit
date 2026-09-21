@@ -2,11 +2,11 @@
  * `Cloudflare.MeshNode` — a Cloudflare Mesh node (a `warp_connector` object), declared without
  * its token ever touching Alchemy state. Usage and the enrolment step: docs/mesh-node.md.
  *
- * 🔴 WHY THIS EXISTS ALONGSIDE `Cloudflare.Tunnel.WarpConnector`. The vault door's Mesh node
- *   (landscape plan 2026-09-21-mesh-path.md) needs a node record in the graph, so the Gateway
- *   rules and DNS that name it deploy together. Alchemy beta.79's WarpConnector would put the
- *   node token — the credential that lets any Linux host join the account's Mesh as that node —
- *   into plaintext state on every read, and it cannot create an HA node. See mesh-node-form.ts.
+ * 🔴 WHY THIS EXISTS ALONGSIDE `Cloudflare.Tunnel.WarpConnector`. A Mesh node that fronts a
+ *   private service needs a node record in the graph, so the Gateway rules and DNS records that
+ *   name it deploy together. Alchemy beta.79's WarpConnector would put the node token — the
+ *   credential that lets any Linux host join the account's Mesh as that node — into plaintext
+ *   state on every read, and it cannot create an HA node. See mesh-node-form.ts.
  *
  * ★ REMOVAL POLICY: Alchemy's default, `destroy`. An `ha` change is a delete-first replace
  *   (mesh-node-form.ts), and under `retain` the old node would keep the name the new one needs;

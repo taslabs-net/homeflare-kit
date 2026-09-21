@@ -9,8 +9,12 @@
  * ★ THE NAME FILTER IS A SUBSTRING MATCH ON PURPOSE. The real filter's exactness is undocumented;
  *   a loose fake proves the client re-checks the exact name.
  * ★ PAGES OF TWO by default, so every lookup walks more than one page.
+ * ★ `is_deleted` IS HONOURED AS THE SDK DOCUMENTS IT: `false` → live only, `true` → deleted only,
+ *   absent → every tunnel. So a lookup that forgot the filter sees tombstones and must drop them.
+ * ★ `onCreate` runs before a POST is answered: a test uses it to put a node in the way between
+ *   the provider's lookup and its create — what a retried POST whose first response was lost does.
  */
-import { fromApiToken } from '@distilled.cloud/cloudflare/Credentials';
+import { type Credentials, fromApiToken } from '@distilled.cloud/cloudflare/Credentials';
 import * as Cloudflare from 'alchemy/Cloudflare';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
@@ -36,7 +40,7 @@ export type Seen = { readonly method: string; readonly path: string; readonly bo
 const ok = (result: unknown, extra: Record<string, unknown> = {}) =>
   Response.json({ success: true, errors: [], messages: [], result, ...extra });
 
-const fail = (status: number, code: number, message: string) =>
+export const fakeFailure = (status: number, code: number, message: string) =>
   Response.json(
     { success: false, errors: [{ code, message }], messages: [], result: null },
     { status },
@@ -53,12 +57,22 @@ const wire = (node: FakeNode) => ({
   tun_type: 'warp_connector',
 });
 
-export const fakeMesh = (options: { readonly perPage?: number } = {}) => {
+export type FakeOptions = {
+  readonly perPage?: number;
+  /** Return a Response to answer the POST with it instead (e.g. `fakeFailure(409, 1013, …)`). */
+  readonly onCreate?: (name: string) => Response | void;
+};
+
+export const fakeMesh = (options: FakeOptions = {}) => {
   const nodes = new Map<string, FakeNode>();
   const seen: Seen[] = [];
   const auth: string[] = [];
   let next = 1;
   const live = () => [...nodes.values()].filter((node) => node.deleted_at === null);
+  const listed = (isDeleted: string | null) =>
+    [...nodes.values()].filter((node) =>
+      isDeleted === null ? true : (node.deleted_at !== null) === (isDeleted === 'true'),
+    );
 
   const seed = (node: Partial<FakeNode> & { name: string }): FakeNode => {
     const id = node.id ?? `00000000-0000-4000-8000-${String(next++).padStart(12, '0')}`;
@@ -84,33 +98,37 @@ export const fakeMesh = (options: { readonly perPage?: number } = {}) => {
       const filter = url.searchParams.get('name') ?? '';
       const page = Number(url.searchParams.get('page') ?? '1');
       const perPage = Number(url.searchParams.get('per_page') ?? options.perPage ?? 2);
-      const hits = live().filter((node) => node.name.includes(filter));
+      const hits = listed(url.searchParams.get('is_deleted')).filter((node) =>
+        node.name.includes(filter),
+      );
       const slice = hits.slice((page - 1) * perPage, page * perPage);
       return ok(slice.map(wire), { result_info: { page, per_page: perPage, count: slice.length } });
     }
     if (id === undefined && method === 'POST') {
       const name = String(body['name']);
+      const override = options.onCreate?.(name);
+      if (override !== undefined) return override;
       if (live().some((node) => node.name === name)) {
-        return fail(409, 1013, 'Tunnel with name already exists');
+        return fakeFailure(409, 1013, 'Tunnel with name already exists');
       }
       const node = seed({ name, ha: body['ha'] === true });
       return ok({ ...wire(node), token: node.token });
     }
     const node = id === undefined ? undefined : nodes.get(id);
-    if (node === undefined) return fail(404, 1002, 'Tunnel not found');
+    if (node === undefined) return fakeFailure(404, 1002, 'Tunnel not found');
     if (sub === 'token' && method === 'GET') return ok(node.token);
     if (sub !== undefined) throw new Error(`fake-mesh: unexpected ${method} ${url.pathname}`);
     if (method === 'GET') return ok(wire(node));
     if (method === 'PATCH') {
       const name = String(body['name']);
       if (live().some((other) => other.name === name && other.id !== node.id)) {
-        return fail(409, 1013, 'Tunnel with name already exists');
+        return fakeFailure(409, 1013, 'Tunnel with name already exists');
       }
       node.name = name;
       return ok(wire(node));
     }
     if (method === 'DELETE') {
-      if (node.deleted_at !== null) return fail(404, 1002, 'Tunnel not found');
+      if (node.deleted_at !== null) return fakeFailure(404, 1002, 'Tunnel not found');
       node.deleted_at = '2026-09-21T01:00:00Z';
       return ok(wire(node));
     }
@@ -134,9 +152,15 @@ export const fakeMesh = (options: { readonly perPage?: number } = {}) => {
 export type FakeMesh = ReturnType<typeof fakeMesh>;
 
 /** distilled Credentials + the real FetchHttpClient over the fake — what a Bun script provides. */
-export const fakeClientLayer = (fake: FakeMesh) =>
+export const fakeClientLayer = (
+  fake: FakeMesh,
+  credentials: Layer.Layer<Credentials> = fromApiToken({
+    apiToken: FAKE_API_TOKEN,
+    apiBaseUrl: FAKE_BASE,
+  }),
+) =>
   Layer.mergeAll(
-    fromApiToken({ apiToken: FAKE_API_TOKEN, apiBaseUrl: FAKE_BASE }),
+    credentials,
     FetchHttpClient.layer,
     Layer.succeed(FetchHttpClient.Fetch, fake.fetch),
   );

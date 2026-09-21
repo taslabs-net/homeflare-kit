@@ -64,6 +64,9 @@ node. Under `RemovalPolicy.retain()` the delete-first teardown is skipped, the o
 name, and the create **refuses** with a sentence. It never quietly reuses the old node, because
 that node would still have the old `ha`.
 
+⚠️ Never deploy with `DISTILLED_DEBUG_HTTP` set: distilled prints the start of every response,
+and the create response carries the node's `token` field (Cloudflare's HA page says so).
+
 ⚠️ Cloudflare may refuse to delete a node while replicas are connected. This is noted in Alchemy's
 WarpConnector and was not measured here. Stop the client on every replica before a destroy or an
 `ha` replace.
@@ -73,6 +76,11 @@ WarpConnector and was not measured here. Stop the client on every replica before
 An existing node is found by **exact** name and returned `Unowned`. Alchemy refuses to take it
 over until the resource is wrapped in `adopt(true)` (or `--adopt` is passed). A deleted node is
 never matched, and a name that matches two live nodes is refused.
+
+An interrupted create (the node was made, its state was not saved) is found the same way on the
+next plan, so it too needs `adopt(true)`. ⚠️ distilled retries a create after a lost response or a
+5xx, and the retry is answered code 1013 by the node the first attempt made: the error then names
+that node's id. It is never adopted silently, because a concurrent creator looks the same.
 
 ⚠️ **Adoption records the declared `ha`.** No documented read returns a node's HA flag:
 `GET /warp_connector/{id}` has no such field. Check the node's **HA** badge in the dashboard
@@ -114,14 +122,21 @@ await file.close();
   **argument**, so it is visible in the host's process list while that command runs. Run it as
   root on the node itself, in a shell that does not keep history.
 - An empty token fails closed. An empty file would otherwise "enrol" a host that never joined.
+- ⛔ **Refused before any request:** `DISTILLED_DEBUG_HTTP` set (distilled then prints the first
+  400 characters of every response body to stderr, which is the whole token), the Global API Key
+  (`apiKey` credentials), and an empty API token (a denied secrets grant, not a permission).
 
 ## Permissions
 
-| step                    | needs (any one, per the API reference)                                      |
-| ----------------------- | --------------------------------------------------------------------------- |
-| plan / read (get, list) | Cloudflare One Connectors Read, or Cloudflare One Connector: WARP Read      |
-| create, rename, delete  | Cloudflare One Connectors Write, or Cloudflare One Connector: WARP Write    |
-| `fetchMeshNodeToken`    | Cloudflare One Connectors Write (or the cloudflared or Tunnel Write groups) |
+| step                    | needs (any one, per the API reference)                                   |
+| ----------------------- | ------------------------------------------------------------------------ |
+| plan / read (get, list) | Cloudflare One Connectors Read, or Cloudflare One Connector: WARP Read   |
+| create, rename, delete  | Cloudflare One Connectors Write, or Cloudflare One Connector: WARP Write |
+| `fetchMeshNodeToken`    | Cloudflare One Connectors Write (see below)                              |
+
+The token endpoint's API reference lists Connectors Write, "Cloudflare One Connector: cloudflared
+Write" and "Cloudflare Tunnel Write"; the Mesh get-started guide lists Connectors Write and
+"Cloudflare One Connector: WARP Write". Connectors Write is the one both name.
 
 ## Not covered here
 
