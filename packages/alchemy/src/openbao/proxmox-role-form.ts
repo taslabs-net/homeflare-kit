@@ -109,7 +109,7 @@ const ttlText = (seconds: number | undefined, fallback = '0') => {
 export const rolePath = (mount: string, name: string) => `${mountPath(mount)}/roles/${name}`;
 
 export const attributesOf = (
-  props: BaoProxmoxRoleProps,
+  props: Pick<BaoProxmoxRoleProps, 'mount' | 'name'>,
   live: Record<string, unknown>,
 ): BaoProxmoxRoleAttributes => {
   const attrs = {
@@ -129,13 +129,13 @@ export const attributesOf = (
  * The body for `PUT <mount>/roles/<name>` — all strings, the `k=v` pairs `bao write` sent — or
  * the prop names whose duration would not parse.
  *
- * ⛔ A WRITE TO roles/{name} REPLACES THE ROLE, IT DOES NOT MERGE. An omitted `ttl` is written
- *   as the field's zero value, so a resource that treated undeclared TTLs as "unmanaged" — the
- *   Bao.Mount shape — would silently reset a lease ceiling every time it rewrote the role for an
- *   unrelated reason. Both TTLs are therefore required props and EVERY write carries all three
- *   fields. REASONED from the Vault secrets-framework write semantics plus this plugin's schema
- *   marking only `mint_user` required; NOT measured, because this session was read-only and
- *   proving it would have meant writing to the live engine.
+ * ⛔ EVERY WRITE CARRIES ALL THREE FIELDS, and both TTLs are required props, so `matches` covers
+ *   the whole role and no field is left unmanaged behind a green plan.
+ * ⚠️ CORRECTED 2026-09-21 FROM THE PLUGIN SOURCE. This said a write REPLACES the role and resets an
+ *   omitted TTL to zero. The port in homeflare-openbao-plugins (secrets/proxmox/path_roles.go,
+ *   pathRolesWrite, commit 0e79154) MERGES: it loads the stored role and sets only the fields
+ *   present (`d.GetOk`). An omitted TTL would keep its old value, which is still a value this
+ *   resource would not be managing. The build running live was not re-checked against that source.
  *
  * ⚠️ Seconds go on the wire as integers, not as `1h`. The schema declares both TTLs
  *   `"format": "seconds"`, and an integer is accepted unambiguously by every path that reads
@@ -166,6 +166,25 @@ const sameTtl = (want: string, have: string) => {
   const haveSeconds = ttlSeconds(have);
   return wantSeconds !== undefined && wantSeconds === haveSeconds;
 };
+
+/**
+ * Why moving the role's mint user from `before` to the declared one must be refused, or undefined.
+ * The ⛔ on reconcile in proxmox-role.ts says why a re-scope needs `allowMintUserChange`.
+ *
+ * ★ ONE DEFINITION FOR BOTH PLACES THAT ASK. Reconcile asks it of the live role at the same path.
+ *   The diff asks it across a rename, where `before` is the role being replaced: a rename writes a
+ *   brand-new role, so reconcile alone would see nothing to re-scope, and a rename would become the
+ *   way around the guard.
+ */
+export const rescopeRefusal = (
+  before: string,
+  mintUser: string,
+  allowMintUserChange: string | undefined,
+): string | undefined =>
+  before === mintUser || allowMintUserChange === before
+    ? undefined
+    : `re-scopes mint_user ${before} → ${mintUser}. Every token this role mints inherits ` +
+      `the ACL of that PVE user. To re-scope deliberately, declare allowMintUserChange: '${before}'.`;
 
 /** True when the live role already matches the declaration on every field the plugin stores. */
 export const matches = (attributes: BaoProxmoxRoleAttributes, props: BaoProxmoxRoleProps) =>

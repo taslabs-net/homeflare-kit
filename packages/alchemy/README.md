@@ -119,6 +119,18 @@ delete-first.
 - ⛔ **No silent sudo:** the system domain needs a deploy started as root, or a `privileged` runner.
 - ⚠️ `org.nixos.*` jobs are never adopted. Guide and nix-darwin cutover: [docs/launchd.md](./docs/launchd.md).
 
+## Caddy — `@homeflare/alchemy/caddy`
+
+`CaddyConfig` declares a running Caddy's config as Caddyfile text, applied through Caddy's own admin
+API: `POST /load` (graceful reload; Caddy keeps the old config if it refuses the new one, and the
+deploy says why), `GET /config/` for drift. A running Caddy is adopted on first read.
+`caddyWithFile()` also writes the file Caddy starts from, with `HostFile`; `caddyProviders()` provides
+the transport, `http://127.0.0.1:2019` by default.
+
+- ⛔ **No secrets in the Caddyfile** (state is unencrypted): `{env.NAME}` / `{file./path}` placeholders.
+- ⛔ **The admin API stays on loopback or a unix socket**, and a Caddyfile that would move it is refused.
+- ⛔ **Delete never unloads or stops Caddy.** Order of file and load, `--resume`: [docs/caddy.md](./docs/caddy.md).
+
 ## Credentials
 
 `CLOUDFLARE_API_TOKEN` is read from the environment at call time, never at module scope.

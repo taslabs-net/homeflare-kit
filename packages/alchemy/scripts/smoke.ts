@@ -96,11 +96,12 @@ import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement,
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { ProxmoxAclProvider } from '@homeflare/alchemy/proxmox';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist } from '@homeflare/alchemy/launchd';
+import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
   R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider,
-  HostFile, LaunchdJob, launchdProviders,
+  HostFile, LaunchdJob, launchdProviders, CaddyConfig, caddyProviders, caddyWithFile,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
 }
@@ -117,7 +118,20 @@ if (new MeshNodeError({ message: 'smoke' }).message !== 'smoke') {
   throw new Error('MeshNodeError from dist did not construct');
 }
 
-console.log('all six subpaths import and resolve');
+// ★ The Caddy transport too: it builds its target from node:http, so a dist that cannot load that
+//   (or a default that drifted off loopback) fails here. It sends nothing — no Caddy is needed.
+if (localCaddyAdmin().endpoint !== 'http://127.0.0.1:2019') {
+  throw new Error('localCaddyAdmin from dist lost its loopback default');
+}
+let refused = false;
+try {
+  localCaddyAdmin({ address: 'http://192.0.2.10:2019' });
+} catch {
+  refused = true;
+}
+if (!refused) throw new Error('localCaddyAdmin from dist accepted a non-loopback address');
+
+console.log('all seven subpaths import and resolve');
 `,
   );
 
