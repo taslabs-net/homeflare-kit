@@ -45,9 +45,12 @@ const PACKAGES: readonly string[] = await Array.fromAsync(
  *   packages/alchemy/tests/peers.test.ts and packages/site/tests/contract.test.ts hold
  *   the per-package reasoning.
  * - `mime` is pinned by @homeflare/alchemy alongside the Alchemy 78/79 install line.
+ * - `@distilled.cloud/cloudflare` is pinned to the exact version alchemy itself pins (a plain
+ *   dependency there), so MeshNode shares alchemy's copy of the SDK rather than a second one.
+ *   packages/alchemy/tests/peers.test.ts asserts the two stay equal.
  */
 const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
-  alchemy: ['@effect/platform-node', 'alchemy', 'effect', 'mime'],
+  alchemy: ['@distilled.cloud/cloudflare', '@effect/platform-node', 'alchemy', 'effect', 'mime'],
   site: ['effect'],
 };
 
