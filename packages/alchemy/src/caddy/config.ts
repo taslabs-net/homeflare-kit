@@ -129,13 +129,14 @@ export const CaddyConfigProvider = () =>
           }).pipe(Effect.catchIf(unreachable, update));
         },
 
-        reconcile: ({ news, output }) =>
+        reconcile: ({ fqn, news, output }) =>
           Effect.gen(function* () {
             // ⛔ State is authority over the Caddy it was applied to, and no other. With none (the
             //   engine may not have probed: see reconcileConfig), or with the transport now at
-            //   another endpoint, only `--adopt` loads over a config the stack cannot claim.
+            //   another endpoint, only adoption — `--adopt`, or this resource's own `adopt(…)`,
+            //   as the planner resolves it — loads over a config the stack cannot claim.
             const sameCaddy = output !== undefined && output.endpoint === admin.endpoint;
-            const takeOver = sameCaddy || (yield* adoptEnabled);
+            const takeOver = sameCaddy || (yield* adoptEnabled(fqn));
             const stored = output === undefined ? {} : { stored: output.configSha256 };
             const applied = yield* lift(() =>
               reconcileConfig(admin, news, { takeOver, ...stored }),

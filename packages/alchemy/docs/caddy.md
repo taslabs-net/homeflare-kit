@@ -171,8 +171,8 @@ With no state, `read` is Alchemy's adoption probe, and what the Caddy runs decid
   before any `/load` unless the deploy runs with `--adopt`. The HostFile is written by then (a file
   already at the path is the HostFile's own `Unowned`); under `--resume` a restart still runs the
   autosave.
-- ⚠️ **That apply-time check sees the deploy-wide `--adopt` only.** A resource-scoped `adopt(true)`
-  is consulted by the planner, and never reaches a provider.
+- ★ **That apply-time check resolves adoption as the planner does:** a resource-scoped `adopt(…)`,
+  else `--adopt`. So `.pipe(adopt(false))` still refuses under `--adopt`, and `adopt(true)` works.
 - ★ **An uncomparable Caddyfile is `Unowned`, not an error**: the same read recovers an interrupted
   create with that deploy's props, and a throw would fail every later plan, the fixed one included.
 

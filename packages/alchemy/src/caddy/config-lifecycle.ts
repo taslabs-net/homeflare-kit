@@ -169,9 +169,10 @@ export type Applied = {
 };
 
 /**
- * What this apply may load over — config.ts decides from the state and `--adopt`:
+ * What this apply may load over — config.ts decides from the state and the adopt setting:
  *   · `takeOver` — any running config: the state was applied to THIS Caddy (an update, drift
- *     correction, or a create the engine adopted), or the deploy runs with `--adopt`.
+ *     correction, or a create the engine adopted), or adoption is on (`--adopt`, or the
+ *     resource's own `adopt(true)` — host-effect.ts adoptEnabled).
  *   · otherwise only a claimable one — plus, as `stored`, the digest the state last recorded: a
  *     Caddy reached at a NEW endpoint that runs exactly that is the same config under another name.
  */
@@ -199,7 +200,8 @@ export const reconcileConfig = async (
       admin,
       `Caddy runs config ${short(before)}, which this stack did not load, and the Caddyfile adapts ` +
         `to ${short(want.digest)} — loading it would replace every site that config serves. ` +
-        'Deploy with --adopt to take this Caddy over, or point caddyProviders() at the Caddy you meant.',
+        'Deploy with --adopt (or wrap the resource in adopt(true)) to take this Caddy over, or ' +
+        'point caddyProviders() at the Caddy you meant.',
     );
   }
   let warnings = want.warnings;
