@@ -5,9 +5,9 @@ Every kit provider must answer `replace` correctly (vault consolidation plan, "R
 
 ★ **Measured, not only read.** `fake-stack.ts` runs beta.79's own `Plan.make` and `apply` over an
 in-memory state store against the fake engines in `fake-engines.ts` and `fake-engines-roles.ts`.
-`policy-rename.test.ts`, `role-rename.test.ts`, `rename-occupied.test.ts` and
-`rename-families.test.ts` deploy, rename, and deploy again, then check the plan and every call that
-reached the fake.
+`policy-rename.test.ts`, `role-rename.test.ts`, `rename-occupied.test.ts`,
+`rename-families.test.ts`, `rename-identity.test.ts` and `rename-adoption.test.ts` deploy, rename,
+and deploy again, then check the plan and every call that reached the fake.
 
 ## What Alchemy does with each answer
 
@@ -56,8 +56,8 @@ says folded.
 | `Bao.AuthMethod`          | `path`                    | Same as `Bao.Mount` (`auth/` prefix). The accessor survives the move.                                                                                                 | `type` → `replace` that **fails at apply** (below)                                          |
 | `Bao.AuthRole`            | `name` (folded)           | `replace`. Before 2026-09-21 it was `update`, and the old role was orphaned. Its delete clears the secret_ids; issued tokens run to their TTL (below).                | `update`                                                                                    |
 | `Bao.PkiRole`             | `mount`, `name`           | `replace`. Before, only a `mount` change was caught; a `name` change orphaned the old role.                                                                           | `update` (full-replace write)                                                               |
-| `Bao.JwtRole`             | `mount`, `name`           | `replace`                                                                                                                                                             | `update` (merge write; every managed field is sent)                                         |
-| `Bao.KubernetesRole`      | `mount`, `name`           | `replace`. The name is folded, as the server stores it.                                                                                                               | `update`                                                                                    |
+| `Bao.JwtRole`             | `mount`, `name` (folded)  | `replace`. The name is folded: the server reads it lowercased (TypeLowerCaseString).                                                                                  | `update` (merge write; every managed field is sent)                                         |
+| `Bao.KubernetesRole`      | `mount`, `name` (folded)  | `replace`. The name is folded, as the server stores it.                                                                                                               | `update`                                                                                    |
 | `Bao.JwtAuthConfig`       | `mount`                   | `replace`. The old delete is a no-op because there is no delete endpoint. A move onto a mount with a config fails the plan too: it would rewrite that mount's logins. | `update` (full-replace write)                                                               |
 | `Bao.MfaTotpMethod`       | `name`                    | ⛔ **fails the plan**: a new id would strand every enrolled secret. Reconcile refuses it too, when the name was an Output.                                            | `update` (the upsert keeps the id)                                                          |
 | `Bao.MfaLoginEnforcement` | `name`                    | `replace`. Its delete is **refused** (openbao#4030)                                                                                                                   | `update`                                                                                    |
@@ -111,8 +111,8 @@ nothing, but each new generation silently rewrote the other's live object. Measu
 have been harmless. So would a move back onto a retained old generation. Move in two deploys
 through a name nothing holds, or remove the target by hand first. For `Bao.Plugin` that includes a
 version bump onto a version already registered by hand. A change of case the server folds (policy,
-AppRole and Kubernetes role names), or a trailing `/` on a mount, is the same object, so it is not a
-move and is never refused.
+AppRole, JWT and Kubernetes role names), or a trailing `/` on a mount, is the same object, so it is
+not a move and is never refused (`rename-identity.test.ts`).
 
 ## What `retain` means for batch 3A and AppRole
 
@@ -139,8 +139,17 @@ retained."). It is live and unmanaged from then on:
 `declareCloudflareRoles` does, never reaches the `replace`: the old id leaves the stack as an
 orphan delete, which `retain` also keeps live.
 
-⚠️ A NEW declaration (a new logical id) of a name that already exists still takes that object over
-and rewrites it: these families' `read` never answers `Unowned`, so Alchemy adopts it.
+## A new declaration of a live name: the swap the guard cannot see
+
+⚠️ A NEW logical id whose name already exists takes that object over and rewrites it: these
+families' `read` never answers `Unowned`, so Alchemy silently adopts it. Nothing moved, so
+`judgeMove` never runs. 🔴 Measured (`rename-adoption.test.ts`): under `destroy` the old owner's
+delete then runs after the adoption wrote, and removes the object the new id now claims, in a
+green deploy. It happened when a logical id changed with the name kept, to each of the nine
+batch-2 families whose delete runs (a TOTP method and its enrolments included), and when a new
+`Bao.AuthRole` took a name another one moved off in the same deploy. Change a logical id with
+Alchemy's `renamedFrom('<old id>')`, which migrates the state row and plans an `update`. Take a
+freed name in the deploy after the move.
 
 ## Why the moves fail instead of replacing
 

@@ -94,6 +94,7 @@ describe('hostAppRoles', () => {
   it('refuses unknown classes, a host twice in one class and names that blur the separator', () => {
     const bad = [
       { class: 'nope', name: 'node-c' },
+      { class: 'constructor', name: 'node-d' },
       { class: 'pve-node', name: 'node-a' },
       { class: 'pve-node', name: 'node-a' },
       { class: 'pve-node', name: 'node--x' },
@@ -104,6 +105,7 @@ describe('hostAppRoles', () => {
       (error: unknown) => {
         assert.ok(error instanceof Error);
         assert.match(error.message, /unknown class `nope`/);
+        assert.match(error.message, /unknown class `constructor`/);
         assert.match(error.message, /`node-a` is listed twice in class `pve-node`/);
         assert.match(error.message, /`node--x` is not lowercase/);
         assert.match(error.message, /`Node-Y` is not lowercase/);

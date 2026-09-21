@@ -70,8 +70,9 @@ export const roleIdentity = <A extends { readonly mount: string; readonly name: 
  * ⚠️ THE LAST SEGMENT LOWERCASED: a role store that folds the name and not the mount. openbao v2.6.2
  *   AppRole (builtin/credential/approle/path_role.go:1485, :1537) and Kubernetes
  *   (builtin/credential/kubernetes/backend.go:362, path_role.go:396) both store `role/<lowercased
- *   name>`, while the router folds no case in a mount path. So `Host` → `host` is the same role,
- *   never a replace that would delete, under `destroy`, the role it had just written.
+ *   name>`, and JWT reads its `name` as a TypeLowerCaseString (builtin/credential/jwt/path_role.go:77),
+ *   while the router folds no case in a mount path. So `Host` → `host` is the same role, never a
+ *   replace that would delete, under `destroy`, the role it had just written.
  */
 export const foldName = (path: string): string =>
   path.replace(/[^/]+$/, (name) => name.toLowerCase());

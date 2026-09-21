@@ -12,11 +12,13 @@ import { ABSENT, type Store, type Stored, lastSegment, store } from './fake-engi
 
 /**
  * The role stores whose server lowercases the name: AppRole (openbao v2.6.2
- * builtin/credential/approle/path_role.go:1485 and :1893) and Kubernetes
- * (builtin/credential/kubernetes backend.go:362, path_role.go:250 and :396). JWT, PKI and SSH store
- * the name verbatim. The tests mount both at their default paths.
+ * builtin/credential/approle/path_role.go:1485 and :1893), Kubernetes
+ * (builtin/credential/kubernetes backend.go:362, path_role.go:250 and :396) and JWT, whose `name`
+ * field is a TypeLowerCaseString (builtin/credential/jwt/path_role.go:77; sdk v2.6.2
+ * framework/field_data.go:250-255 lowercases it on read). PKI and SSH store the name verbatim. The
+ * tests mount all three at their default paths.
  */
-const FOLDED = /^auth\/(approle|kubernetes)\/role\/[^/]+$/;
+const FOLDED = /^auth\/(approle|jwt|kubernetes)\/role\/[^/]+$/;
 
 const keyOf = (path: string): string =>
   FOLDED.test(path) ? path.replace(/[^/]+$/, (name) => name.toLowerCase()) : path;

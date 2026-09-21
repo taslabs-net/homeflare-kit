@@ -13,8 +13,9 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import { BaoAuthRole, BaoAuthRoleProvider } from './auth-role.ts';
-import type { Estate } from './fake-engines-roles.ts';
-import type { StackBody } from './fake-stack.ts';
+import type { Seen } from './fake-bao.ts';
+import { type Estate, fakeEstate } from './fake-engines-roles.ts';
+import { type FakeStack, type StackBody, withFakeStack } from './fake-stack.ts';
 import { BaoJwtAuthConfig, BaoJwtAuthConfigProvider } from './jwt-config.ts';
 import { BaoJwtRole, BaoJwtRoleProvider } from './jwt-role.ts';
 import { BaoKubernetesRole, BaoKubernetesRoleProvider } from './kubernetes-role.ts';
@@ -36,6 +37,21 @@ export const familyProviders = Layer.mergeAll(
   BaoSshRoleProvider(),
   FetchHttpClient.layer,
 );
+
+/** One stack over a fresh estate: every family's provider, and every call the fake saw. */
+export const withEstate = (
+  body: (stack: FakeStack, estate: Estate, seen: Seen[]) => Promise<void>,
+): Promise<void> => {
+  const estate = fakeEstate();
+  return withFakeStack(familyProviders, estate, (stack, bao) => body(stack, estate, bao.seen));
+};
+
+/** The row for one family, by name. */
+export const rowOf = (family: string): Family => {
+  const row = FAMILIES.find((each) => each.family === family);
+  if (row === undefined) throw new Error(`no fake-families row for ${family}`);
+  return row;
+};
 
 type Text = string | Output.Output<string>;
 type Removal = typeof RemovalPolicy.destroy;

@@ -8,29 +8,20 @@
  *   · a rename landing with another pending Output planned `update` for all nine and left the old
  *     object live and unrecorded; for Bao.MfaTotpMethod that wrote a second method;
  *   · with the identity itself pending, all nine wrote the new object and kept the old.
+ * What each family's identity folds or defaults is pinned in rename-identity.test.ts.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as Output from 'alchemy/Output';
-import * as RemovalPolicy from 'alchemy/RemovalPolicy';
 import * as Effect from 'effect/Effect';
-import { type Estate, fakeEstate } from './fake-engines-roles.ts';
-import { FAMILIES, type Family, familyProviders, pairOf, upstream } from './fake-families.ts';
-import { type FakeStack, type StackBody, withFakeStack, writesOf } from './fake-stack.ts';
-import type { Seen } from './fake-bao.ts';
-import { BaoAuthRole } from './auth-role.ts';
-import { BaoKubernetesRole } from './kubernetes-role.ts';
-import { foldName } from './rename-identity.ts';
+import type { Estate } from './fake-engines-roles.ts';
+import { FAMILIES, type Family, pairOf, upstream, withEstate } from './fake-families.ts';
+import { writesOf } from './fake-stack.ts';
 
 const OCCUPIED = /would land on an object that already exists/;
 /** Bao.MfaTotpMethod never replaces: every rename is refused (mfa-totp.ts). */
 const STRANDS = /would strand every enrolled secret/;
 const isTotp = (row: Family) => row.family === 'Bao.MfaTotpMethod';
-
-const withEstate = (body: (stack: FakeStack, estate: Estate, seen: Seen[]) => Promise<void>) => {
-  const estate = fakeEstate();
-  return withFakeStack(familyProviders, estate, (stack, bao) => body(stack, estate, bao.seen));
-};
 
 const snapshot = (estate: Estate) => [
   new Map(estate.roles.live),
@@ -56,6 +47,20 @@ for (const row of FAMILIES) {
   describe(`${row.family}: a rename`, () => {
     const pair = pairOf(row);
     const refusal = isTotp(row) ? STRANDS : OCCUPIED;
+
+    /**
+     * ★ THE CONTROL: the identity a generation RECORDS must be the one its props DECLARE. If the two
+     *   spellings drift apart (a default mount, a version, a trailing `/`), every later plan reads as
+     *   a move onto the resource's own object and fails, or replaces it, under destroy, onto itself.
+     */
+    it('redeployed unchanged is a noop that writes nothing', async () => {
+      await withEstate(async (stack, _estate, seen) => {
+        await stack.deploy(pair('a', 'b'));
+        seen.length = 0;
+        assert.deepEqual(await stack.deploy(pair('a', 'b')), { X: 'noop', Y: 'noop' });
+        assert.deepEqual(writesOf(seen), []);
+      });
+    });
 
     it('onto a name its sibling holds (a swap, under destroy) writes and deletes nothing', async () => {
       await withEstate(async (stack, estate, seen) => {
@@ -115,50 +120,3 @@ for (const row of FAMILIES) {
     });
   });
 }
-
-describe('a change of case the server folds away is not a rename', () => {
-  it('foldName lowercases the name segment only; a mount path keeps its case', () => {
-    assert.equal(foldName('Host-Cert'), 'host-cert');
-    assert.equal(foldName('auth/K8s/role/App'), 'auth/K8s/role/app');
-  });
-
-  it('Bao.AuthRole: `Host-A` after `host-a` under destroy is a noop, nothing deleted', async () => {
-    const role = (name: string): StackBody =>
-      Effect.asVoid(
-        BaoAuthRole('Role', {
-          name,
-          secretIdTtl: '24h',
-          tokenMaxTtl: '1h',
-          tokenPolicies: ['default'],
-          tokenTtl: '15m',
-        }).pipe(RemovalPolicy.destroy()),
-      );
-    await withEstate(async (stack, estate, seen) => {
-      await stack.deploy(role('host-a'));
-      seen.length = 0;
-      assert.deepEqual(await stack.deploy(role('Host-A')), { Role: 'noop' });
-      assert.deepEqual(writesOf(seen), []);
-      assert.ok(estate.roles.live.has('auth/approle/role/host-a'));
-    });
-  });
-
-  it('Bao.KubernetesRole: `App` after `app` is the same role, refused only for its case', async () => {
-    const role = (name: string): StackBody =>
-      Effect.asVoid(
-        BaoKubernetesRole('Role', {
-          aliasNameSource: 'serviceaccount_uid',
-          boundServiceAccountNames: ['app'],
-          boundServiceAccountNamespaces: ['apps'],
-          name,
-          tokenPolicies: ['app'],
-        }).pipe(RemovalPolicy.destroy()),
-      );
-    await withEstate(async (stack, estate, seen) => {
-      await stack.deploy(role('app'));
-      seen.length = 0;
-      await assert.rejects(stack.deploy(role('App')), /must be lower case/);
-      assert.deepEqual(writesOf(seen), []);
-      assert.ok(estate.roles.live.has('auth/kubernetes/role/app'));
-    });
-  });
-});

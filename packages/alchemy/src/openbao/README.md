@@ -17,6 +17,8 @@ plus `FetchHttpClient.layer`.
 - ⛔ A rename or move onto a name or path that already exists fails the plan, before anything is
   written (every family but the mounts, whose moves are below). Move through a free name, in two
   deploys, or remove the target first.
+- ⚠️ A NEW logical id for a live name adopts it, and under `destroy` the old id's delete then
+  removes it. Change a logical id with Alchemy's `renamedFrom` (REPLACE.md).
 
 ## assertBaoIdentity: call it first
 

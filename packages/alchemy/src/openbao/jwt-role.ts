@@ -33,7 +33,7 @@ import {
   rolePath,
   writeBody,
 } from './jwt-role-form.ts';
-import { guardRename, judgeRename, roleIdentity } from './rename-identity.ts';
+import { foldName, guardRename, judgeRename, roleIdentity } from './rename-identity.ts';
 import { type RoleSpec, planRole, readRoleAt, reconcileRole } from './role-reconcile.ts';
 
 export type {
@@ -55,11 +55,16 @@ export const BaoJwtRole = Resource<BaoJwtRole>('Bao.JwtRole', {
   defaultRemovalPolicy: 'retain',
 });
 
-/** Exact: the plugin stores `role/<name>` verbatim (builtin/credential/jwt/path_role.go:289). */
+/**
+ * The name folded, as the server keys it (`foldName`): `name` is a TypeLowerCaseString
+ * (builtin/credential/jwt/path_role.go:77), so the handler reads it lowercased before it ever builds
+ * `role/<name>` (:289). `App` → `app` is the same role, never a move; `problems` refuses the case.
+ */
 const IDENTITY = roleIdentity<BaoJwtRoleAttributes>(
   'Bao.JwtRole',
   (mount, name) => rolePath({ mount, name }),
   'jwt',
+  foldName,
 );
 
 export const jwtRoleSpec = (props: BaoJwtRoleProps): RoleSpec<BaoJwtRoleAttributes> => ({

@@ -114,7 +114,12 @@ export const hostAppRoles = (input: HostAppRolesInput): readonly BaoAuthRoleProp
       problems.push(`host \`${host.name}\` is listed twice in class \`${host.class}\``);
     }
     seen.add(name);
-    const spec = input.classes[host.class];
+    /**
+     * ⛔ OWN KEYS ONLY. `classes['constructor']` is Object's constructor, not undefined, so a host
+     *   naming it passed as a class with no policies and no secretIdTtl, never checked by
+     *   classProblems, and wrote a role whose secret_id never expires.
+     */
+    const spec = Object.hasOwn(input.classes, host.class) ? input.classes[host.class] : undefined;
     if (spec === undefined) {
       problems.push(`host \`${host.name}\` names unknown class \`${host.class}\``);
       continue;
