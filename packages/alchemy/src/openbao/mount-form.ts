@@ -1,7 +1,8 @@
 import { sha256 } from './digest.ts';
+import { trimTrailingSlashes } from './mount-path.ts';
 
 /** Mount path without a trailing slash — props and `sys/mounts/<path>` use this shape. */
-export const mountPath = (path: string) => path.replace(/\/+$/, '');
+export const mountPath = (path: string) => trimTrailingSlashes(path);
 
 const DURATION = /^(\d+)([smhd])$/;
 

@@ -9,10 +9,11 @@
  *   mfaConfigToMap and mfaLoginEnforcementConfigToMap).
  */
 import { type BaoEnvironment, resolveAddress } from './bao-address.ts';
+import { trimSlashes } from './mount-path.ts';
 
 /** The bare name: no leading or trailing slash, and `''` for the root namespace. */
 export const canonicalNamespace = (namespace: string | undefined): string => {
-  const bare = (namespace ?? '').trim().replace(/^\/+|\/+$/g, '');
+  const bare = trimSlashes((namespace ?? '').trim());
   return bare === 'root' ? '' : bare;
 };
 
