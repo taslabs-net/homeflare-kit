@@ -1,5 +1,11 @@
 # @homeflare/alchemy
 
+## 0.4.1
+
+### Patch Changes
+
+- [#62](https://github.com/taslabs-net/homeflare-kit/pull/62) [`93b7107`](https://github.com/taslabs-net/homeflare-kit/commit/93b71070b1a64701cadc1a547044a3ec4da26a50) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export TB4 control-plane Resource constructors from `@homeflare/alchemy/proxmox` (Storage, SDN, access, HA, backup, metrics, PBS). Guests and NIC apply stay Provider-only.
+
 ## 0.4.0
 
 ### Minor Changes
