@@ -93,6 +93,19 @@ describe('enable, tune, disable', () => {
     );
   });
 
+  it('enables an ssh engine at any path — type is a free string, sent as given', async () => {
+    await withFake(
+      () => ({ status: 204 }),
+      async (bao) => {
+        await run({ BAO_ADDR: bao.address }, enableMount({ path: 'ssh-host/', type: 'ssh' }));
+        assert.deepEqual(
+          bao.seen.map((seen) => [seen.method, seen.path, seen.body]),
+          [['POST', '/v1/sys/mounts/ssh-host', JSON.stringify({ type: 'ssh' })]],
+        );
+      },
+    );
+  });
+
   it('fails a refused enable with OpenBao errors', async () => {
     await withFake(
       () => ({ json: { errors: ['path is already in use at kv/'] }, status: 400 }),
