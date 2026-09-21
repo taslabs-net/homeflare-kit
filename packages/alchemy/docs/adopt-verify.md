@@ -32,13 +32,14 @@ fixed. [adopted-deploys.md](./adopted-deploys.md) shows what every family does.
 
 ## Where the answer is taken from
 
-| looked at                  | what it offers                                                 |
-| -------------------------- | -------------------------------------------------------------- |
-| `alchemy plan` (CLI)       | the forced action only; `--detailed` is declared YAML, no JSON |
-| `Plan.describePlan`        | serializable rows, again only the forced action                |
-| `forceUpdateAfterAdoption` | a local variable; no log, no warning, no field on the node     |
-| `alchemy drift`            | rows **with** state only, and its non-dry run reconciles       |
-| **the provider service**   | the raw `read` / `diff` answer, per FQN — used                 |
+| looked at                  | what it offers                                                  |
+| -------------------------- | --------------------------------------------------------------- |
+| `alchemy plan` (CLI)       | the forced action only; `--detailed` is declared YAML, no JSON  |
+| `Plan.describePlan`        | serializable rows, again only the forced action                 |
+| `forceUpdateAfterAdoption` | a local variable; no log, no warning, no field on the node      |
+| `alchemy drift`            | rows **with** state only, and its non-dry run reconciles        |
+| `deploy --adopt --dry-run` | the adoption plan (`plan` has no `--adopt`), same forced action |
+| **the provider service**   | the raw `read` / `diff` answer, per FQN — used                  |
 
 The engine finds every provider in the Effect context by resource type. The verifier opens the
 stack the way `alchemy plan` does (`Alchemist.open`). It swaps each provider for a watched copy
