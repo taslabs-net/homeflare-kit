@@ -5,7 +5,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { OPERATOR, fakeSudoHost } from './fake-sudo.ts';
-import { INSTALL, RM } from './sudo-allowlist.ts';
+import type { FileStat } from './runner.ts';
+import { INSTALL, RM, SudoRefusedError } from './sudo-allowlist.ts';
 
 const CONF = '/opt/example/app/a.conf';
 const bytes = (text: string) => new TextEncoder().encode(text);
@@ -109,6 +110,32 @@ describe('writeFileAtomic', () => {
     });
   });
 
+  test('an omitted owner is root and an omitted group the directory’s, for the read-back check', async () => {
+    // ⚠️ Omitted owner: root, so 0600 is root-only and refused (not the operator's own 0600).
+    const host = fakeSudoHost();
+    await expect(host.runner.writeFileAtomic(CONF, bytes('x'), { mode: 0o600 })).rejects.toThrow(
+      'would hide it from the deploying user',
+    );
+    // Omitted group: the parent's (80, one of the operator's), so 0640 is readable and allowed.
+    host.fake.files.set('/opt/example/app', {
+      bytes: bytes(''),
+      gid: 80,
+      kind: 'directory',
+      mode: 0o755,
+      uid: 0,
+    });
+    await host.runner.writeFileAtomic(CONF, bytes('x'), { mode: 0o640 });
+    expect(host.fake.files.get(CONF)).toMatchObject({ gid: 80, mode: 0o640, uid: 0 });
+  });
+
+  test('a mode chmod cannot mean is a refusal, before anything is staged', async () => {
+    const host = fakeSudoHost();
+    await expect(
+      host.runner.writeFileAtomic(CONF, bytes('x'), { mode: 0o10000 }),
+    ).rejects.toBeInstanceOf(SudoRefusedError);
+    expect(host.state.stagedCount).toBe(0);
+  });
+
   test('outside every prefix, EACCES names the missing prefix instead of a temp file', async () => {
     const host = fakeSudoHost();
     await expect(
@@ -120,7 +147,61 @@ describe('writeFileAtomic', () => {
   });
 });
 
+describe('the declared prefix itself is checked at every call', () => {
+  type Host = ReturnType<typeof fakeSudoHost>;
+  const entry = (kind: FileStat['kind'], mode: number) => ({
+    bytes: bytes(''),
+    gid: 0,
+    kind,
+    mode,
+    uid: 0,
+  });
+  test.each([
+    // ⛔ `/opt/example` -> `/etc` would make root write /etc/a.conf, a path the log never names.
+    [
+      'a symlink',
+      (h: Host) => h.fake.files.set('/opt/example', entry('symlink', 0o755)),
+      'is a symlink',
+    ],
+    ['owned by the operator', (h: Host) => h.fake.dirs.set('/opt/example', OPERATOR), 'uid 501'],
+    [
+      'group-writable',
+      (h: Host) => h.fake.files.set('/opt/example', entry('directory', 0o775)),
+      '0775',
+    ],
+    [
+      'world-writable',
+      (h: Host) => h.fake.files.set('/opt/example', entry('directory', 0o757)),
+      '0757',
+    ],
+    ['missing', (h: Host) => h.fake.dirs.delete('/opt/example'), '/opt/example is missing'],
+  ])('%s is refused, before anything is staged or run', async (_name, setup, message) => {
+    const host = fakeSudoHost();
+    setup(host);
+    const write = host.runner.writeFileAtomic('/opt/example/a.conf', bytes('x'), { mode: 0o644 });
+    await expect(write).rejects.toBeInstanceOf(SudoRefusedError);
+    await expect(write).rejects.toThrow(message);
+    expect(host.state.stagedCount).toBe(0);
+    expect(host.sudoCalls).toEqual([]);
+  });
+
+  test('a remove under a group-writable prefix is refused too', async () => {
+    const host = fakeSudoHost();
+    host.fake.files.set('/opt/example', entry('directory', 0o775));
+    host.fake.files.set('/opt/example/a.conf', entry('file', 0o644));
+    await expect(host.runner.removeFile('/opt/example/a.conf')).rejects.toThrow('0775');
+    expect(host.sudoCalls).toEqual([]);
+  });
+});
+
 describe('removeFile', () => {
+  test('a directory on the way that is already gone: nothing is there, so success, no sudo', async () => {
+    const host = fakeSudoHost();
+    await host.runner.removeFile('/opt/example/gone/a.conf');
+    expect(host.sudoCalls).toEqual([]);
+    expect(host.logs).toEqual([]);
+  });
+
   test('under a prefix: `rm -f --` through sudo', async () => {
     const host = fakeSudoHost();
     host.fake.files.set(CONF, { bytes: bytes('x'), gid: 0, kind: 'file', mode: 0o644, uid: 0 });

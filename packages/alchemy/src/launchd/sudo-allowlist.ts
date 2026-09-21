@@ -9,13 +9,26 @@
  *   those can be written.
  * ⛔ PATHS ARE CHECKED LEXICALLY HERE: absolute, normalised (the same rule a HostFile path obeys,
  *   host-file-form.ts) and STRICTLY under a prefix the stack declared. sudo-guard.ts then checks
- *   the host with lstat: no symlinks, and only regular files.
+ *   the host with lstat: the prefix a root-only directory, no symlinks, and only regular files.
  * ⛔ `install` COPIES ONLY THE FILE THIS RUNNER STAGED. Any other source would let the runner copy
  *   a file only root can read (/etc/master.passwd, say) to a path the deploying user can read.
  */
 import { pathProblems } from './host-file-form.ts';
+import { plistPathFor } from './job-form.ts';
 import { LABEL, RESERVED_LABEL_PREFIXES } from './job-validate.ts';
 import { LAUNCHCTL } from './launchctl.ts';
+
+/**
+ * A privileged call that was refused before it ran: by the allowlist, by a host check
+ * (sudo-guard.ts), or by sudo itself. ★ Here, beside the allowlist, so the guard and the runner
+ *   throw the same class and a caller can tell "nothing ran as root" from "it ran and failed".
+ */
+export class SudoRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SudoRefusedError';
+  }
+}
 
 /** ★ Absolute program paths, so neither sudo nor the command is looked up on the caller's PATH. */
 export const SUDO = '/usr/bin/sudo';
@@ -59,16 +72,25 @@ export const prefixOf = (path: string, prefixes: readonly string[]): string | un
 const labelOk = (label: string): boolean =>
   LABEL.test(label) && !RESERVED_LABEL_PREFIXES.some((prefix) => label.startsWith(prefix));
 
-/** `system/<label>`, with a label LaunchdJob itself would accept. */
-const systemService = (target: string | undefined): boolean =>
-  target !== undefined && target.startsWith('system/') && labelOk(target.slice('system/'.length));
-
-/** A path under a prefix whose file name is `<label>.plist`. */
-const daemonPlist = (path: string | undefined, prefixes: readonly string[]): boolean => {
-  if (path === undefined || prefixOf(path, prefixes) === undefined) return false;
-  const name = path.slice(path.lastIndexOf('/') + 1);
-  return name.endsWith('.plist') && labelOk(name.slice(0, -'.plist'.length));
+/** The label of `system/<label>`, when it is one LaunchdJob itself would accept. */
+const systemLabel = (target: string | undefined): string | undefined => {
+  const label = target?.startsWith('system/') === true ? target.slice('system/'.length) : undefined;
+  return label !== undefined && labelOk(label) ? label : undefined;
 };
+
+/**
+ * A label's daemon plist, when that path is under a declared prefix.
+ * ★ ONLY `/Library/LaunchDaemons/<label>.plist`, derived by the same plistPathFor LaunchdJob uses:
+ *   it is the one directory launchd loads daemons from at boot, so a plist anywhere else under a
+ *   prefix would be a root daemon that silently vanishes at the next restart. Root never loads one.
+ */
+const daemonPlist = (label: string, prefixes: readonly string[]): string | undefined => {
+  const path = plistPathFor(label, { kind: 'system' }, undefined);
+  return prefixOf(path, prefixes) === undefined ? undefined : path;
+};
+
+const NO_DAEMON_PREFIX =
+  'needs /Library/LaunchDaemons among the prefixes, where the job’s plist is written and removed';
 
 const launchctlProblem = (
   args: readonly string[],
@@ -76,20 +98,30 @@ const launchctlProblem = (
 ): string | undefined => {
   const [sub, ...rest] = args;
   if (sub === 'bootstrap') {
-    return rest.length === 2 && rest[0] === 'system' && daemonPlist(rest[1], prefixes)
-      ? undefined
-      : 'bootstrap takes exactly `system <prefix>/<label>.plist`';
+    const given = rest[1] ?? '';
+    const name = given.slice(given.lastIndexOf('/') + 1);
+    const label = name.endsWith('.plist') ? name.slice(0, -'.plist'.length) : '';
+    const shaped = rest.length === 2 && rest[0] === 'system' && labelOk(label);
+    if (!shaped) return 'bootstrap takes exactly `system /Library/LaunchDaemons/<label>.plist`';
+    const plist = daemonPlist(label, prefixes);
+    if (plist === undefined) return `bootstrap ${NO_DAEMON_PREFIX}`;
+    return given === plist ? undefined : `bootstrap loads only ${plist}, never another path`;
   }
   if (sub === 'bootout') {
-    return rest.length === 1 && systemService(rest[0])
-      ? undefined
-      : 'bootout takes exactly `system/<label>`, never a bare domain';
+    const label = rest.length === 1 ? systemLabel(rest[0]) : undefined;
+    if (label === undefined) return 'bootout takes exactly `system/<label>`, never a bare domain';
+    /**
+     * ⚠️ WITHOUT THE PREFIX, A DELETE STOPS HALFWAY. deleteJob boots the job out, then removes its
+     *   plist; with /Library/LaunchDaemons undeclared the removal is refused AFTER the bootout, the
+     *   plist stays, and launchd loads the job again at the next boot. Refused here, nothing moves.
+     */
+    return daemonPlist(label, prefixes) === undefined ? `bootout ${NO_DAEMON_PREFIX}` : undefined;
   }
   if (sub === 'kickstart') {
     const flags = rest.slice(0, -1);
     const flagsOk =
       flags.every((flag) => flag === '-k' || flag === '-p') && new Set(flags).size === flags.length;
-    return flagsOk && systemService(rest[rest.length - 1])
+    return flagsOk && systemLabel(rest[rest.length - 1]) !== undefined
       ? undefined
       : 'kickstart takes only -k / -p, then `system/<label>`';
   }

@@ -31,6 +31,7 @@ import {
   INSTALL,
   RM,
   SUDO,
+  SudoRefusedError,
   checkPrefixes,
   octalMode,
   prefixOf,
@@ -40,12 +41,15 @@ import {
 import { assertPlainPath, assertReadableBack, operatorGroups } from './sudo-guard.ts';
 import { type Staged, stageFile } from './sudo-stage.ts';
 
+export { SudoRefusedError };
+
 export type SudoRunnerOptions = LocalRunnerOptions & {
   /**
    * The directories root may install into and remove from: `/Library/LaunchDaemons` for system
-   * jobs, plus wherever the stack's root-owned HostFiles live. ⛔ Required: absolute, normalised,
-   * never `/`, and only directories root owns. Outside every prefix a file is written as the
-   * deploying user, or refused when that needs root.
+   * jobs (bootstrap and bootout are refused without it), plus wherever the stack's root-owned
+   * HostFiles live. ⛔ Required: absolute, normalised, never `/`; and at every privileged call a
+   * real directory that root owns and only root may write (sudo-guard.ts). Outside every prefix a
+   * file is written as the deploying user, or refused when that needs root.
    */
   readonly prefixes: readonly string[];
   /** Receives one line per privileged argv, before it runs. @default a line on stderr */
@@ -62,22 +66,17 @@ export type SudoDeps = {
   readonly log: (line: string) => void;
 };
 
-/** A privileged call that was refused before it ran: by this runner, or by sudo itself. */
-export class SudoRefusedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'SudoRefusedError';
-  }
-}
-
 /**
  * ⚠️ ANCHORED TO sudo'S OWN MESSAGE FORMS (`sudo: …` lines, `Sorry, user …`), so a launchctl or
  *   install error that happens to say "not allowed" is never reported as "the command did not run".
+ *   The refusals are the three a sudoers denial prints: the command not allowed, the user not in
+ *   sudoers, and the user not allowed on this host (`<user> is not allowed to run sudo on <host>.`).
+ *   REASONED from sudo 1.9's sudoers plugin, like the rest (header).
  */
 const PASSWORD =
   /^sudo: (?:a password is required|a terminal is required|sorry, you must have a tty)/m;
 const NOT_ALLOWED =
-  /^(?:Sorry, user \S+ (?:is not allowed to execute|may not run sudo)|\S+ is not in the sudoers file)/m;
+  /^(?:Sorry, user \S+ (?:is not allowed to execute|may not run sudo)|\S+ is not (?:in the sudoers file|allowed to run sudo on ))/m;
 
 /** ★ An EACCES outside every prefix is almost always a directory the stack forgot to declare. */
 const undeclared =
@@ -165,8 +164,14 @@ export const makeSudoRunner = (prefixList: readonly string[], deps: SudoDeps): H
     removeFile: async (path) => {
       const prefix = prefixOf(path, prefixes);
       if (prefix === undefined) return base.removeFile(path).catch(undeclared(path, prefixes));
-      // ★ Nothing there is success without a privileged call, so an idempotent delete logs nothing.
-      if ((await assertPlainPath(base, prefix, path, 'file-or-absent')) === 'absent') return;
+      /**
+       * ★ Nothing there is success without a privileged call, so an idempotent delete logs nothing.
+       * ⚠️ lstat the path FIRST: a directory on the way that is already gone means nothing is there
+       *   (HostRunner.removeFile is idempotent, and localRunner treats ENOENT/ENOTDIR so), where the
+       *   guard alone would refuse it as a missing directory.
+       */
+      if ((await base.stat(path)) === undefined) return;
+      await assertPlainPath(base, prefix, path, 'file');
       await mustSucceed([RM, '-f', '--', path]);
     },
     sleep: (ms) => base.sleep(ms),
@@ -185,7 +190,8 @@ export const makeSudoRunner = (prefixList: readonly string[], deps: SudoDeps): H
         return base.writeFileAtomic(path, bytes, options).catch(undeclared(path, prefixes));
       }
       const mode = octalMode(options.mode);
-      if (mode === undefined) throw new Error(`sudoRunner ${path}: mode must be 0–0o7777`);
+      if (mode === undefined)
+        throw new SudoRefusedError(`sudoRunner ${path}: mode must be 0–0o7777`);
       await assertPlainPath(base, prefix, path, 'file-or-absent');
       await assertReadableBack(base, path, options, await deps.groups());
       const staged = await deps.stage(bytes);

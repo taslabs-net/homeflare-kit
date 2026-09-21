@@ -39,9 +39,10 @@ describe('exec', () => {
 
   test('bootstrap of a plist that is not a plain file is refused before sudo', async () => {
     const host = fakeSudoHost();
-    await expect(host.runner.exec([LAUNCHCTL, 'bootstrap', 'system', PLIST])).rejects.toThrow(
-      'is missing, not a file',
-    );
+    const missing = host.runner.exec([LAUNCHCTL, 'bootstrap', 'system', PLIST]);
+    // ★ The host checks throw the same class as the allowlist: nothing ran as root.
+    await expect(missing).rejects.toBeInstanceOf(SudoRefusedError);
+    await expect(missing).rejects.toThrow('is missing, not a file');
     host.fake.files.set(PLIST, { bytes: plistBytes, gid: 0, kind: 'symlink', mode: 0o755, uid: 0 });
     await expect(host.runner.exec([LAUNCHCTL, 'bootstrap', 'system', PLIST])).rejects.toThrow(
       'is a symlink',
@@ -80,13 +81,16 @@ describe('exec', () => {
     expect(host.sudoCalls).toHaveLength(1);
   });
 
-  test('a sudoers refusal is named as one', async () => {
-    const host = fakeSudoHost();
-    host.state.sudo = 'denied';
-    await expect(host.runner.exec([LAUNCHCTL, 'bootout', 'system/com.example.a'])).rejects.toThrow(
-      'sudoers does not let',
-    );
-  });
+  test.each(['denied', 'not-in-sudoers', 'not-on-host'] as const)(
+    'a sudoers refusal (%s) is named as one',
+    async (refusal) => {
+      const host = fakeSudoHost();
+      host.state.sudo = refusal;
+      const run = host.runner.exec([LAUNCHCTL, 'bootout', 'system/com.example.a']);
+      await expect(run).rejects.toBeInstanceOf(SudoRefusedError);
+      await expect(run).rejects.toThrow('sudoers does not let');
+    },
+  );
 
   test("launchctl's own failure comes back as a result, for the provider to judge", async () => {
     const host = fakeSudoHost();

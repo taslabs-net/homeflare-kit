@@ -9,6 +9,8 @@
  *   runner that dropped `-o` or wrote the wrong path shows up as the wrong file, not a passing test.
  * ★ THE BASE STAYS UNPRIVILEGED, so a write under /Library/LaunchDaemons that skipped sudo fails
  *   with the fake's EACCES instead of quietly succeeding.
+ * ★ SUDO REFUSES A CALL THAT WAS NOT LOGGED FIRST, so every test holds the runner to "logged
+ *   before it runs", not merely "logged at some point".
  */
 import { fakeRunner } from './fake-runner.ts';
 import { LAUNCHCTL } from './launchctl.ts';
@@ -20,6 +22,15 @@ export const OPERATOR = 501;
 export const PREFIXES = ['/Library/LaunchDaemons', '/opt/example'];
 
 const ok: ExecResult = { exitCode: 0, stderr: '', stdout: '' };
+
+/** What `sudo -n` prints (exit 1) when it will not run the command. Reasoned; see sudo-runner.ts. */
+export const SUDO_SAYS = {
+  denied:
+    "Sorry, user someone is not allowed to execute '/bin/launchctl bootout system/x' as root on example.\n",
+  'not-in-sudoers': 'someone is not in the sudoers file.\n',
+  'not-on-host': 'someone is not allowed to run sudo on example.\n',
+  password: 'sudo: a password is required\n',
+} as const;
 const fail = (exitCode: number, stderr: string): ExecResult => ({ exitCode, stderr, stdout: '' });
 
 /** Parse `install -S -m MODE [-o UID] [-g GID] SRC DEST` the way install(1) would. */
@@ -40,7 +51,10 @@ const parseInstall = (args: readonly string[]) => {
 };
 
 /** `groups` is the operator's `id -G`; `'unknown'` models that lookup failing. */
-export const fakeSudoHost = (groups: readonly number[] | 'unknown' = [20, 80]) => {
+export const fakeSudoHost = (
+  groups: readonly number[] | 'unknown' = [20, 80],
+  prefixes: readonly string[] = PREFIXES,
+) => {
   const fake = fakeRunner({
     dirs: {
       '/Library/LaunchDaemons': 0,
@@ -61,8 +75,8 @@ export const fakeSudoHost = (groups: readonly number[] | 'unknown' = [20, 80]) =
   const logs: string[] = [];
   const sudoCalls: string[][] = [];
   const state = {
-    /** What sudo itself answers: runs the command, wants a password, or is not allowed. */
-    sudo: 'ok' as 'ok' | 'password' | 'denied',
+    /** What sudo itself answers: runs the command, or refuses it with one of SUDO_SAYS. */
+    sudo: 'ok' as 'ok' | keyof typeof SUDO_SAYS,
     /** Returned by `install` in place of success; nothing is written. */
     installFailure: undefined as ExecResult | undefined,
     stagedCount: 0,
@@ -79,7 +93,9 @@ export const fakeSudoHost = (groups: readonly number[] | 'unknown' = [20, 80]) =
       const bytes = staged.get(source);
       if (bytes === undefined) return fail(71, `install: ${source}: No such file or directory`);
       state.installedFrom.set(dest, new TextDecoder().decode(bytes));
-      fake.files.set(dest, { bytes, gid: gid ?? 0, kind: 'file', mode, uid: uid ?? 0 });
+      // ★ No -g: the new file takes its directory's group, as a BSD file create does.
+      const dirGid = (await fake.runner.stat(dest.slice(0, dest.lastIndexOf('/'))))?.gid ?? 0;
+      fake.files.set(dest, { bytes, gid: gid ?? dirGid, kind: 'file', mode, uid: uid ?? 0 });
       return ok;
     }
     if (program === RM) {
@@ -94,16 +110,16 @@ export const fakeSudoHost = (groups: readonly number[] | 'unknown' = [20, 80]) =
     exec: async (argv) => {
       if (argv[0] !== SUDO) return fake.runner.exec(argv);
       sudoCalls.push([...argv]);
-      if (state.sudo === 'password') return fail(1, 'sudo: a password is required\n');
-      if (state.sudo === 'denied') {
-        return fail(1, 'Sorry, user someone is not allowed to execute this as root on example.\n');
+      if (logs[logs.length - 1] !== `homeflare/launchd sudo -n ${JSON.stringify(argv.slice(3))}`) {
+        throw new Error(`fake sudo: ${JSON.stringify(argv)} was not logged before it ran`);
       }
+      if (state.sudo !== 'ok') return fail(1, SUDO_SAYS[state.sudo]);
       // argv is [sudo, -n, --, ...command]
       return asRoot(argv.slice(3));
     },
   };
 
-  const runner = makeSudoRunner(PREFIXES, {
+  const runner = makeSudoRunner(prefixes, {
     base,
     groups: async () => (groups === 'unknown' ? undefined : groups),
     log: (line) => logs.push(line),

@@ -22,6 +22,10 @@ const job: LaunchdJobProps = {
 };
 
 /** Each privileged call as its program and first operand, e.g. `launchctl bootout`. */
+const fail = (): never => {
+  throw new Error('the deployed plist is missing');
+};
+
 const verbs = (privileged: string[][]) =>
   privileged.map(([program, first]) =>
     program === INSTALL ? 'install' : program === RM ? 'rm' : `launchctl ${String(first)}`,
@@ -83,6 +87,20 @@ describe('a system daemon, deployed as the operator', () => {
     expect(host.fake.loaded.get('system/com.example.job')).toBe(pid);
     expect(host.fake.files.get(DAEMON)?.bytes).toBe(before);
   });
+});
+
+test('without /Library/LaunchDaemons declared, a delete is refused before the bootout', async () => {
+  const deployed = fakeSudoHost();
+  const attrs = await reconcileJob(deployed.runner, job, undefined);
+  // The same host, now driven by a runner that declares only /opt/example.
+  const narrow = fakeSudoHost([20, 80], ['/opt/example']);
+  narrow.fake.files.set(DAEMON, deployed.fake.files.get(DAEMON) ?? fail());
+  narrow.fake.loaded.set('system/com.example.job', 4242);
+  await expect(deleteJob(narrow.runner, attrs)).rejects.toThrow('/Library/LaunchDaemons');
+  // ⚠️ Not half a delete: the job still runs and its plist is still there, both or neither.
+  expect(narrow.fake.loaded.get('system/com.example.job')).toBe(4242);
+  expect(narrow.fake.files.has(DAEMON)).toBe(true);
+  expect(narrow.sudoCalls).toEqual([]);
 });
 
 describe("another user's gui domain is not elevated", () => {

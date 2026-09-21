@@ -6,13 +6,15 @@
  *   `install` or `rm`, running as root, act on a path the log never named. So every directory
  *   between the prefix and the file must be a real directory.
  * ⚠️ These checks run before the privileged call, so they guard against a mistaken declaration, not
- *   against someone who can already write inside a prefix and swap a path in between. Declare only
- *   directories that root owns.
+ *   against someone who can already write inside a prefix and swap a path in between. The prefix
+ *   itself is checked to be root-only (prefixProblem); a directory BELOW it that another user owns
+ *   is not, and that user could swap what lies under it in that window.
  */
-import type { HostRunner, WriteOptions } from './runner.ts';
+import type { FileStat, HostRunner, WriteOptions } from './runner.ts';
+import { SudoRefusedError } from './sudo-allowlist.ts';
 
 const refuse = (path: string, message: string): Error =>
-  new Error(`sudoRunner ${path}: ${message}`);
+  new SudoRefusedError(`sudoRunner ${path}: ${message}`);
 
 /** The directories strictly between `prefix` and the file at `path`. */
 export const betweenDirs = (prefix: string, path: string): string[] => {
@@ -30,7 +32,31 @@ export const betweenDirs = (prefix: string, path: string): string[] => {
  */
 export type Expect = 'file' | 'file-or-absent';
 
-/** Refuse a symlink or a non-directory between the prefix and `path`, and anything but a file at it. */
+/**
+ * ⛔ THE PREFIX ITSELF MUST BE A DIRECTORY ONLY ROOT CAN CHANGE, checked at every call rather than
+ *   trusted from the declaration. A symlinked prefix makes root write wherever it points, which the
+ *   log never names (`/opt/example` -> `/etc` turns a HostFile at `/opt/example/sudoers` into
+ *   `/etc/sudoers`). A prefix another user owns or may write lets that user swap a directory below
+ *   it for a symlink between this check and the privileged call.
+ * ⚠️ lstat of the prefix itself: a symlink ABOVE it (`/etc` -> `/private/etc` on macOS) is the
+ *   system's and is followed, as every path lookup does. ACLs are not read; mode bits only.
+ * ★ MEASURED 2026-09-21 on macOS 27.2 (`ls -ldn`): /Library/LaunchDaemons, /private/etc, /opt and
+ *   /usr/local are uid 0, mode 0755, so the prefixes a host stack declares pass as they are.
+ */
+const prefixProblem = (stat: FileStat | undefined): string | undefined => {
+  if (stat === undefined) return 'is missing';
+  if (stat.kind !== 'directory') return `is a ${stat.kind}, not a directory`;
+  if (stat.uid !== 0) return `is owned by uid ${String(stat.uid)}, not root`;
+  if ((stat.mode & 0o022) !== 0) {
+    return `is writable by group or other (mode ${stat.mode.toString(8).padStart(4, '0')})`;
+  }
+  return undefined;
+};
+
+/**
+ * Refuse a prefix that is not a root-only directory, a symlink or a non-directory between the
+ * prefix and `path`, and anything but a file at it.
+ */
 export const assertPlainPath = async (
   base: HostRunner,
   prefix: string,
@@ -38,7 +64,15 @@ export const assertPlainPath = async (
   expect: Expect,
 ): Promise<'file' | 'absent'> => {
   const dirs = betweenDirs(prefix, path);
-  const stats = await Promise.all(dirs.map((dir) => base.stat(dir)));
+  const [prefixStat, ...stats] = await Promise.all([prefix, ...dirs].map((dir) => base.stat(dir)));
+  const bad = prefixProblem(prefixStat);
+  if (bad !== undefined) {
+    throw refuse(
+      path,
+      `the declared prefix ${prefix} ${bad}. Declare only a real directory that root owns and ` +
+        'only root may write. Nothing ran as root.',
+    );
+  }
   for (const [index, stat] of stats.entries()) {
     if (stat?.kind !== 'directory') {
       throw refuse(

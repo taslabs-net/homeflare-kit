@@ -9,7 +9,8 @@ argv shapes, logging each one. It is an explicit opt-in: nothing falls back to i
 import { launchdProviders, sudoRunner } from '@homeflare/alchemy/launchd';
 
 const runner = sudoRunner({
-  // ⛔ Required: the directories root may write. Only directories root owns.
+  // ⛔ Required: the directories root may write. Each must be a real directory that root owns
+  //   and only root may write; that is checked at every privileged call.
   prefixes: ['/Library/LaunchDaemons', '/opt/example'],
   // log: (line) => …, // default: one line on stderr per privileged call
 });
@@ -20,13 +21,13 @@ const runner = sudoRunner({
 
 Each is `/usr/bin/sudo -n -- <argv>`, every program by absolute path, never through a shell.
 
-| when                             | argv                                                                  |
-| -------------------------------- | --------------------------------------------------------------------- |
-| a system job is bootstrapped     | `/bin/launchctl bootstrap system <prefix>/<label>.plist`              |
-| a system job is booted out       | `/bin/launchctl bootout system/<label>`                               |
-| (your own code, via `exec`)      | `/bin/launchctl kickstart [-k] [-p] system/<label>`                   |
-| a file under a prefix is written | `/usr/bin/install -S -m <0644> [-o <uid>] [-g <gid>] <staged> <path>` |
-| a file under a prefix is removed | `/bin/rm -f -- <path>`                                                |
+| when                             | argv                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------- |
+| a system job is bootstrapped     | `/bin/launchctl bootstrap system /Library/LaunchDaemons/<label>.plist` |
+| a system job is booted out       | `/bin/launchctl bootout system/<label>`                                |
+| (your own code, via `exec`)      | `/bin/launchctl kickstart [-k] [-p] system/<label>`                    |
+| a file under a prefix is written | `/usr/bin/install -S -m <0644> [-o <uid>] [-g <gid>] <staged> <path>`  |
+| a file under a prefix is removed | `/bin/rm -f -- <path>`                                                 |
 
 - A file's bytes never reach argv or the log: they are written, as you, to a `0600` file in a
   fresh `0700` temp directory. `install` copies that file (and only that file) into place, and
@@ -47,8 +48,15 @@ Each is `/usr/bin/sudo -n -- <argv>`, every program by absolute path, never thro
 ## Refused before sudo is asked
 
 - Any other argv. That includes a bare `bootout system` (which removes the whole system domain),
-  `bootstrap system <directory>` (which loads every plist in it), `rm -r`, `install -d`, a label
-  under `org.nixos.`, `com.apple.` or `homebrew.mxcl.`, and any argv whose program is `sudo`.
+  `bootstrap system <directory>` (which loads every plist in it), a plist anywhere but
+  `/Library/LaunchDaemons/<label>.plist` (the only place launchd loads daemons from at boot),
+  `rm -r`, `install -d`, a label under `org.nixos.`, `com.apple.` or `homebrew.mxcl.`, and any
+  argv whose program is `sudo`.
+- A system job's `bootstrap` or `bootout` when `/Library/LaunchDaemons` is not a prefix. ⚠️ Without
+  it a delete would boot the job out, then fail to remove its plist, which launchd loads again at
+  the next boot.
+- A prefix that is missing, a symlink, not owned by root, or writable by group or other. ⛔ A
+  symlinked prefix makes root write wherever it points, a path the log never names.
 - A path outside every prefix that needs root: another user as the owner, say.
 - A symlink or missing directory between the prefix and the file, or anything but a regular file
   at the path. ⚠️ `install src <directory>` copies _into_ the directory, and a symlink to one does
@@ -58,6 +66,9 @@ Each is `/usr/bin/sudo -n -- <argv>`, every program by absolute path, never thro
   with no state. Membership comes from `id -G`, because macOS caps `getgroups()` at 16 (measured
   2026-09-21: 16 against 18).
 - Another user's `gui/<uid>` or `user/<uid>` domain. Only the system domain is elevated.
+
+Every refusal above throws `SudoRefusedError`: nothing ran as root. A privileged command that ran
+and failed throws a plain `Error` with its exit code.
 
 ## When sudo wants a password
 
@@ -105,6 +116,7 @@ record of what ran as root.
 - ⚠️ **Under a prefix, the runner writes as root.** An omitted owner is root, and an omitted group
   is the directory's group (a new file's group on macOS).
 - ⚠️ **The checks guard against a mistaken declaration, not against a hostile one.** They run as
-  you, just before the call, so someone who can already write inside a prefix could swap a path in
-  between. Declare only directories that root owns.
+  you, just before the call. The prefix itself must be root-only, but a directory _below_ it that
+  another user owns is not checked for that, and that user could swap what lies under it in
+  between. Keep every directory under a prefix root-owned, too. ACLs are not read, only mode bits.
 - ⛔ **macOS hosts.** Every argv shape was checked against macOS 27.2 man pages.

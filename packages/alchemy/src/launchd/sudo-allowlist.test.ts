@@ -69,6 +69,15 @@ describe('launchctl shapes', () => {
       [LAUNCHCTL, 'bootstrap', 'system', '/tmp/com.example.a.plist'],
     ],
     ['bootstrap of a non-plist', [LAUNCHCTL, 'bootstrap', 'system', `${DAEMONS}/com.example.a`]],
+    // ★ Only where launchd loads daemons at boot: anywhere else is a job that vanishes on restart.
+    [
+      'bootstrap from another prefix',
+      [LAUNCHCTL, 'bootstrap', 'system', '/opt/example/com.example.a.plist'],
+    ],
+    [
+      'bootstrap from a subdirectory',
+      [LAUNCHCTL, 'bootstrap', 'system', `${DAEMONS}/sub/com.example.a.plist`],
+    ],
     ['bootstrap into a gui domain', [LAUNCHCTL, 'bootstrap', 'gui/501', PLIST]],
     ['a reserved label', [LAUNCHCTL, 'bootout', 'system/com.apple.xpc.foo']],
     ['a label that is a path', [LAUNCHCTL, 'bootout', 'system/../x']],
@@ -77,11 +86,27 @@ describe('launchctl shapes', () => {
       [LAUNCHCTL, 'kickstart', '-s', 'system/com.example.a'],
     ],
     ['a repeated flag', [LAUNCHCTL, 'kickstart', '-k', '-k', 'system/com.example.a']],
+    ['kickstart of the bare domain', [LAUNCHCTL, 'kickstart', '-k', 'system']],
+    ['kickstart of a reserved label', [LAUNCHCTL, 'kickstart', 'system/com.apple.xpc.foo']],
     ['enable', [LAUNCHCTL, 'enable', 'system/com.example.a']],
     ['print, which never needs root', [LAUNCHCTL, 'print', 'system/com.example.a']],
   ])('refuses %s', (_name, argv) => {
     expect(allowed(argv)).toBeString();
   });
+});
+
+test('without /Library/LaunchDaemons declared, bootstrap and bootout are refused; kickstart is not', () => {
+  const narrow = { prefixes: ['/opt/example'] };
+  // ⚠️ bootout first, then a refused rm, would leave a plist launchd loads again at boot.
+  expect(privilegedProblem([LAUNCHCTL, 'bootout', 'system/com.example.a'], narrow)).toContain(
+    '/Library/LaunchDaemons',
+  );
+  expect(privilegedProblem([LAUNCHCTL, 'bootstrap', 'system', PLIST], narrow)).toContain(
+    '/Library/LaunchDaemons',
+  );
+  expect(
+    privilegedProblem([LAUNCHCTL, 'kickstart', 'system/com.example.a'], narrow),
+  ).toBeUndefined();
 });
 
 describe('install and rm shapes', () => {

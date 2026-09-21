@@ -131,8 +131,9 @@ one is logged (argv only, never content) before it runs. A plan never calls sudo
 
 - ⛔ **Opt-in, never a fallback**, and it never prompts: if sudo needs a password, the call fails at
   once and says to run `sudo -v`, or to grant exactly these commands `NOPASSWD`.
-- ⚠️ Refused before sudo is asked: any other argv, a path outside every prefix that needs root, a
-  symlink on the way, a file you could not read back, and another user's `gui/<uid>`.
+- ⚠️ Refused before sudo is asked: any other argv, a prefix that is not a real directory only root
+  may write, a path outside every prefix that needs root, a symlink on the way, a file you could
+  not read back, and another user's `gui/<uid>`.
 - Full list, sudoers cautions and limits: [docs/launchd-sudo.md](./docs/launchd-sudo.md).
 
 ## Caddy — `@homeflare/alchemy/caddy`
