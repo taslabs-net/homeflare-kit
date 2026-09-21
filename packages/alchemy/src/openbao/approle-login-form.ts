@@ -10,6 +10,7 @@
  *     the mount is `approle` unless the caller says otherwise. (api/*.go cited here diffed identical
  *     between v2.6.0 and v2.6.2.)
  */
+import { trimSlashes } from './mount-path.ts';
 
 /** Why a login or a revoke failed. */
 export type BaoLoginFailure =
@@ -73,8 +74,7 @@ export const refusal = (label: string, value: unknown): string | undefined => {
 };
 
 /** The auth mount without slashes; `approle` when the caller did not say. */
-export const loginMount = (mount: string | undefined): string =>
-  (mount ?? 'approle').replace(/^\/+|\/+$/g, '');
+export const loginMount = (mount: string | undefined): string => trimSlashes(mount ?? 'approle');
 
 /**
  * Why `mount` cannot name an auth mount, or undefined when it can.
