@@ -37,7 +37,7 @@ describe('appRoleLogin', () => {
       async (bao) => {
         const env = {
           BAO_ADDR: bao.address,
-          BAO_NAMESPACE: 'homeflare',
+          BAO_NAMESPACE: 'example-ns',
           BAO_TOKEN: 'operator-token',
           VAULT_TOKEN: 'legacy-token',
         };
@@ -47,7 +47,7 @@ describe('appRoleLogin', () => {
         assert.equal(seen?.path, '/v1/auth/approle/login');
         assert.equal(seen?.body, JSON.stringify({ role_id: ROLE, secret_id: SECRET }));
         assert.equal(seen?.headers.get('x-vault-token'), null);
-        assert.equal(seen?.headers.get('x-vault-namespace'), 'homeflare');
+        assert.equal(seen?.headers.get('x-vault-namespace'), 'example-ns');
         assert.equal(login.clientToken, 'token-fixture');
         assert.equal(login.accessor, 'accessor-fixture');
         assert.deepEqual(login.policies, ['default', 'host-cert']);
