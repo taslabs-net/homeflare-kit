@@ -42,7 +42,7 @@ import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { refuseTakeover } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import { baoDelete, baoWrite } from './bao-http.ts';
 import {
   type BaoProxmoxRoleAttributes,
@@ -100,7 +100,7 @@ export const BaoProxmoxRoleProvider = () =>
          *   says everything is fine — exactly the drift the hand-written check-* gates exist to
          *   catch, and exactly what a provider that trusted its own state would walk past.
          */
-        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
+        diff: Effect.fn(function* ({ news, olds, output }) {
           /**
            * ⛔ A NEW `mount` OR `name` IS A `replace` (rename.ts). It is a DIFFERENT path, so none of
            *   the reasons below apply. Until 2026-09-21 it planned `update` and left the old role
@@ -113,7 +113,8 @@ export const BaoProxmoxRoleProvider = () =>
            *   resulting `update`.
            */
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return yield* noteResume(instanceId);
+          // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
+          if (output === undefined) return undefined;
           if (move !== undefined) {
             const mintUser = declaredString(news, 'mintUser');
             if (mintUser === undefined || isPendingProp(news, 'allowMintUserChange'))
@@ -234,5 +235,5 @@ export const BaoProxmoxRoleProvider = () =>
           return undefined;
         }),
       }),
-    ),
+    ).pipe(Effect.map(provingResumes)),
   );

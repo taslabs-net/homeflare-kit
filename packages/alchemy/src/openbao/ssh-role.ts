@@ -38,7 +38,7 @@ import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { refuseTakeover } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import { baoDelete, baoRead, baoWrite } from './bao-http.ts';
 import {
   type BaoSshRoleAttributes,
@@ -113,7 +113,7 @@ export const BaoSshRoleProvider = () =>
          *   at risk when something actually writes; if every managed field already matches,
          *   the honest answer is `noop` and nothing gets destroyed.
          */
-        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
+        diff: Effect.fn(function* ({ news, olds, output }) {
           /**
            * ⛔ A RENAMED ROLE IS A NEW PATH, NOT AN EDIT. `ssh/roles/x` and `ssh-host/roles/x`
            *   are different mounts with different CAs. Without this, changing `name` or
@@ -122,7 +122,8 @@ export const BaoSshRoleProvider = () =>
            *   ⛔ a move onto a role that exists fails the plan (rename-identity.ts).
            */
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return yield* noteResume(instanceId);
+          // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
+          if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           const form = resolve(news);
@@ -206,5 +207,5 @@ export const BaoSshRoleProvider = () =>
           return undefined;
         }),
       }),
-    ),
+    ).pipe(Effect.map(provingResumes)),
   );

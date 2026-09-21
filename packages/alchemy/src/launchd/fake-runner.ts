@@ -9,6 +9,8 @@
  *   job exits non-zero; a job can linger after bootout (`lingerPrints`); a gui uid with no login
  *   session answers 112 (`loggedOut`); writes into a root-owned directory, or a chown to another
  *   uid, need root.
+ * ★ Every directory ABOVE a declared one exists, root's and `0755`, as `/`, `/Library` and `/opt`
+ *   are on a Mac; `acls` holds the `ls -lden` entry lines a directory prints (sudo-acl.ts).
  */
 import { LAUNCHCTL, NOT_FOUND, NO_DOMAIN } from './launchctl.ts';
 import type { ExecResult, FileStat, HostRunner, HostUser, WriteOptions } from './runner.ts';
@@ -54,6 +56,16 @@ export const fakeRunner = (options: FakeOptions = {}) => {
   const root = privileged || euid === 0;
   const dirs = new Map(Object.entries(options.dirs ?? {}));
   const files = new Map<string, Entry>();
+  /** Directory → the ACL entry lines `ls -lden` prints under it. */
+  const acls = new Map<string, string[]>();
+  /** The directories above the declared ones, as the host starts: root's, `0755`. */
+  const above = new Set<string>(['/']);
+  for (const dir of dirs.keys()) {
+    const parts = dir.split('/').slice(1, -1);
+    for (const index of parts.keys()) above.add(`/${parts.slice(0, index + 1).join('/')}`);
+  }
+  for (const dir of dirs.keys()) above.delete(dir);
+  const implied = (path: string) => above.has(path);
   const calls: string[][] = [];
   /** target → pid (undefined = loaded, not running). */
   const loaded = new Map<string, number | undefined>();
@@ -128,6 +140,16 @@ export const fakeRunner = (options: FakeOptions = {}) => {
     exec: async (argv) => {
       calls.push([...argv]);
       if (argv[0] === LAUNCHCTL) return launchctl(argv.slice(1));
+      if (argv[0] === '/bin/ls' && argv[1] === '-lden' && argv[2] === '--') {
+        const paths = argv.slice(3);
+        if (paths.some((path) => !dirs.has(path) && !files.has(path) && !implied(path)))
+          return fail(1, 'ls: No such file or directory');
+        const lines = paths.flatMap((path) => [
+          `drwxr-xr-x  2 0  0  64 Sep 21 10:00 ${path}`,
+          ...(acls.get(path) ?? []),
+        ]);
+        return ok(lines.join('\n'));
+      }
       return fail(127, `fake: no program ${String(argv[0])}`);
     },
     lookupGroup: async (nameOrId) => options.groups?.[nameOrId],
@@ -153,9 +175,9 @@ export const fakeRunner = (options: FakeOptions = {}) => {
           size: entry.bytes.length,
           uid: entry.uid,
         };
-      return dirs.has(path)
-        ? { gid: 0, kind: 'directory', mode: 0o755, size: 0, uid: dirs.get(path) ?? 0 }
-        : undefined;
+      if (dirs.has(path) || implied(path))
+        return { gid: 0, kind: 'directory', mode: 0o755, size: 0, uid: dirs.get(path) ?? 0 };
+      return undefined;
     },
     writeFileAtomic: async (path: string, bytes: Uint8Array, write: WriteOptions) => {
       calls.push(['write', path]);
@@ -172,5 +194,5 @@ export const fakeRunner = (options: FakeOptions = {}) => {
       });
     },
   };
-  return { calls, disabled, dirs, files, loaded, runner, state };
+  return { acls, calls, disabled, dirs, files, loaded, runner, state };
 };

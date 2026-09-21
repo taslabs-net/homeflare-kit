@@ -22,7 +22,7 @@ import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { type Claim, claimFor } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import type { BaoError } from './bao-status.ts';
 import {
   type BaoMfaTotpMethodAttributes,
@@ -117,13 +117,14 @@ export const BaoMfaTotpMethodProvider = () =>
          *   upsert by name wrote a SECOND method: the header's stranding, reached through a green
          *   plan. MEASURED through the engine (rename-families.test.ts).
          */
-        diff: Effect.fn(function* ({ instanceId, news, output }) {
+        diff: Effect.fn(function* ({ news, output }) {
           const name = declaredString(news, 'name');
           if (output !== undefined && name !== undefined) {
             const rename = renameProblem(output.name, name);
             if (rename !== undefined) return yield* refuse(name, rename);
           }
-          if (output === undefined) return yield* noteResume(instanceId);
+          // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
+          if (output === undefined) return undefined;
           if (!isResolved(news)) return undefined;
           return { action: yield* planTotp(news) } as const;
         }),
@@ -141,5 +142,5 @@ export const BaoMfaTotpMethodProvider = () =>
           return undefined;
         }),
       }),
-    ),
+    ).pipe(Effect.map(provingResumes)),
   );

@@ -87,8 +87,9 @@ The plist path is derived, never declared: `/Library/LaunchDaemons/<label>.plist
 it becomes visible — then renamed over the path. Read back after every write. Diffed by SHA-256,
 mode and owner. A new `path` is a create-before-delete replace. Delete removes the file.
 
-- ⛔ A different file already at a new `path` is refused, not overwritten: the adoption probe
-  never looks at a replace's new path, so a typo there would otherwise overwrite a system file.
+- ⛔ A different file already at a new `path` is refused, not overwritten, `--adopt` or not: the
+  adoption probe never looks at a replace's new path, so a typo there would otherwise overwrite a
+  system file.
 
 - ⛔ A symlink or directory at the path is refused, never replaced: rename over a symlink replaces
   the link, which takes the path from whatever tool owns it (nix-darwin's `/etc` entries point
@@ -128,7 +129,8 @@ you deploy as.
 `read` with no prior state reports anything it finds — a loaded label, a plist, a file — as
 `Unowned`, so Alchemy refuses to take it over without `--adopt`. Where the plan never asked (a prop
 still an `Output`), `reconcile` refuses the same takeover, and `--adopt` or the resource's own
-`adopt(true)` lets a create through there too. The whole rule: [ownership.md](./ownership.md).
+`adopt(true)` lets a create (or an interrupted generation) through there too — never a fresh
+replace's new path or label. The whole rule: [ownership.md](./ownership.md).
 
 Labels under `org.nixos.`, `com.apple.` and `homebrew.mxcl.` are **refused outright**. nix-darwin
 rewrites its plists on every activation and unloads any it no longer lists, macOS owns

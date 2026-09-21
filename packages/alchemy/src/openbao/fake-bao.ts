@@ -116,3 +116,21 @@ export const crashAfterWrite = () => {
       },
   };
 };
+
+/**
+ * A deploy killed BEFORE a resource's reconcile ran: the first write to a path ending in `suffix` is
+ * refused (500) without landing. Aimed at an upstream, it fails every create waiting on it after
+ * Apply has committed their `creating` rows — rows whose create never asked whose object sat at
+ * its identity (ownership/whole.ts).
+ */
+export const refuseWriteOnce = (suffix: string) => {
+  let armed = true;
+  return (answer: (seen: Seen) => Reply) =>
+    (seen: Seen): Reply => {
+      if (armed && seen.method !== 'GET' && seen.path.endsWith(suffix)) {
+        armed = false;
+        return { json: { errors: ['injected: the upstream was refused'] }, status: 500 };
+      }
+      return answer(seen);
+    };
+};

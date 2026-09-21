@@ -16,7 +16,7 @@ import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { refuseTakeover } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import {
   type BaoAuthRoleAttributes,
   type BaoAuthRoleProps,
@@ -80,7 +80,7 @@ export const BaoAuthRoleProvider = () =>
          * ⛔ IT COMPARES THE LIVE ROLE, NOT THE STORED DIGEST. A role edited in the OpenBao
          *   UI is exactly the drift the check-* gates exist to catch.
          */
-        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
+        diff: Effect.fn(function* ({ news, olds, output }) {
           /**
            * ⛔ A RENAMED ROLE IS A NEW ROLE — NEW role_id, NEW secret_ids — SO IT IS A `replace`,
            *   judged before `isResolved(news)` (rename-identity.ts). Until 2026-09-21 a new `name`
@@ -93,7 +93,8 @@ export const BaoAuthRoleProvider = () =>
            *   opt into `RemovalPolicy.destroy()` or destroy the old role's accessors by hand.
            */
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return yield* noteResume(instanceId);
+          // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
+          if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
           if (!isResolved(news)) return undefined;
           const live = yield* readRole(news);
@@ -139,5 +140,5 @@ export const BaoAuthRoleProvider = () =>
           return undefined;
         }),
       }),
-    ),
+    ).pipe(Effect.map(provingResumes)),
   );

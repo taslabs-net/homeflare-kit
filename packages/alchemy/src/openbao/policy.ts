@@ -7,7 +7,7 @@ import * as Path from 'effect/Path';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { refuseTakeover } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import { sha256 } from './digest.ts';
 import { isEmptyAssembly } from './policy-assembly.ts';
 import { deletePolicy, policyPath, readPolicy, writePolicy } from './policy-wire.ts';
@@ -158,7 +158,7 @@ export const BaoPolicyProvider = () =>
          *   OpenBao UI is exactly the drift the check-* gates exist to catch, and a
          *   provider that trusted its own state would report `noop` straight through it.
          */
-        diff: Effect.fn(function* ({ instanceId, news, olds, output }) {
+        diff: Effect.fn(function* ({ news, olds, output }) {
           /**
            * ⛔ A RENAMED POLICY IS A `replace`, DECIDED BEFORE ANY OTHER READ (rename.ts). Until
            *   2026-09-21 this read the new name, found nothing and planned `update`: the new policy
@@ -171,7 +171,8 @@ export const BaoPolicyProvider = () =>
            *   PR (REPLACE.md).
            */
           const move = yield* judgeRename(IDENTITY, olds, news, output);
-          if (output === undefined) return yield* noteResume(instanceId);
+          // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
+          if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
           // ⚠️ A prop can still be an unresolved Output or Config at plan time. Docker's
           //   own providers guard with isResolved and skip rather than guess; a diff that
@@ -243,5 +244,5 @@ export const BaoPolicyProvider = () =>
           return undefined;
         }),
       });
-    }),
+    }).pipe(Effect.map(provingResumes)),
   );

@@ -1,6 +1,7 @@
 /**
- * The two questions ownership/ asks of Alchemy's state store: does a row record this instance
- * (probe.ts), and — when reconcile refuses a create — forget the row Apply committed for it
+ * The questions ownership/ asks of Alchemy's state store: does a row record this instance, and with
+ * its whole declaration (probe.ts); is this apply a create rather than a replace's new generation
+ * (adopt.ts); and — when reconcile refuses a create — forget the row Apply committed for it
  * (adopt.ts). Alchemy's own AWS.EC2.SecurityGroup provider reads the store the same way: the Stack
  * service names the stack and stage, and `State` yields the store.
  *
@@ -13,6 +14,7 @@ import { Stack } from 'alchemy/Stack';
 import { State, type StateService, isActionState } from 'alchemy/State/State';
 import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
+import { wholeDeclaration } from './whole.ts';
 
 type Where = { readonly stack: string; readonly stage: string };
 
@@ -29,34 +31,67 @@ const storeOf = Effect.gen(function* () {
 const rowAt = (store: StateService, where: Where, fqn: string) =>
   store.get({ ...where, fqn }).pipe(Effect.orElseSucceed(() => undefined));
 
-/** Every instance id a persisted row carries: its own, then each older generation's (`old`). */
-const generationIds = (row: unknown): string[] => {
-  const ids: string[] = [];
-  let at = row;
-  while (typeof at === 'object' && at !== null && !isActionState(at as never)) {
-    const { instanceId, old } = at as { instanceId?: unknown; old?: unknown };
-    if (typeof instanceId === 'string') ids.push(instanceId);
-    at = old;
-  }
-  return ids;
+type Generation = {
+  readonly instanceId?: unknown;
+  readonly status?: unknown;
+  readonly props?: unknown;
+  readonly attr?: unknown;
+  readonly old?: unknown;
 };
 
-/**
- * Whether the state store records `instanceId` for this resource — at its FQN, or at a former FQN
- * its `renamedFrom` names (the planner migrates that row before it recovers it).
- * ★ This is what separates the probe from the recovery read: the probe's instance id is minted for
- *   the probe (Plan.ts `generateInstanceId()`), 128 random bits no row can hold.
- */
-export const recordedInstance = (fqn: string, instanceId: string): Effect.Effect<boolean> =>
+/** The generation of a persisted row that carries `instanceId`: the row itself, or one in `old`. */
+const generationOf = (row: unknown, instanceId: string): Generation | undefined => {
+  let at = row;
+  while (typeof at === 'object' && at !== null && !isActionState(at as never)) {
+    const generation = at as Generation;
+    if (generation.instanceId === instanceId) return generation;
+    at = generation.old;
+  }
+  return undefined;
+};
+
+/** The generation `instanceId` names — at the FQN, or at a former FQN `renamedFrom` names. */
+const recordedGeneration = (fqn: string, instanceId: string) =>
   Effect.gen(function* () {
     const found = yield* storeOf;
-    if (found === undefined) return false;
+    if (found === undefined) return undefined;
     for (const at of [fqn, ...(found.resources[fqn]?.FormerFqns ?? [])]) {
-      const row = yield* rowAt(found.store, found.where, at);
-      if (generationIds(row).includes(instanceId)) return true;
+      const generation = generationOf(yield* rowAt(found.store, found.where, at), instanceId);
+      if (generation !== undefined) return generation;
     }
-    return false;
+    return undefined;
   });
+
+/**
+ * What the state store says of `instanceId` for this resource (at its FQN, or at a former FQN its
+ * `renamedFrom` names — the planner migrates that row before it recovers it):
+ *   · `absent`  — no row holds it. ★ This is what separates the probe from the recovery read: the
+ *     probe's instance id is minted for the probe (Plan.ts `generateInstanceId()`), 128 random bits
+ *     no row can hold.
+ *   · `partial` — a row holds it, but its props lack part of the declaration: a prop stripped at
+ *     commit because it was still an Output (whole.ts). Those props cannot prove an object ours.
+ *   · `whole`   — a row holds it with every prop the declaration names.
+ */
+export type Recorded = 'absent' | 'partial' | 'whole';
+
+export const recordedInstance = (fqn: string, instanceId: string): Effect.Effect<Recorded> =>
+  Effect.gen(function* () {
+    const generation = yield* recordedGeneration(fqn, instanceId);
+    if (generation === undefined) return 'absent';
+    return (yield* wholeDeclaration(fqn, generation.props)) ? 'whole' : 'partial';
+  });
+
+/**
+ * Whether this apply's `instanceId` is a CREATE: the row Apply committed for it is `creating`.
+ * ⛔ A REPLACE'S NEW GENERATION IS NOT ONE. Apply commits it as `replacing`, and the planner never
+ *   offers it adoption — the probe runs only for a resource with no state — so `--adopt` must not
+ *   let it write over whatever sits at its new identity (adopt.ts adoptsAtApply).
+ */
+export const isCreate = (fqn: string, instanceId: string): Effect.Effect<boolean> =>
+  Effect.map(
+    recordedGeneration(fqn, instanceId),
+    (generation) => generation?.status === 'creating',
+  );
 
 /**
  * ⛔ A REFUSED CREATE MUST NOT LEAVE A ROW THAT CLAIMS THE OBJECT IT REFUSED. Apply commits a

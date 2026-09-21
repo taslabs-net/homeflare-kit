@@ -110,9 +110,11 @@ export const diffJob = async (
 };
 
 /**
- * `adopt` is what `--adopt` / `adopt(…)` resolve to for this resource (ownership/adopt.ts): it lets
- * a CREATE take over a job already on the host, as the plan's probe would have. A rename onto an
- * occupied label stays refused, as it is at plan time (assertReplaceable).
+ * `adopt` is whether adoption is on AND this apply is a create or an unfinished generation of our
+ * own (ownership/adopt.ts adoptsAtApply): it lets such a generation take over a job already on the
+ * host, as the plan's probe would have. A rename onto an occupied label stays refused, as it is at
+ * plan time (assertReplaceable) — including a label taken between that plan and a fresh replace's
+ * new generation, which the caller never marks adoptable.
  */
 export const reconcileJob = async (
   runner: HostRunner,

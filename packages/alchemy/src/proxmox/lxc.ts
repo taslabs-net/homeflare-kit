@@ -33,7 +33,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { type Owner, refuseTakeover } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
-import { noteResume } from '../ownership/resume.ts';
+import { provingResumes } from '../ownership/resume.ts';
 import { createRefusals } from './lxc-create-form.ts';
 import { identityRefusals } from './lxc-identity.ts';
 import { judge } from './lxc-judge.ts';
@@ -70,20 +70,16 @@ const refused = (reasons: readonly string[]) =>
   Effect.fail(new LxcRefusedError(reasons.join('\n')));
 
 /**
- * ★ A ROW WITH NO ATTRIBUTES IS AN UNFINISHED CREATE, AND `diff` NOTES IT for the apply that
- *   follows (ownership/resume.ts), so reconcile can tell our own interrupted create from a guest
- *   somebody else put at this vmid.
+ * ★ A ROW WITH NO ATTRIBUTES IS AN UNFINISHED CREATE. provingResumes (ownership/resume.ts) asks
+ *   `read` whether the guest there is that create's before this runs, and notes it for the apply
+ *   that follows, so reconcile can tell our own interrupted create from a guest somebody else put
+ *   at this vmid.
  */
-const diff = (
-  news: Input<LxcProps>,
-  olds: LxcProps,
-  output: LxcAttributes | undefined,
-  instanceId: string,
-) =>
+const diff = (news: Input<LxcProps>, olds: LxcProps, output: LxcAttributes | undefined) =>
   Effect.gen(function* () {
     const identity = identityRefusals(news, olds, output);
     if (identity.length > 0) return yield* refused(identity);
-    if (output === undefined) return yield* noteResume(instanceId);
+    if (output === undefined) return undefined;
     if (!isResolved(news)) return undefined;
     const live = yield* readLive(news);
     // ⚠️ `update`, not `create`: state exists and the guest does not. reconcile rebuilds it from
@@ -212,15 +208,14 @@ const handlers = {
   delete: ({ olds, output }: { olds: LxcProps; output: LxcAttributes }) =>
     destroyGuest(whereOf(olds, output), olds),
   diff: ({
-    instanceId,
     news,
     olds,
     output,
-  }: Asked & {
+  }: {
     news: Input<LxcProps>;
     olds: LxcProps;
     output: LxcAttributes | undefined;
-  }) => diff(news, olds, output, instanceId),
+  }) => diff(news, olds, output),
   list: () => Effect.succeed([]),
   read: ({
     fqn,
@@ -239,4 +234,7 @@ const handlers = {
 };
 
 export const ProxmoxLxcProvider = () =>
-  Provider.effect(ProxmoxLxc, Effect.succeed(ProxmoxLxc.Provider.of(handlers)));
+  Provider.effect(
+    ProxmoxLxc,
+    Effect.succeed(ProxmoxLxc.Provider.of(handlers)).pipe(Effect.map(provingResumes)),
+  );

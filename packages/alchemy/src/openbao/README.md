@@ -19,7 +19,8 @@ plus `FetchHttpClient.layer`.
   deploys, or remove the target first.
 - ⛔ **Nothing is adopted without `--adopt`** (0.9.0), not even an object identical to the
   declaration: a live name with no state fails the plan, or the apply when a prop was an Output.
-  Our own interrupted create still resumes. [docs/ownership.md](../../docs/ownership.md). Change
+  Our own interrupted create still resumes when its row can prove it — not one killed while a
+  prop was still an Output. [docs/ownership.md](../../docs/ownership.md). Change
   a logical id with Alchemy's `renamedFrom` (REPLACE.md), never by adopting.
 
 ## assertBaoIdentity: call it first
