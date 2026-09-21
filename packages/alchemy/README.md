@@ -90,7 +90,8 @@ try {
 
 - ⛔ The login never sends `BAO_TOKEN`, and a `BaoLoginError` never contains the credential.
   OpenBao can echo a secret_id back in an error, so every error string is redacted.
-- ⚠️ `clientToken` is non-enumerable: `console.log(login)` leaves it out, and so does a spread.
+- ⚠️ `clientToken` is a getter over a private field: `console.log(login)` prints `[Getter]` at
+  most (Bun) or nothing (Node), and JSON, a spread and `structuredClone` carry no token.
 - ⚠️ A value with leading or trailing whitespace is refused, not trimmed. `Bun.file().text()`
   keeps a file's trailing newline.
 - `reason` is `input`, `refused`, `unreachable` or `response`. Pass `env` to use something other
@@ -100,12 +101,13 @@ try {
 
 ```ts
 import { BaoPlugin } from '@homeflare/alchemy/openbao';
+import * as Effect from 'effect/Effect';
 
 export const plugins = Effect.gen(function* () {
-  yield* BaoPlugin('plugin-cloudflare', {
-    name: 'openbao-plugin-secrets-cloudflare',
+  yield* BaoPlugin('plugin-example', {
+    name: 'openbao-plugin-secrets-example',
     type: 'secret', // 'secret' | 'auth' | 'database'
-    command: 'openbao-plugin-secrets-cloudflare', // a bare file name in plugin_directory
+    command: 'openbao-plugin-secrets-example', // a bare file name in plugin_directory
     sha256: '<hex sha256 of that file>',
     version: 'v0.1.2', // canonical semver
   });
@@ -113,9 +115,9 @@ export const plugins = Effect.gen(function* () {
 ```
 
 - ⛔ It registers a binary that is already in `plugin_directory`. It does not copy the binary.
-- ⚠️ **Declare `version` if the binary reports its own.** OpenBao files an unversioned
-  registration under the self-reported version, and reconcile then refuses because the read-back
-  finds nothing.
+- ⚠️ **If the binary reports its own version, declare exactly that one.** OpenBao refuses any
+  other ("plugin version mismatch"), and files an unversioned registration under the reported
+  one, so reconcile then refuses because the read-back finds nothing.
 - ⚠️ A new `sha256` does not restart running mounts. Reload with `sys/plugins/reload/backend`.
 - The deploying token needs `sudo` on `sys/plugins/catalog/*`.
 

@@ -26,8 +26,10 @@ export interface BaoPluginProps {
   /** The binary's file name inside plugin_directory — a bare name, no path, no arguments. */
   command: string;
   /**
-   * Canonical semver with its `v`, e.g. `v0.1.2`. ⚠️ Declare it when the binary reports its own
-   * version — see the ⚠️ on the self-reported version in plugin.ts.
+   * Canonical semver with its `v`, e.g. `v0.1.2`. ⚠️ When the binary reports its own version,
+   * declare EXACTLY that one: any other is refused at write ("plugin version mismatch",
+   * plugin_catalog.go setInternal), and none at all is filed under the reported one — see the ⚠️
+   * on SELF_REPORTED in plugin-reconcile.ts.
    */
   version?: string;
   /** Arguments, in order. ⛔ Never a secret: they land in Alchemy state and in every catalog read. */

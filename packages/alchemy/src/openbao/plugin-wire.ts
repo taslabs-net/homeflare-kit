@@ -48,6 +48,10 @@ export const registerPlugin = (
 /**
  * ★ IDEMPOTENT ON THE SERVER. deleteInternal deletes the storage key whether or not it exists
  *   (plugin_catalog.go:1272-1284) and the handler answers with no body, so a retried delete succeeds.
+ *   ⚠️ BUT A MISSING TYPED KEY FALLS BACK TO THE BARE NAME. When `<type>/<name>[/<version>]` is not
+ *     in storage, the same function deletes the key `<name>` instead — where registrations made
+ *     before plugin types existed live, whatever their type. A fresh 2.x vault has none; one
+ *     migrated from an old Vault may. REASONED FROM SOURCE, not run.
  * ⛔ AND THAT IS THE DANGER: NOTHING CHECKS WHETHER A MOUNT STILL USES THE PLUGIN. The same function
  *   has no mount lookup at all, so deregistering the plugin a live mount runs succeeds. The running
  *   process is not killed by it; the mount breaks the next time OpenBao has to START the plugin — a

@@ -24,16 +24,17 @@ import type { BaoEnvironment } from './bao-address.ts';
 import { BaoEnv, baoCall } from './bao-http.ts';
 import type { BaoError } from './bao-status.ts';
 import {
-  type AppRoleLogin,
   BaoLoginError,
-  loginMount,
-  loginOf,
+  failureOf,
   loginPath,
+  mountProblem,
   redact,
   refusal,
 } from './approle-login-form.ts';
+import { type AppRoleLogin, loginOf } from './approle-login-result.ts';
 
-export type { AppRoleLogin, BaoLoginFailure } from './approle-login-form.ts';
+export type { BaoLoginFailure } from './approle-login-form.ts';
+export type { AppRoleLogin } from './approle-login-result.ts';
 export { BaoLoginError };
 
 export interface AppRoleLoginInput {
@@ -41,7 +42,7 @@ export interface AppRoleLoginInput {
   readonly roleId: string;
   /** ⛔ The secret_id. Never logged, never in an error — see `redact`. */
   readonly secretId: string;
-  /** The AppRole auth mount, without slashes. Defaults to `approle`. */
+  /** The AppRole auth mount, e.g. `approle` (the default) — no `.`/`..` segments, `?` or `#`. */
   readonly mount?: string;
 }
 
@@ -52,7 +53,7 @@ const failed =
   (operation: string, secrets: readonly string[]) =>
   (error: BaoError): BaoLoginError =>
     new BaoLoginError(
-      error.status === 0 ? 'unreachable' : 'refused',
+      failureOf(error.status),
       error.status,
       redact(error.errors, secrets),
       operation,
@@ -79,7 +80,7 @@ export const appRoleLoginEffect = (
     const problems = [
       refusal('roleId', input.roleId),
       refusal('secretId', input.secretId),
-      loginMount(input.mount) === '' ? 'mount is empty' : undefined,
+      mountProblem(input.mount),
     ].filter((problem): problem is string => problem !== undefined);
     if (problems.length > 0)
       return yield* Effect.fail(new BaoLoginError('input', 0, problems, LOGIN));

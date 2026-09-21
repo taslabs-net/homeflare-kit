@@ -6,6 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { inspect } from 'node:util';
 import { BaoLoginError, appRoleLogin, revokeSelf } from './approle-login.ts';
 import { withFake } from './fake-bao.ts';
 
@@ -55,14 +56,27 @@ describe('appRoleLogin', () => {
     );
   });
 
-  it('keeps the token out of JSON and out of a spread', async () => {
+  /**
+   * ⚠️ THE PRINTS ARE THE POINT. The first version passed JSON and Object.keys checks and still
+   *   printed the token in full under bun's console.log (approle-login-result.ts has the measure).
+   */
+  it('keeps the token out of every print, JSON, spread and clone', async () => {
     await withFake(
       () => ({ json: AUTH, status: 200 }),
       async (bao) => {
         const env = { BAO_ADDR: bao.address };
         const login = await appRoleLogin({ env, roleId: ROLE, secretId: SECRET });
-        assert.ok(!JSON.stringify(login).includes('token-fixture'));
+        const renderings = [
+          Bun.inspect(login),
+          inspect(login),
+          inspect(login, { showHidden: true }),
+          JSON.stringify(login),
+          JSON.stringify({ ...login }),
+          JSON.stringify(structuredClone(login)),
+        ];
+        for (const text of renderings) assert.ok(!text.includes('token-fixture'), text);
         assert.equal(Object.keys(login).includes('clientToken'), false);
+        assert.equal(login.accessor, 'accessor-fixture');
       },
     );
   });
@@ -88,6 +102,9 @@ describe('appRoleLogin', () => {
           { roleId: ROLE, secretId: `${SECRET}\n` },
           { roleId: ROLE, secretId: undefined as unknown as string },
           { mount: '/', roleId: ROLE, secretId: SECRET },
+          // ⛔ The URL parser would resolve these onto another path; nothing may be sent.
+          { mount: '../../sys/tools', roleId: ROLE, secretId: SECRET },
+          { mount: 'approle?x=', roleId: ROLE, secretId: SECRET },
         ];
         for (const input of cases) {
           const error = await failure(appRoleLogin({ env, ...input }));
@@ -128,14 +145,17 @@ describe('appRoleLogin', () => {
     );
   });
 
-  it('names a 2xx without a usable auth block, including an unfinished MFA login', async () => {
+  it('names a 2xx without a usable login — not JSON, no auth block, unfinished MFA', async () => {
     const replies = [
       { json: { data: {} }, status: 200 },
       {
         json: { auth: { client_token: '', mfa_requirement: { mfa_request_id: 'x' } } },
         status: 200,
       },
+      // ⚠️ Some other web server at BAO_ADDR: a yes that is not a login, never `refused 200`.
+      { status: 200, text: '<html>welcome</html>' },
     ];
+    const expected = [/no auth block/, /requires MFA/, /response 200: a success body/];
     for (const [index, reply] of replies.entries()) {
       await withFake(
         () => reply,
@@ -143,7 +163,7 @@ describe('appRoleLogin', () => {
           const env = { BAO_ADDR: bao.address };
           const error = await failure(appRoleLogin({ env, roleId: ROLE, secretId: SECRET }));
           assert.equal(error.reason, 'response');
-          assert.match(error.message, index === 0 ? /no auth block/ : /requires MFA/);
+          assert.match(error.message, expected[index] ?? /never/);
         },
       );
     }

@@ -38,10 +38,15 @@ const refuse = (form: BaoPluginForm, message: string) =>
  *   request names none, and the storage key carries it — so the unversioned read that follows finds
  *   nothing, or finds an OLDER genuinely-unversioned entry. The Cloudflare engine reports one
  *   (`framework.Backend.RunningVersion`). REASONED FROM SOURCE, not measured against a server.
+ * ⚠️ THE WRITE HAS ALREADY LANDED when this fires, so the catalog holds a registration no state
+ *   record names. Declaring the reported version adopts it on the next deploy (same sha256 and
+ *   command, so reconcile matches and writes nothing); declaring a DIFFERENT version is refused by
+ *   the server itself (setInternal :1219-1221, "plugin version mismatch").
  */
 const SELF_REPORTED =
   'the write succeeded but the read-back does not match. If the binary reports its own version, ' +
-  'OpenBao filed the registration under it (plugin_catalog.go setInternal) — declare `version`.';
+  'OpenBao filed the registration under it (plugin_catalog.go setInternal) — declare `version` ' +
+  'as exactly the version the binary reports; that adopts the entry this write just made.';
 
 /** Register when the live entry differs, then prove it by reading back. Dies on a refusal. */
 export const reconcilePlugin = (
