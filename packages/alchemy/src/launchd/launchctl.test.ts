@@ -98,6 +98,23 @@ describe('printService', () => {
     expect(await printService(fake.runner, 'system/com.example.none')).toEqual({ loaded: false });
   });
 
+  test('exit 112 "Could not find domain" (a gui uid with no login session) is "not loaded"', async () => {
+    const fake = fakeRunner();
+    fake.state.loggedOut.add(502);
+    expect(await printService(fake.runner, 'gui/502/com.example.x')).toEqual({
+      domainMissing: true,
+      loaded: false,
+    });
+  });
+
+  test('exit 112 without that text stays an error', async () => {
+    const runner = {
+      ...fakeRunner().runner,
+      exec: async () => ({ exitCode: 112, stderr: 'Bad request.', stdout: '' }),
+    };
+    await expect(printService(runner, 'system/x')).rejects.toThrow('-> 112');
+  });
+
   test('any other non-zero exit is an error carrying stderr, never stdout', async () => {
     const runner = {
       ...fakeRunner().runner,
@@ -129,6 +146,28 @@ describe('bootoutIfLoaded', () => {
     expect(subs.slice(0, 2)).toEqual(['print', 'bootout']);
     expect(subs.filter((sub) => sub === 'print').length).toBeGreaterThan(3);
     expect(fake.calls.every((call) => call[0] === LAUNCHCTL)).toBe(true);
+  });
+
+  test('a non-zero bootout for a job that is still exiting (EINPROGRESS) waits, not fails', async () => {
+    const fake = fakeRunner();
+    fake.loaded.set('system/com.example.slow', 1);
+    fake.state.lingerPrints = 3;
+    fake.state.bootoutFailure = {
+      exitCode: 36,
+      stderr: 'Boot-out failed: 36: Operation now in progress',
+      stdout: '',
+    };
+    await bootoutIfLoaded(fake.runner, 'system/com.example.slow');
+    expect(fake.loaded.has('system/com.example.slow')).toBe(false);
+  });
+
+  test('a non-zero bootout for a job that never leaves fails with bootout’s own error', async () => {
+    const fake = fakeRunner();
+    fake.loaded.set('system/com.example.stuck', 1);
+    fake.state.bootoutKeepsJob = true;
+    await expect(bootoutIfLoaded(fake.runner, 'system/com.example.stuck')).rejects.toThrow(
+      /bootout system\/com\.example\.stuck -> 5: .*still loaded after waiting/,
+    );
   });
 
   test('gives up with a clear error when the job never goes away', async () => {

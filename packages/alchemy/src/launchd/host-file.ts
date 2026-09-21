@@ -18,7 +18,7 @@ import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { lift } from './host-effect.ts';
+import { lift, resolvedString } from './host-effect.ts';
 import type { HostFileAttributes, HostFileProps } from './host-file-form.ts';
 import { deleteFile, diffFile, readFileAttributes, reconcileFile } from './host-file-lifecycle.ts';
 import { HostRunnerService } from './runner.ts';
@@ -44,12 +44,19 @@ export const HostFileProvider = () =>
             return output === undefined ? Unowned(found) : found;
           }),
 
-        diff: ({ news, output }) =>
-          output === undefined || !isResolved(news)
-            ? Effect.succeed(undefined)
-            : lift(() => diffFile(runner, news, output)),
+        diff: ({ news, output }) => {
+          if (output === undefined) return Effect.succeed(undefined);
+          if (isResolved(news)) return lift(() => diffFile(runner, news, output));
+          // ⛔ A new path is a replace even while `content` is unresolved (an Output templated in):
+          //   the engine's default would be an update, which writes the new path and never
+          //   removes the old one. reconcileFile also defends, for a path that is an Output.
+          const path = resolvedString(news, 'path');
+          return Effect.succeed(
+            path !== undefined && path !== output.path ? { action: 'replace' as const } : undefined,
+          );
+        },
 
-        reconcile: ({ news }) => lift(() => reconcileFile(runner, news)),
+        reconcile: ({ news, output }) => lift(() => reconcileFile(runner, news, output)),
 
         delete: ({ output }) => lift(() => deleteFile(runner, output)),
       });

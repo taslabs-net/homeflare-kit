@@ -61,20 +61,29 @@ const calendarProblems = (entries: readonly CalendarInterval[]): string[] => {
 const absolute = (name: string, value: string | undefined): string[] =>
   value === undefined || value.startsWith('/') ? [] : [`${name} must be an absolute path`];
 
-export const jobProblems = (props: LaunchdJobProps): string[] => {
+/**
+ * The label and domain alone — the job's identity. ★ Split out because a rename is a delete-first
+ *   replace, and it must be refusable at plan time even while other props are still unresolved
+ *   Outputs (see job.ts diff): otherwise the old job is deleted and only then is the new label
+ *   found to be invalid.
+ */
+export const identityProblems = (label: string, domainText: string): string[] => {
   const found: string[] = [];
-  if (!LABEL.test(props.label)) {
+  if (!LABEL.test(label)) {
     found.push('label must be 1–200 of [A-Za-z0-9._-], starting with a letter or digit');
   }
-  const reserved = RESERVED_LABEL_PREFIXES.find((prefix) => props.label.startsWith(prefix));
+  const reserved = RESERVED_LABEL_PREFIXES.find((prefix) => label.startsWith(prefix));
   if (reserved !== undefined) {
-    found.push(
-      `label ${props.label} is under ${reserved}, which another tool owns; declare a new label`,
-    );
+    found.push(`label ${label} is under ${reserved}, which another tool owns; declare a new label`);
   }
+  if (parseDomain(domainText) === undefined)
+    found.push(`domain must be 'system' or 'gui/<uid>', not ${domainText}`);
+  return found;
+};
+
+export const jobProblems = (props: LaunchdJobProps): string[] => {
+  const found = identityProblems(props.label, props.domain);
   const domain = parseDomain(props.domain);
-  if (domain === undefined)
-    found.push(`domain must be 'system' or 'gui/<uid>', not ${props.domain}`);
 
   const [program] = props.programArguments;
   // ★ Absolute, because launchd's PATH for a job is not the deploying shell's PATH.
@@ -85,7 +94,7 @@ export const jobProblems = (props: LaunchdJobProps): string[] => {
     if (!ENV_NAME.test(name))
       found.push(`environment name ${JSON.stringify(name)} is not a valid variable name`);
   }
-  found.push(...jobSecretProblems(props.environment, props.programArguments));
+  found.push(...jobSecretProblems(props.environment, props.programArguments, props.extraKeys));
 
   if (props.startInterval !== undefined && !isInt(props.startInterval, 1)) {
     found.push('startInterval must be a positive whole number of seconds');

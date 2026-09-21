@@ -84,6 +84,15 @@ describe('arguments', () => {
     expect(jobSecretProblems({ API_TOKEN: 'hunter4' }, ['/bin/x']).join()).not.toContain('hunter4');
   });
 
+  test('a private key anywhere in extraKeys trips, by path, without echoing it', () => {
+    const found = jobSecretProblems(undefined, ['/bin/x'], {
+      Sockets: { Listener: [{ SockServiceName: '9000' }, { Blob: `x\n${PEM}` }] },
+    });
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain('extraKeys.Sockets.Listener[1].Blob');
+    expect(found[0]).not.toContain('BEGIN');
+  });
+
   test('every refusal names the alternative', () => {
     expect(jobSecretProblems({ API_TOKEN: 'x' }, ['/bin/x']).join()).toContain('openbao-agent');
   });

@@ -40,7 +40,7 @@ describe('create and read back', () => {
       owner: 'someone',
     });
     expect(attrs).toMatchObject({ gid: 20, mode: 0o640, uid: 501 });
-    const byId = await reconcileFile(fake.runner, { ...file, group: 0, owner: '0' });
+    const byId = await reconcileFile(fake.runner, { ...file, group: 0, owner: '0' }, attrs);
     expect(byId).toMatchObject({ gid: 0, uid: 0 });
   });
 
@@ -137,6 +137,46 @@ describe('refusals', () => {
     ['a private key', { content: `-----BEGIN EC ${'PRIVATE'} KEY-----\n` }, 'openbao-agent'],
   ])('%s', (_name, patch, message) => {
     expect(fileProblems({ ...file, ...patch } as HostFileProps).join('\n')).toContain(message);
+  });
+});
+
+describe('files this resource does not own, and moves', () => {
+  const OTHER = '/etc/example/other.conf';
+
+  test('a different file at a path with no prior state is refused and left alone', async () => {
+    // ★ The new path of a replace: the engine's adoption probe never looked there.
+    const fake = host();
+    fake.files.set(OTHER, {
+      bytes: new Uint8Array([7]),
+      gid: 0,
+      kind: 'file',
+      mode: 0o600,
+      uid: 0,
+    });
+    await expect(reconcileFile(fake.runner, { ...file, path: OTHER })).rejects.toThrow(
+      'not this resource',
+    );
+    expect(fake.files.get(OTHER)?.bytes).toEqual(new Uint8Array([7]));
+  });
+
+  test('a move that reaches reconcile as an update writes the new path, then removes the old', async () => {
+    const fake = host();
+    const output = await reconcileFile(fake.runner, file);
+    const moved = await reconcileFile(fake.runner, { ...file, path: OTHER }, output);
+    expect(moved.path).toBe(OTHER);
+    expect(fake.files.has(OTHER)).toBe(true);
+    expect(fake.files.has(PATH)).toBe(false);
+  });
+
+  test('a create whose read-back fails is rolled back, so the next plan finds nothing', async () => {
+    const fake = host();
+    const runner = {
+      ...fake.runner,
+      writeFileAtomic: (path: string, _bytes: Uint8Array, options: { mode: number }) =>
+        fake.runner.writeFileAtomic(path, new Uint8Array([0]), options),
+    };
+    await expect(reconcileFile(runner, file)).rejects.toThrow('does not match');
+    expect(fake.files.has(PATH)).toBe(false);
   });
 });
 

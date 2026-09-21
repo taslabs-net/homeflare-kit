@@ -90,6 +90,36 @@ describe('LaunchdJobProvider', () => {
     expect(diff).toBeUndefined();
   });
 
+  test('a rename is a replace even while other props are unresolved', async () => {
+    // ★ An Effect is what isResolved() calls unresolved — the stand-in for `config.path` while its
+    //   HostFile is changing in the same deploy. The engine's default here would be `update`.
+    const fake = host();
+    const pending = { ...job, programArguments: [Effect.succeed('/usr/local/bin/job')] } as never;
+    const diffs = await withJobProvider(fake, (provider) =>
+      Effect.gen(function* () {
+        const output = yield* provider.reconcile({
+          ...ids,
+          bindings: [] as never,
+          news: job,
+          olds: undefined,
+          output: undefined,
+          session: undefined as never,
+        });
+        const diff = handler('diff', provider.diff);
+        const base = {
+          ...ids,
+          newBindings: [] as never,
+          oldBindings: [] as never,
+          olds: job,
+          output,
+        };
+        const rename = { ...(pending as object), label: 'com.example.renamed' } as never;
+        return [yield* diff({ ...base, news: rename }), yield* diff({ ...base, news: pending })];
+      }),
+    );
+    expect(diffs).toEqual([{ action: 'replace', deleteFirst: true }, undefined]);
+  });
+
   test('a refusal reaches Alchemy as a failure carrying its message', async () => {
     const fake = fakeRunner({ dirs: { '/Library/LaunchDaemons': 0 }, euid: 501 });
     await expect(
@@ -128,6 +158,37 @@ describe('HostFileProvider', () => {
     );
     expect(Unowned.is(found)).toBe(true);
     expect(found).toMatchObject({ path: '/etc/example/a.conf', size: 1 });
+  });
+
+  test('a new path is a replace even while content is unresolved', async () => {
+    const output = {
+      gid: 0,
+      mode: 0o644,
+      path: '/etc/example/a.conf',
+      sha256: '',
+      size: 1,
+      uid: 0,
+    };
+    const news = { content: Effect.succeed('x'), path: '/etc/example/b.conf' } as never;
+    const diff = await Effect.runPromise(
+      Effect.gen(function* () {
+        const provider = yield* HostFile.Provider;
+        return yield* handler(
+          'diff',
+          provider.diff,
+        )({
+          ...ids,
+          newBindings: [] as never,
+          news,
+          oldBindings: [] as never,
+          olds: { content: 'x', path: output.path },
+          output,
+        });
+      }).pipe(
+        Effect.provide(HostFileProvider().pipe(Layer.provide(hostRunnerLayer(host().runner)))),
+      ),
+    );
+    expect(diff).toEqual({ action: 'replace' });
   });
 });
 

@@ -6,10 +6,11 @@
  *   "bootout before bootstrap" without writing /Library or loading a job.
  * ★ IT MODELS THE BEHAVIOURS THE PROVIDER DEPENDS ON, as launchctl.ts documents them: `print` of an
  *   unknown target exits 113; bootstrap of a loaded or disabled label fails; bootout of an absent
- *   job exits non-zero; a job can linger after bootout (`lingerPrints`); writes into a root-owned
- *   directory, or a chown to another uid, need root.
+ *   job exits non-zero; a job can linger after bootout (`lingerPrints`); a gui uid with no login
+ *   session answers 112 (`loggedOut`); writes into a root-owned directory, or a chown to another
+ *   uid, need root.
  */
-import { LAUNCHCTL, NOT_FOUND } from './launchctl.ts';
+import { LAUNCHCTL, NOT_FOUND, NO_DOMAIN } from './launchctl.ts';
 import type { ExecResult, FileStat, HostRunner, HostUser, WriteOptions } from './runner.ts';
 
 type Entry = { bytes: Uint8Array; mode: number; uid: number; gid: number; kind: FileStat['kind'] };
@@ -61,6 +62,11 @@ export const fakeRunner = (options: FakeOptions = {}) => {
     lingerPrints: 0,
     nextPid: 4000,
     bootstrapFailure: undefined as ExecResult | undefined,
+    /** Returned by bootout in place of success. The job still goes, unless `bootoutKeepsJob`. */
+    bootoutFailure: undefined as ExecResult | undefined,
+    bootoutKeepsJob: false,
+    /** gui uids with no login session: every launchctl call into `gui/<uid>` exits 112. */
+    loggedOut: new Set<number>(),
   };
   /** Booted-out targets launchd has not let go of yet → prints left before they vanish. */
   const lingering = new Map<string, number>();
@@ -72,6 +78,11 @@ export const fakeRunner = (options: FakeOptions = {}) => {
 
   const launchctl = (args: readonly string[]): ExecResult => {
     const [sub, first, second] = args;
+    const gui = /^gui\/(\d+)(?:\/|$)/.exec(first ?? '')?.[1];
+    if (gui !== undefined && state.loggedOut.has(Number(gui))) {
+      // The measured shape (launchctl.ts): 112, "Bad request." then the domain line.
+      return fail(NO_DOMAIN, `Bad request.\nCould not find domain for user gui: ${gui}`);
+    }
     if (sub === 'print' && first !== undefined) {
       const left = lingering.get(first);
       if (left !== undefined) {
@@ -103,10 +114,11 @@ export const fakeRunner = (options: FakeOptions = {}) => {
     if (sub === 'bootout' && first !== undefined) {
       if (!loaded.has(first) || lingering.has(first))
         return fail(3, 'Boot-out failed: 3: No such process');
+      if (state.bootoutKeepsJob) return state.bootoutFailure ?? fail(5, 'Boot-out failed: 5');
       // ⚠️ Model launchd letting go late: the job stays visible for `lingerPrints` more prints.
       if (state.lingerPrints === 0) loaded.delete(first);
       else lingering.set(first, state.lingerPrints);
-      return ok();
+      return state.bootoutFailure ?? ok();
     }
     return fail(64, `fake launchctl: unsupported ${args.join(' ')}`);
   };

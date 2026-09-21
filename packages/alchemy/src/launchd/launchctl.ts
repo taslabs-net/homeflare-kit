@@ -11,6 +11,10 @@
  *     blocks (`resource coalition`, `semaphores`) repeat names like `state` two tabs deep.
  *   - `print-disabled <domain>` lists `"label" => enabled|disabled`.
  *   - reading needs no root: a uid-501 shell printed system-domain jobs.
+ *   - `print gui/<uid>/<label>` for a uid with NO LOGIN SESSION exits **112** with "Could not find
+ *     domain for user gui: <uid>" (and so does `print-disabled gui/<uid>`); a malformed target is
+ *     64, a missing service in a live gui domain is 113. So 112 + that text is "the domain does
+ *     not exist", which means the job cannot be loaded — not an error for a read or a delete.
  * ⚠️ REASONED, NOT MEASURED: bootstrap/bootout exit codes. nix-darwin's own activation script on the
  *   same host notes "`bootout` on an already-absent job is a no-op that returns non-zero", which is
  *   why bootout here is always preceded by a print and followed by a poll, never trusted alone.
@@ -21,6 +25,9 @@ import type { HostRunner } from './runner.ts';
 export const LAUNCHCTL = '/bin/launchctl';
 /** `launchctl print` of an unknown service — measured, see above. */
 export const NOT_FOUND = 113;
+/** `launchctl print` into a gui domain with no login session — measured, see above. */
+export const NO_DOMAIN = 112;
+const NO_DOMAIN_TEXT = 'Could not find domain';
 
 export class LaunchctlError extends Error {
   constructor(command: string, exitCode: number, stderr: string) {
@@ -31,6 +38,8 @@ export class LaunchctlError extends Error {
 
 export type ServiceStatus = {
   readonly loaded: boolean;
+  /** The domain itself is absent (a gui/<uid> with no login session). Implies `loaded: false`. */
+  readonly domainMissing?: true;
   readonly state?: string;
   readonly pid?: number;
   readonly lastExitCode?: number;
@@ -100,6 +109,11 @@ export const parseDisabled = (stdout: string): Set<string> => {
 export const printService = async (runner: HostRunner, target: string): Promise<ServiceStatus> => {
   const result = await runner.exec([LAUNCHCTL, 'print', target]);
   if (result.exitCode === NOT_FOUND) return { loaded: false };
+  // ⚠️ Without this, deleting an agent while its user is logged out fails on the read, and the
+  //   plist stays in LaunchAgents — where launchd loads it again at that user's next login.
+  if (result.exitCode === NO_DOMAIN && result.stderr.includes(NO_DOMAIN_TEXT)) {
+    return { domainMissing: true, loaded: false };
+  }
   if (result.exitCode !== 0)
     throw new LaunchctlError(`print ${target}`, result.exitCode, result.stderr);
   return parsePrint(result.stdout);
@@ -153,9 +167,22 @@ export const waitUnloaded = async (
 export const bootoutIfLoaded = async (runner: HostRunner, target: string): Promise<void> => {
   if (!(await printService(runner, target)).loaded) return;
   const result = await runner.exec([LAUNCHCTL, 'bootout', target]);
-  // ⚠️ A non-zero bootout is only an error if the service is STILL there afterwards (see header).
-  if (result.exitCode !== 0 && (await printService(runner, target)).loaded) {
-    throw new LaunchctlError(`bootout ${target}`, result.exitCode, result.stderr);
+  /**
+   * ⚠️ A non-zero bootout is only an error if the service is STILL there after the wait (see
+   *   header) — so wait FIRST, then judge. A job slower to exit than launchctl's own wait is widely
+   *   reported to fail bootout with `36: Operation now in progress` (EINPROGRESS) while it is
+   *   still going away; REASONED from those reports, not measured here. Judging on an immediate
+   *   print would fail the deploy with the new plist written and the old job already exiting —
+   *   the job ends up down either way, and the error would blame the wrong step.
+   */
+  try {
+    await waitUnloaded(runner, target);
+  } catch (cause) {
+    if (result.exitCode === 0) throw cause;
+    throw new LaunchctlError(
+      `bootout ${target}`,
+      result.exitCode,
+      `${result.stderr.trim()} (and still loaded after waiting)`,
+    );
   }
-  await waitUnloaded(runner, target);
 };

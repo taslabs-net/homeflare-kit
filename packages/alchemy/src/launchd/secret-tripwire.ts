@@ -12,6 +12,7 @@
  * ⚠️ A TRIPWIRE, NOT A SCANNER. It catches the names and shapes people actually type. A token in
  *   an innocently named variable passes; nothing here can make a secret safe to declare.
  */
+import type { PlistDict, PlistValue } from './plist.ts';
 
 const ALTERNATIVE =
   'props are stored unencrypted in Alchemy state. Have a secret renderer (e.g. openbao-agent) ' +
@@ -29,10 +30,28 @@ const BARE_FLAG = /^--?(?:[a-z0-9]+-)*(?:token|password|passwd|passphrase|secret
 
 const PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
 
-/** Refusals for a job's environment and argv. Empty means nothing tripped. */
+/** Paths of every string leaf in a plist value holding a private key. */
+const keyLeaves = (value: PlistValue, path: string): string[] => {
+  if (typeof value === 'string') return PRIVATE_KEY.test(value) ? [path] : [];
+  if (Array.isArray(value)) {
+    return (value as readonly PlistValue[]).flatMap((item, index) =>
+      keyLeaves(item, `${path}[${String(index)}]`),
+    );
+  }
+  if (typeof value === 'object' && value !== null) {
+    return Object.entries(value).flatMap(([key, item]) => keyLeaves(item, `${path}.${key}`));
+  }
+  return [];
+};
+
+/**
+ * Refusals for a job's environment, argv and extraKeys. Empty means nothing tripped.
+ * ★ extraKeys too: it is a prop like the others, so it lands in state just the same.
+ */
 export const jobSecretProblems = (
   environment: Readonly<Record<string, string>> | undefined,
   argv: readonly string[],
+  extraKeys?: PlistDict,
 ): string[] => {
   const found: string[] = [];
   for (const [name, value] of Object.entries(environment ?? {})) {
@@ -50,6 +69,9 @@ export const jobSecretProblems = (
     } else if (PRIVATE_KEY.test(arg)) {
       found.push(`programArguments[${String(index)}] holds a private key: ${ALTERNATIVE}`);
     }
+  }
+  for (const path of keyLeaves(extraKeys ?? {}, 'extraKeys')) {
+    found.push(`${path} holds a private key: ${ALTERNATIVE}`);
   }
   return found;
 };

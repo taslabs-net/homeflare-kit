@@ -1,90 +1,42 @@
 /**
  * LaunchdJob's read / diff / reconcile / delete as plain async functions over a HostRunner — split
  * from job.ts so the whole lifecycle runs against fake-runner.ts in tests, with no real launchd.
+ * The checks made before any write live in job-preflight.ts.
  *
  * ★ THE ORDER IS WRITE, BOOTOUT, BOOTSTRAP — not bootout first. launchd reads the plist only at
  *   bootstrap, so writing the new file while the old job runs changes nothing yet, and a write that
  *   fails (disk full, EACCES) leaves the old job running instead of leaving nothing running.
- * ⚠️ A FAILED BOOTSTRAP LEAVES THE JOB DOWN, with the new plist on disk. The error says so, the
- *   state keeps the previous digest, and the next deploy therefore retries. There is no automatic
- *   rollback: a plist that launchd refuses is a declaration to fix, and re-bootstrapping the old one
- *   could just as easily fail for the same host-side reason (a disabled label, a bad owner).
+ * ⚠️ A FAILED BOOTSTRAP LEAVES THE JOB DOWN. On an UPDATE the new plist stays on disk, the state
+ *   keeps the previous digest, and the next deploy retries. On a CREATE the plist this deploy wrote
+ *   is removed again: left behind, the next plan's recovery `read` would find a plist with no
+ *   state and report it `Unowned`, and every later deploy would demand `--adopt` for our own file.
+ *   There is no rollback to an older plist: one that launchd refuses is a declaration to fix, and
+ *   re-bootstrapping the old one could fail for the same host-side reason.
  */
 import type { Diff } from 'alchemy/Diff';
 import {
   type LaunchdJobAttributes,
   type LaunchdJobProps,
-  type ParsedDomain,
   parseDomain,
-  plistPathFor,
   renderJob,
-  serviceTarget,
   sha256Hex,
 } from './job-form.ts';
-import { jobProblems } from './job-validate.ts';
 import {
-  type ServiceStatus,
-  bootoutIfLoaded,
-  bootstrap,
-  isDisabled,
-  printService,
-} from './launchctl.ts';
-import { type HostRunner, canActAsRoot } from './runner.ts';
-
-type Location = {
-  readonly domain: ParsedDomain;
-  readonly plistPath: string;
-  readonly target: string;
-};
-
-const refuse = (label: string, message: string): Error =>
-  new Error(`Launchd.Job ${label}: ${message}`);
-
-/** Throw every refusal at once, so one plan shows the whole list. */
-export const assertValid = (props: LaunchdJobProps): void => {
-  const found = jobProblems(props);
-  if (found.length > 0) throw refuse(props.label, found.join('; '));
-};
-
-const locate = async (
-  runner: HostRunner,
-  props: Pick<LaunchdJobProps, 'label' | 'domain'>,
-): Promise<Location> => {
-  const domain = parseDomain(props.domain);
-  if (domain === undefined) throw refuse(props.label, `unknown domain ${props.domain}`);
-  const home =
-    domain.kind === 'gui' ? (await runner.lookupUser(String(domain.uid)))?.home : undefined;
-  return {
-    domain,
-    plistPath: plistPathFor(props.label, domain, home),
-    target: serviceTarget(props.label, props.domain),
-  };
-};
-
-/**
- * ⛔ NO SILENT SUDO. The system domain, and another user's gui domain, need root. Refuse up front
- *   with the two ways out, rather than let launchctl or rename(2) fail halfway through.
- */
-const assertMayWrite = (runner: HostRunner, label: string, domain: ParsedDomain): void => {
-  if (canActAsRoot(runner)) return;
-  if (domain.kind === 'system') {
-    throw refuse(
-      label,
-      'the system domain needs root. Run the deploy as root, or provide a HostRunner that is ' +
-        'deliberately privileged (privileged: true). This provider never calls sudo.',
-    );
-  }
-  if (domain.uid !== runner.effectiveUid()) {
-    throw refuse(
-      label,
-      `gui/${String(domain.uid)} belongs to another user; only root may write it. ` +
-        'Deploy as that user, as root, or through a privileged HostRunner.',
-    );
-  }
-};
+  type Identity,
+  type Location,
+  assertMayWrite,
+  assertReplaceable,
+  assertUnclaimed,
+  assertValid,
+  locate,
+  preflight,
+  refuse,
+} from './job-preflight.ts';
+import { type ServiceStatus, bootoutIfLoaded, bootstrap, printService } from './launchctl.ts';
+import type { HostRunner } from './runner.ts';
 
 const attributesOf = (
-  props: Pick<LaunchdJobProps, 'label' | 'domain'>,
+  props: Identity,
   location: Location,
   plistSha256: string,
   status: ServiceStatus,
@@ -103,7 +55,7 @@ const attributesOf = (
 /** What is on the host now: the plist's digest and launchd's view. `undefined` when neither exists. */
 export const readJob = async (
   runner: HostRunner,
-  props: Pick<LaunchdJobProps, 'label' | 'domain'>,
+  props: Identity,
 ): Promise<LaunchdJobAttributes | undefined> => {
   const location = await locate(runner, props);
   const bytes = await runner.readFile(location.plistPath);
@@ -112,18 +64,33 @@ export const readJob = async (
   return attributesOf(props, location, bytes === undefined ? '' : sha256Hex(bytes), status);
 };
 
+/**
+ * ★ `deleteFirst`: labels are unique per domain, and the old and new job would otherwise run the
+ *   same program side by side — same port, same files — until the old one is deleted. A brief
+ *   outage beats two copies. ⛔ Which is why everything the new job's reconcile would refuse is
+ *   refused HERE, at plan time (job-preflight.ts): after the delete it would be too late.
+ * `full` is the whole declaration when resolved; job.ts passes only the identity otherwise.
+ */
+export const replaceDiff = async (
+  runner: HostRunner,
+  next: Identity,
+  full: LaunchdJobProps | undefined,
+  output: LaunchdJobAttributes,
+): Promise<Diff> => {
+  // ★ Validate before rendering, so a bad declaration shows its whole list, not a render error.
+  if (full !== undefined) assertValid(full);
+  const rendered = full === undefined ? undefined : renderJob(full).sha256;
+  await assertReplaceable(runner, next, full, output, rendered);
+  return { action: 'replace', deleteFirst: true };
+};
+
 export const diffJob = async (
   runner: HostRunner,
   news: LaunchdJobProps,
   output: LaunchdJobAttributes,
 ): Promise<Diff> => {
-  /**
-   * ★ `deleteFirst`: labels are unique per domain, and the old and new job would otherwise run the
-   *   same program side by side — same port, same files — until the old one is deleted. A brief
-   *   outage beats two copies.
-   */
   if (news.label !== output.label || news.domain !== output.domain) {
-    return { action: 'replace', deleteFirst: true };
+    return replaceDiff(runner, news, news, output);
   }
   assertValid(news);
   const desired = renderJob(news).sha256;
@@ -142,28 +109,32 @@ export const reconcileJob = async (
   output: LaunchdJobAttributes | undefined,
 ): Promise<LaunchdJobAttributes> => {
   assertValid(props);
-  const location = await locate(runner, props);
-  assertMayWrite(runner, props.label, location.domain);
-  /**
-   * ⛔ A DISABLED LABEL IS SOMEONE'S DECISION, NOT DRIFT. `launchctl disable` persists across boots
-   *   and makes bootstrap fail; enabling it here would silently overrule whoever disabled it.
-   */
-  if (await isDisabled(runner, props.domain, props.label)) {
-    throw refuse(
-      props.label,
-      `${location.target} is disabled (launchctl print-disabled ${props.domain}). ` +
-        `If that is stale, run \`launchctl enable ${location.target}\` deliberately, then redeploy.`,
-    );
-  }
+  const { location, status } = await preflight(runner, props);
   const rendered = renderJob(props);
+  /**
+   * ⚠️ AN `output` UNDER ANOTHER LABEL OR DOMAIN means the engine planned an UPDATE across a rename —
+   *   which it does whenever diff could not see the rename (a label that was itself an unresolved
+   *   Output at plan time; job.ts). Bootstrapping the new label alone would orphan the old job,
+   *   still running, with nothing left in state to ever remove it. So do what the replace would
+   *   have done: every check above first, then delete the old job, then create the new one.
+   */
+  const renamed =
+    output !== undefined && (output.label !== props.label || output.domain !== props.domain);
+  const prior = renamed ? undefined : output;
+  // ⛔ No prior state for THIS identity: whatever is there already belongs to someone else.
+  if (prior === undefined) {
+    await assertUnclaimed(runner, props.label, location, status, rendered.sha256);
+  }
+  if (renamed) await deleteJob(runner, output);
   const before = await runner.readFile(location.plistPath);
-  const status = await printService(runner, location.target);
   // ★ Already converged (a retried deploy, or an adopted job that matches): do not restart it.
+  // ⛔ The STORED digest is part of the test: a write that landed before a failed bootout leaves
+  //   the new plist on disk and the OLD job loaded — both look right, and only state knows better.
   if (
     status.loaded &&
     before !== undefined &&
     sha256Hex(before) === rendered.sha256 &&
-    output?.plistSha256 === rendered.sha256
+    prior?.plistSha256 === rendered.sha256
   ) {
     return attributesOf(props, location, rendered.sha256, status);
   }
@@ -181,18 +152,30 @@ export const reconcileJob = async (
       : { mode: 0o644, uid: location.domain.uid },
   );
   await bootoutIfLoaded(runner, location.target);
-  await bootstrap(runner, props.domain, location.plistPath).catch((cause: unknown) => {
-    const detail = cause instanceof Error ? cause.message : String(cause);
+  const failed = async (detail: string): Promise<never> => {
+    // ⚠️ A failed removal must not replace the bootstrap error, nor let the message claim it worked.
+    const removed =
+      before === undefined &&
+      (await runner.removeFile(location.plistPath).then(
+        () => true,
+        () => false,
+      ));
     throw refuse(
       props.label,
-      `bootstrap failed, so the job is NOT RUNNING; the new plist is at ${location.plistPath} ` +
-        `and the next deploy retries. ${detail}`,
+      removed
+        ? `bootstrap failed, so the job is NOT RUNNING; the plist this deploy wrote was removed ` +
+            `again, so the next deploy starts clean. ${detail}`
+        : `bootstrap failed, so the job is NOT RUNNING; the new plist is at ${location.plistPath} ` +
+            `and the next deploy retries. ${detail}`,
     );
-  });
-  const after = await printService(runner, location.target);
-  if (!after.loaded) {
-    throw refuse(props.label, 'bootstrap exited 0 but launchctl print cannot find the job');
+  };
+  try {
+    await bootstrap(runner, props.domain, location.plistPath);
+  } catch (cause) {
+    return failed(cause instanceof Error ? cause.message : String(cause));
   }
+  const after = await printService(runner, location.target);
+  if (!after.loaded) return failed('bootstrap exited 0 but launchctl print cannot find the job');
   return attributesOf(props, location, rendered.sha256, after);
 };
 
@@ -204,6 +187,8 @@ export const deleteJob = async (
   const domain = parseDomain(output.domain);
   if (domain === undefined) throw refuse(output.label, `unknown domain ${output.domain}`);
   assertMayWrite(runner, output.label, domain);
+  // ★ A gui domain with no login session reads as "not loaded" (launchctl.ts), so the plist is
+  //   still removed — which is what stops launchd loading it again at that user's next login.
   await bootoutIfLoaded(runner, output.serviceTarget);
   await runner.removeFile(output.plistPath);
 };

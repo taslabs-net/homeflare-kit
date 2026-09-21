@@ -64,12 +64,19 @@ The plist path is derived, never declared: `/Library/LaunchDaemons/<label>.plist
 | delete  | `bootout` if loaded, remove the plist; idempotent                                                   |
 
 - A converged job is not restarted: a retried deploy that finds the right plist loaded does nothing.
-- ⚠️ A failed `bootstrap` leaves the job **down**, with the new plist on disk. The error says so,
-  the state keeps the old digest, and the next deploy retries. There is no automatic rollback.
+- ⛔ **A rename is checked at plan time.** Alchemy deletes the old job before it creates the new
+  one, so everything the new one would be refused for (an invalid or reserved label, a domain you
+  may not write, a disabled label, a label another job already holds) fails the **plan**, with the
+  old job still running. A rename is seen even while other props are unresolved Outputs.
+- ⚠️ A failed `bootstrap` leaves the job **down**. On an update the new plist stays on disk, the
+  state keeps the old digest, and the next deploy retries. On a first create the plist is removed
+  again, so the next plan does not find its own file and call it someone else's.
+  There is no rollback to an older plist.
 - ⛔ A label disabled with `launchctl disable` is refused, not re-enabled: that was someone's
   decision. The error names the `launchctl enable` command to run if it is stale.
 - ⚠️ A `gui/<uid>` job needs that user logged in: without a login session the domain does not
-  exist, and `launchctl` fails the deploy.
+  exist (`launchctl print` exits 112, "Could not find domain"; measured). Deploying refuses before
+  it writes anything. Deleting still removes the plist, which stops launchd loading it at login.
 - ⚠️ The digest covers the rendered bytes, so a kit upgrade that changes the renderer's output
   restarts every declared job on the next deploy. Such a release says so in its changelog.
 
@@ -80,6 +87,9 @@ The plist path is derived, never declared: `/Library/LaunchDaemons/<label>.plist
 it becomes visible — then renamed over the path. Read back after every write. Diffed by SHA-256,
 mode and owner. A new `path` is a create-before-delete replace. Delete removes the file.
 
+- ⛔ A different file already at a new `path` is refused, not overwritten: the adoption probe
+  never looks at a replace's new path, so a typo there would otherwise overwrite a system file.
+
 - ⛔ A symlink or directory at the path is refused, never replaced: rename over a symlink replaces
   the link, which takes the path from whatever tool owns it (nix-darwin's `/etc` entries point
   into `/nix/store`).
@@ -87,8 +97,9 @@ mode and owner. A new `path` is a create-before-delete replace. Delete removes t
 
 ## ⛔ No secrets in props
 
-Alchemy stores props and attributes **unencrypted** in its state store. A job's `environment` and
-`programArguments`, and a file's `content`, land there, in every plan diff, and on disk.
+Alchemy stores props and attributes **unencrypted** in its state store. A job's `environment`,
+`programArguments` and `extraKeys`, and a file's `content`, land there, in every plan diff, and on
+disk.
 
 **Keep secret files rendered by a secret renderer** — `openbao-agent` templates on a HomeFlare
 host — and declare only the path: `FOO_TOKEN_FILE=/path`, `--token-file /path`. A tripwire refuses
@@ -137,8 +148,13 @@ Nix job is booted out first. Per job:
 
 - ★ **Why this order.** Both jobs usually bind the same port and write the same files; the old one
   must be gone before the new one starts. Downtime is one deploy.
-- ⚠️ **`sudo launchctl bootout system/org.nixos.<job>` is not a cutover.** The next Nix activation
-  copies the plist back and `load -w`s it, and then two copies fight over the port.
+- ⚠️ **`sudo launchctl bootout system/org.nixos.<job>` is not a cutover.** The plist stays in
+  `/Library/LaunchDaemons`, so launchd loads it again at the next boot; and activation (checked in
+  the same script) copies back and `load -w`s any Nix plist that is missing or differs from the
+  store. Either way two copies end up fighting over the port.
+- ⚠️ **Check the host's own activation for labels it removes.** An activation script can boot out,
+  `disable` and delete jobs by name on every run; a new label that collides with one is disabled
+  under you. `grep -n 'bootout\|disable' /run/current-system/activate` before choosing labels.
 - **Rolling back** is the same three steps reversed: destroy (or remove) the resource, restore the
   job in the Nix config, activate.
 

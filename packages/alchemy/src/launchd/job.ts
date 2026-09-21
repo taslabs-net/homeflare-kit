@@ -11,11 +11,12 @@
  *     An update is therefore a RESTART; a converged job is left alone.
  *   - read — `launchctl print` (loaded? pid? last exit?) plus the plist's SHA-256.
  *   - diff — the rendered plist's SHA-256 against the stored AND the on-disk digest.
- *   - replace — only when `label` or `domain` changes, and DELETE FIRST (labels are unique).
+ *   - replace — only when `label` or `domain` changes, and DELETE FIRST (labels are unique); so
+ *     everything the new job would be refused for is refused at plan time (job-preflight.ts).
  *   - delete — boot out, remove the plist.
  *
  * ⛔ ENVIRONMENT IS NON-SECRET ONLY — see the ⛔ on LaunchdJobProps.environment.
- * ⛔ NO SILENT SUDO — see assertMayWrite in job-lifecycle.ts.
+ * ⛔ NO SILENT SUDO — see assertMayWrite in job-preflight.ts.
  * ⚠️ NOTHING IS ADOPTED WITHOUT `--adopt`. A label already loaded, or a plist already on disk, reads
  *   as `Unowned`, so Alchemy refuses to take it over unless asked. Labels under `org.nixos.`,
  *   `com.apple.` and `homebrew.mxcl.` are refused outright (job-validate.ts) — declare a new label
@@ -26,9 +27,9 @@ import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { lift } from './host-effect.ts';
+import { lift, resolvedString } from './host-effect.ts';
 import type { LaunchdJobAttributes, LaunchdJobProps } from './job-form.ts';
-import { deleteJob, diffJob, readJob, reconcileJob } from './job-lifecycle.ts';
+import { deleteJob, diffJob, readJob, reconcileJob, replaceDiff } from './job-lifecycle.ts';
 import { HostRunnerService } from './runner.ts';
 
 export type {
@@ -66,10 +67,26 @@ export const LaunchdJobProvider = () =>
             return output === undefined ? Unowned(found) : found;
           }),
 
-        diff: ({ news, output }) =>
-          output === undefined || !isResolved(news)
-            ? Effect.succeed(undefined)
-            : lift(() => diffJob(runner, news, output)),
+        diff: ({ news, output }) => {
+          if (output === undefined) return Effect.succeed(undefined);
+          if (isResolved(news)) return lift(() => diffJob(runner, news, output));
+          /**
+           * ⛔ A RENAME MUST BE SEEN EVEN WHILE OTHER PROPS ARE UNRESOLVED. Returning undefined
+           *   hands the call to the engine's default — `update` for any prop change (Plan.ts,
+           *   havePropsChanged) — and an update under a new label bootstraps the new job and
+           *   orphans the old one, still running. `config.path` in programArguments (the pattern
+           *   docs/launchd.md recommends) is unresolved exactly when its HostFile changes in the
+           *   same deploy. reconcileJob also defends against this, for a label that is itself an
+           *   Output; seeing it here is what gets it planned as the replace it is.
+           */
+          const label = resolvedString(news, 'label');
+          const domain = resolvedString(news, 'domain') as LaunchdJobProps['domain'] | undefined;
+          return label !== undefined &&
+            domain !== undefined &&
+            (label !== output.label || domain !== output.domain)
+            ? lift(() => replaceDiff(runner, { domain, label }, undefined, output))
+            : Effect.succeed(undefined);
+        },
 
         reconcile: ({ news, output }) => lift(() => reconcileJob(runner, news, output)),
 

@@ -94,6 +94,7 @@ export const diffFile = async (
 export const reconcileFile = async (
   runner: HostRunner,
   props: HostFileProps,
+  output?: HostFileAttributes,
 ): Promise<HostFileAttributes> => {
   const want = await desiredFile(runner, props);
   // ⛔ NO SILENT SUDO: handing a file to another user is root's call (chown(2)), so say so up front.
@@ -112,6 +113,23 @@ export const reconcileFile = async (
     );
   }
   const before = stat === undefined ? undefined : await readFileAttributes(runner, props.path);
+  // ⚠️ An `output` at another path: the engine planned an UPDATE across a move, which it does
+  //   when diff could not see the new path (host-file.ts). Finish it the way a replace would.
+  const moved = output !== undefined && output.path !== props.path;
+  const prior = moved ? undefined : output;
+  /**
+   * ⛔ A FILE THIS RESOURCE DOES NOT OWN IS NEVER OVERWRITTEN. With no prior state for this path,
+   *   the engine's adoption probe has already refused anything it found — except at the new path of
+   *   a replace, where it reads nothing. A path typo there would otherwise overwrite, say, a system
+   *   file that a fresh declaration of the same path would have been refused as `Unowned`.
+   */
+  if (prior === undefined && before !== undefined && !matches(before, want)) {
+    throw refuse(
+      props.path,
+      'already exists and is not this resource. Remove it, or declare it as a new resource and ' +
+        'deploy with --adopt.',
+    );
+  }
   if (before === undefined || !matches(before, want)) {
     await runner.writeFileAtomic(props.path, want.bytes, {
       mode: want.mode,
@@ -123,11 +141,17 @@ export const reconcileFile = async (
   //   up here as a refusal instead of as a forever-`update`.
   const after = await readFileAttributes(runner, props.path);
   if (after === undefined || !matches(after, want)) {
+    // ⚠️ Roll back a CREATE: left behind, the next plan's recovery `read` finds a file with no
+    //   state, reports it `Unowned`, and every later deploy demands --adopt for our own file.
+    if (before === undefined) await runner.removeFile(props.path).catch(() => undefined);
     throw refuse(
       props.path,
       'the write returned but the file on disk does not match the declaration',
     );
   }
+  // ★ Create-before-delete, as the replace would have been: the old path goes only once the new
+  //   one is written and verified.
+  if (moved) await deleteFile(runner, output);
   return after;
 };
 
