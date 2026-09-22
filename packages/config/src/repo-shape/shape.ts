@@ -22,6 +22,15 @@
  *   has to be written at the exception. See `Stated`.
  */
 
+import {
+  requireIsoDate,
+  requireJobId,
+  requireMajor,
+  requireMinutes,
+  requireNonEmpty,
+  requireSentence,
+} from './guards.ts';
+
 /** Where a repository's jobs run. */
 export type RepoRunner =
   /**
@@ -118,11 +127,23 @@ export interface ExtraJob {
   readonly needs?: readonly string[];
   /** `false` skips the rendered bun prologue — for a job that needs another toolchain. */
   readonly bun?: boolean;
+  /**
+   * `timeout-minutes:` for this job. Omitted takes GitHub's 360-minute default.
+   *
+   * ⚠️ AN INPUT BECAUSE A HUNG JOB IS NOT A FAILED JOB. Measured 2026-09-22:
+   *   homeflare-blog's `runtime` job drives Playwright against a local workerd, and a
+   *   browser that never reaches its first paint holds a self-hosted slot for six hours
+   *   rather than reporting red. On a 3-slot pool that is the whole pool. Only a job
+   *   that starts something with its own wait — a browser, a server, a container — needs
+   *   this; `check` does not, because `bun run check` exits.
+   */
+  readonly timeout?: number;
 }
 
-interface ExtraJobInput extends Omit<ExtraJob, 'needs' | 'bun'> {
+interface ExtraJobInput extends Omit<ExtraJob, 'needs' | 'bun' | 'timeout'> {
   readonly needs?: readonly string[];
   readonly bun?: boolean;
+  readonly timeout?: number;
 }
 
 /**
@@ -145,6 +166,7 @@ export function extraJob<const J extends ExtraJobInput>(
     needs: [...(job.needs ?? [])],
     reason: requireSentence('reason', job.reason),
     steps: [...job.steps],
+    ...(job.timeout === undefined ? {} : { timeout: requireMinutes(job.timeout) }),
   };
 }
 
@@ -161,46 +183,39 @@ export interface RepoShape {
    * that differ between `homeflare-kit` and every other repository.
    */
   readonly publishes: boolean;
+  /**
+   * Node major to install before Bun, for a repository whose own gate needs a real
+   * `node` on `PATH`. Omit it — twelve of fourteen repositories are Bun-only.
+   *
+   * ⛔ AN INPUT, NOT AN EXCEPTION, AND THE MEASUREMENT SAYS WHY. The mini's job image
+   *   carries no node at all (ubuntu-latest always did), so a Bun-only prologue is right
+   *   for most of the estate and *silently wrong* for two repositories:
+   *     · homeflare-alerts — tests/alchemy-import.test.ts spawns `node` to prove the
+   *       modules load the way the Alchemy CLI (`node …/cli.js`) loads them. Without it,
+   *       three tests fail with `Executable not found in $PATH: "node"` (measured on the
+   *       runner, 2026-09-22).
+   *     · homeflare-blog — Payload requires Node >= 24.15, so every lane needs it.
+   *   Both repositories carried the same hand-written `actions/setup-node@v6` block
+   *   before this existed. Excepting `ci.yml` instead would hand the estate's two most
+   *   complicated CI files back to hand-editing, which is the opposite of the point.
+   *
+   * ⚠️ `package-manager-cache: false` IS RENDERED WITH IT. Bun does the installing here;
+   *   letting setup-node prime an npm cache costs time and caches nothing anyone reads.
+   */
+  readonly node?: number;
   /** Jobs beyond `check` and `workflows`. Each carries its own stated reason. */
   readonly extraJobs?: readonly ExtraJob[];
   /** Rendered files this repository keeps its own copy of, each with a reason. */
   readonly exceptions?: readonly RepoShapeException[];
 }
 
-const SENTENCE = 12;
-
-function requireNonEmpty(field: string, value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) throw new Error(`repo-shape: ${field} must not be blank`);
-  return trimmed;
-}
-
-function requireSentence(field: string, value: string): string {
-  const trimmed = value.trim();
-  // ⚠️ THE TYPE CANNOT CATCH `reason: '   '`. `'   '` is a non-empty literal, so `Stated`
-  //   lets it through and only this does not. Type and guard cover different halves.
-  if (trimmed.length < SENTENCE) {
-    throw new Error(`repo-shape: ${field} must be a sentence, got ${JSON.stringify(value)}`);
-  }
-  return trimmed;
-}
-
-function requireIsoDate(value: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new Error(`repo-shape: since must be YYYY-MM-DD, got ${JSON.stringify(value)}`);
-  }
-  return value;
-}
-
-function requireJobId(value: string): string {
-  // ⛔ The id becomes a YAML key and a `needs:` entry. Anything else renders a workflow
-  //   GitHub rejects at parse time, which reports as "workflow file issue" with no line.
-  if (!/^[a-z][a-z0-9_-]*$/.test(value)) {
-    throw new Error(
-      `repo-shape: job id must match /^[a-z][a-z0-9_-]*$/, got ${JSON.stringify(value)}`,
-    );
-  }
-  return value;
+/**
+ * The validated Node major this shape asks for, or `undefined` for a Bun-only prologue.
+ * ★ `RepoShape` is a plain object, so this is where `node:` is checked — at render, not
+ *   at declaration. A bad value fails the refresh rather than the job.
+ */
+export function nodeMajor(shape: RepoShape): number | undefined {
+  return shape.node === undefined ? undefined : requireMajor(shape.node);
 }
 
 /** `runs-on:` for a runner. */
