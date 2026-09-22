@@ -13,6 +13,7 @@
  *   the cache happens to hold.
  */
 import { readdirSync } from 'node:fs';
+import { unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { type VendorEndpoint, endpointsOf, keyOf, parseApidoc } from './apidoc.ts';
@@ -146,7 +147,18 @@ const main = async (): Promise<void> => {
     ),
   });
 
-  let stale = 0;
+  /**
+   * ⛔ A GENERATED FILE THE GENERATOR NO LONGER PRODUCES IS DELETED, NOT LEFT LYING. Changing how
+   *   areas are split renames files, and a leftover table is imported by nothing while reading
+   *   exactly like a table that is consulted — the same trap the generated index exists to avoid.
+   *   In `--check` it counts as stale, so CI says so rather than a reviewer noticing.
+   */
+  const produced = new Set(modules.map((module) => module.file));
+  const orphans = readdirSync(OUT_DIR).filter(
+    (name) => name.endsWith('.ts') && !produced.has(name),
+  );
+
+  let stale = orphans.length;
   for (const module of modules) {
     const path = join(OUT_DIR, module.file);
     const current = (await Bun.file(path).exists()) ? await Bun.file(path).text() : '';
@@ -156,12 +168,14 @@ const main = async (): Promise<void> => {
     }
     await Bun.write(path, module.text);
   }
+  if (!check) for (const name of orphans) await unlink(join(OUT_DIR, name));
   const count = Object.keys(merged).length;
   if (check) {
     console.log(
       `${count} endpoints, ${modules.length} files — ${stale === 0 ? 'current' : `${stale} STALE`}`,
     );
     if (stale > 0) {
+      if (orphans.length > 0) console.error(`orphaned: ${orphans.join(', ')}`);
       console.error('Refresh with: bun codegen/constraints.ts');
       process.exit(1);
     }

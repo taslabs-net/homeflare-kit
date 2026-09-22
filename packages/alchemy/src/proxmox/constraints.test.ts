@@ -69,11 +69,14 @@ describe('the v-r2-offsite failure, refused at plan instead of by the server', (
     // ⛔ THE ASSERTION THE INCIDENT IS ABOUT. A refusal after the POST is the server's own 400.
     expect(writes).toEqual([]);
     /**
-     * ⚠️ ONE CALL IS MADE, AND IT IS A GET. Measured 2026-09-22: Alchemy runs the provider's
-     *   `read` handler before `diff`, so the plan has already asked PBS whether the job exists by
-     *   the time the constraint is checked. Every call is a read; nothing is created or changed.
+     * ⚠️ EVERY CALL IS A READ, AND THERE ARE NOW TWO OF THEM. Measured 2026-09-22: Alchemy runs
+     *   the provider's `read` handler first, and `reconcile` reads again — the guard moved to
+     *   AFTER that second read the same day, because the read is the only thing that says whether
+     *   a create or an update is about to be made, and demanding the create form's required
+     *   parameters on an update refuses edits that were always legal (resource-guard.ts).
+     *   ⛔ THE COUNT IS NOT THE ASSERTION; THE METHOD IS. Nothing is created or changed.
      */
-    expect(calls.map((call) => call.method)).toEqual(['GET']);
+    expect(calls.map((call) => call.method)).toEqual(['GET', 'GET']);
   });
 
   test('128 characters is accepted and the create goes through', async () => {

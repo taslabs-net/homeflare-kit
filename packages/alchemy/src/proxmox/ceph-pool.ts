@@ -101,6 +101,11 @@ const spec: PveSpec<CephPoolProps, CephPoolAttributes> = {
   },
   collection,
   createForm: createBody,
+  /** The vendor rules both forms are checked against at plan time — resource-spec.ts. */
+  endpoint: {
+    create: 'pve:POST /nodes/{node}/ceph/pool',
+    update: 'pve:PUT /nodes/{node}/ceph/pool/{name}',
+  },
   /**
    * ⛔ DECLARING WHAT IS LIVE MUST PLAN noop, AND EVERY OMISSION HERE IS WHY. Out, each with its
    *   reason on the prop it belongs to: `pg_num` (the autoscaler rewrites it), `application` (the
@@ -152,6 +157,10 @@ export const ProxmoxCephPoolProvider = () =>
           const live = yield* ops.read(news);
           let upid: string | undefined;
           if (live === undefined) {
+            // ⛔ THE GUARD `ops.reconcile` WOULD HAVE RUN, RESTORED. This handler replaces it
+            //   wholesale, so without these two calls an ADOPTED pool — whose diff answer Alchemy
+            //   discards — would reach the cluster with nothing having checked its body.
+            yield* ops.guardCreate(news, true);
             yield* confirmAbsent(news, spec.collection(news), object(news));
             upid = yield* pve<string>(
               news.target,
@@ -170,6 +179,7 @@ export const ProxmoxCephPoolProvider = () =>
              */
             const form = formToSend(spec.matches, live, news, updateBody(news));
             if (form !== undefined) {
+              yield* ops.guardUpdate(news);
               upid = yield* pve<string>(news.target, 'provision', 'PUT', object(news), form);
             }
           }

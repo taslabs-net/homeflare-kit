@@ -69,7 +69,7 @@ import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import {
-  body,
+  createBody,
   readAttributes,
   same,
   sameComment,
@@ -199,8 +199,14 @@ export const ProxmoxNodeNetwork = Resource<ProxmoxNodeNetwork>('Proxmox.NodeNetw
 const handlers = pveHandlers<NodeNetworkProps, NodeNetworkAttributes>({
   attributes: readAttributes,
   collection: (props) => `nodes/${props.node}/network`,
-  /** ⚠️ No `delete` parameter on a POST — see the ⚠️ on `updateBody`. */
-  createForm: body,
+  /** ⚠️ No `delete` parameter on a POST — see the ⚠️ on `updateBody`. `iface` IS in the create
+   *   body though, and was missing until 2026-09-22 — the 🔴 on `createBody`. */
+  createForm: createBody,
+  /** The vendor rules both forms are checked against at plan time — resource-spec.ts. */
+  endpoint: {
+    create: 'pve:POST /nodes/{node}/network',
+    update: 'pve:PUT /nodes/{node}/network/{iface}',
+  },
   /**
    * ⛔ `cidr` IS THE ONLY FIELD COMPARED WHEN UNDECLARED, AND THAT ASYMMETRY IS THE POINT. Every
    *   other field here follows storage.ts: undeclared means unmanaged, so it is neither sent nor

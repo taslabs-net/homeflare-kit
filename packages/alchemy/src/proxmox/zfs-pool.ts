@@ -65,7 +65,7 @@ import {
   pveOperations,
 } from './resource.ts';
 import { text } from './values.ts';
-import { createForm, createPool, destroyPool } from './zfs-pool-write.ts';
+import { ZFS_POOL_ENDPOINT, createForm, createPool, destroyPool } from './zfs-pool-write.ts';
 
 /** PVE's layouts. ⚠️ Each has a minimum disk count PVE enforces, and `raid10` needs an even one. */
 export type ZfsRaidLevel =
@@ -213,6 +213,7 @@ const spec: PveSpec<ZfsPoolProps, ZfsPoolAttributes> = {
   },
   collection: (props) => `nodes/${props.node}/disks/zfs`,
   createForm,
+  endpoint: ZFS_POOL_ENDPOINT,
   /**
    * ⛔ IT ALWAYS ANSWERS TRUE, AND THAT IS THE POINT OF THIS FILE. A pool that is there under the
    *   declared name on the declared node IS the declaration, because there is nothing else the two

@@ -31,7 +31,7 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { UNSET, body, update } from './metric-server-form.ts';
+import { UNSET, createBody, update } from './metric-server-form.ts';
 import {
   type MetricServerOtelAttributes,
   type MetricServerOtelProps,
@@ -186,7 +186,16 @@ const handlers = pveHandlers<MetricServerProps, MetricServerAttributes>({
   /** ⛔ THE SAME STRING AS `path`, DELIBERATELY — see the ⛔ in the header. */
   collection: (props) => `cluster/metrics/server/${props.id}`,
   /** ⚠️ `type` IS REQUIRED ON CREATE; `id` IS NOT SENT, because the id is the path. */
-  createForm: (props) => ({ ...body(props), type: props.type }),
+  createForm: createBody,
+  /**
+   * The vendor rules both forms are checked against at plan time — resource-spec.ts.
+   * ⚠️ POST AND PUT ARE THE SAME PATH HERE, and they are still two different tables: only the
+   *   POST marks `type` required, and only the PUT accepts `delete` and `digest`.
+   */
+  endpoint: {
+    create: 'pve:POST /cluster/metrics/server/{id}',
+    update: 'pve:PUT /cluster/metrics/server/{id}',
+  },
   /**
    * ⛔ `id` and `type` are absent: one is the key the object was read by, the other is refused
    *   rather than updated. Everything type-specific is `matchesType`'s, above.

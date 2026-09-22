@@ -25,6 +25,8 @@
  */
 import * as Effect from 'effect/Effect';
 import { PveError, pve, pveWith } from './client.ts';
+import { guardForm } from './constraint-guard.ts';
+import type { EndpointKey } from './constraints.ts';
 import { type PveTarget, mint } from './credentials.ts';
 import { createForm } from './lxc-create-form.ts';
 import { type LxcChange, judge } from './lxc-judge.ts';
@@ -42,6 +44,26 @@ export class LxcRefusedError extends Error {
 export type LxcWhere = { readonly target: PveTarget; readonly node: string; readonly vmid: number };
 
 export const guestPath = (where: LxcWhere) => `nodes/${where.node}/lxc/${String(where.vmid)}`;
+
+/**
+ * The three vendor endpoints a guest is written through, as the generated tables key them.
+ *
+ * ⛔ DECLARED HERE RATHER THAN ON A SPEC BECAUSE `Proxmox.Lxc` HAS NO SPEC — lxc.ts writes all
+ *   five handlers by hand (a guest reads failures as failures, waits on tasks and grows disks
+ *   through a second endpoint), so it cannot inherit the shared guard from resource.ts. Without
+ *   these three it would be the largest write surface in the package with nothing checking the
+ *   body: `POST /nodes/{node}/lxc` alone carries 26 constrained parameters.
+ * ⚠️ THREE, NOT TWO. `resize` is a separate PVE endpoint with its own schema — `disk` against an
+ *   enum of `rootfs` and `mp0..mp255`, `size` against PVE's `+<n>` / `<n>` pattern — and it is
+ *   the one lxc-volume.ts drives.
+ * ⛔ `{vmid}` AND `{node}` ARE PATH SEGMENTS, NOT FORM KEYS, on the two PUTs. On the POST `vmid`
+ *   IS a form key and is required, which is why `createForm` sends it.
+ */
+const LXC_ENDPOINTS = {
+  create: 'pve:POST /nodes/{node}/lxc' as EndpointKey,
+  resize: 'pve:PUT /nodes/{node}/lxc/{vmid}/resize' as EndpointKey,
+  update: 'pve:PUT /nodes/{node}/lxc/{vmid}/config' as EndpointKey,
+};
 
 /** How long each task may run, in one-second polls. ⚠️ A cap, not an estimate. */
 const CREATE_POLLS = 180;
@@ -132,14 +154,25 @@ const task = (
 
 /** POST the create and wait for the template to unpack. ⛔ Refusals are the caller's to check. */
 export const createGuest = (props: LxcProps) =>
-  task(
-    props,
-    'POST',
-    `nodes/${props.node}/lxc`,
-    `create CT ${String(props.vmid)}`,
-    CREATE_POLLS,
-    createForm(props),
-  );
+  Effect.gen(function* () {
+    const form = createForm(props);
+    /**
+     * ⛔ BEFORE THE POST, AND WITH PRESENCE, BECAUSE THIS IS UNCONDITIONALLY A CREATE. Reached
+     *   only when the guest is absent (lxc.ts's reconcile), so the vendor's required parameters
+     *   really are about to go on the wire — `ostemplate` and `vmid`, both of which
+     *   `createRefusals` already insists on, plus every bound the schema carries and nothing here
+     *   knew: `cores` 1..8192, `memory` ≥ 16, `hostname` as a dns-name, `tags`, `startup`.
+     */
+    yield* guardForm(LXC_ENDPOINTS.create, form, true);
+    return yield* task(
+      props,
+      'POST',
+      `nodes/${props.node}/lxc`,
+      `create CT ${String(props.vmid)}`,
+      CREATE_POLLS,
+      form,
+    );
+  });
 
 /**
  * Apply a judged change: the config PUT first, then each resize.
@@ -158,16 +191,22 @@ export const updateGuest = (props: LxcProps, change: LxcChange, digest: string) 
         { ...change.put, ...(digest === '' ? {} : { digest }) },
         change.clear,
       );
+      /** ⚠️ NO PRESENCE: this form is partial by construction — it is `judge`'s answer. */
+      yield* guardForm(LXC_ENDPOINTS.update, form, false);
       yield* pve(props.target, 'provision', 'PUT', `${guestPath(props)}/config`, form);
     }
     for (const grow of change.resize) {
+      const grown = { disk: grow.disk, size: grow.size };
+      // ⛔ WITH PRESENCE: `disk` and `size` are both required and both always sent, so this is a
+      //   value check over PVE's own `+<n>` size pattern and its `rootfs|mp0..mp255` enum.
+      yield* guardForm(LXC_ENDPOINTS.resize, grown, true);
       yield* task(
         props,
         'PUT',
         `${guestPath(props)}/resize`,
         `grow ${grow.disk} of CT ${String(props.vmid)} to ${grow.size}`,
         TASK_POLLS,
-        { disk: grow.disk, size: grow.size },
+        grown,
       );
     }
   });

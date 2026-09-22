@@ -104,12 +104,19 @@ spec field — and tables exactly those. A key naming an endpoint the vendor doe
 on somebody's deploy. Adding a family therefore means: declare `endpoint`, rerun.
 
 `emit.ts` keeps `type`, `required` (from `optional`), `maxLength`, `minLength`, `minimum`,
-`maximum`, `enum`, `pattern`, `format` and `default`. ⛔ It drops **path parameters** —
+`maximum`, `enum`, `pattern`, `format` and `default`. ⚠️ Two PVE bounds arrive as JSON
+**strings** — `bwlimit`'s `minimum: "0"` and `count`'s `maximum: "16777216"` — and are
+parsed to numbers. That is a faithful reading of a value the vendor states, not an
+inference; a bound that is not a number at all is dropped rather than guessed at. ⛔ It drops **path parameters** —
 `{id}` is built into the URL by `spec.path(props)` and never appears as a form key, so
 leaving it in would make every create refuse itself for a missing required parameter.
 
-`render.ts` writes one file per vendor area (`pve-cluster.ts`, `pbs-config.ts`) and the
-merged `index.ts`, and throws if any of them would exceed the house cap of 250 lines.
+`render.ts` writes one file per vendor area (`pve-access.ts`, `pve-cluster-sdn.ts`,
+`pve-nodes-ceph.ts`, `pbs-config.ts`) and the merged `index.ts`, throws if any of them
+would exceed the house cap of 250 lines, and **deletes** a generated file it no longer
+produces — a leftover table is imported by nothing while reading exactly like one that is
+consulted. ⛔ `/cluster` and `/nodes/{node}` are split one level further down because they
+are routes rather than areas; the ⛔ on `areaOf` has PVE's own tree and the argument.
 
 ## Patterns: the trap worth reading before you touch this
 
@@ -186,10 +193,17 @@ element of a repeated key. `required` is never taken from `items`.
 
 ## Coverage today
 
-37 of the vendor's 402 POST/PUT endpoints are tabled — the ones this package writes to.
-PVE publishes 258 and PBS 144; the rest are untabled and therefore unchecked at plan
-time, which each generated header states in full. That is a gap, not a secret: it shrinks
-by one `endpoint` declaration and one regeneration.
+75 of the vendor's 402 POST/PUT endpoints are tabled — **every endpoint this package
+writes to**, across all 35 families, since 2026-09-22. PVE publishes 258 (59 tabled) and
+PBS 144 (16 tabled); the rest are untabled and therefore unchecked at plan time, which
+each generated header states in full. `tests/constraint-wiring.test.ts` derives that
+claim from the ownership ledger, so a family added without an `endpoint` declaration
+fails there rather than on somebody's deploy.
+
+⚠️ An **action** endpoint is wired although its table is empty. `PUT /cluster/sdn` and
+`PUT /nodes/{node}/network` take no body, so nothing is value-checked — but the key is
+resolved against the vendor schema at generation time, so a PVE that moves or withdraws
+an apply fails `bun run check` instead of failing an `ifreload -a` on three nodes.
 
 Two UniFi OpenAPI documents (Network 10.4.57, Site Manager 1.0.0) are recorded in the
 manifest as **available and consumed by nothing** — there is no UniFi provider family

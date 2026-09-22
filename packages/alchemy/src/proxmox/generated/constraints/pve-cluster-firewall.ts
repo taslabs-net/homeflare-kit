@@ -1,5 +1,5 @@
 /**
- * Generated pve-manager parameter constraints for `/pools` — DO NOT EDIT BY HAND.
+ * Generated pve-manager parameter constraints for `/cluster/firewall` — DO NOT EDIT BY HAND.
  *
  * Run: bun codegen/constraints.ts
  * Manifest entry: `pve-apidoc` — pve-manager 9.2.11/f6997e698c7933ea
@@ -20,12 +20,16 @@
  */
 import type { EndpointConstraints } from '../../constraints.ts';
 
-export const PVE_POOLS_CONSTRAINTS: Readonly<Record<string, EndpointConstraints>> = {
-  "pve:POST /pools": {
-    "poolid": {"format":"pve-poolid","required":true,"type":"string"},
+export const PVE_CLUSTER_FIREWALL_CONSTRAINTS: Readonly<Record<string, EndpointConstraints>> = {
+  "pve:POST /cluster/firewall/aliases": {
+    "cidr": {"format":"IPorCIDR","required":true,"type":"string"},
+    "comment": {"format":"pve-fw-comment-spec","type":"string"},
+    "name": {"maxLength":64,"minLength":2,"pattern":"^[A-Za-z][A-Za-z0-9\\-\\_]+\\n?$","patternSource":"[A-Za-z][A-Za-z0-9\\-\\_]+","required":true,"type":"string"},
   },
-  "pve:PUT /pools/{poolid}": {
-    "storage": {"format":"pve-storage-id-list","type":"string"},
-    "vms": {"format":"pve-vmid-list","type":"string"},
+  "pve:PUT /cluster/firewall/aliases/{name}": {
+    "cidr": {"format":"IPorCIDR","required":true,"type":"string"},
+    "comment": {"format":"pve-fw-comment-spec","type":"string"},
+    "digest": {"maxLength":64,"type":"string"},
+    "rename": {"maxLength":64,"minLength":2,"pattern":"^[A-Za-z][A-Za-z0-9\\-\\_]+\\n?$","patternSource":"[A-Za-z][A-Za-z0-9\\-\\_]+","type":"string"},
   },
 };

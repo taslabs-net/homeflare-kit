@@ -103,6 +103,11 @@ export const apiTokenSpec: PveSpec<ApiTokenProps, ApiTokenAttributes> = {
    */
   collection: (props) => `access/users/${props.userid}/token/${props.tokenid}`,
   createForm: shape,
+  /** The vendor rules both forms are checked against at plan time — resource-spec.ts. */
+  endpoint: {
+    create: 'pve:POST /access/users/{userid}/token/{tokenid}',
+    update: 'pve:PUT /access/users/{userid}/token/{tokenid}',
+  },
   /**
    * ⚠️ EXACTLY THE THREE FIELDS A PUT CAN PUT BACK, WHICH IS ALSO EXACTLY WHAT THE GET REPORTS.
    *   MEASURED, by replaying these two functions over the live GET bodies of all four token
