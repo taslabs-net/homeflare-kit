@@ -1,16 +1,20 @@
 /**
- * The vendor checksum file, parsed strictly — the shape every pin in catalog.ts was copied from.
+ * A vendor checksum file in `sha256sum` text mode, parsed strictly — the shape every pin in
+ * victoria.ts was copied from.
  *
  * ★ WHY PARSE A FILE THE PROVIDER NEVER FETCHES. The pins are the ground truth at apply; this is
- *   the ground truth when a pin is WRITTEN. catalog.test.ts feeds it the exact bytes of all four
- *   recorded files (fixtures/, each matching GitHub's digest of that asset) and requires the catalog
- *   to equal what it reads, so a pin typed by hand, a line missed, or a member added by the vendor
+ *   the ground truth when a pin is WRITTEN. victoria.test.ts feeds it the exact bytes of all four
+ *   recorded files (fixtures/victoria/, each matching GitHub's digest of that asset) and requires the
+ *   catalog to equal what it reads, so a pin typed by hand, a line missed, or a member added by the vendor
  *   is a failing test rather than a trusted typo.
  * ⛔ STRICT, BECAUSE THE FORMAT IS KNOWN. Measured 2026-09-22 on all four files: `sha256sum` text
  *   mode — `<64 lowercase hex><two spaces><name>` per line, LF endings, a trailing newline, the
  *   archive on line 1 and one `-prod` member per line after it. Anything else (a `*` binary-mode
  *   marker, CRLF, upper-case hex, a blank line, a repeated name) is a refusal: a file that no longer
  *   has this shape is a vendor change to read before any pin moves, not something to guess past.
+ * ⚠️ ONE FORMAT, MEASURED FOR ONE VENDOR. Other vendors list archives only (Prometheus, vector,
+ *   pyroscope, OpenBao — the estate census, 2026-09-22) or publish digests in JSON (grafana.com). A
+ *   catalog for one of them reads ITS format byte-exact first; nothing here is assumed to fit it.
  */
 
 const LINE = /^([0-9a-f]{64}) {2}([^\s/]+)$/;

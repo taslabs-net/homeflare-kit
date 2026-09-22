@@ -4,15 +4,17 @@
  *
  * ⛔ TEST-ONLY. No provider imports this file, it is not on the barrel, and nothing here reaches a
  *   network or a real filesystem. The catalog is synthetic because a test cannot build bytes that
- *   hash to the vendor's pins; catalog.test.ts holds the REAL catalog to the vendor's own files.
- * ★ THE URLS ARE THE REAL ONES, so a test that serves the `-enterprise` sibling next to the plain
- *   archive proves the provider asks for exactly one of them.
+ *   hash to the vendor's pins; victoria.test.ts holds the REAL data set to the vendor's own files.
+ * ★ THE ASSET NAMES AND URLS ARE THE REAL ONES, so a test that serves the `-enterprise` sibling
+ *   next to the plain archive proves the provider asks for exactly one of them.
  */
 import { fakeRunner } from '../launchd/fake-runner.ts';
 import { sha256Hex } from '../launchd/job-form.ts';
-import { type PinnedArchive, VICTORIA_CATALOG, type VictoriaCatalog } from './catalog.ts';
+import { type ReleaseBinaryProps, releaseUrl } from './binary-form.ts';
+import { type PinnedArchive, type ReleaseCatalog, catalogBinary } from './catalog.ts';
 import type { FetchArchive } from './download.ts';
 import { DownloadFailed } from './refused.ts';
+import { VICTORIA_RELEASES } from './victoria.ts';
 
 export type TarEntry = {
   readonly name: string;
@@ -82,14 +84,17 @@ export const BINARY = {
 };
 
 const present = (archive: PinnedArchive | undefined): PinnedArchive => {
-  if (archive === undefined) throw new Error('the catalog lost a pinned archive');
+  if (archive === undefined) throw new Error('the data set lost a pinned archive');
   return archive;
 };
-export const VMUTILS = present(VICTORIA_CATALOG.vmutils.versions['1.151.0']?.['darwin-arm64']);
-export const TRACES = present(
-  VICTORIA_CATALOG['victoria-traces'].versions['0.10.0']?.['darwin-arm64'],
-);
-export const ENTERPRISE_URL = VMUTILS.url.replace('.tar.gz', '-enterprise.tar.gz');
+const REAL = VICTORIA_RELEASES.packages;
+export const VMUTILS = present(REAL.vmutils?.versions['1.151.0']?.['darwin-arm64']);
+export const TRACES = present(REAL['victoria-traces']?.versions['0.10.0']?.['darwin-arm64']);
+export const urlOf = (archive: PinnedArchive): string =>
+  releaseUrl(archive.repo, archive.tag, archive.asset);
+export const VMUTILS_URL = urlOf(VMUTILS);
+export const TRACES_URL = urlOf(TRACES);
+export const ENTERPRISE_URL = VMUTILS_URL.replace('.tar.gz', '-enterprise.tar.gz');
 
 export const VMUTILS_ENTRIES: readonly TarEntry[] = [
   { bytes: BINARY.vmagent, name: 'vmagent-prod' },
@@ -97,7 +102,7 @@ export const VMUTILS_ENTRIES: readonly TarEntry[] = [
   { bytes: BINARY.vmauth, name: 'vmauth-prod' },
 ];
 
-/** Pin an archive the way catalog.ts pins a vendor one, from the bytes themselves. */
+/** Pin an archive the way victoria.ts pins a vendor one, from the bytes themselves. */
 export const pinned = (
   real: PinnedArchive,
   archive: Uint8Array,
@@ -109,28 +114,29 @@ export const pinned = (
   size: archive.length,
 });
 
-/** The real catalog with vmutils 1.151.0 and victoria-traces 0.10.0 re-pinned to synthetic bytes. */
+/** The real data set with vmutils 1.151.0 and victoria-traces 0.10.0 re-pinned to synthetic bytes. */
 export const syntheticRelease = (vmutilsEntries: readonly TarEntry[] = VMUTILS_ENTRIES) => {
   const vmutils = gzip(tarOf(vmutilsEntries));
   const traces = gzip(tarOf([{ bytes: BINARY['victoria-traces'], name: 'victoria-traces-prod' }]));
-  const memberBytes = Object.fromEntries(
-    vmutilsEntries.map((entry) => [entry.name, entry.bytes ?? new Uint8Array()]),
-  );
-  const catalog: VictoriaCatalog = {
-    ...VICTORIA_CATALOG,
-    'victoria-traces': {
-      ...VICTORIA_CATALOG['victoria-traces'],
-      versions: {
-        '0.10.0': {
-          'darwin-arm64': pinned(TRACES, traces, {
-            'victoria-traces-prod': BINARY['victoria-traces'],
-          }),
-        },
+  // ★ vmalert-prod is always pinned, as the vendor file lists it — so an archive built WITHOUT it
+  //   models "the checksum file names a member the archive does not hold".
+  const memberBytes = {
+    'vmalert-prod': BINARY.vmalert,
+    ...Object.fromEntries(vmutilsEntries.map((e) => [e.name, e.bytes ?? new Uint8Array()])),
+  };
+  const tracesPin = pinned(TRACES, traces, { 'victoria-traces-prod': BINARY['victoria-traces'] });
+  const catalog: ReleaseCatalog = {
+    ...VICTORIA_RELEASES,
+    packages: {
+      ...REAL,
+      'victoria-traces': {
+        binaries: { 'victoria-traces': 'victoria-traces-prod' },
+        versions: { '0.10.0': { 'darwin-arm64': tracesPin } },
       },
-    },
-    vmutils: {
-      ...VICTORIA_CATALOG.vmutils,
-      versions: { '1.151.0': { 'darwin-arm64': pinned(VMUTILS, vmutils, memberBytes) } },
+      vmutils: {
+        binaries: REAL.vmutils?.binaries ?? {},
+        versions: { '1.151.0': { 'darwin-arm64': pinned(VMUTILS, vmutils, memberBytes) } },
+      },
     },
   };
   return { catalog, traces, vmutils };
@@ -154,16 +160,25 @@ export const VMUTILS_DIR = `${ROOT}/vmutils-1.151.0`;
 export const TRACES_DIR = `${ROOT}/victoria-traces-0.10.0`;
 
 /** A host deploying as root, with the two versioned directories already declared. */
-export const victoriaHost = () =>
+export const releaseHost = () =>
   fakeRunner({ dirs: { [ROOT]: 0, [TRACES_DIR]: 0, [VMUTILS_DIR]: 0 }, euid: 0 });
 
-export const VMALERT = {
+export const VMALERT_REQUEST = {
   binary: 'vmalert',
-  directory: VMUTILS_DIR,
   package: 'vmutils',
   platform: 'darwin-arm64',
   version: '1.151.0',
 } as const;
+
+/** vmalert's props out of `catalog` (the synthetic one, normally), in its versioned directory. */
+export const vmalertProps = (
+  catalog: ReleaseCatalog,
+  more: Partial<ReleaseBinaryProps> = {},
+): ReleaseBinaryProps => ({
+  ...catalogBinary(catalog, VMALERT_REQUEST),
+  directory: VMUTILS_DIR,
+  ...more,
+});
 
 /** Every path on the fake host, sorted — equal before and after means nothing was left behind. */
 export const pathsOn = (fake: ReturnType<typeof fakeRunner>): string[] =>

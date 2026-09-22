@@ -3,7 +3,7 @@
  * lifecycle runs against fake-runner.ts in tests.
  *
  * ★ THE CONVERGENCE ITSELF IS file-converge.ts, shared with every resource that owns one whole file
- *   (Victoria.Binary is the second). What stays here is what makes a HOST FILE: text content, its
+ *   (Release.Binary is the second). What stays here is what makes a HOST FILE: text content, its
  *   validation (never a secret — host-file-form.ts), and the refusal wording `Host.File <path>: …`.
  * ⛔ SYMLINKS AND DIRECTORIES ARE REFUSED, NOT REPLACED — see file-converge.ts for why.
  */

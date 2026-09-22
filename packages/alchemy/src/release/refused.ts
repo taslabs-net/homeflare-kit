@@ -1,17 +1,17 @@
 /**
- * Victoria.Binary's failures as typed errors, so a caller can `catchTag` the one it expects — each
- * carrying the house refusal sentence (`Victoria.Binary <path>: …`) as its `message`.
+ * Release.Binary's failures as typed errors, so a caller can `catchTag` the one it expects — each
+ * carrying the house refusal sentence (`Release.Binary <path>: …`) as its `message`.
  *
  * ★ TYPED BECAUSE ALCHEMY UPSTREAM REQUIRES IT (its AGENTS.md at v2.0.0-beta.79: Data.TaggedError,
  *   `catchTag`, never a cast on `_tag`), and a provider written to be contributed should not need
  *   its error channel rewritten to get there. The MESSAGE stays the kit's wording, so a deploy log
  *   reads the same as every other house family's.
- * ★ THE TAGS ARE GENERIC ON PURPOSE. Downloading a pinned archive, refusing an unsafe one and
- *   comparing digests have nothing Victoria-specific in them (docs/victoria-upstream.md).
+ * ★ THE TAGS NAME NO VENDOR. Downloading a pinned archive, refusing an unsafe one and comparing
+ *   digests are the same for every catalog (docs/release-binary-upstream.md).
  */
 import * as Data from 'effect/Data';
 
-/** The declaration itself: an unknown version, a bad path or mode, a pin that disagrees. */
+/** The declaration itself: a version no catalog pins, a malformed pin, a bad path or mode. */
 export class BinaryRefused extends Data.TaggedError('BinaryRefused')<{
   readonly message: string;
 }> {}

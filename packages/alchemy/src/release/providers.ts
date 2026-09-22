@@ -1,9 +1,9 @@
 /**
- * The Victoria provider with ONE HostRunner and its own HTTP client, as a single layer for a host
- * stack:
+ * The release-binary provider with ONE HostRunner and its own HTTP client, as a single layer for a
+ * host stack:
  *
  *     const runner = localRunner();
- *     Layer.mergeAll(launchdProviders(runner), victoriaProviders(runner), …the stack's others)
+ *     Layer.mergeAll(launchdProviders(runner), releaseProviders(runner), …the stack's others)
  *
  * ★ PASS THE SAME RUNNER THE JOBS USE, so the binary and the daemon that runs it are written by one
  *   identity on one host — a stack cannot install as one user and bootstrap as another by accident.
@@ -16,9 +16,9 @@
 import * as Layer from 'effect/Layer';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import { type HostRunner, hostRunnerLayer } from '../launchd/runner.ts';
-import { VictoriaBinaryProvider } from './binary.ts';
+import { ReleaseBinaryProvider } from './binary.ts';
 
-export const victoriaProviders = (runner: HostRunner) =>
-  VictoriaBinaryProvider().pipe(
+export const releaseProviders = (runner: HostRunner) =>
+  ReleaseBinaryProvider().pipe(
     Layer.provide(Layer.mergeAll(hostRunnerLayer(runner), FetchHttpClient.layer)),
   );

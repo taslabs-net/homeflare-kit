@@ -1,6 +1,6 @@
 /**
  * The one path a declared file's bytes take onto a host, shared by every resource that owns ONE
- * whole file: `Host.File` (text it was handed) and `Victoria.Binary` (bytes it downloaded and
+ * whole file: `Host.File` (text it was handed) and `Release.Binary` (bytes it downloaded and
  * verified). Read, diff, converge and delete, as plain async functions over a HostRunner.
  *
  * ★ EXTRACTED FROM host-file-lifecycle.ts, NOT COPIED (2026-09-22). The ownership rules below — a
