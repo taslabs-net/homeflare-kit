@@ -162,6 +162,13 @@ with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:20
 PVE and PBS objects over the PVE API, `ProxmoxLxc` for containers, and the provisioning baseline
 every cluster needs first. What it never does to a guest, and why: [docs/proxmox.md](./docs/proxmox.md).
 
+## GitHub — `@homeflare/alchemy/github`
+
+`declareRepoPolicy` declares one repository's merge policy and its default-branch ruleset in a
+single call: squash-only, auto-merge, head branches deleted, no deletion or force pushes, the
+checks you name required. ⛔ Auto-merge with nothing required merges **immediately**, and Alchemy's
+`Ruleset` creates a duplicate rather than adopting one: [docs/repo-policy.md](./docs/repo-policy.md).
+
 ## Adopt verifier — `hf-adopt-verify` / `@homeflare/alchemy/verify`
 
 ⛔ A plan prints `adopted` for a match and for a drift alike. Before a gated deploy run

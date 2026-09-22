@@ -36,6 +36,10 @@
       "types": "./dist/forgejo/index.d.ts",
       "default": "./dist/forgejo/index.js"
     },
+    "./github": {
+      "types": "./dist/github/index.d.ts",
+      "default": "./dist/github/index.js"
+    },
     "./openbao": {
       "types": "./dist/openbao/index.d.ts",
       "default": "./dist/openbao/index.js"
@@ -67,7 +71,7 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/cloudflare/index.ts ./src/forgejo/index.ts ./src/openbao/index.ts ./src/talos/index.ts ./src/proxmox/index.ts ./src/launchd/index.ts ./src/caddy/index.ts ./src/verify/index.ts ./src/verify/cli.ts --root ./src --outdir dist --target node --format esm --packages external --sourcemap=linked",
+    "build:js": "bun build ./src/index.ts ./src/cloudflare/index.ts ./src/forgejo/index.ts ./src/github/index.ts ./src/openbao/index.ts ./src/talos/index.ts ./src/proxmox/index.ts ./src/launchd/index.ts ./src/caddy/index.ts ./src/verify/index.ts ./src/verify/cli.ts --root ./src --outdir dist --target node --format esm --packages external --sourcemap=linked",
     "build:types": "tsc --project tsconfig.build.json",
     "clean": "rm -rf dist",
     "types": "tsc --noEmit",

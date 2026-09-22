@@ -101,13 +101,22 @@ not branch protection, and the comment there says only "the `main` ruleset alrea
 it." Two things back that up, verified by reading `alchemy@2.0.0-beta.77`'s own source
 (`node_modules/alchemy/src/github/`) on 2026-09-16, not by trusting the comment:
 
-⛔ **There is no ruleset resource to declare.** `alchemy/GitHub` exports `Repository`,
-`Environment`, `Secret`, `Secrets`, `Variable`, `Variables`, `Webhook`, `Comment`, and
-auth/credential plumbing — nothing that reads, creates, or diffs a repository ruleset or
-classic branch protection. Wanting to declare it does not make it declarable; adding it
-would mean forking or upstreaming a new Alchemy resource, not writing a few lines here.
+⚠️ **"There is no ruleset resource to declare" WAS TRUE AT beta.77 AND IS NOT NOW.**
+`alchemy@2.0.0-beta.79` ships `GitHub.Ruleset`, and `@homeflare/alchemy/github` wraps it
+(`packages/alchemy/docs/repo-policy.md`). The first half of the original argument is
+therefore retired; the second half below is what still holds this repo's ruleset out of
+`alchemy.run.ts`.
 
-★ **Even if it existed, this would stay imperative.** A ruleset is a security control
+⛔ **AND IT CANNOT ADOPT THIS ONE ANYWAY.** Read from beta.79's own source on 2026-09-22:
+`Ruleset`'s `read` returns `undefined` without prior state, and its `reconcile` finds the
+live ruleset only by an id it already holds — with none it calls `createRepoRuleset`
+outright. GitHub allows two rulesets with one name, so declaring `main` here would not
+adopt ruleset 23471358; it would quietly add a second one beside it, and
+`apply-main-ruleset.ts` would then refuse to run at all (the duplicate-name refusal
+above). Adopting would mean deleting the live ruleset first — on the repository it
+protects.
+
+★ **Even with a resource that could, this would stay imperative.** A ruleset is a security control
 whose whole point is that it constrains what CAN happen to the branch a deploy runs from
 — including, transitively, an Alchemy deploy's own commits. Folding it into the same
 stack that `alchemy.run.ts` deploys makes "loosen the ruleset" a one-line diff that ships

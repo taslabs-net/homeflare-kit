@@ -6,6 +6,7 @@
  *
  *     import { R2BucketLock } from '@homeflare/alchemy/cloudflare';
  *     import { BranchProtection } from '@homeflare/alchemy/forgejo';
+ *     import { declareRepoPolicy } from '@homeflare/alchemy/github';
  *     import { BaoMount } from '@homeflare/alchemy/openbao';
  *     import { TalosCluster } from '@homeflare/alchemy/talos';
  *     import { ProxmoxAcl } from '@homeflare/alchemy/proxmox';
