@@ -13,9 +13,14 @@
  * ⛔ IT INSTALLS; IT NEVER STARTS. No launchctl, no systemctl, no restart: the job that runs the
  *   binary is the stack's own `LaunchdJob`, which puts this resource's `path` in its argv so the
  *   engine installs first and restarts the job when the path moves.
- * ⚠️ NOTHING IS ADOPTED WITHOUT `--adopt`: a file already at the path reads as `Unowned` — even one
- *   holding exactly the pinned bytes (docs/ownership.md). With `--adopt`, such a file is recognised
- *   by its digest and taken over without a download.
+ * ⚠️ NOTHING IS ADOPTED WITHOUT `--adopt` AT PLAN: the probe reads a file already at the path as
+ *   `Unowned` — even one holding exactly the pinned bytes (docs/ownership.md). With `--adopt`, such
+ *   a file is recognised by its digest and taken over without a download.
+ * ⚠️ AT APPLY, WHERE THE PLAN COULD NOT ASK (a prop was an Output, so Alchemy skipped the probe), a
+ *   file with the pinned bytes, mode and owner is accepted as the resume of an interrupted install
+ *   — Host.File's rule, shared in file-converge.ts. Anything else there is refused without
+ *   `--adopt`. A deliberately identical file placed by another owner is therefore indistinguishable
+ *   from our own half-finished create; declare each path once.
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';

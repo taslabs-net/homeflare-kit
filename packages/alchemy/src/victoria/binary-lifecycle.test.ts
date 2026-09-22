@@ -108,6 +108,13 @@ describe('installing', () => {
     expect(s.transport.requests).toEqual([]);
   });
 
+  test('⚠️ unprobed, the pinned bytes at the path are a resumed install: kept, not fetched', async () => {
+    const s = setup();
+    s.fake.files.set(PATH, { bytes: BINARY.vmalert, gid: 0, kind: 'file', mode: 0o755, uid: 0 });
+    expect((await s.install()).sha256).toBe(sha256Hex(BINARY.vmalert));
+    expect([s.transport.requests, writes(s.fake)]).toEqual([[], []]);
+  });
+
   test('a new version is a new path: written, then the old one removed', async () => {
     const s = setup();
     const old = { ...(await s.install()), path: '/opt/example/bin/vmutils-1.150.0/vmalert' };
