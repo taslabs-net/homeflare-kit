@@ -92,6 +92,7 @@ try {
     join(scratch, 'consumer.ts'),
     `import { MeshNode, MeshNodeError, MeshNodeProvider, R2BucketLock, astroWebsite, fetchMeshNodeToken, providers, viteWebsite } from '@homeflare/alchemy/cloudflare';
 import { ForgejoOrgLabel } from '@homeflare/alchemy/forgejo';
+import { declareRepoPolicy, repoPolicy } from '@homeflare/alchemy/github';
 import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles } from '@homeflare/alchemy/openbao';
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { PROVISION_PRIVILEGES, PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, ProxmoxNotificationMatcher, alertmanagerAlertBody, declareProvisionBaseline, provisionBootstrap } from '@homeflare/alchemy/proxmox';
@@ -101,7 +102,7 @@ import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/
 
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
-  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, declareProvisionBaseline,
+  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, declareRepoPolicy, repoPolicy, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, declareProvisionBaseline,
   PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxNotificationMatcher,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
   parseVerifyArgs, verifySession, verifyStack,
@@ -159,7 +160,25 @@ if (parseVerifyArgs(['--stage', 'live'], {}).kind !== 'run') {
   throw new Error('parseVerifyArgs from dist did not parse');
 }
 
-console.log('all eight subpaths import and resolve');
+// ★ The repository policy through the PUBLISHED file: pure props, so building them proves
+//   the form reached dist, and its refusal proves the auto-merge guard did too. It declares
+//   nothing and reaches no GitHub — the resources only exist inside declareRepoPolicy.
+const policy = repoPolicy({ owner: 'o', repository: 'r', checks: ['b', 'a', 'a'] });
+if (policy.repository.allowMergeCommit !== false || policy.ruleset.rules?.nonFastForward !== true) {
+  throw new Error('repoPolicy from dist lost the house policy');
+}
+if (JSON.stringify(policy.ruleset.rules?.requiredStatusChecks?.checks) !== '[{"context":"a"},{"context":"b"}]') {
+  throw new Error('repoPolicy from dist did not sort and de-duplicate its checks');
+}
+let merged = false;
+try {
+  repoPolicy({ owner: 'o', repository: 'r', checks: [] });
+} catch {
+  merged = true;
+}
+if (!merged) throw new Error('repoPolicy from dist allowed auto-merge with no required check');
+
+console.log('all nine subpaths import and resolve');
 `,
   );
 
