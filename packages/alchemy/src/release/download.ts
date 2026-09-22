@@ -3,7 +3,7 @@
  * the pinned size, into memory.
  *
  * ★ `HttpClient`, THE HOUSE TRANSPORT (openbao/bao-http.ts, decided 2026-09-14) and Alchemy's own:
- *   a typed error channel, interruption, and a client a test swaps for a fake. victoriaProviders()
+ *   a typed error channel, interruption, and a client a test swaps for a fake. releaseProviders()
  *   provides `FetchHttpClient.layer` itself, so a host stack that has no HTTP layer yet (the Mac
  *   stack's has none) cannot forget it. ⚠️ fetch follows GitHub's 302 to its asset CDN (measured
  *   2026-09-22 with HEAD: a signed, expiring URL), so the status judged here is the CDN's.

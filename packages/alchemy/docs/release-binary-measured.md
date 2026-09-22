@@ -1,10 +1,11 @@
-# Victoria binaries — measured, and the limits
+# Release binaries — measured, and the limits
 
 Status: active
 Verified: 2026-09-22
 
-What [victoria.md](./victoria.md) rests on, how each fact was read, and what is
-still reasoned rather than measured. Host class: the Mac mini the stack is for
+What [release-binary.md](./release-binary.md) rests on, how each fact was read,
+and what is still reasoned rather than measured. Every vendor fact here is
+VictoriaMetrics': the only data set so far. Host class: the Mac mini the stack is for
 (macOS 27.2, arm64), bun 1.4.0. No binary was executed for any of this.
 
 ## The vendor side (read-only, `gh api` and `curl`)
@@ -19,7 +20,7 @@ still reasoned rather than measured. Host class: the Mac mini the stack is for
 - **Asset names are exact**, and `-cluster`, `-enterprise`,
   `-enterprise-cluster` (and `vlutils`) archives sit beside them with every
   prefix in common — twelve siblings in the darwin-arm64 listing alone. The
-  listing is committed as `src/victoria/fixtures/darwin-arm64-assets.txt`.
+  listing is committed as `src/release/fixtures/victoria/darwin-arm64-assets.txt`.
 - **Each checksum file hashes both layers**: line 1 the archive, then one line
   per `-prod` member, in `sha256sum` text mode (`<hex>  <name>`, LF, trailing
   newline). For all four, GitHub's asset `digest` equals line 1, and GitHub's
@@ -35,11 +36,18 @@ still reasoned rather than measured. Host class: the Mac mini the stack is for
 
 ## The provider against the real archives
 
-The provider, through `victoriaProviders(localRunner())`, installed all five
-binaries the stack needs into a scratch directory (never `/opt`), 2026-09-22:
+The provider, as `Victoria.Binary` through `victoriaProviders(localRunner())`,
+installed all five binaries the stack needs into a scratch directory (never
+`/opt`), 2026-09-22. ⚠️ **That was the code before it was generalised into
+`Release.Binary`, and the generalised resource has NOT been re-run against the
+real archives** (a download needs the operator's go-ahead). What carried over
+unchanged: `download.ts`, `tar.ts`, the two checks in `archive.ts` and the write
+through `file-converge.ts`. What changed: where the pins come from (props,
+filled by `catalogBinary()`) and the URL, now composed from repo, tag and asset
+and held equal to the old whole URLs by `victoria.test.ts`.
 
 - **Every digest verified**, both layers, and every installed file's SHA-256 is
-  its catalog pin. One run took 1.7–5.9 s on the mini's link.
+  its pin. One run took 1.7–5.9 s on the mini's link.
 - **One download for vmagent + vmalert** installed concurrently: `fetch` was
   called once for the shared vmutils archive (counted by wrapping `fetch`).
 - **`codesign -v` is valid** on all five as written: the vendor binaries are
@@ -61,6 +69,29 @@ binaries the stack needs into a scratch directory (never `/opt`), 2026-09-22:
 - **Under node** (v26.7.0), the bundled extractor reads a gzipped tar the same
   way (`DecompressionStream` is the web standard in both runtimes).
 
+## Through Alchemy's own engine (fakes, not a host)
+
+`src/release/plan.test.ts` runs alchemy@2.0.0-beta.79's Plan and Apply over
+in-memory state, with `HostDirectory` declared in front of the binary, a fake
+host that models `mkdir`/`rmdir`, and a fake HTTP server:
+
+- **A first deploy** runs `mkdir`, one `GET`, one write, in that order: the
+  `directory: dir.path` Output orders them.
+- **A version bump** (`HostDirectory('vmutils-<version>')`, `ReleaseBinary('vmalert')`)
+  plans `replace` / `create` / `delete` and runs: mkdir new, GET new, write new,
+  **then** remove old, **then** rmdir old. That was reasoned from `Apply.ts`
+  before; it is measured now, on the engine, not on a host.
+- **A version outside the data set** fails in the stack program: zero requests,
+  zero host calls.
+- **A new pin in the same directory** fails at plan: the directory already
+  exists, so its path is resolved when `diff` runs.
+- 🔴 **The same bytes re-pinned while the directory is being updated** (its
+  path unresolved at plan): with `diff` answering `replace`, the deploy
+  SUCCEEDED and the binary was gone. The new generation accepted the identical
+  file as its own, and Phase 2 deleted the old generation at the same path.
+  `diff` now answers `update` there, and reconcile's in-place guard refuses it
+  with the binary kept (`plan.test.ts` pins the refusal).
+
 ## Reasoned, not measured
 
 - ⚠️ **REASONED NOT MEASURED: a vendor binary runs under launchd from the
@@ -77,19 +108,15 @@ binaries the stack needs into a scratch directory (never `/opt`), 2026-09-22:
   pre-create the directory. Fixing it is a sudo-seam change with its own review.
 - ⚠️ **REASONED NOT MEASURED: `HostDirectory`'s argv (`mkdir -m`, `chmod`,
   `chown`, `rmdir`) behaves the same on macOS** — its header says so.
-- ⚠️ **REASONED NOT MEASURED: the version bump order.** Alchemy's replace is
-  create-first with old generations collected in a later phase (Apply.ts, read
-  not run), so a job whose argv holds `binary.path` restarts on the new binary
-  before the old file goes. A running daemon keeps its unlinked inode either way.
 - ⚠️ **REASONED NOT MEASURED: the process-memory panels.** The vendor darwin
   builds are `CGO_ENABLED=0` (their Makefile), and VictoriaMetrics' metrics
   library reads darwin RSS only with cgo — the reason the house Nix module
   builds with cgo. Expect `process_resident_memory_bytes` to go missing after
   the swap until someone decides what replaces it. A consumer decision, not
   this provider's.
-- ⚠️ **The platform is not checked against the host.** `darwin-arm64` on a
-  Linux host installs a binary that will not start; the job's first launch is
-  where that shows.
+- ⚠️ **The platform is not checked against the host.** A `darwin-arm64` pin on
+  a Linux host installs a binary that will not start; the job's first launch is
+  where that shows. The platform is the data set's key, not a prop.
 - ⚠️ **A stamped vendor build prints `-version` to stderr**, not stdout
   (`lib/buildinfo`, read). Identity here is the SHA-256 alone; if a check ever
   runs `-version`, read stderr, and say which build (Nix or vendor) it was.

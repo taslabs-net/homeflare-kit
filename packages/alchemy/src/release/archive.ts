@@ -17,8 +17,8 @@
  *   behind; the bytes reach a host only through HostRunner.writeFileAtomic (file-converge.ts).
  */
 import { sha256Hex } from '../launchd/job-form.ts';
+import type { PinnedDownload } from './binary-form.ts';
 import { ArchiveRefused, ChecksumMismatch } from './refused.ts';
-import type { ResolvedRelease } from './release.ts';
 import { type TarContents, tarReader } from './tar.ts';
 
 /** How much gzip is handed to the inflater at a time. */
@@ -75,7 +75,7 @@ const mismatch = (subject: string, expected: string, actual: string): ChecksumMi
  */
 export const verifiedMember = async (
   archive: Uint8Array,
-  release: ResolvedRelease,
+  release: PinnedDownload,
 ): Promise<Uint8Array> => {
   const archiveSha = sha256Hex(archive);
   if (archiveSha !== release.sha256) throw mismatch(release.url, release.sha256, archiveSha);

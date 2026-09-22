@@ -4,7 +4,7 @@
  * as one `install -S` of one staged file, and no failure — before the write or during it — leaves a
  * staged file behind.
  *
- * ★ WHY THIS IS THE STAGING TEST. Victoria.Binary stages nothing itself: the archive and the member
+ * ★ WHY THIS IS THE STAGING TEST. Release.Binary stages nothing itself: the archive and the member
  *   live in memory (archive.ts). The only staged file in an install is the runner's — local-runner's
  *   same-directory temp file (local-runner.test.ts: "leaves no temp file behind") or, here,
  *   sudoRunner's 0600 file in a 0700 directory.
@@ -12,34 +12,43 @@
 import { describe, expect, test } from 'bun:test';
 import { fakeSudoHost } from '../launchd/fake-sudo.ts';
 import { INSTALL } from '../launchd/sudo-allowlist.ts';
+import type { ReleaseBinaryProps } from './binary-form.ts';
 import { reconcileBinary } from './binary-lifecycle.ts';
 import {
   BINARY,
-  VMALERT,
-  VMUTILS,
+  type TarEntry,
   VMUTILS_ENTRIES,
+  VMUTILS_URL,
   bytesOf,
   fakeTransport,
   gzip,
   syntheticRelease,
   tarOf,
+  vmalertProps,
 } from './fake-release.ts';
-import { ChecksumMismatch } from './refused.ts';
 
 const DIR = '/opt/example/app/vmutils-1.151.0';
 const PATH = `${DIR}/vmalert`;
-const DECLARED = { ...VMALERT, directory: DIR, group: 0, owner: 0 } as never;
 
-const setup = (served?: Uint8Array) => {
-  const { catalog, vmutils } = syntheticRelease();
+type Setup = {
+  /** What the transport serves at the vmutils URL; undefined serves nothing (a 404). */
+  readonly served?: (release: ReturnType<typeof syntheticRelease>) => Uint8Array | undefined;
+  readonly entries?: readonly TarEntry[];
+  readonly declare?: Partial<ReleaseBinaryProps>;
+};
+
+const setup = ({ declare = {}, entries, served = (r) => r.vmutils }: Setup = {}) => {
+  const release = syntheticRelease(entries);
   const host = fakeSudoHost();
   host.fake.dirs.set(DIR, 0);
-  const transport = fakeTransport({ [VMUTILS.url]: served ?? vmutils });
-  const install = () => reconcileBinary(host.runner, transport.fetch, DECLARED, { catalog });
+  const bytes = served(release);
+  const transport = fakeTransport(bytes === undefined ? {} : { [VMUTILS_URL]: bytes });
+  const props = vmalertProps(release.catalog, { directory: DIR, group: 0, owner: 0, ...declare });
+  const install = () => reconcileBinary(host.runner, transport.fetch, props);
   return { host, install, transport };
 };
 
-describe('Victoria.Binary through sudoRunner', () => {
+describe('Release.Binary through sudoRunner', () => {
   test('one staged file, one exact install, and the staged file removed', async () => {
     const { host, install } = setup();
     const attrs = await install();
@@ -56,15 +65,28 @@ describe('Victoria.Binary through sudoRunner', () => {
     const { host, install } = setup();
     host.state.installFailure = { exitCode: 71, stderr: 'install: disk full', stdout: '' };
     await expect(install()).rejects.toThrow('disk full');
+    expect(host.state.stagedCount).toBe(1);
     expect(host.staged.size).toBe(0);
     expect(host.fake.files.has(PATH)).toBe(false);
   });
 
-  test('a refused archive stages nothing at all, and sudo is never asked', async () => {
-    const tampered = gzip(tarOf(VMUTILS_ENTRIES.map((e) => ({ ...e, bytes: bytesOf('evil') }))));
-    const { host, install } = setup(tampered);
-    await expect(install()).rejects.toBeInstanceOf(ChecksumMismatch);
+  // ⛔ EVERY failure before the write: nothing is staged at all, sudo is never asked, no binary.
+  const tampered = () =>
+    gzip(tarOf(VMUTILS_ENTRIES.map((e) => ({ ...e, bytes: bytesOf('evil') }))));
+  test.each<[string, Setup]>([
+    ['a wrong archive hash', { served: tampered }],
+    ['a wrong binary hash', { declare: { sha256: 'f'.repeat(64) } }],
+    ['a tar-slip entry', { entries: [...VMUTILS_ENTRIES, { bytes: bytesOf('x'), name: '../x' }] }],
+    ['the member as a symlink', { entries: [{ name: 'vmalert-prod', type: '2' }] }],
+    ['the member missing', { entries: [{ bytes: BINARY.vmagent, name: 'vmagent-prod' }] }],
+    ['a failed download', { served: () => undefined }],
+    ['a malformed pin', { declare: { sha256: 'not-a-digest' } }],
+    ['an unwritable mode', { declare: { mode: 0o777 } }],
+  ])('%s stages nothing, asks sudo nothing, writes nothing', async (_, how) => {
+    const { host, install } = setup(how);
+    await expect(install()).rejects.toThrow();
     expect(host.state.stagedCount).toBe(0);
+    expect(host.staged.size).toBe(0);
     expect(host.sudoCalls).toEqual([]);
     expect(host.fake.files.has(PATH)).toBe(false);
   });
