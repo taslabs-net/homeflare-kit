@@ -24,13 +24,12 @@ PLAN-TIME REFUSAL, because neither order is safe: writing the whole file first d
 owner's bytes before anything can be undone, and removing the block first destroys our own claim and
 then refuses. Destroy the resource and declare a new one.
 
-🔴 **A `Systemd.Unit` RENAME REFUSED AFTER THE OLD UNIT WAS ALREADY GONE.** `diffUnit` returned
-`{ action: 'replace', deleteFirst: true }` after validation and a write-permission check alone, and
-Alchemy deletes the old unit — stop, disable, remove the file — BEFORE reconciling the new one. A
-rename onto a masked name, or onto a unit file belonging to something else, therefore took the
-service down and only then refused. The masked check, the foreign-unit-file check and the runner's
-`checkWrite` now run in the plan, read-only, exactly as the launchd family's `assertReplaceable`
-already did. ⛔ This forbids nothing that used to work: a fresh replace's new generation is never
-adoptable, so the identical refusal was always going to fire — just later, and with nothing running.
-The name-only half of the check also runs on the rename that `diffHandler` spots while `content` is
-still an Output.
+🔴 **A `Systemd.Unit` RENAME WHOSE `content` WAS STILL AN OUTPUT WAS NOT CHECKED AT ALL.** The
+resolved rename is checked in the plan since the systemd preflight; the branch `diffHandler` takes
+while `content` is unresolved — exactly the deploy that templates a rendered config's digest into
+the unit — still returned `{ action: 'replace', deleteFirst: true }` with no check, and Alchemy
+deletes the old unit BEFORE reconciling the new one. A rename onto a masked name therefore took the
+service down and only then refused. The half of the check that needs only the new name — the old
+unit deletable, the new one writable and not masked — now runs there too. ⛔ This forbids nothing
+that used to work: the identical refusal was always going to fire in reconcile, just later and with
+nothing running.

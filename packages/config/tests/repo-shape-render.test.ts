@@ -173,3 +173,33 @@ describe('an extra job carries its reason into the file', () => {
     ).toThrow(/job id/);
   });
 });
+
+describe('a step may carry an `if:` condition', () => {
+  const shape: RepoShape = {
+    ...KIT,
+    extraJobs: [
+      extraJob({
+        id: 'package',
+        name: 'consumer smoke test',
+        reason: 'packs the real tarball and uses it from outside, which nothing else does',
+        steps: [
+          { run: 'bun run smoke' },
+          { if: 'always()', name: 'Job summary', run: 'bun run summary' },
+        ],
+      }),
+    ],
+  };
+
+  test('the condition survives a parse rather than just a substring match', () => {
+    const steps = (jobs(shape)['package'] as unknown as { steps: { if?: string }[] }).steps;
+    // ⛔ THE QUOTING IS THE POINT. `always()` is not a YAML plain scalar, so the emitter
+    //   quotes it; parsing back proves it reaches GitHub as the string `always()` and
+    //   not as something the reader re-interpreted.
+    expect(steps.at(-1)?.if).toBe('always()');
+  });
+
+  test('a step without one renders no `if:` key at all', () => {
+    const steps = (jobs(shape)['package'] as unknown as { steps: Record<string, unknown>[] }).steps;
+    expect(steps.some((step) => 'if' in step && step['name'] !== 'Job summary')).toBe(false);
+  });
+});

@@ -1,5 +1,20 @@
 # @homeflare/alchemy
 
+## 0.19.1
+
+### Patch Changes
+
+- [#128](https://github.com/taslabs-net/homeflare-kit/pull/128) [`ba55148`](https://github.com/taslabs-net/homeflare-kit/commit/ba5514820e32f9d546f1a5eb0f92c7f156f2a978) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Estate topology out of the constraint proofs. PR [#118](https://github.com/taslabs-net/homeflare-kit/issues/118)'s create-form proofs used the real
+  declarations verbatim, which put a metrics hostname, a cluster's `api-path-prefix` and three Ceph
+  pool names into `src` — and `src` ships in the npm tarball of a public repository, so they would
+  have stayed in the git history forever. `lxc-harness.ts` states the rule and these tests did not
+  follow it: a production-SHAPED declaration with placeholder values, because the proof is about
+  which keys the create form sends and which bounds they face, never about the strings.
+
+  No behaviour changes; the same forms are checked against the same tables.
+
+- [#136](https://github.com/taslabs-net/homeflare-kit/pull/136) [`64d4c36`](https://github.com/taslabs-net/homeflare-kit/commit/64d4c36091054fa05b716f1d4029c1feea955289) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Check a systemd rename at plan time. A unit's name or directory change is a delete-first replace, and Alchemy deletes the old unit before reconciling the new one, so a masked name, a unit file someone else owns, or a runner that will not write the new path used to be noticed only after the old unit was already stopped. Those checks now run while planning, and again at apply when the new name was still an Output and the diff could not see the rename. A file byte-identical to this declaration's render stays exempt: it is a deploy that died between write and reload.
+
 ## 0.19.0
 
 ### Minor Changes

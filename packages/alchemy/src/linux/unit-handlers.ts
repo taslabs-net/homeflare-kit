@@ -16,13 +16,8 @@ import type { HostRunner } from '../launchd/runner.ts';
 import { adoptsAtApply } from '../ownership/adopt.ts';
 import { noteUnfinished } from '../ownership/resume.ts';
 import type { SystemdUnitAttributes, SystemdUnitProps } from './unit-form.ts';
-import {
-  assertRenameTarget,
-  deleteUnit,
-  diffUnit,
-  readUnit,
-  reconcileUnit,
-} from './unit-lifecycle.ts';
+import { deleteUnit, diffUnit, readUnit, reconcileUnit } from './unit-lifecycle.ts';
+import { assertRenameTarget } from './unit-preflight.ts';
 
 export const readHandler = (
   runner: HostRunner,
@@ -56,10 +51,11 @@ export const diffHandler = (
   /**
    * ⛔ THE NAME IS ENOUGH TO REFUSE A MASKED TARGET, and the refusal has to happen here: the old
    *   unit is removed before the new one is reconciled. The unit file cannot be compared while
-   *   `content` is still an Output, so this is the name-only half of assertReplaceable.
+   *   `content` is still an Output, so this is the name-only half of assertReplaceable
+   *   (unit-preflight.ts).
    */
   return lift(async () => {
-    await assertRenameTarget(runner, name);
+    await assertRenameTarget(runner, output, name);
     return { action: 'replace' as const, deleteFirst: true };
   });
 };

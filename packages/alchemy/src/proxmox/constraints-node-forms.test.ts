@@ -50,7 +50,12 @@ describe('the Ceph families plan clean against their own creates', () => {
     expect(
       onCreate(
         'pve:POST /nodes/{node}/ceph/fs/{name}',
-        cephFsCreateForm({ 'add-storage': true, name: 'cephfs-c1', node: 'n2', target: TARGET }),
+        cephFsCreateForm({
+          'add-storage': true,
+          name: 'cephfs-example',
+          node: 'n2',
+          target: TARGET,
+        }),
       ),
     ).toEqual([]);
     expect(constraintsFor('pve:POST /nodes/{node}/ceph/fs/{name}')['pg_num']).toMatchObject({
@@ -69,9 +74,13 @@ describe('the Ceph families plan clean against their own creates', () => {
     expect(constraintsFor('pve:POST /nodes/{node}/ceph/osd')['dev']?.required).toBe(true);
   });
 
-  /** The estate's own pools: `cephtb4` and the two `cephfs-tb4_*` halves, size 3 / min_size 2. */
+  /**
+   * The estate's own pool set, SHAPED: an RBD pool and a CephFS data/metadata pair, size 3 and
+   * min_size 2, names replaced. ⛔ `src` ships in the npm tarball and this repository is public —
+   * lxc-harness.ts has the rule. The proof is the keys and the bounds, never the strings.
+   */
   test('the live CephPool declarations have no violations', () => {
-    for (const name of ['cephtb4', 'cephfs-tb4_data', 'cephfs-tb4_metadata']) {
+    for (const name of ['rbd-example', 'cephfs-example_data', 'cephfs-example_metadata']) {
       expect(
         onCreate(
           'pve:POST /nodes/{node}/ceph/pool',

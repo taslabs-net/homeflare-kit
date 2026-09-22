@@ -19,7 +19,8 @@
  *   start fail; unmasking here would silently overrule whoever masked it.
  */
 import type { Diff } from 'alchemy/Diff';
-import { type HostRunner, canActAsRoot } from '../launchd/runner.ts';
+import type { HostRunner } from '../launchd/runner.ts';
+import { daemonReload, disableUnit, showUnit, stopUnit } from './systemctl.ts';
 import {
   type SystemdUnitAttributes,
   type SystemdUnitProps,
@@ -27,20 +28,13 @@ import {
   configDigest,
   digestOf,
   unitPathFor,
-  unitProblems,
   unitText,
 } from './unit-form.ts';
-import { type UnitStatus, daemonReload, disableUnit, showUnit, stopUnit } from './systemctl.ts';
+import { assertMayWrite, assertReplaceable, assertUsable, assertValid } from './unit-preflight.ts';
 import { attributesOf, refuse, settle } from './unit-settle.ts';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-
-/** Throw every refusal at once, so one plan shows the whole list. */
-export const assertValid = (props: SystemdUnitProps, expect?: string): void => {
-  const found = unitProblems(props, expect);
-  if (found.length > 0) throw refuse(props.name, found.join('; '));
-};
 
 /** What is on the host now: the unit file's digest and systemd's view. `undefined` when neither. */
 export const readUnit = async (
@@ -53,63 +47,6 @@ export const readUnit = async (
   return attributesOf(props, bytes === undefined ? '' : digestOf(decoder.decode(bytes)), status);
 };
 
-/** ⛔ Writing a unit file and driving systemd are root's, so refuse up front rather than mid-apply. */
-export const assertMayWrite = (runner: HostRunner, name: string): void => {
-  if (canActAsRoot(runner)) return;
-  throw refuse(
-    name,
-    'a systemd unit is root-owned and systemctl needs root. Point the runner at a destination ' +
-      'whose ssh user is root, or provide a privileged HostRunner. This provider never calls sudo.',
-  );
-};
-
-const assertUsable = (name: string, status: UnitStatus): void => {
-  if (status.loadState === 'masked' || status.unitFileState === 'masked') {
-    throw refuse(
-      name,
-      'is masked. If that is stale, `systemctl unmask` it deliberately, then redeploy. Nothing ' +
-        'was written.',
-    );
-  }
-};
-
-/**
- * PLAN TIME, for the one shape a refusal cannot afford to be late for: the NAME a rename moves to.
- *
- * 🔴 A RENAME IS `deleteFirst`. Alchemy stops, disables and REMOVES the old unit before it
- *   reconciles the new one, so every check that ran only in `reconcileUnit` arrived with the
- *   service already down — and then refused, leaving nothing running and a plan that had promised
- *   a swap. The launchd family solved exactly this in job-preflight.ts `assertReplaceable`; this is
- *   the same answer for systemd. Read-only: `systemctl show`, a `readFile` and the runner's own
- *   pre-write refusals.
- * ⛔ `--adopt` CANNOT RESCUE IT EITHER, which is why refusing here changes no working case: a fresh
- *   replace's new generation is never adoptable (ownership/adopt.ts), so the identical refusal in
- *   `reconcileUnit` was always going to fire — just after the old unit was gone.
- */
-export const assertRenameTarget = async (runner: HostRunner, name: string): Promise<void> => {
-  assertMayWrite(runner, name);
-  assertUsable(name, await showUnit(runner, name));
-};
-
-/** `assertRenameTarget`, plus the unit file the rename would land on. */
-export const assertReplaceable = async (
-  runner: HostRunner,
-  props: SystemdUnitProps,
-): Promise<void> => {
-  await assertRenameTarget(runner, props.name);
-  const path = unitPathFor(props);
-  const before = await runner.readFile(path);
-  // ★ A byte-identical file is this declaration's own leftover, not someone else's unit.
-  if (before !== undefined && digestOf(decoder.decode(before)) !== digestOf(unitText(props))) {
-    throw refuse(
-      props.name,
-      `${path} is already on this host and is not this resource. Nothing was removed. Remove it, ` +
-        'or declare it as a new resource and deploy with --adopt.',
-    );
-  }
-  await runner.checkWrite?.(path, UNIT_WRITE);
-};
-
 export const diffUnit = async (
   runner: HostRunner,
   news: SystemdUnitProps,
@@ -119,8 +56,10 @@ export const diffUnit = async (
   assertValid(news, expect);
   // ★ The unit's name or its directory is its identity on the host: a change is a replace, and
   //   delete-first, because two unit files for one name cannot both be the one systemd reads.
+  // ⛔ Which is why everything the new unit's reconcile would refuse is refused HERE, at plan
+  //   time (unit-preflight.ts): after the delete it would be too late.
   if (news.name !== output.name || unitPathFor(news) !== output.unitPath) {
-    await assertReplaceable(runner, news);
+    await assertReplaceable(runner, news, output, expect);
     return { action: 'replace', deleteFirst: true };
   }
   const desired = digestOf(unitText(news));
@@ -160,12 +99,18 @@ export const reconcileUnit = async (
   assertMayWrite(runner, props.name);
   const path = unitPathFor(props);
   const status = await showUnit(runner, props.name);
-  assertUsable(props.name, status);
+  assertUsable(props, status);
   const text = unitText(props);
   const desired = digestOf(text);
   const before = await runner.readFile(path);
   const liveSha = before === undefined ? undefined : digestOf(decoder.decode(before));
   const moved = output !== undefined && (output.name !== props.name || output.unitPath !== path);
+  /**
+   * ★ A rename the diff could not see — a name that was still an unresolved Output at plan time
+   *   (unit-handlers.ts diffHandler) — arrives here as an update. Run the same read-only checks a
+   *   plan-time replace runs, BEFORE deleteUnit, or the old unit is already gone when we refuse.
+   */
+  if (moved && output !== undefined) await assertReplaceable(runner, props, output, expect);
   const prior = moved ? undefined : output;
   /**
    * ⛔ A UNIT THIS RESOURCE DOES NOT OWN IS NEVER OVERWRITTEN. Where the engine's probe never
