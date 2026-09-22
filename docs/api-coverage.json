@@ -696,9 +696,9 @@
         {
           "method": "POST",
           "owner": "Proxmox.HaRule",
-          "parameters": 0,
+          "parameters": 5,
           "path": "/cluster/ha/rules",
-          "unenforced": []
+          "unenforced": ["resources", "rule"]
         },
         {
           "method": "DELETE",
@@ -710,9 +710,9 @@
         {
           "method": "PUT",
           "owner": "Proxmox.HaRule",
-          "parameters": 0,
+          "parameters": 7,
           "path": "/cluster/ha/rules/{rule}",
-          "unenforced": []
+          "unenforced": ["delete", "resources", "rule"]
         },
         {
           "method": "POST",
@@ -3260,8 +3260,8 @@
       "sha256Short": "9def8f13",
       "system": "pve",
       "totals": {
-        "ownedUnenforcedParams": 490,
-        "unenforcedParams": 1556,
+        "ownedUnenforcedParams": 495,
+        "unenforcedParams": 1561,
         "ownedWriteEndpoints": 88,
         "ownedWritePaths": 59,
         "writeEndpoints": 337,

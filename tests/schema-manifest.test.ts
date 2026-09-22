@@ -167,3 +167,27 @@ describe('the two schema manifests describe the same vendor bytes', () => {
     });
   }
 });
+
+/**
+ * ⛔ AN UNREADABLE PARAMETER SCHEMA MUST NOT BECOME AN EMPTY TABLE. That is how
+ *   `Proxmox.HaRule` ended up with a guard that checked nothing: PVE wraps its parameters in
+ *   `allOf`/`oneOf`, the reader asked for `properties`, and `{}` looks exactly like "no rules".
+ */
+describe('the parameter reader says so when it cannot read', () => {
+  test('allOf merges, oneOf intersects, and anything else is reported', async () => {
+    const { resolveParameters } = await import('../codegen/parameters.ts');
+    expect(
+      resolveParameters({ allOf: [{ properties: { a: {} } }, { properties: { b: {} } }] }),
+    ).toMatchObject({ params: { a: {}, b: {} } });
+    // Only what BOTH branches state, and a disagreeing `optional` becomes optional.
+    const both = resolveParameters({
+      oneOf: [
+        { properties: { keep: { maxLength: 4 }, only: {} } },
+        { properties: { keep: { maxLength: 4, optional: 1 } } },
+      ],
+    });
+    expect(Object.keys(both.params)).toEqual(['keep']);
+    expect(both.params['keep']).toEqual({ maxLength: 4, optional: 1 });
+    expect(resolveParameters({ anyOf: [] }).unresolved).toContain('anyOf');
+  });
+});
