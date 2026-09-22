@@ -94,14 +94,14 @@ try {
 import { ForgejoOrgLabel } from '@homeflare/alchemy/forgejo';
 import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles } from '@homeflare/alchemy/openbao';
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
-import { ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider } from '@homeflare/alchemy/proxmox';
+import { PROVISION_PRIVILEGES, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, declareProvisionBaseline, provisionBootstrap } from '@homeflare/alchemy/proxmox';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
-  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider,
+  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, declareProvisionBaseline,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
   parseVerifyArgs, verifySession, verifyStack,
 })) {
@@ -132,6 +132,12 @@ try {
   refused = true;
 }
 if (!refused) throw new Error('localCaddyAdmin from dist accepted a non-loopback address');
+
+// ★ The provisioning baseline through the PUBLISHED file: the bootstrap is pure, so generating it
+//   proves the list and the generator both reached dist.
+if (PROVISION_PRIVILEGES.length !== 27 || !provisionBootstrap().startsWith('#!/bin/sh')) {
+  throw new Error('the provisioning baseline from dist is incomplete');
+}
 
 if (parseVerifyArgs(['--stage', 'live'], {}).kind !== 'run') {
   throw new Error('parseVerifyArgs from dist did not parse');
