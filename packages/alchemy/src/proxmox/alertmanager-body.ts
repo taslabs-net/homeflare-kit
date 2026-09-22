@@ -16,8 +16,9 @@
  *   field fails the whole render, and the notification is then lost — not degraded. MEASURED
  *   (2026-09-22) with handlebars-rust 5.1.2 and the webhook's three helpers restated from source:
  *   `{{ escape fields.job-id }}` over no fields errors "param at index 0 required but not found";
- *   `{{ json fields.job-id }}` renders `null`, valid JSON but not a label value. Garbage collection has no `job-id`, and the UI's "Test" button sends a notification
- *   with NO fields at all (lib.rs `test_target`). So every field-derived label sits inside
+ *   `{{ json fields.job-id }}` renders `null`, valid JSON but not a label value. Garbage
+ *   collection has no `job-id`, and the UI's "Test" button sends a notification with NO fields at
+ *   all (lib.rs `test_target`). So every field-derived label sits inside
  *   `{{#if}}`, ends with its own comma, and the labels after them are always there: whichever
  *   fields are present, the object stays valid JSON.
  *
@@ -52,6 +53,25 @@ const literal = (label: string, value: string): string => {
   return JSON.stringify(value);
 };
 
+/**
+ * ⛔ AN ABSOLUTE http(s) URL OR NOTHING. Alertmanager validates `generatorURL` as `format: uri`
+ *   (api/v2/openapi.yaml) and answers 422 for the WHOLE post — so a typo here would not degrade
+ *   one field, it would lose every notification, and only at send time.
+ */
+const absoluteUrl = (value: string): string => {
+  const text = literal('generatorURL', value);
+  let protocol = '';
+  try {
+    protocol = new URL(value).protocol;
+  } catch {
+    // not a URL at all: refused below, like a relative one
+  }
+  if (protocol !== 'https:' && protocol !== 'http:') {
+    throw new Error('alertmanagerAlertBody: generatorURL must be an absolute http(s) URL');
+  }
+  return text;
+};
+
 /** Label name → notification field. ⚠️ Label names must match `[a-zA-Z_][a-zA-Z0-9_]*`. */
 const FIELD_LABELS: readonly (readonly [label: string, field: string])[] = [
   ['job_type', 'type'],
@@ -67,7 +87,9 @@ const FIELD_LABELS: readonly (readonly [label: string, field: string])[] = [
  * ★ `fields.job-id` IS A VALID PATH: Handlebars-rust 5 (the version proxmox-notify pins) allows
  *   `-` in an identifier (grammar.pest `symbol_char`), as handlebars.js does. The same scratch
  *   build rendered this template for a GC failure, a verify failure and a field-less test
- *   notification, and each parsed as JSON with string-only labels.
+ *   notification, and each parsed as JSON with string-only labels. The adversarial review re-ran
+ *   it over the test file's whole matrix — every PBS event's fields x five severities x hostile
+ *   text, 840 renders with and without `generatorURL` — and every one parsed (2026-09-22).
  * ⚠️ THAT BUILD IS NOT PBS. The first real notification is the measurement that counts: send one
  *   with the target's "Test" button and read what Alertmanager received.
  */
@@ -81,7 +103,7 @@ export const alertmanagerAlertBody = (options: AlertmanagerBodyOptions = {}): st
   const link =
     options.generatorURL === undefined
       ? ''
-      : `,\n    "generatorURL": ${literal('generatorURL', options.generatorURL)}`;
+      : `,\n    "generatorURL": ${absoluteUrl(options.generatorURL)}`;
   return [
     '[',
     '  {',

@@ -8,7 +8,7 @@
 | `Pbs.NotificationMatcher`     | which PBS notifications go to which targets         | [pbs-notification-matcher.ts](../src/proxmox/pbs-notification-matcher.ts) |
 | `Proxmox.NotificationMatcher` | the same on a PVE cluster                           | [notification-matcher.ts](../src/proxmox/notification-matcher.ts)         |
 | `Proxmox.NotificationTarget`  | PVE targets (existing; declares no secret)          | [notification-target.ts](../src/proxmox/notification-target.ts)           |
-| `alertmanagerAlertBody()`     | a webhook body that posts one Alertmanager v2 alert | [alertmanager-body.ts](../src/proxmox/alertmanager-body.ts)               |
+| `alertmanagerAlertBody()`     | a webhook body that posts one Alertmanager v2 alert | [pbs-alertmanager-body.md](./pbs-alertmanager-body.md)                    |
 
 A target that no matcher names receives nothing. Declare both.
 
@@ -96,52 +96,31 @@ token.
 - **A write that needs a missing variable fails by name**, before any request is sent.
 - **Adoption is free.** A webhook adopted with secrets has no seal. Its values stay unverified
   (presence-only) until the first write that carries them: a create, a changed secret name, or
-  a value rotated after that first write.
+  a value rotated after that first write. A value the server already holds is never replaced by
+  adoption alone. To write yours, rename the secret once, together with its `{{ secrets.* }}`
+  references.
 - **Rotation.** Change the variable's value and plan: the seal no longer matches, and the deploy
   PUTs the secret group alone.
 
+⛔ **A literal credential in a plain prop is refused.** A plain prop is stored as written, so an
+`Authorization`, `Proxy-Authorization` or `Cookie` header, a header or URL query parameter
+named like `token`, `key`, `secret`, `password` or `signature`, or a password in the URL's
+userinfo must be `{ fromEnv }` or read `{{ secrets.<name> }}`. The plan fails and names the
+field, never the value.
+
+⚠️ **What the guard cannot see.** A token in a URL path (Slack-style webhooks), in `body` or in
+`comment` is still a plain prop. Put it in `secret` and reference it from the template. The
+check runs at plan only while every prop is resolved. If a prop is an unresolved Output, Alchemy
+records the props before `reconcile` refuses them.
+
+⚠️ **Prefer `secret` over a `{ fromEnv }` header for a credential.** PBS returns header values
+to anyone with `Sys.Audit`, and prints a header's value unmasked when it fails to render. It
+masks only `secret` values.
+
 ## The body template
 
-`alertmanagerAlertBody()` renders as:
-
-```handlebars
-[ { "labels": {
-{{#if fields.type}}"job_type": {{json fields.type}},{{/if}}
-{{#if fields.job-id}}"job_id": {{json fields.job-id}},{{/if}}
-{{#if fields.datastore}}"datastore": {{json fields.datastore}},{{/if}}
-{{#if fields.hostname}}"hostname": {{json fields.hostname}},{{/if}}
-"severity":
-{{json severity}}, "alertname": "PbsNotification", "source": "pbs" }, "annotations": { "summary":
-{{json title}}, "description":
-{{json message}}, "timestamp": "{{timestamp}}" } } ]
-```
-
-Options: `alertname`, `source` and an optional `generatorURL`. Braces and backslashes are refused.
-
-Why it is written this way. Each point is from the proxmox-notify and Alertmanager source, read
-2026-09-22:
-
-- **The webhook renderer has no escaping** (`register_escape_fn(no_escape)`). Every value goes
-  through `json`, which writes a complete JSON string. A task log with a quote or a newline stays
-  valid JSON.
-- **`escape` on a missing field fails the whole render**, and the notification is lost.
-  `json` on a missing field writes `null`, which is valid JSON but not a label value. So every
-  `fields.*` label sits inside `{{#if}}`, and the constant labels close the object. The UI's
-  **Test** button sends a notification with no fields at all.
-- **The helpers are `json`, `escape` and `url-encode`, and nothing else.** The mail templates'
-  `timestamp` and `duration` helpers are not registered for webhooks, so `timestamp` is sent as
-  epoch seconds in an annotation.
-- **Alertmanager takes an array** (`postableAlerts`). `labels` is required, and every label or
-  annotation value must be a string. It drops empty labels.
-- **With no `endsAt`, Alertmanager resolves the alert itself** after `resolve_timeout` (5 min by
-  default), and PBS never sends a resolve. Treat a "resolved" notification as a timeout, not a
-  recovery.
-- **`severity` uses PBS's names**: `info`, `notice`, `warning`, `error`, `unknown`.
-
-The template is rendered in `tests/alertmanager-body.test.ts` with handlebars.js set up like
-proxmox-notify's renderer. A scratch build of handlebars-rust 5.1.2, the version proxmox-notify
-pins, rendered the same GC, verify and test events to valid JSON. The first real notification is
-still the check that counts. Press **Test** on the target, then read what Alertmanager received.
+`alertmanagerAlertBody()` has its own page, with the exact text it returns and why it is valid
+JSON for every notification PBS sends: [pbs-alertmanager-body.md](./pbs-alertmanager-body.md).
 
 ## Adopting the built-in `default-matcher`
 
@@ -173,10 +152,12 @@ built-in reverts it to the shipped rule**, and the server reports success. The a
 
 ## Privileges
 
-| server | read                                                                | write                                        |
-| ------ | ------------------------------------------------------------------- | -------------------------------------------- |
-| PBS    | `Sys.Audit` on `/system/notifications`                              | `Sys.Modify` on `/system/notifications`      |
-| PVE    | `Mapping.Audit` (or `.Modify` / `.Use`) on `/mapping/notifications` | `Mapping.Modify` on `/mapping/notifications` |
+| server | read                                                            | write                                        |
+| ------ | --------------------------------------------------------------- | -------------------------------------------- |
+| PBS    | `Sys.Audit` on `/system/notifications`                          | `Sys.Modify` on `/system/notifications`      |
+| PVE    | `Mapping.Audit` or `Mapping.Modify` on `/mapping/notifications` | `Mapping.Modify` on `/mapping/notifications` |
 
 ⚠️ A missing read privilege looks like "absent". The plan says `create` and the server answers
-that the object already exists. Grant the read before changing anything else.
+that the object already exists. Grant the read before changing anything else. On PVE,
+`Mapping.Use` is not enough: it opens the matcher list, not the per-matcher read this package
+makes (`get_matcher` in pve-manager's `Notifications.pm`).

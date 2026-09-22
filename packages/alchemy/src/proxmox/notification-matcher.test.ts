@@ -40,8 +40,10 @@ const PBS: PbsTarget = { api: 'https://pbs.test:8007/api2/json', mount: 'pbs-tes
 const PVE_PATH = 'cluster/notifications/matchers/default-matcher';
 const PBS_PATH = 'config/notifications/matchers/default-matcher';
 
+/** ★ The live shape, `digest` included: the per-object GET carries one, the collection GET not. */
 const PVE_DEFAULT = {
   comment: 'Route all notifications to mail-to-root',
+  digest: 'd1'.repeat(32), // placeholder; a real one is a sha256 of notifications.cfg
   mode: 'all',
   name: 'default-matcher',
   origin: 'builtin',
@@ -165,6 +167,9 @@ describe('adopting a built-in default-matcher as it is only reads', () => {
         expect.objectContaining({ diff: 'noop', ok: true }),
       ]);
       expect(Object.values(await engine.deploy(declare()))).toEqual(['adopted']);
+      expect((await engine.verify(declare(), { all: true })).rows[0]).toMatchObject({
+        diff: 'noop',
+      });
     });
     expect(fake.writes()).toEqual([]);
   });
