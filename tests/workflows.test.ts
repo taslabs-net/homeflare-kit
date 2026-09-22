@@ -144,7 +144,7 @@ describe('workflows', () => {
     const doc = Bun.YAML.parse(text) as {
       jobs: Record<string, { steps: readonly Step[] }>;
     };
-    const runs = (doc.jobs['test']?.steps ?? []).flatMap((s) =>
+    const runs = (doc.jobs['check']?.steps ?? []).flatMap((s) =>
       s.run === undefined ? [] : [s.run],
     );
 
@@ -162,5 +162,43 @@ describe('workflows', () => {
     const jobs = Object.keys(doc.jobs).filter((j) => j !== 'ci');
 
     expect(doc.jobs['ci']?.needs).toEqual(expect.arrayContaining(jobs));
+  });
+
+  test('ci and security run on pull requests only, never again on the merge commit', async () => {
+    // ⛔ NO `push: branches: [main]` IN EITHER FILE. Every commit reaches main by squashing
+    //   a PR that had to be green, so a post-merge run recomputes an answer it already has:
+    //   measured 2026-09-15..22, 613 of 619 main-push runs carried a head_sha identical to
+    //   the merge_commit_sha of an already-green PR, and that duplication was ~41% of the
+    //   Mac mini's whole CI load. The branch ruleset is what keeps main safe; these files do
+    //   not need to re-prove it afterwards.
+    // ⚠️ release.yml is deliberately NOT in this list — it is the one workflow whose whole
+    //   job is to react to a push to main.
+    for (const name of ['ci', 'security']) {
+      const text = await Bun.file(
+        new URL(`../.github/workflows/${name}.yml`, import.meta.url),
+      ).text();
+
+      expect(text).toMatch(/^ {2}pull_request:$/m);
+      expect(text).not.toMatch(/^ {2}push:$/m);
+    }
+  });
+
+  test('security cancels a superseded PR scan but never the scheduled one', async () => {
+    // ★ ci.yml always had a concurrency group; security.yml never did, so a superseded scan
+    //   ran to completion holding one of the mini's 3 slots for a result nobody would read.
+    // ⛔ cancel-in-progress IS THE EXPRESSION, NOT `true`. The weekly cron runs on
+    //   refs/heads/main; a bare `true` would let a later run in that same group kill the
+    //   full-history scan, which is the one scan that can find a secret the PR scan missed.
+    const text = await Bun.file(
+      new URL('../.github/workflows/security.yml', import.meta.url),
+    ).text();
+    const doc = Bun.YAML.parse(text) as {
+      concurrency?: { group?: string; 'cancel-in-progress'?: unknown };
+    };
+
+    expect(doc.concurrency?.group ?? '').toContain('security-');
+    expect(String(doc.concurrency?.['cancel-in-progress'])).toContain(
+      "github.event_name == 'pull_request'",
+    );
   });
 });
