@@ -48,7 +48,7 @@ export const assertMayWrite = (runner: HostRunner, name: string): void => {
  * ⛔ A MASKED UNIT IS SOMEONE'S DECISION, NOT DRIFT. `systemctl mask` survives reboots and makes
  *   start fail; unmasking here would silently overrule whoever masked it.
  */
-export const assertUsable = (props: SystemdUnitProps, status: UnitStatus): void => {
+export const assertUsable = (props: Pick<SystemdUnitProps, 'name'>, status: UnitStatus): void => {
   if (status.loadState === 'masked' || status.unitFileState === 'masked') {
     throw refuse(
       props.name,
@@ -82,6 +82,24 @@ export const assertUnclaimed = async (
 };
 
 /**
+ * The half of a rename check that needs only the NEW NAME: the old unit deletable, the new one
+ * writable and not masked.
+ * ★ ON ITS OWN it is for the rename unit-handlers.ts `diffHandler` spots while `content` is still
+ *   an Output. That plan is a delete-first replace too, so a masked target refused only in
+ *   reconcile would again arrive after the old unit was stopped. The unit file itself cannot be
+ *   compared until `content` resolves, so `assertUnclaimed` stays reconcile's job there.
+ */
+export const assertRenameTarget = async (
+  runner: HostRunner,
+  old: SystemdUnitAttributes,
+  name: string,
+): Promise<void> => {
+  assertMayWrite(runner, old.name);
+  assertMayWrite(runner, name);
+  assertUsable({ name }, await showUnit(runner, name));
+};
+
+/**
  * A rename, checked at plan time: the new identity must be valid, writable, not masked and free,
  * and the old one deletable — before the plan may promise a delete-first replace.
  */
@@ -92,9 +110,7 @@ export const assertReplaceable = async (
   expect?: string,
 ): Promise<void> => {
   assertValid(next, expect);
-  assertMayWrite(runner, old.name);
-  assertMayWrite(runner, next.name);
-  assertUsable(next, await showUnit(runner, next.name));
+  await assertRenameTarget(runner, old, next.name);
   await assertUnclaimed(runner, next);
   await runner.checkWrite?.(unitPathFor(next), UNIT_WRITE);
 };

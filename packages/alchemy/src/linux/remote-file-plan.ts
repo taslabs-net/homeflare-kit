@@ -8,7 +8,7 @@
  */
 import { sha256Hex } from '../launchd/job-form.ts';
 import type { FileStat, HostRunner, WriteOptions } from '../launchd/runner.ts';
-import { type RegionSpec, readRegion, spliceRegion } from './region.ts';
+import { type RegionSpec, readRegion, sameRegion, spliceRegion } from './region.ts';
 import {
   DEFAULT_MODE,
   type RemoteFileAttributes,
@@ -45,6 +45,42 @@ export const identity = async (runner: HostRunner, props: RemoteFileProps): Prom
 };
 
 export const digestOf = (text: string): string => sha256Hex(encoder.encode(text));
+
+/** What this declaration now owns, compared with what the last deploy owned. */
+export type Move = 'none' | 'path' | 'region';
+
+/**
+ * Has the thing this resource owns MOVED since the last deploy — and if so, how?
+ *
+ * 🔴 WHY THIS EXISTS (found by review, reproduced against the fake host, 2026-09-22). Without it,
+ *   only `path` was identity and both of these read as a routine `update`:
+ *   - RENAMING THE REGION left the old block in the file FOREVER. The new markers were spliced in,
+ *     the old ones were never touched, and `delete` — which can only look for the name in state,
+ *     now the new one — could never remove them. Two `anchor` lines in a packet filter, two
+ *     entries in a host table, and nothing in the stack able to take either back.
+ *   - DROPPING `region` TOOK OVER THE WHOLE FILE. The plan said `update`; the apply replaced every
+ *     byte of a file belonging to a vendor package with this resource's four lines. That is the
+ *     one thing the managed-region design exists to make impossible.
+ * ⛔ A FLIP BETWEEN THE TWO MODES IS A REFUSAL, NOT A MOVE. Neither order is safe: writing the
+ *   whole file first destroys the other owner's bytes before anything can be undone, and removing
+ *   the block first destroys our own claim and then refuses. The operator destroys the resource
+ *   and declares a new one, which is the only sequence with a reviewable diff at each step.
+ * ★ A region-to-region rename IS safe as a move, because both blocks can exist at once: write the
+ *   new one, verify it, then take the old one out (remote-file-lifecycle.ts reconcileFile).
+ */
+export const relocation = (props: RemoteFileProps, output: RemoteFileAttributes): Move => {
+  if (props.path !== output.path) return 'path';
+  if (sameRegion(props.region, output.region)) return 'none';
+  if (props.region === undefined || output.region === undefined) {
+    throw refuse(
+      props.path,
+      `changes between owning the whole file and owning the managed region ` +
+        `${JSON.stringify((props.region ?? output.region)?.name ?? '')} at the same path. Those ` +
+        'are two different claims on one file: destroy this resource and declare a new one.',
+    );
+  }
+  return 'region';
+};
 
 /** The digest of the part this resource owns, or `undefined` when that part is not there. */
 export const ownedDigest = (
