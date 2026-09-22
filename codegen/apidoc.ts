@@ -37,7 +37,13 @@ export interface VendorParam {
 }
 
 export interface VendorEndpoint {
-  readonly method: 'POST' | 'PUT' | 'DELETE' | 'GET';
+  /**
+   * ⚠️ `PATCH` IS HERE FOR NETBOX, NOT FOR PROXMOX. Neither PVE nor PBS publishes a PATCH
+   *   endpoint — they update with PUT — but this interface is the shared shape `openapi.ts`
+   *   normalises OpenAPI documents into, and a NetBox update IS a PATCH. Widening the union is
+   *   what keeps `emit.ts` and the digest one implementation across both vendors.
+   */
+  readonly method: 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'GET';
   readonly path: string;
   readonly params: Readonly<Record<string, VendorParam>>;
 }

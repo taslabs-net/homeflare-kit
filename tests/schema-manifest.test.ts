@@ -36,6 +36,8 @@ interface Entry {
   readonly bytes: number;
   readonly fetchedAt: string;
   readonly consumedBy: readonly string[];
+  /** ⚠️ Only on an entry fetched from a public git repository, never from a host. */
+  readonly sourceBlobSha1?: string;
 }
 
 const manifest = (await Bun.file(join(ROOT, 'codegen/manifest.json')).json()) as {
@@ -67,8 +69,17 @@ describe('every schema entry says what it is true of', () => {
    *   enough to re-fetch and carries nothing about which box answered.
    */
   test('no estate hostname, address or console id is recorded', () => {
-    // ⚠️ The sha256 fields are the ONE place a long hex string belongs, so they come out first.
-    const text = JSON.stringify(manifest.schemas.map(({ sha256, ...rest }) => rest));
+    /**
+     * ⚠️ THE HASH FIELDS ARE THE ONLY PLACE A LONG HEX STRING BELONGS, so they come out first.
+     *   ⛔ STRIPPED BY FIELD NAME, NOT BY PATTERN — that is what keeps the guarantee. A hex id
+     *     smuggled into `note`, `sourcePath` or `version` still trips the check below; only a
+     *     field this test knows is a content hash is exempt. `sourceBlobSha1` is the vendor's own
+     *     git blob id for a file in a PUBLIC repository, which is how a reader fetches exactly
+     *     the bytes the sha256 describes.
+     */
+    const text = JSON.stringify(
+      manifest.schemas.map(({ sha256, sourceBlobSha1, ...rest }) => rest),
+    );
     expect(text).not.toMatch(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/);
     expect(text).not.toMatch(/[a-z0-9-]+\.(?:mgmt\.)?homeflare\.dev/);
     expect(text).not.toMatch(/\b[0-9a-f]{40,}\b/);
