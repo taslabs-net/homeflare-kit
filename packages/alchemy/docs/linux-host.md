@@ -36,6 +36,22 @@ Layer.mergeAll(linuxProviders(runner) /* the stack's other providers */);
 - The probe at construction (`uname -s`, `id -u`) refuses anything that is not
   Linux: the scripts use GNU/BusyBox spellings (`stat -c`, `base64`, `mv -f`).
 
+★ **Exercised read-only against a live host, 2026-09-22** (Debian 13, ssh user
+uid 1001, nothing written): `stat` of a file, a missing path and a symlink — the
+symlink reported as `symlink`, so the lstat contract holds over the wire —
+`readFile` of a present and an absent path, `getent` user and group lookups, a
+failing `exec`, and an argument containing a space, a `$`, a backtick and a `;`
+arriving verbatim on the far side. That run is also what found the framing bug
+below.
+
+⛔ **The framing runs the script in a subshell, and that is not cosmetic.** The
+scripts end a branch with `exit <code>` to say "nothing was there"; at the top
+level that exit leaves the shell before the marker prints, and the caller
+correctly reads a frameless result as a transport failure. 🔴 Measured: `stat` of
+a missing path came back as "the remote command did not report a status (ssh exit
+66)" instead of "nothing is at this path". A test now runs the real frame through
+a real `/bin/sh`.
+
 ⚠️ One ssh connection per call. Pass `sshArgs: ['-o', 'ControlMaster=auto', …]`
 to opt into your own multiplexing socket; the kit does not create one behind
 your back, because a stale socket outliving the deploy is a surprise nobody
@@ -166,22 +182,5 @@ compare the declaration against itself.
 
 ★ Run `systemd-analyze verify` on the host for the deep check.
 
-### Measured, 2026-09-22 — Debian 13, systemd 257 (read-only)
-
-- ⛔ `systemctl show -p … <unknown>` **exits 0** and answers
-  `LoadState=not-found`. The exit code is not the answer; `LoadState` is.
-- Properties come back in systemd's order, not the order asked for.
-- `is-enabled`/`is-active` of an unknown unit exit **4** with `not-found` /
-  `inactive` — answers, not errors.
-- `/etc/systemd/system` is `root:root 0755`.
-- `systemd-analyze unit-paths`, minus per-user and generator directories:
-  `/etc/systemd/system`, `/run/systemd/system`, `/usr/local/lib/systemd/system`,
-  `/usr/lib/systemd/system`. `/lib/systemd/system` is the same directory before
-  the /usr merge, which the measured host does not have separately.
-- `stat -c '%f %a %u %g %s' /etc/hostname` → `81a4 644 0 0 4`; a missing path
-  exits 1. GNU `stat` does not follow symlinks without `-L`, which is what makes
-  it the lstat the seam requires.
-
-⚠️ The write subcommands were **never run** for this document: `daemon-reload`,
-`enable`, `disable`, `start`, `stop` and `restart` are reasoned, checked for
-exit 0, and their effect read back with `show` rather than assumed.
+★ The exact commands, their output and what was **not** measured:
+[linux-host-measured.md](./linux-host-measured.md).

@@ -38,11 +38,19 @@ const marker = (nonce: string) => `__HF_RC_${nonce}=`;
 
 /**
  * Wrap a script so its status comes back unambiguously.
- * ⚠️ The leading `\n` matters: a program whose last stderr line has no newline would otherwise glue
- *   itself to the marker and the marker would not be found.
+ *
+ * ⛔ THE SCRIPT RUNS IN A SUBSHELL, AND THAT IS NOT COSMETIC. Several of the scripts end a branch
+ *   with `exit <code>` to say "nothing was there"; at the top level that exit leaves the shell
+ *   immediately and the marker line NEVER PRINTS — so the caller sees a framed result missing its
+ *   frame and, correctly, calls it a transport failure. 🔴 MEASURED 2026-09-22 against a live
+ *   Debian 13 host: `stat` of a missing path came back as "the remote command did not report a
+ *   status (ssh exit 66)" instead of "nothing is at this path". Inside `( … )` the exit leaves only
+ *   the subshell, `$?` carries the code out, and the frame always runs.
+ * ⚠️ The leading `\n` matters too: a program whose last stderr line has no newline would otherwise
+ *   glue itself to the marker and the marker would not be found.
  */
 export const frameScript = (script: string, nonce: string): string =>
-  `${script}\n__hf=$?\nprintf '\\n${marker(nonce)}%s\\n' "$__hf" >&2\nexit "$__hf"`;
+  `(\n${script}\n)\n__hf=$?\nprintf '\\n${marker(nonce)}%s\\n' "$__hf" >&2\nexit "$__hf"`;
 
 export type Framed = { readonly exitCode: number; readonly stderr: string };
 
