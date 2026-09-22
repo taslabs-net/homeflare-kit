@@ -173,6 +173,8 @@ const handlers = pveHandlers<BackupJobProps, BackupJobAttributes>({
   /** ⛔ `id` IS SENT AND IS NOT OPTIONAL. Everything above depends on PVE not inventing one. */
   createForm: (props) => ({ ...shape(props), id: props.id }),
   /** Each line reads "not declared, or equal"; the five defaulted fields have no undeclared case. */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pve:POST /cluster/backup', update: 'pve:PUT /cluster/backup/{id}' },
   matches: (attributes, props) =>
     attributes.schedule === props.schedule &&
     attributes.enabled === (props.enabled !== false) &&

@@ -194,6 +194,8 @@ const handlers = pveHandlers<PruneJobProps, PruneJobAttributes>({
    *   compared unconditionally. A changed `store` is an update, not a replace: PBS accepts `store`
    *   on PUT, so the job is re-pointed in place.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pbs:POST /config/prune', update: 'pbs:PUT /config/prune/{id}' },
   matches: (attributes, props) =>
     attributes.schedule === props.schedule &&
     attributes.store === props.store &&

@@ -18,6 +18,9 @@
  * ★ THE NOTIFICATION FAMILIES JOINED 2026-09-22: PBS targets and matchers, the PVE matcher, the
  *   `FromEnv` shape their write-only values take, and the Alertmanager body template
  *   (docs/pbs-notifications.md; the template alone: docs/pbs-alertmanager-body.md).
+ * ★ THE VENDOR CONSTRAINT READER JOINED 2026-09-22 (codegen/README.md). `constraintsFor` and
+ *   `violations` are exported so a CONSUMING stack can assert its own declarations offline — the
+ *   `deploy:pbs` that failed on a 128-character comment had no way to ask that question.
  * ★ Anything else unlisted is still reachable by path if you genuinely need
  *   it — that is a deliberate, visible act rather than an accident of barrelling.
  */
@@ -30,6 +33,13 @@ export { ProxmoxCephFlagProvider } from './ceph-flag.ts';
 export { ProxmoxCephFsProvider } from './ceph-fs.ts';
 export { ProxmoxCephOsdProvider } from './ceph-osd.ts';
 export { ProxmoxCephPool, ProxmoxCephPoolProvider } from './ceph-pool.ts';
+export { constraintsFor, formViolations } from './constraint-guard.ts';
+export {
+  type EndpointConstraints,
+  type EndpointKey,
+  type ParamConstraint,
+  violations,
+} from './constraints.ts';
 export { ProxmoxFirewallAliasProvider } from './firewall-alias.ts';
 export { ProxmoxGroup, ProxmoxGroupProvider } from './group.ts';
 export { ProxmoxHaResource, ProxmoxHaResourceProvider } from './ha-resource.ts';

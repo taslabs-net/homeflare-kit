@@ -131,6 +131,8 @@ const handlers = pveHandlers<RoleProps, RoleAttributes>({
    *   a plan that reports an update every single time and a deploy that writes the same role back
    *   forever. Cheap insurance against the exact trap named in the header.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pve:POST /access/roles', update: 'pve:PUT /access/roles/{roleid}' },
   matches: (attributes, props) =>
     canonical(attributes.privs).join(',') === canonical(props.privs).join(','),
   path: (props) => `access/roles/${props.roleid}`,

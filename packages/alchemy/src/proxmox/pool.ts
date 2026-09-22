@@ -71,6 +71,8 @@ const handlers = pveHandlers<PoolProps, PoolAttributes>({
   },
   collection: () => 'pools',
   createForm: poolCreateForm,
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pve:POST /pools', update: 'pve:PUT /pools/{poolid}' },
   matches: (attributes, props) => attributes.comment === (props.comment ?? ''),
   path: (props) => `pools/${props.poolid}`,
   updateForm: poolUpdateForm,

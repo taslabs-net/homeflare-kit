@@ -10,7 +10,7 @@
       }
     },
     {
-      "files": ["**/scripts/**"],
+      "files": ["**/scripts/**", "codegen/**"],
       "rules": {
         "no-console": "off"
       }

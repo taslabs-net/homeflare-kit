@@ -137,6 +137,11 @@ const handlers = pveHandlers<HaResourceProps, HaResourceAttributes>({
    * ⚠️ `sid` AND `type` ARE NOT COMPARED EITHER: sid is the path, so a change there is a different
    *   object, and type is create-only — it is read back from the prefix, never edited.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: {
+    create: 'pve:POST /cluster/ha/resources',
+    update: 'pve:PUT /cluster/ha/resources/{sid}',
+  },
   matches: (attributes, props) =>
     attributes.state === (props.state ?? 'started') &&
     attributes.comment === (props.comment ?? '') &&
