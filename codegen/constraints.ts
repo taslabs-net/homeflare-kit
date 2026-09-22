@@ -107,7 +107,7 @@ const main = async (): Promise<void> => {
       }
       const area = areaOf(key);
       const table = byArea.get(area) ?? {};
-      table[key] = emitEndpoint(endpoint);
+      table[key] = emitEndpoint(endpoint, product);
       merged[key] = table[key] as Readonly<Record<string, EmittedParam>>;
       byArea.set(area, table);
     }

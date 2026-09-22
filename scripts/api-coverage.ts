@@ -23,8 +23,8 @@ const repoRoot = dirname(import.meta.dir);
 
 export const generate = async (): Promise<{ markdown: string; json: string }> => {
   const manifest = await readManifest(repoRoot);
-  const pve = endpoints(parseApidoc(await readCached(entry(manifest, 'proxmox/pve'))));
-  const pbs = endpoints(parseApidoc(await readCached(entry(manifest, 'proxmox/pbs'))));
+  const pve = endpoints(parseApidoc(await readCached(entry(manifest, 'proxmox/pve'))), 'pve');
+  const pbs = endpoints(parseApidoc(await readCached(entry(manifest, 'proxmox/pbs'))), 'pbs');
   const coverage = buildCoverage(manifest, { pbs, pve });
   return {
     json: await formatAs(repoRoot, `${JSON.stringify(coverage, null, 2)}\n`, 'api-coverage.json'),

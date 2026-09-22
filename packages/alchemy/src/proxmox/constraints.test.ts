@@ -14,13 +14,11 @@
 import { describe, expect, test } from 'bun:test';
 import * as Layer from 'effect/Layer';
 import { engineOver } from '../verify/fake-engine.ts';
+// ⚠️ The estate's own declarations live in constraints-live.test.ts — split at the 250-line cap.
 import { constraintsFor, formViolations } from './constraint-guard.ts';
 import { type EndpointConstraints, refusal, violations } from './constraints.ts';
 import type { PbsTarget } from './credentials.ts';
 import { fakePve, withoutBao } from './fake-pve.ts';
-import { createForm as datastoreCreateForm } from './pbs-datastore-form.ts';
-import { createBody as pruneCreateBody } from './pbs-prune-job-form.ts';
-import { createBody as syncCreateBody } from './pbs-sync-job-form.ts';
 import { PROXMOX_CONSTRAINTS, PROXMOX_CONSTRAINTS_DIGEST } from './generated/constraints/index.ts';
 import { PbsVerifyJob, PbsVerifyJobProvider } from './pbs-verify-job.ts';
 
@@ -200,61 +198,5 @@ describe('every rule kind, at and past its boundary', () => {
   test('the refusal names the endpoint and points at the generated table', () => {
     expect(refusal(VERIFY, ['comment: at most 128 characters'])).toContain(VERIFY);
     expect(refusal(VERIFY, ['comment: at most 128 characters'])).toContain('generated/constraints');
-  });
-});
-
-/**
- * ★ THE OTHER THREE PBS FAMILIES, WITH THE ESTATE'S OWN DECLARATIONS, AGAINST THEIR CREATE TABLE.
- *   The risk this feature carries is not the one it fixes: a table that refuses a declaration the
- *   vendor would have ACCEPTED blocks a deploy that was always legal, and the operator cannot tell
- *   that from a genuine violation. These are the jobs `homeflare-proxmox` actually declares
- *   (`prune-cluster-all`, `sync-all-to-r2`, the `r2-offsite` datastore), so a false positive in the
- *   presence check or a mistranslated pattern fails here rather than on a Sunday morning.
- */
-describe('the live PBS declarations pass their own create tables', () => {
-  test('prune, sync and datastore create forms have no violations', () => {
-    expect(
-      formViolations(
-        'pbs:POST /config/prune',
-        pruneCreateBody({
-          comment: 'cluster retention',
-          id: 'prune-cluster-all',
-          'keep-daily': 7,
-          'keep-last': 3,
-          'keep-monthly': 6,
-          'keep-weekly': 4,
-          schedule: 'sat 03:00',
-          store: 'cluster',
-          target: PBS,
-        }),
-        true,
-      ),
-    ).toEqual([]);
-    expect(
-      formViolations(
-        'pbs:POST /config/sync',
-        syncCreateBody({
-          comment: 'offsite copy to R2',
-          id: 'sync-all-to-r2',
-          'remote-store': 'r2-offsite',
-          schedule: 'mon 08:30',
-          store: 'cluster',
-          target: PBS,
-        }),
-        true,
-      ),
-    ).toEqual([]);
-    expect(
-      formViolations(
-        'pbs:POST /config/datastore',
-        datastoreCreateForm({
-          comment: 'offsite',
-          name: 'r2-offsite',
-          path: '/mnt/datastore/r2-offsite',
-          target: PBS,
-        }),
-        true,
-      ),
-    ).toEqual([]);
   });
 });
