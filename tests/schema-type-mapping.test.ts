@@ -91,6 +91,23 @@ describe('a response is JSON and is not spelled for the wire', () => {
     expect(asReturn(undefined)).toBe('unknown');
   });
 
+  /**
+   * 🔴 `{}` IS EVERY NON-NULLISH VALUE IN TYPESCRIPT, NOT THE EMPTY OBJECT. A closed object with no
+   *   declared properties used to render as `{}`, and `const x: {} = 42` typechecks — so the one
+   *   place the vendor documented least produced a type WEAKER than `unknown` while looking
+   *   specific. Proven with tsc against the committed file before this changed.
+   * ⚠️ `Record<string, never>` WOULD BE THE LITERAL READING AND IT WOULD BE FALSE. The only
+   *   endpoint that hits this — PBS `GET /nodes/{node}/disks/zfs/{name}` — describes itself as
+   *   "zpool vdev tree with status"; the `additionalProperties: false` is serde boilerplate for a
+   *   Rust field holding an untyped value, not the vendor promising an empty payload.
+   */
+  test('a closed object with no properties is a record, never the bare {}', () => {
+    const empty = { additionalProperties: false, properties: {}, type: 'object' } as const;
+    expect(asReturn(empty)).toBe('Record<string, unknown>');
+    expect(asReturn({ ...empty, additionalProperties: 0 })).toBe('Record<string, unknown>');
+    expect(asReturn(empty)).not.toBe('{}');
+  });
+
   test('an open object inside an array is parenthesised and a closed one is not', () => {
     const open = { items: { properties: { id: { type: 'string' } } }, type: 'array' } as const;
     expect(asReturn(open)).toBe('readonly ({ id: string } & Record<string, unknown>)[]');
