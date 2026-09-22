@@ -58,17 +58,25 @@ describe('Proxmox.ApiToken plans clean against POST /access/users/{userid}/token
 });
 
 describe('Proxmox.MetricServer plans clean against POST /cluster/metrics/server/{id}', () => {
-  /** The estate's own row: InfluxDB v2 over https, in a section named `macmini`. */
+  /**
+   * The estate's own row, SHAPED: InfluxDB v2 over https with an api-path-prefix, an
+   * organization and a bucket, every value a placeholder.
+   *
+   * ⛔ SHAPE ONLY, FOR THE REASON lxc-harness.ts GIVES. `src` ships in the npm tarball and this
+   *   repository is public, so a real metrics host, cluster name or organization here would be
+   *   estate topology published forever in the git history. The proof is about which KEYS the
+   *   create form sends and which bounds they face; the strings carry none of it.
+   */
   const declared = {
-    'api-path-prefix': '/tb4/',
+    'api-path-prefix': '/cluster-a/',
     bucket: 'pve',
     disable: false,
-    id: 'macmini',
+    id: 'metrics-example',
     influxdbproto: 'https',
     'max-body-size': 10_000_000,
-    organization: 'homeflare',
+    organization: 'example',
     port: 443,
-    server: 'metrics.homeflare.dev',
+    server: 'metrics.example.invalid',
     target: TARGET,
     type: 'influxdb',
     'verify-certificate': true,
@@ -102,7 +110,7 @@ describe('Proxmox.MetricServer plans clean against POST /cluster/metrics/server/
 });
 
 describe('Proxmox.NotificationTarget plans clean per family', () => {
-  /** The estate's only target: the shipped `mail-to-root`, edited. sendmail requires only a name. */
+  /** The shipped `mail-to-root`, edited — the shape every estate has. sendmail needs only a name. */
   test('the live sendmail declaration has no violations', () => {
     expect(
       onCreate(
