@@ -12,13 +12,18 @@
  *
  * ⚠️ A `patternSource` with no `pattern` beside it is a rule that could NOT be carried into a
  *   JavaScript RegExp faithfully (codegen/pattern.ts). It is recorded and NOT enforced.
+ * ⚠️ `pattern` IS NOT THE VENDOR'S SPELLING. For PVE it is anchored, because PVE applies
+ *   `m/^$pattern$/` itself (JSONSchema.pm); for PBS it is the vendor's own, which already
+ *   carries its anchors. `patternSource` is the spelling to quote at a human — param-rules.ts.
+ * ⚠️ `each: true` means the value rules describe every ELEMENT of a repeated key, because the
+ *   parameter is an array and stated its limits on `items`.
  */
 import type { EndpointConstraints } from '../../constraints.ts';
 
 export const PVE_CLUSTER_REPLICATION_CONSTRAINTS: Readonly<Record<string, EndpointConstraints>> = {
   "pve:POST /cluster/replication": {
     "comment": {"maxLength":4096,"type":"string"},
-    "id": {"format":"pve-replication-job-id","pattern":"[1-9][0-9]{2,8}-\\d{1,9}","patternSource":"[1-9][0-9]{2,8}-\\d{1,9}","required":true,"type":"string"},
+    "id": {"format":"pve-replication-job-id","pattern":"^[1-9][0-9]{2,8}-\\d{1,9}\\n?$","patternSource":"[1-9][0-9]{2,8}-\\d{1,9}","required":true,"type":"string"},
     "rate": {"minimum":1,"type":"number"},
     "remove_job": {"enum":["local","full"],"type":"string"},
     "schedule": {"default":"*/15","format":"pve-calendar-event","maxLength":128,"type":"string"},

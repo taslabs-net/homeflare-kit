@@ -12,6 +12,11 @@
  *
  * ⚠️ A `patternSource` with no `pattern` beside it is a rule that could NOT be carried into a
  *   JavaScript RegExp faithfully (codegen/pattern.ts). It is recorded and NOT enforced.
+ * ⚠️ `pattern` IS NOT THE VENDOR'S SPELLING. For PVE it is anchored, because PVE applies
+ *   `m/^$pattern$/` itself (JSONSchema.pm); for PBS it is the vendor's own, which already
+ *   carries its anchors. `patternSource` is the spelling to quote at a human — param-rules.ts.
+ * ⚠️ `each: true` means the value rules describe every ELEMENT of a repeated key, because the
+ *   parameter is an array and stated its limits on `items`.
  */
 import type { EndpointConstraints } from '../../constraints.ts';
 
@@ -23,7 +28,7 @@ export const PVE_STORAGE_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
     "content-dirs": {"format":"pve-dir-override-list","type":"string"},
     "domain": {"maxLength":256,"type":"string"},
     "export": {"format":"pve-storage-path","type":"string"},
-    "fingerprint": {"pattern":"([A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}","patternSource":"([A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}","type":"string"},
+    "fingerprint": {"pattern":"^([A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}\\n?$","patternSource":"([A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}","type":"string"},
     "format": {"enum":["raw","qcow2","subvol","vmdk"],"type":"string"},
     "fs-name": {"format":"pve-configid","type":"string"},
     "max-protected-backups": {"default":"Unlimited for users with Datastore.Allocate privilege, 5 for other users","minimum":-1,"type":"integer"},
@@ -54,7 +59,7 @@ export const PVE_STORAGE_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
     "delete": {"format":"pve-configid-list","maxLength":4096,"type":"string"},
     "digest": {"maxLength":64,"type":"string"},
     "domain": {"maxLength":256,"type":"string"},
-    "fingerprint": {"pattern":"([A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}","patternSource":"([A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}","type":"string"},
+    "fingerprint": {"pattern":"^([A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}\\n?$","patternSource":"([A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}","type":"string"},
     "format": {"enum":["raw","qcow2","subvol","vmdk"],"type":"string"},
     "fs-name": {"format":"pve-configid","type":"string"},
     "max-protected-backups": {"default":"Unlimited for users with Datastore.Allocate privilege, 5 for other users","minimum":-1,"type":"integer"},

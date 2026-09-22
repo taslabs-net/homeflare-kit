@@ -12,6 +12,8 @@
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { enforcedKinds } from './api-enforced.ts';
+import { resolveParameters } from '../codegen/parameters.ts';
 
 export type ManifestEntry = {
   readonly id: string;
@@ -87,7 +89,7 @@ export type ApiNode = {
 
 export type ApiMethod = {
   readonly method?: string;
-  readonly parameters?: { readonly properties?: Record<string, unknown> };
+  readonly parameters?: unknown;
 };
 
 /**
@@ -136,22 +138,49 @@ const UNENFORCED = ['maxLength', 'minLength', 'minimum', 'maximum', 'pattern', '
  *   layer this summary deliberately does not flatten, because a nested rule belongs to the nested
  *   field, not to the parameter that contains it.
  */
-const isUnenforced = (value: unknown): boolean => {
+const isUnenforced = (value: unknown, enforced: ReadonlySet<string>): boolean => {
   if (typeof value !== 'object' || value === null) return false;
   const p = value as Record<string, unknown>;
-  return UNENFORCED.some((k) => p[k] !== undefined);
+  /**
+   * ⛔ AN ARRAY STATES ITS RULES ON `items`, so a parameter with none of its own may still carry
+   *   one. Both artefacts have to agree on what a rule IS, or the gap list and the guard describe
+   *   different APIs — see codegen/param-rules.ts, which merges the same way.
+   */
+  const inner =
+    p['type'] === 'array' && typeof p['items'] === 'object' && p['items'] !== null
+      ? (p['items'] as Record<string, unknown>)
+      : {};
+  return UNENFORCED.some((k) => (p[k] ?? inner[k]) !== undefined && !enforced.has(k));
 };
 
-/** Every endpoint in the tree, flattened, with the parameters nothing local enforces. */
-export const endpoints = (roots: readonly ApiNode[]): readonly Endpoint[] => {
+/**
+ * Every endpoint in the tree, flattened, with the parameters nothing local enforces.
+ *
+ * ⛔ `product` IS NOT DECORATION. It is how a row is looked up in the generated constraint tables,
+ *   which are keyed `pve:`/`pbs:` because both products publish `PUT /access/acl` with different
+ *   rules. Without it this report counts rules the repository already checks.
+ */
+export const endpoints = (roots: readonly ApiNode[], product: string): readonly Endpoint[] => {
   const out: Endpoint[] = [];
   const walk = (n: ApiNode): void => {
     if (n.path !== undefined && n.info !== undefined) {
       for (const [method, spec] of Object.entries(n.info)) {
-        const props = spec.parameters?.properties ?? {};
+        /**
+         * ⛔ NOT `parameters.properties`. PVE wraps a discriminated union in `allOf`/`oneOf`, and
+         *   asking for `properties` there answers `undefined` — so `/cluster/ha/rules` was
+         *   reported as having ZERO parameters and zero gaps while carrying a `maxLength` of
+         *   4096. The constraint generator had the identical blind spot; both now read the
+         *   combinators through the one resolver.
+         * ⚠️ TWO PARSERS FOR ONE FILE FORMAT is the deeper defect — `codegen/apidoc.ts` and this
+         *   file each slice `apidoc.js` themselves. Sharing the resolver closes the bug; merging
+         *   the two readers is its own change.
+         */
+        const props = resolveParameters(spec.parameters).params as Record<string, unknown>;
         out.push({
           unenforced: Object.entries(props)
-            .filter(([, v]) => isUnenforced(v))
+            .filter(([k, v]) =>
+              isUnenforced(v, enforcedKinds(product, method, n.path as string, k)),
+            )
             .map(([k]) => k)
             .sort(),
           method,

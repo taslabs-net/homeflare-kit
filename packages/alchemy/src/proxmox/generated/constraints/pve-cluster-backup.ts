@@ -12,6 +12,11 @@
  *
  * ⚠️ A `patternSource` with no `pattern` beside it is a rule that could NOT be carried into a
  *   JavaScript RegExp faithfully (codegen/pattern.ts). It is recorded and NOT enforced.
+ * ⚠️ `pattern` IS NOT THE VENDOR'S SPELLING. For PVE it is anchored, because PVE applies
+ *   `m/^$pattern$/` itself (JSONSchema.pm); for PBS it is the vendor's own, which already
+ *   carries its anchors. `patternSource` is the spelling to quote at a human — param-rules.ts.
+ * ⚠️ `each: true` means the value rules describe every ELEMENT of a repeated key, because the
+ *   parameter is an array and stated its limits on `items`.
  */
 import type { EndpointConstraints } from '../../constraints.ts';
 
@@ -36,7 +41,7 @@ export const PVE_CLUSTER_BACKUP_CONSTRAINTS: Readonly<Record<string, EndpointCon
     "performance": {"format":"backup-performance","type":"string"},
     "prune-backups": {"default":"keep-all=1","format":"prune-backups","type":"string"},
     "schedule": {"format":"pve-calendar-event","maxLength":128,"type":"string"},
-    "starttime": {"pattern":"\\d{1,2}:\\d{1,2}","patternSource":"\\d{1,2}:\\d{1,2}","type":"string"},
+    "starttime": {"pattern":"^\\d{1,2}:\\d{1,2}\\n?$","patternSource":"\\d{1,2}:\\d{1,2}","type":"string"},
     "stopwait": {"default":"10","minimum":0,"type":"integer"},
     "storage": {"format":"pve-storage-id","type":"string"},
     "vmid": {"format":"pve-vmid-list","type":"string"},
@@ -61,7 +66,7 @@ export const PVE_CLUSTER_BACKUP_CONSTRAINTS: Readonly<Record<string, EndpointCon
     "performance": {"format":"backup-performance","type":"string"},
     "prune-backups": {"default":"keep-all=1","format":"prune-backups","type":"string"},
     "schedule": {"format":"pve-calendar-event","maxLength":128,"type":"string"},
-    "starttime": {"pattern":"\\d{1,2}:\\d{1,2}","patternSource":"\\d{1,2}:\\d{1,2}","type":"string"},
+    "starttime": {"pattern":"^\\d{1,2}:\\d{1,2}\\n?$","patternSource":"\\d{1,2}:\\d{1,2}","type":"string"},
     "stopwait": {"default":"10","minimum":0,"type":"integer"},
     "storage": {"format":"pve-storage-id","type":"string"},
     "vmid": {"format":"pve-vmid-list","type":"string"},

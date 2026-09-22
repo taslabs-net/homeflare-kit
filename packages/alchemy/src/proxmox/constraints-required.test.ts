@@ -36,9 +36,11 @@ const requiredOf = (key: string) =>
 
 describe('every create this package makes, and what the vendor requires of it', () => {
   /**
-   * ⚠️ AN ENDPOINT WITH NO REQUIRED PARAMETER IS NOT A MISTAKE. `POST /cluster/backup` and
-   *   `POST /cluster/ha/rules` genuinely mark nothing required; recording the empty set is the
-   *   same information as recording a full one.
+   * ⚠️ AN ENDPOINT WITH NO REQUIRED PARAMETER IS NOT A MISTAKE. `POST /cluster/backup` genuinely
+   *   marks nothing required; recording the empty set is the same information as recording a full
+   *   one. ⛔ `POST /cluster/ha/rules` LOOKED LIKE ONE OF THOSE until PR 113 taught the reader to
+   *   follow PVE's `allOf`/`oneOf`, which is exactly the class of change this census exists to
+   *   make visible in a diff.
    */
   test('the required set of every tabled POST is exactly this', () => {
     const creates = Object.keys(PROXMOX_CONSTRAINTS)
@@ -61,6 +63,7 @@ describe('every create this package makes, and what the vendor requires of it', 
       'pve:POST /access/users': ['userid'],
       'pve:POST /cluster/firewall/aliases': ['cidr', 'name'],
       'pve:POST /cluster/ha/resources': ['sid'],
+      'pve:POST /cluster/ha/rules': ['resources', 'rule'],
       'pve:POST /cluster/metrics/server/{id}': ['port', 'server', 'type'],
       'pve:POST /cluster/notifications/endpoints/gotify': ['name', 'server', 'token'],
       'pve:POST /cluster/notifications/endpoints/sendmail': ['name'],

@@ -16,6 +16,8 @@
  *   - PVE `format` is a NAME (`pve-calendar-event`); PBS `format` is a whole sub-schema object for
  *     the inside of a property string. Treating them alike prints `[object Object]`.
  */
+import { resolveParameters } from './parameters.ts';
+
 export interface VendorParam {
   readonly type?: string;
   readonly optional?: number | boolean;
@@ -34,17 +36,35 @@ export interface VendorParam {
   readonly format?: string | Record<string, unknown>;
   readonly default?: unknown;
   readonly description?: string;
+  /**
+   * ⛔ AN ARRAY PARAMETER CARRIES ITS RULES HERE, NOT ON ITSELF. Both products spell an array as
+   *   `{type: 'array', items: {maxLength: 32, pattern: …}}`, so a generator that reads only the
+   *   parameter emits a row with no rule at all — see param-rules.ts.
+   */
+  readonly items?: VendorParam;
 }
 
 export interface VendorEndpoint {
-  readonly method: 'POST' | 'PUT' | 'DELETE' | 'GET';
+  /**
+   * ⚠️ `PATCH` IS HERE FOR NETBOX, NOT FOR PROXMOX. Neither PVE nor PBS publishes a PATCH
+   *   endpoint — they update with PUT — but this interface is the shared shape `openapi.ts`
+   *   normalises OpenAPI documents into, and a NetBox update IS a PATCH. Widening the union is
+   *   what keeps `emit.ts` and the digest one implementation across both vendors.
+   */
+  readonly method: 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'GET';
   readonly path: string;
   readonly params: Readonly<Record<string, VendorParam>>;
+  /**
+   * ⛔ SET WHEN THE PARAMETER SCHEMA USED A CONSTRUCT WE DO NOT READ, so `params` being empty
+   *   cannot be mistaken for "this endpoint has no rules" — which is exactly how
+   *   `Proxmox.HaRule` ended up with an empty table. See codegen/parameters.ts.
+   */
+  readonly unresolved?: string;
 }
 
 interface RawNode {
   readonly path?: string;
-  readonly info?: Record<string, { parameters?: { properties?: Record<string, VendorParam> } }>;
+  readonly info?: Record<string, { parameters?: unknown }>;
   readonly children?: readonly RawNode[];
 }
 
@@ -68,10 +88,12 @@ export const endpointsOf = (roots: readonly RawNode[]): readonly VendorEndpoint[
   const walk = (node: RawNode): void => {
     for (const [method, info] of Object.entries(node.info ?? {})) {
       if (node.path === undefined) continue;
+      const resolved = resolveParameters(info?.parameters);
       out.push({
         method: method as VendorEndpoint['method'],
-        params: info?.parameters?.properties ?? {},
+        params: resolved.params,
         path: node.path,
+        ...(resolved.unresolved === undefined ? {} : { unresolved: resolved.unresolved }),
       });
     }
     for (const child of node.children ?? []) walk(child);

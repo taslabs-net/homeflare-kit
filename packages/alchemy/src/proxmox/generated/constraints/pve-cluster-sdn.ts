@@ -12,6 +12,11 @@
  *
  * ⚠️ A `patternSource` with no `pattern` beside it is a rule that could NOT be carried into a
  *   JavaScript RegExp faithfully (codegen/pattern.ts). It is recorded and NOT enforced.
+ * ⚠️ `pattern` IS NOT THE VENDOR'S SPELLING. For PVE it is anchored, because PVE applies
+ *   `m/^$pattern$/` itself (JSONSchema.pm); for PBS it is the vendor's own, which already
+ *   carries its anchors. `patternSource` is the spelling to quote at a human — param-rules.ts.
+ * ⚠️ `each: true` means the value rules describe every ELEMENT of a repeated key, because the
+ *   parameter is an array and stated its limits on `items`.
  */
 import type { EndpointConstraints } from '../../constraints.ts';
 
@@ -20,11 +25,12 @@ export const PVE_CLUSTER_SDN_CONSTRAINTS: Readonly<Record<string, EndpointConstr
     "alias": {"maxLength":256,"patternSource":"(?^i:[\\(\\)-_.\\w\\d\\s]{0,256})","type":"string"},
     "tag": {"maximum":16777215,"minimum":1,"type":"integer"},
     "type": {"enum":["vnet"],"type":"string"},
-    "vnet": {"maxLength":8,"minLength":2,"pattern":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","patternSource":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","required":true,"type":"string"},
+    "vnet": {"maxLength":8,"minLength":2,"pattern":"^[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]\\n?$","patternSource":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","required":true,"type":"string"},
     "zone": {"required":true,"type":"string"},
   },
   "pve:POST /cluster/sdn/vnets/{vnet}/subnets": {
     "dhcp-dns-server": {"format":"ip","type":"string"},
+    "dhcp-range": {"each":true,"format":"pve-sdn-dhcp-range","type":"array"},
     "dnszoneprefix": {"format":"dns-name","type":"string"},
     "gateway": {"format":"ip","type":"string"},
     "subnet": {"format":"pve-sdn-subnet-id","required":true,"type":"string"},
@@ -40,12 +46,13 @@ export const PVE_CLUSTER_SDN_CONSTRAINTS: Readonly<Record<string, EndpointConstr
     "nodes": {"format":"pve-node-list","type":"string"},
     "peers": {"format":"ip-list","type":"string"},
     "rt-import": {"format":"pve-sdn-bgp-rt-list","type":"string"},
+    "secondary-controllers": {"each":true,"maxLength":64,"minLength":2,"pattern":"^[a-zA-Z][a-zA-Z0-9_-]*[a-zA-Z0-9]\\n?$","patternSource":"[a-zA-Z][a-zA-Z0-9_-]*[a-zA-Z0-9]","type":"array"},
     "tag": {"minimum":0,"type":"integer"},
     "type": {"enum":["evpn","faucet","qinq","simple","vlan","vxlan"],"format":"pve-configid","required":true,"type":"string"},
     "vlan-protocol": {"default":"802.1q","enum":["802.1q","802.1ad"],"type":"string"},
     "vrf-vxlan": {"maximum":16777215,"minimum":1,"type":"integer"},
     "vxlan-port": {"default":"4789","maximum":65536,"minimum":1,"type":"integer"},
-    "zone": {"maxLength":8,"minLength":2,"pattern":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","patternSource":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","required":true,"type":"string"},
+    "zone": {"maxLength":8,"minLength":2,"pattern":"^[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]\\n?$","patternSource":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","required":true,"type":"string"},
   },
   "pve:PUT /cluster/sdn": {},
   "pve:PUT /cluster/sdn/vnets/{vnet}": {
@@ -57,6 +64,7 @@ export const PVE_CLUSTER_SDN_CONSTRAINTS: Readonly<Record<string, EndpointConstr
   "pve:PUT /cluster/sdn/vnets/{vnet}/subnets/{subnet}": {
     "delete": {"format":"pve-configid-list","maxLength":4096,"type":"string"},
     "dhcp-dns-server": {"format":"ip","type":"string"},
+    "dhcp-range": {"each":true,"format":"pve-sdn-dhcp-range","type":"array"},
     "digest": {"maxLength":64,"type":"string"},
     "dnszoneprefix": {"format":"dns-name","type":"string"},
     "gateway": {"format":"ip","type":"string"},
@@ -73,6 +81,7 @@ export const PVE_CLUSTER_SDN_CONSTRAINTS: Readonly<Record<string, EndpointConstr
     "nodes": {"format":"pve-node-list","type":"string"},
     "peers": {"format":"ip-list","type":"string"},
     "rt-import": {"format":"pve-sdn-bgp-rt-list","type":"string"},
+    "secondary-controllers": {"each":true,"maxLength":64,"minLength":2,"pattern":"^[a-zA-Z][a-zA-Z0-9_-]*[a-zA-Z0-9]\\n?$","patternSource":"[a-zA-Z][a-zA-Z0-9_-]*[a-zA-Z0-9]","type":"array"},
     "tag": {"minimum":0,"type":"integer"},
     "vlan-protocol": {"default":"802.1q","enum":["802.1q","802.1ad"],"type":"string"},
     "vrf-vxlan": {"maximum":16777215,"minimum":1,"type":"integer"},

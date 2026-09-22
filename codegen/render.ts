@@ -81,6 +81,11 @@ const header = (entry: ManifestEntry, area: string, covered: number, total: numb
  *
  * ⚠️ A \`patternSource\` with no \`pattern\` beside it is a rule that could NOT be carried into a
  *   JavaScript RegExp faithfully (codegen/pattern.ts). It is recorded and NOT enforced.
+ * ⚠️ \`pattern\` IS NOT THE VENDOR'S SPELLING. For PVE it is anchored, because PVE applies
+ *   \`m/^$pattern$/\` itself (JSONSchema.pm); for PBS it is the vendor's own, which already
+ *   carries its anchors. \`patternSource\` is the spelling to quote at a human — param-rules.ts.
+ * ⚠️ \`each: true\` means the value rules describe every ELEMENT of a repeated key, because the
+ *   parameter is an array and stated its limits on \`items\`.
  */
 import type { EndpointConstraints } from '../../constraints.ts';
 `;

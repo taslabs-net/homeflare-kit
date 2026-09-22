@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/config",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Shared tsconfig, oxlint, oxfmt, and non-npm release helpers for HomeFlare projects.",
   "license": "MIT",
   "author": "Timothy Schneider",
@@ -11,6 +11,7 @@
   },
   "files": [
     "dist",
+    "docs",
     "src",
     "tsconfig.base.json",
     "tsconfig.lib.json",
@@ -35,6 +36,10 @@
       "types": "./dist/check.d.ts",
       "default": "./dist/check.js"
     },
+    "./repo-shape": {
+      "types": "./dist/repo-shape.d.ts",
+      "default": "./dist/repo-shape.js"
+    },
     "./release": {
       "types": "./dist/release.d.ts",
       "default": "./dist/release.js"
@@ -50,7 +55,7 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/check.ts ./src/release.ts ./src/require-release-config.ts --outdir dist --target bun --format esm --packages external --sourcemap=linked",
+    "build:js": "bun build ./src/check.ts ./src/release.ts ./src/require-release-config.ts ./src/repo-shape.ts --outdir dist --target bun --format esm --packages external --sourcemap=linked",
     "build:types": "tsc --project tsconfig.build.json",
     "clean": "rm -rf dist",
     "types": "tsc --noEmit",

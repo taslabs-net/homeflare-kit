@@ -14,18 +14,18 @@
 import { describe, expect, test } from 'bun:test';
 import * as Layer from 'effect/Layer';
 import { engineOver } from '../verify/fake-engine.ts';
+// ⚠️ The estate's own declarations live in constraints-live.test.ts — split at the 250-line cap.
 import { constraintsFor, formViolations } from './constraint-guard.ts';
+import { type EndpointConstraints, refusal, violations } from './constraints.ts';
 import type { PbsTarget } from './credentials.ts';
 import { fakePve, withoutBao } from './fake-pve.ts';
-import { createForm as datastoreCreateForm } from './pbs-datastore-form.ts';
-import { createBody as pruneCreateBody } from './pbs-prune-job-form.ts';
-import { createBody as syncCreateBody } from './pbs-sync-job-form.ts';
 import { PROXMOX_CONSTRAINTS, PROXMOX_CONSTRAINTS_DIGEST } from './generated/constraints/index.ts';
 import { PbsVerifyJob, PbsVerifyJobProvider } from './pbs-verify-job.ts';
 
 const PBS: PbsTarget = { api: 'https://pbs.test:8007/api2/json', mount: 'pbs-test', scheme: 'pbs' };
 const VERIFY = 'pbs:POST /config/verify';
 const BELL = String.fromCodePoint(7);
+const ROCKET = String.fromCodePoint(0x1f680);
 
 /** The real declaration, comment length made an argument. */
 const job = (comment: string) =>
@@ -135,57 +135,71 @@ describe('the table is the vendor own rule set, read from the generated file', (
 });
 
 /**
- * ★ THE OTHER THREE PBS FAMILIES, WITH THE ESTATE'S OWN DECLARATIONS, AGAINST THEIR CREATE TABLE.
- *   The risk this feature carries is not the one it fixes: a table that refuses a declaration the
- *   vendor would have ACCEPTED blocks a deploy that was always legal, and the operator cannot tell
- *   that from a genuine violation. These are the jobs `homeflare-proxmox` actually declares
- *   (`prune-cluster-all`, `sync-all-to-r2`, the `r2-offsite` datastore), so a false positive in the
- *   presence check or a mistranslated pattern fails here rather than on a Sunday morning.
+ * ★ ONE MUTANT PER BRANCH. Each case below fails if that single comparison is deleted, inverted or
+ *   its boundary moved by one — which is the only way to know the validator checks what it claims
+ *   rather than passing everything.
  */
-describe('the live PBS declarations pass their own create tables', () => {
-  test('prune, sync and datastore create forms have no violations', () => {
-    expect(
-      formViolations(
-        'pbs:POST /config/prune',
-        pruneCreateBody({
-          comment: 'cluster retention',
-          id: 'prune-cluster-all',
-          'keep-daily': 7,
-          'keep-last': 3,
-          'keep-monthly': 6,
-          'keep-weekly': 4,
-          schedule: 'sat 03:00',
-          store: 'cluster',
-          target: PBS,
-        }),
-        true,
-      ),
-    ).toEqual([]);
-    expect(
-      formViolations(
-        'pbs:POST /config/sync',
-        syncCreateBody({
-          comment: 'offsite copy to R2',
-          id: 'sync-all-to-r2',
-          'remote-store': 'r2-offsite',
-          schedule: 'mon 08:30',
-          store: 'cluster',
-          target: PBS,
-        }),
-        true,
-      ),
-    ).toEqual([]);
-    expect(
-      formViolations(
-        'pbs:POST /config/datastore',
-        datastoreCreateForm({
-          comment: 'offsite',
-          name: 'r2-offsite',
-          path: '/mnt/datastore/r2-offsite',
-          target: PBS,
-        }),
-        true,
-      ),
-    ).toEqual([]);
+describe('every rule kind, at and past its boundary', () => {
+  const table: EndpointConstraints = {
+    depth: { maximum: 7, minimum: 0, type: 'integer' },
+    mode: { enum: ['all', 'any'], type: 'string' },
+    name: { maxLength: 4, minLength: 2, pattern: '^[a-z]+$', patternSource: '/^[a-z]+$/' },
+    store: { required: true, type: 'string' },
+    tags: { maxLength: 3, type: 'string' },
+  };
+  const at = (form: Record<string, string | readonly string[]>, presence = false) =>
+    violations(table, form, { presence });
+
+  test('maxLength: 4 passes, 5 does not', () => {
+    expect(at({ name: 'abcd' })).toEqual([]);
+    expect(at({ name: 'abcde' })).toEqual(['name: at most 4 characters']);
+  });
+
+  test('minLength: 2 passes, 1 does not', () => {
+    expect(at({ name: 'ab' })).toEqual([]);
+    expect(at({ name: 'a' })).toEqual(['name: at least 2 characters']);
+  });
+
+  test('minimum and maximum are inclusive on both sides', () => {
+    expect(at({ depth: '0' })).toEqual([]);
+    expect(at({ depth: '7' })).toEqual([]);
+    expect(at({ depth: '-1' })).toEqual(['depth: at least 0']);
+    expect(at({ depth: '8' })).toEqual(['depth: at most 7']);
+  });
+
+  test('enum quotes the vendor own members', () => {
+    expect(at({ mode: 'any' })).toEqual([]);
+    expect(at({ mode: 'ALL' })).toEqual(['mode: must be one of all, any']);
+  });
+
+  test('pattern reports the VENDOR spelling, not the translated one', () => {
+    expect(at({ name: 'abc' })).toEqual([]);
+    expect(at({ name: 'ab1' })).toEqual(['name: must match /^[a-z]+$/']);
+  });
+
+  test('required is checked only when presence is asked for — an update form is partial', () => {
+    expect(at({})).toEqual([]);
+    expect(at({}, true)).toEqual(['store: required']);
+    expect(at({ store: 'r2' }, true)).toEqual([]);
+  });
+
+  /** ⚠️ Characters, not UTF-16 code units: an astral character is ONE character to Proxmox. */
+  test('length counts characters, so an astral character is one', () => {
+    expect(at({ tags: `${ROCKET}ab` })).toEqual([]);
+    expect(at({ tags: `${ROCKET}abc` })).toEqual(['tags: at most 3 characters']);
+  });
+
+  /** ⚠️ A list is repeated keys on the wire (client.ts), so every element faces the same rule. */
+  test('every element of an array value is checked', () => {
+    expect(at({ tags: ['ab', 'abcd'] })).toEqual(['tags: at most 3 characters']);
+  });
+
+  test('a key the table does not mention is not an error', () => {
+    expect(at({ unlisted: 'anything at all' })).toEqual([]);
+  });
+
+  test('the refusal names the endpoint and points at the generated table', () => {
+    expect(refusal(VERIFY, ['comment: at most 128 characters'])).toContain(VERIFY);
+    expect(refusal(VERIFY, ['comment: at most 128 characters'])).toContain('generated/constraints');
   });
 });

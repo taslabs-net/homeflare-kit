@@ -18,13 +18,20 @@
  *   field. A props-level check would pass values the form then mangles, and would have to be
  *   written once per family — which is how the copy that forgets a field gets written.
  *
- * ⚠️ WHAT IT DELIBERATELY DOES NOT ENFORCE, so nobody reads a green plan as more than it is:
- *   - a `format` NAME (PVE's `pve-calendar-event`, `pve-node`, 216 of them): the name is a
+ * ⚠️ WHAT IT DELIBERATELY DOES NOT ENFORCE, so nobody reads a green plan as more than it is. The
+ *   full kind-by-kind table, with the counts measured over the 37 tabled endpoints, is in
+ *   codegen/README.md. The short version:
+ *   - a `format` NAME (PVE's `pve-calendar-event`, `pve-node`; 105 parameters here): the name is a
  *     validator PVE implements server-side and publishes nothing about. Recorded, never checked.
+ *   - a `format` OBJECT — PBS's `notify`, `tuning`, `maintenance-mode`, PVE's `bwlimit`; 10
+ *     parameters. It is a sub-schema for the inside of a PROPERTY STRING, and the packed keys
+ *     carry their own limits. Not flattened, because a rule about `notify` is not a rule about
+ *     `notify.gc`. ⛔ This is the largest remaining gap and it is a gap on purpose.
+ *   - `requires` (8 parameters): "this one needs that one". A dependency, not a value rule.
+ *   - `typetext` with nothing else, such as PBS `schedule`'s `<calendar-event>` (21 parameters).
+ *     The schema states a syntax it does not describe; a malformed schedule still reaches PBS.
  *   - a pattern the generator could not translate faithfully (codegen/pattern.ts). Recorded
  *     verbatim as `patternSource`, never checked.
- *   - PBS `schedule`, which carries `typetext: <calendar-event>` and NO pattern and NO maxLength.
- *     The schema cannot help there; a malformed schedule still reaches PBS.
  *   Each of those is a fact in the table rather than a guess, which is the rule this follows:
  *   if the vendor did not state it, it is not enforced and the table says so.
  */
@@ -39,13 +46,29 @@ export interface ParamConstraint {
   readonly minimum?: number;
   readonly maximum?: number;
   readonly enum?: readonly string[];
-  /** A JavaScript-safe translation. Absent when the vendor's dialect could not be carried over. */
+  /**
+   * A JavaScript-safe EQUIVALENT. Absent when the vendor's dialect could not be carried over.
+   *
+   * ⛔ NOT THE VENDOR'S SPELLING, AND FOR PVE NOT EVEN THE SAME SHAPE. PVE publishes the inside of
+   *   an anchored match and applies `m/^$pattern$/` itself (MEASURED in JSONSchema.pm), so the
+   *   generator anchors it here. Quote `patternSource` at a human, never this.
+   */
   readonly pattern?: string;
+  /** `m` when the vendor asked for multi-line. ⚠️ Dropping it enforces the wrong semantics. */
+  readonly patternFlags?: string;
   /** The vendor's own spelling, always — what a violation message quotes, and the audit trail. */
   readonly patternSource?: string;
   /** PVE's server-side validator name. Recorded so a reader knows what is NOT checked here. */
   readonly format?: string;
   readonly default?: string;
+  /**
+   * The value rules describe each ELEMENT of a repeated key, not one joined string.
+   *
+   * ⚠️ RECORDED, NOT BRANCHED ON. `violations` already checks every element of an array value, so
+   *   this changes no behaviour — it tells a reader of the generated table why a `maxLength` of 32
+   *   sits on a parameter that carries a list.
+   */
+  readonly each?: true;
 }
 
 export type EndpointConstraints = Readonly<Record<string, ParamConstraint>>;
@@ -82,7 +105,9 @@ const checkValue = (name: string, value: string, rule: ParamConstraint): string[
   if (rule.enum !== undefined && !rule.enum.includes(value)) {
     out.push(`${name}: must be one of ${rule.enum.join(', ')}`);
   }
-  if (rule.pattern !== undefined && !new RegExp(rule.pattern).test(value)) {
+  // ⚠️ `patternFlags` IS PASSED, NOT IGNORED. It carries the vendor's own `(?m)`; enforcing a
+  //   multi-line rule with single-line semantics refuses values the vendor accepts.
+  if (rule.pattern !== undefined && !new RegExp(rule.pattern, rule.patternFlags).test(value)) {
     out.push(`${name}: must match ${rule.patternSource ?? rule.pattern}`);
   }
   // ⚠️ NUMBER-NESS IS NOT CHECKED, ONLY THE BOUND. The form is strings by construction and a

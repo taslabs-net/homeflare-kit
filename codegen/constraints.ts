@@ -106,9 +106,20 @@ const main = async (): Promise<void> => {
             `${entry.version} has no such endpoint. Fix the key, or the manifest is stale.`,
         );
       }
+      /**
+       * ⛔ AN UNREADABLE PARAMETER SCHEMA STOPS THE GENERATOR, because the alternative is an empty
+       *   table — which is what `Proxmox.HaRule` had, and an empty table looks exactly like an
+       *   endpoint with no rules. See codegen/parameters.ts.
+       */
+      if (endpoint.unresolved !== undefined) {
+        throw new Error(
+          `${key}: this endpoint's parameter schema could not be read (${endpoint.unresolved}). ` +
+            'Teach codegen/parameters.ts that construct; an empty table would hide the rules.',
+        );
+      }
       const area = areaOf(key);
       const table = byArea.get(area) ?? {};
-      table[key] = emitEndpoint(endpoint);
+      table[key] = emitEndpoint(endpoint, product);
       merged[key] = table[key] as Readonly<Record<string, EmittedParam>>;
       byArea.set(area, table);
     }

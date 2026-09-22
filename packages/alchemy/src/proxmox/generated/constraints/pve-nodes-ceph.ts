@@ -12,6 +12,11 @@
  *
  * ⚠️ A `patternSource` with no `pattern` beside it is a rule that could NOT be carried into a
  *   JavaScript RegExp faithfully (codegen/pattern.ts). It is recorded and NOT enforced.
+ * ⚠️ `pattern` IS NOT THE VENDOR'S SPELLING. For PVE it is anchored, because PVE applies
+ *   `m/^$pattern$/` itself (JSONSchema.pm); for PBS it is the vendor's own, which already
+ *   carries its anchors. `patternSource` is the spelling to quote at a human — param-rules.ts.
+ * ⚠️ `each: true` means the value rules describe every ELEMENT of a repeated key, because the
+ *   parameter is an array and stated its limits on `items`.
  */
 import type { EndpointConstraints } from '../../constraints.ts';
 
@@ -38,7 +43,7 @@ export const PVE_NODES_CEPH_CONSTRAINTS: Readonly<Record<string, EndpointConstra
     "pg_num": {"default":"128","maximum":32768,"minimum":1,"type":"integer"},
     "pg_num_min": {"maximum":32768,"type":"integer"},
     "size": {"default":"3","maximum":7,"minimum":1,"type":"integer"},
-    "target_size": {"pattern":"^(\\d+(\\.\\d+)?)([KMGT])?$","patternSource":"^(\\d+(\\.\\d+)?)([KMGT])?$","type":"string"},
+    "target_size": {"pattern":"^^(\\d+(\\.\\d+)?)([KMGT])?$\\n?$","patternSource":"^(\\d+(\\.\\d+)?)([KMGT])?$","type":"string"},
   },
   "pve:PUT /nodes/{node}/ceph/pool/{name}": {
     "application": {"enum":["rbd","cephfs","rgw"],"type":"string"},
@@ -47,6 +52,6 @@ export const PVE_NODES_CEPH_CONSTRAINTS: Readonly<Record<string, EndpointConstra
     "pg_num": {"maximum":32768,"minimum":1,"type":"integer"},
     "pg_num_min": {"maximum":32768,"type":"integer"},
     "size": {"maximum":7,"minimum":1,"type":"integer"},
-    "target_size": {"pattern":"^(\\d+(\\.\\d+)?)([KMGT])?$","patternSource":"^(\\d+(\\.\\d+)?)([KMGT])?$","type":"string"},
+    "target_size": {"pattern":"^^(\\d+(\\.\\d+)?)([KMGT])?$\\n?$","patternSource":"^(\\d+(\\.\\d+)?)([KMGT])?$","type":"string"},
   },
 };
