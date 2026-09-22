@@ -16,7 +16,13 @@ import type { HostRunner } from '../launchd/runner.ts';
 import { adoptsAtApply } from '../ownership/adopt.ts';
 import { noteUnfinished } from '../ownership/resume.ts';
 import type { SystemdUnitAttributes, SystemdUnitProps } from './unit-form.ts';
-import { deleteUnit, diffUnit, readUnit, reconcileUnit } from './unit-lifecycle.ts';
+import {
+  assertRenameTarget,
+  deleteUnit,
+  diffUnit,
+  readUnit,
+  reconcileUnit,
+} from './unit-lifecycle.ts';
 
 export const readHandler = (
   runner: HostRunner,
@@ -46,11 +52,16 @@ export const diffHandler = (
    *   when a rendered config file's digest is templated into the same deploy.
    */
   const name = resolvedString(news, 'name');
-  return Effect.succeed(
-    name !== undefined && name !== output.name
-      ? { action: 'replace' as const, deleteFirst: true }
-      : undefined,
-  );
+  if (name === undefined || name === output.name) return Effect.succeed(undefined);
+  /**
+   * ⛔ THE NAME IS ENOUGH TO REFUSE A MASKED TARGET, and the refusal has to happen here: the old
+   *   unit is removed before the new one is reconciled. The unit file cannot be compared while
+   *   `content` is still an Output, so this is the name-only half of assertReplaceable.
+   */
+  return lift(async () => {
+    await assertRenameTarget(runner, name);
+    return { action: 'replace' as const, deleteFirst: true };
+  });
 };
 
 export const reconcileHandler = (
