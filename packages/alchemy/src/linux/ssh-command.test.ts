@@ -3,7 +3,7 @@
  * result without the framing marker is never read as data.
  */
 import { describe, expect, test } from 'bun:test';
-import { frameScript, parseFramed, quoteArgv, shellQuote, sshArgv } from './ssh-command.ts';
+import { ABSENT, frameScript, parseFramed, quoteArgv, shellQuote, sshArgv } from './ssh-command.ts';
 import { parseStat, statScript, writeScript } from './ssh-scripts.ts';
 
 const NONCE = 'a1b2c3d4';
@@ -56,6 +56,18 @@ describe('framing', () => {
     expect(framed).toContain('__hf=$?');
     expect(framed).toContain(`__HF_RC_${NONCE}=%s`);
     expect(framed.endsWith('exit "$__hf"')).toBe(true);
+  });
+
+  test('a script that exits still reports — the subshell is load-bearing', async () => {
+    /**
+     * 🔴 MEASURED 2026-09-22 against a live host: without the subshell, `statScript`'s
+     *   `else exit 66` left the shell before the marker printed, and a missing file came back as
+     *   a transport failure. This runs the real framing through a real /bin/sh.
+     */
+    const script = frameScript(statScript('/definitely-not-here-hf'), NONCE);
+    const shell = Bun.spawn(['/bin/sh', '-c', script], { stderr: 'pipe', stdout: 'pipe' });
+    const stderr = await new Response(shell.stderr).text();
+    expect(parseFramed(stderr, NONCE)?.exitCode).toBe(ABSENT);
   });
 });
 

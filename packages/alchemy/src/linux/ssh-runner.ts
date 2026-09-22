@@ -15,6 +15,11 @@
  * ⛔ FAIL CLOSED. A connection that drops, a host key that changed, a shell that cannot parse the
  *   script: none of them produces a "not found". Without the framing marker the result is an
  *   Error, never data (ssh-command.ts parseFramed).
+ * ★ EXERCISED READ-ONLY AGAINST A LIVE HOST, 2026-09-22 (Debian 13, systemd 257, ssh user uid
+ *   1001): `stat` of a file, of a missing path and of a symlink (reported `symlink`, so the lstat
+ *   contract holds over the wire); `readFile` of a file and of a missing path; `getent` user and
+ *   group; a failing `exec`; and an argument of `a b '$HOME` + backtick + ` ;rm` arriving verbatim,
+ *   which is the quoting proven rather than argued. Nothing was written.
  * ⚠️ ONE CONNECTION PER CALL. No multiplexing is configured here: a deploy over a slow link pays a
  *   handshake per read. Pass `sshArgs: ['-o', 'ControlMaster=auto', …]` to opt into your own
  *   ControlPersist socket — the kit does not create one behind your back, because a stale socket
