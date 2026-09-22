@@ -14,7 +14,7 @@ import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Effect from 'effect/Effect';
 import { pve } from './client.ts';
-import { guardForm } from './constraint-guard.ts';
+import { specGuards } from './resource-guard.ts';
 import type { PveSpec, WithApiTarget } from './resource-spec.ts';
 import { formToSend } from './update-guard.ts';
 
@@ -29,28 +29,7 @@ export type {
 export const pveOperations = <Props extends WithApiTarget, Attributes>(
   spec: PveSpec<Props, Attributes>,
 ) => {
-  /**
-   * Both forms against their own endpoint's table.
-   *
-   * ⚠️ PRESENCE IS CHECKED ON CREATE ONLY. An update form is deliberately partial — `formToSend`
-   *   sends what changed — so requiring the vendor's required parameters there would refuse every
-   *   ordinary edit. Value rules (length, range, enum, pattern) apply to both.
-   */
-  const guardForms = (props: Props) =>
-    Effect.gen(function* () {
-      /**
-       * ⛔ THE FORM IS BUILT ONLY WHEN THERE IS A TABLE TO CHECK IT AGAINST. Calling
-       *   `spec.createForm` unconditionally would run every family's form builder on every diff,
-       *   including the fifteen that declare no `endpoint` — work nobody asked for, and a new way
-       *   for a builder that throws on an update-only path to break a plan it never touched.
-       */
-      const create = spec.endpoint?.create;
-      if (create !== undefined) yield* guardForm(create, spec.createForm(props), true);
-      const update = spec.endpoint?.update;
-      if (update === undefined) return;
-      const form = spec.updateForm?.(props);
-      if (form !== undefined) yield* guardForm(update, form, false);
-    });
+  const { guardCreate, guardUpdate } = specGuards(spec);
 
   /** The live object, or undefined. ⚠️ A 404 and `{"data": null}` are ANSWERS, not failures. */
   const read = (props: Props) =>
@@ -65,6 +44,15 @@ export const pveOperations = <Props extends WithApiTarget, Attributes>(
     );
 
   return {
+    /**
+     * ★ EXPORTED SO A FAMILY THAT WRITES ITS OWN `reconcile` REACHES THE SAME CHECK BY THE SAME
+     *   NAME. CephPool, CephFs and ZfsPool all bypass the reconcile below — forked workers, a
+     *   settle loop, a destructive create — and without these two they would be checked at plan
+     *   time and not at apply time, which is exactly the gap an ADOPTED row falls through.
+     */
+    guardCreate,
+    guardUpdate,
+
     read,
 
     // ⚠️ `Input<Props>`, NOT `Props`. At plan time a prop can still be an unresolved Output or
@@ -82,12 +70,21 @@ export const pveOperations = <Props extends WithApiTarget, Attributes>(
          *   create. Checking after it would leave exactly the case that failed on 2026-09-22
          *   unchecked, and the refusal would arrive from the server, half a deploy in.
          */
-        yield* guardForms(news);
+        yield* guardCreate(news, output === undefined);
+        yield* guardUpdate(news);
         if (output === undefined) return undefined;
         const live = yield* read(news);
         // ⚠️ `update`, NOT `create` — Alchemy's Diff admits only noop/update/replace. An object
         //   Alchemy has state for but the cluster does not is drift, and reconcile repairs it.
-        if (live === undefined) return { action: 'update' } as const;
+        if (live === undefined) {
+          /**
+           * ⛔ DRIFT REACHES `reconcile`'s POST, so the create form's required parameters ARE
+           *   about to go on the wire after all. Saying so here rather than leaving it to
+           *   reconcile keeps the refusal in `plan`, where an operator is reading.
+           */
+          yield* guardCreate(news, true);
+          return { action: 'update' } as const;
+        }
         if (spec.matches(live, news)) return { action: 'noop' } as const;
         // An object with no update path cannot be edited in place; say replace and mean it.
         return spec.updateForm === undefined
@@ -97,11 +94,14 @@ export const pveOperations = <Props extends WithApiTarget, Attributes>(
 
     reconcile: (news: Props) =>
       Effect.gen(function* () {
+        const live = yield* read(news);
         // ⚠️ CHECKED AGAIN HERE, AND NOT BECAUSE `diff` IS UNTRUSTED. `reconcile` also runs for an
         //   ADOPTED row, whose diff answer Alchemy discards (verify/fake-engine.ts records it), and
         //   a family that writes its own reconcile bypasses the one above entirely.
-        yield* guardForms(news);
-        const live = yield* read(news);
+        // ⛔ AFTER THE READ, BECAUSE THE READ IS WHAT SAYS WHICH REQUEST IS ABOUT TO BE MADE. A GET
+        //   changes nothing, so nothing has been written by the time a violation refuses the plan.
+        yield* guardCreate(news, live === undefined);
+        yield* guardUpdate(news);
         if (live === undefined) {
           yield* pve(
             news.target,

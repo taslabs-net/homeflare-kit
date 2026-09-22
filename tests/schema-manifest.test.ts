@@ -16,7 +16,7 @@
  *        skip prints the command, so nobody has to guess what did not run.
  */
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -103,10 +103,32 @@ describe('the generated tables carry their source in their header', () => {
     }
   });
 
+  /**
+   * ⛔ THE DIRECTORY, NOT A HAND-WRITTEN LIST. This test named four files until 2026-09-22, when
+   *   splitting `/cluster` and `/nodes/{node}` into their vendor areas turned five tables into
+   *   seventeen — and a list would have gone on passing while checking a file that no longer
+   *   exists. A generated directory is exactly the thing to enumerate rather than to enumerate.
+   */
   test('no generated file is over the house cap of 250 lines', async () => {
-    for (const name of ['index.ts', 'pbs-config.ts', 'pve-access.ts', 'pve-cluster.ts']) {
+    const names = readdirSync(GENERATED).filter((name) => name.endsWith('.ts'));
+    expect(names.length).toBeGreaterThan(1);
+    for (const name of names) {
       const text = await Bun.file(join(GENERATED, name)).text();
       expect(text.split('\n').length).toBeLessThanOrEqual(250);
+    }
+  });
+
+  /**
+   * ⛔ `consumedBy` IS HAND-WRITTEN AND THEREFORE DRIFTS. Every table but the generated index has
+   *   to be claimed by the entry it was generated from, or a refresh of that schema would quietly
+   *   leave a file behind describing an older API — and the header test above only checks the
+   *   files the manifest already mentions.
+   */
+  test('every generated table is claimed by the entry it came from', () => {
+    const claimed = new Set(manifest.schemas.flatMap((entry) => entry.consumedBy));
+    for (const name of readdirSync(GENERATED)) {
+      if (name === 'index.ts' || !name.endsWith('.ts')) continue;
+      expect([...claimed]).toContain(`packages/alchemy/src/proxmox/generated/constraints/${name}`);
     }
   });
 });

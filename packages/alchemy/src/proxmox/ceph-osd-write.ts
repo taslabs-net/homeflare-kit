@@ -15,8 +15,33 @@ import * as Effect from 'effect/Effect';
 import { readOsd } from './ceph-osd-tree.ts';
 import type { CephOsdProps } from './ceph-osd.ts';
 import { pve } from './client.ts';
+import { guardForm } from './constraint-guard.ts';
+import type { EndpointKey } from './constraints.ts';
+
+/**
+ * The vendor rules the create form is checked against at plan time.
+ *
+ * ⛔ DECLARED HERE RATHER THAN ON A SPEC BECAUSE THIS FAMILY HAS NO SPEC — `ceph-osd.ts` writes
+ *   all five handlers by hand (the ⛔ there says why), so it cannot inherit the shared guard and
+ *   would otherwise be the one family that writes to Ceph with nothing checking the body.
+ * ⚠️ `dev` IS REQUIRED AND THE REFUSAL BELOW ALREADY COVERS IT, with a message about a missing
+ *   replica that is far more useful than `dev: required`. The table is still worth checking: it
+ *   also carries `db_dev_size` ≥ 1, `wal_dev_size` ≥ 0.5 and `osds-per-device` ≥ 1, and nothing
+ *   else in this package knows those numbers.
+ * ⚠️ THERE IS NO UPDATE KEY: PVE registers no PUT under `ceph/osd`, and an OSD is not editable.
+ */
+export const OSD_CREATE_ENDPOINT: EndpointKey = 'pve:POST /nodes/{node}/ceph/osd';
 
 const describe = (props: CephOsdProps) => `osd.${String(props.osdid)} on ${props.node}`;
+
+/**
+ * The create body. ★ Exported so the constraint proof can run the REAL form.
+ * ⚠️ `dev` is `string | undefined` on the props and non-optional here: `createOsd` refuses first.
+ */
+export const createOsdForm = (props: CephOsdProps, dev: string): Record<string, string> => ({
+  dev,
+  ...(props.device_class === undefined ? {} : { 'crush-device-class': props.device_class }),
+});
 
 export const createOsd = Effect.fn(function* (news: CephOsdProps) {
   if (news.dev === undefined) {
@@ -30,10 +55,11 @@ export const createOsd = Effect.fn(function* (news: CephOsdProps) {
       ),
     );
   }
-  yield* pve(news.target, 'provision', 'POST', `nodes/${news.node}/ceph/osd`, {
-    dev: news.dev,
-    ...(news.device_class === undefined ? {} : { 'crush-device-class': news.device_class }),
-  });
+  const form = createOsdForm(news, news.dev);
+  // ⛔ BEFORE THE POST, BECAUSE THE POST ZAPS A BLOCK DEVICE. A vendor rule broken here is worth
+  //   refusing at plan rather than discovering from a 400 after `ceph-volume` has run.
+  yield* guardForm(OSD_CREATE_ENDPOINT, form, true);
+  yield* pve(news.target, 'provision', 'POST', `nodes/${news.node}/ceph/osd`, form);
   const created = yield* readOsd(news);
   if (created === undefined) {
     return yield* Effect.die(

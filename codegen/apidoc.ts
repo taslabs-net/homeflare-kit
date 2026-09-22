@@ -19,10 +19,16 @@
 export interface VendorParam {
   readonly type?: string;
   readonly optional?: number | boolean;
-  readonly maxLength?: number;
-  readonly minLength?: number;
-  readonly minimum?: number;
-  readonly maximum?: number;
+  /**
+   * ⚠️ `number | string`, AND THE STRING IS THE VENDOR'S DOING. MEASURED 2026-09-22 over the whole
+   *   PVE document: `bwlimit` publishes `minimum: "0"` and `count` publishes `maximum: "16777216"`
+   *   — JSON strings where all 1,500-odd of their neighbours are numbers. PBS has none. Typing
+   *   these `number` made the generated table a type error, which is how they were found at all.
+   */
+  readonly maxLength?: number | string;
+  readonly minLength?: number | string;
+  readonly minimum?: number | string;
+  readonly maximum?: number | string;
   readonly pattern?: string;
   readonly enum?: readonly string[];
   readonly format?: string | Record<string, unknown>;

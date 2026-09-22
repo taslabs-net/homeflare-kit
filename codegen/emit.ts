@@ -35,6 +35,24 @@ const pathParams = (path: string): ReadonlySet<string> =>
 const formatName = (format: VendorParam['format']): string | undefined =>
   typeof format === 'string' ? format : undefined;
 
+/**
+ * A bound as a number, whatever the vendor typed it as.
+ *
+ * ⛔ THIS IS A READ, NOT AN INFERENCE. The vendor STATES the bound; PVE just spells two of them as
+ *   JSON strings (`bwlimit`'s `minimum: "0"`, `count`'s `maximum: "16777216"`). Parsing is a
+ *   faithful reading of a value that is there. Left as a string the comparison in `constraints.ts`
+ *   would be `1 < "0"`, which JavaScript coerces and happens to get right for these two — and
+ *   would get wrong the day a release publishes `"1.5"` or `"1e6"`.
+ * ⛔ AND A BOUND THAT IS NOT A NUMBER AT ALL IS DROPPED RATHER THAN GUESSED AT, which is the same
+ *   rule the untranslatable patterns follow: unenforced and honest beats enforced and wrong.
+ */
+const bound = (value: number | string | undefined): number | undefined => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== 'string' || value.trim() === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
 const scalarDefault = (value: unknown): string | undefined =>
   typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
     ? String(value)
@@ -50,10 +68,10 @@ const emitParam = (param: VendorParam, required: boolean): EmittedParam | undefi
     default: scalarDefault(param.default),
     enum: param.enum,
     format: formatName(param.format),
-    maxLength: param.maxLength,
-    maximum: param.maximum,
-    minLength: param.minLength,
-    minimum: param.minimum,
+    maxLength: bound(param.maxLength),
+    maximum: bound(param.maximum),
+    minLength: bound(param.minLength),
+    minimum: bound(param.minimum),
     pattern: translated?.js,
     patternSource: param.pattern,
     required: required ? true : undefined,

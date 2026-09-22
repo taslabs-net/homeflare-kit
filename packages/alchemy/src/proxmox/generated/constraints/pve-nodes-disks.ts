@@ -1,5 +1,5 @@
 /**
- * Generated pve-manager parameter constraints for `/pools` — DO NOT EDIT BY HAND.
+ * Generated pve-manager parameter constraints for `/nodes/{node}/disks` — DO NOT EDIT BY HAND.
  *
  * Run: bun codegen/constraints.ts
  * Manifest entry: `pve-apidoc` — pve-manager 9.2.11/f6997e698c7933ea
@@ -15,12 +15,12 @@
  */
 import type { EndpointConstraints } from '../../constraints.ts';
 
-export const PVE_POOLS_CONSTRAINTS: Readonly<Record<string, EndpointConstraints>> = {
-  "pve:POST /pools": {
-    "poolid": {"format":"pve-poolid","required":true,"type":"string"},
-  },
-  "pve:PUT /pools/{poolid}": {
-    "storage": {"format":"pve-storage-id-list","type":"string"},
-    "vms": {"format":"pve-vmid-list","type":"string"},
+export const PVE_NODES_DISKS_CONSTRAINTS: Readonly<Record<string, EndpointConstraints>> = {
+  "pve:POST /nodes/{node}/disks/zfs": {
+    "ashift": {"default":"12","maximum":16,"minimum":9,"type":"integer"},
+    "compression": {"default":"on","enum":["on","off","gzip","lz4","lzjb","zle","zstd"],"type":"string"},
+    "devices": {"format":"string-list","required":true,"type":"string"},
+    "name": {"format":"pve-storage-id","required":true,"type":"string"},
+    "raidlevel": {"enum":["single","mirror","raid10","raidz","raidz2","raidz3","draid","draid2","draid3"],"required":true,"type":"string"},
   },
 };

@@ -194,6 +194,11 @@ const handlers = pveHandlers<SdnSubnetProps, SdnSubnetAttributes>({
   },
   collection: (props) => `cluster/sdn/vnets/${props.vnet}/subnets`,
   createForm,
+  /** The vendor rules both forms are checked against at plan time — resource-spec.ts. */
+  endpoint: {
+    create: 'pve:POST /cluster/sdn/vnets/{vnet}/subnets',
+    update: 'pve:PUT /cluster/sdn/vnets/{vnet}/subnets/{subnet}',
+  },
   /**
    * ⛔ FIVE REPORTED FIELDS ARE DELIBERATELY ABSENT FROM THIS COMPARISON, and each is a
    *   forever-diff if it goes back in.

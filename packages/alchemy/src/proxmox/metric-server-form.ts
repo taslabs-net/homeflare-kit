@@ -126,3 +126,13 @@ export const update = (props: MetricServerProps) => {
     .map(([option]) => option);
   return withClears(body(props), clear);
 };
+
+/**
+ * The create form: `body` plus the one field only a POST takes.
+ *
+ * ★ EXPORTED SO THE CONSTRAINT PROOF CAN RUN THE REAL FORM. `metric-server.ts` built this inline
+ *   in its spec, which meant the only way to check it against PVE's table was to retype it in a
+ *   test — and a retyped form proves the test, not the provider.
+ * ⚠️ `type` IS REQUIRED ON CREATE AND REFUSED ON UPDATE; `id` is the path, never the body.
+ */
+export const createBody = (props: MetricServerProps) => ({ ...body(props), type: props.type });

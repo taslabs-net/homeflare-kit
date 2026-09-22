@@ -109,9 +109,21 @@ export type PveSpec<Props extends WithApiTarget, Attributes> = {
    *   names an endpoint the vendor does not have stops the GENERATOR rather than a deploy.
    * ⚠️ The spelling is the vendor's own path TEMPLATE, braces and all — not `spec.path(props)`,
    *   which has the ids substituted in.
+   *
+   * ⚠️ A FUNCTION FOR THE TWO FAMILIES WHOSE ENDPOINT IS CHOSEN BY A PROP, AND FOR NO OTHER
+   *   REASON. `Proxmox.NotificationTarget` POSTs to one of four `endpoints/{type}` paths and
+   *   `Proxmox.CephDaemon` to one of `ceph/mds|mgr|mon`, each with its own parameter schema, so a
+   *   single key would table the wrong rules for three declarations out of four.
+   *   ⛔ EVERY KEY THE FUNCTION CAN RETURN STILL HAS TO EXIST AS A LITERAL IN THIS PACKAGE'S
+   *     SOURCE. `codegen/constraints.ts` finds keys by scanning text, so a key assembled from a
+   *     template literal is tabled by nothing and `constraintsFor` throws on the deploy that first
+   *     reaches it. Write the keys out in a record and index it — see `ceph-endpoints.ts`.
    */
-  readonly endpoint?: {
-    readonly create?: EndpointKey;
-    readonly update?: EndpointKey;
-  };
+  readonly endpoint?: EndpointPair | ((props: Props) => EndpointPair);
+};
+
+/** The two endpoints a family writes. Either may be absent — see `PveSpec['endpoint']`. */
+export type EndpointPair = {
+  readonly create?: EndpointKey;
+  readonly update?: EndpointKey;
 };

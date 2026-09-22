@@ -1,9 +1,10 @@
 /**
  * Rendering the constraint tables: one generated file per vendor area, plus the merged index.
  *
- * ★ SPLIT BY THE VENDOR'S OWN FIRST PATH SEGMENT, not by size. `pve-cluster.ts` is one file
- *   because `/cluster` is one area of the API, so a reader who has the vendor's docs open knows
- *   where to look — and the house cap is enforced below rather than fitted to.
+ * ★ SPLIT BY THE VENDOR'S OWN AREA, not by size. `pve-nodes-ceph.ts` is one file because
+ *   `/nodes/{node}/ceph` is one area of the API, so a reader who has the vendor's docs open knows
+ *   where to look — and the house cap is enforced below rather than fitted to. `areaOf` says
+ *   which segment that is and why.
  */
 import type { EmittedParam } from './emit.ts';
 
@@ -23,15 +24,51 @@ export type Tables = Readonly<Record<string, Readonly<Record<string, EmittedPara
 
 export const CAP = 250;
 
-/** `pve:POST /cluster/sdn/zones` -> `cluster`. One generated file per vendor area. */
-export const areaOf = (key: string): string => (key.split(' ')[1] ?? '/').split('/')[1] ?? 'root';
+/**
+ * `pve:POST /cluster/sdn/zones` -> `cluster-sdn`; `pve:POST /nodes/{node}/ceph/pool` ->
+ * `nodes-ceph`; `pbs:POST /config/prune` -> `config`. One generated file per vendor area.
+ *
+ * ⛔ `/cluster` AND `/nodes/{node}` ARE ROUTES, NOT AREAS, AND THAT IS PVE'S OWN TREE RATHER THAN
+ *   A SIZE FIX. Its API viewer expands `/cluster` into backup, ceph, firewall, ha, metrics,
+ *   notifications, replication and sdn, and `/nodes/{node}` into ceph, lxc, qemu, network and
+ *   disks; each of those is an area a reader can hold in their head, while the two parents are
+ *   most of the product. `/access`, `/pools`, `/storage` and PBS's `/config` are areas already and
+ *   stay whole. The house cap is still enforced in constraints.ts and still throws — this rule is
+ *   the DECISION about where the seams are, not a loop that keeps cutting until things fit.
+ * ⚠️ PATH PARAMETERS ARE SKIPPED WHEN CHOOSING THE AREA, because `{node}` names nothing.
+ */
+const ROUTES = new Set(['cluster', 'nodes']);
+
+export const areaOf = (key: string): string => {
+  const parts = (key.split(' ')[1] ?? '/')
+    .split('/')
+    .filter((part) => part !== '' && !part.startsWith('{'));
+  const head = parts[0] ?? 'root';
+  return ROUTES.has(head) ? `${head}-${parts[1] ?? 'root'}` : head;
+};
+
+/**
+ * How the header names the area. `nodes-ceph` is really `/nodes/{node}/ceph`; say so.
+ *
+ * ⚠️ ONLY A ROUTE PREFIX IS UNJOINED. A vendor area whose own name carries a hyphen —
+ *   `/cluster/bulk-action` would be `cluster-bulk-action` — must not have that hyphen read as a
+ *   path separator, so the split is driven by the same `ROUTES` set that made the name.
+ */
+const areaLabel = (area: string): string => {
+  for (const route of ROUTES) {
+    if (!area.startsWith(`${route}-`)) continue;
+    const rest = area.slice(route.length + 1);
+    return route === 'nodes' ? `/nodes/{node}/${rest}` : `/${route}/${rest}`;
+  }
+  return `/${area}`;
+};
 
 export const constName = (product: string, area: string): string =>
   `${product.toUpperCase()}_${area.toUpperCase().replaceAll('-', '_')}_CONSTRAINTS`;
 
 const header = (entry: ManifestEntry, area: string, covered: number, total: number): string =>
   `/**
- * Generated ${entry.product} parameter constraints for \`/${area}\` — DO NOT EDIT BY HAND.
+ * Generated ${entry.product} parameter constraints for \`${areaLabel(area)}\` — DO NOT EDIT BY HAND.
  *
  * Run: bun codegen/constraints.ts
  * Manifest entry: \`${entry.id}\` — ${entry.product} ${entry.version}

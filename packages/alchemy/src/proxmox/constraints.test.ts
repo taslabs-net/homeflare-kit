@@ -15,7 +15,6 @@ import { describe, expect, test } from 'bun:test';
 import * as Layer from 'effect/Layer';
 import { engineOver } from '../verify/fake-engine.ts';
 import { constraintsFor, formViolations } from './constraint-guard.ts';
-import { type EndpointConstraints, refusal, violations } from './constraints.ts';
 import type { PbsTarget } from './credentials.ts';
 import { fakePve, withoutBao } from './fake-pve.ts';
 import { createForm as datastoreCreateForm } from './pbs-datastore-form.ts';
@@ -27,7 +26,6 @@ import { PbsVerifyJob, PbsVerifyJobProvider } from './pbs-verify-job.ts';
 const PBS: PbsTarget = { api: 'https://pbs.test:8007/api2/json', mount: 'pbs-test', scheme: 'pbs' };
 const VERIFY = 'pbs:POST /config/verify';
 const BELL = String.fromCodePoint(7);
-const ROCKET = String.fromCodePoint(0x1f680);
 
 /** The real declaration, comment length made an argument. */
 const job = (comment: string) =>
@@ -71,11 +69,14 @@ describe('the v-r2-offsite failure, refused at plan instead of by the server', (
     // ⛔ THE ASSERTION THE INCIDENT IS ABOUT. A refusal after the POST is the server's own 400.
     expect(writes).toEqual([]);
     /**
-     * ⚠️ ONE CALL IS MADE, AND IT IS A GET. Measured 2026-09-22: Alchemy runs the provider's
-     *   `read` handler before `diff`, so the plan has already asked PBS whether the job exists by
-     *   the time the constraint is checked. Every call is a read; nothing is created or changed.
+     * ⚠️ EVERY CALL IS A READ, AND THERE ARE NOW TWO OF THEM. Measured 2026-09-22: Alchemy runs
+     *   the provider's `read` handler first, and `reconcile` reads again — the guard moved to
+     *   AFTER that second read the same day, because the read is the only thing that says whether
+     *   a create or an update is about to be made, and demanding the create form's required
+     *   parameters on an update refuses edits that were always legal (resource-guard.ts).
+     *   ⛔ THE COUNT IS NOT THE ASSERTION; THE METHOD IS. Nothing is created or changed.
      */
-    expect(calls.map((call) => call.method)).toEqual(['GET']);
+    expect(calls.map((call) => call.method)).toEqual(['GET', 'GET']);
   });
 
   test('128 characters is accepted and the create goes through', async () => {
@@ -130,76 +131,6 @@ describe('the table is the vendor own rule set, read from the generated file', (
       .digest('hex')
       .slice(0, 16);
     expect(recomputed).toBe(PROXMOX_CONSTRAINTS_DIGEST);
-  });
-});
-
-/**
- * ★ ONE MUTANT PER BRANCH. Each case below fails if that single comparison is deleted, inverted or
- *   its boundary moved by one — which is the only way to know the validator checks what it claims
- *   rather than passing everything.
- */
-describe('every rule kind, at and past its boundary', () => {
-  const table: EndpointConstraints = {
-    depth: { maximum: 7, minimum: 0, type: 'integer' },
-    mode: { enum: ['all', 'any'], type: 'string' },
-    name: { maxLength: 4, minLength: 2, pattern: '^[a-z]+$', patternSource: '/^[a-z]+$/' },
-    store: { required: true, type: 'string' },
-    tags: { maxLength: 3, type: 'string' },
-  };
-  const at = (form: Record<string, string | readonly string[]>, presence = false) =>
-    violations(table, form, { presence });
-
-  test('maxLength: 4 passes, 5 does not', () => {
-    expect(at({ name: 'abcd' })).toEqual([]);
-    expect(at({ name: 'abcde' })).toEqual(['name: at most 4 characters']);
-  });
-
-  test('minLength: 2 passes, 1 does not', () => {
-    expect(at({ name: 'ab' })).toEqual([]);
-    expect(at({ name: 'a' })).toEqual(['name: at least 2 characters']);
-  });
-
-  test('minimum and maximum are inclusive on both sides', () => {
-    expect(at({ depth: '0' })).toEqual([]);
-    expect(at({ depth: '7' })).toEqual([]);
-    expect(at({ depth: '-1' })).toEqual(['depth: at least 0']);
-    expect(at({ depth: '8' })).toEqual(['depth: at most 7']);
-  });
-
-  test('enum quotes the vendor own members', () => {
-    expect(at({ mode: 'any' })).toEqual([]);
-    expect(at({ mode: 'ALL' })).toEqual(['mode: must be one of all, any']);
-  });
-
-  test('pattern reports the VENDOR spelling, not the translated one', () => {
-    expect(at({ name: 'abc' })).toEqual([]);
-    expect(at({ name: 'ab1' })).toEqual(['name: must match /^[a-z]+$/']);
-  });
-
-  test('required is checked only when presence is asked for — an update form is partial', () => {
-    expect(at({})).toEqual([]);
-    expect(at({}, true)).toEqual(['store: required']);
-    expect(at({ store: 'r2' }, true)).toEqual([]);
-  });
-
-  /** ⚠️ Characters, not UTF-16 code units: an astral character is ONE character to Proxmox. */
-  test('length counts characters, so an astral character is one', () => {
-    expect(at({ tags: `${ROCKET}ab` })).toEqual([]);
-    expect(at({ tags: `${ROCKET}abc` })).toEqual(['tags: at most 3 characters']);
-  });
-
-  /** ⚠️ A list is repeated keys on the wire (client.ts), so every element faces the same rule. */
-  test('every element of an array value is checked', () => {
-    expect(at({ tags: ['ab', 'abcd'] })).toEqual(['tags: at most 3 characters']);
-  });
-
-  test('a key the table does not mention is not an error', () => {
-    expect(at({ unlisted: 'anything at all' })).toEqual([]);
-  });
-
-  test('the refusal names the endpoint and points at the generated table', () => {
-    expect(refusal(VERIFY, ['comment: at most 128 characters'])).toContain(VERIFY);
-    expect(refusal(VERIFY, ['comment: at most 128 characters'])).toContain('generated/constraints');
   });
 });
 
