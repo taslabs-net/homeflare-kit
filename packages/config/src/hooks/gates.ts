@@ -90,7 +90,9 @@ export async function prePush(root: string): Promise<void> {
 
   note('pre-push: running `bun run check` — the same gate CI runs');
   const started = Bun.nanoseconds();
-  if ((await run(['bun', 'run', 'check'])) !== 0) {
+  // 🔴 `isolated`: strip the GIT_* this hook inherited before running the test suite.
+  //   See report.ts — without it a test's throwaway git repository commits into this one.
+  if ((await run(['bun', 'run', 'check'], true)) !== 0) {
     fail(
       'pre-push',
       'bun run check failed — CI would fail the same way, on a shared runner',
