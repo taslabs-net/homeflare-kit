@@ -1,0 +1,175 @@
+# Changesets -> npm, in two stages.
+#
+#   1. a push to main opens (or updates) a "Version Packages" PR  (no verify)
+#   2. merging THAT PR publishes every package whose version changed (verify first)
+#
+# ⛔ Step 1 must not re-run the suite. Measured 2026-09-16: a 5s DNS flake failed
+#   `bun run verify` after `ci` on the same SHA was green, and the version PR never opened.
+#
+# ★ THE CHANGELOG IS THE RELEASE. @changesets/changelog-github writes each entry with its
+#   PR link, commit and author; changesets/action then creates a GitHub Release per
+#   package using that same text. One source — the changeset files — feeds the changelog,
+#   the version bump, the npm publish and the release notes.
+#
+# ⛔ changesets/action IS PINNED EXACTLY, not to a major. Measured 2026-09-15: the repo
+#   publishes v2.0.0 … v2.1.2 and NO floating `v2` tag, so `@v2` is a 404 at run time.
+# ⚠️ v2 RENAMED EVERY INPUT (version -> version-script, publish -> publish-script,
+#   commit -> commit-message, title -> pr-title) and DROPPED GITHUB_TOKEN-from-env. A
+#   v1-shaped block fails by doing nothing recognisable rather than by erroring.
+# ⚠️ v2 also stopped writing .npmrc from NPM_TOKEN. actions/setup-node's registry-url is
+#   what writes it; without that step the token is present and ignored (reads as ENEEDAUTH).
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  actions: write # approve the version PR's own parked runs
+  contents: write # open the version PR, push the changelog commit, create releases
+  pull-requests: write # ...and keep that PR updated
+  id-token: write # provenance attestation
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # ★ Publish sits in the `npm` Environment that alchemy.run.ts declares.
+    #   NPM_TOKEN stays a repository secret — GitHub still injects it here.
+    environment: npm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # changesets reads history to build the changelog
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      # Node carries a current npm for the publish step and writes the .npmrc that
+      # NODE_AUTH_TOKEN binds to. The build itself runs on bun.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # ⛔ MASK THE TOKEN BEFORE ANY STEP CAN ECHO IT. GitHub masks `secrets.*` in its own
+      #   interpolation, but a value that reaches a tool and comes back — an npm error
+      #   quoting the request, a debug dump, a crafted package name in a log line — is
+      #   NOT masked unless it was registered. `add-mask` is what registers it.
+      # ⚠️ The mask command itself must not be the thing that leaks: it is written to the
+      #   command file via an env var, never interpolated into the shell line, so the
+      #   value never appears in a `set -x` trace or a failed-command echo.
+      - name: Mask the npm token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: echo "::add-mask::$NPM_TOKEN"
+
+      - run: bun install --frozen-lockfile
+
+      # ⛔ VERIFY ONLY WHEN THIS PUSH WILL PUBLISH. Measured 2026-09-16: running it on
+      #   every main push failed a 5s DNS flake after `ci` on the same SHA was green, and
+      #   changesets never opened the Version Packages PR. A feature merge still has
+      #   `.changeset/*.md`; the version commit consumes them. Required `ci` is what
+      #   stops a broken feature landing. The tarball gate stays here for publish.
+      - name: Pending changesets
+        id: pending
+        run: |
+          set -euo pipefail
+          files=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' -print)
+          if [ -n "$files" ]; then
+            echo "has=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: bun run verify
+        if: steps.pending.outputs.has == 'false'
+
+      # ⛔ publish-script is OURS, not `changeset publish`. See docs/releasing.md: npm pack
+      #   resolves neither `workspace:*` nor `catalog:`, so changesets' own publish path
+      #   would ship both literally and break every consumer install.
+      - uses: changesets/action@v2.1.2
+        with:
+          version-script: bun run version
+          publish-script: bun run release
+          commit-message: 'chore: version packages'
+          pr-title: 'chore: version packages'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # ★ One GitHub Release per published package, with the changelog entry as its
+          #   notes. Off by default in v2; without it npm has the release and GitHub does
+          #   not, and the tag stands there with no notes attached.
+          create-github-releases: true
+        env:
+          # ⚠️ GITHUB_TOKEN is read by @changesets/changelog-github during `version` to
+          #   resolve PR numbers and authors. Without it entries silently degrade to bare
+          #   summaries — no error, just a duller changelog.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # ⚠️ Scoped automation token, not OIDC. changesets/action + npm trusted
+          #   publishing 404s on PUT for SCOPED packages (changesets/action#515, open
+          #   2026-09-15) and every package here is scoped. Revisit when that closes.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Under a token, provenance is opt-in; under OIDC it would be automatic.
+          NPM_CONFIG_PROVENANCE: 'true'
+
+      # ⛔ APPROVE THE VERSION PR'S OWN RUNS. Measured 2026-09-15: every run on
+      #   `changeset-release/main` parks at `action_required`. GitHub's approval policy is
+      #   written for fork PRs but reaches `github-actions[bot]` on a same-repo branch too,
+      #   because the bot has no merged contribution history and reads as a first-time
+      #   contributor. With `ci` and `secret scan` required, the release PR blocks itself
+      #   and a human clicks Approve on every single release.
+      # ★ DONE HERE, NOT IN A `workflow_run` LISTENER. A parked run never emits the
+      #   `completed` event that such a listener needs — measured: the listener fired only
+      #   for main's own runs and skipped. This step runs right after the PR is created or
+      #   updated, when the parked runs demonstrably exist.
+      # ⛔ THE TRUST BOUNDARY: only runs on `changeset-release/main`, only those the bot
+      #   triggered, only those actually parked. A contributor's fork PR still waits for a
+      #   person — that is what the policy is for, and this does not weaken it.
+      - name: Approve the version PR's parked runs
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # ⚠️ POLL, DO NOT APPROVE ONCE. Measured 2026-09-15: pushing the version PR
+          #   spawns its parked runs a second or two LATER, so a single pass approves the
+          #   PREVIOUS release's runs and leaves the new ones stuck — the exact symptom
+          #   this step exists to remove. Timestamps: runs created 18:51:51, the
+          #   single-pass step finished 18:51:54, and the PR stayed BLOCKED.
+          # ★ Bounded at ~100s. If they have not appeared by then they are not coming,
+          #   and a stuck release is better than a workflow that hangs.
+          approved=""
+          for _ in $(seq 1 20); do
+            ids=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?per_page=30" \
+              --jq '.workflow_runs[]
+                    | select(.head_branch == "changeset-release/main")
+                    | select(.conclusion == "action_required")
+                    | select(.actor.login == "github-actions[bot]")
+                    | .id')
+
+            for id in $ids; do
+              case " $approved " in
+                *" $id "*) continue ;;
+              esac
+              echo "Approving parked run $id"
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve"
+              approved="$approved $id"
+            done
+
+            sleep 5
+          done
+
+          if [ -z "$approved" ]; then
+            echo "No parked runs appeared on changeset-release/main."
+            exit 0
+          fi
+
+          {
+            echo "### Version PR runs approved"
+            echo
+            echo "Approved:$approved"
+          } >> "$GITHUB_STEP_SUMMARY"

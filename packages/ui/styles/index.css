@@ -1,0 +1,50 @@
+/**
+ * @homeflare/ui/styles — Kumo, themed for HomeFlare.
+ *
+ * ⛔ GENERATED from theme/homeflare.yaml by scripts/build-theme.ts. Do not hand-edit:
+ *   change the YAML and re-run `bun run build:theme`.
+ *
+ * Import ONCE, at your app root:
+ *     import '@homeflare/ui/styles';
+ *
+ * ⛔ OPT-IN, NEVER AUTOMATIC. The JS entrypoint imports no CSS: a library that does so on
+ *   your behalf breaks any consumer whose bundler cannot handle CSS imports — a Worker
+ *   bundling for workerd, or an SSR pass loading the module for its types.
+ *
+ * ★ This replaces `import '@cloudflare/kumo/styles'`: Kumo's stylesheet first, then the
+ *   HomeFlare theme over it.
+ * ⛔ Kumo's default brand is BLUE. The --color-kumo-brand overrides below are what make
+ *   primary buttons orange, and `bg-kumo-brand` resolves them at the use site — so no
+ *   component needs touching.
+ */
+@import '@cloudflare/kumo/styles';
+
+:root {
+  color-scheme: light dark;
+
+  --color-kumo-brand: #f6821f;
+  --color-kumo-brand-hover: #e0700f;
+
+  /** Brand orange. ⛔ FILLS AND BORDERS ONLY — see --hf-accent-ink. */
+  --hf-accent: #f6821f;
+
+  /**
+   * ⛔ USE FOR ANY ORANGE TEXT, never --hf-accent. The raw brand fails WCAG contrast
+   *   on a light background at body sizes.
+   * ★ light-dark() rather than a dark: variant, so it follows the OS scheme via
+   *   color-scheme above and needs no class plumbing.
+   */
+  --hf-accent-ink: light-dark(#c2570a, #fbad41);
+
+  --hf-radius-card: 0.75rem;
+  --hf-shell-max-width: 80rem;
+  --hf-gutter: 1rem;
+}
+
+/**
+ * Unclassed anchors pick up the brand. Kumo components style their own links, so this
+ * only reaches prose — and it uses the contrast-safe ink, not the raw accent.
+ */
+a:not([class]) {
+  color: var(--hf-accent-ink);
+}

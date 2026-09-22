@@ -1,0 +1,127 @@
+# Pull requests: is this code correct?
+#
+# ★ SPLIT BY CONCERN — BUT NOT PAST THE POINT WHERE THE SPLIT COSTS MORE THAN IT TELLS
+#   YOU. `check`, `workflow lint` and the slow `package` job each answer a different
+#   question, and package still gates on check so a formatting mistake does not wait on a
+#   tarball build. The lint/types/test lanes did not differ that way: they asked the same
+#   question of the same tree and each paid its own `bun install --frozen-lockfile` to do
+#   it, so they are named steps inside one job now.
+#
+# ⛔ EVERY ACTION IS FIRST-PARTY OR THE VENDOR'S OWN, PINNED TO A MAJOR TAG. This file is
+#   the template every HomeFlare repo copies, so a bad action here propagates.
+#   Versions verified against the registry 2026-09-15.
+name: ci
+
+on:
+  # ⛔ NO `push: branches: [main]` ANY MORE. Every commit reaches main through a pull
+  #   request whose `ci` had to be green — the branch ruleset requires it and carries no
+  #   bypass actors — so a second run on the squash commit recomputed an answer it already
+  #   had. Measured 2026-09-15..22 across the estate: 613 of 619 main-push runs had a
+  #   head_sha identical to the merge_commit_sha of an already-green PR, and 203 of 211
+  #   merged PRs had a base that had not moved since their PR run started, so the squashed
+  #   tree was byte-identical to the tree the PR run tested. That duplication was ~41% of
+  #   the Mac mini's entire CI load.
+  # ⚠️ WHAT THIS GIVES UP, SAID OUT LOUD: the ~4% of merges whose base DID move between the
+  #   PR run and the squash no longer get a post-merge re-test. That run gated nothing — it
+  #   reported after main already had the commit — and the next PR, which branches from the
+  #   merged main, is what actually catches a semantic conflict.
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── One job, one install ──────────────────────────────────────────────
+  # ★ WAS 3 SEPARATE JOBS:
+  #   lint and format, types, tests.
+  #   They shared an identical prologue — checkout, setup-bun,
+  #   `bun install --frozen-lockfile` — and the install, not the check, was the cost:
+  #   measured 2026-09-22, install p50 51s / p90 81s against 1-3s for the command
+  #   the install existed to enable. 3 jobs meant 3 installs and 3 containers to
+  #   compute one answer.
+  # ⚠️ THE TRADE, STATED: a red X now says `check` instead of naming the lane. The step
+  #   names below are the replacement signal — the failing step carries the X in the job's
+  #   step list — and this is the same serial short-circuit `bun run check` does locally.
+  # ★ `workflow lint` STAYS ITS OWN JOB on purpose: it needs no `bun install` at all, so
+  #   folding it in here would make a YAML-only change pay an install for nothing.
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      # ⛔ --frozen-lockfile, always. Without it CI silently resolves a newer transitive
+      #   dep than the lockfile pins, so green here stops meaning green on the machine
+      #   that committed.
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      # ⚠️ Tests can pass while failing to typecheck — measured on this repo. `types` stays
+      #   its own named step rather than being folded into the test command.
+      - run: bun run types
+      # ⛔ BUILD BEFORE TEST. tests/dist.test.ts guards the built artifact and SKIPS
+      #   ITSELF when dist/ is absent, so the wrong order silently drops it.
+      - run: bun run build
+      - run: bun test
+
+  workflows:
+    name: workflow lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # ⛔ THERE IS NO FIRST-PARTY actionlint ACTION, and the npm package by that name is
+      #   an unrelated wasm port with no `bin` (measured 2026-09-15). The documented CI
+      #   path is rhysd's own download script, pinned to a release rather than `main`.
+      # ★ The matcher turns actionlint's output into inline annotations on the PR diff,
+      #   so a workflow mistake is marked on the offending line rather than buried in a log.
+      - name: Install actionlint
+        run: |
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+      - name: Lint workflows
+        run: ./actionlint -color
+
+  # ── Stage 2: the expensive one, gated on stage 1 ─────────────────────────────
+  package:
+    name: consumer smoke test
+    needs: [check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      # ⛔ THE GATE THAT MATTERS. Packs the real tarball, installs it into a scratch
+      #   project and uses it under both bun and node, typechecking from the consumer's
+      #   side. Every other job here passed on a package the estate could not consume
+      #   (measured 2026-09-15 — see packages/kit/tests/dist.test.ts).
+      - run: bun run smoke
+
+      # ★ What the packages weigh, rendered on the run's summary page. A green check says
+      #   "it passed"; this says what a consumer would actually install.
+      # ⚠️ `if: always()` so a failed smoke test still reports sizes — that is exactly
+      #   when you want them.
+      - name: Job summary
+        if: always()
+        run: bun run summary
+
+  # ── The one check a branch rule can require ──────────────────────────────────
+  # ★ A single required check that depends on all of them. Without this, adding a job
+  #   means editing the branch protection rule too, and forgetting to means the new job
+  #   is advisory without anyone noticing.
+  ci:
+    name: ci
+    if: always()
+    needs: [check, workflows, package]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every job succeeded
+        run: |
+          [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "false" ]

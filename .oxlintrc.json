@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "extends": ["./packages/config/oxlintrc.json"],
+  "ignorePatterns": ["dist/**", "coverage/**"],
+  "overrides": [
+    {
+      "files": ["**/tests/**", "**/*.test.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["**/scripts/**", "codegen/**"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["packages/cloudflare/src/log.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["tests/**", "packages/*/tests/**"],
+      "rules": {
+        "no-await-in-loop": "off"
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+# ⛔ blank_issues_enabled: false forces every report through a form. ★ The forms exist to
+#   collect the two fields that otherwise cost a round-trip every time: WHICH package and
+#   WHICH runtime. "It's broken in my Worker" and "it's broken in my script" need
+#   different first questions.
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/taslabs-net/homeflare-kit/blob/main/packages/kit/SECURITY.md
+    about: Do not open a public issue. Email security@homeflare.dev instead.
+  - name: Question or idea
+    url: https://github.com/taslabs-net/homeflare-kit/discussions
+    about: For anything that is not a defect or a concrete proposal.

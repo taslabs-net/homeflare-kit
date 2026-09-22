@@ -1,0 +1,22 @@
+# The HomeFlare bun defaults.
+#
+# ★ ADOPTION IS A COPY, NOT AN EXTEND. bunfig.toml has no `extends`, so this is the one
+#   file in the preset that a consumer copies rather than references:
+#       cp node_modules/@homeflare/config/bunfig.toml bunfig.toml
+#   ⚠️ That means it CAN drift. `homeflareConfig()` in @homeflare/config/check asserts a
+#   project's copy still matches, so drift fails a test instead of going unnoticed.
+
+[install]
+# ⛔ EXACT VERSIONS, ALWAYS. A caret in a manifest means two machines resolve different
+#   trees on different days, which is the drift a catalog exists to prevent.
+exact = true
+
+[install.cache]
+# ★ Bun's global cache, shared across every project on the machine.
+disable = false
+
+[test]
+# ⚠️ Coverage is REPORTED by default and gated per project. A repo-wide threshold here
+#   would either be too low to matter or fail every new package on day one.
+coverage = false
+coverageReporter = ["text"]

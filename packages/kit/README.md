@@ -1,0 +1,72 @@
+# @homeflare/kit
+
+Runtime-neutral primitives: environment parsing, errors, and HTTP. Bun-native to
+consume — the published bundle runs on Cloudflare Workers, Node and Bun alike.
+
+```sh
+bun add @homeflare/kit     # or: pnpm add @homeflare/kit
+```
+
+## Usage
+
+```ts
+import { parseEnv } from '@homeflare/kit';
+
+const config = parseEnv(
+  {
+    API_URL: { type: 'string' },
+    PORT: { type: 'number', default: 8787 },
+    DEBUG: { type: 'boolean', default: false },
+  },
+  env, // a Worker's env binding, or process.env
+);
+
+config.PORT; // number
+config.DEBUG; // boolean — 'false' parses as false, not as a truthy string
+```
+
+`parseEnv` throws `EnvError` on the first key that is missing or malformed. The error
+names the key and never the value.
+
+## OpenAPI (Workers / HTTP apps)
+
+```ts
+import { createOpenApiApp } from '@homeflare/kit/openapi';
+import { z } from '@hono/zod-openapi';
+
+const app = createOpenApiApp();
+```
+
+⛔ A **subpath**, never the main entry — Hono must not land in a Node script that only
+wanted `parseEnv`. Peers you provide: `hono` · `@hono/zod-openapi` · `zod`. Import `z`
+from `@hono/zod-openapi`, not from `zod`, or `.openapi()` is missing.
+
+The document and the request share one schema. A parallel OpenAPI registry that does not
+validate is two truths.
+
+## Development
+
+```sh
+bun install
+bun run check    # lint + types + build + tests
+bun run smoke    # pack, install and use the real tarball under bun AND node
+bun run verify   # check + smoke — the full pre-publish gate
+```
+
+Changes are versioned with [changesets](https://github.com/changesets/changesets):
+
+```sh
+bun run changeset   # describe the change; commit the file with your PR
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the workflow and the gates, and
+[AGENTS.md](./AGENTS.md) for the toolchain rationale behind them.
+
+Found a vulnerability? Please don't open a public issue — see
+[SECURITY.md](./SECURITY.md).
+
+## License
+
+MIT © Timothy Schneider

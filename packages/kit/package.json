@@ -1,0 +1,71 @@
+{
+  "name": "@homeflare/kit",
+  "version": "0.3.0",
+  "description": "Runtime-neutral HomeFlare primitives: typed env parsing, actionable errors, and an HTTP client.",
+  "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/kit#readme",
+  "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
+  "license": "MIT",
+  "author": "Timothy Schneider",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taslabs-net/homeflare-kit.git",
+    "directory": "packages/kit"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./openapi": {
+      "types": "./dist/openapi.d.ts",
+      "default": "./dist/openapi.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun run build:js && bun run build:types",
+    "build:js": "bun build ./src/index.ts ./src/openapi.ts --outdir dist --target node --format esm --packages external --sourcemap=linked",
+    "build:types": "tsc --project tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "test": "bun test",
+    "smoke": "bun run scripts/smoke.ts",
+    "prepublishOnly": "bun run clean && bun run build",
+    "types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ky": "2.1.0"
+  },
+  "devDependencies": {
+    "@hono/zod-openapi": "catalog:",
+    "hono": "catalog:",
+    "zod": "catalog:"
+  },
+  "peerDependencies": {
+    "@hono/zod-openapi": "^1.5.0",
+    "hono": "^4.13.0",
+    "zod": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@hono/zod-openapi": {
+      "optional": true
+    },
+    "hono": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  }
+}

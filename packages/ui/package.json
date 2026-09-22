@@ -1,0 +1,61 @@
+{
+  "name": "@homeflare/ui",
+  "version": "0.3.0",
+  "description": "HomeFlare brand tokens and shared compositions for apps built on Cloudflare Kumo.",
+  "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/ui#readme",
+  "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
+  "license": "MIT",
+  "author": "Timothy Schneider",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taslabs-net/homeflare-kit.git",
+    "directory": "packages/ui"
+  },
+  "files": [
+    "dist",
+    "src",
+    "styles",
+    "theme",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./styles": "./styles/index.css",
+    "./package.json": "./package.json",
+    "./styles/tailwind": "./styles/tailwind.css",
+    "./theme": {
+      "types": "./dist/theme.d.ts",
+      "default": "./dist/theme.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun run build:theme && bun run build:js && bun run build:types",
+    "build:js": "bun build ./src/index.ts ./src/theme.ts --outdir dist --target browser --format esm --packages external --sourcemap=linked",
+    "build:types": "tsc --project tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "test": "bun test",
+    "smoke": "bun run scripts/smoke.ts",
+    "types": "tsc --noEmit",
+    "build:theme": "bun run scripts/build-theme.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/kumo": "catalog:",
+    "@phosphor-icons/react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "peerDependencies": {
+    "@cloudflare/kumo": "^2.13.2",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  }
+}

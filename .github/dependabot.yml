@@ -1,0 +1,69 @@
+# Dependabot for @homeflare/kit.
+#
+# ⛔ THIS FILE LIVES AT .github/dependabot.yml, NOT IN .github/workflows/. Dependabot is
+#   a platform feature, not an Action — a config placed among the workflows is silently
+#   ignored, and the symptom is simply that no PRs ever arrive.
+#
+# ★ WHY GROUPED RATHER THAN ONE PR PER DEPENDENCY. The default opens a PR per outdated
+#   package; with ~8 direct deps that is a steady trickle nobody reviews properly. Each
+#   group below is a set that is either safe to take together or needs deciding together.
+#
+# ⚠️ THIS PACKAGE HAS NO RUNTIME DEPENDENCIES, BY DESIGN. Everything here is devDeps and
+#   Actions, so a Dependabot PR can never change what consumers install — only what built
+#   and tested it. That is precisely why CI must stay strict: it is the only thing
+#   standing between a toolchain bump and a broken tarball.
+version: 2
+
+updates:
+  # ── The toolchain (bun.lock) ────────────────────────────────────────────────
+  - package-ecosystem: bun
+    # ⚠️ `directories`, not `directory`. A bun workspace keeps a dependency in the
+    #   package that declares it; pointing only at / would leave every packages/*
+    #   manifest unwatched, and the symptom is silence rather than an error.
+    directories:
+      - /
+      - /packages/*
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: America/New_York
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'chore'
+      include: scope
+    labels: [dependencies]
+    groups:
+      # oxfmt and oxlint move together and only affect style. Minor/patch bumps are
+      # noise unless they fail CI, which is exactly what CI is for.
+      lint-and-format:
+        patterns: ['oxfmt', 'oxlint']
+        update-types: [minor, patch]
+
+      # ⚠️ NOT GROUPED WITH ANYTHING, AND MAJORS EXCLUDED DELIBERATELY. TypeScript
+      #   majors change what typechecks; changesets majors have renamed inputs and
+      #   dropped compatibility (the action's v2 did both). These want reading, not
+      #   merging on green.
+      build-tooling:
+        patterns: ['typescript', '@changesets/*', '@types/bun']
+        update-types: [minor, patch]
+
+  # ── The workflows themselves ────────────────────────────────────────────────
+  # ★ Actions go stale invisibly: nothing fails, they just keep running old code. The
+  #   first draft of this repo's workflows pinned checkout@v5 (current: v7) and
+  #   changesets/action@v1 (current: v2, with every input renamed) — measured 2026-09-15.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: America/New_York
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'ci'
+    labels: [dependencies, github-actions]
+    groups:
+      actions:
+        patterns: ['*']
+        update-types: [minor, patch]

@@ -1,0 +1,17 @@
+node_modules/
+
+# Local agent settings — per-machine, never shared.
+.claude/settings.local.json
+
+dist/
+coverage/
+.alchemy/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+.dev.vars
+
+# npm pack output, when run by hand rather than by scripts/smoke.ts.
+*.tgz

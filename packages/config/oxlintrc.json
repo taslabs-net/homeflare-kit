@@ -1,0 +1,83 @@
+{
+  "plugins": ["typescript", "unicorn", "oxc", "import", "react", "jsx-a11y"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "off",
+    "pedantic": "off",
+    "style": "off",
+    "restriction": "off",
+    "nursery": "off"
+  },
+  "env": {
+    "es2024": true,
+    "node": true,
+    "browser": true,
+    "serviceworker": true
+  },
+  "ignorePatterns": ["dist/**", "coverage/**"],
+  "rules": {
+    "no-unused-vars": [
+      "error",
+      {
+        "args": "none",
+        "caughtErrors": "none",
+        "varsIgnorePattern": "^_",
+        "ignoreRestSiblings": true
+      }
+    ],
+    "import/default": "off",
+    "import/no-unassigned-import": "off",
+    "no-underscore-dangle": "off",
+    "unicorn/no-empty-file": "off",
+    "eqeqeq": [
+      "error",
+      "always",
+      {
+        "null": "ignore"
+      }
+    ],
+    "no-console": "error",
+    "no-control-regex": "error",
+    "no-fallthrough": "error",
+    "no-shadow-restricted-names": "error",
+    "no-template-curly-in-string": "error",
+    "typescript/no-explicit-any": "error",
+    "default-param-last": "error",
+    "no-param-reassign": "error",
+    "operator-assignment": "error",
+    "prefer-const": "error",
+    "prefer-template": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-extraneous-class": "error",
+    "typescript/no-this-alias": "error",
+    "unicorn/no-array-for-each": "warn",
+    "unicorn/prefer-array-flat-map": "error",
+    "oxc/no-accumulating-spread": "error",
+    "react/no-danger": "error",
+    "react/button-has-type": "error",
+    "react/exhaustive-deps": "error",
+    "react/react-in-jsx-scope": "off",
+    "jsx-a11y/click-events-have-key-events": "error",
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "react/set-state-in-effect": "off",
+    "typescript/dot-notation": "off",
+    "no-shadow": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "typescript/consistent-type-imports": "error",
+    "sort-imports": [
+      "error",
+      {
+        "ignoreDeclarationSort": true
+      }
+    ],
+    "import/no-default-export": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/tests/**", "**/*.test.ts", "**/scripts/**"],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ]
+}

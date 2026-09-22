@@ -1,0 +1,15 @@
+# One script per concern, ordered by cost and by consequence.
+#
+# ⛔ SECRETS FIRST. Everything else can be fixed after the fact; a credential in a public
+#   repo is compromised the moment it is pushed.
+bun run scripts/hooks/secrets.ts || exit 1
+bun run scripts/hooks/foreign-locks.ts || exit 1
+# ★ Format/lint of staged files is the SHARED step — it lives in @homeflare/config so
+#   every repo in the estate commits under the same rule. The scripts around it are
+#   kit-specific concerns that no other repo has.
+# ⚠️ THE WORKSPACE PATH, not node_modules/@homeflare/config/bin/hooks.ts as everywhere
+#   else. This repo HOSTS the package and nothing here depends on it, so Bun links no
+#   copy into node_modules — measured 2026-09-22, node_modules/@homeflare does not exist.
+bun packages/config/bin/hooks.ts pre-commit || exit 1
+bun run scripts/hooks/actionlint.ts || exit 1
+bun run scripts/hooks/changeset-pending.ts || exit 1
