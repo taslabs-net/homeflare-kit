@@ -73,7 +73,9 @@ export { ProxmoxPool, ProxmoxPoolProvider } from './pool.ts';
 export {
   PROVISION_DEFAULTS,
   PROVISION_PRIVILEGES,
+  type CoreProvisionNames,
   type ProvisionBaseline,
+  type ProvisionComments,
   type ProvisionLane,
   type ProvisionNames,
   type ResolvedProvisionNames,
