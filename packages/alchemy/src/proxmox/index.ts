@@ -17,7 +17,7 @@
  *   root commands that bootstrap it (`provisionBootstrap`) — docs/provision-baseline.md.
  * ★ THE NOTIFICATION FAMILIES JOINED 2026-09-22: PBS targets and matchers, the PVE matcher, the
  *   `FromEnv` shape their write-only values take, and the Alertmanager body template
- *   (docs/pbs-notifications.md).
+ *   (docs/pbs-notifications.md; the template alone: docs/pbs-alertmanager-body.md).
  * ★ Anything else unlisted is still reachable by path if you genuinely need
  *   it — that is a deliberate, visible act rather than an accident of barrelling.
  */

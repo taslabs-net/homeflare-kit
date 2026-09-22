@@ -82,8 +82,25 @@ const requireValues = (props: Props, groups: Groups, carry: Carry) => {
 export const handlers = {
   /** ⛔ EMPTY: `mail-to-root` is on every host, and adoption stays an explicit act (resource.ts). */
   list: () => Effect.succeed([]),
+  /**
+   * ⛔ WITH NO `output` THIS IS ALCHEMY'S ADOPTION PROBE, AND THE ONLY PLAN-TIME HOOK A NEW TARGET
+   *   GETS — so the refusals run here too. Measured on beta.79 (Plan.ts, the `oldState ===
+   *   undefined` branch): a declaration with no state row is `read` with `olds: news` and never
+   *   `diff`ed, and Apply then commits its props as `creating` BEFORE `reconcile` runs. A refusal
+   *   left to `reconcile` fired after the props — a literal token included — were in the store.
+   * ⚠️ ONLY WHEN THE PROPS ARE RESOLVED: Plan skips the probe while any prop is an unresolved
+   *   Output, and then `reconcile` is the first check. docs/pbs-notifications.md says so.
+   * ★ A DEFECT (`Effect.die`), NOT A FAILURE, AND THAT IS WHAT KEEPS IT FROM WEDGING A STAGE. The
+   *   same `read`-with-no-output shape is Alchemy's RECOVERY read of an interrupted create, at plan
+   *   and before a delete (Plan.ts, Apply.ts), with the STORED props — and both wrap it in
+   *   `catchDefect`, degrading to "nothing recovered". A typed failure would pass that catch and
+   *   block the plan or the delete on props the user already fixed. The cold-start probe has no
+   *   catch, so there the defect fails the plan, as intended. A refused create sent no request,
+   *   so "nothing recovered" is also the truth.
+   */
   read: ({ olds, output }: { olds: Props; output: Attributes | undefined }) =>
-    readLive(olds).pipe(
+    (output === undefined ? refuse(olds) : Effect.void).pipe(
+      Effect.andThen(readLive(olds)),
       Effect.map((live) =>
         live === undefined ? undefined : { ...live, sealed: output?.sealed ?? '' },
       ),

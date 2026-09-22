@@ -18,6 +18,7 @@
  *   deploy by variable name before anything is sent.
  */
 import type { PveForm } from './client.ts';
+import { literalCredentialHeaders, literalCredentialsInUrl } from './credential-literals.ts';
 import { addressList } from './notification-target-form.ts';
 import type {
   PbsNotificationTargetAttributes,
@@ -56,9 +57,15 @@ const REQUIRED: Readonly<Record<Props['type'], readonly Field[]>> = {
 /** A header or secret name lands inside a property string, where `,` and `=` are syntax. */
 const CLEAN_NAME = /^[^,=\s]+$/;
 
+/** How a refused literal credential should be declared instead. */
+const WRITE_ONLY =
+  "declare it { fromEnv: 'NAME' }, or keep it in 'secret' and write {{ secrets.<name> }}";
+
 /**
  * Why this declaration cannot be written, or nothing. Checked at PLAN, so a webhook without a
  * URL fails `alchemy plan` naming the field rather than a deploy failing on a 400.
+ * ⚠️ "AT PLAN" MEANS `diff` FOR A TARGET WITH STATE AND THE ADOPTION PROBE (`read`) FOR ONE
+ *   WITHOUT — pbs-notification-target-lifecycle.ts has why both are needed.
  */
 export const refusals = (props: Props): string[] => {
   const out: string[] = [];
@@ -73,6 +80,13 @@ export const refusals = (props: Props): string[] => {
   }
   for (const key of [...Object.keys(props.header ?? {}), ...Object.keys(props.secret ?? {})]) {
     if (!CLEAN_NAME.test(key)) out.push(`'${key}' cannot be a header or secret name`);
+  }
+  // ⛔ credential-literals.ts: a literal credential in a plain prop is a credential in state.
+  for (const name of literalCredentialHeaders(props.header)) {
+    out.push(`header '${name}' holds a literal credential; ${WRITE_ONLY}`);
+  }
+  for (const where of literalCredentialsInUrl(props.url)) {
+    out.push(`'url' ${where} holds a literal credential; ${WRITE_ONLY}`);
   }
   return out;
 };

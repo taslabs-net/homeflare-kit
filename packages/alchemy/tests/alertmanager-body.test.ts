@@ -9,8 +9,9 @@
  * ⚠️ WHAT THIS CANNOT PROVE: handlebars.js is not handlebars-rust. The constructs the template uses
  *   — `{{#if path}}`, a helper with one path argument, `fields.job-id` — exist in both, and a
  *   scratch build of handlebars-rust 5.1.2 with the three helpers restated rendered these same
- *   three events to valid JSON (2026-09-22, not kept in CI: it needs a Rust toolchain). The first
- *   real notification is still the measurement; the PBS UI's "Test" button sends one.
+ *   events — the whole matrix at the bottom, 840 renders — to valid JSON (2026-09-22, not kept
+ *   in CI: it needs a Rust toolchain). The first real notification is still the measurement; the
+ *   PBS UI's "Test" button sends one.
  *
  * ★ THE EVENTS ARE PBS'S OWN (src/server/notifications/mod.rs at HEAD): GC has no `job-id`, a
  *   verify job's `type` is `verify`, and the test notification has no fields at all.
@@ -120,11 +121,72 @@ describe('alertmanagerAlertBody renders to a valid Alertmanager v2 alert array',
     expect(() => alertmanagerAlertBody({ source: '' })).toThrow();
   });
 
+  test('a generatorURL that Alertmanager would 422 (not absolute http/s) is refused', () => {
+    for (const generatorURL of ['pbs.example.com:8007', '/ui', 'ftp://pbs.example.com/', 'x']) {
+      expect(() => alertmanagerAlertBody({ generatorURL })).toThrow(/absolute http\(s\) URL/);
+    }
+  });
+
   test('never reaches for a field bare, and never uses `escape` (it throws on a missing field)', () => {
     const body = alertmanagerAlertBody();
     expect(body).not.toContain('escape');
     for (const line of body.split('\n').filter((l) => l.includes('fields.'))) {
       expect(line.trim()).toMatch(/^\{\{#if (fields\.[\w-]+)\}\}.*\{\{ json \1 \}\},\{\{\/if\}\}$/);
     }
+  });
+});
+
+/**
+ * ★ EVERY EVENT PBS SENDS, BY ITS FIELD SET — src/server/notifications/mod.rs at HEAD 2026-09-22,
+ *   plus proxmox-notify's forwarded system mail (`type`, `hostname`, severity `unknown`) and the
+ *   Test notification (no fields). A tape backup has `job-id` only when it ran as a job.
+ */
+const EVENTS: readonly Readonly<Record<string, string>>[] = [
+  { datastore: 'd', hostname: 'h', type: 'gc' },
+  { datastore: 'd', hostname: 'h', 'job-id': 'j', type: 'verify' },
+  { datastore: 'd', hostname: 'h', 'job-id': 'j', type: 'prune' },
+  { datastore: 'd', hostname: 'h', 'job-id': 'j', type: 'sync' },
+  { datastore: 'd', hostname: 'h', 'job-id': 'j', 'media-pool': 'p', type: 'tape-backup' },
+  { datastore: 'd', hostname: 'h', 'media-pool': 'p', type: 'tape-backup' },
+  { hostname: 'h', type: 'tape-load' },
+  { hostname: 'h', type: 'package-updates' },
+  { hostname: 'h', type: 'acme' },
+  { datastore: 'd', hostname: 'h', type: 'thresholds' },
+  { hostname: 'h', type: 'system-mail' },
+  {},
+];
+
+/** What a failed job's log, a forwarded mail or a hostile datastore name can hold. */
+const HOSTILE = [
+  'plain',
+  '"quoted" and \\ back\\slashed',
+  'line\nbreak\r\nand\ttab',
+  `control ${String.fromCharCode(0, 1, 8, 12, 27, 31, 127)} chars`,
+  '{{ secrets.token }} and }}{{ braces',
+  'separators \u2028 \u2029 and ünïcode — ✓',
+  '',
+];
+
+describe('every PBS notification renders to a valid alert, whatever its text holds', () => {
+  test('each event field set x each severity x each hostile string', () => {
+    const body = alertmanagerAlertBody();
+    let rendered = 0;
+    for (const fields of EVENTS) {
+      for (const severity of ['info', 'notice', 'warning', 'error', 'unknown']) {
+        for (const text of HOSTILE) {
+          const hostile = Object.fromEntries(Object.keys(fields).map((key) => [key, text || 'x']));
+          const n = { fields: { ...fields, ...hostile }, message: text, severity, title: text };
+          const [alert] = assertPostableAlerts(render(body, n));
+          expect(alert?.annotations['description']).toBe(text);
+          expect(alert?.annotations['summary']).toBe(text);
+          expect(alert?.labels['severity']).toBe(severity);
+          expect(alert?.labels['job_type']).toBe(
+            fields['type'] === undefined ? undefined : text || 'x',
+          );
+          rendered += 1;
+        }
+      }
+    }
+    expect(rendered).toBe(EVENTS.length * 5 * HOSTILE.length);
   });
 });

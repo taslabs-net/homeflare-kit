@@ -5,7 +5,7 @@
  * ★ THE WEBHOOK IS THE POINT. A failed verify, sync or garbage collection reaches a human through a
  *   target a matcher names (pbs-notification-matcher.ts). Out of the box that is `mail-to-root`,
  *   one mailbox on one host; a webhook can post an Alertmanager alert instead, and then the failure
- *   pages like everything else. docs/pbs-notifications.md has the body template.
+ *   pages like everything else. docs/pbs-alertmanager-body.md has the body template.
  *
  * ⛔ SECRETS ARE DECLARED BY THE NAME OF AN ENVIRONMENT VARIABLE, NEVER BY VALUE, and NO VALUE EVER
  *   REACHES STATE — not as a prop, not as an attribute. write-only.ts has the whole argument; the

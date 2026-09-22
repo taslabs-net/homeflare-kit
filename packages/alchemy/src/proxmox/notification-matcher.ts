@@ -18,10 +18,15 @@
  *   out leaves it alone; every rule field is compared — notification-matcher-form.ts says why.
  *
  * ★ WHAT THIS NEEDS, READ OFF THE CLUSTER'S OWN SCHEMA (generated/pve.ts source, 9.2.11):
- *     read      GET    Mapping.Audit, Mapping.Modify or Mapping.Use on /mapping/notifications
- *     write     POST, PUT, DELETE   Mapping.Modify on /mapping/notifications
+ *     read      GET matchers/{name}   Mapping.Audit or Mapping.Modify on /mapping/notifications
+ *     write     POST, PUT, DELETE     Mapping.Modify on /mapping/notifications
  *   The same pair as `Proxmox.NotificationTarget`, with that file's ⚠️ about granting it on `/`.
- *   ⛔ A MISSING READ PRIVILEGE LOOKS LIKE "ABSENT", not like a 403 — see the same file.
+ *   ⛔ `Mapping.Use` IS NOT ENOUGH, though the COLLECTION GET accepts it: the per-object read this
+ *     family makes lists only Audit and Modify (pve-manager API2/Cluster/Notifications.pm
+ *     `get_matcher`, read at HEAD 2026-09-22 — corrected here; PR 95 said Use sufficed).
+ *   ⛔ A MISSING READ PRIVILEGE LOOKS LIKE "ABSENT", not like a 403 — see the same file. For
+ *     `default-matcher` that turns an adoption into a planned CREATE that PVE refuses as a
+ *     duplicate: the noop below needs a read lease holding Mapping.Audit.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
