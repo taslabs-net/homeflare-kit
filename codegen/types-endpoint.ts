@@ -7,6 +7,7 @@
  *   comparable with what is already on disk — sorting differently would have made all 8,196
  *   committed lines move and hidden every real change inside the shuffle.
  */
+import { resolveParameters } from './parameters.ts';
 import type { TsField } from './tsexpr.ts';
 import { declaration } from './tsexpr.ts';
 import { type VendorNode, paramType, returnType } from './tsmap.ts';
@@ -18,8 +19,16 @@ interface RawNode {
   readonly children?: readonly RawNode[];
 }
 
+/**
+ * ⛔ `parameters` IS `unknown` BECAUSE IT IS NOT ALWAYS A `properties` MAP. PVE spells
+ *   `POST /cluster/ha/rules` as `allOf: [{properties}, {oneOf: […]}]` — a discriminated union on
+ *   `instance-type` — and a reader that asks for `parameters.properties` gets `undefined` and
+ *   emits an EMPTY type, which is indistinguishable from an endpoint that takes nothing.
+ *   `codegen/parameters.ts` resolves both combinators and carries the measurement; two PVE
+ *   endpoints need it, and they are worth twelve parameters that were otherwise silently absent.
+ */
 interface RawInfo {
-  readonly parameters?: { readonly properties?: Readonly<Record<string, VendorNode>> | null };
+  readonly parameters?: unknown;
   readonly returns?: VendorNode;
 }
 
@@ -78,17 +87,20 @@ export interface Block {
  */
 export const blockFor = (endpoint: Endpoint): Block => {
   const key = `${endpoint.method} ${endpoint.path}`;
-  const properties = endpoint.info.parameters?.properties;
+  const resolved = resolveParameters(endpoint.info.parameters);
+  const properties = resolved.params as Readonly<Record<string, VendorNode>>;
   const inPath = pathParams(endpoint.path);
-  const names =
-    properties === null || properties === undefined
-      ? []
-      : Object.keys(properties)
-          .filter((name) => !inPath.has(name))
-          .sort();
+  const names = Object.keys(properties)
+    .filter((name) => !inPath.has(name))
+    .sort();
   const parts: string[] = [];
   const declared: string[] = [];
-  if (names.length > 0 && properties !== null && properties !== undefined) {
+  // ⛔ AN UNREADABLE PARAMETER SCHEMA GETS NO TYPE AND A REASON, NOT AN EMPTY OBJECT. `{}` would
+  //   read as "this endpoint takes nothing", which is the defect `parameters.ts` exists to stop.
+  //   Neither product needs this on the versions in the manifest; it is here for the one that does.
+  if (resolved.unresolved !== undefined) {
+    parts.push(`/** ${key} — parameters NOT READ: ${resolved.unresolved}. No Params type. */`);
+  } else if (names.length > 0) {
     const fields: TsField[] = names.map((name) => {
       const property = properties[name] as VendorNode;
       return {

@@ -136,6 +136,14 @@ export type ClusterHaRulesGetParams = {
 /** GET /cluster/ha/rules — `data` payload after client unwrap. */
 export type ClusterHaRulesGetReturn = readonly ({ rule: string } & Record<string, unknown>)[];
 
+/** POST /cluster/ha/rules — form/query parameters (path segments omitted). */
+export type ClusterHaRulesPostParams = {
+  affinity?: 'positive' | 'negative';
+  comment?: string;
+  disable?: '0' | '1';
+  resources: string;
+  rule: string;
+};
 /** POST /cluster/ha/rules — `data` payload after client unwrap. */
 export type ClusterHaRulesPostReturn = null;
 
@@ -145,6 +153,15 @@ export type ClusterHaRulesRuleGetReturn = {
   type: 'node-affinity' | 'resource-affinity';
 } & Record<string, unknown>;
 
+/** PUT /cluster/ha/rules/{rule} — form/query parameters (path segments omitted). */
+export type ClusterHaRulesRulePutParams = {
+  affinity?: 'positive' | 'negative';
+  comment?: string;
+  delete?: string;
+  digest?: string;
+  disable?: '0' | '1';
+  resources?: string;
+};
 /** PUT /cluster/ha/rules/{rule} — `data` payload after client unwrap. */
 export type ClusterHaRulesRulePutReturn = null;
 

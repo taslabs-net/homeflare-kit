@@ -6,7 +6,7 @@
  *   sha256 9def8f13611184ee, read on a PVE cluster node from
  *   /usr/share/pve-docs/api-viewer/apidoc.js
  *
- * 678 endpoints, 1057 exported types: EVERY endpoint the vendor
+ * 678 endpoints, 1059 exported types: EVERY endpoint the vendor
  * documents, not a subset. The generator this replaced covered a fraction of them and no committed
  * file said which fraction or why.
  *

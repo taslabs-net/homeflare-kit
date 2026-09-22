@@ -18,6 +18,7 @@
 import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseApidoc } from './apidoc.ts';
+import { resolveParameters } from './parameters.ts';
 import { REPO_ROOT, readManifest, verifiedText } from './schema-cache.ts';
 import { NUMERIC_STRING, type VendorNode, paramType } from './tsmap.ts';
 import { type Block, type Endpoint, blockFor, endpoints } from './types-endpoint.ts';
@@ -37,9 +38,8 @@ const HEADER_LINES = 18;
 const numericParams = (all: readonly Endpoint[]): number => {
   let count = 0;
   for (const endpoint of all) {
-    const properties = endpoint.info.parameters?.properties;
-    if (properties === null || properties === undefined) continue;
-    for (const property of Object.values<VendorNode>(properties)) {
+    const properties = resolveParameters(endpoint.info.parameters).params;
+    for (const property of Object.values<VendorNode>(properties as Record<string, VendorNode>)) {
       const type = paramType(property);
       if (type.kind === 'atom' && type.text === NUMERIC_STRING) count++;
     }

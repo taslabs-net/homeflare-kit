@@ -14,7 +14,7 @@ covered 407 of PVE's 678 endpoints and 46 of PBS's 367 with no record of which 4
 
 `bun codegen/types.ts` is that generator, with `--check`, the same manifest and the same
 sha256-as-identity rule as `codegen/constraints.ts`. It emits every endpoint both products
-document — 678 PVE and 367 PBS, 1,617 exported types — split across 89 files by the vendor's own
+document — 678 PVE and 367 PBS, 1,619 exported types — split across 89 files by the vendor's own
 path and packed back up so the split is no deeper than the 250-line house cap requires. Every file
 names its manifest entry, the product version the host reported and the sha256 of the bytes it was
 read from. `generated/pve.ts` and `generated/pbs.ts` stay as `export *` barrels, so no import in
@@ -41,6 +41,12 @@ every `generated` directory reached its ignore list. The naming is the old gener
 rather than improved: `ClusterBackupIdIncluded_volumesGetReturn` keeps its underscore, because
 renaming sixty exported types in the commit that changes what the types mean would hide the second
 change inside the first.
+
+⛔ Parameter schemas wrapped in `allOf`/`oneOf` are read through `codegen/parameters.ts` (PR #113),
+not asked for as `parameters.properties`. `POST /cluster/ha/rules` and `PUT /cluster/ha/rules/{rule}`
+are the two PVE endpoints that need it; a reader that misses them emits a type with no fields, which
+is indistinguishable from an endpoint that takes nothing. An unresolvable schema gets a doc comment
+naming the construct and **no** `Params` type — neither product needs that on these versions.
 
 ⛔ "Closed object" is spelled differently by the two products, and a test for one lies about the
 other. Measured over both whole schemas: PVE writes numbers (`additionalProperties: 0` on 617

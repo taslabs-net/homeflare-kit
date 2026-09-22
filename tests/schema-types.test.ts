@@ -162,6 +162,24 @@ describe('coverage is the whole vendor schema, not an unexplained subset', () =>
   });
 
   /**
+   * 🔴 THE EMPTY-TABLE DEFECT, IN ITS TYPE FORM. PVE spells `POST /cluster/ha/rules` as
+   *   `allOf: [{properties}, {oneOf: […]}]`, so a reader that asks for `parameters.properties`
+   *   sees nothing and emits a type with no fields — indistinguishable from an endpoint that
+   *   takes nothing. `codegen/parameters.ts` resolves both combinators; two PVE endpoints need
+   *   it, and they carry twelve parameters that were otherwise absent.
+   * ⚠️ ONLY WHAT EVERY `oneOf` BRANCH STATES SURVIVES. `affinity` is in the resource-affinity
+   *   branch and `comment` in both, so a type claiming a rule from one branch would refuse a
+   *   legal declaration of the other kind.
+   */
+  test('a parameter schema wrapped in allOf/oneOf is read, not emitted empty', async () => {
+    const text = await read('pve/cluster-ha.ts');
+    expect(text).toContain('export type ClusterHaRulesPostParams = {');
+    expect(text).toContain("  affinity?: 'positive' | 'negative';");
+    expect(text).toContain('  comment?: string;');
+    expect(text).not.toContain('export type ClusterHaRulesPostParams = {};');
+  });
+
+  /**
    * ⛔ THE WIDENING, PINNED WHERE IT WAS MEASURED. `pbs:POST /config/verify`'s `max-depth` is
    *   `integer, minimum 0, maximum 7`; the committed type said `'max-depth'?: string`.
    */
