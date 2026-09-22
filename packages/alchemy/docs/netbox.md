@@ -53,9 +53,26 @@ declaration does not delete the object unless the caller opts into `.pipe(Remova
 The `delete` handler is fully implemented anyway — a stub that silently does nothing lies to
 whoever reads the plan.
 
-⚠️ **An optional foreign key is omitted when undeclared, never sent as `null`.** Sending `null`
-would CLEAR a tenant somebody set in the NetBox UI: a destructive act disguised as an incomplete
-declaration.
+## An undeclared field is not an instruction to clear it
+
+🔴 **This shipped wrong once, and the shape of the mistake is worth keeping.** `Netbox.Prefix`
+sent `description: ''` whenever the prop was absent. On a create that is invisible — the field was
+empty anyway. ⛔ **On an adopt it is data loss**: a prefix's description is usually the only written
+trace of why that range exists, and the first deploy that adopted one would have PATCHed it to
+empty, with a plan that read `update`.
+
+★ **So the line is drawn at what the vendor itself defaults.** `status`, `is_pool` and
+`mark_utilized` have defaults in the schema, so omitting one genuinely means "the default" and
+settling it says what NetBox would have done anyway. `description`, `comments` and every optional
+foreign key have no such default — the schema's `''` is the absence of a value, not a decision —
+so they are **omitted from the body and uncompared** until you declare them.
+
+⚠️ **The cost, stated:** prose cannot be cleared by omission. Clearing it is `description: ''`,
+written on purpose, which is the readable way to say a destructive thing.
+
+⛔ **Whatever `matches` compares, `body` must send.** A field compared but never written produces
+a plan that says `update` forever: the PATCH omits it, so the next read is unchanged. The two move
+together, and `prefix-form.test.ts` asserts it.
 
 ## Read and write are different shapes
 
