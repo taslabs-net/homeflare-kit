@@ -7,7 +7,8 @@
  *   planned a create refuses a guest it then finds, and forgets its `creating` row; under
  *   `--adopt` it records a matching one with no write and still refuses one that differs; and a
  *   create interrupted after its POST resumes WITHOUT `--adopt` when the guest is what it wrote,
- *   and asks for `--adopt` when someone changed it meanwhile.
+ *   and asks for `--adopt` when someone changed it meanwhile — which then adopts it only as it
+ *   now runs, never writing the declaration back over the change (lxc-adoption.ts).
  * ★ THE INTERRUPTION IS A CREATE TASK THAT ENDS IN AN ERROR AFTER THE FAKE BUILT THE GUEST — to the
  *   engine the same as a deploy killed while it waited on the task: a live guest, and a
  *   `creating` row with no attributes.
@@ -15,19 +16,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { adopt } from 'alchemy/AdoptPolicy';
 import { type FakePve, fakePve, writesOf } from './fake-pve-lxc.ts';
-import { LIVE, TARGET, lxcEngine, seed } from './lxc-harness.ts';
+import { KEY, NODE, TARGET, VMID, lxcEngine, pasted, seed } from './lxc-harness.ts';
 import { ProxmoxLxc } from './lxc.ts';
 import type { LxcProps } from './lxc-props.ts';
 
-const NODE = 'pve1';
-const VMID = 100;
-const KEY = `${NODE}/${String(VMID)}`;
 const TAKEOVER = 'already exists, and this stack holds no state for it';
-
-const pasted = (over: Partial<LxcProps> = {}): LxcProps => {
-  const { lxc: _raw, ...config } = LIVE;
-  return { ...(config as Partial<LxcProps>), node: NODE, target: TARGET, vmid: VMID, ...over };
-};
 
 let fake: FakePve | undefined;
 afterEach(() => {
@@ -146,14 +139,26 @@ describe('an interrupted create', () => {
     expect(stack.status('door')).toBe('created');
   });
 
-  test('asks for --adopt when the guest changed meanwhile, and resumes with it', async () => {
+  test('is our own guest, not an adoption: a declaration changed meanwhile is written', async () => {
+    const { pve, stack } = await interrupted();
+    const run = await stack.deploy(door({ hostname: 'door-renamed' }));
+    expect(run.failure).toBe('');
+    expect(writesOf(pve)).toEqual([`POST nodes/${NODE}/lxc`, `PUT nodes/${NODE}/lxc/150/config`]);
+    expect(pve.guests.get(`${NODE}/150`)?.['hostname']).toBe('door-renamed');
+  });
+
+  test('asks for --adopt when the guest changed meanwhile, and adopts it only as it runs', async () => {
     const { pve, stack } = await interrupted();
     const guest = pve.guests.get(`${NODE}/150`) ?? {};
     guest['hostname'] = 'someone-else';
     expect((await stack.deploy(door())).failure).toContain('Cannot resume creating');
-    const resumed = await stack.deploy(door(), { adopt: true });
+    const refused = await stack.deploy(door(), { adopt: true });
+    expect(refused.failure).toContain('adopting it would change hostname');
+    expect(refused.failure).not.toContain('someone-else');
+    expect(writesOf(pve)).toEqual([`POST nodes/${NODE}/lxc`]);
+    const resumed = await stack.deploy(door({ hostname: 'someone-else' }), { adopt: true });
     expect(resumed.failure).toBe('');
-    expect(resumed.warnings.join('\n')).toContain('differs from the declaration in hostname');
-    expect(pve.guests.get(`${NODE}/150`)?.['hostname']).toBe('door-example');
+    expect(writesOf(pve)).toEqual([`POST nodes/${NODE}/lxc`]);
+    expect(pve.guests.get(`${NODE}/150`)?.['hostname']).toBe('someone-else');
   });
 });

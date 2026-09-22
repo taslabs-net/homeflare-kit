@@ -34,6 +34,11 @@ export type FakePve = {
    * keyed `node/vmid` — a guest that appears between a plan and its deploy.
    */
   readonly vanish: Map<string, number>;
+  /**
+   * Hand edits that land mid-deploy, keyed `node/vmid`: once that guest's config has been read
+   * `after` more times, `set` is merged into it — a change made between a plan and its apply.
+   */
+  readonly edits: Map<string, { after: number; readonly set: Record<string, unknown> }>;
   /** Config keys a `PUT …/config` accepts with 200 and then does not store. */
   readonly ignore: Set<string>;
   /** How every task ends, and whether a task-starting call answers with no UPID at all. */
@@ -90,6 +95,7 @@ export const fakePve = (): FakePve => {
   const others: { vmid: number | string; node: string; type: string }[] = [];
   const configErrors = new Map<string, { status: number; body: unknown }>();
   const vanish = new Map<string, number>();
+  const edits: FakePve['edits'] = new Map();
   const ignore = new Set<string>();
   const task = { exit: 'OK', noUpid: false };
   const seen: Seen[] = [];
@@ -148,7 +154,12 @@ export const fakePve = (): FakePve => {
       const message = `Configuration file 'nodes/${node}/lxc/${vmid}.conf' does not exist\n`;
       return json({ data: null, message }, 500);
     }
-    if (tail === '/config' && request.method === 'GET') return json({ data: config });
+    if (tail === '/config' && request.method === 'GET') {
+      const answer = json({ data: config });
+      const edit = edits.get(`${node}/${vmid}`);
+      if (edit !== undefined && --edit.after === 0) Object.assign(config, edit.set);
+      return answer;
+    }
     if (tail === '/config' && request.method === 'PUT') {
       const digest = form.get('digest');
       if (digest !== null && digest !== config['digest']) {
@@ -192,6 +203,7 @@ export const fakePve = (): FakePve => {
   };
   return {
     configErrors,
+    edits,
     fetch: Object.assign(remapped, { preconnect: globalThis.fetch.preconnect }),
     guests,
     ignore,

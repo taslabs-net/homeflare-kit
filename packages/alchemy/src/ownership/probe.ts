@@ -28,29 +28,28 @@ import type { Owner } from './adopt.ts';
 import { recordedInstance } from './rows.ts';
 
 /**
- * A family's `read` answer. With attributes in state it is `found` as is. Without, it is the probe
- * or the recovery read (header): `found` is ours only when the state store records this instance
- * with its whole declaration AND `settled` — the family's own "live matches these props" — says so.
- * ⛔ `settled` NEVER FAILS THE READ. The recovery read runs with the INTERRUPTED deploy's props, so
+ * Whether the state store proves the live object this instance's own: a row records `ask.instanceId`
+ * with its whole declaration (whole.ts) AND `settled` — the family's own "live matches these props"
+ * — says so. The one proof ownership/ accepts for a live object state holds no attributes for; the
+ * recovery read (`ownedRead`) and an adoption check (adopting.ts) both ask it.
+ * ⛔ `settled` NEVER FAILS THE CALLER. The recovery read runs with the INTERRUPTED deploy's props, so
  *   a declaration that cannot be evaluated any more (a fragments directory since moved, a group
  *   name since renamed) would fail every later plan, the fix included. It reads as "not proven
- *   ours" instead — `Unowned`, which `--adopt` resolves — with the reason logged.
+ *   ours" instead, with the reason logged.
  */
-export const ownedRead = <A extends object, E, R>(
-  ask: Owner,
-  found: A | undefined,
+export const provenOurs = <E, R>(
+  ask: { readonly fqn: string; readonly instanceId: string },
   settled: Effect.Effect<boolean, E, R>,
-): Effect.Effect<A | undefined, never, R> =>
+): Effect.Effect<boolean, never, R> =>
   Effect.gen(function* () {
-    if (found === undefined || ask.output !== undefined) return found;
     const recorded = yield* recordedInstance(ask.fqn, ask.instanceId);
-    if (recorded === 'absent') return Unowned(found);
+    if (recorded === 'absent') return false;
     if (recorded === 'partial') {
       yield* Effect.logWarning(
         `${ask.fqn}: the interrupted create's state row lacks part of the declaration (a prop ` +
           'was still an Output when it was written), so the live object is not proven ours',
       );
-      return Unowned(found);
+      return false;
     }
     const unproven = (reason: unknown) =>
       Effect.as(
@@ -60,6 +59,20 @@ export const ownedRead = <A extends object, E, R>(
         ),
         false,
       );
-    const ours = yield* settled.pipe(Effect.catch(unproven), Effect.catchDefect(unproven));
-    return ours ? found : Unowned(found);
+    return yield* settled.pipe(Effect.catch(unproven), Effect.catchDefect(unproven));
+  });
+
+/**
+ * A family's `read` answer. With attributes in state it is `found` as is. Without, it is the probe
+ * or the recovery read (header): `found` is ours only when `provenOurs` says so, else `Unowned`,
+ * which `--adopt` resolves.
+ */
+export const ownedRead = <A extends object, E, R>(
+  ask: Owner,
+  found: A | undefined,
+  settled: Effect.Effect<boolean, E, R>,
+): Effect.Effect<A | undefined, never, R> =>
+  Effect.gen(function* () {
+    if (found === undefined || ask.output !== undefined) return found;
+    return (yield* provenOurs(ask, settled)) ? found : Unowned(found);
   });

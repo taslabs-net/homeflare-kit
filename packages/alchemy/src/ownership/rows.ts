@@ -31,12 +31,15 @@ const storeOf = Effect.gen(function* () {
 const rowAt = (store: StateService, where: Where, fqn: string) =>
   store.get({ ...where, fqn }).pipe(Effect.orElseSucceed(() => undefined));
 
-type Generation = {
+/** One generation of a persisted row, as far as ownership/ reads it. */
+export type Generation = {
   readonly instanceId?: unknown;
   readonly status?: unknown;
   readonly props?: unknown;
   readonly attr?: unknown;
   readonly old?: unknown;
+  /** Set by Apply on the `updating` row of an adoption, until that update commits (Apply.ts). */
+  readonly adopting?: unknown;
 };
 
 /** The generation of a persisted row that carries `instanceId`: the row itself, or one in `old`. */
@@ -51,7 +54,10 @@ const generationOf = (row: unknown, instanceId: string): Generation | undefined 
 };
 
 /** The generation `instanceId` names — at the FQN, or at a former FQN `renamedFrom` names. */
-const recordedGeneration = (fqn: string, instanceId: string) =>
+export const recordedGeneration = (
+  fqn: string,
+  instanceId: string,
+): Effect.Effect<Generation | undefined> =>
   Effect.gen(function* () {
     const found = yield* storeOf;
     if (found === undefined) return undefined;
