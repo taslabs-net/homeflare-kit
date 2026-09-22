@@ -23,7 +23,7 @@
  *   it from the template. docs/pbs-notifications.md says the same to the reader.
  * ⛔ A REFUSAL NAMES THE FIELD, NEVER THE VALUE — the message lands in a terminal and a CI log.
  */
-import type { FromEnv } from './write-only.ts';
+import type { FromEnv } from '../secrets/write-only.ts';
 
 /** `{{ secrets.x }}`, `{{secrets.x}}`, `{{ url-encode secrets.x }}` — a reference, not a value. */
 const READS_SECRET = /\{\{[^}]*\bsecrets\./;

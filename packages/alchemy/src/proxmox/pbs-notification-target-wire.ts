@@ -23,7 +23,7 @@ import type {
   PbsNotificationTargetProps,
 } from './pbs-notification-target.ts';
 import { bool, text } from './values.ts';
-import { seal } from './write-only.ts';
+import { seal } from '../secrets/write-only.ts';
 
 export const base64 = (value: string): string => Buffer.from(value, 'utf8').toString('base64');
 
