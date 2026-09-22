@@ -158,7 +158,13 @@ unit reads converged — the same limit the Mac side records.
 - ⛔ Deleting the declaration **stops the service** — stop, disable, remove the
   file, reload. A unit that must outlive its declaration is adopted, not deleted.
 - A name or directory change is a **delete-first replace**: two unit files for
-  one name cannot both be the one systemd reads.
+  one name cannot both be the one systemd reads. The new identity is checked
+  at plan time, read-only — valid, writable, not masked, unclaimed, and the
+  runner's own check on the new path — and the old unit must be deletable,
+  before that swap is promised. A file byte-identical to this render is the
+  declaration's own leftover, not someone else's unit. A rename the plan could
+  not see (a name still an Output) gets the same checks at apply, before the
+  old unit is stopped.
 
 ### The directive set is systemd's, not the kit's
 
