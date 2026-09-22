@@ -8,5 +8,7 @@ or creates one from a template.
   flip or another template fails the plan. Destroy retains unless `RemovalPolicy.destroy()`.
 - ⛔ **It adopts nothing without `--adopt` or `adopt(true)`**, a matching guest included
   ([ownership.md](./ownership.md)): under `destroy`, a claimed guest's disks go with it.
+- ⛔ **An adoption never changes a guest.** Any key that differs from the live config fails the
+  plan, named without its value ([proxmox-lxc-adopt.md](./proxmox-lxc-adopt.md)).
 - ⛔ **root@pam-only keys** (`devN`, bind mounts, features beyond `nesting`) are refused at plan,
   with the `pct set` to run instead. Guide: [proxmox-lxc.md](./proxmox-lxc.md).

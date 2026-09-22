@@ -4,27 +4,19 @@
  *
  * ⛔ WHAT THESE PIN: a declaration pasted from the live config plans `adopted` with no warning,
  *   its deploy writes NOTHING, and the next plan is `noop`; the create spellings (`storage:size`,
- *   a NIC without its MAC) adopt as cleanly; drift is named at plan and written as one PUT that
- *   keeps the live MAC and carries the digest; and every change PVE cannot make in place fails the
- *   plan with nothing written. Deleting both empty-change guards (reconcile's in lxc.ts and
- *   `updateGuest`'s in lxc-lifecycle.ts), or the hwaddr carry in lxc-wire.ts, fails a test here —
- *   each MEASURED by making that edit and running this file, 2026-09-21.
+ *   a NIC without its MAC) adopt as cleanly; after that adoption, drift is named at plan and
+ *   written as one PUT that keeps the live MAC and carries the digest; and every change PVE cannot
+ *   make in place fails the plan with nothing written. Deleting both empty-change guards
+ *   (reconcile's in lxc.ts and `updateGuest`'s in lxc-lifecycle.ts), or the hwaddr carry in
+ *   lxc-wire.ts, fails a test here — each MEASURED by making that edit and running this file,
+ *   2026-09-21. An adoption that WOULD write fails instead: lxc-strict-adopt.test.ts.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { adopt } from 'alchemy/AdoptPolicy';
 import { type FakePve, fakePve, writesOf } from './fake-pve-lxc.ts';
-import { LIVE, TARGET, lxcEngine, seed } from './lxc-harness.ts';
+import { NODE, TARGET, VMID, adoptedAsIs, lxcEngine, pasted, seed } from './lxc-harness.ts';
 import { ProxmoxLxc } from './lxc.ts';
 import type { LxcProps } from './lxc-props.ts';
-
-const NODE = 'pve1';
-const VMID = 100;
-
-/** The live config as a declaration: every key, minus what pvesh adds that is not a prop. */
-const pasted = (): LxcProps => {
-  const { lxc: _raw, ...config } = LIVE;
-  return { ...(config as Partial<LxcProps>), node: NODE, target: TARGET, vmid: VMID };
-};
 
 const ct = (props: LxcProps) => ProxmoxLxc('ct', props).pipe(adopt(true));
 
@@ -84,17 +76,17 @@ describe('adopting a live container', () => {
   });
 });
 
-describe('drift at adoption is named at plan and written once', () => {
+describe('drift after the adoption is named at plan and written once', () => {
   test('memory and an MTU change: one PUT, the live MAC kept, the digest carried', async () => {
     const pve = live();
-    const stack = lxcEngine(pve);
+    const stack = await adoptedAsIs(pve);
     const props: LxcProps = {
       ...pasted(),
       memory: 4096,
       net1: 'name=eth1,bridge=vmbr1,ip=198.51.100.4/24,mtu=9000',
     };
     const planned = await stack.plan(ct(props));
-    expect(planned.actions).toEqual({ ct: 'adopted' });
+    expect(planned.actions).toEqual({ ct: 'update' });
     expect(planned.warnings.join('\n')).toContain('differs from the declaration in memory, net1');
     expect((await stack.deploy(ct(props))).failure).toBe('');
     expect(writesOf(pve)).toEqual([`PUT nodes/${NODE}/lxc/${String(VMID)}/config`]);
@@ -107,7 +99,7 @@ describe('drift at adoption is named at plan and written once', () => {
 
   test('a larger rootfs is a resize after the config, never a new volume', async () => {
     const pve = live();
-    const stack = lxcEngine(pve);
+    const stack = await adoptedAsIs(pve);
     const props: LxcProps = { ...pasted(), rootfs: 'local-zfs:subvol-100-disk-0,size=64G' };
     expect((await stack.deploy(ct(props))).failure).toBe('');
     expect(writesOf(pve)).toEqual([`PUT nodes/${NODE}/lxc/${String(VMID)}/resize`]);
@@ -125,7 +117,8 @@ describe('changes PVE cannot make in place fail the plan and write nothing', () 
     ['detaching a mount point', { mp0: '' }, /unusedN/],
   ])('%s', async (_, change, reason) => {
     const pve = live();
-    const run = await lxcEngine(pve).deploy(ct({ ...pasted(), ...change } as LxcProps));
+    const stack = await adoptedAsIs(pve);
+    const run = await stack.deploy(ct({ ...pasted(), ...change } as LxcProps));
     expect(run.failure).toMatch(reason);
     expect(writesOf(pve)).toEqual([]);
   });

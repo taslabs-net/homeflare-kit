@@ -108,6 +108,6 @@ a declaration, so Apply leaves its object in place with a note instead of deleti
 - ⚠️ **`CaddyConfig` keeps its own probe.** A running config identical to the declaration reads as
   ours, because adopting it changes nothing Caddy serves ([caddy.md](./caddy.md#adoption)).
   `ProxmoxLxc` does not share that exception: its delete removes a guest and its volumes
-  ([proxmox-lxc.md](./proxmox-lxc.md#adopting-what-the-plan-says)).
+  ([proxmox-lxc-adopt.md](./proxmox-lxc-adopt.md)).
 - ⚠️ **The other `@homeflare/alchemy/proxmox` resources do not follow this rule yet.** Those built
   on `pveHandlers` (`src/proxmox/resource.ts`) still read a live object with no state as ours.

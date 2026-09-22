@@ -17,11 +17,11 @@
  * ⛔ AND NOTHING HERE WRITES A VOLUME IT DID NOT ALLOCATE. A create takes `storage:GiB` only
  *   (lxc-create-form.ts), and a deploy that planned a create never writes onto a guest it finds.
  *
- * ⚠️ AN ADOPTION ALWAYS PLANS `adopted`, EVEN WHEN IT WOULD WRITE. alchemy 2.0.0-beta.79 turns a
- *   cold adoption's diff into an update whatever it answered (Plan.ts, `forceUpdateAfterAdoption`)
- *   and prints no property diff for it. So `diff` LOGS the keys a deploy would write, by name
- *   (never by value), as a warning — the only place a plan can say the declaration is not the live
- *   config yet. A clean adoption logs nothing, and its deploy writes nothing (lxc-judge.ts).
+ * ⛔ AND AN ADOPTION NEVER CHANGES A GUEST (lxc-adoption.ts). A guest this stack adopts is taken
+ *   over exactly as it runs: any key the declaration says otherwise FAILS the plan, by name (never
+ *   by value), and reconcile asks again before it would write. Only an exact match adopts.
+ * ⚠️ AN UPDATE STILL PLANS `update` WITHOUT A PROPERTY DIFF, so `diff` LOGS the keys a deploy would
+ *   write, by name, as a warning — the only place a plan says what the deploy will change.
  *
  * ⚠️ POWER STATE IS NOT DECLARED. `onboot` is config; start and stop are an operator's act, as for
  *   `Proxmox.Vm`. `start: 1` starts a guest once, after the create that built it, and never again.
@@ -36,6 +36,7 @@ import { ownedRead } from '../ownership/probe.ts';
 import { provingResumes } from '../ownership/resume.ts';
 import { createRefusals } from './lxc-create-form.ts';
 import { identityRefusals } from './lxc-identity.ts';
+import { refuseAdoptedDrift } from './lxc-adoption.ts';
 import { judge } from './lxc-judge.ts';
 import {
   LxcRefusedError,
@@ -75,8 +76,9 @@ const refused = (reasons: readonly string[]) =>
  *   that follows, so reconcile can tell our own interrupted create from a guest somebody else put
  *   at this vmid.
  */
-const diff = (news: Input<LxcProps>, olds: LxcProps, output: LxcAttributes | undefined) =>
+const diff = (owner: LxcOwner, news: Input<LxcProps>, olds: LxcProps) =>
   Effect.gen(function* () {
+    const { output } = owner;
     const identity = identityRefusals(news, olds, output);
     if (identity.length > 0) return yield* refused(identity);
     if (output === undefined) return undefined;
@@ -96,6 +98,7 @@ const diff = (news: Input<LxcProps>, olds: LxcProps, output: LxcAttributes | und
       return { action: 'update' } as const;
     }
     const change = judge(news, live);
+    yield* refuseAdoptedDrift(owner, news, live, change);
     if (change.refuse.length > 0) return yield* refused(change.refuse);
     const moved = news.node !== output.node;
     if (change.drift.length === 0 && !moved) return { action: 'noop' } as const;
@@ -112,7 +115,8 @@ const diff = (news: Input<LxcProps>, olds: LxcProps, output: LxcAttributes | und
 /**
  * ⛔ THE SAME JUDGE AS `diff`, RE-RUN AGAINST A FRESH READ, AND AN EMPTY CHANGE WRITES NOTHING.
  *   Apply routes `adopted` through reconcile (resource.ts has the Apply.ts lines), so this is what
- *   runs on the first deploy after an adoption; for a guest that already matches it is two GETs.
+ *   runs on the first deploy after an adoption; for a guest that already matches it is two GETs,
+ *   and for one edited since the plan it is a refusal, never a write (lxc-adoption.ts).
  * ⛔ AND IT READS BACK AND JUDGES AGAIN. PVE answers 200 on writes that did nothing, so a change
  *   that did not land is a failure here, not a state row claiming it did. ⚠️ A change PVE parked
  *   as pending on a running guest DOES read back (GET config merges `[pending]` unless asked for
@@ -148,6 +152,7 @@ const reconcile = (owner: LxcOwner, news: LxcProps) =>
             'onto an existing guest: plan again, so the plan can show it and adopt it.',
         ]);
       }
+      yield* refuseAdoptedDrift(owner, news, live, change);
       if (change.refuse.length > 0) return yield* refused(change.refuse);
       if (change.drift.length > 0) yield* updateGuest(news, change, text(live['digest']));
     }
@@ -208,14 +213,13 @@ const handlers = {
   delete: ({ olds, output }: { olds: LxcProps; output: LxcAttributes }) =>
     destroyGuest(whereOf(olds, output), olds),
   diff: ({
+    fqn,
+    instanceId,
     news,
     olds,
     output,
-  }: {
-    news: Input<LxcProps>;
-    olds: LxcProps;
-    output: LxcAttributes | undefined;
-  }) => diff(news, olds, output),
+  }: Asked & { news: Input<LxcProps>; olds: LxcProps; output: LxcAttributes | undefined }) =>
+    diff({ fqn, instanceId, output }, news, olds),
   list: () => Effect.succeed([]),
   read: ({
     fqn,

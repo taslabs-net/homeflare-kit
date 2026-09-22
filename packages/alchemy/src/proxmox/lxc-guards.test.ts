@@ -11,19 +11,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { adopt } from 'alchemy/AdoptPolicy';
 import { type FakePve, fakePve, writesOf } from './fake-pve-lxc.ts';
-import { LIVE, TARGET, lxcEngine, seed } from './lxc-harness.ts';
+import { KEY, NODE, TARGET, VMID, adoptedAsIs, lxcEngine, pasted, seed } from './lxc-harness.ts';
 import { ProxmoxLxc } from './lxc.ts';
 import type { LxcProps } from './lxc-props.ts';
 
-const NODE = 'pve1';
-const VMID = 100;
-const KEY = `${NODE}/${String(VMID)}`;
 const TEMPLATE = 'local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst';
-
-const pasted = (over: Partial<LxcProps> = {}): LxcProps => {
-  const { lxc: _raw, ...config } = LIVE;
-  return { ...(config as Partial<LxcProps>), node: NODE, target: TARGET, vmid: VMID, ...over };
-};
+const ct = (props: LxcProps) => ProxmoxLxc('ct', props).pipe(adopt(true));
 
 let fake: FakePve | undefined;
 afterEach(() => {
@@ -113,10 +106,9 @@ describe('a write is claimed only when PVE says it finished', () => {
   test('a config write PVE accepted but did not store fails the read-back', async () => {
     const pve = cluster();
     seed(pve, NODE, VMID);
+    const stack = await adoptedAsIs(pve);
     pve.ignore.add('memory');
-    const run = await lxcEngine(pve).deploy(
-      ProxmoxLxc('ct', pasted({ memory: 4096 })).pipe(adopt(true)),
-    );
+    const run = await stack.deploy(ct(pasted({ memory: 4096 })));
     expect(run.failure).toContain('memory still differ');
   });
 });
@@ -137,8 +129,9 @@ describe('identity and volumes', () => {
   test('options and growth on one volume: the PUT keeps the live size, the resize follows', async () => {
     const pve = cluster();
     seed(pve, NODE, VMID);
+    const stack = await adoptedAsIs(pve);
     const mp0 = 'tank:subvol-100-disk-0,mp=/data,backup=1,size=300G';
-    const run = await lxcEngine(pve).deploy(ProxmoxLxc('ct', pasted({ mp0 })).pipe(adopt(true)));
+    const run = await stack.deploy(ct(pasted({ mp0 })));
     expect(run.failure).toBe('');
     const path = `nodes/${NODE}/lxc/${String(VMID)}`;
     expect(writesOf(pve)).toEqual([`PUT ${path}/config`, `PUT ${path}/resize`]);

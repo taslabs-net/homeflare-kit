@@ -57,8 +57,10 @@ lease (`readRole`, resource.ts). That is still a read.
 ² The PVE notification endpoints: `smtp` (the mail target), `sendmail`, `gotify`, `webhook`. The
 secrets are never props (notification-target.ts), so no write is ever needed to "reset" them.
 ³ Rewritten 2026-09-21 (PR 80, [proxmox-lxc.md](./proxmox-lxc.md)): its own reconcile, and its
-probe answers `Unowned`, so the deploy needs `--adopt`. Its `diff` also logs the keys a deploy
-would write, by name. Pinned by `src/proxmox/lxc-adopt.test.ts` ("deploys with no write").
+probe answers `Unowned`, so the deploy needs `--adopt`. An adoption that would write fails the
+plan instead, naming the keys ([proxmox-lxc-adopt.md](./proxmox-lxc-adopt.md)), so only the
+no-write row applies. Pinned by `src/proxmox/lxc-adopt.test.ts` ("deploys with no write") and
+`src/proxmox/lxc-strict-adopt.test.ts`.
 ⁴ `updateBody` sends `target_size_ratio`, but `matches` does not compare it (float equality). A
 declared ratio that differs from the live one is never written on a no-op adoption and never
 reported as a diff.

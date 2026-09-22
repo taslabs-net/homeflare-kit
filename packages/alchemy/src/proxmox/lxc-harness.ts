@@ -13,7 +13,7 @@
  * ★ ONE ARTIFACT STORE ACROSS A PLAN AND ITS APPLY, and `--adopt` as the AdoptPolicy service, as
  *   openbao/fake-stack.ts provides them: the ownership rule reads both (src/ownership/).
  */
-import { AdoptPolicy } from 'alchemy/AdoptPolicy';
+import { AdoptPolicy, adopt } from 'alchemy/AdoptPolicy';
 import { apply } from 'alchemy/Apply';
 import { provideFreshArtifactStore } from 'alchemy/Artifacts';
 import * as Plan from 'alchemy/Plan';
@@ -29,7 +29,8 @@ import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import type { PveTarget } from './credentials.ts';
 import { withFakeBao } from './fake-bao-env.ts';
 import { FAKE_BAO, FAKE_MEMBER, type FakePve } from './fake-pve-lxc.ts';
-import { ProxmoxLxcProvider } from './lxc.ts';
+import type { LxcProps } from './lxc-props.ts';
+import { ProxmoxLxc, ProxmoxLxcProvider } from './lxc.ts';
 
 export const TARGET: PveTarget = {
   members: [FAKE_MEMBER],
@@ -66,6 +67,17 @@ export const LIVE: Readonly<Record<string, unknown>> = {
   swap: 0,
   tags: 'web',
   unprivileged: 1,
+};
+
+/** Where `seed` puts the production-shaped guest by default, and its `node/vmid` key. */
+export const NODE = 'pve1';
+export const VMID = 100;
+export const KEY = `${NODE}/${String(VMID)}`;
+
+/** The live config as a declaration: every key, minus what pvesh adds that is not a prop. */
+export const pasted = (over: Partial<LxcProps> = {}): LxcProps => {
+  const { lxc: _raw, ...config } = LIVE;
+  return { ...(config as Partial<LxcProps>), node: NODE, target: TARGET, vmid: VMID, ...over };
 };
 
 /** Put `config` live on the fake as `node/vmid`, with a digest as PVE would add. */
@@ -147,4 +159,15 @@ export const lxcEngine = (fake: FakePve) => {
     /** The stored row's status, or undefined when there is none. */
     status: (fqn: string) => rows['lxc']?.['test']?.[fqn]?.status,
   };
+};
+
+/**
+ * The engine, with the guest `seed` put at NODE/VMID adopted exactly as it runs — the only adoption
+ * that proceeds (lxc-adoption.ts) — so a test can go on to change it, as an ordinary update.
+ */
+export const adoptedAsIs = async (pve: FakePve): Promise<ReturnType<typeof lxcEngine>> => {
+  const stack = lxcEngine(pve);
+  const run = await stack.deploy(ProxmoxLxc('ct', pasted()).pipe(adopt(true)));
+  if (run.failure !== '') throw new Error(`the clean adoption failed: ${run.failure}`);
+  return stack;
 };

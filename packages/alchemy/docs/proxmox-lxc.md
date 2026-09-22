@@ -90,7 +90,8 @@ Every prop is the key and spelling PVE uses in `/nodes/{node}/lxc/{vmid}/config`
 
 The `digest` makes PVE refuse the write if the config changed since the deploy read it. ⚠️ That
 read is the deploy's, not the plan's: a declared key edited by hand between `plan` and `deploy`
-is written back to the declaration, even after a plan that warned of nothing.
+is written back to the declaration, even after a plan that warned of nothing. (An adoption
+refuses it instead.)
 
 On a running guest, PVE may keep a change as pending until the next restart. A read returns the
 pending value, so the plan still converges.
@@ -141,51 +142,12 @@ guest that needs `/dev/net/tun` (a Mesh door) or `/dev/dri` is created in two st
 - **Pool membership, HA, firewall rules, snapshots, replication** are not declared here. Use their
   own resources, or manage them by hand.
 
-## Adopting: what the plan says
+## Adopting
 
-⛔ **No live guest is adopted without `adopt(true)` or `--adopt`, not even one that matches the
-declaration** — the kit-wide rule in [ownership.md](./ownership.md). Without either, the plan fails
-with "Cannot adopt" and nothing is written. Matching is not proof the guest is yours: a pasted
-config or a mistyped vmid reads the same, and once state claims a guest, `RemovalPolicy.destroy()`
-deletes it and its volumes. `.pipe(adopt(false))` stays refused under `--adopt`.
-
-With adoption on, a cold adoption plans **`adopted`** even when the deploy would write. Alchemy
-2.0.0-beta.79 forces an update after it adopts, and prints no property diff for that update. So
-`diff` logs a warning naming each key a deploy would write:
-
-```
-Proxmox.Lxc pve1/100: live config differs from the declaration in memory, net1 -- a deploy writes these.
-```
-
-- **No warning** means the declaration is the live config. The deploy writes nothing (two GETs),
-  and the next plan is `noop`. ★ That is the zero-change adoption check: read the plan first.
-- **A warning** means fix the declaration, or accept the named writes. Keys are named, values are
-  not.
-
-⛔ **A warning does not stop the deploy.** `deploy --adopt --yes` writes each named key onto the
-live guest. A `net0` declared without the live `tag=` is written without it, and the guest leaves
-its VLAN. Only the plan you read makes an adoption zero-change.
-
-⚠️ **`alchemy plan` has no `--adopt` flag** (2.0.0-beta.79: only `deploy` declares it). Without
-adoption on, the plan stops at "Cannot adopt" before `diff` can warn. To read the adoption's plan,
-run `alchemy deploy --adopt --dry-run`, or declare `.pipe(adopt(true))` and run `alchemy plan`.
-
-A deploy that planned a **create** never takes over a guest it then finds at that vmid (the plan
-skips its adoption read while a prop is an unresolved Output, and a guest can appear after the
-plan). Without adoption on, the deploy fails and forgets its `creating` row, so the next plan asks.
-With it on, a matching guest is recorded with no write; any other fails until a plan can show it.
-
-A create interrupted after its POST resumes on the next deploy **without** `--adopt` when the guest
-still matches what it declared. If someone changed it meanwhile, the plan says "Cannot resume
-creating", and `--adopt` resumes it (the warning names the keys it writes back).
-
-A guest the cluster no longer lists at all, with state still held, plans `update` and warns that
-the deploy **creates it again** from `ostemplate`, with new volumes. The plan fails instead when
-there is no `ostemplate`, or when `rootfs`/`mpN` are declared by live volume id (as a paste is):
-a create never reuses a volume.
-
-`GET …/config` needs `VM.Audit`, which the `read` lease has. A config PUT uses the cached
-`provision` lease. A create, resize or delete mints a fresh one and polls its task with it.
+⛔ **No live guest is adopted without `adopt(true)` or `--adopt`, and an adoption never changes
+a guest.** It is taken over exactly as it runs, or the plan fails naming each key that differs.
+What the plan says, what counts as an adoption, and the leases each step uses:
+[proxmox-lxc-adopt.md](./proxmox-lxc-adopt.md).
 
 ## Removing
 
