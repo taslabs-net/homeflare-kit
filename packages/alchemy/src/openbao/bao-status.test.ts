@@ -86,7 +86,7 @@ describe('settle', () => {
 
   // ⛔ A success body can hold a credential, so a malformed one is described and never quoted.
   it('fails an unparseable success body without quoting it', () => {
-    const error = errorOf(settle('read', 'GET', 'pbs-tb4/creds/read', 200, 'secret=abc123 {'));
+    const error = errorOf(settle('read', 'GET', 'pbs-c1/creds/read', 200, 'secret=abc123 {'));
     assert.ok(!error.message.includes('abc123'));
   });
 

@@ -54,7 +54,7 @@ export const guardPath = (live: PbsDatastoreAttributes, props: PbsDatastoreProps
  *
  * ⚠️ AN UNDECLARED `backend` IS NOT A DIVERGENCE. Undeclared is unmanaged everywhere in this
  *   family, and this guard keeps that rule: it fires only when the declaration says something and
- *   PBS says something else. Adopting `r2-offsite` without mentioning `backend` still plans noop.
+ *   PBS says something else. Adopting `offsite` without mentioning `backend` still plans noop.
  *
  * ⚠️ COMPARED AS A CANONICAL PROPERTY STRING, so `bucket=x,type=s3` and `type=s3,bucket=x` are the
  *   same backend and key order cannot deadlock a plan — the reason `samePath` trims a slash.

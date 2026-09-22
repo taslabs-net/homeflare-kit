@@ -105,10 +105,10 @@ export const machines = Effect.gen(function* () {
   });
   yield* BaoKubernetesRole('pod', {
     aliasNameSource: 'serviceaccount_name',
-    boundServiceAccountNames: ['litellm'],
+    boundServiceAccountNames: ['llm-gateway'],
     boundServiceAccountNamespaces: ['ai'],
-    name: 'ai-litellm',
-    tokenPolicies: ['ai-litellm'],
+    name: 'ai-gateway',
+    tokenPolicies: ['ai-gateway'],
   });
 });
 ```

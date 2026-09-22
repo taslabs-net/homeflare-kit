@@ -2,7 +2,7 @@
  * A Cloudflare policy document as the engine stores it — resolution from names, parsing from a
  * read, and the one comparison every Bao.CloudflareRole plan rests on.
  *
- * MEASURED from the engine source (house/platform/secrets/vault/plugin/cloudflare/path_roles.go)
+ * MEASURED from the engine source (<estate>/platform/secrets/vault/plugin/cloudflare/path_roles.go)
  * and the 2026-09-14 snapshot of all 586 live roles:
  *   • `policies` is a STRING field holding a JSON array (path_roles.go:67-72). Each entry is
  *     `{effect, resources: map[string]string, permission_groups: [{id}]}` (:25-33).

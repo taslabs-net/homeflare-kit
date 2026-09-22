@@ -10,7 +10,7 @@
  *   permission-groups`: `Logs Read` is listed twice, `6a315a56…` at `com.cloudflare.api.account`
  *   and `c4a30cd5…` at `com.cloudflare.api.account.zone`. The second is what the four live
  *   security roles carry on their ACCOUNT resource, and what
- *   house/nix/homeflare-config/scripts/cf-mint-analytics-tokens.py:80 pins as PG_LOGS_ZONE.
+ *   <estate>/nix/scripts/cf-mint-analytics-tokens.py:80 pins as PG_LOGS_ZONE.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';

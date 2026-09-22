@@ -4,7 +4,7 @@
  * ★ PLAIN `fetch`, NO TLS ESCAPE HATCH, AND THAT IS A MEASURED CHOICE RATHER THAN AN OMISSION.
  *   Proxmox is usually met with `curl -k` because a fresh install serves its own self-signed
  *   certificate — I reached for `-k` myself before checking. This cluster serves a real Let's
- *   Encrypt certificate (`CN=cluster-tb4.example.com`), and strict TLS answers 401, i.e. the
+ *   Encrypt certificate (`CN=cluster-c1.example.com`), and strict TLS answers 401, i.e. the
  *   handshake succeeds and only the credential is missing. So there is no `rejectUnauthorized`
  *   option here to be left switched on by accident in somebody else's estate.
  *
@@ -93,7 +93,7 @@ const buildRequest = (
    *   package can perform was broken from the day the client was written.
    *   ⛔ NOTHING CAUGHT IT BECAUSE NOTHING HAD EVER WRITTEN. Ninety-eight resources were adopted
    *     against the live cluster and every one matched, so `reconcile` never reached a PUT. The
-   *     identical bug in house/forgejo/src/client.ts surfaced the moment a write token existed
+   *     identical bug in <estate>/forgejo/src/client.ts surfaced the moment a write token existed
    *     and answered `422 Unsupported Content-Type`; this one is the same line, found by looking.
    *   ★ A PLAN THAT SAYS `noop` PROVES THE READ PATH AND NOTHING ELSE. That is the lesson worth
    *     more than the fix.
@@ -213,7 +213,7 @@ export const pveEnvelopeWith = (
  * Make one call on a credential for `role`, REUSING a still-valid lease rather than minting one.
  *
  * 🔴 IT USED TO MINT PER CALL, AND AT 98 RESOURCES THAT STOPPED BEING FREE. One plan plus deploy
- *   of the TB4 stack left 760 token entries in `/etc/pve/user.cfg` — read, diff, reconcile and the
+ *   of the C1 stack left 760 token entries in `/etc/pve/user.cfg` — read, diff, reconcile and the
  *   read-back each minted their own, and `/etc/pve` is a replicated cluster filesystem every node
  *   has to agree on. src/lease-cache.ts carries the measurement and the safety argument.
  *

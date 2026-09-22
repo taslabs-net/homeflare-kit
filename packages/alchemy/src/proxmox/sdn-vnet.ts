@@ -35,12 +35,11 @@
  *   than an error — see the ⛔ in sdn-zone.ts and docs/privileges.md.
  *
  * ⚠️ PRIVILEGES, AND THE ESTATE'S CREDENTIAL HELD NONE OF THEM UNTIL 2026-09-13. reconcile and
- *   delete mint `provision` and need SDN.Allocate on `/sdn/zones`, or on the one zone if scoped. `LXCProvisioner` grants
- *   SDN.Use, which is what a GUEST needs in order to attach to a vnet and NOT what creating one
- *   needs, so a container declared on this vnet works today while the vnet itself 403s. Widen
- *   deliberately, the way Pool.Allocate was:
- *   `pveum role modify LXCProvisioner --privs "<existing>,SDN.Allocate,SDN.Audit"` over SSH,
- *   preserving every existing privilege.
+ *   delete mint `provision` and need SDN.Allocate on `/sdn/zones`, or on the one zone if scoped. The provision role granted
+ *   only SDN.Use then, which is what a GUEST needs in order to attach to a vnet and NOT what
+ *   creating one needs, so a container on a vnet worked while the vnet itself 403'd. It was widened
+ *   the way Pool.Allocate was, and `PROVISION_PRIVILEGES` (provision-baseline.ts) now carries
+ *   SDN.Allocate and SDN.Audit.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';

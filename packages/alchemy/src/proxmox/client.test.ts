@@ -25,7 +25,7 @@ const CRED: PveCredential = {
 
 const target = (members: readonly string[]): PveTarget => ({
   members,
-  mount: 'proxmox-tb4-test',
+  mount: 'proxmox-c1-test',
   scheme: 'pve',
 });
 
@@ -148,7 +148,7 @@ describe('cluster member failover', () => {
     const backup = counting('UPID:1');
     try {
       await run(
-        pveWith(target([A, B]), CRED, 'PUT', 'nodes/n3/network').pipe(
+        pveWith(target([A, B]), CRED, 'PUT', 'nodes/node-c/network').pipe(
           Effect.timeout('50 millis'),
           Effect.flip,
         ),
@@ -169,7 +169,7 @@ describe('cluster member failover', () => {
     const backup = counting('UPID:2');
     try {
       // Loopback port 1 is closed: Bun answers ConnectionRefused before a byte is written.
-      const data = await run(pveWith(target([A, B]), CRED, 'PUT', 'nodes/n3/network'), {
+      const data = await run(pveWith(target([A, B]), CRED, 'PUT', 'nodes/node-c/network'), {
         [A]: 1,
         [B]: backup.port,
       });

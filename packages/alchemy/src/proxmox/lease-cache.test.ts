@@ -17,13 +17,13 @@ import * as Exit from 'effect/Exit';
 import type { PveCredential } from './credentials.ts';
 import { type LeaseKey, makeLeases, timeToLive } from './lease-cache.ts';
 
-const TB4: LeaseKey = {
-  mount: 'proxmox-tb4',
+const C1: LeaseKey = {
+  mount: 'proxmox-c1',
   role: 'read',
   scheme: 'pve',
 };
-/** ⚠️ Same role as TB4, DIFFERENT mount — the collision the key has to survive. */
-const OPS: LeaseKey = { ...TB4, mount: 'proxmox-ops' };
+/** ⚠️ Same role as C1, DIFFERENT mount — the collision the key has to survive. */
+const C2: LeaseKey = { ...C1, mount: 'proxmox-c2' };
 
 const cred = (tokenId: string, leaseSeconds: number): PveCredential => ({
   leaseSeconds,
@@ -85,10 +85,10 @@ describe('lease cache under concurrency', () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const leases = yield* makeLeases(mint.mintFor);
-        const exits = yield* concurrently(20, Cache.get(leases, TB4));
+        const exits = yield* concurrently(20, Cache.get(leases, C1));
         assert.equal(exits.filter(Exit.isSuccess).length, 20);
         // An equal but separately built key is the same entry.
-        yield* Cache.get(leases, { ...TB4 });
+        yield* Cache.get(leases, { ...C1 });
       }),
     );
     assert.equal(mint.calls(), 1);
@@ -102,9 +102,9 @@ describe('lease cache under concurrency', () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const leases = yield* makeLeases(mint.mintFor);
-        const first = yield* concurrently(20, Cache.get(leases, TB4));
+        const first = yield* concurrently(20, Cache.get(leases, C1));
         assert.equal(first.filter(Exit.isFailure).length, 20, 'the waiters share the failure');
-        const second = yield* concurrently(20, Cache.get(leases, TB4));
+        const second = yield* concurrently(20, Cache.get(leases, C1));
         assert.equal(second.filter(Exit.isSuccess).length, 20);
       }),
     );
@@ -116,8 +116,8 @@ describe('lease cache under concurrency', () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const leases = yield* makeLeases(mint.mintFor);
-        yield* concurrently(20, Cache.get(leases, TB4));
-        yield* Cache.get(leases, TB4);
+        yield* concurrently(20, Cache.get(leases, C1));
+        yield* Cache.get(leases, C1);
       }),
     );
     assert.equal(mint.calls(), 2);
@@ -125,25 +125,25 @@ describe('lease cache under concurrency', () => {
 
   it('does not serve one cluster the credential of another with the same mount and role', async () => {
     const mint = countingMint((call) => cred(`hf-read@pve!${String(call)}`, 3600));
-    const [tb4, ops] = await Effect.runPromise(
+    const [c1, c2] = await Effect.runPromise(
       Effect.gen(function* () {
         const leases = yield* makeLeases(mint.mintFor);
-        return [yield* Cache.get(leases, TB4), yield* Cache.get(leases, OPS)] as const;
+        return [yield* Cache.get(leases, C1), yield* Cache.get(leases, C2)] as const;
       }),
     );
-    assert.notEqual(tb4.tokenId, ops.tokenId);
+    assert.notEqual(c1.tokenId, c2.tokenId);
     assert.equal(mint.calls(), 2);
   });
 
   it('shares one lease across two members of the same cluster mount', async () => {
     const mint = countingMint((call) => cred(`hf-read@pve!${String(call)}`, 3600));
-    const N2: LeaseKey = { mount: 'proxmox-tb4', role: 'read', scheme: 'pve' };
-    const N3: LeaseKey = { mount: 'proxmox-tb4', role: 'read', scheme: 'pve' };
+    const NODE_B: LeaseKey = { mount: 'proxmox-c1', role: 'read', scheme: 'pve' };
+    const NODE_C: LeaseKey = { mount: 'proxmox-c1', role: 'read', scheme: 'pve' };
     await Effect.runPromise(
       Effect.gen(function* () {
         const leases = yield* makeLeases(mint.mintFor);
-        yield* Cache.get(leases, N2);
-        yield* Cache.get(leases, N3);
+        yield* Cache.get(leases, NODE_B);
+        yield* Cache.get(leases, NODE_C);
       }),
     );
     assert.equal(mint.calls(), 1);
@@ -151,11 +151,11 @@ describe('lease cache under concurrency', () => {
 
   it('keeps read and provision apart', async () => {
     const mint = countingMint((call) => cred(`hf@pve!${String(call)}`, 3600));
-    const PROVISION: LeaseKey = { ...TB4, role: 'provision' };
+    const PROVISION: LeaseKey = { ...C1, role: 'provision' };
     const [read, provision] = await Effect.runPromise(
       Effect.gen(function* () {
         const leases = yield* makeLeases(mint.mintFor);
-        return [yield* Cache.get(leases, TB4), yield* Cache.get(leases, PROVISION)] as const;
+        return [yield* Cache.get(leases, C1), yield* Cache.get(leases, PROVISION)] as const;
       }),
     );
     assert.notEqual(read.tokenId, provision.tokenId);

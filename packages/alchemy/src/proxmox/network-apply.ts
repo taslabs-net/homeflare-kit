@@ -4,23 +4,23 @@
  * ⛔ WITHOUT IT EVERY NETWORK DECLARATION IS A GREEN PLAN THAT CHANGES NO NETWORK; WITH IT A GREEN
  *   PLAN CAN TAKE A NODE OFF THE NETWORK. Writes under `nodes/{node}/network/{iface}` edit
  *   `/etc/network/interfaces.new` and touch no interface. `PUT /nodes/{node}/network` is the apply.
- *   MEASURED in the cluster's own source on n2, 2026-09-13 — `PVE/API2/Network.pm`:
+ *   MEASURED in the cluster's own source on node-b, 2026-09-13 — `PVE/API2/Network.pm`:
  *       rename($new_config_file, $current_config_file) if -e $new_config_file;
  *       PVE::Tools::run_command(['ifreload', '-a'], errfunc => $err);
  *       return $rpcenv->fork_worker('srvreload', 'networking', $authuser, $worker);
  *
- * ⛔ THIS IS THE MOST DANGEROUS RESOURCE IN THE PACKAGE, AND ON TB4 THE DANGER IS NOT ABSTRACT.
- *   Ceph runs over `vmbr1.11` on n2, n3 AND n4 (MEASURED 2026-09-13: four pools, size 3 /
+ * ⛔ THIS IS THE MOST DANGEROUS RESOURCE IN THE PACKAGE, AND ON C1 THE DANGER IS NOT ABSTRACT.
+ *   Ceph runs over `vmbr1.42` on node-b, node-c AND node-d (MEASURED 2026-09-13: four pools, size 3 /
  *   min_size 2, mon+mgr+mds on all three). `ifreload -a` takes that node's OSDs, mons and MDS off
  *   the cluster network for the length of the reload; two nodes at once puts every pool below
  *   min_size and blocks IO for every guest with an RBD disk. The management address the API is
- *   reached on, `vmbr0.10`, is reloaded by the same call.
+ *   reached on, `vmbr0.41`, is reloaded by the same call.
  *
  * ⛔ AND UNLIKE `SdnApply` IT IS PER NODE, SO A HALF-RECONFIGURED CLUSTER IS THE DEFAULT FAILURE
  *   MODE, NOT AN EDGE CASE. `PUT /cluster/sdn` publishes the whole cluster in one call; this
- *   publishes exactly one node, so a stack holding three of these can apply n2, fail, and leave n3
- *   and n4 on the old layout with Ceph spanning all three. Four things here exist only for that:
- *     1. `after` SERIALISES THEM — chain n3 after n2 and n4 after n3, so at most one node is ever
+ *   publishes exactly one node, so a stack holding three of these can apply node-b, fail, and leave node-c
+ *   and node-d on the old layout with Ceph spanning all three. Four things here exist only for that:
+ *     1. `after` SERIALISES THEM — chain node-c after node-b and node-d after node-c, so at most one node is ever
  *        mid-reload. Three declared in parallel is the outage, and nothing in Alchemy stops you.
  *     2. `reconcile` REFUSES TO START on a cluster that is already degraded.
  *     3. `reconcile` RE-CHECKS quorum and every member's `online` flag AFTER the reload and dies if
@@ -58,7 +58,7 @@ import type { WithTarget } from './resource.ts';
 
 export interface NetworkApplyProps extends WithTarget {
   /**
-   * The node whose staged interfaces file this applies — `n2`.
+   * The node whose staged interfaces file this applies — `node-b`.
    *
    * ⚠️ ONE APPLY PER NODE, AND NEVER TWO FOR THE SAME NODE. Two would each publish the other's
    *   staged half, and both would run `ifreload` on a file the other had not finished writing.
@@ -99,7 +99,7 @@ export interface NetworkApplyAttributes {
    *   `active`, `exists`, `families`, `method`, `method6`, `options`, `priority`, `link-type` and
    *   ten more; `altnames` is returned and is not even in the schema. `priority` is the worst of
    *   them: PVE ASSIGNS it from the order of the interfaces file, so the same logical layout
-   *   carries different numbers on different nodes (MEASURED: n4's differ from n2/n3's by one).
+   *   carries different numbers on different nodes (MEASURED: node-d's differ from node-b/node-c's by one).
    *   Every one of those is a forever-diff waiting for whoever writes `Proxmox.NetworkInterface`.
    *   This resource compares a single integer against zero and never looks at a row at all.
    */
@@ -128,7 +128,7 @@ const read = (props: NetworkApplyProps) =>
  *   decides it is whether the node is carrying a staged change right now.
  *
  * ★ THIS IS ALSO WHY DECLARING THE LIVE CLUSTER PLANS AS `noop`. VERIFIED 2026-09-13:
- *   `/etc/network/interfaces.new` is absent on n2, n3 and n4, so `changes` is absent from all three
+ *   `/etc/network/interfaces.new` is absent on node-b, node-c and node-d, so `changes` is absent from all three
  *   answers, so `pending` is 0 on all three and every one of them plans `noop`.
  */
 const diff = (news: Input<NetworkApplyProps>) =>

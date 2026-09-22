@@ -16,7 +16,7 @@ export const guests = Effect.gen(function* () {
   const ct = yield* ProxmoxLxc('ct', {
     target,
     node: 'pve1',
-    vmid: 100,
+    vmid: 900,
     hostname: 'ct-example',
     cores: 4,
     memory: 8192,
@@ -24,8 +24,8 @@ export const guests = Effect.gen(function* () {
     onboot: 1,
     unprivileged: 1,
     features: 'nesting=1',
-    rootfs: 'local-zfs:subvol-100-disk-0,size=40G',
-    mp0: 'tank:subvol-100-disk-0,mp=/data,backup=0,size=200G',
+    rootfs: 'local-zfs:subvol-900-disk-0,size=40G',
+    mp0: 'tank:subvol-900-disk-0,mp=/data,backup=0,size=200G',
     net0: 'name=eth0,bridge=vmbr0,hwaddr=00:00:5E:00:53:01,ip=192.0.2.10/24,type=veth',
     dev0: '/dev/dri/renderD128,uid=0,gid=44,mode=0660',
   }).pipe(adopt(true));
@@ -129,7 +129,8 @@ guest that needs `/dev/net/tun` (a Mesh door) or `/dev/dri` is created in two st
 1. Declare the guest without the device, and deploy.
 2. Run the `pct set` on the node, then add `dev0` to the declaration.
 
-`nesting` on an unprivileged guest is allowed. It needs `VM.Allocate`, which `LXCProvisioner` has.
+`nesting` on an unprivileged guest is allowed. It needs `VM.Allocate`, which the
+[provisioning baseline](./provision-baseline.md)'s role has.
 
 ### Gaps
 

@@ -22,22 +22,22 @@
  *     that one line turns a text edit into an unrecoverable one.
  *
  * ⛔ THERE IS NO PUT ON THIS FAMILY AT ALL. MEASURED from the cluster's own published schema
- *   (`/usr/share/pve-docs/api-viewer/apidoc.js`, read on n2 2026-09-13): `/nodes/{node}/disks/zfs`
+ *   (`/usr/share/pve-docs/api-viewer/apidoc.js`, read on node-b 2026-09-13): `/nodes/{node}/disks/zfs`
  *   has GET and POST, `/nodes/{node}/disks/zfs/{name}` has GET and DELETE, and that is the whole
  *   surface. So `updateForm` is omitted — which, per `resource.ts`, makes any `matches` = false a
  *   REPLACE. A replace is a delete followed by a create, and on this family the delete is the
  *   thing above. Read the ⛔ on `matches` before adding anything to it.
  *
  * ⛔ NOT ONE CREATE PARAMETER COMES BACK ON READ, SO `matches` COMPARES NOTHING. MEASURED against
- *   the live cluster: `GET /nodes/n2/disks/zfs/rpool` answers exactly
+ *   the live cluster: `GET /nodes/node-b/disks/zfs/rpool` answers exactly
  *   `{action, children, errors, leaf, name, scan, state, status}` — no `ashift`, no `compression`,
  *   no `raidlevel`, no `devices`, no `add_storage`. Every create parameter is write-only. There is
  *   therefore no field a declaration and a live pool can both be asked about, and a `matches` that
  *   invented one would plan a replace — i.e. a `zpool destroy` — over a difference it could never
  *   verify in the first place.
  *
- * ⚠️ AND WHAT THE INDEX RETURNS IS LIVE TELEMETRY, NOT CONFIGURATION. `GET /nodes/n2/disks/zfs`
- *   gives `alloc`, `free`, `frag`, `dedup`, `size`, `health`. MEASURED: two reads of n2 seconds
+ * ⚠️ AND WHAT THE INDEX RETURNS IS LIVE TELEMETRY, NOT CONFIGURATION. `GET /nodes/node-b/disks/zfs`
+ *   gives `alloc`, `free`, `frag`, `dedup`, `size`, `health`. MEASURED: two reads of node-b seconds
  *   apart returned `alloc` 14474944512 then 14472740864 — it moves on its own, with no declaration
  *   anywhere near it. `scan` in the detail read moves the same way (it carries the last scrub), and
  *   `status`/`action` appear and vanish as ZFS feature flags and faults come and go. None of them
@@ -155,7 +155,7 @@ export interface ZfsPoolAttributes {
    *
    * ⚠️ THIS IS WHAT ZFS RESOLVED, NOT WHAT WAS DECLARED, and the two normally differ: PVE rewrites
    *   a `/dev/sdb` into a by-id link before creating, and ZFS reports partition paths (`…-part3`)
-   *   for a pool built on partitions — MEASURED, that is exactly what n2's `rpool` reports. Never
+   *   for a pool built on partitions — MEASURED, that is exactly what node-b's `rpool` reports. Never
    *   compare it with `props.devices`.
    */
   devices: string;
@@ -219,7 +219,7 @@ const spec: PveSpec<ZfsPoolProps, ZfsPoolAttributes> = {
    *   can be compared on: every create parameter is write-only (see the ⛔ in the header) and
    *   everything the read does return is telemetry that moves by itself. So declaring what is live
    *   plans as `noop` — the only honest answer available, and the one the live cluster needs:
-   *   `rpool` exists on n2, n3 and n4 with nothing about its construction readable.
+   *   `rpool` exists on node-b, node-c and node-d with nothing about its construction readable.
    *   ⛔ ANYTHING ADDED HERE IS A REPLACE, NOT AN UPDATE. `updateForm` is omitted because PVE has
    *     no PUT, so `resource.ts` turns a false into `{action:'replace'}` — delete then create — on
    *     a family whose delete is `zpool destroy`. A comparison added here would be one plan away

@@ -22,7 +22,7 @@ export type DhcpRange = { start: string; end: string };
  *
  * ⛔ MEASURED from `/usr/share/perl5/PVE/API2/Network/SDN/Subnets.pm` on pve-manager 9.2.11, in
  *   the create handler: `my $id = $cidr =~ s/\//-/r; $id = "$zoneid-$id";`. So `subnet=10.0.0.0/24`
- *   goes out and `house-10.0.0.0-24` is what exists afterwards. A CIDR cannot be a path segment
+ *   goes out and `lab-10.0.0.0-24` is what exists afterwards. A CIDR cannot be a path segment
  *   anyway — it carries a slash — so there is no spelling of this endpoint that takes the CIDR.
  *
  * ⚠️ `.replace`, NOT `.replaceAll`, AND THE PARITY IS DELIBERATE. Perl's `s/\//-/r` has no `/g`, so

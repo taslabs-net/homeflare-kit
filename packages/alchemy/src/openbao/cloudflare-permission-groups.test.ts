@@ -143,7 +143,7 @@ describe('permissionGroupsFromEngine', () => {
   });
 
   /**
-   * ⛔ r2-backup-mini's ENTRY IS BUCKET-SCOPED (`bucket: homeflare-pg-mini`), and the two groups it
+   * ⛔ r2-backup-host's ENTRY IS BUCKET-SCOPED (`bucket: example-db-backup`), and the two groups it
    *   names are the only two the account lists at `com.cloudflare.edge.r2.bucket` — MEASURED
    *   2026-09-15: 2 of 399. A unique name still resolves whatever scope asks, which is why the
    *   account-scoped `Workers R2 Storage Read` here answers a bucket-scoped question too.

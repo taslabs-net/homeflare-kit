@@ -4,11 +4,11 @@
  * MEASURED 2026-09-13, read-only, against the live server (BAO_ADDR=http://127.0.0.1:8200,
  * BAO_NAMESPACE=homeflare). No write of any kind was issued to a role or a mount:
  *
- *   bao read -format=json proxmox-tb4/roles/read
+ *   bao read -format=json proxmox-c1/roles/read
  *     → { max_ttl: 21600, mint_user: "hf-read@pve",      name: "read",      ttl: 3600 }
- *   bao read -format=json proxmox-tb4/roles/provision
+ *   bao read -format=json proxmox-c1/roles/provision
  *     → { max_ttl: 1800,  mint_user: "hf-provision@pve", name: "provision", ttl: 300 }
- *   GET /v1/proxmox-tb4/?help=1 → components.schemas.WriteRolesNameRequest:
+ *   GET /v1/proxmox-c1/?help=1 → components.schemas.WriteRolesNameRequest:
  *     mint_user  string  — the ONLY required field, described as "The `user@realm` whose
  *                          standing ACL is the minted token's entire privilege set. Created
  *                          out-of-band; this engine never grants ACLs."
@@ -24,7 +24,7 @@ import { sha256 } from './digest.ts';
 import { mountPath, parseDuration, ttlSeconds } from './mount-form.ts';
 
 export interface BaoProxmoxRoleProps {
-  /** Mount path of the proxmox secrets engine, e.g. `proxmox-tb4`. A trailing slash is fine. */
+  /** Mount path of the proxmox secrets engine, e.g. `proxmox-c1`. A trailing slash is fine. */
   mount: string;
   /**
    * Role name, as `<mount>/roles/<name>` takes it.
@@ -105,7 +105,7 @@ const ttlText = (seconds: number | undefined, fallback = '0') => {
   return `${String(seconds)}s`;
 };
 
-/** `proxmox-tb4/roles/read` — read, write and delete all address the role here. */
+/** `proxmox-c1/roles/read` — read, write and delete all address the role here. */
 export const rolePath = (mount: string, name: string) => `${mountPath(mount)}/roles/${name}`;
 
 export const attributesOf = (

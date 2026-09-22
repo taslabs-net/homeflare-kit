@@ -29,11 +29,11 @@ describe('usernamesFrom', () => {
   test('reads the Username column of the measured table', () => {
     const table = [
       'ID   Username            Email                                   IsActive IsAdmin 2FA',
-      '1    tim                 tim@example.invalid                     true     true    false',
+      '1    alice               alice@example.invalid                   true     true    false',
       '7    forgejo-provision   forgejo-provision@noreply.example        true     false   false',
       '',
     ].join('\n');
-    expect(usernamesFrom(table)).toEqual(['tim', 'forgejo-provision']);
+    expect(usernamesFrom(table)).toEqual(['alice', 'forgejo-provision']);
   });
 
   test('refuses a table it does not recognise rather than reporting nobody', () => {
@@ -63,7 +63,7 @@ describe('readCreateOutput', () => {
   });
 
   test('reports not created when the success line names someone else or is missing', () => {
-    expect(readCreateOutput("New user 'tim' has been successfully created!", user).created).toBe(
+    expect(readCreateOutput("New user 'alice' has been successfully created!", user).created).toBe(
       false,
     );
     const noPassword = readCreateOutput(

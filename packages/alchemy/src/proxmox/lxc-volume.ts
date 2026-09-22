@@ -14,7 +14,7 @@
  * ⛔ AN EXISTING VOLUME IS NEVER WRITTEN WITH THE NEW-DISK SPELLING. `tank:100` in a PUT means
  *   "allocate a fresh 100 GiB volume", and PVE then moves the volume the guest was using to
  *   `unusedN`. So a declared `tank:100,mp=/data` that matches a live
- *   `tank:subvol-100-disk-1,mp=/data,size=100G` compares EQUAL, and an options change on it is
+ *   `tank:subvol-900-disk-1,mp=/data,size=100G` compares EQUAL, and an options change on it is
  *   written with the LIVE volume id — the declaration's spelling is never sent back for a volume
  *   that exists.
  */

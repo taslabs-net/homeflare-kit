@@ -4,9 +4,9 @@
  * ⛔ TALOSCONFIG AND secrets.yaml HOLD CLIENT CERTIFICATES AND CLUSTER CA PRIVATE KEYS. Alchemy
  *   persists resource attributes WITHOUT encryption — StateEncoding.ts writes `Redacted` as
  *   `{"@redacted": <plaintext>}` — and this estate's state store is the `alchemy` Postgres that
- *   pg-backup.sh dumps nightly. Neither file may be a prop, an attribute, or a log line.
+ *   a nightly job dumps. Neither file may be a prop, an attribute, or a log line.
  *
- * ★ MODELED ON house/proxmox/src/credentials.ts: mint at call time through `ChildProcessSpawner`,
+ * ★ MODELED ON <estate>/proxmox/src/credentials.ts: mint at call time through `ChildProcessSpawner`,
  *   use the material to build a client, drop it when the scope ends. The difference is Talos wants a
  *   FILE (`--talosconfig` / `TALOSCONFIG`), so mint writes a temp path and registers cleanup.
  *
@@ -21,7 +21,7 @@ import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawne
 
 /** Where credentials come from. HomeFlare-specific mount names live in the stack, not here. */
 export type TalosTarget = {
-  /** OpenBao KV mount holding Talos material, e.g. `talos-tb4`. */
+  /** OpenBao KV mount holding Talos material, e.g. `talos-c1`. */
   readonly mount: string;
   /** Logical cluster name — safe to persist and log. */
   readonly cluster: string;

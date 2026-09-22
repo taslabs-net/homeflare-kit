@@ -43,7 +43,7 @@ const row = (over: Partial<AdoptRow>): AdoptRow => ({
   bindings: 0,
   changed: [],
   diff: 'noop',
-  fqn: 'house',
+  fqn: 'lab',
   ok: true,
   planned: 'adopted',
   read: 'found',

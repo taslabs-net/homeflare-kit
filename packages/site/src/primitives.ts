@@ -7,7 +7,7 @@
  */
 import * as Schema from 'effect/Schema';
 
-/** One DNS label: `v`, `mgmt`, `n1`. Also the shape of every key a consumer looks up. */
+/** One DNS label: `v`, `mgmt`, `node-a`. Also the shape of every key a consumer looks up. */
 export const Label = Schema.String.check(
   Schema.isPattern(/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/, {
     message: 'Expected a lowercase DNS label (a-z, 0-9, inner hyphens, at most 63)',

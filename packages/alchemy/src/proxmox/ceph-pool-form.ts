@@ -4,25 +4,25 @@
  * ★ SPLIT OUT OF ceph-pool.ts TO KEEP BOTH FILES UNDER THE 250-LINE CAP, and the seam is
  *   "does this touch the cluster" — the same one metric-server-form.ts draws, just with more on
  *   this side because this family needs it. Here: the declared shape, the reported shape, and the
- *   coercions that turn one into the other. There: reading TB4, deciding a diff, and the four
+ *   coercions that turn one into the other. There: reading C1, deciding a diff, and the four
  *   handlers. Nothing in this file makes a call or decides an action.
  * ⚠️ THE PROPS LIVE HERE RATHER THAN IN THE RESOURCE FILE, which is the one place this pair
  *   differs from metric-server / notification-target. There is no `import type` cycle back as a
  *   result; ceph-pool.ts re-exports both interfaces so the public surface is unchanged.
  *
  * ⛔ POST AND PUT DO NOT TAKE THE SAME PARAMETERS, AND BOTH EXTRAS ARE DESTRUCTIVE. MEASURED from
- *   the cluster's own schema (/usr/share/pve-docs/api-viewer/apidoc.js on n2, pve-manager 9.2.11,
+ *   the cluster's own schema (/usr/share/pve-docs/api-viewer/apidoc.js on node-b, pve-manager 9.2.11,
  *   2026-09-13): POST adds `add_storages` and `erasure-coding` to the shared set, PUT takes
  *   neither. Both are refused below, so what is left between the two bodies is `name`, which PUT
  *   reads from the path, and `pg_num`.
  *
  * ⛔ `pg_num` IS IN THE CREATE BODY AND NOT IN THE UPDATE BODY, AND THAT IS THE MOST IMPORTANT
- *   LINE IN THIS FILE. MEASURED in PVE::API2::Ceph::Pool::createpool on n2: a POST carrying no
+ *   LINE IN THIS FILE. MEASURED in PVE::API2::Ceph::Pool::createpool on node-b: a POST carrying no
  *   `pg_num` gets 128 substituted (`$param->{pg_num} //= 128`), and PVE::Ceph::Tools::create_pool
  *   then runs `osd pool create` — which Ceph answers with SUCCESS for a pool that already exists,
  *   before applying the rest of the body to it. So a create fired at a live pool SETS its pg_num,
  *   and lowering pg_num starts a PG MERGE: hours of backfill across every OSD, on a cluster whose
- *   Ceph traffic shares vmbr1.11 with everything else. ceph-pool.ts guards the create for exactly
+ *   Ceph traffic shares vmbr1.42 with everything else. ceph-pool.ts guards the create for exactly
  *   that reason; this half simply never offers pg_num to an update.
  */
 import type { WithTarget } from './resource.ts';
@@ -30,10 +30,10 @@ import { csv } from './values.ts';
 
 export interface CephPoolProps extends WithTarget {
   /**
-   * ⚠️ WHICH NODE THE CALL GOES THROUGH, NOT WHERE THE POOL LIVES. A pool is cluster-wide: n2 and
-   *   n3 answer byte-identically for `cephtb4` (measured). The endpoint is node-scoped only
+   * ⚠️ WHICH NODE THE CALL GOES THROUGH, NOT WHERE THE POOL LIVES. A pool is cluster-wide: node-b and
+   *   node-c answer byte-identically for `rbd-c1` (measured). The endpoint is node-scoped only
    *   because PVE talks to the local RADOS socket, so this is a door, not a location — it is never
-   *   compared, and moving a declaration from n2 to n3 plans noop. Point it at a node you expect
+   *   compared, and moving a declaration from node-b to node-c plans noop. Point it at a node you expect
    *   to be up: a node that is down makes the read fail, and a failed read reads as "absent".
    */
   node: string;
@@ -51,7 +51,7 @@ export interface CephPoolProps extends WithTarget {
   min_size?: number;
   /**
    * ⛔ CREATE-TIME ONLY, AND NEVER COMPARED — the single biggest noop hazard in this family. With
-   *   `pg_autoscale_mode` on or warn the autoscaler owns this number: MEASURED on TB4, `cephtb4`
+   *   `pg_autoscale_mode` on or warn the autoscaler owns this number: MEASURED on C1, `rbd-c1`
    *   sits at pg_num 128 while the autoscaler's own `pg_num_final` is 256, so a declaration
    *   diffing it reports an update the moment Ceph decides to act. A split is gradual even with
    *   the autoscaler off, and `nopgchange` can refuse the write outright — which kills the WHOLE
@@ -61,7 +61,7 @@ export interface CephPoolProps extends WithTarget {
   pg_num?: number;
   /** The floor the autoscaler may not go below. Operator-owned and stable, so it IS compared. */
   pg_num_min?: number;
-  /** ⚠️ PVE's create default is `warn`; Ceph's own is `on`, which is what all four TB4 pools have. */
+  /** ⚠️ PVE's create default is `warn`; Ceph's own is `on`, which is what all four C1 pools have. */
   pg_autoscale_mode?: 'off' | 'on' | 'warn';
   /**
    * The CRUSH rule BY NAME, e.g. `replicated_rule`.
@@ -108,7 +108,7 @@ export interface CephPoolProps extends WithTarget {
  *   size or its PG shape, and `set_pool` dies on the whole PUT when any one parameter will not
  *   apply (Tools.pm:310). `matches` refuses to diff the fields they freeze, so these attributes
  *   are the only place a plan can show WHY a declared size is not being enforced. All three read
- *   false on all four TB4 pools.
+ *   false on all four C1 pools.
  * ⚠️ `pg_num`, `id` AND `applications` ARE REPORTED AND NEVER COMPARED — see the props above.
  * ⛔ NO `statistics` AND NO `autoscale_status`, though the verbose read returns both. They change
  *   every few seconds; persisting them would rewrite this resource's state on every deploy and
@@ -170,7 +170,7 @@ export const same = <T>(declared: T | undefined, live: T, frozen = false) =>
  * A declared autoscaler hint, or nothing when it is zero.
  *
  * ⚠️ A DECLARED ZERO IS "NO FLOOR, NO HINT", AND IT IS DELIBERATELY LEFT UNCOMPARED. REASONED, NOT
- *   MEASURED: all four TB4 pools carry null for both `pg_num_min` and `target_size`, and finding
+ *   MEASURED: all four C1 pools carry null for both `pg_num_min` and `target_size`, and finding
  *   out for certain would mean writing to the cluster. Ceph CLEARS both when they are set to 0 and
  *   `osd pool get all` then omits the key, which PVE reports as null and this pair reads as UNSET
  *   — so a declared 0 would compare 0 against -1 on every plan, forever. Mapping 0 to UNSET
@@ -203,7 +203,7 @@ const numeric = (value: number | undefined) => (value === undefined ? undefined 
  * ⚠️ AN UNDECLARED FIELD IS NEITHER SENT NOR COMPARED — storage.ts's rule, and the opposite of
  *   Proxmox.Pool's. Undeclared means UNMANAGED here, because a pool has no one set of defaults to
  *   fall back on: PVE's POST fills in size 3, min_size 2, application rbd and pg_autoscale_mode
- *   'warn' (MEASURED in createpool), while Ceph's own defaults — which is what every pool on TB4
+ *   'warn' (MEASURED in createpool), while Ceph's own defaults — which is what every pool on C1
  *   was actually born with — put pg_autoscale_mode at 'on'. Guessing either set would rewrite a
  *   pool somebody tuned by hand.
  *
@@ -216,7 +216,7 @@ const numeric = (value: number | undefined) => (value === undefined ? undefined 
  *   NOT PVE's `1T` STRING. MEASURED: the API parses the string with PVE::JSONSchema::parse_size
  *   and stores Ceph's `target_size_bytes` (Pool.pm:474-477 for POST, 683-686 for PUT), and
  *   `GET .../status` hands that integer back under the name `target_size` (Pool.pm:878). Run on
- *   n2, `parse_size('1099511627776')` returns 1099511627776 — bare digits are bytes, no
+ *   node-b, `parse_size('1099511627776')` returns 1099511627776 — bare digits are bytes, no
  *   multiplier — so a byte count survives the round trip exactly, while a declared `1T` would read
  *   back as 1099511627776 and diff against itself on every plan, forever.
  */

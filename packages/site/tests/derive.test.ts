@@ -43,12 +43,16 @@ describe('vault addresses', () => {
     let input = withPath(example(), ['vault', 'lan'], { host: 'hub', port: 8443, scheme: 'https' });
     input = withPath(input, ['vault', 'port'], 8300);
     input = withPath(input, ['vault', 'cliCallbackPort'], 18250);
-    input = withPath(input, ['services', 'grafana'], { host: 'n1', port: 3443, scheme: 'https' });
+    input = withPath(input, ['services', 'grafana'], {
+      host: 'node-a',
+      port: 3443,
+      scheme: 'https',
+    });
     const built = derive(decodeSite(input));
     expect(built.vault.lanAddr).toBe('https://hub.mgmt.example.com:8443');
     expect(built.vault.meshAddr).toBe('https://198.18.0.2:8300');
     expect(built.vault.oidcRedirects[1]).toBe('http://localhost:18250/oidc/callback');
-    expect(built.serviceUrl('grafana')).toBe('https://n1.mgmt.example.com:3443');
+    expect(built.serviceUrl('grafana')).toBe('https://node-a.mgmt.example.com:3443');
   });
 
   test('OIDC redirects: the UI callback on the vault host, then the CLI listener', () => {
@@ -68,16 +72,16 @@ describe('zones, hosts, addresses', () => {
   });
 
   test('host FQDNs and leg addresses', () => {
-    expect(d.host('n2')).toBe('n2.mgmt.example.com');
+    expect(d.host('node-b')).toBe('node-b.mgmt.example.com');
     expect(d.host('docs')).toBe('docs.example.com');
-    expect(d.address('n2', 'lab')).toBe('198.51.100.12');
+    expect(d.address('node-b', 'lab')).toBe('198.51.100.12');
     expect(d.address('backup', 'storage')).toBe('198.18.4.7');
   });
 
   test('host numbers count from the network address, beyond one octet', () => {
     const wide = withPath(example(), ['networks', 'lab'], '198.18.0.0/16');
-    const built = derive(decodeSite(withPath(wide, ['hosts', 'n1', 'legs', 'lab'], 300)));
-    expect(built.address('n1', 'lab')).toBe('198.18.1.44');
+    const built = derive(decodeSite(withPath(wide, ['hosts', 'node-a', 'legs', 'lab'], 300)));
+    expect(built.address('node-a', 'lab')).toBe('198.18.1.44');
   });
 });
 
@@ -98,9 +102,9 @@ describe('Access, products, services, clusters, mounts', () => {
   test('services and cluster members', () => {
     expect(d.serviceUrl('grafana')).toBe('http://hub.mgmt.example.com:3000');
     expect(d.clusterMembers('c1')).toEqual([
-      'n1.mgmt.example.com',
-      'n2.mgmt.example.com',
-      'n3.mgmt.example.com',
+      'node-a.mgmt.example.com',
+      'node-b.mgmt.example.com',
+      'node-c.mgmt.example.com',
     ]);
   });
 
@@ -166,7 +170,7 @@ describe('inventory', () => {
     const known = inventory(site);
     for (const name of [
       'gateway',
-      'n3',
+      'node-c',
       'backup.lab.example.com',
       '203.0.113.250',
       'example.com',
@@ -180,7 +184,7 @@ describe('inventory', () => {
   });
 
   test('a stale principal is reported, not generated away', () => {
-    expect(unknownPrincipals(site, ['n1', '192.0.2.99'])).toEqual(['192.0.2.99']);
+    expect(unknownPrincipals(site, ['node-a', '192.0.2.99'])).toEqual(['192.0.2.99']);
     const stale = withPath(example(), ['pinned', 'sshPrincipals', 'ssh-host.host'], ['n9']);
     expect(pinnedPrincipalIssues(decodeSite(stale))).toEqual([
       'pinned.sshPrincipals["ssh-host.host"]: "n9" is not in the inventory',

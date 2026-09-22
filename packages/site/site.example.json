@@ -16,13 +16,13 @@
       "aliases": ["gateway"],
       "legs": { "mgmt": 250, "services": 250 }
     },
-    "n1": { "zone": "mgmt", "legs": { "mgmt": 11, "lab": 11 } },
-    "n2": { "zone": "mgmt", "legs": { "mgmt": 12, "lab": 12 } },
-    "n3": { "zone": "mgmt", "legs": { "mgmt": 13, "lab": 13 } },
+    "node-a": { "zone": "mgmt", "legs": { "mgmt": 11, "lab": 11 } },
+    "node-b": { "zone": "mgmt", "legs": { "mgmt": 12, "lab": 12 } },
+    "node-c": { "zone": "mgmt", "legs": { "mgmt": 13, "lab": 13 } },
     "backup": { "zone": "lab", "legs": { "mgmt": 7, "storage": 7 } },
     "docs": { "zone": "apex" }
   },
-  "clusters": { "c1": { "members": ["n1", "n2", "n3"] } },
+  "clusters": { "c1": { "members": ["node-a", "node-b", "node-c"] } },
   "products": {
     "alerts": {},
     "wiki": { "label": "kb" },
@@ -70,9 +70,9 @@
         "hub",
         "gateway",
         "192.0.2.250",
-        "n1",
-        "n2",
-        "n3",
+        "node-a",
+        "node-b",
+        "node-c",
         "192.0.2.11",
         "198.51.100.11"
       ]

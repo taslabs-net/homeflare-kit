@@ -3,20 +3,20 @@
  * mint user, plus the lease ceilings that consumer's tokens get. METADATA ONLY.
  *
  * ★ WHY THIS FAMILY MATTERS MORE THAN IT LOOKS. Declaring these roles is how the estate
- *   replaces HAND-MADE PERMANENT PVE TOKENS with short-lived minted ones. On TB4, SEVEN tokens
- *   carry expire=0 and privsep=0 — root@pam!proxbox-sync, mcp@pve!executor,
- *   monitoring@pve!exporter, sablier@pve!sablier, tofu@pve!ro, tofu@pve!apply and
- *   vaultmint@pve!engine. Six of those are one Bao.ProxmoxRole plus a scoped PVE user away from
+ *   replaces HAND-MADE PERMANENT PVE TOKENS with short-lived minted ones. On C1, SEVEN tokens
+ *   carry expire=0 and privsep=0 — root@pam!inventory-sync, agent@pve!executor,
+ *   metrics@pve!exporter, app@pve!app, iac@pve!ro, iac@pve!apply and
+ *   mint@pve!engine. Six of those are one Bao.ProxmoxRole plus a scoped PVE user away from
  *   being a 5-minute lease instead of a forever key.
  *
- *   The seventh cannot be. vaultmint@pve!engine is the credential the ENGINE ITSELF
+ *   The seventh cannot be. mint@pve!engine is the credential the ENGINE ITSELF
  *   authenticates with in order to mint anything at all: the thing that issues short-lived
  *   tokens needs a standing one, and no role can resolve that chicken-and-egg. It stays
  *   permanent, which makes it the single most valuable token on the cluster and the one whose
  *   rotation must be a deliberate, hand-run procedure rather than a plan.
  *
- *   MEASURED here: `bao read proxmox-tb4/config` returns parent_token_id
- *   `vaultmint@pve!engine`, parent_secret_set true, parent_secret_tail `…eb01` — the engine's
+ *   MEASURED here: `bao read proxmox-c1/config` returns parent_token_id
+ *   `mint@pve!engine`, parent_secret_set true, parent_secret_tail `…eb01` — the engine's
  *   own key, present and, by the schema's own "Write-only: never returned by a read", not
  *   retrievable. The seven-token inventory was handed to this change and NOT re-counted against
  *   the PVE API in this session.
@@ -27,13 +27,13 @@
  *
  * ⛔ ISSUANCE IS NOT THIS RESOURCE, AND MUST NEVER BECOME ONE. `<mount>/creds/<name>` returns a
  *   LIVE PVE TOKEN. Alchemy persists attributes unencrypted (StateEncoding.ts tags Redacted
- *   values rather than encrypting them) into the `alchemy` Postgres, which pg-backup.sh dumps
- *   nightly to CT100, from where PBS backs it up. A minted token declared as a resource would
+ *   values rather than encrypting them) into the `alchemy` Postgres, which a nightly job dumps
+ *   to a backup guest, from where PBS backs it up. A minted token declared as a resource would
  *   outlive its own lease in at least four places, none of them OpenBao. This resource declares
  *   the DOOR; walking through it is a runtime call, not a plan.
  *
  * ★ `defaultRemovalPolicy: 'retain'` — deleting a role breaks every consumer that mints from
- *   it. Opt in with `.pipe(RemovalPolicy.destroy())`; see resource.ts in house/proxmox.
+ *   it. Opt in with `.pipe(RemovalPolicy.destroy())`; see resource.ts in <estate>/proxmox.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
@@ -80,7 +80,7 @@ export const BaoProxmoxRoleProvider = () =>
       BaoProxmoxRole.Provider.of({
         /**
          * ⛔ `bao list <mount>/roles` IS NOT A LIST OF THINGS THIS OWNS. MEASURED today:
-         *   proxmox-tb4/roles answers `provision, read` and proxmox-ops/roles answers `read` —
+         *   proxmox-c1/roles answers `provision, read` and proxmox-c2/roles answers `read` —
          *   four roles created by hand at bringup, none of them declared anywhere yet.
          *   Returning them would invite Alchemy to adopt, and then delete, roles it never
          *   created, and deleting a role is how every consumer of it stops being able to mint.

@@ -7,7 +7,7 @@
  *   diff, and the only write in either file is the apply itself.
  *
  * ⛔ THE PENDING STATE IS NOT IN `data`, WHICH IS WHY THIS FILE DOES ITS OWN FETCH. MEASURED in the
- *   cluster's own source on n2, 2026-09-13 — not inferred from documentation:
+ *   cluster's own source on node-b, 2026-09-13 — not inferred from documentation:
  *     PVE/API2/Network.pm   my $tmp = PVE::INotify::read_file('interfaces', 1);
  *                           $rpcenv->set_result_attrib('changes', $changes) if $changes;
  *     PVE/HTTPServer.pm     if (my $diff = $rpcenv->get_result_attrib('changes')) {
@@ -24,9 +24,9 @@
  *   `GET /nodes/{node}/network` answers with the STAGED config and a node about to be reconfigured
  *   looks identical to one already running it. Same trap `sdn-apply.ts` documents for `?running=1`.
  *
- * ⚠️ `active` IS NOT A PENDING SIGNAL, AND THE OBVIOUS SHORTCUT IS MEASURABLY WRONG. On n2 and n3,
- *   with nothing staged anywhere (VERIFIED 2026-09-13: `/etc/network/interfaces.new` absent on n2,
- *   n3 and n4), `wlp91s0` already comes back with no `active` key at all. Counting interfaces that
+ * ⚠️ `active` IS NOT A PENDING SIGNAL, AND THE OBVIOUS SHORTCUT IS MEASURABLY WRONG. On node-b and node-c,
+ *   with nothing staged anywhere (VERIFIED 2026-09-13: `/etc/network/interfaces.new` absent on node-b,
+ *   node-c and node-d), `wlan0` already comes back with no `active` key at all. Counting interfaces that
  *   are not up as "pending" would report an update on two of the three nodes forever.
  *
  * ⚠️ ONE THING GENUINELY CANNOT BE SEEN FROM HERE, AND IT IS SMALL. The diff is computed as
@@ -58,7 +58,7 @@ export type ClusterHealth = { quorate: boolean; offline: readonly string[] };
  *
  * ⛔ THIS STRING NEVER LEAVES THIS MODULE, AND THAT IS A SECRET RULE, NOT A STYLE ONE. Alchemy
  *   persists attributes UNENCRYPTED (credentials.ts spells out why), and `/etc/network/interfaces`
- *   is a file that can legally contain `wpa-psk` — n2 and n3 both carry a `wlp91s0`, MEASURED — as
+ *   is a file that can legally contain `wpa-psk` — node-b and node-c both carry a `wlan0`, MEASURED — as
  *   well as any `pre-up` command somebody wrote. A diff of that file in a state store is a secret
  *   in a state store. Only the COUNT below ever escapes.
  */
@@ -70,7 +70,7 @@ const stagedDiff = (target: PveTarget, node: string) =>
     //   provisioning lease, and a plan stays a plan even if the write role is missing entirely.
     // ⛔ THROUGH THE LEASE CACHE, NOT `mint`. This read needs no particular identity — only the
     //   apply and its task poll do, and network-apply.ts mints for those itself. Minting here left
-    //   SIX extra `hf-read@pve` tokens on n2 per TB4 plan (one per node, for read and for diff),
+    //   SIX extra `hf-read@pve` tokens on node-b per C1 plan (one per node, for read and for diff),
     //   MEASURED 2026-09-14 while the cache itself made one read mint for the whole run.
     const credential = yield* leased(target, 'read');
     const envelope = (yield* pveEnvelopeWith(target, credential, 'GET', path)) as NetworkEnvelope;
@@ -108,9 +108,9 @@ export const pendingCount = (target: PveTarget, node: string) =>
  * Quorum, and every member that is not online.
  *
  * ⛔ QUORUM ALONE IS NOT THE CHECK, AND ON A THREE-NODE CLUSTER IT WOULD MISS THE ACCIDENT THIS
- *   RESOURCE IS AFRAID OF. Losing ONE of three leaves `quorate: 1` — MEASURED shape on TB4:
- *   `{"id":"cluster","name":"HF-TB4","nodes":3,"quorate":1,…}` plus one row per node with
- *   `online: 1`. So a reload that drops n2 off the network is invisible to `quorate` and visible
+ *   RESOURCE IS AFRAID OF. Losing ONE of three leaves `quorate: 1` — MEASURED shape on C1:
+ *   `{"id":"cluster","name":"HF-C1","nodes":3,"quorate":1,…}` plus one row per node with
+ *   `online: 1`. So a reload that drops node-b off the network is invisible to `quorate` and visible
  *   only as `online: 0` on that row. Both are checked, and the node names come back so the failure
  *   message can say WHICH member went away.
  *
@@ -140,7 +140,7 @@ const clusterHealth = (target: PveTarget) =>
  *
  * ★ A REASON RATHER THAN A BOOLEAN, BECAUSE THE CALLER'S ONLY USE FOR IT IS A REFUSAL MESSAGE.
  *   "The deploy stopped because the cluster was degraded" is not actionable at three in the
- *   morning; "quorate=true offline=[n3]" is. The two callers in network-apply.ts ask this before
+ *   morning; "quorate=true offline=[node-c]" is. The two callers in network-apply.ts ask this before
  *   the reload and again after it, and the second answer is the one that stops the chain from
  *   reaching the next node.
  *

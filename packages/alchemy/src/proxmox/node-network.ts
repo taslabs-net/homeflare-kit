@@ -11,23 +11,23 @@
  *   that apply — this one never calls it, exactly as `Proxmox.SdnZone` never calls
  *   `Proxmox.SdnApply`.
  *
- * ⛔ CEPH ON TB4 RIDES TWO NETWORKS AND THIS API ONLY SEES ONE OF THEM. Measured from
+ * ⛔ CEPH ON C1 RIDES TWO NETWORKS AND THIS API ONLY SEES ONE OF THEM. Measured from
  *   `/etc/pve/ceph.conf` on 2026-09-13:
  *
- *     public_network  = 10.20.11.0/24     -> vmbr1.11, which this resource DOES see
- *     cluster_network = 10.100.0.0/24     -> every OSD's cluster_addr: .102 / .103 / .104
+ *     public_network  = 198.51.100.0/24     -> vmbr1.42, which this resource DOES see
+ *     cluster_network = 203.0.113.0/24     -> every OSD's cluster_addr: .102 / .103 / .104
  *
  *   The cluster network — OSD REPLICATION, the traffic that rebuilds a lost replica — lives on
- *   `10.100.0.10X/32` addresses carried by `en05`, `en06` and `dummy_tb4`: the Thunderbolt mesh.
+ *   `203.0.113.10X/32` addresses carried by `tb0`, `tb1` and `dummy_c1`: the Thunderbolt mesh.
  *
  * ⛔ AND THOSE ADDRESSES ARE INVISIBLE HERE, WHICH IS THE TRAP. They are declared in
  *   `/etc/network/interfaces.d/sdn`, and PVE's network API does not parse that directory.
- *   MEASURED: `GET /nodes/n2/network/en05` answers `{"method":"manual","type":"eth",…}` with NO
- *   address, while `ip -br -4 addr` shows `en05  UP  10.100.0.102/32`. So this resource reports
- *   en05 and en06 as address-less manual ports and will plan `noop` over them — implicitly
+ *   MEASURED: `GET /nodes/node-b/network/tb0` answers `{"method":"manual","type":"eth",…}` with NO
+ *   address, while `ip -br -4 addr` shows `tb0  UP  203.0.113.102/32`. So this resource reports
+ *   tb0 and tb1 as address-less manual ports and will plan `noop` over them — implicitly
  *   asserting they carry no address, which is FALSE.
  *
- *   The consequence, stated plainly: declaring en05/en06 from what this API reports and then
+ *   The consequence, stated plainly: declaring tb0/tb1 from what this API reports and then
  *   DESTROYING or applying over them takes out OSD replication on a cluster whose pools are
  *   size 3 / min_size 2. They read as the most boring interfaces on the node and are the two most
  *   dangerous. Leave them undeclared; if they must be managed, manage the file that actually
@@ -55,7 +55,7 @@
  *   interface a node already has would otherwise leave it holding a pending network change.
  *
  * ⚠️ WHAT IS STILL TRUE: when `matches` is false the PUT rewrites the whole stanza, and that can
- *   ADD lines the file did not have — a `vlan-raw-device vmbr1` under `vmbr1.11`, where PVE had
+ *   ADD lines the file did not have — a `vlan-raw-device vmbr1` under `vmbr1.42`, where PVE had
  *   been deriving it from the name. Harmless in content, and it costs nothing until somebody
  *   applies; one more reason the apply is a separate resource.
  *
@@ -79,10 +79,10 @@ import {
 import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
 
 /**
- * PVE's interface types. `unknown` is what a NIC it does not manage reports — n2 and n3 both
- * report `wlp91s0` that way, and n4 has no such interface at all.
+ * PVE's interface types. `unknown` is what a NIC it does not manage reports — node-b and node-c both
+ * report `wlan0` that way, and node-d has no such interface at all.
  *
- * ⚠️ THAT ASYMMETRY IS A TRAP FOR A DECLARATION SHARED ACROSS NODES. On n4 the read answers 404,
+ * ⚠️ THAT ASYMMETRY IS A TRAP FOR A DECLARATION SHARED ACROSS NODES. On node-d the read answers 404,
  *   which this provider cannot tell from "deleted", so reconcile POSTs — writing a stanza for a
  *   card that is not in the machine. Declare per node what each node actually has; a physical
  *   interface is discovered, not decided.
@@ -104,24 +104,24 @@ export type NodeNetworkType =
 export interface NodeNetworkProps extends WithTarget {
   /** Which node's file this stanza lives in. Interfaces are per node, never cluster-wide. */
   node: string;
-  /** `vmbr0`, `bond0`, `vmbr1.11`. 2-20 characters, PVE's `pve-iface` format. */
+  /** `vmbr0`, `bond0`, `vmbr1.42`. 2-20 characters, PVE's `pve-iface` format. */
   iface: string;
   /** ⛔ REQUIRED ON EVERY WRITE, update included, never used to retype — see `readAttributes`. */
   type: NodeNetworkType;
   /**
-   * `10.20.11.12/24`. ⛔ THE ONE FIELD WITH NO UNMANAGED MODE: leaving it out is an instruction
+   * `198.51.100.12/24`. ⛔ THE ONE FIELD WITH NO UNMANAGED MODE: leaving it out is an instruction
    * to make the interface `manual`, not an instruction to leave its address alone. The ⛔ on
    * `updateBody` in node-network-form.ts has the measurement and the consequence.
    */
   cidr?: string;
   /** ⚠️ PVE allows exactly ONE default gateway per node and refuses a second with "Default
-   *  gateway already exists on interface '<other>'". On TB4 it is vmbr0.10's. */
+   *  gateway already exists on interface '<other>'". On C1 it is vmbr0.41's. */
   gateway?: string;
   /**
    * `auto <iface>` in the file. Absent on read means off, which is why `bool`'s fallback is used.
    * ⚠️ UNDECLARED IS UNMANAGED ON AN UPDATE AND OFF ON A CREATE — the same asymmetry storage.ts
    *   has, and it bites harder here: an interface created without `autostart` is one the node
-   *   will not bring up at boot. Every TB4 bridge, bond and vlan carries it.
+   *   will not bring up at boot. Every C1 bridge, bond and vlan carries it.
    */
   autostart?: boolean;
   /** 1280-65520. Unset leaves the file without an `mtu` line and the kernel default in force. */
@@ -145,7 +145,7 @@ export interface NodeNetworkProps extends WithTarget {
   bond_xmit_hash_policy?: string;
   /** active-backup only. Kept hyphenated because that is the wire name. */
   'bond-primary'?: string;
-  /** ⚠️ DERIVED FROM A DOTTED NAME. `vmbr1.11` reports `vlan-id` 11 with no such line in the file;
+  /** ⚠️ DERIVED FROM A DOTTED NAME. `vmbr1.42` reports `vlan-id` 42 with no such line in the file;
    *  declaring it there is harmless but adds a line the file did not have. */
   'vlan-id'?: number;
   'vlan-raw-device'?: string;
@@ -209,7 +209,7 @@ const handlers = pveHandlers<NodeNetworkProps, NodeNetworkAttributes>({
    *   omission is an edit. Comparing it unconditionally is what makes that edit visible in `plan`
    *   instead of at `ifreload` time.
    *
-   * ⚠️ NOTHING IN THE REPORTED-ONLY BLOCK IS HERE, and that is what makes the TB4 declaration
+   * ⚠️ NOTHING IN THE REPORTED-ONLY BLOCK IS HERE, and that is what makes the C1 declaration
    *   plan as `noop` on all three nodes at once — the ⛔ above `NodeNetworkAttributes` lists them
    *   and the measurement behind each.
    */

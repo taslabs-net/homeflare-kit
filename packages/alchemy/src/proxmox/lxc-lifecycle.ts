@@ -72,7 +72,7 @@ export const readLive = (where: LxcWhere) =>
       'GET',
       'cluster/resources?type=vm',
     );
-    // ⚠️ `Number()`, NOT `===` ON THE RAW VALUE: a vmid that came back as `"100"` would otherwise
+    // ⚠️ `Number()`, NOT `===` ON THE RAW VALUE: a vmid that came back as `"900"` would otherwise
     //   match nothing, and "listed nowhere" is the one answer that turns into a create.
     const found = (rows ?? []).find((row) => Number(row.vmid) === where.vmid);
     if (found !== undefined && found.node === where.node && found.type === 'lxc') {

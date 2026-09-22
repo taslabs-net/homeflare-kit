@@ -100,7 +100,7 @@ describe('drift after the adoption is named at plan and written once', () => {
   test('a larger rootfs is a resize after the config, never a new volume', async () => {
     const pve = live();
     const stack = await adoptedAsIs(pve);
-    const props: LxcProps = { ...pasted(), rootfs: 'local-zfs:subvol-100-disk-0,size=64G' };
+    const props: LxcProps = { ...pasted(), rootfs: 'local-zfs:subvol-900-disk-0,size=64G' };
     expect((await stack.deploy(ct(props))).failure).toBe('');
     expect(writesOf(pve)).toEqual([`PUT nodes/${NODE}/lxc/${String(VMID)}/resize`]);
     expect(pve.guests.get(`${NODE}/${String(VMID)}`)?.['rootfs']).toContain('size=64G');
@@ -109,10 +109,10 @@ describe('drift after the adoption is named at plan and written once', () => {
 
 describe('changes PVE cannot make in place fail the plan and write nothing', () => {
   test.each([
-    ['a smaller mount point', { mp0: 'tank:subvol-100-disk-0,mp=/data,size=100G' }, /shrink/],
+    ['a smaller mount point', { mp0: 'tank:subvol-900-disk-0,mp=/data,size=100G' }, /shrink/],
     ['a storage move', { rootfs: 'other:40' }, /pct move-volume/],
     ['an unprivileged flip', { unprivileged: 0 as const }, /read-only option/],
-    ['a device passthrough change', { dev1: '/dev/fuse' }, /pct set 100 --dev1/],
+    ['a device passthrough change', { dev1: '/dev/fuse' }, /pct set 900 --dev1/],
     ['a feature beyond nesting', { features: 'nesting=1,keyctl=1' }, /root@pam/],
     ['detaching a mount point', { mp0: '' }, /unusedN/],
   ])('%s', async (_, change, reason) => {

@@ -20,7 +20,7 @@
  *     Refused unless the transport is at that default; declaring `admin <address>` is the fix.
  *   · a Host the new config does not allow: `origins` without it, or — with no `origins` — a Host
  *     outside Caddy's loopback defaults (`localhost`, `[::1]`, `127.0.0.1` at the listen port).
- *     Every later call answers 403 (admin.go allowedOrigins / checkHost; MEASURED on the mini's
+ *     Every later call answers 403 (admin.go allowedOrigins / checkHost; MEASURED on a Mac host's
  *     Caddy 2.11.4 — `host not allowed`). The transport also sends `Origin: http://<Host>`, which
  *     Caddy checks against the same list (originAllowed), so one check covers both.
  *   · `enforce_origin` over a unix socket: this transport, like Caddy's CLI (cmd/commandfuncs.go

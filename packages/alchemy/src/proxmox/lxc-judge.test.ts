@@ -13,7 +13,7 @@ import { judgeVolume, parseVolume, sizeBytes } from './lxc-volume.ts';
 const props = (over: Partial<LxcProps>): LxcProps => ({
   node: 'pve1',
   target: TARGET,
-  vmid: 100,
+  vmid: 900,
   ...over,
 });
 const live = (config: Record<string, unknown>) => ({ unprivileged: 1, ...config });
@@ -36,7 +36,7 @@ describe('sizes and volumes, as pve-container parses them', () => {
 
   test('an options change on a volume declared as new is written with the LIVE volume id', () => {
     const verdict = judgeVolume('mp0', 'tank:200,mp=/data,backup=1', LIVE_MP);
-    expect(verdict).toEqual({ put: 'tank:subvol-100-disk-0,mp=/data,backup=1,size=200G' });
+    expect(verdict).toEqual({ put: 'tank:subvol-900-disk-0,mp=/data,backup=1,size=200G' });
   });
 
   test('a fractional new-disk size grows by the same GiB', () => {
@@ -44,7 +44,7 @@ describe('sizes and volumes, as pve-container parses them', () => {
   });
 });
 
-const LIVE_MP = 'tank:subvol-100-disk-0,mp=/data,backup=0,size=200G';
+const LIVE_MP = 'tank:subvol-900-disk-0,mp=/data,backup=0,size=200G';
 
 describe('scalars compare the way PVE stores them', () => {
   test.each([
@@ -106,7 +106,7 @@ describe('features follow check_ct_modify_config_perm', () => {
 
   test('clearing features that hold more than nesting is root@pam only, as PVE counts keys', () => {
     const change = judge(props({ features: '' }), live({ features: 'nesting=1,keyctl=0' }));
-    expect(change.refuse[0]).toMatch(/pct set 100 --delete features/);
+    expect(change.refuse[0]).toMatch(/pct set 900 --delete features/);
   });
 });
 
@@ -147,7 +147,7 @@ describe('create', () => {
       ostemplate: 'local:vztmpl/t.tar.zst',
       start: '1',
       unprivileged: '1',
-      vmid: '100',
+      vmid: '900',
     });
   });
 

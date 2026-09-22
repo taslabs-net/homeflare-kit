@@ -28,7 +28,7 @@ import { ForgejoError, forgejo } from './client.ts';
 /**
  * ★ WHAT EVERY OPERATION HERE NEEDS FROM THE RUNTIME — and it is NOT what the first draft said.
  *
- *   These resources declared `ChildProcessSpawner`, copied from house/proxmox, where it is there
+ *   These resources declared `ChildProcessSpawner`, copied from <estate>/proxmox, where it is there
  *   because a PVE credential is minted by shelling out to `bao`. Nothing in this package shells
  *   out: the token comes from `FORGEJO_TOKEN` in the environment. Declaring a service you never
  *   use is not harmless — it makes a stack provide a layer for nothing, and it hides the one
@@ -152,7 +152,7 @@ export const forgejoOperations = <Props extends object, Attributes>(
  * The five provider handlers for a spec'd Forgejo object, wired once.
  *
  * ⛔ IT STOPS AT THE HANDLERS AND DOES NOT RETURN THE LAYER — same reasoning as pveHandlers in
- *   house/proxmox: wrapping `Provider.effect` here needs casts against Alchemy's `Props<R>`.
+ *   <estate>/proxmox: wrapping `Provider.effect` here needs casts against Alchemy's `Props<R>`.
  *
  * ⚠️ `list` answers empty — Forgejo index endpoints return the whole org; adoption stays explicit.
  */

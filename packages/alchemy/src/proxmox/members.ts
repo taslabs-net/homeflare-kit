@@ -1,10 +1,10 @@
 /**
- * TB4 cluster members: ordered failover, last-good preference, transport classification.
+ * C1 cluster members: ordered failover, last-good preference, transport classification.
  *
  * ★ ANY MEMBER'S :8006 API MANAGES THE WHOLE CLUSTER — PVE proxies node paths itself — so the
  *   provider reaches the cluster through whichever member is up, not through one pinned node.
  *
- * ⛔ NEVER cluster-tb4.example.com: it resolves to 10.20.10.250, which nothing serves.
+ * ⛔ NEVER cluster-c1.example.com: it resolves to 192.0.2.250, which nothing serves.
  */
 import * as Effect from 'effect/Effect';
 import * as Result from 'effect/Result';
@@ -120,7 +120,7 @@ export type PveMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
  *   elsewhere can repeat a write.
  *
  * ★ Reads fail over on any transport failure, including timeout — no side effect to duplicate.
- *   MEASURED 2026-09-14: full TB4 plans stayed all-noop with the first member refused (127.0.0.1)
+ *   MEASURED 2026-09-14: full C1 plans stayed all-noop with the first member refused (127.0.0.1)
  *   and with it unresolvable (n9.invalid).
  */
 export const executeOnCluster = (

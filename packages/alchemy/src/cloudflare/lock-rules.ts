@@ -1,7 +1,7 @@
 /**
  * The vocabulary of an R2 lock rule, and the comparison that decides whether to write one.
  *
- * ★ ITS OWN MODULE FOR THE REASON `house/litellm/src/equal.ts` IS ONE: the comparison is the
+ * ★ ITS OWN MODULE FOR THE REASON `<estate>/litellm/src/equal.ts` IS ONE: the comparison is the
  *   riskiest function in the provider and it deserves to be readable and testable without the
  *   lifecycle around it. An equality that returned true for everything would make every reconcile
  *   a no-op and the resource would silently never write anything — which looks exactly like a

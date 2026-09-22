@@ -5,9 +5,9 @@
  *   read off the running 16.0.3 daemon or its source on 2026-09-14, not assumed.
  */
 
-/** Where the mini's Forgejo keeps its state (hosts/macmini/modules/forgejo.nix:235, app.ini:14). */
+/** Where the host's Forgejo keeps its state (its NixOS module and `app.ini`). */
 export const FORGEJO_WORK_PATH = '/opt/homeflare/forgejo';
-/** The file the launchd runner renders at every start (forgejo.nix:78). Readable by tim, who runs Forgejo. */
+/** The file the launchd runner renders at every start. Readable by the account that runs Forgejo. */
 export const FORGEJO_CONFIG = `${FORGEJO_WORK_PATH}/custom/conf/app.ini`;
 
 /**

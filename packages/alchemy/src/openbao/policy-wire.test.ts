@@ -28,11 +28,11 @@ describe('policy wire', () => {
   it('round-trips through the stripped newline with equal digests', async () => {
     await withFake(aclPolicies(), async (bao) => {
       const env = { BAO_ADDR: bao.address };
-      await run(env, writePolicy('homeflare-llm', ASSEMBLED));
+      await run(env, writePolicy('app-llm', ASSEMBLED));
       assert.equal(bao.seen[0]?.method, 'PUT');
-      assert.equal(bao.seen[0]?.path, `${PREFIX}homeflare-llm`);
+      assert.equal(bao.seen[0]?.path, `${PREFIX}app-llm`);
       assert.deepEqual(JSON.parse(bao.seen[0]?.body ?? ''), { policy: ASSEMBLED });
-      const live = await run(env, readPolicy('homeflare-llm'));
+      const live = await run(env, readPolicy('app-llm'));
       assert.notEqual(live, ASSEMBLED, 'the fake strips the newline, as OpenBao does');
       assert.equal(sha256(live), sha256(ASSEMBLED));
     });

@@ -8,7 +8,7 @@
  * The only form a policy body may be hashed or compared in.
  *
  * ⛔ OPENBAO STRIPS THE TRAILING NEWLINE AND THAT ALONE WAS A FOREVER-DIFF. MEASURED on the live
- *   server: the assembler emits each fragment followed by a newline, so `homeflare-llm` goes in as
+ *   server: the assembler emits each fragment followed by a newline, so `app-llm` goes in as
  *   41 lines and `bao policy read` hands back 40 — identical text, one `\n` apart, two different
  *   digests. Every plan therefore reported `update`, every deploy rewrote the same policy, and the
  *   stack could never settle. It was invisible until the stack planned for the first time today.

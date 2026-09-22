@@ -87,7 +87,7 @@ export const forgejo = <T>(
      *   (src/Hetzner/Providers.ts builds on `FetchHttpClient.layer`; there is no bare fetch in its
      *   Docker, Kubernetes or GitHub providers). It buys a typed error channel, interruption when
      *   a plan is cancelled, the runtime's tracing, and a client a test can replace without
-     *   monkey-patching a global. house/proxmox/src/resource.ts carries the same note.
+     *   monkey-patching a global. <estate>/proxmox/src/resource.ts carries the same note.
      */
     const client = yield* HttpClient.HttpClient;
     /**

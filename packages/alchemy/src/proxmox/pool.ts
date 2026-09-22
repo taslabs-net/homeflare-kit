@@ -8,11 +8,11 @@
  *   its own state would have reported noop straight past a hand-edit in the UI.
  *
  * ⚠️ IT 403'd UNTIL THE ROLE WAS WIDENED, AND THE HISTORY IS WORTH KEEPING. `hf-provision@pve`
- *   held `LXCProvisioner` on `/` with no `Pool.Allocate`, so reconcile answered
- *   "Permission check failed (/pool/house, Pool.Allocate)". The credential could not widen itself
+ *   held the provision role on `/` with no `Pool.Allocate`, so reconcile answered
+ *   "Permission check failed (/pool/lab, Pool.Allocate)". The credential could not widen itself
  *   — `PUT /access/roles` is 403 for it too — so the role was extended over SSH with
- *   `pveum role modify LXCProvisioner --privs "<existing>,Pool.Allocate,Pool.Audit"`, preserving
- *   every existing privilege. Each new resource in this package should state the privileges its
+ *   `pveum role modify <role> --privs "<existing>,Pool.Allocate,Pool.Audit"`, preserving every
+ *   existing privilege. `PROVISION_PRIVILEGES` (provision-baseline.ts) carries both now. Each new resource in this package should state the privileges its
  *   reconcile needs, so widening stays a deliberate act rather than a reaction to a 403.
  */
 import { Resource } from 'alchemy';

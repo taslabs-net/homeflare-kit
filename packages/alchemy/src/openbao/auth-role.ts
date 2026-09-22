@@ -7,7 +7,7 @@
  *
  * ★ `defaultRemovalPolicy: 'retain'` — deleting a role locks out every host that logs in with it:
  *   its secret_ids go with it (the ⚠️ on `delete` below). Opt in with
- *   `.pipe(RemovalPolicy.destroy())`; see resource.ts in house/proxmox.
+ *   `.pipe(RemovalPolicy.destroy())`; see resource.ts in <estate>/proxmox.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';

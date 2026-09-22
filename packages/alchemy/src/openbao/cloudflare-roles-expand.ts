@@ -44,7 +44,7 @@ export interface DeclaredPolicy {
    * ⛔ IT MOVES THE LOOKUP, NEVER THE RESOURCE. The entry still binds the groups to the resource
    *   above; only the id chosen for each name changes. That is the shape Cloudflare calls "all
    *   zones from an account" — the ACCOUNT resource carrying ZONE-scoped groups
-   *   (house/nix/homeflare-config/scripts/cf-mint-analytics-tokens.py:155-158, beside a working
+   *   (<estate>/nix/scripts/cf-mint-analytics-tokens.py:155-158, beside a working
    *   token). Without this field the resource is the only witness, and it says `account`.
    */
   readonly scope?: string;

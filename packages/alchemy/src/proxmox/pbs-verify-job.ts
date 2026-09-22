@@ -11,7 +11,7 @@
  *
  * ⛔ THIS FILE CANNOT AUTHENTICATE UNTIL TWO THINGS OUTSIDE IT CHANGE, AND IT IS SHIPPED SAYING SO
  *   RATHER THAN SHIPPED LOOKING FINISHED. Both are recorded on `PbsTarget` below:
- *     1. `credentials.ts` has no PBS mint. MEASURED 2026-09-13 from this Mac: the `claude-code`
+ *     1. `credentials.ts` has no PBS mint. MEASURED 2026-09-13 from this Mac: the agent's
  *        approle is refused `sys/mounts`, `kv/infra/proxmox` and `proxmox-pbs/creds/read` alike —
  *        403 permission denied on all three — so there is no mount to name and none is invented.
  *     2. `client.ts`'s `authorization()` builds a PVE header, and PBS will not accept it. See the

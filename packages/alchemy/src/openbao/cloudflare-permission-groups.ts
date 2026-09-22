@@ -103,7 +103,7 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
  * ⛔ A 403 IS A MISSING GRANT, AND IT SAYS SO. `BaoError` alone reports `GET /v1/<mount>/
  *   permission-groups -> 403: permission denied` — true, and it points nowhere: the path is
  *   deployed, the token is valid, and the one thing to change is a policy file. MEASURED 2026-09-15
- *   10:19 on the macmini-admin lane, where `bao write sys/capabilities-self` answered `[deny]` on
+ *   10:19 on the host's admin lane, where `bao write sys/capabilities-self` answered `[deny]` on
  *   this exact path. bao-status.ts argues that a failure must name what it is; this is that
  *   argument one level up.
  */
@@ -147,7 +147,7 @@ const engineGroups = (mount: string): Lookup =>
     if (data === undefined) {
       // ⚠️ 404 IS NOW A MOUNT-SHAPED ANSWER, NOT THE EXPECTED ONE. The path IS deployed
       //   estate-wide (measured 2026-09-15), so a 404 here means this mount is served by an older
-      //   plugin binary or BAO_ADDR is not the mini — never "no groups".
+      //   plugin binary or BAO_ADDR is not the vault host — never "no groups".
       const why = 'GET <mount>/permission-groups answered 404 — the endpoint is not deployed here';
       return Effect.fail(new CloudflareGroupsError(mount, [why]));
     }
@@ -231,7 +231,7 @@ export const permissionGroupsFromEngine = () =>
  *   undeclared live role carries IDs with no names to pair them with — and solves the account at
  *   once.
  * 🔴 WHAT RETIRED IT, 2026-09-15 10:13: `alchemy deploy` could not create
- *   `cloudflare-{<account>,testing}-platform/roles/r2-backup-mini` — `unknown group "Workers R2
+ *   `cloudflare-{<account>,testing}-platform/roles/r2-backup-host` — `unknown group "Workers R2
  *   Storage Bucket Item Write" — no live role on account <account> carries it; a NEW group needs
  *   the engine endpoint`. That is this source's documented blind spot arriving, not a bug in it.
  *

@@ -32,8 +32,8 @@ type Case = {
 
 const cases: readonly Case[] = [
   {
-    declare: () => ProxmoxPool('house', { comment: 'x', poolid: 'house', target: FAKE_TARGET }),
-    live: { 'pools/house': { comment: 'x', members: [] } },
+    declare: () => ProxmoxPool('lab', { comment: 'x', poolid: 'lab', target: FAKE_TARGET }),
+    live: { 'pools/lab': { comment: 'x', members: [] } },
     name: 'Proxmox.Pool (pveHandlers: every factory family)',
     provider: ProxmoxPoolProvider as never,
   },
@@ -98,15 +98,15 @@ describe('adopting a matching object only reads', () => {
   });
 
   test('and the harness does see a write: a drifted Pool is PUT once', async () => {
-    const fake = clusterWith({ 'pools/house': { comment: 'old', members: [] } });
+    const fake = clusterWith({ 'pools/lab': { comment: 'old', members: [] } });
     await withoutBao(async () => {
       const engine = engineOver(ProxmoxPoolProvider().pipe(Layer.provideMerge(fake.layer)));
       const declared = () =>
-        ProxmoxPool('house', { comment: 'x', poolid: 'house', target: FAKE_TARGET });
+        ProxmoxPool('lab', { comment: 'x', poolid: 'lab', target: FAKE_TARGET });
       const report = await engine.verify(declared());
       expect(report.rows[0]).toMatchObject({ changed: ['comment'], diff: 'update', ok: false });
-      expect(await engine.deploy(declared())).toEqual({ house: 'adopted' });
+      expect(await engine.deploy(declared())).toEqual({ lab: 'adopted' });
     });
-    expect(fake.writes()).toEqual(['PUT pools/house']);
+    expect(fake.writes()).toEqual(['PUT pools/lab']);
   });
 });

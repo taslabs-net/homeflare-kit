@@ -36,7 +36,7 @@ describe('breakered', () => {
 
   test('rethrows the ORIGINAL error, not a generic "circuit open"', async () => {
     const fetcher = breakered(async () => {
-      throw new Error('ECONNREFUSED 10.0.0.1:443');
+      throw new Error('ECONNREFUSED 192.0.2.1:443');
     });
 
     await fetcher('https://team.example/certs', OPTS).catch(() => undefined);
