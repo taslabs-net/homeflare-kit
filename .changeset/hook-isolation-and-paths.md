@@ -25,3 +25,7 @@ touching that file fails with a message about the wrong name, and the obvious re
 written: the scratch repository is a top-level `const` rather than a `let` a hook fills,
 every `git` call names it with `-C` and runs with `GIT_*` dropped, and the identity is
 passed with `-c` instead of a `git config` write that landed in the real repository.
+
+`scripts/hooks/verify.ts` — this repository's own pre-push, which runs the wider `verify`
+rather than `check` — gets the same treatment, because it is the one hook in the estate
+that does not go through the shared runner.
