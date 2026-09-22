@@ -7,9 +7,11 @@
  *   `repo-policy-guards.ts` holds everything this refuses and why.
  *
  * ⛔ AUTO-MERGE WITH NOTHING TO WAIT FOR MERGES IMMEDIATELY. `gh pr merge --auto` is a
- *   queue only while something is outstanding. Three different inputs produce "nothing
+ *   queue only while something is outstanding. Five different inputs produce "nothing
  *   outstanding" — no `checks` and no `requiredApprovals`, an `enforcement` that is not
- *   `active`, and an empty `include` — and all three are refused. See the guards module.
+ *   `active`, and three ways to land a ruleset that matches no ref (an empty `include`, a
+ *   blank ref pattern, an `exclude` that cancels every `include`). All five are refused.
+ *   See the guards module.
  *
  * ⛔ EVERY CONTEXT IN `checks` MUST ALWAYS REPORT. A required context that never reports
  *   is not "passed", it is "pending", and the pull request waits on it forever —
@@ -21,6 +23,7 @@ import type { RepositoryProps, RulesetProps } from 'alchemy/GitHub';
 import {
   assertAutoMergeWaits,
   normalizeChecks,
+  normalizeExclude,
   normalizeInclude,
   requireName,
   resolveApprovals,
@@ -65,7 +68,11 @@ export interface RepoPolicyOptions {
   readonly rulesetName?: string;
   /** Ref patterns the ruleset covers. @default ['~DEFAULT_BRANCH'] */
   readonly include?: readonly string[];
-  /** Ref patterns exempted from it. @default [] */
+  /**
+   * Ref patterns exempted from it. @default []
+   * ⛔ Exclusions win over inclusions, so one that cancels every `include` is refused —
+   *   it reads as a narrowing and acts as an off switch.
+   */
   readonly exclude?: readonly string[];
   /** Who may bypass the ruleset. @default [] — nobody, administrators included. */
   readonly bypassActors?: readonly RepoPolicyBypassActor[];
@@ -111,6 +118,7 @@ export function repoPolicy(options: RepoPolicyOptions): RepoPolicy {
   const repository = requireName('repository', options.repository);
   const checks = normalizeChecks(options.checks);
   const include = normalizeInclude(options.include, DEFAULT_INCLUDE);
+  const exclude = normalizeExclude(options.exclude, include);
   const autoMerge = options.autoMerge ?? true;
   const enforcement = options.enforcement ?? 'active';
   const approvals = resolveApprovals(options.requiredApprovals);
@@ -134,7 +142,7 @@ export function repoPolicy(options: RepoPolicyOptions): RepoPolicy {
     ruleset: {
       ...host,
       bypassActors: [...(options.bypassActors ?? [])],
-      conditions: { exclude: [...(options.exclude ?? [])], include },
+      conditions: { exclude, include },
       enforcement,
       name: options.rulesetName ?? DEFAULT_RULESET_NAME,
       owner,

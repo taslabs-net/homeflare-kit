@@ -2,13 +2,21 @@
  * Everything `repoPolicy` refuses, and why. Extracted from repo-policy-form.ts so the
  * shape stays readable and the reasoning stays whole.
  *
- * ⛔ THREE DIFFERENT DOORS LEAD TO THE SAME FAILURE — auto-merge with nothing to wait for.
+ * ⛔ FIVE DIFFERENT DOORS LEAD TO THE SAME FAILURE — auto-merge with nothing to wait for.
  *   `gh pr merge --auto` is a queue only while something is outstanding; with nothing
  *   outstanding GitHub merges the pull request on the spot. An empty `checks` is the
  *   obvious door. `enforcement: 'disabled'` or `'evaluate'` is the quiet one: the ruleset
- *   exists, the required checks are listed on it, and none of them block anything. An
- *   empty `include` is the quietest of all — a ruleset that matches no ref enforces on
- *   no ref, and the GitHub UI still shows it as active. All three are refused.
+ *   exists, the required checks are listed on it, and none of them block anything. Then
+ *   three ways to end up with a ruleset that matches NO REF — which enforces on no ref
+ *   while the GitHub UI still shows it as `active`: an empty `include`, a blank ref
+ *   pattern, and an `exclude` that cancels every `include`. All five are refused.
+ *
+ * ★ THE REF DOORS WERE FOUND BY ADVERSARIAL REVIEW, NOT BY DESIGN. The first cut of this
+ *   module guarded `include.length === 0` and spread `exclude` raw, so
+ *   `include: ['~DEFAULT_BRANCH'], exclude: ['~DEFAULT_BRANCH']` and `include: ['   ']`
+ *   both sailed through with `allowAutoMerge: true` — the exact end state the empty-array
+ *   guard exists to prevent, reached by a door beside it. Checked by execution, not by
+ *   reading: see the `matches no ref` tests in repo-policy-form.test.ts.
  */
 
 /** A non-empty, trimmed identifier, or an error naming the field. */
@@ -40,6 +48,30 @@ export function normalizeChecks(checks: readonly string[]): string[] {
 }
 
 /**
+ * Trim, de-duplicate, sort one list of ref patterns, refusing a blank one.
+ *
+ * ⚠️ A BLANK PATTERN IS NOT AN EMPTY LIST, AND THAT IS THE WHOLE TRAP. `['   ']` has
+ *   length 1, so a guard that counts the array waves it through; GitHub then stores a ref
+ *   condition that matches nothing. Same end state as `[]`, reached past the guard.
+ * ★ Sorted for the same reason `normalizeChecks` is: GitHub echoes the patterns back in
+ *   the order they were sent, so an unsorted list diffs against itself the first time a
+ *   caller writes the same patterns in a different order.
+ */
+function normalizeRefs(field: string, patterns: readonly string[]): string[] {
+  const seen = new Set<string>();
+  for (const raw of patterns) {
+    const pattern = raw.trim();
+    if (pattern === '') {
+      throw new Error(
+        `repoPolicy: a ${field} ref pattern is blank — a ruleset that matches no ref enforces nothing.`,
+      );
+    }
+    seen.add(pattern);
+  }
+  return [...seen].sort();
+}
+
+/**
  * ⛔ AN EMPTY `include` IS REFUSED. Alchemy defaults `conditions.include` to `['~ALL']`
  *   when it is absent, but an explicitly empty array is sent as an empty array, and a
  *   ruleset that matches no ref protects nothing while still reading as `active` in the
@@ -55,7 +87,38 @@ export function normalizeInclude(
       'repoPolicy: include is empty — a ruleset that matches no ref enforces nothing. Omit it for the default branch.',
     );
   }
-  return [...include];
+  return normalizeRefs('include', include);
+}
+
+/**
+ * ⛔ AN `exclude` THAT CANCELS EVERY `include` IS REFUSED. In a GitHub ruleset the
+ *   exclusions win, so `include: ['~DEFAULT_BRANCH'], exclude: ['~DEFAULT_BRANCH']` is a
+ *   ruleset over nothing — and it reads as a narrowing, which is what makes it worse than
+ *   the empty array: the caller believes they scoped the policy, not switched it off.
+ *
+ * ⚠️ EXACT CANCELLATION ONLY, DELIBERATELY. GitHub's patterns are globs, so deciding in
+ *   general whether some exclude swallows some include means implementing GitHub's
+ *   matcher and being wrong about it quietly. This refuses the case that is decidable —
+ *   every include pattern also appears verbatim in `exclude` — and leaves
+ *   `exclude: ['refs/heads/*']` against `include: ['~DEFAULT_BRANCH']` to the operator.
+ *   A narrower guard that is always right beats a broad one that false-refuses.
+ */
+export function normalizeExclude(
+  exclude: readonly string[] | undefined,
+  include: readonly string[],
+): string[] {
+  const patterns = exclude === undefined ? [] : normalizeRefs('exclude', exclude);
+  if (patterns.length === 0) return patterns;
+  const excluded = new Set(patterns);
+  if (include.every((pattern) => excluded.has(pattern))) {
+    throw new Error(
+      [
+        'repoPolicy: exclude cancels every include pattern, so the ruleset matches no ref and enforces nothing.',
+        `include ${JSON.stringify(include)} is fully covered by exclude ${JSON.stringify(patterns)}.`,
+      ].join(' '),
+    );
+  }
+  return patterns;
 }
 
 /**
