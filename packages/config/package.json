@@ -13,6 +13,7 @@
     "dist",
     "docs",
     "src",
+    "bin",
     "tsconfig.base.json",
     "tsconfig.lib.json",
     "tsconfig.app.json",
@@ -36,6 +37,10 @@
       "types": "./dist/check.d.ts",
       "default": "./dist/check.js"
     },
+    "./hooks": {
+      "types": "./dist/hooks.d.ts",
+      "default": "./dist/hooks.js"
+    },
     "./repo-shape": {
       "types": "./dist/repo-shape.d.ts",
       "default": "./dist/repo-shape.js"
@@ -55,7 +60,7 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/check.ts ./src/release.ts ./src/require-release-config.ts ./src/repo-shape.ts --outdir dist --target bun --format esm --packages external --sourcemap=linked",
+    "build:js": "bun build ./src/check.ts ./src/hooks.ts ./src/release.ts ./src/require-release-config.ts ./src/repo-shape.ts --outdir dist --target bun --format esm --packages external --sourcemap=linked",
     "build:types": "tsc --project tsconfig.build.json",
     "clean": "rm -rf dist",
     "types": "tsc --noEmit",

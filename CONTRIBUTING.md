@@ -48,10 +48,26 @@ expensive part.
 `bun install` installs them (husky, via `prepare`). One script per concern, in
 `scripts/hooks/`:
 
-| hook       | runs                                                                               | why                         |
-| ---------- | ---------------------------------------------------------------------------------- | --------------------------- |
-| pre-commit | `secrets` → `foreign-locks` → `format-staged` → `actionlint` → `changeset-pending` | fast, staged files only     |
-| pre-push   | `verify`                                                                           | the same gate CI runs, ~30s |
+| hook       | runs                                                                                      | why                         |
+| ---------- | ----------------------------------------------------------------------------------------- | --------------------------- |
+| pre-commit | `secrets` → `foreign-locks` → **shared format/lint** → `actionlint` → `changeset-pending` | fast, staged files only     |
+| pre-push   | `verify`                                                                                  | the same gate CI runs, ~30s |
+
+★ **The format/lint step is not kit's.** It lives in `@homeflare/config/hooks` and every
+repo in the estate runs the same one. Change the rule there, not here; the scripts
+either side of it are concerns only this repo has. ⚠️ This repo calls it by its
+workspace path (`packages/config/bin/hooks.ts`) because nothing here depends on the
+package, so Bun links no copy into `node_modules` — every other repo uses
+`node_modules/@homeflare/config/bin/hooks.ts`.
+
+⚠️ **That step rewrites staged files.** It runs `oxfmt` over the staged formattable
+files, names the ones it changed, and restages exactly those. A file with unstaged edits
+on top is checked and never rewritten — restaging it would commit work in progress.
+
+⛔ **pre-push here runs `verify`, not `check`.** Kit's `verify` adds the consumer smoke
+test, which is the only gate that catches a tarball consumers cannot install. Elsewhere
+in the estate the shared pre-push runs `bun run check`; it never guesses at `verify`,
+because in `homeflare-proxmox` that name means a live adoption verifier.
 
 ⛔ **Secrets are scanned first**, by [gitleaks](https://github.com/gitleaks/gitleaks).
 Everything else can be fixed after the fact; a credential in a public repo is compromised
