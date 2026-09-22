@@ -98,6 +98,7 @@ import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { PROVISION_PRIVILEGES, PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, ProxmoxNotificationMatcher, alertmanagerAlertBody, declareProvisionBaseline, provisionBootstrap } from '@homeflare/alchemy/proxmox';
 import { NETBOX_CONSTRAINTS_DIGEST, NetboxPrefix, bodyViolations, constraintsFor } from '@homeflare/alchemy/netbox';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
+import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, renderUnit, sshRunner } from '@homeflare/alchemy/linux';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 
@@ -107,6 +108,7 @@ for (const [name, value] of Object.entries({
   PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxNotificationMatcher,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
   NetboxPrefix, bodyViolations, constraintsFor, NETBOX_CONSTRAINTS_DIGEST,
+  HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner,
   parseVerifyArgs, verifySession, verifyStack,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
@@ -116,6 +118,12 @@ for (const [name, value] of Object.entries({
 //   (a Bun-only API in dist, a node: builtin that fails to resolve) fails here, not in a stack.
 if (!renderPlist({ Label: 'com.example.smoke' }).includes('<string>com.example.smoke</string>')) {
   throw new Error('renderPlist from dist did not render');
+}
+
+// ★ The Linux subpath's renderer through the PUBLISHED file, for the same reason: it is the one
+//   pure function the systemd family exposes, and a dist that cannot load node:crypto fails here.
+if (renderUnit([{ lines: [['ExecStart', '/bin/true']], name: 'Service' }]) !== '[Service]\\nExecStart=/bin/true\\n') {
+  throw new Error('renderUnit from dist did not render');
 }
 
 // ★ MeshNode's error type through the PUBLISHED file: a distilled SDK missing from the install
@@ -203,7 +211,7 @@ if (!/^[0-9a-f]{16}$/.test(NETBOX_CONSTRAINTS_DIGEST)) {
   throw new Error('NetBox constraint digest from dist is not a digest');
 }
 
-console.log('all ten subpaths import and resolve');
+console.log('all eleven subpaths import and resolve');
 `,
   );
 
