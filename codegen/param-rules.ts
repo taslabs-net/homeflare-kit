@@ -33,15 +33,44 @@
  *   ⚠️ `required` IS NEVER TAKEN FROM `items`. Presence is about the parameter, not its elements.
  */
 import type { VendorParam } from './apidoc.ts';
-import { translatePattern } from './pattern.ts';
+import { type TranslatedPattern, translatePattern } from './pattern.ts';
+import { translateDjangoPattern } from './py-pattern.ts';
 
-export type Product = 'pve' | 'pbs';
+export type Product = 'pve' | 'pbs' | 'netbox';
 
 export interface PatternRule {
   readonly pattern?: string;
   readonly patternFlags?: string;
   readonly patternSource?: string;
 }
+
+/**
+ * Everything about a pattern that is TRUE OF ONE VENDOR, in one table.
+ *
+ * ★ A TABLE RATHER THAN A STRING EVERY FUNCTION SWITCHES ON. There are exactly two vendor facts —
+ *   which dialect the regex is written in, and whether the vendor anchors it — and keeping them
+ *   together is what stops a third product being added with one of the two forgotten. The
+ *   forgotten one would not fail: it would silently enforce the wrong rule.
+ *
+ * ⛔ NETBOX GETS A DIFFERENT TRANSLATOR, NOT A SHARED ONE. `pattern.ts` is a whitelist for
+ *   Rust/Perl spellings; NetBox ships Python regexes whose `\w` is Unicode where JavaScript's is
+ *   ASCII. One whitelist covering both would have to accept every construct either vendor uses,
+ *   which is precisely how a rule gets carried over wrongly for the other (codegen/py-pattern.ts).
+ * ⛔ AND NETBOX DOES NOT ANCHOR. Django's `RegexValidator` uses `re.search` and NetBox's own
+ *   patterns already carry `^…$` — all 7, measured over the whole 4.7.0 document — so anchoring
+ *   them again would be inventing a rule, exactly as it would be for PBS.
+ */
+interface Dialect {
+  readonly translate: (source: string) => TranslatedPattern;
+  /** ⚠️ PVE only: it matches `m/^$pattern$/`, so the published pattern is the INSIDE of that. */
+  readonly anchor: boolean;
+}
+
+const DIALECT: Readonly<Record<Product, Dialect>> = {
+  netbox: { anchor: false, translate: translateDjangoPattern },
+  pbs: { anchor: false, translate: translatePattern },
+  pve: { anchor: true, translate: translatePattern },
+};
 
 /**
  * The vendor's spelling, always; a JavaScript-safe equivalent when one exists.
@@ -53,9 +82,10 @@ export interface PatternRule {
  */
 export const patternRule = (source: string | undefined, product: Product): PatternRule => {
   if (source === undefined) return {};
-  const translated = translatePattern(source);
+  const dialect = DIALECT[product];
+  const translated = dialect.translate(source);
   if (translated.js === undefined) return { patternSource: source };
-  const js = product === 'pve' ? `^${translated.js}\\n?$` : translated.js;
+  const js = dialect.anchor ? `^${translated.js}\\n?$` : translated.js;
   return {
     pattern: js,
     patternSource: source,

@@ -56,6 +56,10 @@
       "types": "./dist/launchd/index.d.ts",
       "default": "./dist/launchd/index.js"
     },
+    "./netbox": {
+      "types": "./dist/netbox/index.d.ts",
+      "default": "./dist/netbox/index.js"
+    },
     "./caddy": {
       "types": "./dist/caddy/index.d.ts",
       "default": "./dist/caddy/index.js"
@@ -71,7 +75,7 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/cloudflare/index.ts ./src/forgejo/index.ts ./src/github/index.ts ./src/openbao/index.ts ./src/talos/index.ts ./src/proxmox/index.ts ./src/launchd/index.ts ./src/caddy/index.ts ./src/verify/index.ts ./src/verify/cli.ts --root ./src --outdir dist --target node --format esm --packages external --sourcemap=linked",
+    "build:js": "bun build ./src/index.ts ./src/cloudflare/index.ts ./src/forgejo/index.ts ./src/github/index.ts ./src/openbao/index.ts ./src/talos/index.ts ./src/proxmox/index.ts ./src/netbox/index.ts ./src/launchd/index.ts ./src/caddy/index.ts ./src/verify/index.ts ./src/verify/cli.ts --root ./src --outdir dist --target node --format esm --packages external --sourcemap=linked",
     "build:types": "tsc --project tsconfig.build.json",
     "clean": "rm -rf dist",
     "types": "tsc --noEmit",

@@ -35,6 +35,16 @@ Both read `codegen/manifest.json`, resolve each schema out of the cache director
 names, and **stop** when a file's sha256 or byte count does not match. A near-miss is a
 different API, not a rounding error.
 
+★ **NetBox has its own generator and its own page**, because the dialect differs in ways
+that matter: OpenAPI 3 rather than `apidoc.js`, Python regexes whose `\w` is Unicode, and
+a document that could not be read from the instance. Same rules, different traps —
+[`codegen/netbox.md`](./netbox.md).
+
+```sh
+bun codegen/netbox.ts                # tables + docs/netbox-coverage.md
+bun codegen/netbox.ts --check        # staleness gate
+```
+
 ## The cache, and why the blobs are not in git
 
 `~/.cache/homeflare/schemas/` — override with `HOMEFLARE_SCHEMA_CACHE`.
