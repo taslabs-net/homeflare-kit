@@ -106,7 +106,19 @@ then tidiness.
 ## The Bun line
 
 These are non-test files under `src/` that the standard (S42) says must be portable. "Exp"
-marks files exported from a subpath `index.ts`.
+marks files exported from a subpath `index.ts`. `git grep` on `origin/main` finds 23 non-test
+files under `src/` that call `Bun.*` or import `node:*`/`bun:*`. Six of them are outside
+S42's scope:
+
+- four loopback fakes (`caddy/fake-caddy.ts`, `openbao/fake-bao.ts`, `proxmox/fake-pve.ts`,
+  `proxmox/fake-pve-lxc.ts`), which are test-side under S44;
+- `proxmox/provision-cli-fake.ts`, which is used only by tests;
+- `verify/args.ts`, which belongs to the CLI and so is tooling under S43.
+
+That leaves 17 files. The table lists them, plus `provision-cli-fake.ts`, which should move
+out of `src/`. The six out-of-scope files still ship in the tarball's `src/`, but no export
+reaches them.
+⚠️ The first version of this table said 16 files and left out `launchd/job-form.ts`.
 
 | file                                                       | API                                          | exp | portable replacement                        |
 | ---------------------------------------------------------- | -------------------------------------------- | --- | ------------------------------------------- |
@@ -122,6 +134,7 @@ marks files exported from a subpath `index.ts`.
 | `talos/values.ts`                                          | `Bun.YAML`, `node:crypto`                    | —   | tooling-side parse; `alchemy/Util/sha256`   |
 | `launchd/local-runner.ts`                                  | `node:child_process`, `node:fs/promises`     | yes | H3 above                                    |
 | `launchd/sudo-stage.ts`                                    | `node:fs/promises`, `node:os`, `node:path`   | —   | `FileSystem`, `Path`                        |
+| `launchd/job-form.ts`                                      | `node:crypto` (`createHash`)                 | —   | `sha256` from `alchemy/Util/sha256`         |
 | `linux/ssh-runner.ts`                                      | `node:child_process`, `node:crypto`          | yes | H3 above                                    |
 | `caddy/local-admin.ts`                                     | `node:http` (unix socket)                    | yes | H3 above                                    |
 | `proxmox/write-only.ts`, `pbs-notification-target-wire.ts` | `node:crypto`, `node:buffer`                 | —   | `Effect.sync` + Web APIs                    |
