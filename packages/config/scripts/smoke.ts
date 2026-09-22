@@ -90,6 +90,8 @@ export const opts: Opts = { a: undefined };
 import { shouldRelease, tagEvent } from '@homeflare/config/release';
 import { problemsInHooks } from '@homeflare/config/hooks';
 import { problemsInReleaseConfig } from '@homeflare/config/require-release-config';
+import { ESTATE_VERSIONS } from '@homeflare/config/versions';
+import { BUN_VERSION } from '@homeflare/config/repo-shape';
 
 const problems = await checkProject(process.cwd());
 if (!Array.isArray(problems)) throw new Error('checkProject did not return a list');
@@ -120,6 +122,10 @@ if ((await install.exited) !== 0) throw new Error('the published hook runner can
 if ((await problemsInHooks(process.cwd())).length === 0) {
   throw new Error('problemsInHooks passed a project with no prepare script');
 }
+
+// ⛔ The estate's version set is only useful if a consumer can read it from the tarball.
+if (ESTATE_VERSIONS.bun !== BUN_VERSION) throw new Error('ESTATE_VERSIONS.bun drifted from BUN_VERSION');
+if (!/^\\d+\\.\\d+\\.\\d+/.test(ESTATE_VERSIONS.alchemy)) throw new Error('ESTATE_VERSIONS.alchemy is not a version');
 
 // Every non-code export must resolve as a real file.
 for (const name of ['oxlintrc.json', 'oxlintrc.app.json', 'oxfmtrc.json', 'tsconfig.base.json', 'tsconfig.lib.json', 'tsconfig.app.json', 'bunfig.toml']) {

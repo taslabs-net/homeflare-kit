@@ -53,6 +53,10 @@
       "types": "./dist/require-release-config.d.ts",
       "default": "./dist/require-release-config.js"
     },
+    "./versions": {
+      "types": "./dist/versions.d.ts",
+      "default": "./dist/versions.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -60,7 +64,7 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/check.ts ./src/hooks.ts ./src/release.ts ./src/require-release-config.ts ./src/repo-shape.ts --outdir dist --target bun --format esm --packages external --sourcemap=linked",
+    "build:js": "bun build ./src/check.ts ./src/hooks.ts ./src/release.ts ./src/require-release-config.ts ./src/repo-shape.ts ./src/versions.ts --outdir dist --target bun --format esm --packages external --sourcemap=linked",
     "build:types": "tsc --project tsconfig.build.json",
     "clean": "rm -rf dist",
     "types": "tsc --noEmit",
