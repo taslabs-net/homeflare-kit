@@ -46,6 +46,23 @@ a gap instead of hand-rolling one locally.
 
 Working **in this repo** instead? [AGENTS.md](./AGENTS.md) is the entry point.
 
+## What `@homeflare/alchemy` covers of the Proxmox API
+
+[`docs/api-coverage.md`](./docs/api-coverage.md) maps **every PVE and PBS endpoint that can change
+state** to the Resource that owns it, or to nothing. It is generated from the vendor schemas named
+in [`schemas/manifest.json`](./schemas/manifest.json) — product version and sha256 included — so it
+is a fact about a stated cluster version rather than a hand-counted list that drifts.
+[`docs/api-coverage.json`](./docs/api-coverage.json) is the complete machine-readable record.
+
+```sh
+bun run api:coverage          # regenerate from the cached vendor schemas
+bun run api:coverage --check  # writes nothing; exits 1 when the committed report is stale
+```
+
+⛔ **It is generated, so it is never hand-edited**, and `tests/api-coverage.test.ts` fails if a
+Resource claims an endpoint the schema no longer has. [`schemas/README.md`](./schemas/README.md)
+has the read-only fetch commands and why the raw documents stay out of git.
+
 ## Developing
 
 ```sh

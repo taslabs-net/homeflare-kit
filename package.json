@@ -16,6 +16,7 @@
   "type": "module",
   "scripts": {
     "build": "bun run --filter '*' build",
+    "api:coverage": "bun run scripts/api-coverage.ts",
     "clean": "bun run --filter '*' clean",
     "lint": "oxfmt --check . && oxlint .",
     "lint:fix": "oxfmt . && oxlint --fix .",
