@@ -4,5 +4,9 @@
   //   felt here immediately rather than at the next publish.
   "extends": "../config/tsconfig.lib.json",
   "compilerOptions": { "types": ["bun"] },
-  "include": ["src", "tests", "scripts"]
+  "include": ["src", "tests", "scripts"],
+  // ⛔ EXCLUDED BECAUSE IT IS SUPPOSED TO FAIL. tests/type-fixtures/reasonless.ts holds
+  //   calls that must NOT compile; `tests/repo-shape-reason.test.ts` runs tsc over it and
+  //   asserts the diagnostics. Including it here would make `bun run types` red on purpose.
+  "exclude": ["tests/type-fixtures"]
 }
