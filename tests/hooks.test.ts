@@ -24,7 +24,7 @@ describe('husky hooks', () => {
     // ⚠️ Without `|| exit 1`, a failing script prints its complaint and the commit
     //   proceeds anyway — the worst kind of gate, one that looks present.
     for (const name of ['pre-commit', 'pre-push']) {
-      const lines = (await hook(name)).split('\n').filter((l) => l.startsWith('bun run'));
+      const lines = (await hook(name)).split('\n').filter((l) => l.startsWith('bun '));
 
       expect(lines.length).toBeGreaterThan(0);
       for (const line of lines) expect(line).toContain('|| exit 1');
@@ -44,16 +44,21 @@ describe('husky hooks', () => {
     }
   });
 
-  test('format-staged covers every extension oxfmt checks, markdown included', async () => {
-    // ⚠️ THE GAP THIS CLOSES, measured 2026-09-15. The hook filtered to TS/JS/JSON while
-    //   `oxfmt --check .` also formats .md, so an unformatted changeset passed the commit
-    //   hook and failed the push. A hook that checks LESS than CI trains people to
-    //   distrust it, which is worse than having no hook.
-    const src = await Bun.file(
-      new URL('../scripts/hooks/format-staged.ts', import.meta.url),
-    ).text();
+  test('the staged format/lint step is the shared one, not a kit-local copy', async () => {
+    // ★ It moved into @homeflare/config so the other repos get the same rule by a
+    //   version bump instead of by copying this file. What stays here is the set of
+    //   concerns only the kit has: gitleaks, foreign lockfiles, actionlint, changesets.
+    // ⚠️ THE GAP THE SHARED STEP CLOSES, measured 2026-09-15: a hook that filtered to
+    //   TS/JS/JSON while `oxfmt --check .` also formats .md let an unformatted changeset
+    //   through the commit and failed the push. Its markdown coverage is tested in
+    //   packages/config/tests.
+    // ⚠️ The workspace path. Everywhere else in the estate the same runner is reached
+    //   as node_modules/@homeflare/config/bin/hooks.ts; here nothing depends on the
+    //   package, so Bun links no copy — see the comment in .husky/pre-commit.
+    expect(await hook('pre-commit')).toContain('bun packages/config/bin/hooks.ts pre-commit');
 
-    expect(src).toContain('md');
+    const runner = new URL('../packages/config/bin/hooks.ts', import.meta.url);
+    expect(await Bun.file(runner).exists()).toBe(true);
   });
 
   test('pre-push runs the same gate as CI', async () => {
