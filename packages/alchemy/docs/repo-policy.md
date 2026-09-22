@@ -56,13 +56,30 @@ merges the pull request on the spot — the flag does not wait for CI that was n
 required to start.
 
 So `repoPolicy` refuses `autoMerge` whenever the ruleset would not hold anything back.
-⛔ **Three different inputs produce "nothing outstanding", and all three are refused:**
+⛔ **Five different inputs produce "nothing outstanding", and all five are refused:**
 
-| input                                    | why it merges anyway                                          |
-| ---------------------------------------- | ------------------------------------------------------------- |
-| no `checks` and no `requiredApprovals`   | nothing is pending, so `--auto` merges now                    |
-| `enforcement: 'disabled'` / `'evaluate'` | the rules are listed and none of them block — the quiet door  |
-| `include: []`                            | the ruleset matches no ref; GitHub still shows it as `active` |
+| input                                     | why it merges anyway                                          |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| no `checks` and no `requiredApprovals`    | nothing is pending, so `--auto` merges now                    |
+| `enforcement: 'disabled'` / `'evaluate'`  | the rules are listed and none of them block — the quiet door  |
+| `include: []`                             | the ruleset matches no ref; GitHub still shows it as `active` |
+| a blank ref pattern, e.g. `include: ['']` | length is not coverage — matches no ref, past the guard       |
+| `exclude` cancelling every `include`      | exclusions win; reads as a narrowing, acts as an off switch   |
+
+★ The last two were found by adversarial review after the first cut shipped. The guard
+counted the array and spread `exclude` raw, so `include: ['   ']` and
+`include: ['~DEFAULT_BRANCH'], exclude: ['~DEFAULT_BRANCH']` both produced an active
+ruleset over nothing with `allowAutoMerge: true` — the same end state the empty-array
+guard exists to prevent, through the door beside it.
+
+⚠️ **Exact cancellation only.** Deciding in general whether a glob `exclude` swallows an
+`include` means reimplementing GitHub's matcher and being quietly wrong about it. The
+helper refuses the decidable case — every `include` pattern appearing verbatim in
+`exclude` — and leaves `exclude: ['refs/heads/*']` to the operator.
+
+⚠️ **`bypassActors` is not checked against `autoMerge`, and is `[]` by default.** An actor
+you add can bypass the required checks; whether GitHub's auto-merge then lands the pull
+request on red was not measured here. Add bypass actors deliberately.
 
 ⚠️ The test is "nothing outstanding", not "no checks" — a required review holds the pull
 request open just as a required check does, so `requiredApprovals` with an empty `checks`
@@ -88,49 +105,16 @@ not name a job behind a `paths:` filter, a matrix leg, or anything a skipped wor
 silence. Contexts are trimmed, de-duplicated and **sorted**, so writing the same two the
 other way round is not a diff.
 
-## ⛔ The ruleset cannot be adopted — it duplicates
+## ⛔ The ruleset half has hazards of its own
 
-Read out of `alchemy@2.0.0-beta.79`'s own source on 2026-09-22
-(`node_modules/alchemy/lib/github/Ruleset.js`):
+The vendor `Ruleset` **cannot be adopted** — a first deploy onto a repository that
+already has a ruleset of that name creates a **second** one beside it, both enforcing —
+it **never plans a no-op**, and it replaces its `rules` and `bypass_actors` **wholesale**.
+None of that applies to the repository half.
 
-- `read` returns `undefined` whenever there is no prior `output`. Alchemy's adoption
-  routes on what `read` reports, so with no state the engine plans a **create**.
-- `reconcile` looks the live ruleset up **only by the id in that output**. With none, it
-  calls `createRepoRuleset` unconditionally — it never searches by name.
-
-GitHub permits several rulesets with the same name on one repository, so nothing errors.
-The repository quietly ends up with **two `main` rulesets, both enforcing**, and the
-second one is the only one Alchemy will ever converge.
-
-**Before the first deploy onto a repository that already has a ruleset:**
-
-```sh
-gh api repos/<owner>/<repo>/rulesets --jq '.[] | select(.target=="branch") | "\(.id) \(.name)"'
-```
-
-Delete the hand-made ruleset of the same name, or give this one a `rulesetName` of its
-own. After the first deploy the state carries the id and every later deploy converges
-that one ruleset.
-
-★ **Or take the repository half only.** `repoPolicy` returns the two prop objects
-separately, so a stack whose ruleset is already owned by something else can declare the
-settings that adopt cleanly and leave the ruleset alone:
-
-```ts
-yield * GitHub.Repository('api', repoPolicy({ owner, repository, checks }).repository);
-```
-
-⚠️ **`GitHub.Repository` does not share the problem.** Its `reconcile` probes by name and
-converges onto whatever is live, so the repository half adopts cleanly on the first
-deploy even though the plan prints `create`. The two halves of this helper fail
-differently, which is exactly why it is worth writing down.
-
-⚠️ **A reconcile may write on every deploy.** Alchemy compares the live ruleset against
-the rule parameters **it** builds, and it builds a strict subset of what GitHub stores —
-`required_status_checks`, for instance, comes back carrying defaults Alchemy never sent.
-Any such field makes the comparison unequal forever, so the deploy issues an idempotent
-`updateRepoRuleset` each time. Not measured against live GitHub here; it is convergence
-noise, not drift, but do not read a write in the log as a change.
+⛔ Read [repo-policy-ruleset-hazards.md](./repo-policy-ruleset-hazards.md) before the
+first deploy. It carries the preflight `gh api repos/<owner>/<repo>/rulesets` command and
+the repository-half-only escape hatch.
 
 ## Required reviews are opt-in, and `0` is refused
 

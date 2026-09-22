@@ -163,6 +163,57 @@ describe('repoPolicy — the auto-merge trap', () => {
     //   nothing, so every rule on it is decorative.
     expect(() => repoPolicy({ ...base, include: [] })).toThrow(/matches no ref/);
   });
+
+  test('a blank ref pattern is refused — length is not coverage', () => {
+    // ⚠️ THE DOOR BESIDE THE GUARD. `['   ']` has length 1, so a guard that counts the
+    //   array passes it; GitHub then stores a condition that matches nothing. Identical
+    //   end state to `include: []`, reached past the check that exists to stop it.
+    expect(() => repoPolicy({ ...base, include: ['   '] })).toThrow(/blank/);
+    expect(() => repoPolicy({ ...base, exclude: [''] })).toThrow(/blank/);
+  });
+
+  test('an exclude that cancels every include is refused', () => {
+    // ⚠️ THE DOOR THAT READS AS A NARROWING. Exclusions win in a GitHub ruleset, so this
+    //   is a ruleset over nothing — but it looks like scoping, not like switching off.
+    expect(() => repoPolicy({ ...base, exclude: ['~DEFAULT_BRANCH'] })).toThrow(
+      /cancels every include/,
+    );
+    expect(() =>
+      repoPolicy({
+        ...base,
+        exclude: ['refs/heads/release/*', 'refs/heads/main'],
+        include: ['refs/heads/main', 'refs/heads/release/*'],
+      }),
+    ).toThrow(/cancels every include/);
+  });
+
+  test('an exclude that leaves an include standing is a narrowing, and allowed', () => {
+    // ★ EXACT CANCELLATION ONLY. Deciding glob overlap in general means reimplementing
+    //   GitHub's matcher; a narrow guard that is always right beats a broad one that
+    //   false-refuses a legitimate scope.
+    const { ruleset } = repoPolicy({
+      ...base,
+      exclude: ['refs/heads/release/*'],
+      include: ['~DEFAULT_BRANCH', 'refs/heads/release/*'],
+    });
+
+    // ★ Sorted, so `refs/…` precedes the `~` tokens — the ordering is normalization, not
+    //   a preference, and it is what keeps a second deploy from diffing against itself.
+    expect(ruleset.conditions).toEqual({
+      exclude: ['refs/heads/release/*'],
+      include: ['refs/heads/release/*', '~DEFAULT_BRANCH'],
+    });
+  });
+
+  test('ref patterns are trimmed, de-duplicated and sorted, so re-ordering is not a diff', () => {
+    const one = repoPolicy({ ...base, include: ['refs/heads/main', 'refs/heads/release/*'] });
+    const other = repoPolicy({
+      ...base,
+      include: [' refs/heads/release/* ', 'refs/heads/main', 'refs/heads/main'],
+    });
+
+    expect(other).toEqual(one);
+  });
 });
 
 describe('repoPolicy — one host for both halves', () => {

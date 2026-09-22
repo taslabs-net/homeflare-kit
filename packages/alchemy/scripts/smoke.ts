@@ -177,6 +177,15 @@ try {
   merged = true;
 }
 if (!merged) throw new Error('repoPolicy from dist allowed auto-merge with no required check');
+// ★ And the ref guard: an exclude that cancels every include is a ruleset over nothing,
+//   which is the same unchecked merge reached by a door that reads as a narrowing.
+let scoped = false;
+try {
+  repoPolicy({ owner: 'o', repository: 'r', checks: ['ci'], exclude: ['~DEFAULT_BRANCH'] });
+} catch {
+  scoped = true;
+}
+if (!scoped) throw new Error('repoPolicy from dist allowed an exclude that matches no ref');
 
 console.log('all nine subpaths import and resolve');
 `,
