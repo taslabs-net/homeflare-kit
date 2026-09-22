@@ -62,7 +62,10 @@ yield* LaunchdJob('vmalert', { programArguments: [vmalert.path, '--httpListenAdd
 2. **Check the directory exists** (and is not a symlink) — before any download.
 3. **Observe the path.** A symlink or directory there is refused. A file this
    resource does not own is refused without `--adopt`. A file already holding
-   the pinned bytes, mode and owner is done: no download, no write.
+   the pinned bytes, mode and owner is done: no download, no write. ⚠️ At plan
+   the probe calls even that file `Unowned`; at apply, when a prop was an Output
+   and the probe never ran, it is accepted as the resume of an interrupted
+   install — Host.File's rule (`file-converge.ts`).
 4. **Download** the archive by its exact URL, into memory, never past its pinned
    size. Two binaries from one archive at once share one download.
 5. **Verify the archive** against its pinned SHA-256 — before unpacking a byte.
