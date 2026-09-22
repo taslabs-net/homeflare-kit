@@ -9,6 +9,16 @@
  * ⛔ NOTHING IS ADOPTED SILENTLY: a running config that is not the declared one needs `--adopt`.
  * Guide, order of file and load, adoption, `--resume` and secrets: docs/caddy.md.
  */
+/**
+ * ★ `accessForwardAuth` is Caddyfile TEXT, not a resource: it renders the `forward_auth` block
+ *   that puts a Cloudflare Access check in front of a route, paired with the verifier in
+ *   `@homeflare/cloudflare/access-auth`. Guide: docs/access-auth.md.
+ */
+export {
+  accessForwardAuth,
+  verifierProblems,
+  type AccessForwardAuthProps,
+} from './access-forward-auth.ts';
 export type {
   CaddyAdmin,
   CaddyAdminListener,

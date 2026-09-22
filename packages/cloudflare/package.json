@@ -13,6 +13,7 @@
   },
   "files": [
     "dist",
+    "docs",
     "src",
     "README.md",
     "LICENSE"
@@ -24,6 +25,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./access-auth": {
+      "types": "./dist/access-auth/index.d.ts",
+      "default": "./dist/access-auth/index.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -31,7 +36,7 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts --outdir dist --target node --format esm --packages external --sourcemap=linked",
+    "build:js": "bun build ./src/index.ts ./src/access-auth/index.ts --root ./src --outdir dist --target node --format esm --packages external --sourcemap=linked",
     "build:types": "tsc --project tsconfig.build.json",
     "clean": "rm -rf dist",
     "test": "bun test",
