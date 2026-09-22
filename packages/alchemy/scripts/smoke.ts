@@ -99,6 +99,7 @@ import { PROVISION_PRIVILEGES, PbsNotificationMatcher, PbsNotificationTarget, Pb
 import { NETBOX_CONSTRAINTS_DIGEST, NetboxPrefix, bodyViolations, constraintsFor } from '@homeflare/alchemy/netbox';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
 import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, renderUnit, sshRunner } from '@homeflare/alchemy/linux';
+import { VictoriaBinary, identifyVictoriaBinary, resolveVictoriaRelease, victoriaProviders } from '@homeflare/alchemy/victoria';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 
@@ -108,7 +109,7 @@ for (const [name, value] of Object.entries({
   PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxNotificationMatcher,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
   NetboxPrefix, bodyViolations, constraintsFor, NETBOX_CONSTRAINTS_DIGEST,
-  HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner,
+  HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, VictoriaBinary, victoriaProviders,
   parseVerifyArgs, verifySession, verifyStack,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
@@ -124,6 +125,13 @@ if (!renderPlist({ Label: 'com.example.smoke' }).includes('<string>com.example.s
 //   pure function the systemd family exposes, and a dist that cannot load node:crypto fails here.
 if (renderUnit([{ lines: [['ExecStart', '/bin/true']], name: 'Service' }]) !== '[Service]\\nExecStart=/bin/true\\n') {
   throw new Error('renderUnit from dist did not render');
+}
+
+// ★ The Victoria catalog through the PUBLISHED file — pure, no network: an export map that resolved
+//   /victoria to a file without the pins would import fine and then install nothing verifiable.
+const vmalert = resolveVictoriaRelease({ binary: 'vmalert', package: 'vmutils', platform: 'darwin-arm64', version: '1.151.0' });
+if (!vmalert.url.endsWith('/vmutils-darwin-arm64-v1.151.0.tar.gz') || identifyVictoriaBinary(vmalert.memberSha256)?.binary !== 'vmalert') {
+  throw new Error('the Victoria catalog from dist lost its vmalert pin');
 }
 
 // ★ MeshNode's error type through the PUBLISHED file: a distilled SDK missing from the install
@@ -211,7 +219,7 @@ if (!/^[0-9a-f]{16}$/.test(NETBOX_CONSTRAINTS_DIGEST)) {
   throw new Error('NetBox constraint digest from dist is not a digest');
 }
 
-console.log('all eleven subpaths import and resolve');
+console.log('all twelve subpaths import and resolve');
 `,
   );
 

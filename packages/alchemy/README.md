@@ -164,6 +164,33 @@ SystemdUnit('thing', { name: 'thing.service', sections: [...], restartOn: [confi
 - ⛔ **The directive set is systemd's:** unit files render verbatim; nothing here invents a schema.
 - Guide, the measured `systemctl` shapes and the limits: [docs/linux-host.md](./docs/linux-host.md).
 
+## Victoria binaries — `@homeflare/alchemy/victoria`
+
+`VictoriaBinary` installs one VictoriaMetrics-family binary (`victoria-metrics`, `victoria-logs`,
+`victoria-traces`, or a `vmutils` tool) from the vendor's release archive into a directory you
+declare, verified against digests pinned in the kit. `victoriaProviders(runner)` provides it.
+
+```ts
+VictoriaBinary('vmalert', {
+  directory: dir.path,
+  package: 'vmutils',
+  version: '1.151.0',
+  platform: 'darwin-arm64',
+  binary: 'vmalert',
+});
+```
+
+- ⛔ **It installs; it never starts.** Put `binary.path` in your job's argv; that orders the two.
+- ⛔ **Pinned, not fetched:** archive and binary SHA-256s live in the catalog, copied from the vendor
+  checksum files. A version the catalog does not pin is refused before any download.
+- ⛔ **Exact names, both layers, one writer:** the `-enterprise`/`-cluster` siblings are never
+  selected; the archive is verified before unpacking and the binary before writing; only the
+  declared member is extracted; any link, `..` or absolute entry refuses the whole archive; the
+  bytes reach the host only through `HostRunner.writeFileAtomic`.
+- Guide, refusals and adding a version: [docs/victoria.md](./docs/victoria.md) · measured facts and
+  limits: [docs/victoria-measured.md](./docs/victoria-measured.md) · the upstream gap list:
+  [docs/victoria-upstream.md](./docs/victoria-upstream.md).
+
 ## Caddy — `@homeflare/alchemy/caddy`
 
 `CaddyConfig` declares a running Caddy's config as Caddyfile text, applied through Caddy's own admin
