@@ -1,5 +1,67 @@
 # @homeflare/alchemy
 
+## 0.16.1
+
+### Patch Changes
+
+- [#113](https://github.com/taslabs-net/homeflare-kit/pull/113) [`4fe8cef`](https://github.com/taslabs-net/homeflare-kit/commit/4fe8cef3154ad0f373b291f413dcbd570602e6fa) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Proxmox.HaRule`'s constraint table was empty and nothing said so.
+
+  MEASURED 2026-09-22: PVE spells `POST /cluster/ha/rules` as `parameters: {allOf: [{properties:
+{rule}}, {oneOf: [node-affinity, resource-affinity]}]}` — a discriminated union. The apidoc reader
+  asked for `parameters.properties`, got `undefined`, and emitted `{}`. A wired family's plan-time
+  guard therefore checked **nothing**, and an empty table is indistinguishable from an endpoint whose
+  parameters happen to carry no rules. `comment` there has a `maxLength` of 4096 and `affinity` an
+  enum of two.
+
+  `codegen/parameters.ts` reads both combinators, and their logic is their meaning. `allOf` branches
+  all apply, so their properties MERGE — a key claimed by two branches would have to satisfy both,
+  which this does not compute, so it stops rather than picking one. `oneOf` branches are
+  ALTERNATIVES, so they INTERSECT: only what every branch states identically survives, because
+  enforcing a rule from one branch would refuse a legal declaration of the other kind. `nodes` and
+  `strict` exist only on node-affinity and are therefore not enforced. ⚠️ `optional` is intersected
+  toward optional rather than field-by-field: its ABSENCE means required, so dropping a disagreeing
+  `optional` would have read as required and refused every legal node-affinity rule, whose `affinity`
+  is optional where resource-affinity's is not.
+
+  ⛔ And a parameter schema this file cannot read is now recorded as `unresolved` and **stops the
+  generator** for any endpoint this package writes to, rather than producing the empty table that hid
+  the problem. `tests/schema-manifest.test.ts` covers the reader directly.
+
+  ⛔ `docs/api-coverage.*` had the identical blind spot from its own parser: it reported
+  `/cluster/ha/rules` as having **zero** parameters and zero gaps. `scripts/api-schema.ts` now reads
+  the combinators through the same resolver — 5 parameters, 2 unenforced, both `format` names.
+  ⚠️ Two parsers for one file format is the deeper defect; merging them is its own change.
+
+- [#116](https://github.com/taslabs-net/homeflare-kit/pull/116) [`54479fc`](https://github.com/taslabs-net/homeflare-kit/commit/54479fc7792076fb0e718b55588cc815823818c2) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Netbox.Prefix` no longer erases prose it did not declare.
+
+  🔴 **The bug, found by review rather than by an incident.** The resource sent `description: ''`
+  whenever the prop was absent. On a create that is invisible — the field was empty anyway. ⛔ On an
+  **adopt** it is data loss: NetBox is the estate's record of DECISIONS, so a prefix's description is
+  usually the only written trace of why that range exists. The first deploy that adopted one would
+  have PATCHed it to empty, `matches` would have reported drift, the plan would have said `update`,
+  and the diff would have read as converging a declaration rather than deleting a sentence.
+
+  ★ **The tell was an inconsistency inside the same file, not a failure.** Optional foreign keys were
+  already omitted when undeclared, with a comment explaining that sending `null` would clear a tenant
+  somebody set in the UI. Free text had the identical hazard and the opposite treatment. Two fields,
+  one hazard, two answers — that gap is the defect.
+
+  ★ **The line is now drawn at what the vendor itself defaults.** `status`, `is_pool` and
+  `mark_utilized` have defaults in NetBox's schema, so omitting one genuinely means "the default" and
+  settling it says what NetBox would have done anyway. `description`, `comments` and the optional
+  foreign keys have no such default — the schema's `''` is the absence of a value, not a decision —
+  so they are omitted from the body and left uncompared until declared.
+
+  ⛔ **Whatever `matches` compares, `body` must send**, or the plan says `update` forever: the PATCH
+  omits the field, so the next read is unchanged. The two moved together here and
+  `prefix-form.test.ts` asserts the invariant.
+
+  ⚠️ **The cost, stated:** prose can no longer be cleared by omission. Clearing it is
+  `description: ''`, written on purpose — the readable way to say a destructive thing.
+
+  `body` and `matches` are extracted to `prefix-form.ts` so both are pure functions a test can call
+  with a literal, the way the Proxmox families keep their `*-form.ts` beside the resource.
+
 ## 0.16.0
 
 ### Minor Changes
