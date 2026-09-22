@@ -94,15 +94,27 @@ a declaration, so Apply leaves its object in place with a note instead of deleti
 
 ## After a wiped store or `state delete`, it needs `--adopt`
 
-★ This departs from Alchemy on purpose (decided 2026-09-21). Alchemy expects a provider with no
-ownership marker to answer plain attributes, so its objects re-import silently (`AdoptPolicy.ts`,
-[adopting resources](https://alchemy.run/cli/adopting-resources)). Its documented repair for a
-bad record is `alchemy state delete`, then `alchemy deploy`, escalating to `--adopt` only on
-`OwnedBySomeoneElse` ([inspecting state](https://alchemy.run/cli/inspecting-state#recover-from-bad-state)).
-For the families above that escalation always comes: an object whose row is gone is `Unowned`,
-so the deploy needs `--adopt`, or `adopt(true)` on its declaration. A `CaddyConfig` running the
-declared config and the `pveHandlers` resources (Limits) re-import without it. Read the takeover
-first with `hf-adopt-verify` ([adopt-verify.md](./adopt-verify.md)).
+Alchemy's documented repair for a bad record is `alchemy state delete`, then `alchemy deploy`,
+escalating to `--adopt` only on `OwnedBySomeoneElse`
+([inspecting state](https://alchemy.run/cli/inspecting-state#recover-from-bad-state)). For the
+families above that escalation always comes (decided 2026-09-21): an object whose row is gone is
+`Unowned`, so the deploy needs `--adopt`, or `adopt(true)` on its declaration. `MeshNode`
+([mesh-node.md](./mesh-node.md)) and `R2BucketLock` (`src/cloudflare/r2-bucket-lock.ts`) need it
+too. A `CaddyConfig` running the declared config re-imports without it, and so does every family
+whose `read` never answers `Unowned`: the `pveHandlers` resources (Limits), the `forgejoHandlers`
+resources and the Talos resources. Read the takeover first with `hf-adopt-verify`
+([adopt-verify.md](./adopt-verify.md)).
+
+★ This departs from Alchemy's docs, not from its code. The docs say a provider with no ownership
+marker answers plain attributes, so its objects re-import silently (`AdoptPolicy.ts`,
+[adopting resources](https://alchemy.run/cli/adopting-resources),
+[provider](https://alchemy.run/infrastructure-as-code/provider#read)). Many of Alchemy's own
+marker-less providers answer `Unowned` to a read with no state instead, as the kit's families do
+(beta.79: `Cloudflare/Snippets/Snippet.ts`, `Cloudflare/Tunnel/WarpConnector.ts`,
+`Cloudflare/Zone/Hold.ts`). After a wiped store those need `--adopt` too.
+
+⚠️ **That page's `alchemy state delete myapp/pr-42` fails.** A stage or a whole stack is a
+directory, and deleting one needs `-r` (beta.79 `State/Tree.ts`). A single row does not.
 
 ## Limits
 
