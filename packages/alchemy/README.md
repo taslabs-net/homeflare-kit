@@ -104,7 +104,7 @@ Cloudflare and Proxmox roles, plugins — plus `assertBaoIdentity` (call it firs
 ⛔ **Metadata only.** Alchemy stores props and attributes unencrypted, so no secret, CA key,
 plugin `env` or OIDC client secret is declarable. Every family defaults to `retain` on destroy.
 
-⛔ **Nothing is adopted without `--adopt`** (0.9.0), for every family and even when the live object
+⛔ **Nothing is adopted without `--adopt`** (0.9.0, first published as 0.10.0), for every family and even when the live object
 is identical to the declaration; an interrupted create of this stack's own resumes when its row
 can prove it (one killed while a prop was an `Output` needs `--adopt`). The same rule holds for
 `HostFile`, `LaunchdJob`, `CaddyConfig` and `ProxmoxLxc`: [docs/ownership.md](./docs/ownership.md).

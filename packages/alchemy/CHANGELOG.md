@@ -118,6 +118,8 @@
 
 ## 0.9.0
 
+> ⚠️ Never published: no npm version and no git tag. These changes first shipped in 0.10.0.
+
 ### Minor Changes
 
 - [#78](https://github.com/taslabs-net/homeflare-kit/pull/78) [`8de1015`](https://github.com/taslabs-net/homeflare-kit/commit/8de1015993f147ffb2f88116204cba6efb449268) Thanks [@taslabs-net](https://github.com/taslabs-net)! - ⚠️ **BEHAVIOUR CHANGE — `@homeflare/alchemy/openbao` no longer adopts anything silently.** Until

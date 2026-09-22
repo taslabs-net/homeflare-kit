@@ -21,9 +21,10 @@
  *   messages point away from the cause.
  *   ★ SO WIDEN OR RE-POINT BEFORE THE FIRST PLAN, outside this file: give the credential mount's
  *     `read` role `Datastore.Allocate` on `/storage`, or read this family with `provision`. The
- *     provision role in the estate this was written for holds `Datastore.AllocateSpace` and
+ *     provision role in the estate this was written for held only `Datastore.AllocateSpace` and
  *     `Datastore.Audit`, and NEITHER IS IT — AllocateSpace writes volumes INTO a storage, Allocate
- *     DEFINES one — so it 403s here until widened the way `Pool.Allocate` was for `Proxmox.Pool`.
+ *     DEFINES one — so it 403'd here until widened the way `Pool.Allocate` was for `Proxmox.Pool`.
+ *     The provisioning baseline (`provision-baseline.ts`) carries `Datastore.Allocate`.
  *
  * ⛔ THERE IS NO `password` PROP AND THERE MUST NEVER BE ONE. PBS and CIFS storages take one at
  *   create time, and Alchemy persists attributes UNENCRYPTED — a secret in props is one careless

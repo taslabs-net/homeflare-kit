@@ -17,7 +17,7 @@ plus `FetchHttpClient.layer`.
 - ⛔ A rename or move onto a name or path that already exists fails the plan, before anything is
   written (every family but the mounts, whose moves are below). Move through a free name, in two
   deploys, or remove the target first.
-- ⛔ **Nothing is adopted without `--adopt`** (0.9.0), not even an object identical to the
+- ⛔ **Nothing is adopted without `--adopt`** (0.9.0, first published as 0.10.0), not even an object identical to the
   declaration: a live name with no state fails the plan, or the apply when a prop was an Output.
   Our own interrupted create still resumes when its row can prove it — not one killed while a
   prop was still an Output. [docs/ownership.md](../../docs/ownership.md). Change
