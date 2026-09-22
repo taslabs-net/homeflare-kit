@@ -1,6 +1,0 @@
-# One full verify per push — the same gate CI runs, so a red PR is a surprise rather
-# than the norm.
-#
-# ⚠️ ~30s, including the consumer smoke test that packs and installs the real tarball.
-#   `git push --no-verify` skips it deliberately.
-bun run scripts/hooks/verify.ts || exit 1

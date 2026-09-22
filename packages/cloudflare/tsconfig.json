@@ -1,8 +1,0 @@
-{
-  // ⚠️ Extends the WORKSPACE copy, not the published one: inside this repo
-  //   @homeflare/config resolves through the workspace, so a change to the preset is
-  //   felt here immediately rather than at the next publish.
-  "extends": "../config/tsconfig.lib.json",
-  "compilerOptions": { "types": ["@cloudflare/workers-types", "bun"] },
-  "include": ["src", "tests", "scripts"]
-}
