@@ -159,8 +159,8 @@ with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:20
 
 ## Proxmox — `@homeflare/alchemy/proxmox`
 
-PVE and PBS objects over the PVE API, and `ProxmoxLxc` for containers. What the subpath never does
-to a guest, and why: [docs/proxmox.md](./docs/proxmox.md).
+PVE and PBS objects over the PVE API, `ProxmoxLxc` for containers, and the provisioning baseline
+every cluster needs first. What it never does to a guest, and why: [docs/proxmox.md](./docs/proxmox.md).
 
 ## Adopt verifier — `hf-adopt-verify` / `@homeflare/alchemy/verify`
 

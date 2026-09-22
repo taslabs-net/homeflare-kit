@@ -40,6 +40,13 @@ test('control-plane Resource constructors are on the public barrel', () => {
   }
 });
 
+test('the provisioning baseline is on the barrel: the list, the declaration, the bootstrap', async () => {
+  const barrel = await import('./index.ts');
+  expect(barrel.PROVISION_PRIVILEGES).toHaveLength(27);
+  expect(typeof barrel.declareProvisionBaseline).toBe('function');
+  expect(barrel.provisionBootstrap()).toStartWith('#!/bin/sh\n');
+});
+
 test('QEMU and NIC apply stay Provider-only', () => {
   expect(src).not.toMatch(/export \{ ProxmoxVm[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxNodeNetwork[, }]/);

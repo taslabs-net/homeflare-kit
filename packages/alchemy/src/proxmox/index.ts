@@ -12,6 +12,9 @@
  *   The provider-only version diffed four fields and would have planned a create over any read
  *   failure. The Resource now adopts from the live config, refuses every change PVE cannot make
  *   in place, and retains on destroy (lxc.ts).
+ * ★ THE PROVISIONING BASELINE JOINED 2026-09-21: one privilege list (`PROVISION_PRIVILEGES`), the
+ *   helper that declares it (`declareProvisionBaseline`) and the pure generator of the one-time
+ *   root commands that bootstrap it (`provisionBootstrap`) — docs/provision-baseline.md.
  * ★ Anything else unlisted is still reachable by path if you genuinely need
  *   it — that is a deliberate, visible act rather than an accident of barrelling.
  */
@@ -40,6 +43,17 @@ export { PbsPruneJob, PbsPruneJobProvider } from './pbs-prune-job.ts';
 export { PbsSyncJob, PbsSyncJobProvider } from './pbs-sync-job.ts';
 export { PbsVerifyJob, PbsVerifyJobProvider } from './pbs-verify-job.ts';
 export { ProxmoxPool, ProxmoxPoolProvider } from './pool.ts';
+export {
+  PROVISION_DEFAULTS,
+  PROVISION_PRIVILEGES,
+  type ProvisionBaseline,
+  type ProvisionLane,
+  type ProvisionNames,
+  type ResolvedProvisionNames,
+  provisionBaseline,
+} from './provision-baseline.ts';
+export { provisionBootstrap } from './provision-bootstrap.ts';
+export { type DeclareProvisionOptions, declareProvisionBaseline } from './provision-declare.ts';
 export { ProxmoxVmProvider } from './qemu.ts';
 export { ProxmoxReplicationJobProvider } from './replication-job.ts';
 export { ProxmoxRole, ProxmoxRoleProvider } from './role.ts';

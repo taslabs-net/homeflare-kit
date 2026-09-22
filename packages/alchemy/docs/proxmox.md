@@ -12,3 +12,6 @@ or creates one from a template.
   plan, named without its value ([proxmox-lxc-adopt.md](./proxmox-lxc-adopt.md)).
 - ⛔ **root@pam-only keys** (`devN`, bind mounts, features beyond `nesting`) are refused at plan,
   with the `pct set` to run instead. Guide: [proxmox-lxc.md](./proxmox-lxc.md).
+- ★ **One provisioning baseline for every cluster and node**: the privilege list, a helper that
+  declares it, and the one-time root commands that bootstrap it
+  ([provision-baseline.md](./provision-baseline.md)).
