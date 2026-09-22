@@ -2,7 +2,7 @@
  * Generated PBS API types — DO NOT EDIT BY HAND.
  *
  * Run: bun codegen/generate.ts
- * Source: house/proxmox/apidoc/ — see README there for provenance.
+ * Source: the cluster's own `apidoc.js` (pve-docs), extracted outside this repo.
  */
 
 /** GET /config/datastore — `data` payload after client unwrap. */

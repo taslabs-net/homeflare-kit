@@ -14,17 +14,17 @@ import { judge } from './lxc-judge.ts';
 import { type LxcProps, storedConfig } from './lxc-props.ts';
 import { judgeVolume } from './lxc-volume.ts';
 
-const LIVE_MP = 'tank:subvol-100-disk-0,mp=/data,size=200G';
+const LIVE_MP = 'tank:subvol-900-disk-0,mp=/data,size=200G';
 const props = (over: Record<string, unknown>): LxcProps =>
-  ({ node: 'pve1', target: TARGET, vmid: 100, ...over }) as unknown as LxcProps;
+  ({ node: 'pve1', target: TARGET, vmid: 900, ...over }) as unknown as LxcProps;
 const live = (config: Record<string, unknown>) => ({ unprivileged: 1, ...config });
 
 describe('mount points', () => {
   test('another volume on the same storage is refused, never written', () => {
-    const verdict = judgeVolume('mp0', 'tank:subvol-100-disk-7,mp=/data,size=200G', LIVE_MP);
+    const verdict = judgeVolume('mp0', 'tank:subvol-900-disk-7,mp=/data,size=200G', LIVE_MP);
     expect(verdict.refuse).toMatch(/detach the live volume to unusedN/);
     expect(verdict.put).toBeUndefined();
-    const change = judge(props({ mp0: 'tank:subvol-100-disk-7,mp=/data' }), live({ mp0: LIVE_MP }));
+    const change = judge(props({ mp0: 'tank:subvol-900-disk-7,mp=/data' }), live({ mp0: LIVE_MP }));
     expect(change.put).toEqual({});
     expect(change.refuse[0]).toMatch(/unusedN/);
   });
@@ -32,7 +32,7 @@ describe('mount points', () => {
   test('a bind mount is root@pam only, new or changed', () => {
     const added = judge(props({ mp1: '/srv/share,mp=/share' }), live({}));
     expect(added.put).toEqual({});
-    expect(added.refuse[0]).toMatch(/pct set 100 --mp1/);
+    expect(added.refuse[0]).toMatch(/pct set 900 --mp1/);
     const bind = '/srv/share,mp=/share';
     expect(judgeVolume('mp1', `${bind},ro=1`, bind)).toEqual({ rootOnly: true });
     expect(judgeVolume('mp1', bind, bind)).toEqual({});
@@ -41,13 +41,13 @@ describe('mount points', () => {
   test('replicate defaults ON: an explicit replicate=0 is a value, replicate=1 is not', () => {
     expect(judgeVolume('mp0', `${LIVE_MP},replicate=1`, LIVE_MP)).toEqual({});
     const off = judgeVolume('mp0', LIVE_MP, `${LIVE_MP},replicate=0`);
-    expect(off.put).toBe('tank:subvol-100-disk-0,mp=/data,size=200G');
+    expect(off.put).toBe('tank:subvol-900-disk-0,mp=/data,size=200G');
   });
 
   test('options and growth together: the PUT carries the live size, the resize the new one', () => {
     const verdict = judgeVolume('mp0', 'tank:300,mp=/data,backup=1', LIVE_MP);
     expect(verdict).toEqual({
-      put: 'tank:subvol-100-disk-0,mp=/data,backup=1,size=200G',
+      put: 'tank:subvol-900-disk-0,mp=/data,backup=1,size=200G',
       resize: '300G',
     });
   });
@@ -57,7 +57,7 @@ describe('a create allocates new volumes only', () => {
   test('an existing volume id in a create is refused; the new-disk spelling is not', () => {
     const base = { ostemplate: 'local:vztmpl/t.tar.zst' };
     const existing = createRefusals(
-      props({ ...base, rootfs: 'local-zfs:subvol-100-disk-0,size=8G' }),
+      props({ ...base, rootfs: 'local-zfs:subvol-900-disk-0,size=8G' }),
     );
     expect(existing.join('\n')).toMatch(/rootfs: .* names an existing volume/);
     expect(
@@ -84,7 +84,7 @@ describe('keys the resource does not manage', () => {
       mp0: LIVE_MP,
       parent: 'snap1',
       unprivileged: 1,
-      unused0: 'tank:subvol-100-disk-9',
+      unused0: 'tank:subvol-900-disk-9',
     };
     expect(storedConfig(read)).toEqual({
       hostname: 'x',

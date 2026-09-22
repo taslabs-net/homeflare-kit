@@ -1,7 +1,7 @@
 /**
  * `Proxmox.HaRule` — where the CRM may place a guest, and which guests must not share a node.
  *
- * ★ THIS IS THE PVE 9 SUCCESSOR TO HA GROUPS, AND THE GROUPS ENDPOINT IS GONE. MEASURED on n2
+ * ★ THIS IS THE PVE 9 SUCCESSOR TO HA GROUPS, AND THE GROUPS ENDPOINT IS GONE. MEASURED on node-b
  *   (pve-manager/9.2.11, 2026-09-13): `pvesh get /cluster/ha/groups` answers `cannot index groups:
  *   ha groups have been migrated to rules`, and `/etc/pve/ha/` holds `rules.cfg` with no
  *   `groups.cfg` beside it. The published schema still documents groups and still offers a `group`
@@ -48,8 +48,8 @@
  * ⚠️ BOTH LANES ALREADY HAVE THE PRIVILEGES, WHICH IS NEW. MEASURED 2026-09-13:
  *   GET (collection and item) checks `Sys.Audit` on `/` and the built-in `PVEAuditor` holds it, so
  *   `readRole` stays the default `read` lease — unlike storage.ts and the SDN families. POST, PUT
- *   and DELETE all check `Sys.Console` on `/`, and `pvesh get /access/roles/LXCProvisioner` now
- *   returns `Sys.Console` among its 27 privileges. The warning in ha-resource.ts's header — that
+ *   and DELETE all check `Sys.Console` on `/`, and the provision role now returns `Sys.Console` among
+ *   its 27 privileges (`PROVISION_PRIVILEGES`, provision-baseline.ts). The warning in ha-resource.ts's header — that
  *   `Sys.Console` is missing — is stale; the role was widened, and the price it named still stands:
  *   `Sys.Console` is also what opens a root shell on every node.
  *

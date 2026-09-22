@@ -3,7 +3,7 @@
  *
  * ★ EVERY RULE HERE IS READ OFF pve-container 6.1.14 (the PVE 9 line, `src/PVE/LXC/Config.pm` at
  *   git.proxmox.com HEAD, 2026-09-21) or off a live guest's config read with
- *   `pvesh get /nodes/<node>/lxc/100/config`. A rule nobody measured is a forever-diff waiting to
+ *   `pvesh get /nodes/<node>/lxc/<vmid>/config`. A rule nobody measured is a forever-diff waiting to
  *   happen: the plan reports an update, the deploy writes the same value back, and the next plan
  *   reports it again.
  *

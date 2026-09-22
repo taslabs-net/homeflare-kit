@@ -58,7 +58,7 @@ export interface LxcProps extends WithTarget {
   /** MiB. */
   swap?: number;
   /**
-   * `local-zfs:subvol-100-disk-0,size=40G` as read, or `local-zfs:40` (40 GiB, new volume) to
+   * `local-zfs:subvol-900-disk-0,size=40G` as read, or `local-zfs:40` (40 GiB, new volume) to
    * create. See lxc-volume.ts for what may change: options in place, size up only.
    */
   rootfs?: string;
@@ -79,7 +79,7 @@ export interface LxcProps extends WithTarget {
   console?: PveFlag;
   tty?: number;
   cmode?: string;
-  /** `tank:subvol-100-disk-1,mp=/data,backup=1,size=100G`, or `tank:100,mp=/data` to create. */
+  /** `tank:subvol-900-disk-1,mp=/data,backup=1,size=100G`, or `tank:100,mp=/data` to create. */
   [mount: `mp${number}`]: string | undefined;
   /** `name=eth0,bridge=vmbr0,ip=dhcp`. ⚠️ An undeclared `hwaddr` keeps the live MAC. */
   [nic: `net${number}`]: string | undefined;

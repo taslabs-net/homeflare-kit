@@ -14,16 +14,16 @@ import {
 
 const POD: BaoKubernetesRoleProps = {
   aliasNameSource: 'serviceaccount_name',
-  boundServiceAccountNames: ['litellm'],
+  boundServiceAccountNames: ['llm-gateway'],
   boundServiceAccountNamespaces: ['ai'],
-  name: 'ai-litellm',
-  tokenPolicies: ['ai-litellm'],
+  name: 'ai-gateway',
+  tokenPolicies: ['ai-gateway'],
   tokenTtl: '1h',
 };
 
 const LIVE: Record<string, unknown> = {
   alias_name_source: 'serviceaccount_name',
-  bound_service_account_names: ['litellm'],
+  bound_service_account_names: ['llm-gateway'],
   bound_service_account_namespace_selector: '',
   bound_service_account_namespaces: ['ai'],
   token_bound_cidrs: [],
@@ -32,7 +32,7 @@ const LIVE: Record<string, unknown> = {
   token_no_default_policy: false,
   token_num_uses: 0,
   token_period: 0,
-  token_policies: ['ai-litellm'],
+  token_policies: ['ai-gateway'],
   token_ttl: 3600,
   token_type: 'default',
 };

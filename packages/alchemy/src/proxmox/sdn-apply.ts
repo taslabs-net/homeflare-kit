@@ -6,7 +6,7 @@
  *   is the apply, and it is CLUSTER-WIDE — it publishes every staged object at once, not the one
  *   that happened to reconcile.
  *
- * ★ MEASURED ON TB4 ON 2026-09-13, NOT INFERRED. A probe zone was created, inspected and removed:
+ * ★ MEASURED ON C1 ON 2026-09-13, NOT INFERRED. A probe zone was created, inspected and removed:
  *
  *     pvesh create /cluster/sdn/zones --zone zzprobe --type simple
  *     GET /cluster/sdn/zones/zzprobe              -> {"digest":"c438…","type":"simple","zone":"zzprobe"}
@@ -109,8 +109,8 @@ export const ProxmoxSdnApplyProvider = () =>
            *
            * 🔴 WHAT IT PREVENTS. `reconcile` runs on CREATE, the first time this resource appears
            *   in a stack, before `diff` has ever been consulted. `PUT /cluster/sdn` regenerates
-           *   `/etc/network/interfaces.d/sdn` on EVERY node at once — and on TB4 that file carries
-           *   the OSPF fabric holding Ceph's `cluster_network` on en05/en06. Without this branch,
+           *   `/etc/network/interfaces.d/sdn` on EVERY node at once — and on C1 that file carries
+           *   the OSPF fabric holding Ceph's `cluster_network` on tb0/tb1. Without this branch,
            *   adding one line to a stack file reloads networking on all three nodes simultaneously,
            *   which is precisely what the serialised NetworkApply chain exists to prevent.
            *

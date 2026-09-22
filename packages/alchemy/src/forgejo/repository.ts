@@ -1,7 +1,7 @@
 /**
  * `Forgejo.Repository` — an organization-owned git repository.
  *
- * ★ MEASURED 2026-09-13 against the live daemon (`GET /api/v1/repos/HomeFlare/homeflare-config`):
+ * ★ MEASURED 2026-09-13 against the live daemon (`GET /api/v1/repos/<org>/<repo>`):
  *   responses are flat JSON with `private`, `has_issues`, `default_branch`, etc. Create is
  *   `POST /orgs/{org}/repos`; read/update/delete use `/repos/{owner}/{repo}`.
  *
@@ -15,7 +15,7 @@ import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
 import { bool, text } from './values.ts';
 
 export interface RepositoryProps {
-  /** Organization login — the owner segment in `HomeFlare/homeflare-config`. */
+  /** Organization login — the owner segment in `<org>/<repo>`. */
   org: string;
   /** Repository name. Changing it is a replace, not an update. */
   name: string;

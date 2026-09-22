@@ -10,7 +10,7 @@
  *   `{"data":{"pong":true}}` against a Let's Encrypt certificate for CN=pbs.example.com;
  *   `/version` and `/config/datastore` answer 401 "authentication failed";
  *   `pbs.mgmt.example.com:8007` answers 401 and its certificate verifies too; and
- *   `/access/domains` lists the realms `pbs`, `pam` and an openid realm `Schenanigans`. So the
+ *   `/access/domains` lists the realms `pbs`, `pam` and an openid realm. So the
  *   prefix, the `{"data": …}` envelope and the strict-TLS story are PVE's exactly — and only the
  *   credential differs. There is no `pve` realm here; a PVE token cannot authenticate at all.
  *   The header differs too, which is why `pve()` exists rather than `pve()` being reused — see the
@@ -18,18 +18,18 @@
  *
  * ⛔ THERE IS NO OPENBAO MOUNT FOR PBS TODAY, SO NOTHING HERE CAN DEPLOY YET. `PbsTarget.mount` is
  *   a parameter for the reason `PveTarget.mount` is — the provider must be able to leave this
- *   estate — but the estate has nothing to put in it. MEASURED: under the `claude-code` approle,
- *   `bao token capabilities` answers `deny` for `proxmox-tb4/creds/{read,provision}`,
- *   `proxmox-ops/creds/read` and every `…pbs…` path tried, and `sys/mounts` is 403 — so I could
+ *   estate — but the estate has nothing to put in it. MEASURED: under the agent's approle,
+ *   `bao token capabilities` answers `deny` for `proxmox-c1/creds/{read,provision}`,
+ *   `proxmox-c2/creds/read` and every `…pbs…` path tried, and `sys/mounts` is 403 — so I could
  *   not enumerate the mounts to PROVE a PBS one is absent. That it is absent is the brief's
  *   statement, not my measurement.
  *   ★ WHAT THE MOUNT MUST VEND, so `mint()` is reused unchanged: `bao read -format=json
  *     <mount>/creds/<role>` answering `{"data":{"token_id":…,"secret":…}}`, where `token_id` is a
  *     PBS token id `user@realm!tokenname` — `hf-read@pbs!…` and `hf-provision@pbs!…`. Same short,
- *     non-renewable lease contract as `proxmox-tb4`.
+ *     non-renewable lease contract as `proxmox-c1`.
  *   ⚠️ PBS HAS NO DYNAMIC-SECRETS PLUGIN OF ITS OWN — OpenBao's Proxmox support is a PVE thing — so
  *     the mount is a small custom vendor against `POST /access/users/{id}/token/{name}`. Say which
- *     mount and role you needed rather than reaching for the read-only `monitoring@pbs` token on
+ *     mount and role you needed rather than reaching for the read-only `metrics@pbs` token on
  *     the kv shelf: widening that would delete the outer lock for every reader of the shelf.
  *
  * ⛔ A DATASTORE HOLDS THE BACKUPS, SO `retain` IS THE DEFAULT AND `delete` IS FULLY IMPLEMENTED —
@@ -47,7 +47,7 @@
  * ⛔ NO SECRET IS A PROP OR AN ATTRIBUTE, AND THIS FAMILY IS CLEAN BY CONSTRUCTION: a datastore
  *   section holds no password, token or key — encryption keys belong to the backup CLIENT. Every
  *   field below is a name, a path, a schedule, a count or a policy string, all of which are safe in
- *   a state store Alchemy writes UNENCRYPTED and this estate dumps to CT100 nightly.
+ *   a state store Alchemy writes UNENCRYPTED and this estate copies to a backup guest nightly.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
@@ -131,11 +131,11 @@ export interface PbsDatastoreProps {
    *   `datastore create --help` offers `--backend`, `datastore update --help` does NOT, and
    *   `backend` is absent from update's `--delete` enum. PBS will not move a datastore between
    *   local disk and object storage, ever.
-   * ★ IT IS A PROP AT ALL BECAUSE THE ESTATE HAS ONE. `r2-offsite` holds
-   *   `type=s3,client=cloudflare-r2,bucket=homeflare-pbs`. Leaving it undeclared would still plan
+   * ★ IT IS A PROP AT ALL BECAUSE THE ESTATE HAS ONE. `offsite` holds
+   *   `type=s3,client=cloudflare-r2,bucket=example-pbs`. Leaving it undeclared would still plan
    *   noop — undeclared is unmanaged here — but the declaration would then describe a LOCAL
    *   datastore, and anyone recreating from it would get exactly that: an empty directory on the
-   *   mini's disk where the offsite copy used to be, behind a green plan the whole way.
+   *   host's disk where the offsite copy used to be, behind a green plan the whole way.
    * ⚠️ A property string. Compared canonically, so key order is never a diff.
    */
   backend?: string;

@@ -52,7 +52,7 @@ gate. The tarball gate stays in release for the publish itself.
 ★ **`release.yml` uses `environment: npm`.** Alchemy adopts this repo and declares that
 environment (`alchemy.run.ts`). The token stays a repository secret; the environment is
 the trust boundary for which job may publish. Stack state is `Cloudflare.state()` on
-Schenanigans — the same Durable Object as the other HomeFlare stacks. Deploy with
+the Cloudflare account — the same Durable Object as the other HomeFlare stacks. Deploy with
 `--stage live`.
 
 ⛔ **First-party (`actions/*`) or the vendor's own action. Nothing hand-rolled, nothing

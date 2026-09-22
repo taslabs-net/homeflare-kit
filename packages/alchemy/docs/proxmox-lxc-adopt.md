@@ -12,7 +12,7 @@ The adoption half of [proxmox-lxc.md](./proxmox-lxc.md). Two rules, both decided
    With adoption on, a declaration that differs from the live config in any key fails the plan:
 
 ```
-CT 100 on pve1: adopting it would change memory, net1. An adoption never changes a guest, so
+CT 900 on pve1: adopting it would change memory, net1. An adoption never changes a guest, so
 nothing is written. Declare what is live for these keys (the plan names keys, never values) and
 plan again; change them after the adoption, as an update.
 ```
@@ -26,7 +26,7 @@ plan again; change them after the adoption, as an update.
   ordinary `update`, and its plan warns with each key the deploy writes:
 
 ```
-Proxmox.Lxc pve1/100: live config differs from the declaration in memory -- a deploy writes these.
+Proxmox.Lxc pve1/900: live config differs from the declaration in memory -- a deploy writes these.
 ```
 
 - **The deploy asks again.** A key edited by hand between the plan and the deploy is refused at

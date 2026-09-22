@@ -23,7 +23,7 @@ import { bool } from './values.ts';
 /**
  * ⛔ A CREATE ALLOCATES NEW VOLUMES ONLY. pve-container's `create_disks` allocates `storage:GiB`
  *   and takes anything else as "use specified/existing volid", then `restore_archive` unpacks the
- *   template into the mounted rootfs. So a create naming `local-zfs:subvol-100-disk-0` — a pasted
+ *   template into the mounted rootfs. So a create naming `local-zfs:subvol-900-disk-0` — a pasted
  *   adoption, re-created after its config vanished while the volume survived (a `pct destroy`
  *   only WARNS when a volume will not delete) — unpacks a template over the data on it.
  */

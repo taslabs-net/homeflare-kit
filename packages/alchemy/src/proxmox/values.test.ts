@@ -99,11 +99,11 @@ describe('num and text', () => {
 
 describe('csv — a set PVE does not give back in the order it was handed', () => {
   it('is order insensitive, so two orderings compare equal', () => {
-    assert.equal(csv(['n3', 'n2']), csv('n2,n3'));
+    assert.equal(csv(['node-c', 'node-b']), csv('node-b,node-c'));
   });
 
   it('trims and drops empties, so a trailing comma is not a phantom member', () => {
-    assert.equal(csv('n2, n3,'), 'n2,n3');
+    assert.equal(csv('node-b, node-c,'), 'node-b,node-c');
   });
 });
 

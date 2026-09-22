@@ -11,13 +11,13 @@
  *   `CephOsdProps` is a cycle on paper only: it is erased before anything runs.
  *
  * ⛔ `GET /nodes/{node}/ceph/osd` ANSWERS A TREE, NOT A LIST, AND IT IS THE WHOLE CLUSTER'S TREE.
- *   MEASURED 2026-09-13: asked of n2 it answers `{"flags":…,"root":{"children":[…]}}` whose
- *   leaves include osd.0 and osd.5 on n4; asked of n3 it answers the identical six leaves. The
+ *   MEASURED 2026-09-13: asked of node-b it answers `{"flags":…,"root":{"children":[…]}}` whose
+ *   leaves include osd.0 and osd.5 on node-d; asked of node-c it answers the identical six leaves. The
  *   `{node}` in the path chooses WHO ANSWERS, not what is listed. A provider that read it as "the
- *   OSDs on this node" would find osd.0 through n2 and then report it as living there.
+ *   OSDs on this node" would find osd.0 through node-b and then report it as living there.
  *
  * ⛔ AND THE SINGLE-OBJECT PATH CANNOT BE USED INSTEAD — THIS WALK EXISTS BECAUSE IT LIES.
- *   MEASURED: `GET /nodes/n2/ceph/osd/99`, an id with no OSD behind it, answers HTTP 200 with
+ *   MEASURED: `GET /nodes/node-b/ceph/osd/99`, an id with no OSD behind it, answers HTTP 200 with
  *   `[{"name":"metadata"},{"name":"lv-info"}]` — byte for byte what `…/osd/2` answers for a real
  *   one. It is a directory index (its schema says `permissions: {"user":"all"}`), not a read of
  *   the OSD. Point `PveSpec.path` at it and every declared OSD is "present": `diff` reports
@@ -25,18 +25,18 @@
  *   stops this package recording objects that do not exist — passes on an OSD that was never
  *   built. The only endpoint that can tell present from absent is the tree.
  *
- * ★ MEASURED ON TB4 ON 2026-09-13, `GET /nodes/n2/ceph/osd`. Six leaves, all `up` and `in`, Ceph
+ * ★ MEASURED ON C1 ON 2026-09-13, `GET /nodes/node-b/ceph/osd`. Six leaves, all `up` and `in`, Ceph
  *   20.2.2 tentacle:
  *
- *     id  name   host  device_class  crush_weight      reweight  pgs  status
- *     0   osd.0  n4    ssd           1.86299133300781  1          99  up
- *     5   osd.5  n4    ssd           1.86299133300781  1          94  up
- *     1   osd.1  n3    ssd           1.86299133300781  1          96  up
- *     4   osd.4  n3    ssd           1.81939697265625  1          97  up
- *     2   osd.2  n2    ssd           1.81939697265625  1          88  up
- *     3   osd.3  n2    ssd           1.81939697265625  1         105  up
+ *     id  name   host    device_class  crush_weight      reweight  pgs  status
+ *     0   osd.0  node-d  ssd           1.86299133300781  1          99  up
+ *     5   osd.5  node-d  ssd           1.86299133300781  1          94  up
+ *     1   osd.1  node-c  ssd           1.86299133300781  1          96  up
+ *     4   osd.4  node-c  ssd           1.81939697265625  1          97  up
+ *     2   osd.2  node-b  ssd           1.81939697265625  1          88  up
+ *     3   osd.3  node-b  ssd           1.81939697265625  1         105  up
  *
- *   `{ node: 'n2', osdid: 2, host: 'n2', device_class: 'ssd' }` plans `noop` against that row.
+ *   `{ node: 'node-b', osdid: 2, host: 'node-b', device_class: 'ssd' }` plans `noop` against that row.
  *   That is the acceptance test this file was written to pass.
  *
  * ⚠️ EVERY OTHER COLUMN IS REPORTED AND NEVER COMPARED, FOR FOUR DIFFERENT REASONS. `pgs` is the
@@ -72,8 +72,8 @@ const branches = (node: CrushNode): CrushNode[] =>
 /**
  * Every OSD leaf under the tree root, at any depth.
  *
- * ⚠️ RECURSIVE BECAUSE THE TREE IS NOT THREE LEVELS DEEP BY LAW. TB4 measures as
- *   root(`default`) -> host(n2|n3|n4) -> osd, but CRUSH admits datacenter, rack and chassis
+ * ⚠️ RECURSIVE BECAUSE THE TREE IS NOT THREE LEVELS DEEP BY LAW. C1 measures as
+ *   root(`default`) -> host(node-b|node-c|node-d) -> osd, but CRUSH admits datacenter, rack and chassis
  *   buckets between them, and an OSD created outside a host bucket hangs off the root. Reaching
  *   in as `root.children[].children[]` would read this cluster correctly and answer "absent" —
  *   i.e. "the replica is gone" — on the first cluster that has a rack in it.
@@ -149,7 +149,7 @@ export interface CephOsdAttributes {
  * ⚠️ THE TELEMETRY IS DELIBERATELY DROPPED, NOT FORGOTTEN. The leaf also carries `bytes_used`,
  *   `percent_used`, `apply_latency_ms` and `commit_latency_ms`. MEASURED, AND THE MEASUREMENT SAYS
  *   THE OPPOSITE OF WHAT YOU WOULD EXPECT: across two reads minutes apart, all four were identical
- *   on every OSD, and both latencies read 0 — TB4 was idle, so nothing was caught in the act. That
+ *   on every OSD, and both latencies read 0 — C1 was idle, so nothing was caught in the act. That
  *   these move is therefore REASONED, from what they count, not observed. Alchemy persists
  *   attributes; on a cluster doing work, keeping them would rewrite all six resources' state on
  *   every deploy and record a number that is stale by the time anybody reads it. What is kept is

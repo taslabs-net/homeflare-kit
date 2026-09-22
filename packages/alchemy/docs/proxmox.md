@@ -15,3 +15,6 @@ or creates one from a template.
 - ★ **One provisioning baseline for every cluster and node**: the privilege list, a helper that
   declares it, and the one-time root commands that bootstrap it
   ([provision-baseline.md](./provision-baseline.md)).
+- ★ **Measurements in the source name a reference cluster with placeholders**: `C1`, three nodes
+  `node-b`, `node-c` and `node-d` with Ceph on a Thunderbolt mesh, and documentation addresses
+  (RFC 5737). The shapes and counts are measured; the names and addresses are not the real ones.

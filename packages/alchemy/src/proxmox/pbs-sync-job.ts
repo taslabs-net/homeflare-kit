@@ -12,14 +12,14 @@
  *
  * ⛔ THE CREDENTIAL IS A PBS TOKEN AND IT DOES NOT EXIST YET; NO MOUNT NAME IS INVENTED IN THIS
  *   FILE. PBS wants `user@realm!tokenname` plus a UUID secret, issued by PBS — a PVE token is not
- *   one, whatever it is spelled like. MEASURED from this machine on 2026-09-13: the `claude-code`
+ *   one, whatever it is spelled like. MEASURED from this machine on 2026-09-13: the agent's
  *   approle cannot enumerate mounts (`bao secrets list` -> 403) and
  *   `bao token capabilities kv/infra/proxmox/pbs` -> `deny`, so I could not confirm from here what
  *   does or does not exist. What credentials.ts records is that every PBS token on the kv shelf is
- *   READ-ONLY (`Audit`, as `monitoring@pve`) and STATIC — too narrow to create a sync job, and
+ *   READ-ONLY (`Audit`, as `metrics@pve`) and STATIC — too narrow to create a sync job, and
  *   exactly the kind of credential this provider exists to avoid writing with.
  *   ★ SO THE MOUNT IS A `PbsTarget.mount` THE STACK SUPPLIES, and somebody has to build it first:
- *     a dynamic PBS mount with `read` and `provision` roles mirroring `proxmox-tb4`. Until it
+ *     a dynamic PBS mount with `read` and `provision` roles mirroring `proxmox-c1`. Until it
  *     exists this family can be declared and cannot be deployed. `permission denied` means the
  *     grant is missing — say which mount and role you needed; do not fall back to the shelf token.
  *
@@ -83,7 +83,7 @@ export interface SyncJobProps extends WithPbsTarget {
    *   `Pbs.Remote` family is OUT OF SCOPE for this package rather than merely unwritten:
    *   `POST /config/remote` requires `password`, and Alchemy persists props and attributes to its
    *   state store UNENCRYPTED (StateEncoding.ts tags Redacted values rather than encrypting them),
-   *   which here is the `alchemy` Postgres that pg-backup.sh dumps nightly to CT100. A remote's
+   *   which here is the `alchemy` Postgres that a nightly job dumps to a backup guest. A remote's
    *   password in a prop is that password in four places, for months. The only Remote resource that
    *   could exist would refuse `password` the way storage.ts refuses it — as a `never` — and could
    *   therefore never CREATE a remote, which is a resource that cannot do what its name promises.

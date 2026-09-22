@@ -16,21 +16,21 @@ import { csv } from './values.ts';
  * A `<node>[:<pri>]` list, spelled the way PVE gives it back.
  *
  * ⛔ THIS IS NOT `csv`, AND THE DIFFERENCE IS A FOREVER-DIFF. MEASURED by reading
- *   `/usr/share/perl5/PVE/HA/Rules/NodeAffinity.pm` on n2 (2026-09-13): `decode_plugin_value`
+ *   `/usr/share/perl5/PVE/HA/Rules/NodeAffinity.pm` on node-b (2026-09-13): `decode_plugin_value`
  *   turns the list into a HASH keyed by node name, and `encode_plugin_value` rebuilds it with
  *   `for my $node (sort keys %$value)` — sorted by NODE NAME, never by the token — emitting the
  *   bare name whenever the priority is falsy, because `PVE::HA::Tools::parse_node_priority` reads
- *   a missing priority as 0. So a declared `n3:1,n2:0` is handed back as `n2,n3:1`: re-ordered AND
+ *   a missing priority as 0. So a declared `node-c:1,node-b:0` is handed back as `node-b,node-c:1`: re-ordered AND
  *   re-spelled. Compare the raw strings and every plan reports an update, forever.
  *
  * ⚠️ SORTED BY NAME, NOT BY TOKEN, AND THE TWO GENUINELY DIVERGE. `csv` sorts whole tokens. Node
  *   names may contain `-` — `parse_node_priority`'s own regex is
- *   `[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?` — and `-` (0x2D) sorts before `:` (0x3A), so `n2-a`
- *   and `n2:5` come out in one order by token and the other by name. PVE sorts by the name, so
+ *   `[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?` — and `-` (0x2D) sorts before `:` (0x3A), so `node-b-a`
+ *   and `node-b:5` come out in one order by token and the other by name. PVE sorts by the name, so
  *   this does too.
  *
  * ⚠️ LAST ENTRY WINS FOR A REPEATED NODE, because PVE's decode is a hash assignment and a hash
- *   keeps one value per key. A declaration saying `n2:1,n2:5` is stored as `n2:5`; matching that
+ *   keeps one value per key. A declaration saying `node-b:1,node-b:5` is stored as `node-b:5`; matching that
  *   is what a Map gives for free.
  */
 export const nodeList = (value: readonly string[] | string | undefined) => {

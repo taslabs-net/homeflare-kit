@@ -59,7 +59,7 @@ describe('a cold adoption that differs from the live guest fails the plan', () =
     ['an unprivileged flip', { unprivileged: 0 as const }, 'unprivileged', ['live 1']],
     [
       'a smaller mount point',
-      { mp0: 'tank:subvol-100-disk-0,mp=/data,size=100G' },
+      { mp0: 'tank:subvol-900-disk-0,mp=/data,size=100G' },
       'mp0',
       ['100G'],
     ],

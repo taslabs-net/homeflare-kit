@@ -2,11 +2,11 @@
  * `Proxmox.ApiToken` — a PVE API token: the thing a service actually authenticates as.
  *
  * ⛔ THE SECRET EXISTS FOR ONE HTTP RESPONSE AND THEN NOWHERE. MEASURED from the cluster's own
- *   schema (`/usr/share/pve-docs/api-viewer/apidoc.js` on n2, 2026-09-13): POST returns
+ *   schema (`/usr/share/pve-docs/api-viewer/apidoc.js` on node-b, 2026-09-13): POST returns
  *   `["full-tokenid","info","value"]`; PUT returns `["comment","expire","full-tokenid","privsep",
  *   "value"]` with `value` present ONLY when `regenerate` was set; GET returns
  *   `["comment","expire","privsep"]` and never the secret. A live token agrees —
- *   `GET /access/users/monitoring@pve/token/exporter` answers `{"expire":0,"privsep":0}`. PVE says
+ *   `GET /access/users/metrics@pve/token/exporter` answers `{"expire":0,"privsep":0}`. PVE says
  *   it plainly on the POST: the value "needs to be stored as it cannot be retrieved afterwards".
  *
  * ⛔ SO A TOKEN THIS RESOURCE CREATES IS UNUSABLE, AND SAYING SO IS THE POINT OF THIS BLOCK. The
@@ -19,7 +19,7 @@
  *   ★ SO POINT THIS FAMILY AT TOKENS THAT ALREADY EXIST. `comment`, `expire` and `privsep` are the
  *     whole of a token's policy, and declaring them is real work: it is how `expire` stops being
  *     whatever somebody typed in 2024. Mint NEW tokens where the secret can be caught — OpenBao's
- *     `proxmox-tb4` mount, or a human at `pveum user token add`.
+ *     `proxmox-c1` mount, or a human at `pveum user token add`.
  *   ⚠️ THE CREATE PATH IS LEFT REACHABLE RATHER THAN STUBBED. A create that silently did nothing
  *     would be the same lie as the stubbed delete resource.ts's ★ refuses; the honest arrangement
  *     is a create that works and a header that says what it produces.
@@ -31,8 +31,8 @@
  *   that owns the lease, or to a human who is watching.
  *
  * ⚠️ THERE IS A SECOND WRITER TO THESE OBJECTS AND IT IS THE ONE THIS PROVIDER RUNS ON. OpenBao's
- *   `proxmox-tb4` engine mints PVE tokens under `hf-read@pve` and `hf-provision@pve` — read from
- *   `house/platform/secrets/vault/plugin-proxmox/proxmox/`: `privsep=0` (client.go), `expire` set
+ *   `proxmox-c1` engine mints PVE tokens under `hf-read@pve` and `hf-provision@pve` — read from
+ *   `<estate>/platform/secrets/vault/plugin-proxmox/proxmox/`: `privsep=0` (client.go), `expire` set
  *   to the lease deadline, and an id the plugin CHOOSES,
  *   `hf-<role>-<actor>-<entity6>-<stamp>-<nonce>` (tokenname.go). Revocation and WAL rollback look
  *   up that one exact id (wal.go); neither sweeps a prefix. So the two systems cannot collide on
@@ -62,7 +62,7 @@ import { type PveRequirements, type WithTarget, pveHandlers, pveOperations } fro
 
 export interface ApiTokenProps extends WithTarget {
   /**
-   * The account that owns the token, realm-qualified: `tofu@pve`, `root@pam`. Identity.
+   * The account that owns the token, realm-qualified: `iac@pve`, `root@pam`. Identity.
    *
    * ⚠️ THE ACCOUNT MUST ALREADY EXIST. Every method here runs `check_user_exist` first, so a
    *   token named under a missing user fails the READ (folded to "absent") and then fails the
@@ -120,7 +120,7 @@ export interface ApiTokenProps extends WithTarget {
    *   — `$privsep = $privsep ? 1 : 0` (AccessControl.pm:1622), so there is no unset state to
    *   preserve. Were this optional, adopting a live token without mentioning `privsep` would plan
    *   an update to 1 and STRIP a working credential of every privilege it has, silently: PVE
-   *   returns 401/403 to the service, nothing errors here, and `tofu@pve!apply` simply stops
+   *   returns 401/403 to the service, nothing errors here, and `iac@pve!apply` simply stops
    *   working. Required, so adopting a token is a sentence that states what it is.
    * ⚠️ AND `false` IS NOT A SHRUG. It is a token with its owner's whole privilege set; under a
    *   provisioning account that is the account's full authority with a separate secret.
@@ -156,9 +156,9 @@ export interface ProxmoxApiToken extends Resource<
  * ★ `retain` BY DEFAULT, AND THIS IS THE PLAINEST CASE FOR IT IN THE PACKAGE. A token's contents
  *   are one irreplaceable secret: delete it and the value is gone, a replacement is a DIFFERENT
  *   value, and every holder loses access the instant `cfs_write_file` returns — with no error
- *   raised anywhere near them. The live cluster's tokens are `monitoring@pve!exporter` (the PVE
- *   exporter feeding VictoriaMetrics), `mcp@pve!executor`, `tofu@pve!apply`, `tofu@pve!ro`,
- *   `sablier@pve!sablier` and `vaultmint@pve!engine` — the last being the parent credential the
+ *   raised anywhere near them. The live cluster's tokens are `metrics@pve!exporter` (the PVE
+ *   exporter feeding VictoriaMetrics), `agent@pve!executor`, `iac@pve!apply`, `iac@pve!ro`,
+ *   `app@pve!app` and `mint@pve!engine` — the last being the parent credential the
  *   OpenBao mount itself authenticates with, so orphaning that one would stop every plan in this
  *   package, this resource included. `delete` is FULLY IMPLEMENTED (DELETE is a real method on
  *   this path, measured) and runs the moment a caller opts in with `.pipe(RemovalPolicy.destroy())`.
@@ -184,7 +184,7 @@ const ops = pveOperations(apiTokenSpec);
  *   `reconcile` refuses by name and says what to do instead.
  *
  * ★ EVERYTHING ELSE STILL WORKS, AND IT IS THE HALF WORTH HAVING. Adopting an existing token and
- *   converging its `comment`, `expire` and `privsep` are real operations: TB4 carries SEVEN tokens
+ *   converging its `comment`, `expire` and `privsep` are real operations: C1 carries SEVEN tokens
  *   with `expire=0` and `privsep=0` made by clicks nobody recorded. Declaring those freezes the
  *   set, and an eighth appearing shows up as drift.
  *
@@ -203,7 +203,7 @@ const handlers = {
             'the secret only in the create response and it cannot be stored, so a token made here ' +
             'would be a live credential nobody holds. Create it with `pveum user token add` and ' +
             'capture the value, or mint a short-lived one from the OpenBao proxmox mount ' +
-            '(`bao read proxmox-tb4/creds/<role>`) -- then declare it here to manage it.',
+            '(`bao read proxmox-c1/creds/<role>`) -- then declare it here to manage it.',
         ),
       );
     }
@@ -213,7 +213,7 @@ const handlers = {
 
 /**
  * ⛔ `list` IS EMPTY, AND FOR THIS FAMILY THAT MATTERS MORE THAN THE GENERIC ARGUMENT IN
- *   resource.ts. A token index handed to Alchemy would offer up `vaultmint@pve!engine` and every
+ *   resource.ts. A token index handed to Alchemy would offer up `mint@pve!engine` and every
  *   live OpenBao lease for adoption — and adoption is what makes a later plan willing to delete.
  *   The mount's leases in particular appear and vanish on their own; anything that adopted one
  *   would report drift against a credential that was never its to hold.

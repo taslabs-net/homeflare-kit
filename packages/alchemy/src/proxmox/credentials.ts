@@ -2,13 +2,13 @@
  * The PVE credential a reconcile runs with: minted from OpenBao, alive for five minutes.
  *
  * ⛔ THERE IS NO STATIC WRITE TOKEN IN THIS ESTATE, AND THAT IS DELIBERATE. Every PVE token stored
- *   in `kv/infra/proxmox/*` is read-only — PVEAuditor on media/ops/tb4, Audit on pbs, all as
- *   `monitoring@pve`. The MCP proxmox client says why in its own header: the auditor token bounds
+ *   on the estate's static KV shelf is read-only — PVEAuditor on each cluster, Audit on PBS, all
+ *   as one metrics user. The MCP proxmox client says why in its own header: the auditor token bounds
  *   what a BUG can do, independently of what the code bounds. Adding a long-lived write token to
  *   that shelf would delete the outer lock for every reader of the shelf, not just for this
  *   provider.
  *
- * ★ SO WRITES COME FROM A DYNAMIC MOUNT INSTEAD, which the estate already built: `proxmox-tb4/`
+ * ★ SO WRITES COME FROM A DYNAMIC MOUNT INSTEAD, which the estate already built: `proxmox-c1/`
  *   exposes two roles — `read` (ttl 3600s) and `provision` (ttl 300s, max 1800s, NOT renewable).
  *   A mint returns a PVE API token of its own, `hf-provision@pve!hf-provision-…-<timestamp>-<id>`,
  *   which expires on its own whether or not anything cleans up. Same shape as
@@ -24,7 +24,7 @@
  *
  * ⛔ THE SECRET NEVER TOUCHES DISK, A LOG, OR ALCHEMY STATE. Alchemy persists resource attributes
  *   WITHOUT encryption — StateEncoding.ts writes `Redacted` as `{"@redacted": <plaintext>}` — and
- *   this estate's state store is the `alchemy` Postgres, which pg-backup.sh dumps nightly. A PVE
+ *   this estate's state store is the `alchemy` Postgres, which a nightly job dumps. A PVE
  *   secret that reached an attribute would outlive its 300s lease by months, in four places.
  *   Nothing here returns it to a resource; it is used to build a header and then dropped.
  */
@@ -60,10 +60,10 @@ export type PveRole = 'read' | 'provision';
  *   use this file unchanged; that is the whole difference between a provider and a script.
  */
 export type PveTarget = {
-  /** OpenBao mount that vends API tokens for this host, e.g. `proxmox-tb4`. */
+  /** OpenBao mount that vends API tokens for this host, e.g. `proxmox-c1`. */
   readonly mount: string;
   /**
-   * mgmt hostnames for cluster members, e.g. `n2.mgmt.example.com`. Any member's :8006 API
+   * mgmt hostnames for cluster members, e.g. `node-b.mgmt.example.com`. Any member's :8006 API
    * manages the whole cluster; `client.ts` failovers across them.
    */
   readonly members: readonly string[];
@@ -133,14 +133,14 @@ const baoVariable = (env: BaoEnvironment, name: string) =>
  * Mint one credential for `role`: `GET /v1/<mount>/creds/<role>` on OpenBao's HTTP API.
  *
  * 🔴 IT SHELLED OUT TO `bao read -format=json` UNTIL 2026-09-14. The case for the CLI was that one
- *   client could not disagree with `bao kv get` about what this machine may do. house/openbao then
+ *   client could not disagree with `bao kv get` about what this machine may do. <estate>/openbao then
  *   learned twice what deciding by stderr costs — every failure read as absent, and two commands
  *   said "absent" in different words — so this reads STATUS CODES: 2xx is a credential, and 403
  *   (denied), 404 (no such role or mount — a mint has no "absent"), 503 (sealed) all fail.
  * ★ THE ENVIRONMENT CONTRACT IS STILL THE CLI's, READ THE CLI's WAY, which keeps the case above
  *   true (openbao v2.6.2 api/client.go:34-66, 370, 503-507, 761-762, 776-785): BAO_AGENT_ADDR over
  *   BAO_ADDR over https://127.0.0.1:8200; BAO_NAMESPACE as X-Vault-Namespace; BAO_TOKEN as
- *   X-Vault-Token; X-Vault-Request always. house/openbao/src/bao-address.ts has the long form.
+ *   X-Vault-Token; X-Vault-Request always. <estate>/openbao/src/bao-address.ts has the long form.
  * ★ AGENT MODE IS NO BAO_TOKEN AND NO TOKEN HEADER. An Agent or Proxy listener with
  *   `api_proxy { use_auto_auth_token = true }` (or the older `cache { … }`) substitutes its
  *   auto-auth token exactly when a request carries none — command/agentproxyshared/cache/handler.go

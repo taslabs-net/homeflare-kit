@@ -29,8 +29,9 @@
  *   can then say what a delete would take with it — and kept OUT of `matches`, exactly like
  *   `pool.members`. Reported, never declared.
  *
- * ⚠️ RECONCILE NEEDS PRIVILEGES `LXCProvisioner` DOES NOT HOLD, so state them rather than meet a
- *   403 in the middle of a deploy (pool.ts records how that went the last time):
+ * ⚠️ RECONCILE NEEDS PRIVILEGES A GUEST-ONLY ROLE DOES NOT HOLD, so they are stated rather than met
+ *   as a 403 in the middle of a deploy (pool.ts records how that went the last time).
+ *   `PROVISION_PRIVILEGES` (provision-baseline.ts) carries every one of them:
  *     · `Realm.AllocateUser` on `/access/realm/<realm>` — create and delete.
  *     · `User.Modify` on `/access/groups`, and on `/access/groups/<group>` for EVERY group named in
  *       `groups` — create, update and delete. PVE checks the groups you are granting, not just the

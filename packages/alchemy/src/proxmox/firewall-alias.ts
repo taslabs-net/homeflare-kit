@@ -61,7 +61,7 @@
  * ⚠️ PRIVILEGES, AND FOR ONCE NOTHING NEEDS WIDENING. MEASURED 2026-09-13 from the cluster's own
  *   schema and its live ACL: the item GET checks `["perm","/",["Sys.Audit"]]`, POST/PUT/DELETE
  *   check `["perm","/",["Sys.Modify"]]`, `hf-read@pve` holds `PVEAuditor` at `/` with propagate and
- *   `hf-provision@pve` holds `LXCProvisioner` at `/` with propagate. Both privileges are already
+ *   `hf-provision@pve` holds the provision role (provision-baseline.ts) at `/` with propagate. Both privileges are already
  *   held, so `readRole` stays the default `read` lane — unlike storage/sdn-zone/sdn-vnet, whose
  *   ITEM reads are gated on an allocate privilege the auditor cannot have.
  *   ⚠️ `Sys.Modify` ON `/` IS STILL A BIG HAMMER — it is the same grant `metric-server.ts` warns

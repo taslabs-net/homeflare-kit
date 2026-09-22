@@ -2,7 +2,7 @@
  * The fabric comparison, which is what decides whether `Proxmox.SdnApply` publishes.
  *
  * ⛔ IT IS TESTED HERE RATHER THAN AGAINST THE CLUSTER BECAUSE STAGING A REAL FABRIC CHANGE MEANS
- *   TOUCHING CEPH'S CLUSTER NETWORK. TB4's OSPF fabric pins 10.100.0.102/103/104 to en05 and en06,
+ *   TOUCHING CEPH'S CLUSTER NETWORK. C1's OSPF fabric pins 203.0.113.102/103/104 to tb0 and tb1,
  *   and those are the addresses `cluster_network` runs over. The staged-zone path IS proven end to
  *   end against the live cluster (plan noop -> stage a zone -> plan update -> remove -> plan noop);
  *   the fabric path is proven by construction, with the two ways it could lie pinned below.
@@ -20,20 +20,20 @@ import { UNDIFFABLE, canonical, fabricStaged, subsystemAbsent } from './sdn-appl
 
 /** The shape `cluster/sdn/fabrics/all` actually returns, trimmed to what matters. */
 const N2 = {
-  fabric_id: 'tb4',
-  interfaces: ['name=en05', 'name=en06'],
-  ip: '10.100.0.102',
-  node_id: 'n2',
+  fabric_id: 'c1',
+  interfaces: ['name=tb0', 'name=tb1'],
+  ip: '203.0.113.102',
+  node_id: 'node-b',
 };
 const N3 = {
-  fabric_id: 'tb4',
-  interfaces: ['name=en05', 'name=en06'],
-  ip: '10.100.0.103',
-  node_id: 'n3',
+  fabric_id: 'c1',
+  interfaces: ['name=tb0', 'name=tb1'],
+  ip: '203.0.113.103',
+  node_id: 'node-c',
 };
 
 const running = {
-  fabrics: [{ area: '1', id: 'tb4', ip_prefix: '10.100.0.0/24', protocol: 'ospf' }],
+  fabrics: [{ area: '1', id: 'c1', ip_prefix: '203.0.113.0/24', protocol: 'ospf' }],
   nodes: [N2, N3],
 };
 
@@ -44,8 +44,8 @@ describe('fabric canonicalisation', () => {
         {
           area: '1',
           digest: '7b94d363ff69',
-          id: 'tb4',
-          ip_prefix: '10.100.0.0/24',
+          id: 'c1',
+          ip_prefix: '203.0.113.0/24',
           protocol: 'ospf',
         },
       ],
@@ -76,7 +76,7 @@ describe('fabric canonicalisation', () => {
   it('sees a changed node address', () => {
     const moved = {
       ...running,
-      nodes: [{ ...N2, ip: '10.100.0.199' }, N3],
+      nodes: [{ ...N2, ip: '203.0.113.199' }, N3],
     };
     assert.notEqual(canonical(moved), canonical(running));
   });
@@ -86,7 +86,7 @@ describe('fabric canonicalisation', () => {
       ...running,
       nodes: [
         ...running.nodes,
-        { fabric_id: 'tb4', interfaces: ['name=en05'], ip: '10.100.0.104', node_id: 'n4' },
+        { fabric_id: 'c1', interfaces: ['name=tb0'], ip: '203.0.113.104', node_id: 'node-d' },
       ],
     };
     assert.notEqual(canonical(added), canonical(running));
@@ -95,7 +95,7 @@ describe('fabric canonicalisation', () => {
   it('sees a changed interface list, which is what decides where the address lands', () => {
     const rewired = {
       ...running,
-      nodes: [{ ...N2, interfaces: ['name=en05'] }, N3],
+      nodes: [{ ...N2, interfaces: ['name=tb0'] }, N3],
     };
     assert.notEqual(canonical(rewired), canonical(running));
   });
@@ -135,7 +135,7 @@ describe('what a failed read is allowed to mean', () => {
   });
 
   it('counts an unchanged fabric as nothing staged and a moved node as staged', () => {
-    const moved = { ...running, nodes: [{ ...N2, ip: '10.100.0.199' }, N3] };
+    const moved = { ...running, nodes: [{ ...N2, ip: '203.0.113.199' }, N3] };
     assert.equal(fabricStaged(canonical(running), canonical(running)), 0);
     assert.equal(fabricStaged(canonical(moved), canonical(running)), 1);
   });

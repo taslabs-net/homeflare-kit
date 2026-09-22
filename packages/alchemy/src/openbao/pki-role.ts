@@ -36,7 +36,7 @@
  *   never a policy one — but neither is a measurement.
  *
  * ★ `defaultRemovalPolicy: 'retain'` — see the delete comment below. Opt in with
- *   `.pipe(RemovalPolicy.destroy())`; see resource.ts in house/proxmox.
+ *   `.pipe(RemovalPolicy.destroy())`; see resource.ts in <estate>/proxmox.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';

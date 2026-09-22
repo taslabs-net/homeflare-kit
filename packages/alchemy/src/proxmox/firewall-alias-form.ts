@@ -36,7 +36,7 @@ export const fold = (name: string) => name.trim().toLowerCase();
 /**
  * A CIDR reduced to the one form PVE will hand back.
  *
- * ⛔ MEASURED by running the cluster's own `PVE::Firewall::parse_alias` on n2 (pve-manager 9.2.11,
+ * ⛔ MEASURED by running the cluster's own `PVE::Firewall::parse_alias` on node-b (pve-manager 9.2.11,
  *   2026-09-13) — a pure function over a string, no config read and none written:
  *     `10.1.1.5/32`     -> `10.1.1.5`        a /32 host suffix is STRIPPED
  *     `2001:0DB8::1/128`-> `2001:0DB8::1`    a /128 is stripped, and the case is NOT folded

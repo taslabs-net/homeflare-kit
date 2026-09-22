@@ -35,10 +35,11 @@
  *   (node-affinity and resource-affinity) and that is the next family to add; do not port the old
  *   groups endpoint back just because the docs still describe it.
  *
- * ⚠️ RECONCILE NEEDS `Sys.Console` ON `/`, WHICH `LXCProvisioner` DOES NOT HOLD. Read and diff are
+ * ⚠️ RECONCILE NEEDS `Sys.Console` ON `/`, WHICH THE PROVISION ROLE LACKED WHEN THIS WAS WRITTEN
+ *   (`PROVISION_PRIVILEGES` carries it now — ha-rule.ts has the measurement). Read and diff are
  *   fine — `GET /cluster/ha/resources/{sid}` checks `Sys.Audit`, which the role already has — while
  *   POST, PUT and DELETE all check `Sys.Console` on `/` and will answer "Permission check failed
- *   (/, Sys.Console)" until the role is widened. Widen it knowingly: `Sys.Console` is also what
+ *   (/, Sys.Console)" on a role without it. Widen it knowingly: `Sys.Console` is also what
  *   opens a root shell on every node (`/nodes/{node}/vncshell`, `termproxy`), so granting it to the
  *   provision credential buys HA membership at the price of node console access. A separate role
  *   for HA writes is the narrower answer if that trade is not wanted.

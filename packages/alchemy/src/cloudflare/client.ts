@@ -5,7 +5,7 @@
  * ⛔ THE SDK WAS ALREADY IN THE STORE AND DECLARED BY NOBODY. Measured 2026-09-15:
  *   `node_modules/.pnpm/cloudflare@4.5.0` exists as a transitive dependency of `alchemy`, and
  *   `pnpm ls cloudflare --depth 0` at the root and in every workspace package returns nothing.
- *   `house/local/scripts/vendor-sdk-ratchet.ts` row R2 says exactly that — "not declared anywhere
+ *   `<estate>/local/scripts/vendor-sdk-ratchet.ts` row R2 says exactly that — "not declared anywhere
  *   in the workspace yet … the row adds the dependency once, then converts the TS callers" — so
  *   this package is that row's first half, and the twenty ratcheted offences keep their rows.
  *

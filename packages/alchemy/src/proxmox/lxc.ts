@@ -1,9 +1,9 @@
 /**
  * `Proxmox.Lxc` — a container, declared: adopted as it runs, or created from a template.
  *
- * ★ `hf-provision@pve` HOLDS EXACTLY THE ROLE THIS NEEDS: `LXCProvisioner` on `/` grants
- *   VM.Allocate, VM.Audit, VM.Config.{CPU,Disk,HWType,Memory,Network,Options}, VM.PowerMgmt,
- *   Datastore.AllocateSpace, Datastore.Audit, SDN.Use, Sys.Audit. What that role cannot do — device
+ * ★ THE PROVISIONING BASELINE HOLDS WHAT THIS NEEDS (provision-baseline.ts): on `/`, VM.Allocate,
+ *   VM.Audit, VM.Config.{CPU,Disk,HWType,Memory,Network,Options}, VM.PowerMgmt,
+ *   Datastore.AllocateSpace, Datastore.Audit, SDN.Use, Sys.Audit. What no token can do — device
  *   passthrough, bind mounts, features beyond nesting — PVE keeps for root@pam, and lxc-judge.ts
  *   refuses at plan with the `pct set` to run instead.
  *

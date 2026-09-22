@@ -14,16 +14,16 @@ import { engineOver } from '../verify/fake-engine.ts';
 import { ProxmoxCephPool, ProxmoxCephPoolProvider } from './ceph-pool.ts';
 import { FAKE_TARGET, type PveCall, fakePve, withoutBao } from './fake-pve.ts';
 
-const STATUS = 'nodes/n2/ceph/pool/cephtb4/status?verbose=1';
-const OBJECT = 'nodes/n2/ceph/pool/cephtb4';
+const STATUS = 'nodes/node-b/ceph/pool/rbd-c1/status?verbose=1';
+const OBJECT = 'nodes/node-b/ceph/pool/rbd-c1';
 
-/** TB4's rbd pool as `getpool` answers it — the fields ceph-pool.ts reads. */
+/** C1's rbd pool as `getpool` answers it — the fields ceph-pool.ts reads. */
 const livePool = (size: number): Record<string, unknown> => ({
   application_list: ['rbd'],
   crush_rule: 'replicated_rule',
   id: 2,
   min_size: 2,
-  name: 'cephtb4',
+  name: 'rbd-c1',
   pg_autoscale_mode: 'on',
   pg_num: 128,
   size,
@@ -38,18 +38,18 @@ const cluster = (size: number) => {
       for (const [key, value] of Object.entries(call.form)) {
         pool[key] = /^\d+$/.test(value) ? Number(value) : value;
       }
-      return 'UPID:n2:fake:setpool';
+      return 'UPID:node-b:fake:setpool';
     }
     return undefined;
   });
 };
 
 const declared = () =>
-  ProxmoxCephPool('cephtb4', {
+  ProxmoxCephPool('rbd-c1', {
     crush_rule: 'replicated_rule',
     min_size: 2,
-    name: 'cephtb4',
-    node: 'n2',
+    name: 'rbd-c1',
+    node: 'node-b',
     pg_autoscale_mode: 'on',
     size: 3,
     target: FAKE_TARGET,
@@ -67,7 +67,7 @@ describe('adopting a Ceph pool', () => {
       expect(report.rows).toEqual([
         expect.objectContaining({ diff: 'noop', ok: true, planned: 'adopted', read: 'found' }),
       ]);
-      expect(await engine.deploy(declared())).toEqual({ cephtb4: 'adopted' });
+      expect(await engine.deploy(declared())).toEqual({ 'rbd-c1': 'adopted' });
     });
     expect(fake.writes()).toEqual([]);
     expect(fake.calls.every((call) => call.path === STATUS)).toBe(true);
@@ -82,10 +82,10 @@ describe('adopting a Ceph pool', () => {
   test('declaring a field it does not manage: rechecked, still noop, and the deploy only reads', async () => {
     const fake = cluster(3);
     const birth = () =>
-      ProxmoxCephPool('cephtb4', {
+      ProxmoxCephPool('rbd-c1', {
         min_size: 2,
-        name: 'cephtb4',
-        node: 'n2',
+        name: 'rbd-c1',
+        node: 'node-b',
         pg_num: 32,
         size: 3,
         target: FAKE_TARGET,
@@ -100,7 +100,7 @@ describe('adopting a Ceph pool', () => {
         recheck: 'noop',
       });
       expect(report.rows[0]?.why).toContain('does not manage');
-      expect(await engine.deploy(birth())).toEqual({ cephtb4: 'adopted' });
+      expect(await engine.deploy(birth())).toEqual({ 'rbd-c1': 'adopted' });
     });
     expect(fake.writes()).toEqual([]);
   });
@@ -112,7 +112,7 @@ describe('adopting a Ceph pool', () => {
       const report = await engine.verify(declared());
       expect(report.rows[0]).toMatchObject({ changed: ['size'], diff: 'update', ok: false });
       expect(fake.writes()).toEqual([]);
-      expect(await engine.deploy(declared())).toEqual({ cephtb4: 'adopted' });
+      expect(await engine.deploy(declared())).toEqual({ 'rbd-c1': 'adopted' });
     });
     expect(fake.writes()).toEqual([`PUT ${OBJECT}`]);
     expect(fake.calls.find((call) => call.method === 'PUT')?.form['size']).toBe('3');

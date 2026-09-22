@@ -9,7 +9,7 @@
  *   environment job.
  * ★ STATE IS `Cloudflare.state()` — the account Durable Object already used by
  *   homeflare-forgejo, homeflare-proxmox, …. Keys live in Secrets Store as
- *   AlchemyStateStoreToken / AlchemyStateStoreEncryptionKey (Schenanigans,
+ *   AlchemyStateStoreToken / AlchemyStateStoreEncryptionKey (the Cloudflare account,
  *   measured 2026-09-16 via wrangler). Do not bootstrap a second store.
  * ⚠️ Deploy with `--stage live`. The CLI default is `live_$USER`, which would
  *   fork a per-laptop copy. Other HomeFlare stacks on this store use `live`.

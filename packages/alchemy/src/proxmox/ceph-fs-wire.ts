@@ -16,7 +16,7 @@
  *
  * ⛔ POST AND DELETE ANSWER WITH A UPID, NOT A RESULT — THE WRITE IS ASYNCHRONOUS AND A FAILED ONE
  *   IS STILL HTTP 200. Read from the cluster's own source, /usr/share/perl5/PVE/API2/Ceph/FS.pm on
- *   n2: `createfs` and `destroyfs` both end `return $rpcenv->fork_worker(...)`. Two different lies
+ *   node-b: `createfs` and `destroyfs` both end `return $rpcenv->fork_worker(...)`. Two different lies
  *   come out of trusting that status code. A read-back straight after the POST reports "still
  *   absent" about a filesystem that is being built as it says so — which is precisely the message
  *   `pveOperations.reconcile` would print, pointing at the wrong cause. And a worker that dies
@@ -26,7 +26,7 @@
  *     has not been observed; only the `fork_worker` that guarantees it is there.
  *
  * ⛔ A DELETE BODY IS SILENTLY DISCARDED BY PVE, SO `remove-pools` GOES IN THE QUERY STRING.
- *   MEASURED in /usr/share/perl5/PVE/APIServer/AnyEvent.pm on n2: line 928 reads the request
+ *   MEASURED in /usr/share/perl5/PVE/APIServer/AnyEvent.pm on node-b: line 928 reads the request
  *   content into params only `if ($method eq 'PUT' || $method eq 'POST')`, and line 1653 sends
  *   every other method down a branch that parses `$request->url->query()` and nothing else. So
  *   `pve(target, role, 'DELETE', path, form)` would send a body PVE never looks at: the flags would
@@ -41,7 +41,7 @@
  * ⛔ THE POLLER IS NEVER THE TASK'S OWNER, WHICH COSTS A PRIVILEGE, AND THIS ONE IS MEASURED
  *   RATHER THAN FEARED. client.ts mints a fresh credential per call and the mount vends a NEW
  *   token id each time, so the token reading the status is never the token recorded in the UPID —
- *   and PVE compares them exactly. /usr/share/perl5/PVE/API2/Tasks.pm on n2, `$check_task_user`:
+ *   and PVE compares them exactly. /usr/share/perl5/PVE/API2/Tasks.pm on node-b, `$check_task_user`:
  *   `return $user eq $fulltoken || $user eq $task->{user};`, above it the comment "token only sees
  *   token tasks, user sees user + token tasks". Token B of the same user matches neither branch.
  *   So the fallback is the schema's other clause for `GET /nodes/{node}/tasks/{upid}/status`: "The
@@ -128,8 +128,8 @@ const destroyPath = (props: CephFsProps) => {
 /**
  * Wait for a forked PVE task, and fail loudly rather than quietly.
  *
- * ⚠️ THE UPID IS PERCENT-ENCODED BECAUSE IT IS FULL OF COLONS — `UPID:n2:00396D3A:…:root@pam:`
- *   (MEASURED shape, from `GET /nodes/n2/tasks`) is ONE path segment, not seven. Encoding is what
+ * ⚠️ THE UPID IS PERCENT-ENCODED BECAUSE IT IS FULL OF COLONS — `UPID:node-b:00396D3A:…:root@pam:`
+ *   (MEASURED shape, from `GET /nodes/node-b/tasks`) is ONE path segment, not seven. Encoding is what
  *   guarantees it arrives as one; PVE's router decodes each segment before matching. REASONED from
  *   the URI handling rather than measured — no task of this provider's has been polled yet.
  */
@@ -178,8 +178,8 @@ const settle = (target: PveTarget, node: string, upid: string, what: string) =>
  *
  * ⚠️ A CREATE NEEDS A RUNNING *AND* A STANDBY MDS, and refuses BEFORE it forks -- "no running
  *   Metadata Server (MDS) found!" / "no standby Metadata Server (MDS) found!" are synchronous, so
- *   they surface as a failed POST rather than as a silent worker. TB4 has three (MEASURED: n3
- *   `up:active` for cephfs-tb4, n2 and n4 `up:standby`), so this is a note for a smaller cluster.
+ *   they surface as a failed POST rather than as a silent worker. C1 has three (MEASURED: node-c
+ *   `up:active` for cephfs-c1, node-b and node-d `up:standby`), so this is a note for a smaller cluster.
  * ⚠️ BOTH WRITES CHECK `Sys.Modify` ON `/` -- the root, with the breadth metric-server.ts warns
  *   about: granting it buys datacenter options and every other cluster-wide config write too.
  */

@@ -6,7 +6,7 @@
  *   in OpenBao, not Alchemy state.
  *
  * ★ `defaultRemovalPolicy: 'retain'` — disabling a mount destroys every secret under it.
- *   Opt in with `.pipe(RemovalPolicy.destroy())`; see resource.ts in house/proxmox.
+ *   Opt in with `.pipe(RemovalPolicy.destroy())`; see resource.ts in <estate>/proxmox.
  *
  * ★ REPLACE SEMANTICS (audited 2026-09-21, see src/openbao/REPLACE.md):
  *   · `type` changed → plans `replace`, and the APPLY FAILS, destroying nothing: the new

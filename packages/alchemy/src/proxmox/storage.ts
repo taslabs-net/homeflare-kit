@@ -68,7 +68,7 @@ export interface StorageProps extends WithTarget {
   /** `images,rootdir,vztmpl,iso,backup,snippets`. PVE reports `none` for an empty set. */
   content?: string;
   /**
-   * Node restriction, e.g. `n1,n2`. ⚠️ A STORAGE WITH A `nodes` LIST DOES NOT EXIST ANYWHERE ELSE:
+   * Node restriction, e.g. `node-a,node-b`. ⚠️ A STORAGE WITH A `nodes` LIST DOES NOT EXIST ANYWHERE ELSE:
    * an LXC declared on a node outside it fails at create with "storage not available on node".
    */
   nodes?: string;

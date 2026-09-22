@@ -11,7 +11,7 @@
  *   `vnet`; a literal buys no ordering, and here it also buys a wrong path.
  *
  * ⛔ THE ID PVE FILES A SUBNET UNDER IS NOT THE ONE YOU WRITE, AND IT IS THIS FAMILY'S SHARPEST
- *   EDGE. `POST` takes `subnet=10.0.0.0/24` while GET, PUT and DELETE address `house-10.0.0.0-24`.
+ *   EDGE. `POST` takes `subnet=10.0.0.0/24` while GET, PUT and DELETE address `lab-10.0.0.0-24`.
  *   One PVE parameter name, `subnet`, carrying two different values — so they are named APART here,
  *   `cidr` for the declared one and `subnetId` for the derived one, for the reason values.ts gives
  *   about `flag`: a name that means two things is a bug waiting for whoever reads one meaning. The
@@ -50,11 +50,11 @@
  *   seven privileges include SDN.Audit — at `/` with propagate=1. So the default 3600s auditor
  *   lease reads this family, and a `readRole: 'provision'` here would be privilege nobody needed.
  *   Writes are a different answer: POST, PUT and DELETE all require SDN.Allocate on
- *   `/sdn/zones/<zone>/<vnet>`, which `LXCProvisioner` gained on 2026-09-13.
+ *   `/sdn/zones/<zone>/<vnet>`, which the provision role gained on 2026-09-13 (`PROVISION_PRIVILEGES`).
  *
- * ⚠️ NO LIVE SUBNET EXISTS ON TB4 TO ROUND-TRIP AGAINST — there are no SDN zones and no vnets, so
+ * ⚠️ NO LIVE SUBNET EXISTS ON C1 TO ROUND-TRIP AGAINST — there are no SDN zones and no vnets, so
  *   there can be no subnets. Every claim above is read off PVE 9.2.11's own schema and Perl sources
- *   on n2, and the noop argument below rests on those rather than on a plan this file has watched.
+ *   on node-b, and the noop argument below rests on those rather than on a plan this file has watched.
  *
  * ⚠️ TWO REFUSALS TO EXPECT, both from `SubnetPlugin::on_update_hook`: PVE will not put a subnet on
  *   a vnet with `vlanaware` set ("you can't add a subnet on a vlanaware vnet"), and it rejects a
@@ -98,7 +98,7 @@ export interface SdnSubnetProps extends WithTarget {
   gateway?: string;
   /**
    * Masquerade this subnet. ⚠️ INERT UNTIL THE CLUSTER FIREWALL IS ON — PVE's own description is
-   *   "enable masquerade for this subnet if pve-firewall", and TB4's cluster firewall was empty and
+   *   "enable masquerade for this subnet if pve-firewall", and C1's cluster firewall was empty and
    *   disabled when this was written. It still round-trips, so declaring it does not diff.
    */
   snat?: boolean;

@@ -3,7 +3,7 @@
  *
  * ★ WHY IT EXISTS: forgejo-provision, the service account the Forgejo engine mints as, belongs to the
  *   HomeFlare Owners team — Tim, 2026-09-14. Membership is what its tokens can reach; the role's
- *   scopes only cap it (house/openbao/src/forgejo-bootstrap.ts).
+ *   scopes only cap it (<estate>/openbao/src/forgejo-bootstrap.ts).
  *
  * ★ READ OFF THE LIVE 16.0.3 SWAGGER (127.0.0.1:3000/swagger.v1.json, 2026-09-14): GET, PUT and
  *   DELETE `/teams/{id}/members/{username}` answer 200, 204 and 204, and 404 when absent. The team

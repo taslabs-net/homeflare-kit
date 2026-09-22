@@ -168,7 +168,7 @@ export const int = (value: unknown, fallback: number) => {
  * A PVE update form with its clear-list attached, and the two guaranteed not to overlap.
  *
  * ⛔ PVE DIES IF A KEY IS SET AND DELETED IN ONE CALL, AND SIX FAMILIES HERE BUILT THAT FORM BY
- *   HAND. Measured in the shipped Perl on n2 — `PVE::SectionConfig::delete_from_config`, line 1860:
+ *   HAND. Measured in the shipped Perl on node-b — `PVE::SectionConfig::delete_from_config`, line 1860:
  *
  *     die "cannot set and delete property '$k' at the same time!\n"
  *         if defined($new_options->{$k});

@@ -1,7 +1,7 @@
 /**
  * `Forgejo.OrgTeam` — one organization team under `/orgs/{org}/teams`.
  *
- * ★ READ OFF `house/mcp-servers/docs/api/upstream/forgejo.json` (Forgejo 16.x OpenAPI): create is
+ * ★ READ OFF `<estate>/mcp-servers/docs/api/upstream/forgejo.json` (Forgejo 16.x OpenAPI): create is
  *   `POST /orgs/{org}/teams`; read/update/delete use numeric id at `/teams/{id}` — not the name.
  *
  * ⚠️ PATCH AND DELETE USE `/teams/{id}` — same seam as org labels. `locate` lists by name;

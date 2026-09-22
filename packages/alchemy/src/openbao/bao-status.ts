@@ -121,7 +121,7 @@ export const settle = (
     if (errors === undefined) {
       // ⛔ DESCRIBED, NEVER QUOTED. A proxy or gateway error page can echo the request back, headers
       //   and all, so quoting it could carry X-Vault-Token into an error that Alchemy logs (grok,
-      //   2026-09-14). mint in house/proxmox/src/credentials.ts already did it this way.
+      //   2026-09-14). mint in <estate>/proxmox/src/credentials.ts already did it this way.
       return fail([`not an OpenBao error body (${String(text.length)} bytes)`]);
     }
     if (status === 404 && intent !== 'write') return { body: undefined };

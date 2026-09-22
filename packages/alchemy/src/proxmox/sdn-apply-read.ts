@@ -3,12 +3,12 @@
  * collections this package declares resources for.
  *
  * 🔴 THE GAP THIS FILE CLOSES, AND IT WAS FOUND BY ALMOST DECLARING THE APPLY. `pendingCount` in
- *   sdn-apply.ts counted `cluster/sdn/zones` and `cluster/sdn/vnets`. TB4 has zero of each — and a
- *   staged OSPF FABRIC that nothing counted. MEASURED 2026-09-13 on n2:
+ *   sdn-apply.ts counted `cluster/sdn/zones` and `cluster/sdn/vnets`. C1 has zero of each — and a
+ *   staged OSPF FABRIC that nothing counted. MEASURED 2026-09-13 on node-b:
  *
- *     /etc/pve/sdn/fabrics.cfg   ospf_fabric: tb4, area 1, ip_prefix 10.100.0.0/24
- *                                ospf_node: tb4_n2/n3/n4, interfaces en05 + en06,
- *                                ip 10.100.0.102 / .103 / .104
+ *     /etc/pve/sdn/fabrics.cfg   ospf_fabric: c1, area 1, ip_prefix 203.0.113.0/24
+ *                                ospf_node: c1_n2/node-c/node-d, interfaces tb0 + tb1,
+ *                                ip 203.0.113.102 / .103 / .104
  *     /etc/network/interfaces.d/sdn   the file PVE GENERATES from it, carrying those /32s
  *
  *   Those addresses are Ceph's `cluster_network`. So `diff` would have answered `noop` for ever
@@ -62,7 +62,7 @@ const MARKED = [
  *
  * ⚠️ NAMED RATHER THAN SILENTLY SKIPPED. `ipams` and `dns` answer HTTP 400 to both `?pending=1` and
  *   `?running=1`, so there is no way to ask them what is staged. They are a REAL blind spot: an
- *   ipam edited by hand is published by the apply and cannot be seen from here. TB4 has one ipam
+ *   ipam edited by hand is published by the apply and cannot be seen from here. C1 has one ipam
  *   (`pve`, the built-in) and zero dns entries, so the blind spot is currently empty — which is a
  *   fact about today, not a property of the design.
  */
@@ -181,7 +181,7 @@ const sortDeep = (value: unknown): unknown => {
  *
  * ⛔ ZERO HERE IS THE ONLY THING THAT MAKES DECLARING THE APPLY SAFE. `reconcile` runs on CREATE —
  *   Alchemy always calls it the first time a resource appears — and `PUT /cluster/sdn` regenerates
- *   `/etc/network/interfaces.d/sdn` on every node. On TB4 that file carries Ceph's cluster network.
+ *   `/etc/network/interfaces.d/sdn` on every node. On C1 that file carries Ceph's cluster network.
  */
 export const sdnPendingCount = (target: PveTarget) =>
   Effect.all([markedPending(target), fabricPending(target)], { concurrency: 'unbounded' }).pipe(

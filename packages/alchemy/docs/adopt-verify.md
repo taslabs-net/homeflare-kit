@@ -9,8 +9,8 @@ bunx --bun hf-adopt-verify --config alchemy.run.ts --stage live          # rows 
 bunx --bun hf-adopt-verify --config alchemy.pbs.ts --stage live --all    # every row + deletions
 ```
 
-Wrap it in the same credential lane the deploy uses (`bun ./scripts/with-mini-bao.ts --admin …`
-in the Proxmox stacks): a lane that cannot read an object sees it as absent, and the verifier
+Wrap it in the same credential lane the deploy uses (the wrapper that mints
+its OpenBao token): a lane that cannot read an object sees it as absent, and the verifier
 then reports `create` for something that exists.
 
 ## Why a plan line is not enough
@@ -24,8 +24,8 @@ Measured in alchemy `2.0.0-beta.79`:
 - So `alchemy plan` prints `(+) adopted` for a matching object **and** for a drifting one, and
   the deploy reconciles both. Whether that writes is up to each family's `reconcile`.
 
-Measured on TB4, `pvesh get /cluster/tasks`, 2026-09-21: six `cephsetpool` tasks by
-`hf-provision@pve`, one per pool, on 2026-09-13 and again on 2026-09-20 — the deploys that
+Measured on C1, `pvesh get /cluster/tasks`, 2026-09-21: six `cephsetpool` tasks by
+the provision user, one per pool, on 2026-09-13 and again on 2026-09-20 — the deploys that
 adopted the three Ceph pools. `Proxmox.CephPool` sent `setpool` whenever the pool existed,
 whatever its diff said. It was the one PVE/PBS family that wrote on a no-op adoption, and it is
 fixed. [adopted-deploys.md](./adopted-deploys.md) shows what every family does.

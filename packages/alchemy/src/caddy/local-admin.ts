@@ -12,7 +12,7 @@
  * ★ HOST AND ORIGIN, AS CADDY's OWN CLI SENDS THEM (cmd/commandfuncs.go AdminAPIRequest): over
  *   TCP, `Host` and `Origin: http://<host>`; over a socket, `Host: 127.0.0.1` and no Origin, because
  *   Caddy skips the Host check on unix listeners (admin.go allowedOrigins). MEASURED against the
- *   mini's Caddy 2.11.4: any other Host gets 403 `host not allowed`, a forwarded port included —
+ *   a Mac host's Caddy 2.11.4: any other Host gets 403 `host not allowed`, a forwarded port included —
  *   hence `hostHeader`.
  */
 import { request as httpRequest } from 'node:http';

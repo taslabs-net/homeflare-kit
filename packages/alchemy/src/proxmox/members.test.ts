@@ -15,7 +15,7 @@ const transport = (cause: Error) =>
   new HttpClientError.HttpClientError({
     reason: new HttpClientError.TransportError({
       cause,
-      request: { method: 'PUT', url: 'https://n2.mgmt.example.com:8006/api2/json/x' } as never,
+      request: { method: 'PUT', url: 'https://node-b.mgmt.example.com:8006/api2/json/x' } as never,
     }),
   });
 

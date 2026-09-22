@@ -17,14 +17,14 @@ const target: PoolProps['target'] = {
 
 const props = (over: Partial<PoolProps> = {}): PoolProps => ({
   target,
-  poolid: 'house',
+  poolid: 'lab',
   ...over,
 });
 
 describe('pool forms match generated POST/PUT parameters', () => {
   it('createForm sends exactly poolid and comment', () => {
     const form: PoolsPostParams = poolCreateForm(props({ comment: 'estate' }));
-    assert.deepEqual(form, { poolid: 'house', comment: 'estate' });
+    assert.deepEqual(form, { poolid: 'lab', comment: 'estate' });
     assert.deepEqual(Object.keys(form).sort(), ['comment', 'poolid']);
   });
 

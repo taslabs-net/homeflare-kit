@@ -18,10 +18,10 @@
  *   string, so HTTP 200 means "the task started" — an immediate read-back can see a pool that does
  *   not exist yet, or values that have not landed. `settle` waits for the cluster to agree.
  *
- * ⛔ THE FOUR POOLS ON TB4 INCLUDE CEPH'S OWN, AND NONE OF THEM MAY BE ADOPTED. Measured
+ * ⛔ THE FOUR POOLS ON C1 INCLUDE CEPH'S OWN, AND NONE OF THEM MAY BE ADOPTED. Measured
  *   2026-09-13: `.mgr` (application `mgr`, created and owned by the manager daemons),
- *   `cephfs-tb4_data` and `cephfs-tb4_metadata` (the two halves of the `cephfs-tb4` filesystem —
- *   destroying either destroys the filesystem), and `cephtb4`, the rbd pool the guests sit on.
+ *   `cephfs-c1_data` and `cephfs-c1_metadata` (the two halves of the `cephfs-c1` filesystem —
+ *   destroying either destroys the filesystem), and `rbd-c1`, the rbd pool the guests sit on.
  *   `list` answers empty like every resource in this package, so adoption stays an explicit act;
  *   the `applications` attribute is reported so that a plan SHOWS which of those a declaration hit.
  *
@@ -107,9 +107,9 @@ const spec: PveSpec<CephPoolProps, CephPoolAttributes> = {
    *   write only ever ADDS to a list), `target_size_ratio` (float equality), `id`, `applications`
    *   and the three `no*` flags (PVE returns them and accepts none of them on write), `node` and
    *   `name` (the address the read was made at — true by construction, never a diff). In, and each
-   *   measured to round-trip unchanged against TB4's four pools on 2026-09-13: size 3, min_size 2,
+   *   measured to round-trip unchanged against C1's four pools on 2026-09-13: size 3, min_size 2,
    *   pg_autoscale_mode `on`, crush_rule `replicated_rule`, pg_num_min where it is set (16 on
-   *   cephfs-tb4_metadata, absent on cephtb4), target_size in bytes — and each of the last two
+   *   cephfs-c1_metadata, absent on rbd-c1), target_size in bytes — and each of the last two
    *   through `hint`, which drops a declared zero for the reason given on it.
    */
   matches: (attributes, props) =>
@@ -197,7 +197,7 @@ export const ProxmoxCephPoolProvider = () =>
          *   to remove deliberately.
          * ⚠️ AND THE REFUSAL CAN ARRIVE AFTER THE RESPONSE, WHICH IS WHY THIS WAITS. The DELETE
          *   forks a worker and answers 200 with a UPID, so mons running with
-         *   `mon_allow_pool_delete` false fail once the call has already returned. MEASURED on TB4
+         *   `mon_allow_pool_delete` false fail once the call has already returned. MEASURED on C1
          *   2026-09-13: the config-db value is false while the running mons report true, i.e. it is
          *   set in ceph.conf and the two sources disagree by design.
          */

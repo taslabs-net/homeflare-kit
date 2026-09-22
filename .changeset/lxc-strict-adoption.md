@@ -8,7 +8,7 @@ could not prove its own — any key the declaration says otherwise now FAILS the
 keys and never their values:
 
 ```
-CT 100 on pve1: adopting it would change memory, net1. An adoption never changes a guest, so
+CT 900 on pve1: adopting it would change memory, net1. An adoption never changes a guest, so
 nothing is written. …
 ```
 

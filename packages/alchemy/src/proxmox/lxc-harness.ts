@@ -54,7 +54,7 @@ export const LIVE: Readonly<Record<string, unknown>> = {
   hostname: 'ct-example',
   lxc: [['lxc.prlimit.memlock', 'unlimited']],
   memory: 8192,
-  mp0: 'tank:subvol-100-disk-0,mp=/data,backup=0,size=200G',
+  mp0: 'tank:subvol-900-disk-0,mp=/data,backup=0,size=200G',
   nameserver: '192.0.2.254',
   net0:
     'name=eth0,bridge=vmbr0,firewall=0,gw=192.0.2.1,hwaddr=00:00:5E:00:53:01,' +
@@ -62,7 +62,7 @@ export const LIVE: Readonly<Record<string, unknown>> = {
   net1: 'name=eth1,bridge=vmbr1,hwaddr=00:00:5E:00:53:02,ip=198.51.100.4/24,mtu=1500,type=veth',
   onboot: 1,
   ostype: 'debian',
-  rootfs: 'local-zfs:subvol-100-disk-0,size=40G',
+  rootfs: 'local-zfs:subvol-900-disk-0,size=40G',
   searchdomain: 'example.com',
   swap: 0,
   tags: 'web',
@@ -71,7 +71,7 @@ export const LIVE: Readonly<Record<string, unknown>> = {
 
 /** Where `seed` puts the production-shaped guest by default, and its `node/vmid` key. */
 export const NODE = 'pve1';
-export const VMID = 100;
+export const VMID = 900;
 export const KEY = `${NODE}/${String(VMID)}`;
 
 /** The live config as a declaration: every key, minus what pvesh adds that is not a prop. */

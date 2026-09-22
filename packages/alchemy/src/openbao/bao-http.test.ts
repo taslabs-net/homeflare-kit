@@ -31,11 +31,11 @@ describe('baoRead', () => {
       () => reply,
       async (bao) => {
         const env = { BAO_ADDR: bao.address, BAO_NAMESPACE: 'homeflare', BAO_TOKEN: TOKEN };
-        const data = await run(env, baoRead('proxmox-tb4/roles/read'));
+        const data = await run(env, baoRead('proxmox-c1/roles/read'));
         assert.deepEqual(data, { mint_user: 'hf-read@pve', ttl: 3600 });
         const [seen] = bao.seen;
         assert.equal(seen?.method, 'GET');
-        assert.equal(seen?.path, '/v1/proxmox-tb4/roles/read');
+        assert.equal(seen?.path, '/v1/proxmox-c1/roles/read');
         assert.equal(seen?.headers.get('x-vault-namespace'), 'homeflare');
         assert.equal(seen?.headers.get('x-vault-token'), TOKEN);
         assert.equal(seen?.headers.get('x-vault-request'), 'true');
