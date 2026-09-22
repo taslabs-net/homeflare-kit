@@ -15,10 +15,14 @@
  * ★ THE PROVISIONING BASELINE JOINED 2026-09-21: one privilege list (`PROVISION_PRIVILEGES`), the
  *   helper that declares it (`declareProvisionBaseline`) and the pure generator of the one-time
  *   root commands that bootstrap it (`provisionBootstrap`) — docs/provision-baseline.md.
+ * ★ THE NOTIFICATION FAMILIES JOINED 2026-09-22: PBS targets and matchers, the PVE matcher, the
+ *   `FromEnv` shape their write-only values take, and the Alertmanager body template
+ *   (docs/pbs-notifications.md).
  * ★ Anything else unlisted is still reachable by path if you genuinely need
  *   it — that is a deliberate, visible act rather than an accident of barrelling.
  */
 export { ProxmoxAcl, ProxmoxAclProvider } from './acl.ts';
+export { type AlertmanagerBodyOptions, alertmanagerAlertBody } from './alertmanager-body.ts';
 export { ProxmoxApiTokenProvider } from './api-token.ts';
 export { ProxmoxBackupJob, ProxmoxBackupJobProvider } from './backup-job.ts';
 export { ProxmoxCephDaemonProvider } from './ceph-daemon.ts';
@@ -35,10 +39,23 @@ export { ProxmoxMetricServer, ProxmoxMetricServerProvider } from './metric-serve
 export { ProxmoxNetworkApplyProvider } from './network-apply.ts';
 export { ProxmoxNodeNetworkProvider } from './node-network.ts';
 export {
+  ProxmoxNotificationMatcher,
+  ProxmoxNotificationMatcherProvider,
+} from './notification-matcher.ts';
+export {
   ProxmoxNotificationTarget,
   ProxmoxNotificationTargetProvider,
 } from './notification-target.ts';
 export { PbsDatastore, PbsDatastoreProvider } from './pbs-datastore.ts';
+export {
+  PbsNotificationMatcher,
+  PbsNotificationMatcherProvider,
+} from './pbs-notification-matcher.ts';
+export {
+  PbsNotificationTarget,
+  PbsNotificationTargetProvider,
+  type PbsNotificationTargetProps,
+} from './pbs-notification-target.ts';
 export { PbsPruneJob, PbsPruneJobProvider } from './pbs-prune-job.ts';
 export { PbsSyncJob, PbsSyncJobProvider } from './pbs-sync-job.ts';
 export { PbsVerifyJob, PbsVerifyJobProvider } from './pbs-verify-job.ts';
@@ -63,4 +80,5 @@ export { ProxmoxSdnVnet, ProxmoxSdnVnetProvider } from './sdn-vnet.ts';
 export { ProxmoxSdnZone, ProxmoxSdnZoneProvider } from './sdn-zone.ts';
 export { ProxmoxStorage, ProxmoxStorageProvider } from './storage.ts';
 export { ProxmoxUser, ProxmoxUserProvider } from './user.ts';
+export { type FromEnv } from './write-only.ts';
 export { ProxmoxZfsPoolProvider } from './zfs-pool.ts';

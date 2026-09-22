@@ -130,6 +130,11 @@ export interface FakeEngine {
   readonly deploy: (body: Body) => Promise<Record<string, string>>;
   /** Verify `body` against what the earlier deploys recorded. */
   readonly verify: (body: Body, options?: VerifyOptions) => Promise<AdoptReport>;
+  /**
+   * Every state row the store holds, as JSON — what a Postgres store would persist. ★ For tests
+   * that must prove a value NEVER reaches state (proxmox/pbs-notification-target-state.test.ts).
+   */
+  readonly stored: () => string;
 }
 
 /**
@@ -138,7 +143,8 @@ export interface FakeEngine {
  * ⚠️ THE CASTS ARE AT THE ENGINE'S TYPED BOUNDARY — openbao/fake-stack.ts has the reasoning.
  */
 export const engineOver = <ROut, E, RIn>(layer: Layer.Layer<ROut, E, RIn>): FakeEngine => {
-  const state = Alchemy.inMemoryState();
+  const rows: NonNullable<Parameters<typeof Alchemy.inMemoryState>[0]> = {};
+  const state = Alchemy.inMemoryState(rows);
   const stack = Alchemy.Stack as unknown as (
     name: string,
     options: { providers: typeof layer; state: typeof state },
@@ -161,6 +167,7 @@ export const engineOver = <ROut, E, RIn>(layer: Layer.Layer<ROut, E, RIn>): Fake
     );
 
   return {
+    stored: () => JSON.stringify(rows),
     deploy: (body) =>
       run(body, (compiled) =>
         Effect.gen(function* () {

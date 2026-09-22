@@ -28,6 +28,11 @@ export interface PveCall {
   /** Relative to `/api2/json/`, query included — the string a family passes to `pve()`. */
   readonly path: string;
   readonly form: Readonly<Record<string, string>>;
+  /**
+   * Every key/value pair in wire order. ⚠️ `form` keeps only the LAST value of a repeated key, and
+   * a PBS list IS a repeated key (client.ts `encode`) — assert a list on `pairs`, never `form`.
+   */
+  readonly pairs: readonly (readonly [string, string])[];
 }
 
 /** Answers one call with its `data`; `undefined` is PVE's `{"data": null}`. */
@@ -56,8 +61,13 @@ export const fakePve = (answer: PveAnswer): FakePve => {
       return Response.json({ data, lease_duration: 0 });
     }
     const path = `${url.pathname.replace(/^\/api2\/json\//, '')}${url.search}`;
-    const form = Object.fromEntries(new URLSearchParams(await request.text()));
-    const call = { form, method: request.method, path };
+    const params = new URLSearchParams(await request.text());
+    const call = {
+      form: Object.fromEntries(params),
+      method: request.method,
+      pairs: [...params],
+      path,
+    };
     calls.push(call);
     return Response.json({ data: answer(call) ?? null });
   };

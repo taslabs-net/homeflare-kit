@@ -68,6 +68,7 @@
     "@alchemy.run/frontend-frameworks": "2.0.0-beta.79",
     "effect": "4.0.0-rc.115",
     "mime": "4.1.0",
+    "handlebars": "4.7.9",
     "@flue/cli": "2.0.8",
     "@flue/react": "2.0.8",
     "@flue/runtime": "2.0.8",

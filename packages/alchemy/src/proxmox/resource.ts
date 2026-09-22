@@ -20,7 +20,7 @@ import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
-import { pve } from './client.ts';
+import { type PveForm, pve } from './client.ts';
 import type { ApiTarget, PbsTarget, PveRole, PveTarget } from './credentials.ts';
 import { formToSend } from './update-guard.ts';
 
@@ -77,15 +77,15 @@ export type PveSpec<Props extends WithApiTarget, Attributes> = {
   readonly collection: (props: Props) => string;
   /** Live JSON to attributes. Returning undefined means "this is not really there". */
   readonly attributes: (live: Record<string, unknown>, props: Props) => Attributes | undefined;
-  /** The form PVE wants on create. ⚠️ PVE takes form encoding, not JSON. */
-  readonly createForm: (props: Props) => Record<string, string>;
+  /** The form PVE wants on create. ⚠️ PVE takes form encoding, not JSON. Arrays: client.ts. */
+  readonly createForm: (props: Props) => PveForm;
   /**
    * The form for an update, or undefined when the object has no mutable fields.
    *
    * ⚠️ SOME PVE OBJECTS CANNOT BE UPDATED AT ALL. Returning undefined makes a changed prop a
    *   REPLACE rather than a silent no-op, which is the honest answer for an immutable object.
    */
-  readonly updateForm?: (props: Props) => Record<string, string>;
+  readonly updateForm?: (props: Props) => PveForm;
   /** True when live already matches props. Decides noop vs update. */
   readonly matches: (attributes: Attributes, props: Props) => boolean;
   /**
@@ -105,7 +105,7 @@ export type PveSpec<Props extends WithApiTarget, Attributes> = {
 export const pveOperations = <Props extends WithApiTarget, Attributes>(
   spec: PveSpec<Props, Attributes>,
 ) => {
-  /** The live object, or undefined. ⚠️ A 404 is an ANSWER here, not a failure. */
+  /** The live object, or undefined. ⚠️ A 404 and `{"data": null}` are ANSWERS, not failures. */
   const read = (props: Props) =>
     pve<Record<string, unknown>>(
       props.target,
@@ -113,7 +113,7 @@ export const pveOperations = <Props extends WithApiTarget, Attributes>(
       'GET',
       spec.path(props),
     ).pipe(
-      Effect.map((data) => (data === undefined ? undefined : spec.attributes(data, props))),
+      Effect.map((data) => (data == null ? undefined : spec.attributes(data, props))),
       Effect.orElseSucceed(() => undefined),
     );
 

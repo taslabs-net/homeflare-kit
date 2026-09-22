@@ -141,6 +141,335 @@ export type ConfigDatastoreNameDeleteParams = {
 /** DELETE /config/datastore/{name} — `data` payload after client unwrap. */
 export type ConfigDatastoreNameDeleteReturn = string;
 
+/** GET /config/notifications/endpoints — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsGetReturn = null;
+
+/** GET /config/notifications/endpoints/gotify — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsGotifyGetReturn = readonly {
+  comment?: string;
+  disable?: boolean | 0 | 1;
+  filter?: string;
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  server: string;
+}[];
+
+/** POST /config/notifications/endpoints/gotify — form/query parameters (path segments omitted). */
+export type ConfigNotificationsEndpointsGotifyPostParams = {
+  comment?: string;
+  disable?: '0' | '1';
+  filter?: string;
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  server: string;
+  token: string;
+};
+/** POST /config/notifications/endpoints/gotify — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsGotifyPostReturn = null;
+
+/** GET /config/notifications/endpoints/gotify/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsGotifyNameGetReturn = {
+  comment?: string;
+  disable?: boolean | 0 | 1;
+  filter?: string;
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  server: string;
+};
+
+/** PUT /config/notifications/endpoints/gotify/{name} — form/query parameters (path segments omitted). */
+export type ConfigNotificationsEndpointsGotifyNamePutParams = {
+  comment?: string;
+  delete?: readonly ('comment' | 'disable')[];
+  digest?: string;
+  disable?: '0' | '1';
+  server?: string;
+  token?: string;
+};
+/** PUT /config/notifications/endpoints/gotify/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsGotifyNamePutReturn = null;
+
+/** DELETE /config/notifications/endpoints/gotify/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsGotifyNameDeleteReturn = null;
+
+/** GET /config/notifications/endpoints/sendmail — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsSendmailGetReturn = readonly {
+  author?: string;
+  comment?: string;
+  disable?: boolean | 0 | 1;
+  filter?: string;
+  'from-address'?: string;
+  mailto?: readonly string[];
+  'mailto-user'?: readonly string[];
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+}[];
+
+/** POST /config/notifications/endpoints/sendmail — form/query parameters (path segments omitted). */
+export type ConfigNotificationsEndpointsSendmailPostParams = {
+  author?: string;
+  comment?: string;
+  disable?: '0' | '1';
+  filter?: string;
+  'from-address'?: string;
+  mailto?: readonly string[];
+  'mailto-user'?: readonly string[];
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+};
+/** POST /config/notifications/endpoints/sendmail — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsSendmailPostReturn = null;
+
+/** GET /config/notifications/endpoints/sendmail/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsSendmailNameGetReturn = {
+  author?: string;
+  comment?: string;
+  disable?: boolean | 0 | 1;
+  filter?: string;
+  'from-address'?: string;
+  mailto?: readonly string[];
+  'mailto-user'?: readonly string[];
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+};
+
+/** PUT /config/notifications/endpoints/sendmail/{name} — form/query parameters (path segments omitted). */
+export type ConfigNotificationsEndpointsSendmailNamePutParams = {
+  author?: string;
+  comment?: string;
+  delete?: readonly (
+    | 'author'
+    | 'comment'
+    | 'disable'
+    | 'from-address'
+    | 'mailto'
+    | 'mailto-user'
+  )[];
+  digest?: string;
+  disable?: '0' | '1';
+  'from-address'?: string;
+  mailto?: readonly string[];
+  'mailto-user'?: readonly string[];
+};
+/** PUT /config/notifications/endpoints/sendmail/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsSendmailNamePutReturn = null;
+
+/** DELETE /config/notifications/endpoints/sendmail/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsSendmailNameDeleteReturn = null;
+
+/** GET /config/notifications/endpoints/smtp — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsSmtpGetReturn = readonly {
+  author?: string;
+  comment?: string;
+  disable?: boolean | 0 | 1;
+  'from-address': string;
+  mailto?: readonly string[];
+  'mailto-user'?: readonly string[];
+  mode?: 'insecure' | 'starttls' | 'tls';
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  port?: number;
+  server: string;
+  username?: string;
+}[];
+
+/** POST /config/notifications/endpoints/smtp — form/query parameters (path segments omitted). */
+export type ConfigNotificationsEndpointsSmtpPostParams = {
+  author?: string;
+  comment?: string;
+  disable?: '0' | '1';
+  'from-address': string;
+  mailto?: readonly string[];
+  'mailto-user'?: readonly string[];
+  mode?: 'insecure' | 'starttls' | 'tls';
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  password?: string;
+  port?: string;
+  server: string;
+  username?: string;
+};
+/** POST /config/notifications/endpoints/smtp — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsSmtpPostReturn = null;
+
+/** GET /config/notifications/endpoints/smtp/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsSmtpNameGetReturn = {
+  author?: string;
+  comment?: string;
+  disable?: boolean | 0 | 1;
+  'from-address': string;
+  mailto?: readonly string[];
+  'mailto-user'?: readonly string[];
+  mode?: 'insecure' | 'starttls' | 'tls';
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  port?: number;
+  server: string;
+  username?: string;
+};
+
+/** PUT /config/notifications/endpoints/smtp/{name} — form/query parameters (path segments omitted). */
+export type ConfigNotificationsEndpointsSmtpNamePutParams = {
+  author?: string;
+  comment?: string;
+  delete?: readonly (
+    | 'author'
+    | 'comment'
+    | 'disable'
+    | 'mailto'
+    | 'mailto-user'
+    | 'password'
+    | 'port'
+    | 'username'
+  )[];
+  digest?: string;
+  disable?: '0' | '1';
+  'from-address'?: string;
+  mailto?: readonly string[];
+  'mailto-user'?: readonly string[];
+  mode?: 'insecure' | 'starttls' | 'tls';
+  password?: string;
+  port?: string;
+  server?: string;
+  username?: string;
+};
+/** PUT /config/notifications/endpoints/smtp/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsSmtpNamePutReturn = null;
+
+/** DELETE /config/notifications/endpoints/smtp/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsSmtpNameDeleteReturn = null;
+
+/** GET /config/notifications/endpoints/webhook — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsWebhookGetReturn = readonly {
+  body?: string;
+  comment?: string;
+  disable?: boolean | 0 | 1;
+  header?: readonly string[];
+  method: 'post' | 'put' | 'get';
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  secret?: readonly string[];
+  url: string;
+}[];
+
+/** POST /config/notifications/endpoints/webhook — form/query parameters (path segments omitted). */
+export type ConfigNotificationsEndpointsWebhookPostParams = {
+  body?: string;
+  comment?: string;
+  disable?: '0' | '1';
+  header?: readonly string[];
+  method: 'post' | 'put' | 'get';
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  secret?: readonly string[];
+  url: string;
+};
+/** POST /config/notifications/endpoints/webhook — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsWebhookPostReturn = null;
+
+/** GET /config/notifications/endpoints/webhook/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsWebhookNameGetReturn = {
+  body?: string;
+  comment?: string;
+  disable?: boolean | 0 | 1;
+  header?: readonly string[];
+  method: 'post' | 'put' | 'get';
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  secret?: readonly string[];
+  url: string;
+};
+
+/** PUT /config/notifications/endpoints/webhook/{name} — form/query parameters (path segments omitted). */
+export type ConfigNotificationsEndpointsWebhookNamePutParams = {
+  body?: string;
+  comment?: string;
+  delete?: readonly ('comment' | 'disable' | 'header' | 'body' | 'secret')[];
+  digest?: string;
+  disable?: '0' | '1';
+  header?: readonly string[];
+  method?: 'post' | 'put' | 'get';
+  secret?: readonly string[];
+  url?: string;
+};
+/** PUT /config/notifications/endpoints/webhook/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsWebhookNamePutReturn = null;
+
+/** DELETE /config/notifications/endpoints/webhook/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsEndpointsWebhookNameDeleteReturn = null;
+
+/** GET /config/notifications/matchers — `data` payload after client unwrap. */
+export type ConfigNotificationsMatchersGetReturn = readonly {
+  comment?: string;
+  disable?: boolean | 0 | 1;
+  'invert-match'?: boolean | 0 | 1;
+  'match-calendar'?: readonly string[];
+  'match-field'?: readonly string[];
+  'match-severity'?: readonly string[];
+  mode?: 'all' | 'any';
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  target?: readonly string[];
+}[];
+
+/** POST /config/notifications/matchers — form/query parameters (path segments omitted). */
+export type ConfigNotificationsMatchersPostParams = {
+  comment?: string;
+  disable?: '0' | '1';
+  'invert-match'?: '0' | '1';
+  'match-calendar'?: readonly string[];
+  'match-field'?: readonly string[];
+  'match-severity'?: readonly string[];
+  mode?: 'all' | 'any';
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  target?: readonly string[];
+};
+/** POST /config/notifications/matchers — `data` payload after client unwrap. */
+export type ConfigNotificationsMatchersPostReturn = null;
+
+/** GET /config/notifications/matchers/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsMatchersNameGetReturn = {
+  comment?: string;
+  disable?: boolean | 0 | 1;
+  'invert-match'?: boolean | 0 | 1;
+  'match-calendar'?: readonly string[];
+  'match-field'?: readonly string[];
+  'match-severity'?: readonly string[];
+  mode?: 'all' | 'any';
+  name: string;
+  origin?: 'user-created' | 'builtin' | 'modified-builtin';
+  target?: readonly string[];
+};
+
+/** PUT /config/notifications/matchers/{name} — form/query parameters (path segments omitted). */
+export type ConfigNotificationsMatchersNamePutParams = {
+  comment?: string;
+  delete?: readonly (
+    | 'comment'
+    | 'disable'
+    | 'invert-match'
+    | 'match-calendar'
+    | 'match-field'
+    | 'match-severity'
+    | 'mode'
+    | 'target'
+  )[];
+  digest?: string;
+  disable?: '0' | '1';
+  'invert-match'?: '0' | '1';
+  'match-calendar'?: readonly string[];
+  'match-field'?: readonly string[];
+  'match-severity'?: readonly string[];
+  mode?: 'all' | 'any';
+  target?: readonly string[];
+};
+/** PUT /config/notifications/matchers/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsMatchersNamePutReturn = null;
+
+/** DELETE /config/notifications/matchers/{name} — `data` payload after client unwrap. */
+export type ConfigNotificationsMatchersNameDeleteReturn = null;
+
 /** GET /config/prune — `data` payload after client unwrap. */
 export type ConfigPruneGetReturn = readonly {
   comment?: string;
