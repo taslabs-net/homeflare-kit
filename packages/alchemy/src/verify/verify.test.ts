@@ -8,6 +8,7 @@
  *   this tool can be re-thought rather than silently duplicated.
  */
 import { describe, expect, test } from 'bun:test';
+import { renamedFrom } from 'alchemy';
 import * as Effect from 'effect/Effect';
 import {
   Blind,
@@ -110,6 +111,27 @@ describe('verifySession', () => {
     expect(kept).toMatchObject({ diff: 'noop', ok: true, planned: 'noop', read: 'found' });
     expect(kept?.stateRow).toBe(true);
     expect(writesOf(cloud)).toEqual([]);
+  });
+
+  /**
+   * ⚠️ A RENAME MAY HAND ITS OLD ID TO A NEW RESOURCE IN THE SAME DEPLOY (alchemy Rename.ts). The
+   *   store still holds the renamer's row at that id, so judging state by FQN alone hid the new
+   *   resource's `create` from the default report. Both rows are without state of their own.
+   */
+  test('a rename that hands its old id to a new resource shows both, the create included', async () => {
+    const cloud = cloudOf();
+    const engine = fakeEngine(cloud);
+    await engine.deploy(one('old', 'x'));
+    const body = Effect.all([
+      Thing('moved', { comment: 'x', name: 'old' }).pipe(renamedFrom('old')),
+      Thing('old', { name: 'fresh' }),
+    ]);
+    const report = await engine.verify(body);
+    const byFqn = Object.fromEntries(report.rows.map((row) => [row.fqn, row]));
+    expect(Object.keys(byFqn).sort()).toEqual(['moved', 'old']);
+    expect(byFqn['old']).toMatchObject({ ok: false, planned: 'create', stateRow: false });
+    expect(byFqn['moved']).toMatchObject({ ok: false, stateRow: false });
+    expect(writesOf(cloud)).toEqual(['reconcile old']);
   });
 
   test('with all, a row no longer declared is a pending delete', async () => {

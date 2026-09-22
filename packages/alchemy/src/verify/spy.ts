@@ -31,11 +31,22 @@ import * as Effect from 'effect/Effect';
 
 export type ReadAnswer = 'found' | 'unowned' | 'absent' | 'failed' | 'not-read';
 export type DiffAnswer = 'noop' | 'update' | 'replace' | 'none' | 'not-run';
+/** What the diff answered when asked again with the live values as its recorded props (recheck.ts). */
+export type RecheckAnswer = DiffAnswer | 'failed';
+
+/** Exactly what the planner handed a provider's `diff`. */
+export type DiffInput = Parameters<NonNullable<ProviderService['diff']>>[0];
 
 /** What one FQN's provider answered during the plan — the LAST answer of each kind. */
 export interface Seen {
   read?: { readonly answer: ReadAnswer; readonly attributes: unknown };
-  diff?: { readonly answer: DiffAnswer; readonly news: unknown };
+  /**
+   * ★ `input` IS THE WHOLE CALL, NOT ONLY `news`, so recheck.ts can ask the same question again
+   *   with one field changed. In memory only; the report carries field names, never values. An
+   *   observation built by hand without it (rows.ts's tests) is simply never rechecked.
+   */
+  diff?: { readonly answer: DiffAnswer; readonly news: unknown; readonly input?: DiffInput };
+  recheck?: RecheckAnswer;
 }
 
 /** Keyed by FQN. Filled while the plan runs; read once it is done. */
@@ -63,7 +74,7 @@ const refuse = (type: string, operation: string) => () =>
 const readAnswer = (attributes: unknown): ReadAnswer =>
   attributes === undefined ? 'absent' : Unowned.is(attributes) ? 'unowned' : 'found';
 
-const diffAnswer = (diff: unknown): DiffAnswer => {
+export const diffAnswer = (diff: unknown): DiffAnswer => {
   const action = (diff as { action?: unknown } | undefined)?.action;
   return action === 'noop' || action === 'update' || action === 'replace' ? action : 'none';
 };
@@ -82,7 +93,7 @@ export const spyService = (type: string, service: ProviderService, seen: Observa
       (diff === undefined ? Effect.succeed(undefined) : diff(input)).pipe(
         Effect.tap((answer) =>
           Effect.sync(() => {
-            seenFor(seen, input.fqn).diff = { answer: diffAnswer(answer), news: input.news };
+            seenFor(seen, input.fqn).diff = { answer: diffAnswer(answer), input, news: input.news };
           }),
         ),
       ),

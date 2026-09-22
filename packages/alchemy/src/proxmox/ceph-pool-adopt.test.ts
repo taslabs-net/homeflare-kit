@@ -73,6 +73,38 @@ describe('adopting a Ceph pool', () => {
     expect(fake.calls.every((call) => call.path === STATUS)).toBe(true);
   });
 
+  /**
+   * ★ THE RECHECK MUST NOT FAIL A FIELD THE FAMILY DOES NOT MANAGE. `pg_num` is create-time only and
+   *   the autoscaler owns it, so a declared birth size differs from the live count and shows under
+   *   `changed`. recheck.ts asks the diff again with the live value as recorded props; this diff
+   *   re-reads the cluster and ignores `olds`, so it says `noop` again, and the deploy only reads.
+   */
+  test('declaring a field it does not manage: rechecked, still noop, and the deploy only reads', async () => {
+    const fake = cluster(3);
+    const birth = () =>
+      ProxmoxCephPool('cephtb4', {
+        min_size: 2,
+        name: 'cephtb4',
+        node: 'n2',
+        pg_num: 32,
+        size: 3,
+        target: FAKE_TARGET,
+      });
+    await withoutBao(async () => {
+      const engine = engineFor(fake);
+      const report = await engine.verify(birth());
+      expect(report.rows[0]).toMatchObject({
+        changed: ['pg_num'],
+        diff: 'noop',
+        ok: true,
+        recheck: 'noop',
+      });
+      expect(report.rows[0]?.why).toContain('does not manage');
+      expect(await engine.deploy(birth())).toEqual({ cephtb4: 'adopted' });
+    });
+    expect(fake.writes()).toEqual([]);
+  });
+
   test('that drifted: the verifier names the field, and the deploy PUTs once', async () => {
     const fake = cluster(2);
     await withoutBao(async () => {

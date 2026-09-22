@@ -33,6 +33,14 @@ export const Thing = Alchemy.Resource<Thing>('Test.Thing');
 export interface Blind extends Alchemy.Resource<'Test.Blind', ThingProps, ThingAttributes> {}
 export const Blind = Alchemy.Resource<Blind>('Test.Blind');
 
+/**
+ * The same object with a `diff` that compares the RECORDED props with the declaration and never
+ * the live object — the shape of Alchemy's own `Cloudflare.R2Bucket` diff (beta.79
+ * Cloudflare/R2/Bucket.ts: `olds.domains` against `news.domains`). recheck.ts exists for it.
+ */
+export interface Recorded extends Alchemy.Resource<'Test.Recorded', ThingProps, ThingAttributes> {}
+export const Recorded = Alchemy.Resource<Recorded>('Test.Recorded');
+
 /** The fake cloud: what exists, what is someone else's, and every call made to it, in order. */
 export interface Cloud {
   readonly live: Map<string, string>;
@@ -93,6 +101,22 @@ export const thingProviders = (cloud: Cloud) =>
       ),
     ),
     Provider.effect(Blind, Effect.succeed(Blind.Provider.of(lifecycle(cloud)))),
+    Provider.effect(
+      Recorded,
+      Effect.succeed(
+        Recorded.Provider.of({
+          ...lifecycle(cloud),
+          diff: ({ news, olds }) =>
+            Effect.sync(() => {
+              if (!isResolved(news)) return undefined;
+              cloud.calls.push(`diff ${news.name}`);
+              return (olds.comment ?? '') === (news.comment ?? '')
+                ? ({ action: 'noop' } as const)
+                : ({ action: 'update' } as const);
+            }),
+        }),
+      ),
+    ),
   );
 
 /** A stack body: resource declarations, as an `alchemy.run.ts` would write them. */

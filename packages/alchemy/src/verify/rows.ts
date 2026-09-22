@@ -7,12 +7,15 @@
  *   this file only decides.
  */
 import { deepEqual, isResolved } from 'alchemy/Diff';
-import type { DiffAnswer, Observations, ReadAnswer } from './spy.ts';
+import type { DiffAnswer, Observations, ReadAnswer, RecheckAnswer } from './spy.ts';
 
 export interface AdoptRow {
   readonly fqn: string;
   readonly type: string;
-  /** Whether the state store holds a row for this FQN. An adoption is a row without one. */
+  /**
+   * Whether the row plans from a row the state store holds for it (verify.ts `withState`). An
+   * adoption is a row without one.
+   */
   readonly stateRow: boolean;
   /** The engine's action — what `alchemy plan` prints (`adopted`, `create`, `noop`, …). */
   readonly planned: string;
@@ -23,9 +26,16 @@ export interface AdoptRow {
   /**
    * Declared fields whose live value differs, by NAME only — values can be secrets. Compared on
    * same-named keys of the declaration and the read's attributes, so a family whose attributes
-   * rename a field cannot show it here; the diff answer, not this list, is the verdict.
+   * rename a field cannot show it here. The diff answer is the verdict; a name here beside an
+   * adopted `noop` only makes recheck.ts ask that diff again.
    */
   readonly changed: readonly string[];
+  /**
+   * What the provider's `diff` answered when asked again with the live values of `changed` as its
+   * recorded props (recheck.ts). Absent when it was not asked: only an adopted `noop` with
+   * something in `changed` is.
+   */
+  readonly recheck?: RecheckAnswer;
   /** Bindings the engine will create, update or delete — reconcile applies them even on `noop`. */
   readonly bindings: number;
   readonly ok: boolean;
@@ -77,9 +87,38 @@ const isNoop = (planned: string, diff: DiffAnswer, stateRow: boolean) =>
   STILL_LIVE.has(planned) &&
   (diff === 'noop' || (diff === 'none' && stateRow && planned === 'noop'));
 
+/**
+ * ⛔ AND A `noop` MUST SURVIVE BEING ASKED WITH THE LIVE VALUES. A diff that compares recorded props
+ *   answers an adopted row `noop` whatever the cloud holds; recheck.ts asks it again, and only a
+ *   second `noop` (or no need to ask) proves anything.
+ */
+const proven = (recheck: RecheckAnswer | undefined) => recheck === undefined || recheck === 'noop';
+
+/** Notes on a row that passes: nothing to say is the common case. */
+const notes = (row: Omit<AdoptRow, 'ok' | 'why'>): string =>
+  [
+    row.read === 'unowned' ? 'unowned: the deploy needs --adopt or adopt(true)' : '',
+    row.recheck === 'noop'
+      ? `${row.changed.join(', ')} differ, but the diff says noop even given the live values: ` +
+        'the family does not manage them, and the deploy leaves them alone'
+      : '',
+  ]
+    .filter((note) => note !== '')
+    .join('; ');
+
 const reason = (row: Omit<AdoptRow, 'ok' | 'why'>, ok: boolean): string => {
-  if (ok) return row.read === 'unowned' ? 'unowned: the deploy needs --adopt or adopt(true)' : '';
+  if (ok) return notes(row);
   if (isNoop(row.planned, row.diff, row.stateRow)) {
+    const live = `the live ${row.changed.join(', ')}`;
+    if (row.recheck === 'failed') {
+      return `asked again with ${live} as recorded props, the provider's diff failed: not proven`;
+    }
+    if (!proven(row.recheck)) {
+      return (
+        `the provider's diff compares recorded props, not the live object: given ${live} it ` +
+        `says ${String(row.recheck)}, and the deploy's forced reconcile writes`
+      );
+    }
     return `${String(row.bindings)} binding(s) change: the deploy reconciles them though the diff is noop`;
   }
   if (row.planned === 'delete') return 'no longer declared: the deploy deletes it';
@@ -107,6 +146,7 @@ export const rowFor = (
   seen: Observations,
 ): AdoptRow => {
   const observed = seen.get(fqn);
+  const recheck = observed?.recheck;
   const base = {
     bindings: (node.bindings ?? []).filter((binding) => binding.action !== 'noop').length,
     changed: changedFields(observed?.diff?.news, observed?.read?.attributes),
@@ -114,6 +154,7 @@ export const rowFor = (
     fqn,
     planned: node.action,
     read: observed?.read?.answer ?? 'not-read',
+    ...(recheck === undefined ? {} : { recheck }),
     stateRow,
     type: node.resource.Type,
   } satisfies Omit<AdoptRow, 'ok' | 'why'>;
@@ -122,7 +163,7 @@ export const rowFor = (
    *   non-noop binding to `reconcile`, which an adopted row reaches anyway — a Worker adopted with
    *   a new binding writes although its own diff said nothing changed.
    */
-  const ok = isNoop(base.planned, base.diff, stateRow) && base.bindings === 0;
+  const ok = isNoop(base.planned, base.diff, stateRow) && proven(recheck) && base.bindings === 0;
   return { ...base, ok, why: reason(base, ok) };
 };
 

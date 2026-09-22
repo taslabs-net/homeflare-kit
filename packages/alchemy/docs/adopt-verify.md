@@ -70,6 +70,16 @@ adopted row whose provider has no `diff` is not proven: the engine compared the 
 itself. A row with state and no diff is trusted at `noop`, as `alchemy plan` trusts it. A stack
 task (an Alchemy action) that will `run` is always a failing row: no provider sees it.
 
+An adopted `noop` with something under `changed` is asked once more (`src/verify/recheck.ts`).
+Plan.ts hands an adopted row's `diff` the declaration as its recorded props (`olds: news`), so a
+diff that compares recorded props with the declaration answers `noop` whatever the cloud holds.
+Alchemy's own `Cloudflare.R2Bucket` diff has that shape (`olds.domains` against `news.domains`).
+The replay passes the read's values for the changed fields as `olds`. A diff that reads the live
+object ignores them and says `noop` again, so the row passes with a note: the family does not
+manage those fields (CephPool's autoscaled `pg_num`). Anything else fails the row, and the JSON
+report carries the answer as `recheck`. Before this check, such a row passed with its drift
+listed beside the `ok`.
+
 Exit codes: `0` all no-op (or nothing to verify), `1` any row is not, `2` the plan could not be
 computed (a provider died, an `adopt(false)` row is not ours, state unreadable). A gate should stop
 on anything but `0`.
@@ -97,8 +107,9 @@ a compiled stack (`src/verify/fake-engine.ts`).
 - ⚠️ **`noop` covers what the family compares.** A family's `diff` and its `reconcile` guard share
   one predicate (`matches`). A field that `matches` leaves out is never written on a no-op
   adoption and never reported. `Proxmox.CephPool` `target_size_ratio` is the known case.
-- ⚠️ **`changed` is a hint, not the verdict.** It compares same-named keys. A family whose
-  attributes rename or normalise a field shows nothing there, and its `diff` still decides.
+- ⚠️ **`changed` is not the verdict.** It compares same-named keys, and only decides whether an
+  adopted `noop` is asked again. A drift in a field the attributes rename or normalise shows
+  nothing there, and a diff that ignores the live object then goes unchallenged.
 - ⚠️ **Reads are what `alchemy plan` does.** A kit PVE/PBS read mints a lease through OpenBao,
   which creates a short-lived API token on the cluster. `--all` adds one read per row with state.
 - ⚠️ **Outside the kit, `noop` is only the diff's word.** For a kit PVE/PBS family, `noop` means

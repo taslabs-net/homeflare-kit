@@ -22,6 +22,7 @@ export {
   type DiffAnswer,
   type Observations,
   type ReadAnswer,
+  type RecheckAnswer,
   type Seen,
   WRITE_REFUSED,
   spyContext,
