@@ -1,5 +1,217 @@
 # @homeflare/alchemy
 
+## 0.19.0
+
+### Minor Changes
+
+- [#120](https://github.com/taslabs-net/homeflare-kit/pull/120) [`512bf1a`](https://github.com/taslabs-net/homeflare-kit/commit/512bf1a6a973bdbd1c9688d295dcf8a067820a36) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Linux hosts on the existing HostRunner seam: `@homeflare/alchemy/linux`.
+
+  The kit could declare a guest and nothing inside it. This adds the families that gap
+  was missing, on the same seam the launchd subpath already drives a Mac through — so
+  `HostFile`'s ownership rules, `checkWrite` and the adoption doctrine come along unchanged.
+
+  - `sshRunner({ host })` — a Linux `HostRunner` over the operator's own ssh config.
+    ⛔ `BatchMode=yes` and host verification untouched; ⛔ every remote script reports its
+    status behind a per-runner nonce, so a dropped connection is an Error and never a
+    "nothing is there"; ⛔ `privileged: false` — nothing calls sudo.
+  - `HostDirectory` — because no file resource creates a parent. One directory, never a
+    chain; delete is `rmdir`, never recursive.
+  - `RemoteFile` — a whole file, or one MANAGED REGION (`BEGIN`/`END` markers) inside a
+    file this resource does not own. ⛔ Every byte outside the markers stays identical, the
+    file's own mode and owner are copied back, and a delete removes only the block.
+  - `SystemdUnit` / `SystemdTimer` — unit file, `daemon-reload`, enable/disable,
+    start/stop. ⛔ A deploy NEVER mass-restarts: a unit restarts only when its own file
+    changed, when state or systemd says the loaded copy is stale, or when a digest the
+    declaration listed in `restartOn` changed. An adopted unit that already matches is not
+    restarted, reloaded or started.
+
+  `systemctl` and `stat` shapes measured read-only on Debian 13 / systemd 257, 2026-09-22;
+  the write subcommands are reasoned and read back rather than assumed. Unit files render
+  verbatim — there is no machine-readable directive schema to generate from, so the kit
+  invents none. Guide: `docs/linux-host.md`.
+
+## 0.18.0
+
+### Minor Changes
+
+- [#118](https://github.com/taslabs-net/homeflare-kit/pull/118) [`5ae4e91`](https://github.com/taslabs-net/homeflare-kit/commit/5ae4e91919a101da3d8605a069c65e0301d0cccc) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Every Proxmox family that writes to the vendor is now checked against the vendor's own schema —
+  35 of 35, up from 19, covering 75 endpoints instead of 37. A family left unwired was a write this
+  package made with nothing between the declaration and the server's 400, which is the shape of the
+  2026-09-22 `deploy:pbs` incident this feature exists for.
+
+  Newly wired: `Proxmox.ApiToken`, `CephDaemon`, `CephFlag`, `CephFs`, `CephOsd`, `CephPool`, `Lxc`,
+  `MetricServer`, `NetworkApply`, `NodeNetwork`, `NotificationTarget`, `SdnApply`, `SdnSubnet`, `Vm`,
+  `ZfsPool`, and `Pbs.NotificationTarget` — which was missing from the sweep list and carries the
+  incident's own rule, `comment: maxLength 128`, on all three of its creates. Families that write
+  their own handlers (`CephOsd`, `Lxc`, the two applies, `Pbs.NotificationTarget`) reach the same
+  check by name through `guardForm`, as `Pbs.Datastore` already did; families with a spec declare
+  `endpoint`. `tests/constraint-wiring.test.ts` derives the census from the ownership ledger, so a
+  family added without an endpoint fails there rather than on a deploy, and each newly wired family
+  has a proof test that runs its REAL create form through the vendor's create table and requires no
+  violations.
+
+  🔴 **A live bug this found.** `Proxmox.NodeNetwork`'s create form never sent `iface`, which PVE
+  marks required on `POST /nodes/{node}/network` while `{node}` is its only path parameter. Every
+  interface create this package could have made would have 400ed; nothing caught it because the
+  estate's interfaces were all adopted, which takes the PUT path. `createBody` now sends it, and the
+  PUT still does not — there `iface` is the path.
+
+  ⛔ **Presence of a vendor-required parameter is now demanded only when a create is really about to
+  happen**, not whenever the create form is built. `Proxmox.NotificationTarget` cannot send gotify's
+  `token` or smtp's `password` — they are write-only secrets and props are persisted unencrypted — so
+  the documented workflow is to create the target out of band and then declare it. Under the old
+  unconditional check that adopt-then-update would have been refused forever; now it plans clean,
+  while asking to CREATE a gotify target fails at plan with PVE's own `token: required`. The guards
+  move into `resource-guard.ts` and are exported from `pveOperations`, so `CephPool`'s hand-written
+  reconcile gets them too.
+
+  An **action** endpoint with no form is wired as well (`PUT /cluster/sdn`, `PUT /nodes/{node}/network`):
+  the table is empty, but the key is resolved against the vendor schema at generation time, so a PVE
+  that moves or withdraws an apply fails `bun run check` instead of an `ifreload -a` on three nodes.
+
+  `PveSpec['endpoint']` now also admits a function of props, for the two families whose endpoint is
+  chosen by a prop — `NotificationTarget`'s four PVE types and `CephDaemon`'s mds/mgr/mon, each with
+  its own parameter schema. Every key it can return is still a literal in this package's source,
+  because the generator finds endpoints by scanning text.
+
+  Generator changes that came with the volume: `/cluster` and `/nodes/{node}` are split one level
+  further down, because they are routes rather than areas — PVE's own viewer expands them — so the
+  tables are now 18 files (`pve-cluster-sdn.ts`, `pve-nodes-ceph.ts`, …), all inside the 250-line
+  house cap. The generator deletes a file it no longer produces, `tests/schema-manifest.test.ts`
+  enumerates the directory instead of a hand-written list and checks every table is claimed by the
+  manifest entry it came from, and two PVE bounds published as JSON strings (`bwlimit`'s
+  `minimum: "0"`, `count`'s `maximum: "16777216"`) are parsed to numbers — a faithful reading of a
+  stated value; a bound that is not a number at all is still dropped rather than guessed at.
+
+## 0.17.0
+
+### Minor Changes
+
+- [#114](https://github.com/taslabs-net/homeflare-kit/pull/114) [`3316006`](https://github.com/taslabs-net/homeflare-kit/commit/3316006513196622551d4cc041986089dc28ffc4) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The Proxmox API type generator, written from the vendor schemas, and the widening it removes.
+  `packages/alchemy/src/proxmox/generated/{pve,pbs}.ts` carried the header
+  `Run: bun codegen/generate.ts` from the day they were committed, and
+  `git log --oneline --all -- 'codegen/generate*'` is empty at every commit: that file existed
+  nowhere. The mapping was therefore readable only as its own 8,196 lines of output — nobody could
+  reproduce it, correct it, or say which schema version it described. Because nobody could read it,
+  nobody noticed what it did: it kept `type`, `enum` and `optional`, dropped every `maxLength`,
+  `minLength`, `minimum`, `maximum`, `pattern`, `format`, `typetext`, `default` and description, and
+  covered 407 of PVE's 678 endpoints and 46 of PBS's 367 with no record of which 407 or why.
+
+  `bun codegen/types.ts` is that generator, with `--check`, the same manifest and the same
+  sha256-as-identity rule as `codegen/constraints.ts`. It emits every endpoint both products
+  document — 678 PVE and 367 PBS, 1,619 exported types — split across 89 files by the vendor's own
+  path and packed back up so the split is no deeper than the 250-line house cap requires. Every file
+  names its manifest entry, the product version the host reported and the sha256 of the bytes it was
+  read from. `generated/pve.ts` and `generated/pbs.ts` stay as `export *` barrels, so no import in
+  this package or any consumer moves.
+
+  ⛔ **An integer request parameter is `` `${number}` ``, not `string`.** `pbs:POST /config/verify`'s
+  `max-depth` is `integer, minimum 0, maximum 7` in PBS's schema and was `'max-depth'?: string` in
+  the type, which accepts `'banana'`; 480 PVE and 151 PBS parameters were widened that way. They are
+  now the wire spelling of a number: still assignable to `PveForm`, still carried unchanged through
+  `violations`' bound check, and no longer satisfied by an arbitrary string. It is deliberately NOT
+  `number`: `client.ts` sends `application/x-www-form-urlencoded` and types the body
+  `Record<string, readonly string[] | string>`, so a `number` could not be handed to `pve()` at all,
+  and `constraints.ts` iterates a form value on `typeof value === 'string'`. ⚠️ `String(n)` does not
+  typecheck against it — write `` `${n}` ``. A boolean parameter stays `'0' | '1'`, which is the
+  encoding `values.ts`'s `flag()` already produces rather than a widening. Responses are JSON and
+  keep their real `number` and `boolean | 0 | 1`.
+
+  The old output is reproduced before it is changed, which is what makes the diff reviewable: run
+  against the same two schemas with integers left widened, the pipeline re-emits all 646 PVE and 69
+  PBS declarations identically, with two recorded exceptions — `NodesNodeLxcVmidConfigGetReturn`'s
+  `lxc` becomes `readonly (readonly string[])[]` rather than a readonly array of mutable ones, and 21
+  declarations break lines differently because `oxfmt` had reformatted the committed files before
+  every `generated` directory reached its ignore list. The naming is the old generator's, reproduced
+  rather than improved: `ClusterBackupIdIncluded_volumesGetReturn` keeps its underscore, because
+  renaming sixty exported types in the commit that changes what the types mean would hide the second
+  change inside the first.
+
+  ⛔ Parameter schemas wrapped in `allOf`/`oneOf` are read through `codegen/parameters.ts` (PR [#113](https://github.com/taslabs-net/homeflare-kit/issues/113)),
+  not asked for as `parameters.properties`. `POST /cluster/ha/rules` and `PUT /cluster/ha/rules/{rule}`
+  are the two PVE endpoints that need it; a reader that misses them emits a type with no fields, which
+  is indistinguishable from an endpoint that takes nothing. An unresolvable schema gets a doc comment
+  naming the construct and **no** `Params` type — neither product needs that on these versions.
+
+  ⛔ "Closed object" is spelled differently by the two products, and a test for one lies about the
+  other. Measured over both whole schemas: PVE writes numbers (`additionalProperties: 0` on 617
+  objects, `1` on 21, absent on 352), PBS writes booleans (`false` on 560, `true` on 36). An absent
+  `additionalProperties` is open — the vendor never promised the list was exhaustive.
+
+  ⛔ Eight PVE files are over the house cap and cannot be split. Each holds the endpoints of one
+  vendor path whose parameters carry enums of hundreds of members — `rootfs`, `mp0`…`mp255`,
+  `unused0`…`unused255` for the volume moves, the ACME DNS provider list, the QEMU CPU model list. A
+  single type declaration is the smallest unit there is; dropping the enum would widen the parameter
+  back to `string`. Each says so in its own header and `tests/schema-types.test.ts` pins the list.
+
+  `tests/schema-type-mapping.test.ts` holds the mapping to shapes lifted from the committed files and
+  needs no schema cache, so it runs on CI. `tests/schema-types.test.ts` checks provenance, the
+  barrel against the files on disk, the cap, the coverage counts and five endpoints the old generator
+  omitted, and runs `bun codegen/types.ts --check` when the cache is present — skipping with the
+  refresh command when it is not. `codegen/TYPES.md` carries the reasoning.
+
+## 0.16.1
+
+### Patch Changes
+
+- [#113](https://github.com/taslabs-net/homeflare-kit/pull/113) [`4fe8cef`](https://github.com/taslabs-net/homeflare-kit/commit/4fe8cef3154ad0f373b291f413dcbd570602e6fa) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Proxmox.HaRule`'s constraint table was empty and nothing said so.
+
+  MEASURED 2026-09-22: PVE spells `POST /cluster/ha/rules` as `parameters: {allOf: [{properties:
+{rule}}, {oneOf: [node-affinity, resource-affinity]}]}` — a discriminated union. The apidoc reader
+  asked for `parameters.properties`, got `undefined`, and emitted `{}`. A wired family's plan-time
+  guard therefore checked **nothing**, and an empty table is indistinguishable from an endpoint whose
+  parameters happen to carry no rules. `comment` there has a `maxLength` of 4096 and `affinity` an
+  enum of two.
+
+  `codegen/parameters.ts` reads both combinators, and their logic is their meaning. `allOf` branches
+  all apply, so their properties MERGE — a key claimed by two branches would have to satisfy both,
+  which this does not compute, so it stops rather than picking one. `oneOf` branches are
+  ALTERNATIVES, so they INTERSECT: only what every branch states identically survives, because
+  enforcing a rule from one branch would refuse a legal declaration of the other kind. `nodes` and
+  `strict` exist only on node-affinity and are therefore not enforced. ⚠️ `optional` is intersected
+  toward optional rather than field-by-field: its ABSENCE means required, so dropping a disagreeing
+  `optional` would have read as required and refused every legal node-affinity rule, whose `affinity`
+  is optional where resource-affinity's is not.
+
+  ⛔ And a parameter schema this file cannot read is now recorded as `unresolved` and **stops the
+  generator** for any endpoint this package writes to, rather than producing the empty table that hid
+  the problem. `tests/schema-manifest.test.ts` covers the reader directly.
+
+  ⛔ `docs/api-coverage.*` had the identical blind spot from its own parser: it reported
+  `/cluster/ha/rules` as having **zero** parameters and zero gaps. `scripts/api-schema.ts` now reads
+  the combinators through the same resolver — 5 parameters, 2 unenforced, both `format` names.
+  ⚠️ Two parsers for one file format is the deeper defect; merging them is its own change.
+
+- [#116](https://github.com/taslabs-net/homeflare-kit/pull/116) [`54479fc`](https://github.com/taslabs-net/homeflare-kit/commit/54479fc7792076fb0e718b55588cc815823818c2) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Netbox.Prefix` no longer erases prose it did not declare.
+
+  🔴 **The bug, found by review rather than by an incident.** The resource sent `description: ''`
+  whenever the prop was absent. On a create that is invisible — the field was empty anyway. ⛔ On an
+  **adopt** it is data loss: NetBox is the estate's record of DECISIONS, so a prefix's description is
+  usually the only written trace of why that range exists. The first deploy that adopted one would
+  have PATCHed it to empty, `matches` would have reported drift, the plan would have said `update`,
+  and the diff would have read as converging a declaration rather than deleting a sentence.
+
+  ★ **The tell was an inconsistency inside the same file, not a failure.** Optional foreign keys were
+  already omitted when undeclared, with a comment explaining that sending `null` would clear a tenant
+  somebody set in the UI. Free text had the identical hazard and the opposite treatment. Two fields,
+  one hazard, two answers — that gap is the defect.
+
+  ★ **The line is now drawn at what the vendor itself defaults.** `status`, `is_pool` and
+  `mark_utilized` have defaults in NetBox's schema, so omitting one genuinely means "the default" and
+  settling it says what NetBox would have done anyway. `description`, `comments` and the optional
+  foreign keys have no such default — the schema's `''` is the absence of a value, not a decision —
+  so they are omitted from the body and left uncompared until declared.
+
+  ⛔ **Whatever `matches` compares, `body` must send**, or the plan says `update` forever: the PATCH
+  omits the field, so the next read is unchanged. The two moved together here and
+  `prefix-form.test.ts` asserts the invariant.
+
+  ⚠️ **The cost, stated:** prose can no longer be cleared by omission. Clearing it is
+  `description: ''`, written on purpose — the readable way to say a destructive thing.
+
+  `body` and `matches` are extracted to `prefix-form.ts` so both are pure functions a test can call
+  with a literal, the way the Proxmox families keep their `*-form.ts` beside the resource.
+
 ## 0.16.0
 
 ### Minor Changes

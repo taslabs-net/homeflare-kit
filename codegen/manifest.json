@@ -31,7 +31,8 @@
         "packages/alchemy/src/proxmox/generated/constraints/pve-nodes-network.ts",
         "packages/alchemy/src/proxmox/generated/constraints/pve-nodes-qemu.ts",
         "packages/alchemy/src/proxmox/generated/constraints/pve-pools.ts",
-        "packages/alchemy/src/proxmox/generated/constraints/pve-storage.ts"
+        "packages/alchemy/src/proxmox/generated/constraints/pve-storage.ts",
+        "packages/alchemy/src/proxmox/generated/pve.ts"
       ],
       "note": "This cluster is MIXED VERSION. One node still runs pve-manager 9.2.4 and ships a DIFFERENT apidoc.js (4277440 bytes, sha256 f2b77b57...). Fetch from a node running the newest pve-manager, or the table describes an API half the cluster no longer has."
     },
@@ -47,7 +48,10 @@
       "sha256": "274ab9f6fc075aeafb827370e6b65545507e3348a404f1c0b181fc2d9589458a",
       "bytes": 1508860,
       "fetchedAt": "2026-09-22T19:36:00Z",
-      "consumedBy": ["packages/alchemy/src/proxmox/generated/constraints/pbs-config.ts"],
+      "consumedBy": [
+        "packages/alchemy/src/proxmox/generated/constraints/pbs-config.ts",
+        "packages/alchemy/src/proxmox/generated/pbs.ts"
+      ],
       "note": "NOT at /usr/share/javascript/proxmox-backup/api-viewer/ \u2014 that path does not exist on 4.2.6. `find /usr/share -name apidoc.js` first."
     },
     {

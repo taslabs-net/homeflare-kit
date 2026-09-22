@@ -18,9 +18,10 @@
  *      a retired range stops being folklore and becomes a line in a stack file with a reviewable
  *      diff. No other NetBox class turns an estate decision into one field this cleanly.
  *
- * ⚠️ ADOPT-FRIENDLY BY CONSTRUCTION. `locate` filters on the exact `prefix` (and the VRF, which
- *   is what makes it unique — NetBox allows the same CIDR in two VRFs and in the global table).
- *   An instance that already holds `10.0.0.0/24` is BOUND, never duplicated.
+ * ⚠️ ADOPT-FRIENDLY BY CONSTRUCTION. `locate` filters on the exact `prefix`; `identifies` then
+ *   picks the declared VRF, because NetBox allows the same CIDR in two VRFs and in the global
+ *   table. An instance that already holds `10.0.0.0/24` is BOUND, never duplicated — and ⛔ an
+ *   adopt never clears prose it did not declare (prefix-form.ts).
  *
  * ⛔ THIS RESOURCE DOES NOT REMOVE PREFIXES IT DOES NOT DECLARE, and `defaultRemovalPolicy` is
  *   `retain` (resource.ts). Deleting a prefix in NetBox reparents its children and detaches its
@@ -32,6 +33,7 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
+import { prefixBody, prefixMatches } from './prefix-form.ts';
 import { type NetboxRequirements, netboxHandlers } from './resource.ts';
 import { choice, fk, text } from './values.ts';
 
@@ -90,41 +92,6 @@ export const NetboxPrefix = Resource<NetboxPrefix>('Netbox.Prefix', {
   defaultRemovalPolicy: 'retain',
 });
 
-/** ⚠️ NetBox's own default when the property is omitted, copied from the schema, not assumed. */
-const DEFAULT_STATUS: PrefixStatus = 'active';
-
-const settled = (props: PrefixProps) => ({
-  comments: props.comments ?? '',
-  description: props.description ?? '',
-  isPool: props.isPool ?? false,
-  markUtilized: props.markUtilized ?? false,
-  status: props.status ?? DEFAULT_STATUS,
-});
-
-/**
- * ⛔ THE BODY IS BUILT ONCE AND USED FOR BOTH CREATE AND UPDATE, so a field cannot be settable on
- *   one path and forgotten on the other — the failure mode that makes a resource converge on
- *   create and drift forever after.
- * ⚠️ AN OPTIONAL FOREIGN KEY IS OMITTED WHEN UNDECLARED, NOT SENT AS `null`. Sending `null` would
- *   CLEAR a tenant somebody set in the NetBox UI, which is a destructive act disguised as an
- *   incomplete declaration.
- */
-const body = (props: PrefixProps): Record<string, unknown> => {
-  const fixed = settled(props);
-  const out: Record<string, unknown> = {
-    description: fixed.description,
-    is_pool: fixed.isPool,
-    mark_utilized: fixed.markUtilized,
-    prefix: props.prefix,
-    status: fixed.status,
-  };
-  if (props.comments !== undefined) out['comments'] = props.comments;
-  if (props.vrf !== undefined) out['vrf'] = props.vrf;
-  if (props.tenant !== undefined) out['tenant'] = props.tenant;
-  if (props.vlan !== undefined) out['vlan'] = props.vlan;
-  return out;
-};
-
 const handlers = netboxHandlers<PrefixProps, PrefixAttributes>({
   attributes: (live, props) => {
     const id = live['id'];
@@ -143,7 +110,7 @@ const handlers = netboxHandlers<PrefixProps, PrefixAttributes>({
     };
   },
   collection: 'ipam/prefixes',
-  createBody: body,
+  createBody: prefixBody,
   describe: (props) => `ipam/prefixes ${props.prefix}`,
   endpoint: {
     create: 'netbox:POST /api/ipam/prefixes/',
@@ -161,19 +128,8 @@ const handlers = netboxHandlers<PrefixProps, PrefixAttributes>({
    */
   identifies: (live, props) => fk(live['vrf']) === props.vrf,
   locate: (props) => [['prefix', props.prefix]],
-  matches: (attributes, props) => {
-    const fixed = settled(props);
-    return (
-      attributes.status === fixed.status &&
-      attributes.description === fixed.description &&
-      attributes.isPool === fixed.isPool &&
-      attributes.markUtilized === fixed.markUtilized &&
-      (props.comments === undefined || attributes.comments === props.comments) &&
-      (props.tenant === undefined || attributes.tenant === props.tenant) &&
-      (props.vlan === undefined || attributes.vlan === props.vlan)
-    );
-  },
-  updateBody: body,
+  matches: prefixMatches,
+  updateBody: prefixBody,
 });
 
 export const NetboxPrefixProvider = () =>
