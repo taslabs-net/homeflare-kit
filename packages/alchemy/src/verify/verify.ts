@@ -11,25 +11,20 @@
  *
  * ⛔ READ-ONLY BY CONSTRUCTION. The planner calls `read` and `diff`; spy.ts replaces `reconcile`,
  *   `delete` and `precreate` with refusals; nothing here calls `apply`. `--all` adds one `read` per
- *   row with state — still a read by Alchemy's provider contract.
+ *   row with state, and recheck.ts one more `diff` for an adopted `noop` whose read differs from
+ *   the declaration — both still reads by Alchemy's provider contract.
  * ⚠️ READS ARE NOT FREE FOR EVERY FAMILY. A kit PVE/PBS read mints a lease through OpenBao, which
  *   creates a short-lived API token on the cluster, exactly as `alchemy plan` does.
  */
 import * as Alchemist from 'alchemy/Alchemist';
-import {
-  ArtifactStore,
-  Artifacts,
-  createArtifactStore,
-  makeScopedArtifacts,
-} from 'alchemy/Artifacts';
-import { InstanceId } from 'alchemy/InstanceId';
 import * as Plan from 'alchemy/Plan';
 import type { ProviderService } from 'alchemy/Provider';
 import type { CompiledStack } from 'alchemy/Stack';
 import { State, isActionState } from 'alchemy/State';
 import type * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
-import * as Option from 'effect/Option';
+import { inPlanScope } from './plan-scope.ts';
+import { recheck } from './recheck.ts';
 import { type AdoptRow, type PlanView, rowsOf } from './rows.ts';
 import { type Observations, spyContext } from './spy.ts';
 
@@ -52,8 +47,9 @@ export interface VerifySession {
   readonly context: Context.Context<unknown>;
 }
 
-/** The plan-node fields `--all` needs to read a row that has state. */
+/** The plan-node fields `--all` needs to read a row that has state, and the recheck to replay a diff. */
 type StatefulNode = {
+  readonly action: string;
   readonly provider?: ProviderService;
   readonly resource: { readonly LogicalId: string };
   readonly state?: {
@@ -63,37 +59,49 @@ type StatefulNode = {
   };
 };
 
-/**
- * ⚠️ THE SAME SCOPE Plan.ts GIVES ITS OWN READS (`providePlanScope`, not exported): a scoped
- *   `Artifacts` bag and the row's `InstanceId`. A kit family that consults either — the ownership
- *   helpers do — sees what it would see under `alchemy plan`.
- */
+/** ⚠️ In the scope Plan.ts gives its own reads (plan-scope.ts). */
 const readWithState = (fqn: string, node: StatefulNode) =>
   Effect.gen(function* () {
     const read = node.provider?.read;
     if (read === undefined || node.state === undefined) return;
-    const store = Option.getOrElse(yield* Effect.serviceOption(ArtifactStore), createArtifactStore);
     yield* read({
       fqn,
       id: node.resource.LogicalId,
       instanceId: node.state.instanceId,
       olds: node.state.props,
       output: node.state.attr,
-    }).pipe(
-      Effect.provideService(Artifacts, makeScopedArtifacts(store, fqn)),
-      Effect.provideService(InstanceId, node.state.instanceId),
-    );
+    }).pipe(inPlanScope(fqn, node.state.instanceId));
   });
 
-/** Which of `fqns` the stage's state store holds a resource row for. */
-const withState = (stack: CompiledStack<unknown, unknown>, fqns: readonly string[]) =>
+/**
+ * Which planned rows plan FROM a resource row the stage's state store holds for them.
+ *
+ * ⚠️ THE ROW MUST BE THE ONE THE NODE PLANS FROM, NOT MERELY A ROW AT THE SAME FQN. Alchemy lets a
+ *   rename hand its old id to a new resource in the same deploy (Rename.ts: `Bucket("Assets")
+ *   .pipe(renamedFrom("Bucket"))` beside a fresh `Bucket("Bucket")`). The store still holds the
+ *   renamer's row at `Bucket`, so a check by FQN alone called the reuser stateful and the default
+ *   report hid its `create`. Matching the node's `state.instanceId` also sees the renamer, whose
+ *   row still sits at its FORMER FQN, as a row without state.
+ */
+const withState = (
+  stack: CompiledStack<unknown, unknown>,
+  nodes: Readonly<Record<string, StatefulNode>>,
+) =>
   Effect.gen(function* () {
     const store = yield* yield* State;
     const found = yield* Effect.all(
-      fqns.map((fqn) =>
+      Object.entries(nodes).map(([fqn, node]) =>
         store
           .get({ fqn, stack: stack.name, stage: stack.stage })
-          .pipe(Effect.map((row) => (row === undefined || isActionState(row) ? [] : [fqn]))),
+          .pipe(
+            Effect.map((row) =>
+              row === undefined ||
+              isActionState(row) ||
+              (row as { readonly instanceId?: unknown }).instanceId !== node.state?.instanceId
+                ? []
+                : [fqn],
+            ),
+          ),
       ),
       { concurrency: 8 },
     );
@@ -118,7 +126,12 @@ export const verifySession = (
   >;
   return Effect.gen(function* () {
     const planned = yield* plan;
-    const stateRows = yield* withState(session.stack, Object.keys(planned.resources));
+    const stateRows = yield* withState(session.stack, planned.resources);
+    // ★ Before the rows are judged: an adopted `noop` beside a differing read is asked again.
+    yield* Effect.all(
+      Object.entries(planned.resources).map(([fqn, node]) => recheck(fqn, node, seen)),
+      { concurrency: 8 },
+    );
     if (all) {
       const stateful = Object.entries(planned.resources).filter(([fqn]) => stateRows.has(fqn));
       yield* Effect.all(
