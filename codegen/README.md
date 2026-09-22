@@ -29,9 +29,11 @@ PVE POST config/verify -> 400: parameter verification failed - comment: value ma
 ```sh
 bun codegen/constraints.ts           # verify each sha256, regenerate, write
 bun codegen/constraints.ts --check   # same, but compare and exit non-zero when stale
+bun codegen/types.ts                 # the API TYPES — codegen/TYPES.md
+bun codegen/types.ts --check         # same, but compare and exit non-zero when stale
 ```
 
-Both read `codegen/manifest.json`, resolve each schema out of the cache directory it
+Every generator here reads `codegen/manifest.json`, resolve each schema out of the cache directory it
 names, and **stop** when a file's sha256 or byte count does not match. A near-miss is a
 different API, not a rounding error.
 
@@ -194,10 +196,10 @@ manifest as **available and consumed by nothing** — there is no UniFi provider
 here yet. ⛔ The Network document's server URL embeds a console id, which is an account
 identifier; it is not recorded and must not be.
 
-## Not in this repository
+## The type generator lives beside this one — `codegen/TYPES.md`
 
-The generator that produced `generated/{pve,pbs}.ts` — the _type_ files. Both headers say
-`Run: bun codegen/generate.ts` and `git log --all -- 'codegen/*'` was empty before this
-directory existed. Nobody can reproduce or correct that mapping without writing it first,
-which is why it keeps only `type`, `enum` and `optional` and widens every request
-parameter to `string`. Regenerating those types is a separate change with its own diff.
+`generated/{pve,pbs}.ts` are the _type_ files, and until 2026-09-22 their generator was
+**not in this repository**: both headers said `Run: bun codegen/generate.ts` and
+`git log --oneline --all -- 'codegen/generate*'` was empty, so the mapping existed only as
+its own output. `codegen/types.ts` is that generator, written from the schemas and holding
+the same provenance rules as this file. Read `codegen/TYPES.md` before touching it.
