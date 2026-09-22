@@ -37,9 +37,18 @@ fixed. [adopted-deploys.md](./adopted-deploys.md) shows what every family does.
 | `alchemy plan` (CLI)       | the forced action only; `--detailed` is declared YAML, no JSON  |
 | `Plan.describePlan`        | serializable rows, again only the forced action                 |
 | `forceUpdateAfterAdoption` | a local variable; no log, no warning, no field on the node      |
-| `alchemy drift`            | rows **with** state only, and its non-dry run reconciles        |
+| `alchemy drift`            | rows **with** state only, held against the last deploy, no gate |
 | `deploy --adopt --dry-run` | the adoption plan (`plan` has no `--adopt`), same forced action |
 | **the provider service**   | the raw `read` / `diff` answer, per FQN — used                  |
+
+`alchemy drift` has no dry run to gate on (beta.79, `Cli/commands/drift.ts`, `Drift.ts`). Its
+flags are `--repair`, `--config`, `--env-file`, `--stage` and `--profile`: no `--dry-run`, and no
+`--yes`, although [its page](https://alchemy.run/cli/drift) lists one. Without `--repair`, a
+terminal run asks Repair or Cancel (default Cancel). A non-interactive run (no TTY, `CI`,
+`--no-input`, or an agent such as Claude Code) prints the repair plan and exits `0` even when
+something drifted. `--repair` restores the props saved at the last deploy, not what the code
+declares now, and recreates a missing object. `--all` (below) asks each provider's `diff` about
+the declaration, as a deploy does, and reads every row again.
 
 The engine finds every provider in the Effect context by resource type. The verifier opens the
 stack the way `alchemy plan` does (`Alchemist.open`). It swaps each provider for a watched copy

@@ -92,6 +92,18 @@ read, a resume reads as a fresh create and asks for `--adopt`. `alchemy deploy` 
 session both share one. An orphan's interrupted create (no longer declared) cannot be compared with
 a declaration, so Apply leaves its object in place with a note instead of deleting it.
 
+## After a wiped store or `state delete`, it needs `--adopt`
+
+★ This departs from Alchemy on purpose (decided 2026-09-21). Alchemy expects a provider with no
+ownership marker to answer plain attributes, so its objects re-import silently (`AdoptPolicy.ts`,
+[adopting resources](https://alchemy.run/cli/adopting-resources)). Its documented repair for a
+bad record is `alchemy state delete`, then `alchemy deploy`, escalating to `--adopt` only on
+`OwnedBySomeoneElse` ([inspecting state](https://alchemy.run/cli/inspecting-state#recover-from-bad-state)).
+For the families above that escalation always comes: an object whose row is gone is `Unowned`,
+so the deploy needs `--adopt`, or `adopt(true)` on its declaration. A `CaddyConfig` running the
+declared config and the `pveHandlers` resources (Limits) re-import without it. Read the takeover
+first with `hf-adopt-verify` ([adopt-verify.md](./adopt-verify.md)).
+
 ## Limits
 
 - ⚠️ **A check, then a write: not a lock.** Two resources that declare the same name in **one**
