@@ -34,7 +34,8 @@ export interface HostFileAttributes {
 
 export const DEFAULT_MODE = 0o644;
 
-const identityProblems = (name: string, value: string | number | undefined): string[] => {
+/** A user or group as declared: a non-negative id, or a name the host could have. */
+export const identityProblems = (name: string, value: string | number | undefined): string[] => {
   if (value === undefined) return [];
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value >= 0
