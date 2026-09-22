@@ -4,7 +4,8 @@ A live object this stack holds **no state for** is never taken over silently. Th
 `Bao.*` family, `HostFile`, `LaunchdJob`, `CaddyConfig` and `ProxmoxLxc`, and it holds even when the
 live object is **identical** to the declaration: identical is not ours. Another stack, a person or an old
 script put it there, and once state claims it, a delete under `RemovalPolicy.destroy()` removes it
-from its real owner. (Decided 2026-09-21; the Bao families adopted silently until 0.9.0.)
+from its real owner. (Decided 2026-09-21; the Bao families adopted silently until 0.9.0. 0.9.0 was
+never published, so 0.10.0 is the first release with the rule.)
 
 To take an object over, say so:
 
