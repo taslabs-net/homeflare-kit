@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { enforcedKinds } from './api-enforced.ts';
+import { resolveParameters } from '../codegen/parameters.ts';
 
 export type ManifestEntry = {
   readonly id: string;
@@ -88,7 +89,7 @@ export type ApiNode = {
 
 export type ApiMethod = {
   readonly method?: string;
-  readonly parameters?: { readonly properties?: Record<string, unknown> };
+  readonly parameters?: unknown;
 };
 
 /**
@@ -164,7 +165,17 @@ export const endpoints = (roots: readonly ApiNode[], product: string): readonly 
   const walk = (n: ApiNode): void => {
     if (n.path !== undefined && n.info !== undefined) {
       for (const [method, spec] of Object.entries(n.info)) {
-        const props = spec.parameters?.properties ?? {};
+        /**
+         * ⛔ NOT `parameters.properties`. PVE wraps a discriminated union in `allOf`/`oneOf`, and
+         *   asking for `properties` there answers `undefined` — so `/cluster/ha/rules` was
+         *   reported as having ZERO parameters and zero gaps while carrying a `maxLength` of
+         *   4096. The constraint generator had the identical blind spot; both now read the
+         *   combinators through the one resolver.
+         * ⚠️ TWO PARSERS FOR ONE FILE FORMAT is the deeper defect — `codegen/apidoc.ts` and this
+         *   file each slice `apidoc.js` themselves. Sharing the resolver closes the bug; merging
+         *   the two readers is its own change.
+         */
+        const props = resolveParameters(spec.parameters).params as Record<string, unknown>;
         out.push({
           unenforced: Object.entries(props)
             .filter(([k, v]) =>

@@ -39,7 +39,7 @@ proof.
 
 | system | version                                       | sha256      | write endpoints |      owned | write paths | owned paths | unenforced params | owned unenforced |
 | ------ | --------------------------------------------- | ----------- | --------------: | ---------: | ----------: | ----------: | ----------------: | ---------------: |
-| PVE    | pve-manager/9.2.11/f6997e698c7933ea           | `9def8f13…` |             337 | 88 (26.1%) |         258 |          59 |              1556 |              490 |
+| PVE    | pve-manager/9.2.11/f6997e698c7933ea           | `9def8f13…` |             337 | 88 (26.1%) |         258 |          59 |              1561 |              495 |
 | PBS    | proxmox-backup-server 4.2.6-1 (running 4.2.3) | `274ab9f6…` |             182 | 27 (14.8%) |         141 |          18 |               568 |               62 |
 
 ## Owned endpoints, by Resource
@@ -54,7 +54,7 @@ proof.
 | `Proxmox.BackupJob`           | PVE    |               3 |                24 | `packages/alchemy/src/proxmox/backup-job.ts`                        |
 | `Proxmox.FirewallAlias`       | PVE    |               3 |                 7 | `packages/alchemy/src/proxmox/firewall-alias.ts`                    |
 | `Proxmox.HaResource`          | PVE    |               3 |                 6 | `packages/alchemy/src/proxmox/ha-resource.ts`                       |
-| `Proxmox.HaRule`              | PVE    |               3 |                 1 | `packages/alchemy/src/proxmox/ha-rule.ts`                           |
+| `Proxmox.HaRule`              | PVE    |               3 |                 6 | `packages/alchemy/src/proxmox/ha-rule.ts`                           |
 | `Proxmox.MetricServer`        | PVE    |               3 |                26 | `packages/alchemy/src/proxmox/metric-server.ts`                     |
 | `Proxmox.NotificationMatcher` | PVE    |               3 |                 6 | `packages/alchemy/src/proxmox/notification-matcher.ts`              |
 | `Proxmox.NotificationTarget`  | PVE    |              12 |                28 | `packages/alchemy/src/proxmox/notification-target.ts`               |

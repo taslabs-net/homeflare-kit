@@ -114,3 +114,52 @@ describe("an array's rules come from its items, and reach every element", () => 
     );
   });
 });
+
+/**
+ * 🔴 `Proxmox.HaRule`'s TABLE WAS EMPTY AND NOTHING SAID SO. PVE spells `POST /cluster/ha/rules`
+ *   as `allOf: [{properties: {rule}}, {oneOf: [node-affinity, resource-affinity]}]`, the reader
+ *   asked for `parameters.properties`, got `undefined`, and emitted `{}` — which is exactly what
+ *   an endpoint with no rules emits. A wired family's guard checked nothing, silently.
+ */
+describe('a parameter schema wrapped in allOf/oneOf is read, not skipped', () => {
+  const CREATE = 'pve:POST /cluster/ha/rules';
+
+  test('the table is no longer empty, and carries the limits both branches agree on', () => {
+    const table = constraintsFor(CREATE);
+    expect(Object.keys(table).sort()).toEqual(['affinity', 'comment', 'resources', 'rule']);
+    expect(table['comment']).toMatchObject({ maxLength: 4096 });
+    expect(table['affinity']).toMatchObject({ enum: ['positive', 'negative'] });
+  });
+
+  /**
+   * ⛔ `nodes` AND `strict` EXIST ONLY ON THE node-affinity BRANCH, so enforcing them would refuse
+   *   a resource-affinity rule for breaking a rule PVE never applies to it. `oneOf` intersects.
+   */
+  test('a rule only one branch states is NOT enforced', () => {
+    expect(constraintsFor(CREATE)['nodes']).toBeUndefined();
+    expect(constraintsFor(CREATE)['strict']).toBeUndefined();
+  });
+
+  /**
+   * ⚠️ `affinity` IS REQUIRED ON resource-affinity AND OPTIONAL ON node-affinity, so presence is
+   *   not enforced. Dropping a disagreeing `optional` would have read as REQUIRED — absence means
+   *   required in this schema — and refused every legal node-affinity rule.
+   */
+  test('presence is required only where every branch requires it', () => {
+    const table = constraintsFor(CREATE);
+    expect(table['rule']?.required).toBe(true);
+    expect(table['resources']?.required).toBe(true);
+    expect(table['affinity']?.required).toBeUndefined();
+    expect(formViolations(CREATE, { affinity: 'positive', resources: 'vm:100' }, true)).toEqual([
+      'rule: required',
+    ]);
+  });
+
+  test('the live shape of a node-affinity rule has no violations', () => {
+    const form = { affinity: 'positive', nodes: 'n1:2,n2:1', resources: 'vm:100', rule: 'pin-100' };
+    expect(formViolations(CREATE, form, true)).toEqual([]);
+    expect(formViolations(CREATE, { ...form, comment: 'c'.repeat(4097) }, true)).toEqual([
+      'comment: at most 4096 characters',
+    ]);
+  });
+});
