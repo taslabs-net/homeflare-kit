@@ -19,6 +19,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import coverageManifest from '../schemas/manifest.json' with { type: 'json' };
 
 const ROOT = join(import.meta.dir, '..');
 const GENERATED = join(ROOT, 'packages/alchemy/src/proxmox/generated/constraints');
@@ -35,6 +36,8 @@ interface Entry {
   readonly bytes: number;
   readonly fetchedAt: string;
   readonly consumedBy: readonly string[];
+  /** ⚠️ Only on an entry fetched from a public git repository, never from a host. */
+  readonly sourceBlobSha1?: string;
 }
 
 const manifest = (await Bun.file(join(ROOT, 'codegen/manifest.json')).json()) as {
@@ -66,8 +69,17 @@ describe('every schema entry says what it is true of', () => {
    *   enough to re-fetch and carries nothing about which box answered.
    */
   test('no estate hostname, address or console id is recorded', () => {
-    // ⚠️ The sha256 fields are the ONE place a long hex string belongs, so they come out first.
-    const text = JSON.stringify(manifest.schemas.map(({ sha256, ...rest }) => rest));
+    /**
+     * ⚠️ THE HASH FIELDS ARE THE ONLY PLACE A LONG HEX STRING BELONGS, so they come out first.
+     *   ⛔ STRIPPED BY FIELD NAME, NOT BY PATTERN — that is what keeps the guarantee. A hex id
+     *     smuggled into `note`, `sourcePath` or `version` still trips the check below; only a
+     *     field this test knows is a content hash is exempt. `sourceBlobSha1` is the vendor's own
+     *     git blob id for a file in a PUBLIC repository, which is how a reader fetches exactly
+     *     the bytes the sha256 describes.
+     */
+    const text = JSON.stringify(
+      manifest.schemas.map(({ sha256, sourceBlobSha1, ...rest }) => rest),
+    );
     expect(text).not.toMatch(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/);
     expect(text).not.toMatch(/[a-z0-9-]+\.(?:mgmt\.)?homeflare\.dev/);
     expect(text).not.toMatch(/\b[0-9a-f]{40,}\b/);
@@ -135,4 +147,34 @@ describe('the committed tables are current against the schemas they name', () =>
     );
     expect(missing.every((entry) => entry.sha256.length === 64)).toBe(true);
   });
+});
+
+/**
+ * ⛔ TWO MANIFESTS, ONE REPOSITORY, AND THEY MUST NAME THE SAME BYTES. `codegen/manifest.json`
+ *   feeds the constraint tables and `schemas/manifest.json` feeds `docs/api-coverage.*`; they were
+ *   written hours apart and landed pointing at DIFFERENT PVE schemas — 9.2.11 and 9.2.4, from a
+ *   genuinely mixed-version cluster, differing by two write endpoints. A reader comparing the two
+ *   artefacts was comparing two APIs, and nothing said so. Measured and corrected 2026-09-22.
+ */
+describe('the two schema manifests describe the same vendor bytes', () => {
+  const coverage = coverageManifest as {
+    entries: readonly { id: string; sha256: string; version: string; cacheFile: string }[];
+  };
+  const pairs = [
+    { codegen: 'pve-apidoc', coverage: 'proxmox/pve' },
+    { codegen: 'pbs-apidoc', coverage: 'proxmox/pbs' },
+  ];
+
+  for (const pair of pairs) {
+    test(`${pair.codegen} and ${pair.coverage} agree on sha256, version and cache file`, () => {
+      const a = manifest.schemas.find((s) => s.id === pair.codegen);
+      const b = coverage.entries.find((e) => e.id === pair.coverage);
+      // ⛔ THE BYTES AND THE FILE, EXACTLY. A second filename for the same bytes is how an
+      //   unversioned `pve-apidoc.js` stayed in the cache holding a stale 9.2.4 copy.
+      expect([a?.sha256, a?.file]).toEqual([b?.sha256, b?.cacheFile]);
+      // ⚠️ THE VERSION STRINGS DIFFER BY THE PRODUCT NAME, which codegen keeps in its own field:
+      //   `9.2.11/f699…` against `pve-manager/9.2.11/f699…`. Containment is the honest assertion.
+      expect(b?.version).toContain(a?.version ?? 'MISSING');
+    });
+  }
 });

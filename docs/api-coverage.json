@@ -240,17 +240,7 @@
           "owner": "Proxmox.User",
           "parameters": 10,
           "path": "/access/users",
-          "unenforced": [
-            "comment",
-            "email",
-            "expire",
-            "firstname",
-            "groups",
-            "keys",
-            "lastname",
-            "password",
-            "userid"
-          ]
+          "unenforced": ["email", "groups", "userid"]
         },
         {
           "method": "DELETE",
@@ -264,16 +254,7 @@
           "owner": "Proxmox.User",
           "parameters": 10,
           "path": "/access/users/{userid}",
-          "unenforced": [
-            "comment",
-            "email",
-            "expire",
-            "firstname",
-            "groups",
-            "keys",
-            "lastname",
-            "userid"
-          ]
+          "unenforced": ["email", "groups", "userid"]
         },
         {
           "method": "DELETE",
@@ -358,22 +339,15 @@
           "parameters": 38,
           "path": "/cluster/backup",
           "unenforced": [
-            "bwlimit",
-            "comment",
             "dow",
             "exclude",
             "fleecing",
             "id",
-            "ionice",
-            "lockwait",
             "mailto",
             "node",
-            "notes-template",
             "performance",
             "prune-backups",
             "schedule",
-            "starttime",
-            "stopwait",
             "storage",
             "vmid"
           ]
@@ -391,23 +365,16 @@
           "parameters": 39,
           "path": "/cluster/backup/{id}",
           "unenforced": [
-            "bwlimit",
-            "comment",
             "delete",
             "dow",
             "exclude",
             "fleecing",
             "id",
-            "ionice",
-            "lockwait",
             "mailto",
             "node",
-            "notes-template",
             "performance",
             "prune-backups",
             "schedule",
-            "starttime",
-            "stopwait",
             "storage",
             "vmid"
           ]
@@ -417,28 +384,28 @@
           "owner": null,
           "parameters": 6,
           "path": "/cluster/bulk-action/guest/migrate",
-          "unenforced": ["max-workers", "maxworkers", "target"]
+          "unenforced": ["max-workers", "maxworkers", "target", "vms"]
         },
         {
           "method": "POST",
           "owner": null,
           "parameters": 5,
           "path": "/cluster/bulk-action/guest/shutdown",
-          "unenforced": ["max-workers", "maxworkers"]
+          "unenforced": ["max-workers", "maxworkers", "vms"]
         },
         {
           "method": "POST",
           "owner": null,
           "parameters": 4,
           "path": "/cluster/bulk-action/guest/start",
-          "unenforced": ["max-workers", "maxworkers"]
+          "unenforced": ["max-workers", "maxworkers", "vms"]
         },
         {
           "method": "POST",
           "owner": null,
           "parameters": 5,
           "path": "/cluster/bulk-action/guest/suspend",
-          "unenforced": ["max-workers", "maxworkers", "statestorage"]
+          "unenforced": ["max-workers", "maxworkers", "statestorage", "vms"]
         },
         {
           "method": "PUT",
@@ -453,6 +420,13 @@
           "parameters": 2,
           "path": "/cluster/ceph/flags/{flag}",
           "unenforced": []
+        },
+        {
+          "method": "POST",
+          "owner": null,
+          "parameters": 5,
+          "path": "/cluster/ceph/restart-bulk",
+          "unenforced": ["timeout"]
         },
         {
           "method": "POST",
@@ -487,7 +461,7 @@
           "owner": "Proxmox.FirewallAlias",
           "parameters": 3,
           "path": "/cluster/firewall/aliases",
-          "unenforced": ["cidr", "name"]
+          "unenforced": ["cidr", "comment"]
         },
         {
           "method": "DELETE",
@@ -501,14 +475,14 @@
           "owner": "Proxmox.FirewallAlias",
           "parameters": 5,
           "path": "/cluster/firewall/aliases/{name}",
-          "unenforced": ["cidr", "digest", "name", "rename"]
+          "unenforced": ["cidr", "comment", "name"]
         },
         {
           "method": "POST",
           "owner": null,
           "parameters": 4,
           "path": "/cluster/firewall/groups",
-          "unenforced": ["digest", "group", "rename"]
+          "unenforced": ["comment", "digest", "group", "rename"]
         },
         {
           "method": "DELETE",
@@ -524,6 +498,7 @@
           "path": "/cluster/firewall/groups/{group}",
           "unenforced": [
             "action",
+            "comment",
             "dest",
             "digest",
             "dport",
@@ -552,6 +527,7 @@
           "path": "/cluster/firewall/groups/{group}/{pos}",
           "unenforced": [
             "action",
+            "comment",
             "delete",
             "dest",
             "digest",
@@ -573,7 +549,7 @@
           "owner": null,
           "parameters": 4,
           "path": "/cluster/firewall/ipset",
-          "unenforced": ["digest", "name", "rename"]
+          "unenforced": ["comment", "digest", "name", "rename"]
         },
         {
           "method": "DELETE",
@@ -587,7 +563,7 @@
           "owner": null,
           "parameters": 4,
           "path": "/cluster/firewall/ipset/{name}",
-          "unenforced": ["cidr", "name"]
+          "unenforced": ["cidr", "comment", "name"]
         },
         {
           "method": "DELETE",
@@ -601,7 +577,7 @@
           "owner": null,
           "parameters": 5,
           "path": "/cluster/firewall/ipset/{name}/{cidr}",
-          "unenforced": ["cidr", "digest", "name"]
+          "unenforced": ["cidr", "comment", "digest", "name"]
         },
         {
           "method": "PUT",
@@ -617,6 +593,7 @@
           "path": "/cluster/firewall/rules",
           "unenforced": [
             "action",
+            "comment",
             "dest",
             "digest",
             "dport",
@@ -644,6 +621,7 @@
           "path": "/cluster/firewall/rules/{pos}",
           "unenforced": [
             "action",
+            "comment",
             "delete",
             "dest",
             "digest",
@@ -685,7 +663,7 @@
           "owner": "Proxmox.HaResource",
           "parameters": 9,
           "path": "/cluster/ha/resources",
-          "unenforced": ["comment", "group", "max_relocate", "max_restart", "sid"]
+          "unenforced": ["group", "sid"]
         },
         {
           "method": "DELETE",
@@ -699,15 +677,7 @@
           "owner": "Proxmox.HaResource",
           "parameters": 10,
           "path": "/cluster/ha/resources/{sid}",
-          "unenforced": [
-            "comment",
-            "delete",
-            "digest",
-            "group",
-            "max_relocate",
-            "max_restart",
-            "sid"
-          ]
+          "unenforced": ["delete", "group", "sid"]
         },
         {
           "method": "POST",
@@ -726,9 +696,9 @@
         {
           "method": "POST",
           "owner": "Proxmox.HaRule",
-          "parameters": 8,
+          "parameters": 0,
           "path": "/cluster/ha/rules",
-          "unenforced": ["comment", "nodes", "resources", "rule"]
+          "unenforced": []
         },
         {
           "method": "DELETE",
@@ -740,9 +710,9 @@
         {
           "method": "PUT",
           "owner": "Proxmox.HaRule",
-          "parameters": 10,
+          "parameters": 0,
           "path": "/cluster/ha/rules/{rule}",
-          "unenforced": ["comment", "delete", "digest", "nodes", "resources", "rule"]
+          "unenforced": []
         },
         {
           "method": "POST",
@@ -784,7 +754,7 @@
           "owner": null,
           "parameters": 3,
           "path": "/cluster/mapping/dir",
-          "unenforced": ["description", "id"]
+          "unenforced": ["description", "id", "map"]
         },
         {
           "method": "DELETE",
@@ -798,14 +768,14 @@
           "owner": null,
           "parameters": 5,
           "path": "/cluster/mapping/dir/{id}",
-          "unenforced": ["delete", "description", "digest", "id"]
+          "unenforced": ["delete", "description", "digest", "id", "map"]
         },
         {
           "method": "POST",
           "owner": null,
           "parameters": 5,
           "path": "/cluster/mapping/pci",
-          "unenforced": ["description", "id"]
+          "unenforced": ["description", "id", "map"]
         },
         {
           "method": "DELETE",
@@ -819,14 +789,14 @@
           "owner": null,
           "parameters": 7,
           "path": "/cluster/mapping/pci/{id}",
-          "unenforced": ["delete", "description", "digest", "id"]
+          "unenforced": ["delete", "description", "digest", "id", "map"]
         },
         {
           "method": "POST",
           "owner": null,
           "parameters": 3,
           "path": "/cluster/mapping/usb",
-          "unenforced": ["description", "id"]
+          "unenforced": ["description", "id", "map"]
         },
         {
           "method": "DELETE",
@@ -840,7 +810,7 @@
           "owner": null,
           "parameters": 5,
           "path": "/cluster/mapping/usb/{id}",
-          "unenforced": ["delete", "description", "digest", "id"]
+          "unenforced": ["delete", "description", "digest", "id", "map"]
         },
         {
           "method": "DELETE",
@@ -909,14 +879,14 @@
           "owner": "Proxmox.NotificationTarget",
           "parameters": 7,
           "path": "/cluster/notifications/endpoints/gotify/{name}",
-          "unenforced": ["digest", "name"]
+          "unenforced": ["delete", "digest", "name"]
         },
         {
           "method": "POST",
           "owner": "Proxmox.NotificationTarget",
           "parameters": 7,
           "path": "/cluster/notifications/endpoints/sendmail",
-          "unenforced": ["name"]
+          "unenforced": ["mailto", "mailto-user", "name"]
         },
         {
           "method": "DELETE",
@@ -930,14 +900,14 @@
           "owner": "Proxmox.NotificationTarget",
           "parameters": 9,
           "path": "/cluster/notifications/endpoints/sendmail/{name}",
-          "unenforced": ["digest", "name"]
+          "unenforced": ["delete", "digest", "mailto", "mailto-user", "name"]
         },
         {
           "method": "POST",
           "owner": "Proxmox.NotificationTarget",
           "parameters": 12,
           "path": "/cluster/notifications/endpoints/smtp",
-          "unenforced": ["name"]
+          "unenforced": ["mailto", "mailto-user", "name"]
         },
         {
           "method": "DELETE",
@@ -951,7 +921,7 @@
           "owner": "Proxmox.NotificationTarget",
           "parameters": 14,
           "path": "/cluster/notifications/endpoints/smtp/{name}",
-          "unenforced": ["digest", "name"]
+          "unenforced": ["delete", "digest", "mailto", "mailto-user", "name"]
         },
         {
           "method": "POST",
@@ -972,14 +942,14 @@
           "owner": "Proxmox.NotificationTarget",
           "parameters": 10,
           "path": "/cluster/notifications/endpoints/webhook/{name}",
-          "unenforced": ["digest", "name"]
+          "unenforced": ["delete", "digest", "name"]
         },
         {
           "method": "POST",
           "owner": "Proxmox.NotificationMatcher",
           "parameters": 9,
           "path": "/cluster/notifications/matchers",
-          "unenforced": ["name"]
+          "unenforced": ["name", "target"]
         },
         {
           "method": "DELETE",
@@ -993,7 +963,7 @@
           "owner": "Proxmox.NotificationMatcher",
           "parameters": 11,
           "path": "/cluster/notifications/matchers/{name}",
-          "unenforced": ["digest", "name"]
+          "unenforced": ["delete", "name", "target"]
         },
         {
           "method": "POST",
@@ -1072,7 +1042,7 @@
           "owner": "Proxmox.ReplicationJob",
           "parameters": 9,
           "path": "/cluster/replication",
-          "unenforced": ["comment", "id", "rate", "schedule", "source", "target"]
+          "unenforced": ["id", "schedule", "source", "target"]
         },
         {
           "method": "DELETE",
@@ -1086,7 +1056,7 @@
           "owner": "Proxmox.ReplicationJob",
           "parameters": 9,
           "path": "/cluster/replication/{id}",
-          "unenforced": ["comment", "delete", "digest", "id", "rate", "schedule", "source"]
+          "unenforced": ["delete", "id", "schedule", "source"]
         },
         {
           "method": "PUT",
@@ -1208,7 +1178,7 @@
           "owner": null,
           "parameters": 13,
           "path": "/cluster/sdn/fabrics/node/{fabric_id}",
-          "unenforced": ["digest", "fabric_id", "ip", "ip6", "node_id"]
+          "unenforced": ["allowed_ips", "digest", "fabric_id", "ip", "ip6", "node_id", "peers"]
         },
         {
           "method": "DELETE",
@@ -1222,7 +1192,7 @@
           "owner": null,
           "parameters": 14,
           "path": "/cluster/sdn/fabrics/node/{fabric_id}/{node_id}",
-          "unenforced": ["digest", "fabric_id", "ip", "ip6", "node_id"]
+          "unenforced": ["allowed_ips", "digest", "fabric_id", "ip", "ip6", "node_id", "peers"]
         },
         {
           "method": "POST",
@@ -1264,7 +1234,7 @@
           "owner": null,
           "parameters": 4,
           "path": "/cluster/sdn/prefix-lists",
-          "unenforced": ["digest", "id"]
+          "unenforced": ["digest", "entries", "id"]
         },
         {
           "method": "DELETE",
@@ -1278,7 +1248,7 @@
           "owner": null,
           "parameters": 5,
           "path": "/cluster/sdn/prefix-lists/{id}",
-          "unenforced": ["digest", "id"]
+          "unenforced": ["digest", "entries", "id"]
         },
         {
           "method": "POST",
@@ -1313,7 +1283,7 @@
           "owner": null,
           "parameters": 9,
           "path": "/cluster/sdn/route-maps/entries",
-          "unenforced": ["call", "digest", "exit-action", "order", "route-map-id"]
+          "unenforced": ["call", "digest", "exit-action", "match", "order", "route-map-id", "set"]
         },
         {
           "method": "DELETE",
@@ -1327,14 +1297,14 @@
           "owner": null,
           "parameters": 10,
           "path": "/cluster/sdn/route-maps/entries/{route-map-id}/entry/{order}",
-          "unenforced": ["call", "digest", "exit-action", "order", "route-map-id"]
+          "unenforced": ["call", "digest", "exit-action", "match", "order", "route-map-id", "set"]
         },
         {
           "method": "POST",
           "owner": "Proxmox.SdnVnet",
           "parameters": 8,
           "path": "/cluster/sdn/vnets",
-          "unenforced": ["alias", "tag", "vnet"]
+          "unenforced": ["alias"]
         },
         {
           "method": "DELETE",
@@ -1348,7 +1318,7 @@
           "owner": "Proxmox.SdnVnet",
           "parameters": 9,
           "path": "/cluster/sdn/vnets/{vnet}",
-          "unenforced": ["alias", "delete", "digest", "tag", "vnet"]
+          "unenforced": ["alias", "delete", "vnet"]
         },
         {
           "method": "PUT",
@@ -1364,6 +1334,7 @@
           "path": "/cluster/sdn/vnets/{vnet}/firewall/rules",
           "unenforced": [
             "action",
+            "comment",
             "dest",
             "digest",
             "dport",
@@ -1392,6 +1363,7 @@
           "path": "/cluster/sdn/vnets/{vnet}/firewall/rules/{pos}",
           "unenforced": [
             "action",
+            "comment",
             "delete",
             "dest",
             "digest",
@@ -1434,7 +1406,7 @@
           "owner": "Proxmox.SdnSubnet",
           "parameters": 9,
           "path": "/cluster/sdn/vnets/{vnet}/subnets",
-          "unenforced": ["dhcp-dns-server", "dnszoneprefix", "gateway", "subnet"]
+          "unenforced": ["dhcp-dns-server", "dhcp-range", "dnszoneprefix", "gateway", "subnet"]
         },
         {
           "method": "DELETE",
@@ -1451,6 +1423,7 @@
           "unenforced": [
             "delete",
             "dhcp-dns-server",
+            "dhcp-range",
             "digest",
             "dnszoneprefix",
             "gateway",
@@ -1471,11 +1444,7 @@
             "nodes",
             "peers",
             "rt-import",
-            "tag",
-            "type",
-            "vrf-vxlan",
-            "vxlan-port",
-            "zone"
+            "type"
           ]
         },
         {
@@ -1492,7 +1461,6 @@
           "path": "/cluster/sdn/zones/{zone}",
           "unenforced": [
             "delete",
-            "digest",
             "dnszone",
             "exitnodes",
             "exitnodes-primary",
@@ -1501,9 +1469,6 @@
             "nodes",
             "peers",
             "rt-import",
-            "tag",
-            "vrf-vxlan",
-            "vxlan-port",
             "zone"
           ]
         },
@@ -1669,6 +1634,13 @@
           "parameters": 2,
           "path": "/nodes/{node}/ceph/restart",
           "unenforced": ["node", "service"]
+        },
+        {
+          "method": "POST",
+          "owner": null,
+          "parameters": 8,
+          "path": "/nodes/{node}/ceph/restart-bulk",
+          "unenforced": ["node", "timeout"]
         },
         {
           "method": "POST",
@@ -1843,6 +1815,7 @@
           "path": "/nodes/{node}/firewall/rules",
           "unenforced": [
             "action",
+            "comment",
             "dest",
             "digest",
             "dport",
@@ -1871,6 +1844,7 @@
           "path": "/nodes/{node}/firewall/rules/{pos}",
           "unenforced": [
             "action",
+            "comment",
             "delete",
             "dest",
             "digest",
@@ -1995,7 +1969,7 @@
           "owner": null,
           "parameters": 5,
           "path": "/nodes/{node}/lxc/{vmid}/firewall/aliases",
-          "unenforced": ["cidr", "name", "node", "vmid"]
+          "unenforced": ["cidr", "comment", "name", "node", "vmid"]
         },
         {
           "method": "DELETE",
@@ -2009,14 +1983,14 @@
           "owner": null,
           "parameters": 7,
           "path": "/nodes/{node}/lxc/{vmid}/firewall/aliases/{name}",
-          "unenforced": ["cidr", "digest", "name", "node", "rename", "vmid"]
+          "unenforced": ["cidr", "comment", "digest", "name", "node", "rename", "vmid"]
         },
         {
           "method": "POST",
           "owner": null,
           "parameters": 6,
           "path": "/nodes/{node}/lxc/{vmid}/firewall/ipset",
-          "unenforced": ["digest", "name", "node", "rename", "vmid"]
+          "unenforced": ["comment", "digest", "name", "node", "rename", "vmid"]
         },
         {
           "method": "DELETE",
@@ -2030,7 +2004,7 @@
           "owner": null,
           "parameters": 6,
           "path": "/nodes/{node}/lxc/{vmid}/firewall/ipset/{name}",
-          "unenforced": ["cidr", "name", "node", "vmid"]
+          "unenforced": ["cidr", "comment", "name", "node", "vmid"]
         },
         {
           "method": "DELETE",
@@ -2044,7 +2018,7 @@
           "owner": null,
           "parameters": 7,
           "path": "/nodes/{node}/lxc/{vmid}/firewall/ipset/{name}/{cidr}",
-          "unenforced": ["cidr", "digest", "name", "node", "vmid"]
+          "unenforced": ["cidr", "comment", "digest", "name", "node", "vmid"]
         },
         {
           "method": "PUT",
@@ -2060,6 +2034,7 @@
           "path": "/nodes/{node}/lxc/{vmid}/firewall/rules",
           "unenforced": [
             "action",
+            "comment",
             "dest",
             "digest",
             "dport",
@@ -2089,6 +2064,7 @@
           "path": "/nodes/{node}/lxc/{vmid}/firewall/rules/{pos}",
           "unenforced": [
             "action",
+            "comment",
             "delete",
             "dest",
             "digest",
@@ -2683,7 +2659,7 @@
           "owner": null,
           "parameters": 5,
           "path": "/nodes/{node}/qemu/{vmid}/firewall/aliases",
-          "unenforced": ["cidr", "name", "node", "vmid"]
+          "unenforced": ["cidr", "comment", "name", "node", "vmid"]
         },
         {
           "method": "DELETE",
@@ -2697,14 +2673,14 @@
           "owner": null,
           "parameters": 7,
           "path": "/nodes/{node}/qemu/{vmid}/firewall/aliases/{name}",
-          "unenforced": ["cidr", "digest", "name", "node", "rename", "vmid"]
+          "unenforced": ["cidr", "comment", "digest", "name", "node", "rename", "vmid"]
         },
         {
           "method": "POST",
           "owner": null,
           "parameters": 6,
           "path": "/nodes/{node}/qemu/{vmid}/firewall/ipset",
-          "unenforced": ["digest", "name", "node", "rename", "vmid"]
+          "unenforced": ["comment", "digest", "name", "node", "rename", "vmid"]
         },
         {
           "method": "DELETE",
@@ -2718,7 +2694,7 @@
           "owner": null,
           "parameters": 6,
           "path": "/nodes/{node}/qemu/{vmid}/firewall/ipset/{name}",
-          "unenforced": ["cidr", "name", "node", "vmid"]
+          "unenforced": ["cidr", "comment", "name", "node", "vmid"]
         },
         {
           "method": "DELETE",
@@ -2732,7 +2708,7 @@
           "owner": null,
           "parameters": 7,
           "path": "/nodes/{node}/qemu/{vmid}/firewall/ipset/{name}/{cidr}",
-          "unenforced": ["cidr", "digest", "name", "node", "vmid"]
+          "unenforced": ["cidr", "comment", "digest", "name", "node", "vmid"]
         },
         {
           "method": "PUT",
@@ -2748,6 +2724,7 @@
           "path": "/nodes/{node}/qemu/{vmid}/firewall/rules",
           "unenforced": [
             "action",
+            "comment",
             "dest",
             "digest",
             "dport",
@@ -2777,6 +2754,7 @@
           "path": "/nodes/{node}/qemu/{vmid}/firewall/rules/{pos}",
           "unenforced": [
             "action",
+            "comment",
             "delete",
             "dest",
             "digest",
@@ -3231,18 +3209,13 @@
             "bwlimit",
             "content",
             "content-dirs",
-            "domain",
             "export",
-            "fingerprint",
             "fs-name",
-            "max-protected-backups",
             "monhost",
             "mountpoint",
             "nodes",
             "options",
-            "password",
             "path",
-            "port",
             "portal",
             "prune-backups",
             "server",
@@ -3271,17 +3244,11 @@
             "content",
             "content-dirs",
             "delete",
-            "digest",
-            "domain",
-            "fingerprint",
             "fs-name",
-            "max-protected-backups",
             "monhost",
             "mountpoint",
             "nodes",
             "options",
-            "password",
-            "port",
             "prune-backups",
             "server",
             "storage",
@@ -3290,17 +3257,17 @@
           ]
         }
       ],
-      "sha256Short": "f2b77b57",
+      "sha256Short": "9def8f13",
       "system": "pve",
       "totals": {
-        "ownedUnenforcedParams": 545,
-        "unenforcedParams": 1562,
+        "ownedUnenforcedParams": 490,
+        "unenforcedParams": 1556,
         "ownedWriteEndpoints": 88,
         "ownedWritePaths": 59,
-        "writeEndpoints": 335,
-        "writePaths": 256
+        "writeEndpoints": 337,
+        "writePaths": 258
       },
-      "version": "pve-manager/9.2.4/5e5ae681198514d4"
+      "version": "pve-manager/9.2.11/f6997e698c7933ea"
     },
     {
       "product": "Proxmox Backup Server API",
@@ -3671,7 +3638,7 @@
           "owner": null,
           "parameters": 3,
           "path": "/backup/_upgrade_/dynamic_index",
-          "unenforced": ["wid"]
+          "unenforced": ["digest-list", "offset-list", "wid"]
         },
         {
           "method": "POST",
@@ -3706,7 +3673,7 @@
           "owner": null,
           "parameters": 3,
           "path": "/backup/_upgrade_/fixed_index",
-          "unenforced": ["wid"]
+          "unenforced": ["digest-list", "offset-list", "wid"]
         },
         {
           "method": "POST",
@@ -3913,23 +3880,7 @@
           "owner": "Pbs.Datastore",
           "parameters": 24,
           "path": "/config/datastore",
-          "unenforced": [
-            "backing-device",
-            "comment",
-            "keep-daily",
-            "keep-hourly",
-            "keep-last",
-            "keep-monthly",
-            "keep-weekly",
-            "keep-yearly",
-            "maintenance-mode",
-            "name",
-            "notification-thresholds",
-            "notify",
-            "notify-user",
-            "path",
-            "tuning"
-          ]
+          "unenforced": ["maintenance-mode", "notification-thresholds", "notify", "tuning"]
         },
         {
           "method": "DELETE",
@@ -3943,22 +3894,7 @@
           "owner": "Pbs.Datastore",
           "parameters": 21,
           "path": "/config/datastore/{name}",
-          "unenforced": [
-            "comment",
-            "digest",
-            "keep-daily",
-            "keep-hourly",
-            "keep-last",
-            "keep-monthly",
-            "keep-weekly",
-            "keep-yearly",
-            "maintenance-mode",
-            "name",
-            "notification-thresholds",
-            "notify",
-            "notify-user",
-            "tuning"
-          ]
+          "unenforced": ["maintenance-mode", "name", "notification-thresholds", "notify", "tuning"]
         },
         {
           "method": "POST",
@@ -4091,7 +4027,7 @@
           "owner": "Pbs.NotificationTarget",
           "parameters": 9,
           "path": "/config/notifications/endpoints/sendmail",
-          "unenforced": ["comment", "name"]
+          "unenforced": ["comment", "mailto", "mailto-user", "name"]
         },
         {
           "method": "DELETE",
@@ -4105,14 +4041,14 @@
           "owner": "Pbs.NotificationTarget",
           "parameters": 9,
           "path": "/config/notifications/endpoints/sendmail/{name}",
-          "unenforced": ["comment", "digest", "name"]
+          "unenforced": ["comment", "digest", "mailto", "mailto-user", "name"]
         },
         {
           "method": "POST",
           "owner": "Pbs.NotificationTarget",
           "parameters": 13,
           "path": "/config/notifications/endpoints/smtp",
-          "unenforced": ["comment", "name", "port"]
+          "unenforced": ["comment", "mailto", "mailto-user", "name", "port"]
         },
         {
           "method": "DELETE",
@@ -4126,14 +4062,14 @@
           "owner": "Pbs.NotificationTarget",
           "parameters": 14,
           "path": "/config/notifications/endpoints/smtp/{name}",
-          "unenforced": ["comment", "digest", "name", "port"]
+          "unenforced": ["comment", "digest", "mailto", "mailto-user", "name", "port"]
         },
         {
           "method": "POST",
           "owner": "Pbs.NotificationTarget",
           "parameters": 9,
           "path": "/config/notifications/endpoints/webhook",
-          "unenforced": ["comment", "name", "url"]
+          "unenforced": ["comment", "header", "name", "secret", "url"]
         },
         {
           "method": "DELETE",
@@ -4147,14 +4083,14 @@
           "owner": "Pbs.NotificationTarget",
           "parameters": 10,
           "path": "/config/notifications/endpoints/webhook/{name}",
-          "unenforced": ["comment", "digest", "name", "url"]
+          "unenforced": ["comment", "digest", "header", "name", "secret", "url"]
         },
         {
           "method": "POST",
           "owner": "Pbs.NotificationMatcher",
           "parameters": 10,
           "path": "/config/notifications/matchers",
-          "unenforced": ["comment", "name"]
+          "unenforced": []
         },
         {
           "method": "DELETE",
@@ -4168,7 +4104,7 @@
           "owner": "Pbs.NotificationMatcher",
           "parameters": 11,
           "path": "/config/notifications/matchers/{name}",
-          "unenforced": ["comment", "digest", "name"]
+          "unenforced": ["name"]
         },
         {
           "method": "POST",
@@ -4182,19 +4118,7 @@
           "owner": "Pbs.PruneJob",
           "parameters": 13,
           "path": "/config/prune",
-          "unenforced": [
-            "comment",
-            "id",
-            "keep-daily",
-            "keep-hourly",
-            "keep-last",
-            "keep-monthly",
-            "keep-weekly",
-            "keep-yearly",
-            "max-depth",
-            "ns",
-            "store"
-          ]
+          "unenforced": []
         },
         {
           "method": "DELETE",
@@ -4208,20 +4132,7 @@
           "owner": "Pbs.PruneJob",
           "parameters": 15,
           "path": "/config/prune/{id}",
-          "unenforced": [
-            "comment",
-            "digest",
-            "id",
-            "keep-daily",
-            "keep-hourly",
-            "keep-last",
-            "keep-monthly",
-            "keep-weekly",
-            "keep-yearly",
-            "max-depth",
-            "ns",
-            "store"
-          ]
+          "unenforced": ["id"]
         },
         {
           "method": "POST",
@@ -4289,24 +4200,7 @@
           "owner": "Pbs.SyncJob",
           "parameters": 26,
           "path": "/config/sync",
-          "unenforced": [
-            "active-encryption-key",
-            "burst-in",
-            "burst-out",
-            "comment",
-            "id",
-            "max-depth",
-            "ns",
-            "owner",
-            "rate-in",
-            "rate-out",
-            "remote",
-            "remote-ns",
-            "remote-store",
-            "store",
-            "transfer-last",
-            "worker-threads"
-          ]
+          "unenforced": []
         },
         {
           "method": "DELETE",
@@ -4320,25 +4214,7 @@
           "owner": "Pbs.SyncJob",
           "parameters": 28,
           "path": "/config/sync/{id}",
-          "unenforced": [
-            "active-encryption-key",
-            "burst-in",
-            "burst-out",
-            "comment",
-            "digest",
-            "id",
-            "max-depth",
-            "ns",
-            "owner",
-            "rate-in",
-            "rate-out",
-            "remote",
-            "remote-ns",
-            "remote-store",
-            "store",
-            "transfer-last",
-            "worker-threads"
-          ]
+          "unenforced": ["id"]
         },
         {
           "method": "POST",
@@ -4408,7 +4284,16 @@
           "owner": null,
           "parameters": 9,
           "path": "/config/traffic-control",
-          "unenforced": ["burst-in", "burst-out", "comment", "name", "rate-in", "rate-out"]
+          "unenforced": [
+            "burst-in",
+            "burst-out",
+            "comment",
+            "name",
+            "network",
+            "rate-in",
+            "rate-out",
+            "users"
+          ]
         },
         {
           "method": "DELETE",
@@ -4428,8 +4313,10 @@
             "comment",
             "digest",
             "name",
+            "network",
             "rate-in",
-            "rate-out"
+            "rate-out",
+            "users"
           ]
         },
         {
@@ -4437,16 +4324,7 @@
           "owner": "Pbs.VerifyJob",
           "parameters": 10,
           "path": "/config/verify",
-          "unenforced": [
-            "comment",
-            "id",
-            "max-depth",
-            "ns",
-            "outdated-after",
-            "read-threads",
-            "store",
-            "verify-threads"
-          ]
+          "unenforced": []
         },
         {
           "method": "DELETE",
@@ -4460,17 +4338,7 @@
           "owner": "Pbs.VerifyJob",
           "parameters": 12,
           "path": "/config/verify/{id}",
-          "unenforced": [
-            "comment",
-            "digest",
-            "id",
-            "max-depth",
-            "ns",
-            "outdated-after",
-            "read-threads",
-            "store",
-            "verify-threads"
-          ]
+          "unenforced": ["id"]
         },
         {
           "method": "POST",
@@ -4730,6 +4598,7 @@
           "unenforced": [
             "burst-in",
             "burst-out",
+            "decryption-keys",
             "max-depth",
             "ns",
             "rate-in",
@@ -4902,14 +4771,14 @@
           "owner": null,
           "parameters": 8,
           "path": "/tape/restore",
-          "unenforced": ["drive", "notify-user", "owner", "store"]
+          "unenforced": ["drive", "namespaces", "notify-user", "owner", "snapshots", "store"]
         }
       ],
       "sha256Short": "274ab9f6",
       "system": "pbs",
       "totals": {
-        "ownedUnenforcedParams": 144,
-        "unenforcedParams": 639,
+        "ownedUnenforcedParams": 62,
+        "unenforcedParams": 568,
         "ownedWriteEndpoints": 27,
         "ownedWritePaths": 18,
         "writeEndpoints": 182,

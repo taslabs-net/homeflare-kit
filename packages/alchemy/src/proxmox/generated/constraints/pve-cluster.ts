@@ -12,6 +12,11 @@
  *
  * ⚠️ A `patternSource` with no `pattern` beside it is a rule that could NOT be carried into a
  *   JavaScript RegExp faithfully (codegen/pattern.ts). It is recorded and NOT enforced.
+ * ⚠️ `pattern` IS NOT THE VENDOR'S SPELLING. For PVE it is anchored, because PVE applies
+ *   `m/^$pattern$/` itself (JSONSchema.pm); for PBS it is the vendor's own, which already
+ *   carries its anchors. `patternSource` is the spelling to quote at a human — param-rules.ts.
+ * ⚠️ `each: true` means the value rules describe every ELEMENT of a repeated key, because the
+ *   parameter is an array and stated its limits on `items`.
  */
 import type { EndpointConstraints } from '../../constraints.ts';
 
@@ -36,7 +41,7 @@ export const PVE_CLUSTER_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
     "performance": {"format":"backup-performance","type":"string"},
     "prune-backups": {"default":"keep-all=1","format":"prune-backups","type":"string"},
     "schedule": {"format":"pve-calendar-event","maxLength":128,"type":"string"},
-    "starttime": {"pattern":"\\d{1,2}:\\d{1,2}","patternSource":"\\d{1,2}:\\d{1,2}","type":"string"},
+    "starttime": {"pattern":"^\\d{1,2}:\\d{1,2}\\n?$","patternSource":"\\d{1,2}:\\d{1,2}","type":"string"},
     "stopwait": {"default":"10","minimum":0,"type":"integer"},
     "storage": {"format":"pve-storage-id","type":"string"},
     "vmid": {"format":"pve-vmid-list","type":"string"},
@@ -44,7 +49,7 @@ export const PVE_CLUSTER_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
   "pve:POST /cluster/firewall/aliases": {
     "cidr": {"format":"IPorCIDR","required":true,"type":"string"},
     "comment": {"format":"pve-fw-comment-spec","type":"string"},
-    "name": {"maxLength":64,"minLength":2,"pattern":"[A-Za-z][A-Za-z0-9\\-\\_]+","patternSource":"[A-Za-z][A-Za-z0-9\\-\\_]+","required":true,"type":"string"},
+    "name": {"maxLength":64,"minLength":2,"pattern":"^[A-Za-z][A-Za-z0-9\\-\\_]+\\n?$","patternSource":"[A-Za-z][A-Za-z0-9\\-\\_]+","required":true,"type":"string"},
   },
   "pve:POST /cluster/ha/resources": {
     "comment": {"maxLength":4096,"type":"string"},
@@ -59,10 +64,11 @@ export const PVE_CLUSTER_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
   "pve:POST /cluster/notifications/matchers": {
     "mode": {"default":"all","enum":["all","any"],"type":"string"},
     "name": {"format":"pve-configid","required":true,"type":"string"},
+    "target": {"each":true,"format":"pve-configid","type":"array"},
   },
   "pve:POST /cluster/replication": {
     "comment": {"maxLength":4096,"type":"string"},
-    "id": {"format":"pve-replication-job-id","pattern":"[1-9][0-9]{2,8}-\\d{1,9}","patternSource":"[1-9][0-9]{2,8}-\\d{1,9}","required":true,"type":"string"},
+    "id": {"format":"pve-replication-job-id","pattern":"^[1-9][0-9]{2,8}-\\d{1,9}\\n?$","patternSource":"[1-9][0-9]{2,8}-\\d{1,9}","required":true,"type":"string"},
     "rate": {"minimum":1,"type":"number"},
     "remove_job": {"enum":["local","full"],"type":"string"},
     "schedule": {"default":"*/15","format":"pve-calendar-event","maxLength":128,"type":"string"},
@@ -74,7 +80,7 @@ export const PVE_CLUSTER_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
     "alias": {"maxLength":256,"patternSource":"(?^i:[\\(\\)-_.\\w\\d\\s]{0,256})","type":"string"},
     "tag": {"maximum":16777215,"minimum":1,"type":"integer"},
     "type": {"enum":["vnet"],"type":"string"},
-    "vnet": {"maxLength":8,"minLength":2,"pattern":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","patternSource":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","required":true,"type":"string"},
+    "vnet": {"maxLength":8,"minLength":2,"pattern":"^[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]\\n?$","patternSource":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","required":true,"type":"string"},
     "zone": {"required":true,"type":"string"},
   },
   "pve:POST /cluster/sdn/zones": {
@@ -87,12 +93,13 @@ export const PVE_CLUSTER_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
     "nodes": {"format":"pve-node-list","type":"string"},
     "peers": {"format":"ip-list","type":"string"},
     "rt-import": {"format":"pve-sdn-bgp-rt-list","type":"string"},
+    "secondary-controllers": {"each":true,"maxLength":64,"minLength":2,"pattern":"^[a-zA-Z][a-zA-Z0-9_-]*[a-zA-Z0-9]\\n?$","patternSource":"[a-zA-Z][a-zA-Z0-9_-]*[a-zA-Z0-9]","type":"array"},
     "tag": {"minimum":0,"type":"integer"},
     "type": {"enum":["evpn","faucet","qinq","simple","vlan","vxlan"],"format":"pve-configid","required":true,"type":"string"},
     "vlan-protocol": {"default":"802.1q","enum":["802.1q","802.1ad"],"type":"string"},
     "vrf-vxlan": {"maximum":16777215,"minimum":1,"type":"integer"},
     "vxlan-port": {"default":"4789","maximum":65536,"minimum":1,"type":"integer"},
-    "zone": {"maxLength":8,"minLength":2,"pattern":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","patternSource":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","required":true,"type":"string"},
+    "zone": {"maxLength":8,"minLength":2,"pattern":"^[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]\\n?$","patternSource":"[a-zA-Z][a-zA-Z0-9]*[a-zA-Z0-9]","required":true,"type":"string"},
   },
   "pve:PUT /cluster/backup/{id}": {
     "bwlimit": {"default":"0","minimum":0,"type":"integer"},
@@ -114,7 +121,7 @@ export const PVE_CLUSTER_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
     "performance": {"format":"backup-performance","type":"string"},
     "prune-backups": {"default":"keep-all=1","format":"prune-backups","type":"string"},
     "schedule": {"format":"pve-calendar-event","maxLength":128,"type":"string"},
-    "starttime": {"pattern":"\\d{1,2}:\\d{1,2}","patternSource":"\\d{1,2}:\\d{1,2}","type":"string"},
+    "starttime": {"pattern":"^\\d{1,2}:\\d{1,2}\\n?$","patternSource":"\\d{1,2}:\\d{1,2}","type":"string"},
     "stopwait": {"default":"10","minimum":0,"type":"integer"},
     "storage": {"format":"pve-storage-id","type":"string"},
     "vmid": {"format":"pve-vmid-list","type":"string"},
@@ -123,7 +130,7 @@ export const PVE_CLUSTER_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
     "cidr": {"format":"IPorCIDR","required":true,"type":"string"},
     "comment": {"format":"pve-fw-comment-spec","type":"string"},
     "digest": {"maxLength":64,"type":"string"},
-    "rename": {"maxLength":64,"minLength":2,"pattern":"[A-Za-z][A-Za-z0-9\\-\\_]+","patternSource":"[A-Za-z][A-Za-z0-9\\-\\_]+","type":"string"},
+    "rename": {"maxLength":64,"minLength":2,"pattern":"^[A-Za-z][A-Za-z0-9\\-\\_]+\\n?$","patternSource":"[A-Za-z][A-Za-z0-9\\-\\_]+","type":"string"},
   },
   "pve:PUT /cluster/ha/resources/{sid}": {
     "comment": {"maxLength":4096,"type":"string"},
@@ -136,8 +143,10 @@ export const PVE_CLUSTER_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
   },
   "pve:PUT /cluster/ha/rules/{rule}": {},
   "pve:PUT /cluster/notifications/matchers/{name}": {
+    "delete": {"each":true,"format":"pve-configid","type":"array"},
     "digest": {"maxLength":64,"type":"string"},
     "mode": {"default":"all","enum":["all","any"],"type":"string"},
+    "target": {"each":true,"format":"pve-configid","type":"array"},
   },
   "pve:PUT /cluster/replication/{id}": {
     "comment": {"maxLength":4096,"type":"string"},
@@ -166,6 +175,7 @@ export const PVE_CLUSTER_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
     "nodes": {"format":"pve-node-list","type":"string"},
     "peers": {"format":"ip-list","type":"string"},
     "rt-import": {"format":"pve-sdn-bgp-rt-list","type":"string"},
+    "secondary-controllers": {"each":true,"maxLength":64,"minLength":2,"pattern":"^[a-zA-Z][a-zA-Z0-9_-]*[a-zA-Z0-9]\\n?$","patternSource":"[a-zA-Z][a-zA-Z0-9_-]*[a-zA-Z0-9]","type":"array"},
     "tag": {"minimum":0,"type":"integer"},
     "vlan-protocol": {"default":"802.1q","enum":["802.1q","802.1ad"],"type":"string"},
     "vrf-vxlan": {"maximum":16777215,"minimum":1,"type":"integer"},

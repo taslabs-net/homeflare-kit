@@ -33,9 +33,19 @@ bun codegen/types.ts                 # the API TYPES — codegen/TYPES.md
 bun codegen/types.ts --check         # same, but compare and exit non-zero when stale
 ```
 
-All four read `codegen/manifest.json`, resolve each schema out of the cache directory it
+Every generator here reads `codegen/manifest.json`, resolve each schema out of the cache directory it
 names, and **stop** when a file's sha256 or byte count does not match. A near-miss is a
 different API, not a rounding error.
+
+★ **NetBox has its own generator and its own page**, because the dialect differs in ways
+that matter: OpenAPI 3 rather than `apidoc.js`, Python regexes whose `\w` is Unicode, and
+a document that could not be read from the instance. Same rules, different traps —
+[`codegen/netbox.md`](./netbox.md).
+
+```sh
+bun codegen/netbox.ts                # tables + docs/netbox-coverage.md
+bun codegen/netbox.ts --check        # staleness gate
+```
 
 ## The cache, and why the blobs are not in git
 
@@ -123,9 +133,48 @@ exists to catch, and far more damaging.
 drop anything still carrying syntax it does not recognise. A dropped rule is recorded
 verbatim as `patternSource` with no `pattern` beside it, and nothing enforces it.
 
+⛔ And PVE **anchors**, which the first generation did not. MEASURED read-only on a node,
+`/usr/share/perl5/PVE/JSONSchema.pm:1636`: `if ($value !~ m/^$pattern$/)`. The published
+pattern is the inside of an anchored match, `RegExp.test` is a search, and the six PVE
+patterns in the tables were all toothless — a firewall alias named `ok name!` matched on
+its `ok` and passed. The anchoring is textual, not `(?:…)`, because Perl's is: three of
+PVE's 72 patterns have a top-level `|`, and `^a|b$` is not `^(?:a|b)$`. The `\n?` before
+the `$` is Perl's `$`, which matches before a final newline where JavaScript's does not.
+PBS is left alone: all 37 of its patterns already carry `^…$`.
+
 ⛔ `(?^i:…)` is dropped rather than lifted to the `i` flag. The flag is whole-pattern and
 the group is not, so lifting it would widen every other branch. `Proxmox.SdnVnet`'s
 `alias` is the one that does this; unenforced and honest beats enforced and wrong.
+
+## Which rule kinds are enforced
+
+Measured 2026-09-22 over the 37 tabled endpoints: 525 vendor parameters, 321 of which
+carry something worth a row. A green plan means the kinds marked **yes** held — nothing
+more.
+
+| Vendor kind          | Rows | Enforced | Why                                                                                 |
+| -------------------- | ---: | -------- | ----------------------------------------------------------------------------------- |
+| `maxLength`          |   98 | yes      | Characters, not UTF-16 units. The 128 that started this                             |
+| `minimum`/`maximum`  |   90 | yes      | Blank and non-numeric values are skipped, never coerced to `0`                      |
+| `pattern`            |   62 | yes      | Anchored for PVE; 2 dropped as untranslatable, recorded verbatim                    |
+| `enum`               |   45 | yes      | Includes 5 element enums reached through `items`                                    |
+| `minLength`          |   41 | yes      |                                                                                     |
+| `optional` (absent)  |   31 | creates  | An update form is partial by design, so presence is create-only                     |
+| `format` (a name)    |  108 | **no**   | `pve-calendar-event` names a validator PVE publishes nothing about                  |
+| `format` (an object) |   10 | **no**   | A property string's packed keys. A rule about `notify` is not one about `notify.gc` |
+| `typetext` alone     |  269 | **no**   | A syntax the schema states and does not describe                                    |
+| `requires`           |    8 | **no**   | A dependency between parameters, not a value rule                                   |
+| `default`            |   55 | n/a      | Recorded so a reader knows what an omitted key means                                |
+
+⛔ The two **no** rows that matter are `format` objects and `typetext`. Together they are
+every property string — PBS `notify`, `tuning`, `maintenance-mode`, `backend`, PVE
+`bwlimit`, `prune-backups`, `fleecing` — and every `<calendar-event>`. A malformed
+schedule or a bad inner key still reaches the server, and this is the honest edge of the
+feature rather than an oversight.
+
+★ 30 parameters are arrays and 11 of them state real limits one level down, on `items`.
+Those merge into the row and the row says `each: true`, because `violations` checks every
+element of a repeated key. `required` is never taken from `items`.
 
 ## Coverage today
 

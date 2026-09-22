@@ -7,7 +7,7 @@
  *   `packages/alchemy/src/proxmox/constraints.ts` therefore cannot enforce one.
  */
 import type { VendorEndpoint, VendorParam } from './apidoc.ts';
-import { translatePattern } from './pattern.ts';
+import { type Product, isElementRule, patternRule, withItemRules } from './param-rules.ts';
 
 export interface EmittedParam {
   readonly type?: string;
@@ -18,9 +18,12 @@ export interface EmittedParam {
   readonly maximum?: number;
   readonly enum?: readonly string[];
   readonly pattern?: string;
+  readonly patternFlags?: string;
   readonly patternSource?: string;
   readonly format?: string;
   readonly default?: string;
+  /** The value rules describe each ELEMENT of a repeated key — see param-rules.ts. */
+  readonly each?: true;
 }
 
 /** `{node}` in `/nodes/{node}/network`. */
@@ -44,20 +47,26 @@ const scalarDefault = (value: unknown): string | undefined =>
  * ⚠️ BUILT AS A WIDER RECORD AND PRUNED, NOT AS AN `EmittedParam`. `exactOptionalPropertyTypes` is
  *   on, so an explicit `undefined` is not an absent key — and `prune` is what makes it one.
  */
-const emitParam = (param: VendorParam, required: boolean): EmittedParam | undefined => {
-  const translated = param.pattern === undefined ? undefined : translatePattern(param.pattern);
+const emitParam = (
+  vendor: VendorParam,
+  required: boolean,
+  product: Product,
+): EmittedParam | undefined => {
+  // ⚠️ AN ARRAY'S RULES COME FROM ITS `items` FIRST — see param-rules.ts. Everything below then
+  //   reads one flat parameter, so no rule kind has two places to be looked for.
+  const param = withItemRules(vendor);
   const out: Record<string, unknown> = {
     default: scalarDefault(param.default),
+    each: isElementRule(vendor) ? true : undefined,
     enum: param.enum,
     format: formatName(param.format),
     maxLength: param.maxLength,
     maximum: param.maximum,
     minLength: param.minLength,
     minimum: param.minimum,
-    pattern: translated?.js,
-    patternSource: param.pattern,
     required: required ? true : undefined,
     type: param.type,
+    ...patternRule(param.pattern, product),
   };
   // ⚠️ A row with only a `type` states nothing enforceable and nothing a reader needs; dropping it
   //   keeps the committed table to the rules that exist.
@@ -89,14 +98,17 @@ const prune = (value: Record<string, unknown>): EmittedParam =>
  *   itself, so `{id}` never appears as a form key — and leaving it in the table would make every
  *   create refuse itself for a missing required parameter that was never missing.
  */
-export const emitEndpoint = (endpoint: VendorEndpoint): Readonly<Record<string, EmittedParam>> => {
+export const emitEndpoint = (
+  endpoint: VendorEndpoint,
+  product: Product,
+): Readonly<Record<string, EmittedParam>> => {
   const inPath = pathParams(endpoint.path);
   const rows: Record<string, EmittedParam> = {};
   for (const name of Object.keys(endpoint.params).sort()) {
     if (inPath.has(name)) continue;
     const param = endpoint.params[name];
     if (param === undefined) continue;
-    const row = emitParam(param, param.optional !== 1 && param.optional !== true);
+    const row = emitParam(param, param.optional !== 1 && param.optional !== true, product);
     if (row !== undefined) rows[name] = row;
   }
   return rows;

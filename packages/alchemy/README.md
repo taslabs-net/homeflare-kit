@@ -162,6 +162,13 @@ with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:20
 PVE and PBS objects over the PVE API, `ProxmoxLxc` for containers, and the provisioning baseline
 every cluster needs first. What it never does to a guest, and why: [docs/proxmox.md](./docs/proxmox.md).
 
+## NetBox — `@homeflare/alchemy/netbox`
+
+`Netbox.Prefix` declares one IP prefix and the decision recorded against it — including
+`status: 'deprecated'`, which is how a retired range stops being folklore. Every write is checked
+against a table generated from NetBox's own OpenAPI document before the request is built.
+⛔ Adopt-first, `retain` on removal, and read/write shapes that differ: [docs/netbox.md](./docs/netbox.md).
+
 ## GitHub — `@homeflare/alchemy/github`
 
 `declareRepoPolicy` declares one repository's merge policy and its default-branch ruleset in a
