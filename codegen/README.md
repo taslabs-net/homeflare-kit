@@ -113,10 +113,8 @@ leaving it in would make every create refuse itself for a missing required param
 `pve-nodes-ceph.ts`, `pbs-config.ts`) and the merged `index.ts`, throws if any of them
 would exceed the house cap of 250 lines, and **deletes** a generated file it no longer
 produces — a leftover table is imported by nothing while reading exactly like one that is
-consulted. ⛔ `/cluster` and `/nodes/{node}` are split one level further down because
-they are ROUTES, not areas: PVE's own viewer expands them into backup, ceph, firewall,
-ha, metrics, notifications, replication, sdn and into ceph, lxc, qemu, network, disks.
-`/access`, `/pools`, `/storage` and PBS's `/config` are areas already and stay whole.
+consulted. ⛔ `/cluster` and `/nodes/{node}` are split one level further down because they
+are routes rather than areas; the ⛔ on `areaOf` has PVE's own tree and the argument.
 
 ## Patterns: the trap worth reading before you touch this
 
