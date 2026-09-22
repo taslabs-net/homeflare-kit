@@ -1,5 +1,43 @@
 # @homeflare/alchemy
 
+## 0.12.0
+
+### Minor Changes
+
+- [#90](https://github.com/taslabs-net/homeflare-kit/pull/90) [`de65267`](https://github.com/taslabs-net/homeflare-kit/commit/de652677804581b1dd431d3930d6656ac760037f) Thanks [@taslabs-net](https://github.com/taslabs-net)! - **New: the provisioning baseline, one description for every cluster and node.**
+  `@homeflare/alchemy/proxmox` now exports:
+
+  - `PROVISION_PRIVILEGES`: the provision role's 27 privileges as one sorted, frozen constant. It is
+    the union of what every family's reconcile needs, including what the lane needs to manage the
+    baseline itself.
+  - `PROVISION_DEFAULTS` and `provisionBaseline(names)`: generic names (role `HfProvisioner`, users
+    `hf-provision@pve` and `hf-read@pve`, group `hf-mint`, read role `PVEAuditor`), overridable per
+    site. Names that are not PVE-shaped or would need shell quoting are refused.
+  - `declareProvisionBaseline(id, target, names?, { adopt? })`: declares the role, the mint group,
+    one user per lane (its group membership included) and the grant for each lane on `/`. Every
+    resource retains, and `adopt` is piped only when asked.
+  - `provisionBootstrap(names?)`: a pure generator of the one-time root commands for a new cluster
+    or node, as a POSIX `sh` script. It checks each object before changing it, so it is idempotent,
+    and it never creates a token or sets a password.
+
+  The provision lane cannot create itself, so root bootstraps it once, then the stack adopts it and
+  keeps it. After the bootstrap, the declaration is a clean adoption that writes nothing. See
+  `docs/provision-baseline.md`.
+
+### Patch Changes
+
+- [#89](https://github.com/taslabs-net/homeflare-kit/pull/89) [`94fbc2f`](https://github.com/taslabs-net/homeflare-kit/commit/94fbc2f0f8471e64164b4c77418140c0fcf28cce) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The adopt verifier's guide now says what `alchemy drift` does in alchemy 2.0.0-beta.79. It has no dry run and no `--yes`, although its docs page lists one: `alchemy drift --yes` fails with `Unrecognized flag`. A non-interactive run prints the repair plan and exits `0` even when something drifted, so it cannot gate a deploy. `--repair` restores the props saved at the last deploy, not what the code declares now, and it writes without a prompt, outside the deploy gate. The ownership guide now says that recovering from a wiped state store, or from `alchemy state delete`, needs `--adopt` for every family that follows the ownership rule, and for `MeshNode` and `R2BucketLock`. Alchemy's docs say objects with no ownership marker re-import without the flag, but many of Alchemy's own marker-less providers refuse them too, as the kit does. The exceptions are a `CaddyConfig` running the declared config, and the families whose `read` never answers `Unowned`: the `pveHandlers`, `forgejoHandlers` and Talos resources.
+
+- [#94](https://github.com/taslabs-net/homeflare-kit/pull/94) [`745d941`](https://github.com/taslabs-net/homeflare-kit/commit/745d94161b5cdd63c8d8ebd40a730c8b8b931ff7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Docs only. The changelog marks 0.9.0 as never published (no npm version, no git tag): its changes first shipped in 0.10.0, and the README, the openbao README and the ownership guide now say so where they cite 0.9.0. The `Proxmox.Storage` header no longer says the estate's provision role lacks `Datastore.Allocate`: it was widened, and the provisioning baseline carries it.
+
+- [#93](https://github.com/taslabs-net/homeflare-kit/pull/93) [`d3c332b`](https://github.com/taslabs-net/homeflare-kit/commit/d3c332bd4f175cc3510b7ae06ff98f4b426f0c52) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The published sources, docs and examples no longer name the maintainer's own infrastructure.
+  Node names, cluster and pool names, NICs, VLANs, addresses, hostnames, guest ids, principals and
+  policy names in comments, fixtures and examples are now neutral placeholders: nodes `node-a`…
+  `node-d`, a reference cluster `C1`, documentation addresses (RFC 5737), `bao.example.internal`.
+  Measured facts are unchanged; only the names are. `site.example.json` names its hosts `node-a`…
+  `node-c`. One runtime message changed: `forgejo-bootstrap` now says to run on "the host where
+  Forgejo runs". The historical CHANGELOG entries are unchanged.
+
 ## 0.11.0
 
 ### Minor Changes

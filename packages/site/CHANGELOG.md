@@ -1,5 +1,17 @@
 # @homeflare/site
 
+## 0.1.1
+
+### Patch Changes
+
+- [#93](https://github.com/taslabs-net/homeflare-kit/pull/93) [`d3c332b`](https://github.com/taslabs-net/homeflare-kit/commit/d3c332bd4f175cc3510b7ae06ff98f4b426f0c52) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The published sources, docs and examples no longer name the maintainer's own infrastructure.
+  Node names, cluster and pool names, NICs, VLANs, addresses, hostnames, guest ids, principals and
+  policy names in comments, fixtures and examples are now neutral placeholders: nodes `node-a`…
+  `node-d`, a reference cluster `C1`, documentation addresses (RFC 5737), `bao.example.internal`.
+  Measured facts are unchanged; only the names are. `site.example.json` names its hosts `node-a`…
+  `node-c`. One runtime message changed: `forgejo-bootstrap` now says to run on "the host where
+  Forgejo runs". The historical CHANGELOG entries are unchanged.
+
 ## 0.1.0
 
 ### Minor Changes
