@@ -2,7 +2,7 @@
  * Props, attributes and field comparison for Bao.CloudflareRole — the resource is
  * cloudflare-role.ts, the policy document rules are cloudflare-policy.ts.
  *
- * MEASURED from the engine (house/platform/secrets/vault/plugin/cloudflare/path_roles.go) and the
+ * MEASURED from the engine (<estate>/platform/secrets/vault/plugin/cloudflare/path_roles.go) and the
  * 2026-09-14 snapshot of all 586 live roles:
  *   • A role is name, description, policies, ttl and max_ttl AND NOTHING ELSE (path_roles.go:14-20
  *     stores those; :204-210 returns them). Every snapshot read carries exactly those five keys, so
@@ -79,7 +79,7 @@ export interface RoleDifference {
   readonly have: string;
 }
 
-/** `cloudflare-<account>-dns/roles/homeflare-dev-dns-read` — read, write and delete use it. */
+/** `cloudflare-<account>-dns/roles/example-dns-read` — read, write and delete use it. */
 export const rolePath = (mount: string, name: string) => `${mountPath(mount)}/roles/${name}`;
 
 const seconds = (value: unknown) =>

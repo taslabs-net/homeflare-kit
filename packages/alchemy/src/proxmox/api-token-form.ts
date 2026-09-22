@@ -12,7 +12,7 @@ import type { ApiTokenAttributes, ApiTokenProps } from './api-token.ts';
  *
  * ⛔ THE WRITE SEMANTICS BELOW ARE READ FROM THE CLUSTER'S OWN PERL RATHER THAN INFERRED FROM THE
  *   API SCHEMA — `/usr/share/perl5/PVE/API2/User.pm`, subs `generate_token` and
- *   `update_token_info`, read over SSH on n2 on 2026-09-13. The two disagree in exactly the place
+ *   `update_token_info`, read over SSH on node-b on 2026-09-13. The two disagree in exactly the place
  *   that costs a forever-diff: the schema gives `expire` the default "same as user", and the code
  *   never implements it. api-token.ts records what that means.
  */
@@ -26,7 +26,7 @@ import { bool, int, text } from './values.ts';
  *   `ugid`, so reporting it as an attribute is what lets a privilege-separated token be granted
  *   anything at all without somebody retyping the join by hand.
  *
- * ⚠️ DERIVED, NOT READ. MEASURED: `GET /access/users/monitoring@pve/token/exporter` answers
+ * ⚠️ DERIVED, NOT READ. MEASURED: `GET /access/users/metrics@pve/token/exporter` answers
  *   `{"expire":0,"privsep":0}` and echoes back neither half of its own identity. So this is built
  *   from props, cannot disagree with the path the read used, and is therefore true by
  *   construction — which is why it is reported and never compared.
@@ -106,8 +106,8 @@ export const apiTokenSpec: PveSpec<ApiTokenProps, ApiTokenAttributes> = {
   /**
    * ⚠️ EXACTLY THE THREE FIELDS A PUT CAN PUT BACK, WHICH IS ALSO EXACTLY WHAT THE GET REPORTS.
    *   MEASURED, by replaying these two functions over the live GET bodies of all four token
-   *   shapes this cluster has: `monitoring@pve!exporter` (no comment), `tofu@pve!apply` and
-   *   `sablier@pve!sablier` (commented), and a live OpenBao lease under `hf-read@pve` (a real
+   *   shapes this cluster has: `metrics@pve!exporter` (no comment), `iac@pve!apply` and
+   *   `app@pve!app` (commented), and a live OpenBao lease under `hf-read@pve` (a real
    *   non-zero `expire`, offered as both `1789327175` and `"1789327175"` since `int` must not care
    *   which). All four answer noop; flipping `privsep` answers update; an empty body answers
    *   absent. ⚠️ THAT IS THE COMPARISON, NOT THE ENGINE — no `alchemy plan` was run against this

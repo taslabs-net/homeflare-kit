@@ -2,7 +2,7 @@
  * `Proxmox.CephDaemon` — a Ceph monitor, manager or metadata server on one node.
  *
  * ★ ONE RESOURCE FOR THREE KINDS, AND THE SCHEMAS WERE CHECKED BEFORE THAT WAS DECIDED. Parsed
- *   from `/usr/share/pve-docs/api-viewer/apidoc.js` on n2, 2026-09-13: mon, mgr and mds each
+ *   from `/usr/share/pve-docs/api-viewer/apidoc.js` on node-b, 2026-09-13: mon, mgr and mds each
  *   expose GET on the collection and POST + DELETE on the id below it, each returns
  *   name/host/state/addr/ceph_version*, and the only divergence is the create parameter
  *   (`mon-address` / none / `hotstandby`) and the read-only extras (mon: quorum, rank; mds: rank,
@@ -10,11 +10,11 @@
  *   times over and let them drift — the argument resource.ts already makes for the factory itself.
  *
  * ⛔ THE ONLY GET IS THE COLLECTION'S, AND IT ANSWERS FOR THE WHOLE CLUSTER. MEASURED:
- *   `GET /nodes/n2/ceph/mon` returns n2, n3 AND n4, and `GET /nodes/n3/ceph/mon` returns the same
- *   three IN A DIFFERENT ORDER — [n4,n2,n3] from n2, [n3,n2,n4] from n3 — so a row is found by
+ *   `GET /nodes/node-b/ceph/mon` returns node-b, node-c AND node-d, and `GET /nodes/node-c/ceph/mon` returns the same
+ *   three IN A DIFFERENT ORDER — [node-d,node-b,node-c] from node-b, [node-c,node-b,node-d] from node-c — so a row is found by
  *   `name` and NEVER by position, and the `{node}` in the path is only the node being ASKED.
- *   MEASURED too: there is no GET on the id path at all; `pvesh get /nodes/n2/ceph/mon/n2` answers
- *   "No 'get' handler defined for '/nodes/n2/ceph/mon/n2'", and mgr and mds answer the same.
+ *   MEASURED too: there is no GET on the id path at all; `pvesh get /nodes/node-b/ceph/mon/node-b` answers
+ *   "No 'get' handler defined for '/nodes/node-b/ceph/mon/node-b'", and mgr and mds answer the same.
  *   That is why `path()` below is the COLLECTION, and that in turn is why `delete` is the one
  *   handler this file writes by hand: `pveOperations.destroy` sends its DELETE to `spec.path`,
  *   which here would be the collection — a 501 reported as a failed destroy, with the daemon still
@@ -27,11 +27,11 @@
  *   strips its section from ceph.conf. THREE MONS TOLERATE ONE LOSS; TWO TOLERATE NONE. Removing
  *   two in one deploy — or removing the mon on the node whose API is serving the call — loses
  *   quorum, and a cluster without mon quorum BLOCKS every RBD and CephFS I/O rather than erroring
- *   it, so on this cluster every guest on `cephtb4` hangs.
+ *   it, so on this cluster every guest on `rbd-c1` hangs.
  *   `mds`: destroying a STANDBY is a non-event; destroying the ACTIVE one fails CephFS over,
- *   and with no standby left `cephfs-tb4` goes unavailable. `mgr`: no guest I/O depends on it, but
+ *   and with no standby left `cephfs-c1` goes unavailable. `mgr`: no guest I/O depends on it, but
  *   the last one takes the PG autoscaler, the dashboard and PVE's own Ceph status with it.
- *   Live on 2026-09-13: mon, mgr AND mds on each of n2, n3, n4.
+ *   Live on 2026-09-13: mon, mgr AND mds on each of node-b, node-c, node-d.
  *
  * ★ AND THE ONLY WAY TO REACH THAT DESTROY IS TO DELETE THE DECLARATION. `matches` is deliberately
  *   total (see its ⛔), so this resource CANNOT plan a `replace` — which is the one action that
@@ -41,7 +41,7 @@
  *   `Sys.Audit`/`Datastore.Audit` on `/`, and PVEAuditor holds both (MEASURED:
  *   `GET /access/roles/PVEAuditor`), so the mount's `read` role can see this family — unlike
  *   `Proxmox.Storage`, which 403s under that lease. POST and DELETE both check `Sys.Modify` on
- *   `/`, and MEASURED on this cluster `LXCProvisioner` already holds it, so the provision lane
+ *   `/`, and MEASURED on this cluster the provision role already held it (it is in `PROVISION_PRIVILEGES`), so the provision lane
  *   needs no widening for once. ⚠️ `Sys.Modify` on the ROOT path is broad — it also buys
  *   datacenter options and every other cluster-wide config write — so it is worth knowing that
  *   this credential already has it rather than discovering it the next time something is scoped.
@@ -86,9 +86,9 @@ export interface CephDaemonProps extends WithTarget {
   name?: string;
   /**
    * mon only. Overrides the autodetected monitor IP; must sit in Ceph's public network — on this
-   * cluster that is 10.20.11.0/24, carried by `vmbr1.11`.
+   * cluster that is 198.51.100.0/24, carried by `vmbr1.42`.
    * ⛔ CREATE-ONLY AND NEVER COMPARED. PVE takes a bare ip-list on write and hands back `addr` as
-   *   `10.20.11.12:6789/0` — an address, a port and a nonce. The two are not the same string and
+   *   `198.51.100.12:6789/0` — an address, a port and a nonce. The two are not the same string and
    *   never will be, so diffing them would report a mismatch on every plan; with no PUT on this
    *   family that mismatch becomes a REPLACE, and a replace of a mon is the quorum loss in the
    *   header. Left out of `matches` on purpose.
@@ -98,7 +98,7 @@ export interface CephDaemonProps extends WithTarget {
    * mds only. Makes this standby replay the active MDS's journal for a faster failover.
    * ⛔ CREATE-ONLY AND NEVER COMPARED, AND THE FIELD THAT LOOKS LIKE ITS READBACK IS NOT ONE.
    *   `standby_replay` in the list is the daemon's CURRENT state, not its configuration: MEASURED
-   *   2026-09-13, all three mds report `standby_replay: false`, n3 included — and n3 is the ACTIVE
+   *   2026-09-13, all three mds report `standby_replay: false`, node-c included — and node-c is the ACTIVE
    *   mds, which is not a standby at all and so can never report true however it was created.
    *   Comparing `hotstandby` to it would plan a replace against whichever mds Ceph happens to have
    *   elected, i.e. against a value no declaration controls.
@@ -128,22 +128,22 @@ export interface CephDaemonAttributes {
   host: string;
   /**
    * mon `running`/`stopped`/`unknown`, mgr `active`/`standby`, mds `up:active`/`up:standby`/…
-   * ⛔ CEPH ELECTS THIS AND REWRITES IT WITHOUT ANYONE DECLARING ANYTHING. MEASURED: mgr n2 is
-   *   `active` while n3 and n4 are `standby`; mds n3 is `up:active` while n2 and n4 are
+   * ⛔ CEPH ELECTS THIS AND REWRITES IT WITHOUT ANYONE DECLARING ANYTHING. MEASURED: mgr node-b is
+   *   `active` while node-c and node-d are `standby`; mds node-c is `up:active` while node-b and node-d are
    *   `up:standby`. Restart a daemon and the roles move. It is reported so a plan can show what is
    *   live and kept out of `matches` so that an election is never a diff.
    * ⚠️ IT ALSO MEANS THIS RESOURCE DOES NOT MANAGE WHETHER THE DAEMON IS RUNNING. A configured but
    *   stopped daemon is still a row in the list, so it reads as present and plans `noop`.
    */
   state: string;
-  /** Ceph-formatted, e.g. `10.20.11.12:6789/0`. Reported; see `mon-address` for why never compared. */
+  /** Ceph-formatted, e.g. `198.51.100.12:6789/0`. Reported; see `mon-address` for why never compared. */
   addr: string;
   /** `ceph_version_short`, e.g. `20.2.2`. Reported: a straggler after an upgrade is worth seeing. */
   version: string;
   /**
    * mon rank in the monmap, mds rank in the filesystem, `-1` when the daemon has neither.
-   * ⛔ CEPH ASSIGNS IT AND NOTHING DECLARES IT. MEASURED: the mons are ranked n4=0, n3=1, n2=2 —
-   *   monmap order, not declaration order — and the mds ranks are 0 for the active n3 and -1 for
+   * ⛔ CEPH ASSIGNS IT AND NOTHING DECLARES IT. MEASURED: the mons are ranked node-d=0, node-c=1, node-b=2 —
+   *   monmap order, not declaration order — and the mds ranks are 0 for the active node-c and -1 for
    *   the two standbys. Rank moves when a daemon is added, removed or restarted.
    */
   rank: number;
@@ -152,8 +152,8 @@ export interface CephDaemonAttributes {
   /** mds only, and NOT the readback of `hotstandby` — see the ⛔ on that prop. */
   standbyReplay: boolean;
   /**
-   * mds only: the CephFS this daemon currently serves — `cephfs-tb4` here.
-   * ⛔ PRESENT ONLY ON THE ACTIVE MDS. MEASURED: n3 carries `fs_name`, n2 and n4 have no such key
+   * mds only: the CephFS this daemon currently serves — `cephfs-c1` here.
+   * ⛔ PRESENT ONLY ON THE ACTIVE MDS. MEASURED: node-c carries `fs_name`, node-b and node-d have no such key
    *   at all. So it is empty for two of three identical declarations, and comparing it would
    *   report work on exactly the daemons that are healthy standbys.
    */
@@ -234,7 +234,7 @@ export const ProxmoxCephDaemonProvider = () =>
          *   problem. Everything else here is the factory's.
          * ⚠️ AND IT IS THE DANGEROUS ONE. Re-read the destroy ⛔ in the header before letting a
          *   plan that removes a mon run: two gone at once is a cluster with no quorum and every
-         *   guest on `cephtb4` blocked on I/O.
+         *   guest on `rbd-c1` blocked on I/O.
          */
         delete: ({ olds }: { olds: CephDaemonProps }) =>
           pve(olds.target, 'provision', 'DELETE', daemonPath(olds)),

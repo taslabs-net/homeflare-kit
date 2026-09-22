@@ -1,15 +1,15 @@
 /**
  * `Proxmox.ReplicationJob` — a guest's ZFS storage replication to a second node, declared.
  *
- * ⛔ NOTHING ON TB4 CAN USE THIS FAMILY, AND THAT IS SAID HERE RATHER THAN FOUND OUT LATER. PVE
+ * ⛔ NOTHING ON C1 CAN USE THIS FAMILY, AND THAT IS SAID HERE RATHER THAN FOUND OUT LATER. PVE
  *   storage replication is ZFS-only: `POST /cluster/replication` calls `get_replicatable_volumes`
- *   and refuses a guest whose disks are anywhere else with "No replicatable volumes found". TB4 is
+ *   and refuses a guest whose disks are anywhere else with "No replicatable volumes found". C1 is
  *   Ceph/RBD-backed — shared storage, where replication means nothing because every node already
- *   sees the volume — so `GET /cluster/replication` answers `[]` (MEASURED on n2, 2026-09-13) and
- *   on this cluster always will. The file is written for a ZFS cluster; against TB4 a declaration
+ *   sees the volume — so `GET /cluster/replication` answers `[]` (MEASURED on node-b, 2026-09-13) and
+ *   on this cluster always will. The file is written for a ZFS cluster; against C1 a declaration
  *   is a create that fails with PVE's own sentence, not a plan that quietly does nothing.
  *
- * ★ WHAT IS MEASURED HERE AND WHAT IS REASONED. Measured on n2 (pve-manager 9.2.11), read-only:
+ * ★ WHAT IS MEASURED HERE AND WHAT IS REASONED. Measured on node-b (pve-manager 9.2.11), read-only:
  *   the published schema for all five methods; `PVE/ReplicationConfig.pm` and
  *   `PVE/API2/ReplicationConfig.pm` line by line; `GET /cluster/replication` -> `[]`; and the ACL
  *   row `{"path":"/","propagate":1,"roleid":"PVEAuditor","ugid":"hf-read@pve"}`. NOT measured: any
@@ -45,12 +45,13 @@
  *   declarations differing only in `jobnum` but naming the same target are not two jobs; the second
  *   is a create that fails.
  *
- * ⚠️ RECONCILE NEEDS `VM.Replicate` ON `/vms/<guest>`, WHICH `LXCProvisioner` DOES NOT HOLD. All
+ * ⚠️ RECONCILE NEEDS `VM.Replicate` ON `/vms/<guest>`, WHICH THE PROVISION ROLE DOES NOT HOLD. All
  *   three writes check it (MEASURED in API2/ReplicationConfig.pm: create, update and delete each
  *   call `$rpcenv->check($authuser, "/vms/$vmid", ['VM.Replicate'])`), and the role's 27 privileges
  *   include `VM.Allocate`, `VM.Audit`, `VM.Backup`, `VM.Config.*` and `VM.PowerMgmt` but not
- *   `VM.Replicate`. Widen it deliberately over SSH, preserving what is there, as `pool.ts` records:
- *   `pveum role modify LXCProvisioner --privs "<existing>,VM.Replicate"`.
+ *   `VM.Replicate` (`PROVISION_PRIVILEGES`). Do NOT widen it by hand: the baseline declares the
+ *   role's exact set, so a hand-added privilege is removed on the next deploy. Grant a second role
+ *   holding `VM.Replicate` on `/vms/<guest>` instead.
  *   ★ THE READ LANE NEEDS NOTHING EXTRA, which is why there is no `readRole` below. The ITEM read
  *     checks `VM.Audit` on `/vms/<guest>`, `hf-read@pve` holds the built-in `PVEAuditor` at `/`
  *     with propagate — both MEASURED — and `PVEAuditor` carries `VM.Audit`. This family is not a

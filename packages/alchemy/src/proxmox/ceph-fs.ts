@@ -2,7 +2,7 @@
  * `Proxmox.CephFs` — a CephFS on the cluster's own Ceph. The filesystem a `cephfs` storage mounts.
  *
  * ⛔ A REPLACE OF THIS RESOURCE DESTROYS A LIVE FILESYSTEM, AND THERE IS NO PUT TO SAVE YOU FROM
- *   IT. MEASURED from the published schema on n2, 2026-09-13: `/nodes/{node}/ceph/fs/{name}` has
+ *   IT. MEASURED from the published schema on node-b, 2026-09-13: `/nodes/{node}/ceph/fs/{name}` has
  *   exactly two methods, POST and DELETE. A CephFS cannot be edited in place, so `updateForm` is
  *   left undefined and anything the factory can see as changed becomes a REPLACE — and Alchemy's
  *   replace is create-then-delete, where the delete is `destroyfs`: the entry leaves the MDS map,
@@ -12,9 +12,9 @@
  *     one it is a live filesystem destroyed on every deploy, forever, because a background daemon
  *     moved a number nobody declared.
  *
- * ⛔ THERE IS NO SINGLE-OBJECT READ, WHICH INVERTS `path` AND `collection`. MEASURED on n2:
- *     pvesh get /nodes/n2/ceph/fs/cephfs-tb4
- *       -> No 'get' handler defined for '/nodes/n2/ceph/fs/cephfs-tb4'
+ * ⛔ THERE IS NO SINGLE-OBJECT READ, WHICH INVERTS `path` AND `collection`. MEASURED on node-b:
+ *     pvesh get /nodes/node-b/ceph/fs/cephfs-c1
+ *       -> No 'get' handler defined for '/nodes/node-b/ceph/fs/cephfs-c1'
  *   `GET /nodes/{node}/ceph/fs` is a directory index and is the only read there is, so `path()`
  *   below returns the INDEX and `attributes` picks this filesystem out of the array client-side —
  *   the shape acl.ts uses for the one flat `GET /access/acl`. The POST goes to the `{name}` path,
@@ -28,9 +28,9 @@
  *
  * ⛔ CREATING A CephFS CREATES TWO CEPH POOLS, AND A `Proxmox.CephPool` MUST NOT ALSO DECLARE THEM.
  *   `createfs` builds `<name>_data` and `<name>_metadata` itself and refuses outright if either
- *   exists ("ceph pools '…_data' and/or '…_metadata' already exist"). MEASURED on TB4: the live
- *   `cephfs-tb4` owns `cephfs-tb4_data` (id 6) and `cephfs-tb4_metadata` (id 7), both of which
- *   `GET /nodes/n2/ceph/pool` lists like any other pool — and `/nodes/{node}/ceph/pool/{name}` DOES
+ *   exists ("ceph pools '…_data' and/or '…_metadata' already exist"). MEASURED on C1: the live
+ *   `cephfs-c1` owns `cephfs-c1_data` (id 6) and `cephfs-c1_metadata` (id 7), both of which
+ *   `GET /nodes/node-b/ceph/pool` lists like any other pool — and `/nodes/{node}/ceph/pool/{name}` DOES
  *   have GET, PUT and DELETE, so a pool resource would be a clean `pveHandlers` fit and would
  *   adopt them without noticing. Declaring both is double management of one object: whichever
  *   reconciles first wins, and the loser either fails its create or PUTs `size`/`pg_num` onto pools
@@ -38,16 +38,16 @@
  *
  * ⚠️ `add-storage` IS A SECOND SIDE EFFECT AND IT LANDS IN storage.cfg. Set, `createfs` also calls
  *   `PVE::API2::Storage::Config->create` with type `cephfs`, content `backup,iso,vztmpl` and
- *   `fs-name <name>`. MEASURED: /etc/pve/storage.cfg on n2 holds exactly that — `cephfs:
- *   cephfs-tb4` / `content backup,vztmpl,iso` / `fs-name cephfs-tb4`. So a `Proxmox.Storage`
- *   declaring `cephfs-tb4` would be managing an entry this resource created. Declare ONE of them:
+ *   `fs-name <name>`. MEASURED: /etc/pve/storage.cfg on node-b holds exactly that — `cephfs:
+ *   cephfs-c1` / `content backup,vztmpl,iso` / `fs-name cephfs-c1`. So a `Proxmox.Storage`
+ *   declaring `cephfs-c1` would be managing an entry this resource created. Declare ONE of them:
  *   either `add-storage` here and no storage resource, or `add-storage` off and a
  *   `Proxmox.Storage` that reads this resource's `name` attribute — which also gets the ordering
  *   right for free, because Alchemy orders by data flow.
  *
  * ⚠️ `node` IS A ROUTE, NOT IDENTITY, AND MUST NEVER BE DIFFED. A CephFS is cluster-wide; the node
- *   in the path only says which node PVE proxies the call to. MEASURED: `GET /nodes/n2/ceph/fs`,
- *   `…/n3/…` and `…/n4/…` returned the byte-identical array. So changing `node` plans `noop`, and
+ *   in the path only says which node PVE proxies the call to. MEASURED: `GET /nodes/node-b/ceph/fs`,
+ *   `…/node-c/…` and `…/node-d/…` returned the byte-identical array. So changing `node` plans `noop`, and
  *   two resources naming the same `name` on different nodes are the SAME filesystem — the vmid
  *   hazard from lxc.ts, with a filesystem on the end of it instead of a container.
  *
@@ -84,11 +84,11 @@ export interface CephFsProps extends WithTarget {
    * this is under 32. PVE's default is 128.
    *
    * ⛔ CREATE-TIME ONLY, UNREADABLE, AND OWNED BY THE AUTOSCALER FROM THE SECOND IT LANDS. It is
-   *   never compared — see the ⛔ on `matches` — and this is not caution, it is measured. TB4's
-   *   `cephfs-tb4` was created with the default 128 (the arithmetic proves it: `cephfs-tb4_metadata`
-   *   sits at 32, which is 128/4), and `cephfs-tb4_data` reads pg_num 32 TODAY. The autoscaler moved
+   *   never compared — see the ⛔ on `matches` — and this is not caution, it is measured. C1's
+   *   `cephfs-c1` was created with the default 128 (the arithmetic proves it: `cephfs-c1_metadata`
+   *   sits at 32, which is 128/4), and `cephfs-c1_data` reads pg_num 32 TODAY. The autoscaler moved
    *   it by a factor of four, and it is not finished: `pg_autoscale_mode` is `on` for every pool on
-   *   this cluster and `cephfs-tb4_metadata` already reports `pg_num_final: 16` against its live 32.
+   *   this cluster and `cephfs-c1_metadata` already reports `pg_num_final: 16` against its live 32.
    */
   pg_num?: number;
   /**
@@ -155,7 +155,7 @@ const ops = pveOperations<CephFsProps, CephFsAttributes>({
    *   only honest comparison is none at all.
    *   ⚠️ THE TEMPTING ADDITION IS `pg_num`, AND IT WOULD BE THE WORST BUG THIS PACKAGE HAS SHIPPED.
    *     It is not in the index at all, so it can only be read from the pool endpoint — where the
-   *     autoscaler owns it. MEASURED on TB4 today: created at 128, live at 32, with the metadata
+   *     autoscaler owns it. MEASURED on C1 today: created at 128, live at 32, with the metadata
    *     pool already scheduled down to 16. Compared, that is an eternal mismatch; and because
    *     `updateForm` is undefined, the action it produces is REPLACE. The plan would destroy and
    *     rebuild a live filesystem on every deploy, triggered by a daemon on its own schedule.
@@ -176,7 +176,7 @@ export const ProxmoxCephFsProvider = () =>
       ProxmoxCephFs.Provider.of({
         /**
          * ⛔ EMPTY, LIKE EVERY OTHER RESOURCE HERE. The index answers with every filesystem on the
-         *   cluster, `cephfs-tb4` included — the one holding this estate's ISOs and templates.
+         *   cluster, `cephfs-c1` included — the one holding this estate's ISOs and templates.
          *   Adopting it would put Alchemy one `destroy` away from it. Adoption stays explicit.
          */
         list: () => Effect.succeed([]),

@@ -122,7 +122,12 @@ describe('references name the broken field', () => {
       'nope',
       'services.grafana.host:',
     ],
-    ['a cluster member with no zone', ['hosts', 'n1', 'zone'], undefined, 'clusters.c1.members.0:'],
+    [
+      'a cluster member with no zone',
+      ['hosts', 'node-a', 'zone'],
+      undefined,
+      'clusters.c1.members.0:',
+    ],
     ['the LAN proxy on an unknown host', ['vault', 'lan', 'host'], 'nope', 'vault.lan.host:'],
     ['a product with label AND domain', ['products', 'shop', 'label'], 'store', 'products.shop:'],
     ['the reserved zone key', ['zones', 'apex'], 'top', 'zones.apex:'],

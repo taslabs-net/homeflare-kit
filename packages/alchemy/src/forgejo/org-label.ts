@@ -1,7 +1,7 @@
 /**
  * `Forgejo.OrgLabel` — one org-level issue label shared across every repository in the org.
  *
- * ★ RETIRES `house/nix/homeflare-config/hosts/macmini/forgejo/labels-reconcile.sh`, which
+ * ★ RETIRES the estate's hand-run `labels-reconcile.sh`, which
  *   converged the whole `labels.yaml` file in one shot. That script CREATED and PATCHED labels
  *   from the spec and REPORTED `EXTRA` labels present live but absent from the file — it never
  *   deleted them, because removing a label strips it from every issue that carries it.

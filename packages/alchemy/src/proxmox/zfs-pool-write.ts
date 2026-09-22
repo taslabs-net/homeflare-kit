@@ -51,7 +51,7 @@ const SETTLE_ATTEMPTS = 30;
 /**
  * Create the pool if it is absent, and otherwise leave it completely alone.
  *
- * ⛔ THE POST ONLY FORKS A WORKER. MEASURED in `/usr/share/perl5/PVE/API2/Disks/ZFS.pm` on n2: the
+ * ⛔ THE POST ONLY FORKS A WORKER. MEASURED in `/usr/share/perl5/PVE/API2/Disks/ZFS.pm` on node-b: the
  *   create handler ends in `$rpcenv->fork_worker('zfscreate', ...)` and its HTTP answer is a UPID
  *   returned the instant the worker is forked — before `zpool create` has run, let alone finished.
  *   A read-back taken immediately, as `pveOperations.reconcile` takes it, finds nothing and would

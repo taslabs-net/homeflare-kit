@@ -1,7 +1,7 @@
 /**
  * `Forgejo.BranchProtection` — one rule at `/repos/{owner}/{repo}/branch_protections/{name}`.
  *
- * ★ READ OFF `house/mcp-servers/docs/api/upstream/forgejo.json`: create is POST collection;
+ * ★ READ OFF `<estate>/mcp-servers/docs/api/upstream/forgejo.json`: create is POST collection;
  *   read/update/delete use the branch/rule name in the path segment `{name}`. Response carries
  *   `rule_name` (preferred) and deprecated `branch_name`.
  *

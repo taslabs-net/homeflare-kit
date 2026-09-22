@@ -14,14 +14,14 @@
  *
  * * ⛔ THE LAST SEVEN ARE REPORTED AND NEVER COMPARED, AND EACH ONE IS A MEASURED FOREVER-DIFF.
  *   `priority` is assigned by PVE FROM FILE ORDER — `my $priority = 2; ... $d->{priority} =
- *   $priority++` — and it is not a POST or PUT parameter at all. MEASURED ACROSS TB4: vmbr1.11 is
- *   priority 16 on n2 and n3 and 15 on n4, because n4 has no `wlp91s0` above it. One declaration
+ *   $priority++` — and it is not a POST or PUT parameter at all. MEASURED ACROSS C1: vmbr1.42 is
+ *   priority 16 on node-b and node-c and 15 on node-d, because node-d has no `wlan0` above it. One declaration
  *   reused across three nodes would diff on exactly one of them, forever, over nothing.
  *   `method` is RECOMPUTED on every write from whether the form carried an address, `families` is
  *   recomputed the same way and never written to the file, `active` and `exists` describe the
  *   kernel rather than the config, and `bond_miimon`, `bridge_stp` and `bridge_fd` are emitted by
  *   PVE's writer with defaults (100, `off`, 0) while appearing in NEITHER write schema —
- *   `additionalProperties => 0` means sending one is a 400. Live proof of all three: n2's bond0
+ *   `additionalProperties => 0` means sending one is a 400. Live proof of all three: node-b's bond0
  *   returns `bond_miimon "100"` and vmbr1 returns `bridge_stp "off"`, `bridge_fd "0"`, none of
  *   which any declaration can set.
  */
@@ -74,7 +74,7 @@ export const ifaceList = (value: unknown) =>
  *   `ceph transport` comes back as `ceph transport\n` and the two never compare equal.
  * ⚠️ AND THE READER FOLDS `comments6` INTO `comments` (`$d->{comments} .= $comments6`), so on an
  *   interface that carries an IPv6 comment a declared `comments` CANNOT match what comes back.
- *   TB4 has none; on an interface that does, leave `comments` undeclared rather than fighting it.
+ *   C1 has none; on an interface that does, leave `comments` undeclared rather than fighting it.
  */
 export const comment = (value: unknown) => text(value).replace(/\s+$/, '');
 
@@ -111,7 +111,7 @@ const field = (name: string, value: string | undefined): Record<string, string> 
  *
  * ⚠️ `netmask` IS A WRITABLE PARAMETER AND IS DELIBERATELY NOT OFFERED. PVE raises
  *   "netmask conflicts with cidr" when both are sent, and the reader rewrites whatever was written
- *   into prefix form — MEASURED: n2's vmbr1.11 reports `"netmask":"24"`, never `255.255.255.0`.
+ *   into prefix form — MEASURED: node-b's vmbr1.42 reports `"netmask":"24"`, never `255.255.255.0`.
  *   A resource accepting both spellings would let a declaration diff against its own value.
  */
 export const body = (props: NodeNetworkProps): Record<string, string> => ({
@@ -144,7 +144,7 @@ export const body = (props: NodeNetworkProps): Record<string, string> => ({
  *   `ifreload -a` I did NOT measure. Clearing cidr explicitly at least produces a clean, honest
  *   manual interface — and `matches` compares `cidr` UNCONDITIONALLY, so the plan says so first.
  *
- * ⛔ ON vmbr1.11 THAT IS THE CEPH TRANSPORT. A declaration of that interface without its `cidr` is
+ * ⛔ ON vmbr1.42 THAT IS THE CEPH TRANSPORT. A declaration of that interface without its `cidr` is
  *   a declaration that it should have no address, applied across three nodes. The plan will read
  *   `1 to update` rather than `noop`; do not wave it through.
  *
@@ -177,7 +177,7 @@ export const readAttributes = (
    *   same call metric-server.ts makes, for a worse reason. `type` is required on the PUT and
    *   the PUT MERGES, so a declaration naming `bridge` for what is really a vlan would write
    *   `type bridge` into the stanza and PVE's writer would then emit bridge-ports and
-   *   bridge-stp lines for vmbr1.11. Reporting absent instead makes reconcile POST a create,
+   *   bridge-stp lines for vmbr1.42. Reporting absent instead makes reconcile POST a create,
    *   which PVE refuses with "interface already exists": loud, and it changes nothing.
    */
   const liveType = text(live['type']);

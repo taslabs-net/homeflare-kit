@@ -2,14 +2,14 @@
  * One call to OpenBao's HTTP API through Effect's `HttpClient` — the transport every Bao.* family
  * uses since it stopped shelling out to `bao`.
  *
- * ★ `HttpClient`, THE SAME PATTERN house/proxmox and house/forgejo USE AGAINST THEIR APIs, decided
+ * ★ `HttpClient`, THE SAME PATTERN <estate>/proxmox and <estate>/forgejo USE AGAINST THEIR APIs, decided
  *   2026-09-14. It buys a typed error channel, interruption when a plan is cancelled, the runtime's
  *   tracing, and a client a test can point at a fake server — and it needs no Alchemy session, so
  *   every call here works from all four operations. (`CommandExecutor.run` was tried on Bao.Policy
  *   first and blocked read/diff: Alchemy passes a session to reconcile/delete but NOT to read/diff,
  *   Provider.ts:258-289. The ChildProcessSpawner that fixed that is gone with the CLI.)
  * ⚠️ THE STACK MUST PROVIDE `FetchHttpClient.layer`. alchemy.run.ts does, the way
- *   house/proxmox/alchemy.run.ts does.
+ *   <estate>/proxmox/alchemy.run.ts does.
  */
 import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
@@ -34,7 +34,7 @@ export const BaoEnv = Context.Reference<BaoEnvironment>('homeflare/openbao/BaoEn
 /**
  * ⛔ AT MOST EIGHT EXCHANGES WITH OPENBAO AT ONCE — ACROSS EVERY Bao.* FAMILY, IN ONE PROCESS.
  *
- * 🔴 MEASURED 2026-09-14 10:41: A DEPLOY OF THIS STACK TOOK OPENBAO's API OFF THE MINI. Alchemy fans
+ * 🔴 MEASURED 2026-09-14 10:41: A DEPLOY OF THIS STACK TOOK OPENBAO's API OFF ITS HOST. Alchemy fans
  *   resources out with a hard-coded `concurrency: "unbounded"` (alchemy Plan.ts:476, Apply.ts:259,
  *   :263, :303 — no option reaches it), and 555 Bao.CloudflareRole resources each read, diff,
  *   reconcile and read back: well over a thousand requests at one loopback listener within seconds.
@@ -42,7 +42,7 @@ export const BaoEnv = Context.Reference<BaoEnvironment>('homeflare/openbao/BaoEn
  *     HTTP server (listening on 127.0.0.1:8200) exited with error: set tcp
  *     127.0.0.1:8200->127.0.0.1:57974: setsockopt: invalid argument
  *   and KEPT RUNNING with 8200 closed. launchd saw a live process and restarted nothing. Everything
- *   on the mini that talks to 127.0.0.1:8200 was cut off, starting with the agent's templates, until
+ *   on the vault host that talks to 127.0.0.1:8200 was cut off, starting with the agent's templates, until
  *   a manual restart.
  * ★ THE LISTENER DYING IS A GO-ON-DARWIN FAILURE, NOT OURS TO FIX. Traefik lost its entrypoints the
  *   same way on darwin/arm64 (traefik issue 8841). The BURST is ours. The adoption deploy an hour
@@ -70,7 +70,7 @@ const TIMEOUT = '60 seconds';
 /**
  * Mesh in front of a remote OpenBao drops connections under Alchemy's unbounded
  * fan-out. Status 0 is transport, not an OpenBao 4xx — retry twice. Measured
- * 2026-09-16 against api.v.homeflare.dev: a 585-role plan died mid-diff with
+ * 2026-09-16 against bao.example.internal: a 585-role plan died mid-diff with
  * `no response: (no errors given)` while the vault stayed unsealed.
  */
 const retryTransport = <A, R>(effect: Effect.Effect<A, BaoError, R>) =>
@@ -136,7 +136,7 @@ export const baoCall = (
     const address = resolveAddress(env);
     const client = yield* HttpClient.HttpClient;
     // ⚠️ The content type goes on `bodyText`, never in the header map: `bodyText` overwrites it.
-    //   house/proxmox/src/client.ts has the scar.
+    //   <estate>/proxmox/src/client.ts has the scar.
     const request = HttpClientRequest.make(method)(`${address.base}/v1/${path}`).pipe(
       HttpClientRequest.setHeaders(headersFor(address, env)),
       body === undefined

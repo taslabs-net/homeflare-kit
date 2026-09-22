@@ -39,8 +39,9 @@
  *     reconcile  POST + PUT                   Mapping.Modify on /mapping/notifications AND one of
  *                                             Sys.Audit / Sys.Modify / Sys.AccessNetwork on /
  *     delete     DELETE                       Mapping.Modify on /mapping/notifications
- *   `LXCProvisioner` already carries Sys.Audit on `/` (see lxc.ts), so the delta is the two Mapping
- *   privileges — notably NOT the `Sys.Modify` a backup job costs.
+ *   The provision role already carried Sys.Audit on `/` (see lxc.ts), so the delta was the two
+ *   Mapping privileges — notably NOT the `Sys.Modify` a backup job costs. `PROVISION_PRIVILEGES`
+ *   carries both on `/`: the baseline took the trade below knowingly.
  *   ⚠️ PREFER A SECOND ROLE GRANTED AT `/mapping/notifications` OVER WIDENING THE PROVISIONING ROLE
  *     ON `/`. `/mapping` also holds the PCI and USB passthrough maps, so Mapping.Modify at the root
  *     lets a credential scoped to make containers rewire somebody's hardware.

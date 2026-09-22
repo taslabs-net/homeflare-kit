@@ -37,10 +37,10 @@
  *   answers 401 "authentication failure", which reads as a bad credential rather than as a
  *   malformed header — the same trap credentials.ts already records for PVE's colon form.
  *   ⛔ AND THERE IS NO MOUNT TO MINT FROM. `mint()` runs `bao read <mount>/creds/<role>`; no
- *     OpenBao mount vends PBS tokens — `proxmox-tb4` and `proxmox-ops` vend PVE ones. The
+ *     OpenBao mount vends PBS tokens — `proxmox-c1` and `proxmox-c2` vend PVE ones. The
  *     `kv/infra/proxmox` shelf holds a READ-ONLY `Audit` token for PBS, and a read-only token
  *     cannot create a prune job. I could not confirm that shelf's contents: this machine's
- *     claude-code approle answers 403 on `sys/mounts` AND on `kv/metadata/infra/proxmox`
+ *     agent approle answers 403 on `sys/mounts` AND on `kv/metadata/infra/proxmox`
  *     (MEASURED). What is needed is a dynamic PBS mount vending a `provision` role with
  *     `Datastore.Modify` — say that, rather than reaching for the stored auditor token.
  *

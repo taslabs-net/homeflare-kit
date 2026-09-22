@@ -11,7 +11,7 @@
  *
  *   A PVE method with no permissions block is refused to every identity except `root@pam`, so an
  *   OpenBao-minted `hf-provision@pve!…` token is answered 403 however wide its role — widening
- *   `LXCProvisioner` cannot fix it. Compare the sibling families, which DO carry a check and
+ *   the provision role cannot fix it. Compare the sibling families, which DO carry a check and
  *   therefore do work with a token: `ceph/fs`, `ceph/mon` and `disks/zfs` all want `Sys.Modify`.
  *
  * ⚠️ SO THE WRITE PATH IS HONEST RATHER THAN USEFUL. It is written out properly in
@@ -19,7 +19,7 @@
  *   operator running as root@pam. Through this package's credential it will 403, and a 403 is a
  *   better answer than a `delete` that silently does nothing while the plan claims otherwise.
  *
- * ★ WHAT IT IS ACTUALLY FOR, THEN: ASSERTION. It turns "n2, n3 and n4 each hold two ssd OSDs"
+ * ★ WHAT IT IS ACTUALLY FOR, THEN: ASSERTION. It turns "node-b, node-c and node-d each hold two ssd OSDs"
  *   into a line a plan checks, and it gives Ceph-backed resources something real to depend on —
  *   read `osd.osdid` into an `rbd` storage's props and Alchemy orders that storage after the
  *   assertion, so a stack can no longer report a healthy Ceph storage on a cluster whose OSDs are
@@ -53,8 +53,8 @@ export type { CephOsdAttributes };
 
 export interface CephOsdProps extends WithTarget {
   /**
-   * Which node ANSWERS the read — not where the OSD lives. MEASURED: the tree n2 returns and the
-   * tree n3 returns are the same six leaves, n4's included. Point this at any node that is up;
+   * Which node ANSWERS the read — not where the OSD lives. MEASURED: the tree node-b returns and the
+   * tree node-c returns are the same six leaves, node-d's included. Point this at any node that is up;
    * `host` is the field that says where the disk is.
    */
   node: string;
@@ -63,7 +63,7 @@ export interface CephOsdProps extends WithTarget {
   /**
    * The CRUSH host bucket this OSD must sit in. Undeclared means unmanaged, as in storage.ts.
    *
-   * ⚠️ DECLARING IT IS AN ASSERTION WITH NO REPAIR. If osd.2 turns up under n3, the plan reports
+   * ⚠️ DECLARING IT IS AN ASSERTION WITH NO REPAIR. If osd.2 turns up under node-c, the plan reports
    *   work every time and the deploy fails, because moving an OSD between failure domains is a
    *   `ceph osd crush move` this provider will not perform. That is the intent: a replica in the
    *   wrong failure domain is not something to converge quietly past.
@@ -125,7 +125,7 @@ export const ProxmoxCephOsd = Resource<ProxmoxCephOsd>('Proxmox.CephOsd', {
  *   node, an expired lease, a role without `Sys.Audit`, or a cluster with no Ceph at all. Folding
  *   those into "absent" would turn every one of them into the sentence "osd.2 is missing", which
  *   is the most alarming thing this provider can say and would be a lie in all four cases. Left
- *   to fail, the plan shows `PVE GET nodes/n2/ceph/osd -> 500: …` and names the real problem.
+ *   to fail, the plan shows `PVE GET nodes/node-b/ceph/osd -> 500: …` and names the real problem.
  */
 
 /**

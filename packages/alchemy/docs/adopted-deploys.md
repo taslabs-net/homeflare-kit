@@ -71,7 +71,7 @@ reported as a diff.
 `pg_autoscale_mode`, `crush_rule` (and any declared hints) to `nodes/{node}/ceph/pool/{name}`.
 That PUT forks a `cephsetpool` worker under the provision token. PVE's `set_pool` skips each
 setting whose value is unchanged (Tools.pm:293-300), so a matching pool was not re-tuned. It was
-still a provision-lease write and a task on the node every time the pool was adopted. TB4's task
+still a provision-lease write and a task on the node every time the pool was adopted. C1's task
 list shows six such tasks (2026-09-13 and 2026-09-20), one per declared pool per deploy.
 
 ## How it is pinned

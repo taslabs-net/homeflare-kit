@@ -21,21 +21,21 @@ const FIXTURE_KUBECONFIG = `
 apiVersion: v1
 kind: Config
 clusters:
-  - name: hf-tb4
+  - name: hf-c1
     cluster:
-      server: https://10.20.10.50:6443
+      server: https://192.0.2.50:6443
       certificate-authority-data: ${b64('not a ca')}
 contexts:
-  - name: admin@hf-tb4
+  - name: admin@hf-c1
     context:
-      cluster: hf-tb4
-      user: admin@hf-tb4
+      cluster: hf-c1
+      user: admin@hf-c1
 users:
-  - name: admin@hf-tb4
+  - name: admin@hf-c1
     user:
       client-certificate-data: ${b64('not a certificate')}
       client-key-data: ${b64('not a key')}
-current-context: admin@hf-tb4
+current-context: admin@hf-c1
 `;
 
 describe('sha256', () => {
@@ -53,9 +53,9 @@ describe('configDigest', () => {
 
 describe('kubeconfigMetadata', () => {
   it('extracts public fields without returning PEM bytes', () => {
-    const meta = kubeconfigMetadata(FIXTURE_KUBECONFIG, 'admin@hf-tb4');
+    const meta = kubeconfigMetadata(FIXTURE_KUBECONFIG, 'admin@hf-c1');
     assert.ok(meta);
-    assert.equal(meta.endpoint, 'https://10.20.10.50:6443');
+    assert.equal(meta.endpoint, 'https://192.0.2.50:6443');
     // ⚠️ HASHED FROM THE SAME ENCODER THE FIXTURE USES, so the assertion cannot drift from it —
     //   and so no base64 blob has to appear in this file. See the ⛔ at the top.
     assert.equal(meta.caFingerprint, sha256(b64('not a ca')));

@@ -41,14 +41,14 @@ export type AclSubjectType = 'user' | 'group' | 'token';
 
 export interface AclProps extends WithTarget {
   /**
-   * The PVE object path the grant is ON — `/`, `/pool/house`, `/vms/101`, `/storage/local-zfs`.
+   * The PVE object path the grant is ON — `/`, `/pool/lab`, `/vms/101`, `/storage/local-zfs`.
    * ⚠️ NOT THE API PATH: `spec.path` below is the endpoint (`access/acl`). PVE's API overloads the
    *   word, so this file does too rather than renaming a field the cluster calls `path`.
    */
   path: string;
   /** Which kind of subject `ugid` names. Identity: changing it is a different grant. */
   type: AclSubjectType;
-  /** `tim@pve`, `admins`, `hf-provision@pve!hf-provision-…`. Identity. */
+  /** `alice@pve`, `admins`, `hf-provision@pve!hf-provision-…`. Identity. */
   ugid: string;
   /** The role bound here, e.g. `PVEAuditor`. ⚠️ It must exist — PVE refuses an unknown roleid. */
   roleid: string;
@@ -85,9 +85,9 @@ export const ProxmoxAcl = Resource<ProxmoxAcl>('Proxmox.Acl');
 /**
  * ⚠️ PVE NORMALISES ACL PATHS AND RETURNS THE NORMALISED FORM, a forever-update trap when only one
  *   side of the comparison is normalised. `PVE::AccessControl::normalize_path` collapses repeated
- *   slashes and strips the trailing one, so a declared `/pool/house/` reads back as `/pool/house`
+ *   slashes and strips the trailing one, so a declared `/pool/lab/` reads back as `/pool/lab`
  *   and a naive match never fires again. It also refuses a path with no leading slash, so one is
- *   added here rather than letting `pool/house` 400.
+ *   added here rather than letting `pool/lab` 400.
  */
 const normalize = (raw: string) => `/${raw.split('/').filter(Boolean).join('/')}`;
 

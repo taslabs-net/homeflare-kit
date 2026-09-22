@@ -61,18 +61,18 @@ every derived hostname.
 
 ## Derived names
 
-| call                                    | example value                                   |
-| --------------------------------------- | ----------------------------------------------- |
-| `d.vault.host` / `d.vault.apiHost`      | `v.example.com` / `api.v.example.com`           |
-| `d.vault.meshAddr` / `d.vault.lanAddr`  | `https://198.18.0.2:8200` / `http://hub.mgmt…`  |
-| `d.vault.oidcRedirects`                 | UI callback on the vault host, then `localhost` |
-| `d.mgmtZone`, `d.zone('lab')`           | `mgmt.example.com`, `lab.example.com`           |
-| `d.host('n2')`, `d.address('n2','lab')` | `n2.mgmt.example.com`, `198.51.100.12`          |
-| `d.access.teamDomain`                   | `https://example-team.cloudflareaccess.com`     |
-| `d.productHost('wiki')`, `d.productUrl` | `kb.example.com` (label), own `domain` if set   |
-| `d.serviceUrl('grafana')`               | `http://hub.mgmt.example.com:3000`              |
-| `d.clusterMembers('c1')`                | member FQDNs                                    |
-| `d.cloudflareMount('main','dns')`       | `cloudflare-main-dns` (all: `cloudflareMounts`) |
+| call                                            | example value                                   |
+| ----------------------------------------------- | ----------------------------------------------- |
+| `d.vault.host` / `d.vault.apiHost`              | `v.example.com` / `api.v.example.com`           |
+| `d.vault.meshAddr` / `d.vault.lanAddr`          | `https://198.18.0.2:8200` / `http://hub.mgmt…`  |
+| `d.vault.oidcRedirects`                         | UI callback on the vault host, then `localhost` |
+| `d.mgmtZone`, `d.zone('lab')`                   | `mgmt.example.com`, `lab.example.com`           |
+| `d.host('node-b')`, `d.address('node-b','lab')` | `node-b.mgmt.example.com`, `198.51.100.12`      |
+| `d.access.teamDomain`                           | `https://example-team.cloudflareaccess.com`     |
+| `d.productHost('wiki')`, `d.productUrl`         | `kb.example.com` (label), own `domain` if set   |
+| `d.serviceUrl('grafana')`                       | `http://hub.mgmt.example.com:3000`              |
+| `d.clusterMembers('c1')`                        | member FQDNs                                    |
+| `d.cloudflareMount('main','dns')`               | `cloudflare-main-dns` (all: `cloudflareMounts`) |
 
 ⛔ **Unknown keys throw** (`SiteError` code `unknown-key`, listing what is declared). There
 is no fallback host: a plausible default is how a typo becomes a DNS record.

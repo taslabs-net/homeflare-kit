@@ -2,7 +2,7 @@
  * `Forgejo.OrgSecret` — org-level Actions secret metadata at `/orgs/{org}/actions/secrets/{name}`.
  *
  * ★ CHOICE: AUTHORED WITH WRITE-ONLY VALUE VIA ENV, NOT REFUSED. The OpenAPI in
- *   `house/mcp-servers/docs/api/upstream/forgejo.json` shows `Secret` returns only `name` and
+ *   `<estate>/mcp-servers/docs/api/upstream/forgejo.json` shows `Secret` returns only `name` and
  *   `created_at` — never the `data` field — so attributes stay metadata-only. Create/update is PUT
  *   with body `{ data }`, which does not fit POST/PATCH; this family uses the `upsert` seam on
  *   `ForgejoSpec` instead of hand-rolling provider handlers.

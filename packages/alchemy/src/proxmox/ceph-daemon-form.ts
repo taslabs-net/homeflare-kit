@@ -9,7 +9,7 @@
  *   here decides a diff; `findRow` picks a row out of an answer its caller already fetched.
  *
  * ⛔ THE TWO PATHS ARE DIFFERENT AND THAT IS THE WHOLE REASON THIS FILE HAS TWO OF THEM. MEASURED
- *   on n2, 2026-09-13: there is no GET on the id path — `pvesh get /nodes/n2/ceph/mon/n2` answers
+ *   on node-b, 2026-09-13: there is no GET on the id path — `pvesh get /nodes/node-b/ceph/mon/node-b` answers
  *   "No 'get' handler defined" — while POST and DELETE are registered ONLY there. So the read uses
  *   `collectionPath` and the two writes use `daemonPath`, and swapping either one is a silent
  *   501: a create that never lands, or a destroy that reports failure while the daemon runs on.
@@ -41,8 +41,8 @@ export const daemonId = (props: CephDaemonProps) => props.name ?? props.node;
 
 /**
  * The read path. ⚠️ `{node}` HERE IS ONLY THE NODE BEING ASKED, not a filter. MEASURED:
- *   `GET /nodes/n2/ceph/mon` returns n2, n3 AND n4, and `GET /nodes/n3/ceph/mon` returns the same
- *   three IN A DIFFERENT ORDER — [n4,n2,n3] from n2 against [n3,n2,n4] from n3. A caller that took
+ *   `GET /nodes/node-b/ceph/mon` returns node-b, node-c AND node-d, and `GET /nodes/node-c/ceph/mon` returns the same
+ *   three IN A DIFFERENT ORDER — [node-d,node-b,node-c] from node-b against [node-c,node-b,node-d] from node-c. A caller that took
  *   row zero, or assumed the list was this node's daemons, would be wrong on both counts.
  */
 export const collectionPath = (props: CephDaemonProps) => `nodes/${props.node}/ceph/${props.kind}`;

@@ -1,7 +1,7 @@
 /**
  * `Proxmox.Group` — a PVE group: a name, a comment, and the set of users PVE hangs off it.
  *
- * ★ DECLARING `hf-mint` IS THE WHOLE POINT OF THIS FAMILY. `vaultmint@pve` holds the `HFMint` role
+ * ★ DECLARING `hf-mint` IS THE WHOLE POINT OF THIS FAMILY. `mint@pve` holds the `MintTokens` role
  *   ON THE PATH `/access/groups/hf-mint` — measured from `GET /access/acl`, 2026-09-13 — which is
  *   what confines the OpenBao proxmox engine to minting inside that one group. The group is the
  *   fence around the credential every other resource in this package runs on, and until now it was
@@ -17,7 +17,7 @@
  *   in this file could ever settle.
  *
  * ⛔ THE INDEX AND THE ITEM DISAGREE ABOUT BOTH THE NAME AND THE TYPE, and this file reads only the
- *   item. MEASURED against n2, 2026-09-13:
+ *   item. MEASURED against node-b, 2026-09-13:
  *     GET /access/groups         -> [{"groupid":"hf-mint","comment":"…",
  *                                     "users":"hf-provision@pve,hf-read@pve"}, …]
  *     GET /access/groups/hf-mint -> {"comment":"…","members":["hf-provision@pve","hf-read@pve"]}
@@ -27,8 +27,8 @@
  *
  * ⛔ AND THE ITEM'S ORDER IS NOT STABLE BETWEEN TWO CONSECUTIVE CALLS. MEASURED, seconds apart, on
  *   the same endpoint:
- *     ["root@pam","tim@pve","tim@pam","tim@<account>.com@Schenanigans"]
- *     ["tim@pam","tim@pve","tim@<account>.com@Schenanigans","root@pam"]
+ *     ["root@pam","alice@pve","alice@pam","alice@example.com@corp"]
+ *     ["alice@pam","alice@pve","alice@example.com@corp","root@pam"]
  *   `read_group` builds it as `[keys %{ $data->{users} }]` — a bare Perl hash key list, whose order
  *   is randomised per process — while the INDEX sorts (`join(',', sort keys …)`). So the array is
  *   sorted on the way into `attributes` as well as being kept out of `matches`: unsorted, Alchemy's
@@ -45,7 +45,7 @@
  *       So `readRole` is left at the default `read` — unlike storage/sdn-zone/sdn-vnet, whose ITEM
  *       reads PVE gates on an allocate privilege. See the ⛔ on `readRole` in `resource.ts`.
  *     · POST, PUT and DELETE each check `Group.Allocate` on `/access/groups`, and
- *       `hf-provision@pve` holds it via `LXCProvisioner`.
+ *       `hf-provision@pve` holds it via the provision role (`PROVISION_PRIVILEGES`).
  *
  * ⛔ `retain` BY DEFAULT, BECAUSE DELETING A GROUP DESTROYS TWO THINGS THIS FILE CANNOT PUT BACK.
  *   Measured in `PVE::AccessControl` on the node:
@@ -53,8 +53,8 @@
  *       <comment>:`) and DERIVES each user's `groups` map from it at parse time. Deleting the group
  *       deletes the list, and this resource has no `members` prop to restore it from.
  *     · `delete_group_acl` then walks the whole ACL tree and drops every grant where the group is
- *       the SUBJECT. On this cluster that is `Schenanigans -> Administrator on /` and
- *       `HomeAssistant -> PVEAuditor on /`: whole populations of access, gone in one call, with no
+ *       the SUBJECT. On this cluster that is `admins -> Administrator on /` and
+ *       `automation -> PVEAuditor on /`: whole populations of access, gone in one call, with no
  *       confirmation and nothing in the plan to suggest it.
  *   `delete` is FULLY IMPLEMENTED — `DELETE /access/groups/{groupid}` exists, unlike the ACL
  *   family's — so `.pipe(RemovalPolicy.destroy())` really removes the group. See the ★ in
@@ -120,7 +120,7 @@ export const ProxmoxGroup = Resource<ProxmoxGroup>('Proxmox.Group', {
  *   back as absent. Left alone, `matches` would be false on every plan and every deploy would
  *   rewrite the same value into the same hole. Normalising BOTH the comparison and the form is how
  *   `values.ts` already treats `''` as the absence of a boolean rather than as `false`.
- *   ⚠️ MEASURED IN THE SOURCE ON n2, NOT ON THE WIRE — writing `'0'` to the cluster to watch it
+ *   ⚠️ MEASURED IN THE SOURCE ON node-b, NOT ON THE WIRE — writing `'0'` to the cluster to watch it
  *     vanish would have been a write, and this agent had read access only.
  *   ⚠️ `pool.ts` HAS THE SAME LATENT HOLE — `pool:$pool:$comment:…` is written by that same
  *     truthiness test and is not guarded. Not fixed from here; flagged so it is fixed on purpose.
@@ -160,7 +160,7 @@ const handlers = pveHandlers<GroupProps, GroupAttributes>({
      *   without one answers `{"members":[…]}` and nothing else. THAT ONE IS READ OFF THE HANDLER'S
      *   SOURCE, not off the wire — every group on this cluster happens to carry a comment, so the
      *   commentless shape was not there to measure. The empty-MEMBERS shape WAS measured —
-     *   `HomeAssistant` answers `{"comment":"…","members":[]}`. `''` is what an undeclared
+     *   `automation` answers `{"comment":"…","members":[]}`. `''` is what an undeclared
      *   `comment` prop normalises to, so the two sides meet either way.
      */
     comment: text(live['comment']),
@@ -190,7 +190,7 @@ const handlers = pveHandlers<GroupProps, GroupAttributes>({
 
 /**
  * ⛔ THE EMPTY `list` IS INHERITED FROM `pveHandlers` AND IT MATTERS HERE. `GET /access/groups`
- *   answers with every group on the cluster — on this one that is `Schenanigans`, which grants
+ *   answers with every group on the cluster — on this one that is `admins`, which grants
  *   `Administrator` on `/` to every human who logs in. Handing it to Alchemy would invite adoption,
  *   and therefore one day a delete that takes the whole admin group's access with it. Adoption
  *   stays an explicit act, here as everywhere else in this package.

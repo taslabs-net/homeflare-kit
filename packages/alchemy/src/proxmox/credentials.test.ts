@@ -29,9 +29,9 @@ const { Bun } = globalThis as unknown as {
 
 const TOKEN = 'hvs.FAKE-sentinel-never-a-real-token';
 const SECRET = 'fake-pve-secret-0000';
-const TB4: PveTarget = {
+const C1: PveTarget = {
   members: ['pve.example'],
-  mount: 'proxmox-tb4',
+  mount: 'proxmox-c1',
   scheme: 'pve',
 };
 
@@ -59,11 +59,9 @@ const withFake = async (
 };
 
 const minted = (env: BaoEnvironment) =>
-  Effect.runPromise(mint(TB4, 'read', env).pipe(Effect.provide(FetchHttpClient.layer)));
+  Effect.runPromise(mint(C1, 'read', env).pipe(Effect.provide(FetchHttpClient.layer)));
 const refused = (env: BaoEnvironment) =>
-  Effect.runPromise(
-    mint(TB4, 'read', env).pipe(Effect.flip, Effect.provide(FetchHttpClient.layer)),
-  );
+  Effect.runPromise(mint(C1, 'read', env).pipe(Effect.flip, Effect.provide(FetchHttpClient.layer)));
 
 const CREDENTIAL = {
   json: { data: { secret: SECRET, token_id: 'hf-read@pve!hf-read-1' }, lease_duration: 3600 },
@@ -79,7 +77,7 @@ describe('mint', () => {
         secret: SECRET,
         tokenId: 'hf-read@pve!hf-read-1',
       });
-      assert.equal(seen[0]?.path, '/v1/proxmox-tb4/creds/read');
+      assert.equal(seen[0]?.path, '/v1/proxmox-c1/creds/read');
       assert.equal(seen[0]?.headers.get('x-vault-token'), TOKEN);
       assert.equal(seen[0]?.headers.get('x-vault-namespace'), 'homeflare');
       assert.equal(seen[0]?.headers.get('x-vault-request'), 'true');
@@ -135,7 +133,7 @@ describe('mint', () => {
       CREDENTIAL,
       async (address, seen) => {
         assert.equal((await minted({ BAO_ADDR: address })).leaseSeconds, 3600);
-        assert.equal(seen[0]?.path, '/v1/proxmox-tb4/creds/read');
+        assert.equal(seen[0]?.path, '/v1/proxmox-c1/creds/read');
       },
       socket,
     );

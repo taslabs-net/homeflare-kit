@@ -71,9 +71,9 @@ export type WithPbsTarget = { target: PbsTarget };
 export type WithApiTarget = { target: ApiTarget };
 
 export type PveSpec<Props extends WithApiTarget, Attributes> = {
-  /** `pools/house`, `nodes/n2/lxc/101` — where ONE object is read, updated and deleted. */
+  /** `pools/lab`, `nodes/node-b/lxc/101` — where ONE object is read, updated and deleted. */
   readonly path: (props: Props) => string;
-  /** `pools`, `nodes/n2/lxc` — where a NEW one is POSTed. */
+  /** `pools`, `nodes/node-b/lxc` — where a NEW one is POSTed. */
   readonly collection: (props: Props) => string;
   /** Live JSON to attributes. Returning undefined means "this is not really there". */
   readonly attributes: (live: Record<string, unknown>, props: Props) => Attributes | undefined;
@@ -164,7 +164,7 @@ export const pveOperations = <Props extends WithApiTarget, Attributes>(
            *   `Proxmox.NodeNetwork` it is worse than pointless: a PUT under `/nodes/{node}/network`
            *   STAGES a change into `/etc/network/interfaces.new`, so merely adopting the interface
            *   a node already has would leave that node with a pending network change waiting for an
-           *   apply — on a cluster whose Ceph traffic rides vmbr1.11. Adoption has to be free.
+           *   apply — on a cluster whose Ceph traffic rides vmbr1.42. Adoption has to be free.
            *
            * ★ SO THE CONDITION IS THE SAME PREDICATE `diff` USES. If `matches` is true the object
            *   already says what the declaration says, and there is nothing to write — by

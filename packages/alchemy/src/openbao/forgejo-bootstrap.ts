@@ -3,7 +3,7 @@
  * straight to the Forgejo engine's role and nowhere else.
  *
  * ★ TIM'S CALL, 2026-09-14: "Random password, piped", and membership of the HomeFlare Owners team
- *   (house/forgejo, Forgejo.TeamMember). Forgejo has no service-account type and no app.ini setting
+ *   (<estate>/forgejo, Forgejo.TeamMember). Forgejo has no service-account type and no app.ini setting
  *   that creates users — the bot type is database-only (codeberg issue 8136) — so this is an
  *   ordinary user made by `forgejo admin user create`.
  *
@@ -34,12 +34,12 @@ import {
 } from './forgejo-bootstrap-parse.ts';
 
 export const PROVISION_USER = 'forgejo-provision';
-/** `NO_REPLY_ADDRESS` in hosts/macmini/forgejo/app.ini:117 — a service account's mail goes nowhere. */
+/** `NO_REPLY_ADDRESS` in the host's Forgejo `app.ini` — a service account's mail goes nowhere. */
 const PROVISION_EMAIL = `${PROVISION_USER}@noreply.lab.example.com`;
 export const ROLE_PATH = 'forgejo/roles/provision';
 
 /**
- * ★ THE SCOPES ARE WHAT house/forgejo WRITES TODAY. Org labels, teams and org secrets need
+ * ★ THE SCOPES ARE WHAT <estate>/forgejo WRITES TODAY. Org labels, teams and org secrets need
  *   `write:organization`; repositories, webhooks and branch protection need `write:repository`.
  *   Membership decides what the tokens can reach, and the scopes cap it.
  * ⚠️ FORGEJO TOKENS NEVER EXPIRE ON THE SERVER. The TTL is OpenBao's lease, and revoking the lease is
@@ -92,7 +92,7 @@ export const bootstrapProvisionAccount = Effect.gen(function* () {
   const binary = runningForgejoBinary(ps.stdout);
   if (binary === undefined) {
     return yield* refuse(
-      'no running `forgejo web` found. Run this on the mini, where Forgejo runs.',
+      'no running `forgejo web` found. Run this on the host where Forgejo runs.',
     );
   }
   const cli = (subcommand: string, ...args: string[]) =>

@@ -40,10 +40,10 @@ describe('absent means the cluster does not list the vmid', () => {
 
   test('a 500 for a guest the cluster lists on this node fails with PVE’s error', async () => {
     fake = fakePve();
-    seed(fake, NODE, 100, LIVE);
+    seed(fake, NODE, 900, LIVE);
     const message = 'got timeout\n';
-    fake.configErrors.set(`${NODE}/100`, { body: { data: null, message }, status: 500 });
-    const run = await lxcEngine(fake).plan(declared(100));
+    fake.configErrors.set(`${NODE}/900`, { body: { data: null, message }, status: 500 });
+    const run = await lxcEngine(fake).plan(declared(900));
     expect(run.failure).toContain('got timeout');
     expect(run.actions).toEqual({});
     expect(writesOf(fake)).toEqual([]);

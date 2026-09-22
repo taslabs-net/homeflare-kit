@@ -63,8 +63,8 @@ describe('a guest the cluster no longer lists, with state still held', () => {
     expect((await stack.deploy(declared())).failure).toBe('');
     pve.guests.delete(KEY);
     const run = await stack.deploy(declared());
-    expect(run.failure).toContain('rootfs: local-zfs:subvol-100-disk-0,size=40G names an existing');
-    expect(run.failure).toContain('mp0: tank:subvol-100-disk-0');
+    expect(run.failure).toContain('rootfs: local-zfs:subvol-900-disk-0,size=40G names an existing');
+    expect(run.failure).toContain('mp0: tank:subvol-900-disk-0');
     expect(writesOf(pve)).toEqual([]);
   });
 
@@ -130,13 +130,13 @@ describe('identity and volumes', () => {
     const pve = cluster();
     seed(pve, NODE, VMID);
     const stack = await adoptedAsIs(pve);
-    const mp0 = 'tank:subvol-100-disk-0,mp=/data,backup=1,size=300G';
+    const mp0 = 'tank:subvol-900-disk-0,mp=/data,backup=1,size=300G';
     const run = await stack.deploy(ct(pasted({ mp0 })));
     expect(run.failure).toBe('');
     const path = `nodes/${NODE}/lxc/${String(VMID)}`;
     expect(writesOf(pve)).toEqual([`PUT ${path}/config`, `PUT ${path}/resize`]);
     const put = pve.seen.find((call) => call.path.endsWith('/config') && call.method === 'PUT');
-    expect(put?.form.get('mp0')).toBe('tank:subvol-100-disk-0,mp=/data,backup=1,size=200G');
+    expect(put?.form.get('mp0')).toBe('tank:subvol-900-disk-0,mp=/data,backup=1,size=200G');
     expect(pve.guests.get(KEY)?.['mp0']).toContain('size=300G');
   });
 

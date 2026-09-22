@@ -2,7 +2,7 @@
  * `Proxmox.CephFlag` — one cluster-wide Ceph OSD flag, declared: `noout`, `pause`, `norebalance`.
  *
  * ★ ONE RESOURCE PER FLAG, NOT ONE CARRYING ALL ELEVEN, AND THE CLUSTER'S OWN API DECIDED IT.
- *   MEASURED on TB4 2026-09-13 (pve-manager 9.2.11, ceph tentacle 20.2.2) by reading
+ *   MEASURED on C1 2026-09-13 (pve-manager 9.2.11, ceph tentacle 20.2.2) by reading
  *   `/usr/share/perl5/PVE/API2/Cluster/Ceph.pm` and the published schema in
  *   `/usr/share/pve-docs/api-viewer/apidoc.js`:
  *     · `PUT /cluster/ceph/flags` ends in `fork_worker('cephsetflags', ...)` and returns a STRING
@@ -30,7 +30,7 @@
  *     defaulting to false would make `CephFlag('noout', { flag: 'noout', target })` mean "clear
  *     it" — the dangerous direction, chosen by OMISSION. Here the dangerous sentence has to be
  *     typed out by a person. Do not add a default, and do not declare a flag merely to document
- *     that it is off: MEASURED 2026-09-13, all eleven flags on TB4 read 0, so eleven
+ *     that it is off: MEASURED 2026-09-13, all eleven flags on C1 read 0, so eleven
  *     `value: false` lines would plan green forever and do nothing except take the brake off
  *     whenever somebody happens to apply them.
  *
@@ -58,8 +58,8 @@
  *   and plans `noop` straight past it. It cannot express a half-pause, so never use it to prove
  *   one is gone; `ceph osd dump | head -1` can.
  *   ⛔ `pause` AND `noup` ARE ALSO THE TWO THAT TAKE THE CLUSTER DOWN FROM A TYPO. `pause: true`
- *     stops all reads and writes, so every guest on `cephtb4` — the cluster's only rbd pool,
- *     MEASURED 2026-09-13 — freezes on its root disk, and so does `cephfs-tb4`. `noup: true`
+ *     stops all reads and writes, so every guest on `rbd-c1` — the cluster's only rbd pool,
+ *     MEASURED 2026-09-13 — freezes on its root disk, and so does `cephfs-c1`. `noup: true`
  *     stops a rebooted OSD from ever rejoining. Neither is undone by deleting the line.
  *
  * ⚠️ PRIVILEGES, AND THE WRITE ONE IS A BIG ASK. Both GETs check `Sys.Audit` on `/`; both PUTs
@@ -83,7 +83,7 @@ import { bool, flag } from './values.ts';
  *
  * ⚠️ THE ENUM IS CLOSED AND A TYPO IS A 400, WHICH IS WHY THIS IS A UNION AND NOT `string`. Both
  *   the GET and the PUT declare `additionalProperties => 0` over exactly this list.
- * ⚠️ CEPH HAS FLAGS PVE DOES NOT MODEL, and four of them are always on. MEASURED on TB4:
+ * ⚠️ CEPH HAS FLAGS PVE DOES NOT MODEL, and four of them are always on. MEASURED on C1:
  *   `ceph osd dump` reports `flags sortbitwise,recovery_deletes,purged_snapdirs,pglog_hardlimit`.
  *   PVE reads that same string and answers only about its own eleven, so the others can neither
  *   leak in here nor be set from here — `noautoscale` and `nosnaptrim` included.
@@ -167,7 +167,7 @@ const handlers = pveHandlers<CephFlagProps, CephFlagAttributes>({
    *
    * ⛔ IT NEVER ANSWERS undefined, WHICH MAKES THE CREATE BRANCH UNREACHABLE, AND ITS ERROR WILL
    *   MISLEAD YOU. All eleven flags always exist; there is nothing for "absent" to mean. So a POST
-   *   to `collection` means the READ failed — an expired 300s lease, n2 down, or ceph simply not
+   *   to `collection` means the READ failed — an expired 300s lease, node-b down, or ceph simply not
    *   configured on the cluster (every one of these four handlers opens with
    *   `check_ceph_configured()`, which dies). Read the resulting "Method 'POST /cluster/ceph/flags'
    *   not implemented" as "the read failed" and go and look at the credential, not at ceph. Same
@@ -187,7 +187,7 @@ const handlers = pveHandlers<CephFlagProps, CephFlagAttributes>({
    *   and `name` exist only on the bulk GET, which this file does not read, so neither can be
    *   compared by accident. Nothing PVE returns here is rewritten, re-ordered or re-typed by the
    *   cluster, because all PVE returns here is one boolean.
-   *   ★ MEASURED: on TB4, `GET /cluster/ceph/flags` answers value 0 for all eleven flags, so a
+   *   ★ MEASURED: on C1, `GET /cluster/ceph/flags` answers value 0 for all eleven flags, so a
    *     declaration of `value: false` reads back false and plans `noop`.
    */
   matches: (attributes, props) => attributes.value === props.value,

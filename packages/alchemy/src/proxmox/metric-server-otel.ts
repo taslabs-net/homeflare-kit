@@ -12,8 +12,8 @@
  *   `Content-Type: application/json` (pve-manager PVE/Status/OpenTelemetry.pm:643) and gzips by
  *   default; there is no protobuf option. vector's opentelemetry source and VictoriaMetrics both
  *   take protobuf only — measured 2026-09-14 — so a server pointed straight at either fails every
- *   push. That is why TB4's declaration points at each node's own vector bridge
- *   (hosts/pve/vector/vector.yaml in homeflare-config) rather than at the estate's intake.
+ *   push. That is why C1's declaration points at each node's own vector bridge
+ *   (the estate's per-node vector config) rather than at the estate's intake.
  *
  * ⛔ `otel-headers` IS `never`, FOR THE REASON `token` IS. It is where an OTLP bearer token goes —
  *   base64 of a JSON object of arbitrary HTTP headers — and Alchemy persists attributes UNENCRYPTED.

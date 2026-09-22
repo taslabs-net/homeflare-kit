@@ -1,7 +1,7 @@
 /**
  * Create/PATCH bodies for `Forgejo.BranchProtection` — extracted for the 250-line cap.
  *
- * ★ READ OFF `house/mcp-servers/docs/api/upstream/forgejo.json` — create posts
+ * ★ READ OFF `<estate>/mcp-servers/docs/api/upstream/forgejo.json` — create posts
  *   `CreateBranchProtectionOption`; update sends `EditBranchProtectionOption` fields only.
  */
 import type { BranchProtectionProps } from './branch-protection.ts';

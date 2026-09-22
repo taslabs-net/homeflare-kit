@@ -136,7 +136,7 @@ measured evidence behind both.
 ## Git
 
 - `origin` is **GitHub** (`taslabs-net/homeflare-kit`). It is the only remote.
-- Forgejo (`git.homeflare.dev/tim/homeflare-kit`) is a **pull mirror** of GitHub, and is
+- The estate's self-hosted Forgejo carries a **pull mirror** of GitHub, and it is
   read-only. ⚠️ It was a push mirror until 2026-09-15 and the direction was reversed
   because Alchemy has first-class GitHub resources and none for Forgejo — and because
   Forgejo push mirrors carry git data only, never releases (forgejo#4701, open).

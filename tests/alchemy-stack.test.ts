@@ -5,7 +5,7 @@
  *   `Cloudflare.state()` is the account Durable Object (Secrets Store keys
  *   AlchemyStateStoreToken / AlchemyStateStoreEncryptionKey). Stacks share that
  *   store and are keyed by name. Measured 2026-09-16: wrangler listed those two
- *   secrets on Schenanigans; `alchemy state list --backend cloudflare` already
+ *   secrets on the Cloudflare account; `alchemy state list --backend cloudflare` already
  *   had homeflare-forgejo, homeflare-proxmox, …
  */
 import { describe, expect, test } from 'bun:test';

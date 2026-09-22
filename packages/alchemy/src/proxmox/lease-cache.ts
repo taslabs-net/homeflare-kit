@@ -1,8 +1,8 @@
 /**
  * One credential per (target, role) for the life of a run, instead of one per API call.
  *
- * 🔴 THE MEASUREMENT THAT MADE THIS NECESSARY. A single `alchemy plan` plus `deploy` of the TB4
- *   stack — 98 resources — left **760 API token entries in `/etc/pve/user.cfg`**, counted on n2
+ * 🔴 THE MEASUREMENT THAT MADE THIS NECESSARY. A single `alchemy plan` plus `deploy` of the C1
+ *   stack — 98 resources — left **760 API token entries in `/etc/pve/user.cfg`**, counted on node-b
  *   immediately afterwards. `mint()` asked OpenBao for a new credential on EVERY call, and each
  *   mint creates a real Proxmox token: read, diff, reconcile and read-back each got their own. They
  *   drain as the leases expire (760 down to 712 over five minutes), so nothing was broken — but
@@ -66,9 +66,9 @@ const REMINT_MARGIN_SECONDS = 60;
  * What a credential is cached under.
  *
  * ⛔ KEYED ON THE OPENBAO MOUNT AND ROLE, NOT ON A MEMBER HOSTNAME. A PVE API token is
- *   cluster-wide — `user.cfg` is replicated — so n2, n3 and n4 share one credential. Keying on
+ *   cluster-wide — `user.cfg` is replicated — so node-b, node-c and node-d share one credential. Keying on
  *   `api` would mint three identical tokens when failover rotates members.
- * ★ THE MOUNT CANNOT COLLIDE ACROSS CLUSTERS: `proxmox-tb4`, `proxmox-ops` and `pbs-tb4` are
+ * ★ THE MOUNT CANNOT COLLIDE ACROSS CLUSTERS: `proxmox-c1`, `proxmox-c2` and `pbs-c1` are
  *   distinct OpenBao mounts with distinct policies; two estates never share a mount name.
  * ★ A PLAIN OBJECT IS A SAFE KEY BECAUSE EFFECT COMPARES KEYS STRUCTURALLY — two separately built
  *   literals with the same fields are one entry, which the probe above measured.

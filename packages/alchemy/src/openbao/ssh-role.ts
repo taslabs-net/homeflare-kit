@@ -4,8 +4,8 @@
  * ⛔ THE SIGNING KEY IS OUT OF SCOPE AND MUST STAY OUT. `ssh/config/ca` holds (or generates)
  *   the CA private key and `ssh/sign/<role>` issues certificates. Neither is declarable
  *   here, for the reason policy.ts spells out: Alchemy persists attributes to its state
- *   store WITHOUT encrypting them, that store is the `alchemy` Postgres, and pg-backup.sh
- *   dumps it nightly to CT100. A CA key there would outlive the vault that guards it. This
+ *   store WITHOUT encrypting them, that store is the `alchemy` Postgres, and a nightly job
+ *   dumps it to a backup guest. A CA key there would outlive the vault that guards it. This
  *   resource declares the SHAPE a signature must satisfy — principals, extensions, TTLs.
  *
  * ⛔ THE ROLE WRITE IS A FULL REPLACE, NOT A PATCH. OpenBao rebuilds the role entry from the
@@ -29,7 +29,7 @@
  *
  * ★ `defaultRemovalPolicy: 'retain'`. Deleting this role locks every operator out of the
  *   estate — the memory note "operator SSH is homeflare-bot@<host>" is this CA. Opt in with
- *   `.pipe(RemovalPolicy.destroy())`; see resource.ts in house/proxmox.
+ *   `.pipe(RemovalPolicy.destroy())`; see resource.ts in <estate>/proxmox.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';

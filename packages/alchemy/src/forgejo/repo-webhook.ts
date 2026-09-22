@@ -1,7 +1,7 @@
 /**
  * `Forgejo.RepoWebhook` — one repository webhook under `/repos/{owner}/{repo}/hooks`.
  *
- * ★ READ OFF `house/mcp-servers/docs/api/upstream/forgejo.json`: create is POST collection; read/update/delete
+ * ★ READ OFF `<estate>/mcp-servers/docs/api/upstream/forgejo.json`: create is POST collection; read/update/delete
  *   use numeric hook id at `/repos/{owner}/{repo}/hooks/{id}`. `locate` lists and matches on `name`.
  *
  * ⛔ NO WEBHOOK `secret` IN PROPS OR ATTRIBUTES. Optional HMAC material is env-only at write time

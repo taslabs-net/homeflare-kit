@@ -26,8 +26,8 @@ import { guardRename, judgeRename, nameIdentity } from './rename-identity.ts';
  * ⛔ THERE IS NO `Bao.Secret`, AND THERE MUST NEVER BE ONE. Alchemy persists attributes to
  *   its state store and does NOT encrypt them: StateEncoding.ts unwraps `Redacted` to
  *   plaintext under a marker key, and nothing under alchemy/src/State encrypts. This
- *   estate's state store is the `alchemy` Postgres database, which pg-backup.sh dumps
- *   nightly (it enumerates EVERY non-template database), copies to CT100, and PBS backs up
+ *   estate's state store is the `alchemy` Postgres database, which a nightly job dumps
+ *   (it enumerates EVERY non-template database), copies to a backup guest, and PBS backs up
  *   from there. A KV value here would exist in four places, none of them OpenBao.
  *
  *   So this declares the SHAPE AROUND secrets. Every attribute it stores is a name, a
