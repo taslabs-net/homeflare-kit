@@ -12,6 +12,11 @@
  *
  * ⚠️ A `patternSource` with no `pattern` beside it is a rule that could NOT be carried into a
  *   JavaScript RegExp faithfully (codegen/pattern.ts). It is recorded and NOT enforced.
+ * ⚠️ `pattern` IS NOT THE VENDOR'S SPELLING. For PVE it is anchored, because PVE applies
+ *   `m/^$pattern$/` itself (JSONSchema.pm); for PBS it is the vendor's own, which already
+ *   carries its anchors. `patternSource` is the spelling to quote at a human — param-rules.ts.
+ * ⚠️ `each: true` means the value rules describe every ELEMENT of a repeated key, because the
+ *   parameter is an array and stated its limits on `items`.
  */
 import type { EndpointConstraints } from '../../constraints.ts';
 
@@ -29,7 +34,7 @@ export const PVE_ACCESS_CONSTRAINTS: Readonly<Record<string, EndpointConstraints
     "expire": {"minimum":0,"type":"integer"},
     "firstname": {"maxLength":1024,"type":"string"},
     "groups": {"format":"pve-groupid-list","type":"string"},
-    "keys": {"pattern":"[0-9a-zA-Z!=]{0,4096}","patternSource":"[0-9a-zA-Z!=]{0,4096}","type":"string"},
+    "keys": {"pattern":"^[0-9a-zA-Z!=]{0,4096}\\n?$","patternSource":"[0-9a-zA-Z!=]{0,4096}","type":"string"},
     "lastname": {"maxLength":1024,"type":"string"},
     "password": {"maxLength":64,"minLength":8,"type":"string"},
     "userid": {"format":"pve-userid","maxLength":64,"required":true,"type":"string"},
@@ -51,7 +56,7 @@ export const PVE_ACCESS_CONSTRAINTS: Readonly<Record<string, EndpointConstraints
     "expire": {"minimum":0,"type":"integer"},
     "firstname": {"maxLength":1024,"type":"string"},
     "groups": {"format":"pve-groupid-list","type":"string"},
-    "keys": {"pattern":"[0-9a-zA-Z!=]{0,4096}","patternSource":"[0-9a-zA-Z!=]{0,4096}","type":"string"},
+    "keys": {"pattern":"^[0-9a-zA-Z!=]{0,4096}\\n?$","patternSource":"[0-9a-zA-Z!=]{0,4096}","type":"string"},
     "lastname": {"maxLength":1024,"type":"string"},
   },
 };

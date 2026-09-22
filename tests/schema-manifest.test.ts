@@ -19,6 +19,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import coverageManifest from '../schemas/manifest.json' with { type: 'json' };
 
 const ROOT = join(import.meta.dir, '..');
 const GENERATED = join(ROOT, 'packages/alchemy/src/proxmox/generated/constraints');
@@ -135,4 +136,34 @@ describe('the committed tables are current against the schemas they name', () =>
     );
     expect(missing.every((entry) => entry.sha256.length === 64)).toBe(true);
   });
+});
+
+/**
+ * ⛔ TWO MANIFESTS, ONE REPOSITORY, AND THEY MUST NAME THE SAME BYTES. `codegen/manifest.json`
+ *   feeds the constraint tables and `schemas/manifest.json` feeds `docs/api-coverage.*`; they were
+ *   written hours apart and landed pointing at DIFFERENT PVE schemas — 9.2.11 and 9.2.4, from a
+ *   genuinely mixed-version cluster, differing by two write endpoints. A reader comparing the two
+ *   artefacts was comparing two APIs, and nothing said so. Measured and corrected 2026-09-22.
+ */
+describe('the two schema manifests describe the same vendor bytes', () => {
+  const coverage = coverageManifest as {
+    entries: readonly { id: string; sha256: string; version: string; cacheFile: string }[];
+  };
+  const pairs = [
+    { codegen: 'pve-apidoc', coverage: 'proxmox/pve' },
+    { codegen: 'pbs-apidoc', coverage: 'proxmox/pbs' },
+  ];
+
+  for (const pair of pairs) {
+    test(`${pair.codegen} and ${pair.coverage} agree on sha256, version and cache file`, () => {
+      const a = manifest.schemas.find((s) => s.id === pair.codegen);
+      const b = coverage.entries.find((e) => e.id === pair.coverage);
+      // ⛔ THE BYTES AND THE FILE, EXACTLY. A second filename for the same bytes is how an
+      //   unversioned `pve-apidoc.js` stayed in the cache holding a stale 9.2.4 copy.
+      expect([a?.sha256, a?.file]).toEqual([b?.sha256, b?.cacheFile]);
+      // ⚠️ THE VERSION STRINGS DIFFER BY THE PRODUCT NAME, which codegen keeps in its own field:
+      //   `9.2.11/f699…` against `pve-manager/9.2.11/f699…`. Containment is the honest assertion.
+      expect(b?.version).toContain(a?.version ?? 'MISSING');
+    });
+  }
 });

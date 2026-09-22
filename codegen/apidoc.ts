@@ -28,6 +28,12 @@ export interface VendorParam {
   readonly format?: string | Record<string, unknown>;
   readonly default?: unknown;
   readonly description?: string;
+  /**
+   * ⛔ AN ARRAY PARAMETER CARRIES ITS RULES HERE, NOT ON ITSELF. Both products spell an array as
+   *   `{type: 'array', items: {maxLength: 32, pattern: …}}`, so a generator that reads only the
+   *   parameter emits a row with no rule at all — see param-rules.ts.
+   */
+  readonly items?: VendorParam;
 }
 
 export interface VendorEndpoint {
