@@ -12,6 +12,8 @@ const src = await Bun.file(new URL('./index.ts', import.meta.url)).text();
 
 const resourceExports = [
   'PbsDatastore',
+  'PbsNotificationMatcher',
+  'PbsNotificationTarget',
   'PbsPruneJob',
   'PbsSyncJob',
   'PbsVerifyJob',
@@ -22,6 +24,7 @@ const resourceExports = [
   'ProxmoxHaRule',
   'ProxmoxLxc',
   'ProxmoxMetricServer',
+  'ProxmoxNotificationMatcher',
   'ProxmoxNotificationTarget',
   'ProxmoxRole',
   'ProxmoxSdnApply',

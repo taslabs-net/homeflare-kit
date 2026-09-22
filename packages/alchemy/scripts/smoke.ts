@@ -94,7 +94,7 @@ try {
 import { ForgejoOrgLabel } from '@homeflare/alchemy/forgejo';
 import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles } from '@homeflare/alchemy/openbao';
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
-import { PROVISION_PRIVILEGES, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, declareProvisionBaseline, provisionBootstrap } from '@homeflare/alchemy/proxmox';
+import { PROVISION_PRIVILEGES, PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, ProxmoxNotificationMatcher, alertmanagerAlertBody, declareProvisionBaseline, provisionBootstrap } from '@homeflare/alchemy/proxmox';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
@@ -102,6 +102,7 @@ import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
   R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, declareProvisionBaseline,
+  PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxNotificationMatcher,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
   parseVerifyArgs, verifySession, verifyStack,
 })) {
@@ -138,6 +139,21 @@ if (!refused) throw new Error('localCaddyAdmin from dist accepted a non-loopback
 if (PROVISION_PRIVILEGES.length !== 27 || !provisionBootstrap().startsWith('#!/bin/sh')) {
   throw new Error('the provisioning baseline from dist is incomplete');
 }
+
+// ★ The Alertmanager body through the PUBLISHED file: pure text, so building it proves the helper
+//   reached dist, and its refusal proves the guard did too. PbsNotificationTarget's module imports
+//   node:crypto for its seal, which the import line above has already loaded.
+const alertBody = alertmanagerAlertBody();
+if (!alertBody.startsWith('[') || !alertBody.includes('{{ json message }}')) {
+  throw new Error('alertmanagerAlertBody from dist did not build the template');
+}
+let braces = false;
+try {
+  alertmanagerAlertBody({ alertname: '{{ x }}' });
+} catch {
+  braces = true;
+}
+if (!braces) throw new Error('alertmanagerAlertBody from dist accepted template syntax');
 
 if (parseVerifyArgs(['--stage', 'live'], {}).kind !== 'run') {
   throw new Error('parseVerifyArgs from dist did not parse');

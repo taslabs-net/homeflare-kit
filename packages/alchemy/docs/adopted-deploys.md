@@ -38,6 +38,7 @@ API token on the cluster, just as it does for `alchemy plan`.
 | `Proxmox.BackupJob`            | `cluster/backup/{id}`                                           | read        | shared path — no write                                                                               |
 | `Proxmox.MetricServer`         | `cluster/metrics/server/{id}`                                   | read        | shared path — no write                                                                               |
 | `Proxmox.NotificationTarget` ² | `cluster/notifications/endpoints/{type}/{name}`                 | read        | shared path — no write                                                                               |
+| `Proxmox.NotificationMatcher`  | `cluster/notifications/matchers/{name}`                         | read        | shared path — no write                                                                               |
 | `Proxmox.HaResource`           | `cluster/ha/resources/{sid}`                                    | read        | shared path — no write                                                                               |
 | `Proxmox.HaRule`               | `cluster/ha/rules/{rule}`                                       | read        | shared path — no write                                                                               |
 | `Proxmox.SdnZone`              | `cluster/sdn/zones/{zone}`                                      | provision ¹ | shared path — no write                                                                               |
@@ -47,6 +48,8 @@ API token on the cluster, just as it does for `alchemy plan`.
 | `Pbs.PruneJob`                 | `config/prune/{id}`                                             | read (PBS)  | shared path — no write                                                                               |
 | `Pbs.SyncJob`                  | `config/sync/{id}`                                              | read (PBS)  | shared path — no write                                                                               |
 | `Pbs.VerifyJob`                | `config/verify/{id}`                                            | read (PBS)  | shared path — no write                                                                               |
+| `Pbs.NotificationMatcher`      | `config/notifications/matchers/{name}`                          | read (PBS)  | shared path — no write                                                                               |
+| `Pbs.NotificationTarget` ⁵     | `config/notifications/endpoints/{type}/{name}`                  | read (PBS)  | own: GET, PUT only for a stale group, GET — no write                                                 |
 | `Proxmox.Acl`                  | `access/acl` (whole list, filtered)                             | provision ¹ | shared path, then its own `bound` check — no write                                                   |
 | `Pbs.Datastore`                | `config/datastore/{name}`                                       | read (PBS)  | own: GET, path/backend guards, PUT skipped on `matches`, settle GET — no write                       |
 | `Proxmox.SdnApply`             | 5 × `cluster/sdn/*?pending=1` + fabrics `?pending` / `?running` | read        | own: counts staged objects; zero returns at once — **no `PUT /cluster/sdn`**                         |
@@ -64,6 +67,11 @@ no-write row applies. Pinned by `src/proxmox/lxc-adopt.test.ts` ("deploys with n
 ⁴ `updateBody` sends `target_size_ratio`, but `matches` does not compare it (float equality). A
 declared ratio that differs from the live one is never written on a no-op adoption and never
 reported as a diff.
+
+⁵ Its own `diff` and `reconcile`, because a secret's value is not in the live object: the plan
+compares a seal kept in the previous state ([pbs-notifications.md](./pbs-notifications.md)). An
+adopted target has no seal, so its secret values are presence-only and adoption writes nothing.
+Pinned by `src/proxmox/pbs-notification-target-state.test.ts`.
 
 ## Before the fix: `Proxmox.CephPool`
 

@@ -375,6 +375,68 @@ export type ClusterNotificationsEndpointsWebhookNamePutReturn = null;
 /** DELETE /cluster/notifications/endpoints/webhook/{name} — `data` payload after client unwrap. */
 export type ClusterNotificationsEndpointsWebhookNameDeleteReturn = null;
 
+/** GET /cluster/notifications/matchers — `data` payload after client unwrap. */
+export type ClusterNotificationsMatchersGetReturn = readonly ({
+  comment?: string;
+  disable?: boolean | 0 | 1;
+  'invert-match'?: boolean | 0 | 1;
+  'match-calendar'?: readonly string[];
+  'match-field'?: readonly string[];
+  'match-severity'?: readonly string[];
+  mode?: 'all' | 'any';
+  name: string;
+  origin: 'user-created' | 'builtin' | 'modified-builtin';
+  target?: readonly string[];
+} & Record<string, unknown>)[];
+
+/** POST /cluster/notifications/matchers — form/query parameters (path segments omitted). */
+export type ClusterNotificationsMatchersPostParams = {
+  comment?: string;
+  disable?: '0' | '1';
+  'invert-match'?: '0' | '1';
+  'match-calendar'?: readonly string[];
+  'match-field'?: readonly string[];
+  'match-severity'?: readonly string[];
+  mode?: 'all' | 'any';
+  name: string;
+  target?: readonly string[];
+};
+/** POST /cluster/notifications/matchers — `data` payload after client unwrap. */
+export type ClusterNotificationsMatchersPostReturn = null;
+
+/** GET /cluster/notifications/matchers/{name} — `data` payload after client unwrap. */
+export type ClusterNotificationsMatchersNameGetReturn = {
+  comment?: string;
+  digest?: string;
+  disable?: boolean | 0 | 1;
+  'invert-match'?: boolean | 0 | 1;
+  'match-calendar'?: readonly string[];
+  'match-field'?: readonly string[];
+  'match-severity'?: readonly string[];
+  mode?: 'all' | 'any';
+  name: string;
+  target?: readonly string[];
+} & Record<string, unknown>;
+
+/** PUT /cluster/notifications/matchers/{name} — form/query parameters (path segments omitted). */
+export type ClusterNotificationsMatchersNamePutParams = {
+  comment?: string;
+  delete?: readonly string[];
+  digest?: string;
+  disable?: '0' | '1';
+  'invert-match'?: '0' | '1';
+  'match-calendar'?: readonly string[];
+  'match-field'?: readonly string[];
+  'match-severity'?: readonly string[];
+  mode?: 'all' | 'any';
+  target?: readonly string[];
+};
+/** PUT /cluster/notifications/matchers/{name} — `data` payload after client unwrap. */
+export type ClusterNotificationsMatchersNamePutReturn = null;
+
+/** DELETE /cluster/notifications/matchers/{name} — `data` payload after client unwrap. */
+export type ClusterNotificationsMatchersNameDeleteReturn = null;
+
 /** GET /cluster/firewall/aliases — `data` payload after client unwrap. */
 export type ClusterFirewallAliasesGetReturn = readonly ({
   cidr: string;
