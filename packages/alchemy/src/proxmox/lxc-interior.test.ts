@@ -14,8 +14,24 @@
  *   and have completely different reach. Never infer one family's endpoints from the other's.
  */
 import { describe, expect, test } from 'bun:test';
+import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
-const schema = await Bun.file(new URL('./generated/pve.ts', import.meta.url)).text();
+/**
+ * ⚠️ THE GENERATED TYPES ARE A DIRECTORY NOW, NOT ONE FILE. `generated/pve.ts` became a barrel of
+ *   `export *` lines when codegen/types.ts split the 678 endpoints across files that fit the house
+ *   cap, so reading that path alone would find no endpoint at all — and every absence assertion
+ *   below would pass on an empty list. That is what the first test guards.
+ */
+const dir = fileURLToPath(new URL('./generated/pve/', import.meta.url));
+const schema = (
+  await Promise.all(
+    readdirSync(dir)
+      .sort()
+      .map((name) => Bun.file(join(dir, name)).text()),
+  )
+).join('\n');
 
 /** Every endpoint the generated schema documents, as `METHOD /path`. */
 const endpoints = [...schema.matchAll(/(GET|POST|PUT|DELETE) (\/[A-Za-z0-9/{}_.-]+)/g)].map(
