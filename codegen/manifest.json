@@ -1,0 +1,72 @@
+{
+  "$comment": "Every vendor schema this repository generates from or knows about. Read codegen/README.md before editing: the sha256 is the identity, the version string is what the host reports, and the raw blobs live in a cache outside git.",
+  "cacheDir": "~/.cache/homeflare/schemas",
+  "cacheDirEnv": "HOMEFLARE_SCHEMA_CACHE",
+  "schemas": [
+    {
+      "id": "pve-apidoc",
+      "vendor": "Proxmox",
+      "product": "pve-manager",
+      "version": "9.2.11/f6997e698c7933ea",
+      "versionCommand": "pveversion",
+      "sourceRole": "PVE cluster node",
+      "sourcePath": "/usr/share/pve-docs/api-viewer/apidoc.js",
+      "file": "proxmox/pve_9.2.11_apidoc.js",
+      "sha256": "9def8f13611184ee1c7d0399713130dfc4a065701d0d91a69b9c03df929344e9",
+      "bytes": 4337847,
+      "fetchedAt": "2026-09-22T19:36:00Z",
+      "consumedBy": [
+        "packages/alchemy/src/proxmox/generated/constraints/pve-access.ts",
+        "packages/alchemy/src/proxmox/generated/constraints/pve-cluster.ts",
+        "packages/alchemy/src/proxmox/generated/constraints/pve-pools.ts",
+        "packages/alchemy/src/proxmox/generated/constraints/pve-storage.ts"
+      ],
+      "note": "This cluster is MIXED VERSION. One node still runs pve-manager 9.2.4 and ships a DIFFERENT apidoc.js (4277440 bytes, sha256 f2b77b57...). Fetch from a node running the newest pve-manager, or the table describes an API half the cluster no longer has."
+    },
+    {
+      "id": "pbs-apidoc",
+      "vendor": "Proxmox",
+      "product": "proxmox-backup-server",
+      "version": "4.2.6-1 (running 4.2.3)",
+      "versionCommand": "proxmox-backup-manager version --verbose",
+      "sourceRole": "PBS host",
+      "sourcePath": "/usr/share/doc/proxmox-backup/html/api-viewer/apidoc.js",
+      "file": "proxmox/pbs_4.2.6-1_apidoc.js",
+      "sha256": "274ab9f6fc075aeafb827370e6b65545507e3348a404f1c0b181fc2d9589458a",
+      "bytes": 1508860,
+      "fetchedAt": "2026-09-22T19:36:00Z",
+      "consumedBy": ["packages/alchemy/src/proxmox/generated/constraints/pbs-config.ts"],
+      "note": "NOT at /usr/share/javascript/proxmox-backup/api-viewer/ — that path does not exist on 4.2.6. `find /usr/share -name apidoc.js` first."
+    },
+    {
+      "id": "unifi-network",
+      "vendor": "Ubiquiti",
+      "product": "UniFi Network API (OpenAPI 3.1.0)",
+      "version": "10.4.57",
+      "versionCommand": "the document's own info.version",
+      "sourceRole": "operator download",
+      "sourcePath": "network_v10.4.57_openapi.json",
+      "file": "unifi/network_v10.4.57_openapi.json",
+      "sha256": "3773947b4572b1bdc84272d3d2b9ebb5cad0d9aaa2640c3418568df97c9df59d",
+      "bytes": 409055,
+      "fetchedAt": "2026-09-22T19:11:00Z",
+      "consumedBy": [],
+      "note": "Recorded as AVAILABLE, generated from by nothing: there is no UniFi provider family in this package yet. 44 paths, 73 operations, 379 component schemas. ⛔ The document's servers[0].url embeds a console id — an account identifier. Keep it out of commits, PRs and chat."
+    },
+    {
+      "id": "unifi-site-manager",
+      "vendor": "Ubiquiti",
+      "product": "UniFi Site Manager API (OpenAPI 3.0.3)",
+      "version": "1.0.0",
+      "versionCommand": "the document's own info.version",
+      "sourceRole": "operator download",
+      "sourcePath": "site-manager_v1.0.0_openapi.json",
+      "file": "unifi/site-manager_v1.0.0_openapi.json",
+      "sha256": "16daa37f17c9489a6f579d88611bd5827232f65be603125e3c707bb4ef30ad9f",
+      "bytes": 247388,
+      "fetchedAt": "2026-09-22T19:11:00Z",
+      "consumedBy": [],
+      "note": "Recorded as AVAILABLE, generated from by nothing. 10 paths, 14 operations, 0 component schemas."
+    }
+  ]
+}

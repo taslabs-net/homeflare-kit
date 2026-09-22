@@ -1,16 +1,10 @@
 /**
- * One shape for every PVE object, so the provider can cover Proxmox rather than a corner of it.
+ * The four operations every PVE object shares, and the five handlers that wire them to Alchemy.
  *
- * ⛔ THE ALTERNATIVE IS TWENTY COPIES OF THE SAME 130 LINES. Proxmox exposes LXC, QEMU, storage,
- *   pools, users, groups, roles, ACLs, API tokens, SDN zones/vnets/subnets, firewall rules and
- *   groups, HA resources, backup and replication jobs, metric servers and notification targets.
- *   Each is the same four operations over a different path and a different form body. Written by
- *   hand, resource number six is where someone quietly drops the read-back or the isResolved guard
- *   and nobody notices until a plan lies.
- *
- * ★ SO THE FOUR OPERATIONS LIVE HERE, ONCE, AND A RESOURCE DECLARES ONLY WHAT IS DIFFERENT:
- *   where it lives, how to recognise it, and which fields are mutable. A new PVE object should be
- *   thirty lines, not a hundred and thirty.
+ * ★ THE SHAPE THEY READ IS `PveSpec`, IN resource-spec.ts, WITH THE ARGUMENT FOR IT. This file was
+ *   one file until 2026-09-22, when the vendor-constraint guard took it past the 250-line cap; the
+ *   split is by what a reader is doing — declaring an object, or changing how every object is
+ *   written — and the types are re-exported below so no importer moved.
  *
  * ⚠️ EVERY PVE ANSWER IS WRAPPED IN `{"data": ...}` AND A FAILED CALL CAN STILL BE HTTP 200 with
  *   `{"data": null}`. That is why `reconcile` below READS BACK and refuses when the object is still
@@ -19,92 +13,45 @@
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
-import { type PveForm, pve } from './client.ts';
-import type { ApiTarget, PbsTarget, PveRole, PveTarget } from './credentials.ts';
+import { pve } from './client.ts';
+import { guardForm } from './constraint-guard.ts';
+import type { PveSpec, WithApiTarget } from './resource-spec.ts';
 import { formToSend } from './update-guard.ts';
 
-/**
- * ★ WHY SEVERAL FAMILIES HERE DECLARE `defaultRemovalPolicy: 'retain'`, WRITTEN ONCE.
- *
- *   Alchemy's own convention: a few resource types default to retain "because their contents are
- *   irreplaceable" — `GitHub.Repository` and `Cloudflare.Zone` do — and those opt into deletion
- *   with `destroy()`. `retain` means the engine SKIPS `provider.delete` entirely when a resource
- *   is orphaned or destroyed: the state row is dropped, the cluster object lives on.
- *
- *   So the PVE families whose contents cannot be rebuilt from a line of TypeScript — CephOsd,
- *   CephPool, CephFs, CephDaemon, ZfsPool, Storage, NodeNetwork — carry that default. Their
- *   `delete` is FULLY IMPLEMENTED and runs the moment a caller opts in with
- *   `.pipe(RemovalPolicy.destroy())`. This is deliberately the Terraform `prevent_destroy` shape
- *   rather than a stubbed-out operation: a `delete` that silently does nothing lies to whoever is
- *   reading the plan, and the lie is discovered at the worst possible time.
- *
- * ⚠️ THE POLICY IS A DECORATION, NOT A PROP, so changing it produces NO DIFF — the resource plans
- *   as a noop and the deploy re-commits the row's policy in place. A policy change therefore takes
- *   effect from the very next deploy even though the plan shows nothing.
- */
-
-/**
- * ⛔ A RESOURCE IS PINNED TO ITS PRODUCT; ONLY THE FACTORY TAKES EITHER. The two hosts are the same
- *   two strings, so without a required discriminant TypeScript would accept a PBS host wherever a
- *   PVE one belongs — silently, with every call 401ing and `read` folding that into "absent". The
- *   whole argument is on `scheme` in credentials.ts.
- */
-/**
- * ★ WHAT EVERY OPERATION IN THIS PACKAGE NEEDS FROM THE RUNTIME, NAMED ONCE.
- *
- *   `HttpClient`, for both halves of every call: the credential is minted from OpenBao's HTTP API
- *   and the PVE call goes through the same client. That is what Alchemy's own providers do
- *   (src/Hetzner/Providers.ts builds on `FetchHttpClient.layer`, and there is no bare `fetch` in
- *   its Docker, Kubernetes or GitHub providers).
- * ★ `ChildProcessSpawner` WAS HERE UNTIL 2026-09-14, while the mint shelled out to `bao`. The HTTP
- *   client replaced that (credentials.ts), so the requirement went with it.
- *
- * ⚠️ SPELLED OUT AT EACH OF THE FORTY-ODD RESOURCES this would be a union nobody keeps in step —
- *   one file left on the old shape is a type error at the stack, far from the cause. Named here,
- *   adding a third service later is one edit.
- */
-export type PveRequirements = HttpClient.HttpClient;
-
-export type WithTarget = { target: PveTarget };
-export type WithPbsTarget = { target: PbsTarget };
-export type WithApiTarget = { target: ApiTarget };
-
-export type PveSpec<Props extends WithApiTarget, Attributes> = {
-  /** `pools/lab`, `nodes/node-b/lxc/101` — where ONE object is read, updated and deleted. */
-  readonly path: (props: Props) => string;
-  /** `pools`, `nodes/node-b/lxc` — where a NEW one is POSTed. */
-  readonly collection: (props: Props) => string;
-  /** Live JSON to attributes. Returning undefined means "this is not really there". */
-  readonly attributes: (live: Record<string, unknown>, props: Props) => Attributes | undefined;
-  /** The form PVE wants on create. ⚠️ PVE takes form encoding, not JSON. Arrays: client.ts. */
-  readonly createForm: (props: Props) => PveForm;
-  /**
-   * The form for an update, or undefined when the object has no mutable fields.
-   *
-   * ⚠️ SOME PVE OBJECTS CANNOT BE UPDATED AT ALL. Returning undefined makes a changed prop a
-   *   REPLACE rather than a silent no-op, which is the honest answer for an immutable object.
-   */
-  readonly updateForm?: (props: Props) => PveForm;
-  /** True when live already matches props. Decides noop vs update. */
-  readonly matches: (attributes: Attributes, props: Props) => boolean;
-  /**
-   * Which lease reads this family. Defaults to `read`, the 3600s auditor-shaped one.
-   *
-   * ⛔ THREE FAMILIES SET THIS TO `provision`, AND THE FAILURE IT AVOIDS IS SILENT. PVE gates some
-   *   SINGLE-OBJECT reads on the allocate privilege rather than the audit one — `/storage/{id}`,
-   *   `/cluster/sdn/zones/{zone}`, `/cluster/sdn/vnets/{vnet}` — while their COLLECTION reads
-   *   accept audit, so nothing looks wrong until a resource reads one object. `read` below folds
-   *   every failure into `undefined`, right for a 404 and wrong for a 403, so the plan says create
-   *   and PVE answers that the object already exists. Measured both ways on `local`, and written
-   *   up with the alternative that was rejected, in docs/privileges.md.
-   */
-  readonly readRole?: PveRole;
-};
+export type {
+  PveRequirements,
+  PveSpec,
+  WithApiTarget,
+  WithPbsTarget,
+  WithTarget,
+} from './resource-spec.ts';
 
 export const pveOperations = <Props extends WithApiTarget, Attributes>(
   spec: PveSpec<Props, Attributes>,
 ) => {
+  /**
+   * Both forms against their own endpoint's table.
+   *
+   * ⚠️ PRESENCE IS CHECKED ON CREATE ONLY. An update form is deliberately partial — `formToSend`
+   *   sends what changed — so requiring the vendor's required parameters there would refuse every
+   *   ordinary edit. Value rules (length, range, enum, pattern) apply to both.
+   */
+  const guardForms = (props: Props) =>
+    Effect.gen(function* () {
+      /**
+       * ⛔ THE FORM IS BUILT ONLY WHEN THERE IS A TABLE TO CHECK IT AGAINST. Calling
+       *   `spec.createForm` unconditionally would run every family's form builder on every diff,
+       *   including the fifteen that declare no `endpoint` — work nobody asked for, and a new way
+       *   for a builder that throws on an update-only path to break a plan it never touched.
+       */
+      const create = spec.endpoint?.create;
+      if (create !== undefined) yield* guardForm(create, spec.createForm(props), true);
+      const update = spec.endpoint?.update;
+      if (update === undefined) return;
+      const form = spec.updateForm?.(props);
+      if (form !== undefined) yield* guardForm(update, form, false);
+    });
+
   /** The live object, or undefined. ⚠️ A 404 and `{"data": null}` are ANSWERS, not failures. */
   const read = (props: Props) =>
     pve<Record<string, unknown>>(
@@ -128,7 +75,15 @@ export const pveOperations = <Props extends WithApiTarget, Attributes>(
         // ⚠️ A prop can still be an unresolved Output at plan time. Alchemy's own providers guard
         //   with isResolved and skip rather than guess; comparing a placeholder to a live value
         //   reports an update nobody asked for.
-        if (output === undefined || !isResolved(news)) return undefined;
+        if (!isResolved(news)) return undefined;
+        /**
+         * ⛔ THE VENDOR CHECK RUNS BEFORE THE `output === undefined` RETURN, AND THE ORDER IS THE
+         *   WHOLE FIX. `output === undefined` IS the resource Alchemy has no state for — the
+         *   create. Checking after it would leave exactly the case that failed on 2026-09-22
+         *   unchecked, and the refusal would arrive from the server, half a deploy in.
+         */
+        yield* guardForms(news);
+        if (output === undefined) return undefined;
         const live = yield* read(news);
         // ⚠️ `update`, NOT `create` — Alchemy's Diff admits only noop/update/replace. An object
         //   Alchemy has state for but the cluster does not is drift, and reconcile repairs it.
@@ -142,6 +97,10 @@ export const pveOperations = <Props extends WithApiTarget, Attributes>(
 
     reconcile: (news: Props) =>
       Effect.gen(function* () {
+        // ⚠️ CHECKED AGAIN HERE, AND NOT BECAUSE `diff` IS UNTRUSTED. `reconcile` also runs for an
+        //   ADOPTED row, whose diff answer Alchemy discards (verify/fake-engine.ts records it), and
+        //   a family that writes its own reconcile bypasses the one above entirely.
+        yield* guardForms(news);
         const live = yield* read(news);
         if (live === undefined) {
           yield* pve(

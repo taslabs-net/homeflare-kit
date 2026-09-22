@@ -176,6 +176,8 @@ const handlers = pveHandlers<GroupProps, GroupAttributes>({
    *   `resource.ts` states once in the ⛔ on adoption: a field deliberately out of `matches` is a
    *   field this resource does not manage.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pve:POST /access/groups', update: 'pve:PUT /access/groups/{groupid}' },
   matches: (attributes, props) => attributes.comment === storedComment(props.comment),
   path: (props) => `access/groups/${props.groupid}`,
   /**

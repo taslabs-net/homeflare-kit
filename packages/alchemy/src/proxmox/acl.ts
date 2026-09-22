@@ -189,6 +189,8 @@ const ops = pveOperations<AclProps, AclAttributes>({
    *   the props they came from is true by construction. An identity change is a DIFFERENT grant,
    *   which `diff` in the provider handles.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pve:PUT /access/acl', update: 'pve:PUT /access/acl' },
   matches: (attributes, props) =>
     attributes.bound && attributes.propagate === (props.propagate !== false),
   path: () => 'access/acl',
