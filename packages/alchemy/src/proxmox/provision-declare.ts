@@ -71,26 +71,32 @@ export const declareProvisionBaseline = (
       }),
     );
     const group = yield* owned(ProxmoxGroup(`${id}-mint-group`, { ...baseline.group, target }));
-    const users = yield* Effect.forEach(baseline.users, (user) =>
-      owned(
-        ProxmoxUser(`${id}-${user.lane}-user`, {
-          comment: user.comment,
-          groups: [...user.groups],
-          target,
-          userid: user.userid,
-        }),
+    // ★ `Effect.all` over mapped declarations (sequential), as cloudflare-permission-groups.ts does:
+    //   oxlint's unicorn/no-array-for-each cannot tell `Effect.forEach` from `Array#forEach`.
+    const users = yield* Effect.all(
+      baseline.users.map((user) =>
+        owned(
+          ProxmoxUser(`${id}-${user.lane}-user`, {
+            comment: user.comment,
+            groups: [...user.groups],
+            target,
+            userid: user.userid,
+          }),
+        ),
       ),
     );
-    const grants = yield* Effect.forEach(baseline.grants, (grant) =>
-      owned(
-        ProxmoxAcl(`${id}-${grant.lane}-grant`, {
-          path: '/',
-          propagate: true,
-          roleid: grant.roleid,
-          target,
-          type: 'user',
-          ugid: grant.userid,
-        }),
+    const grants = yield* Effect.all(
+      baseline.grants.map((grant) =>
+        owned(
+          ProxmoxAcl(`${id}-${grant.lane}-grant`, {
+            path: '/',
+            propagate: true,
+            roleid: grant.roleid,
+            target,
+            type: 'user',
+            ugid: grant.userid,
+          }),
+        ),
       ),
     );
     return { baseline, grants, group, role, users };
