@@ -60,7 +60,12 @@ export const PVE_CLUSTER_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
     "state": {"default":"started","enum":["started","stopped","enabled","disabled","ignored"],"type":"string"},
     "type": {"enum":["ct","vm"],"type":"string"},
   },
-  "pve:POST /cluster/ha/rules": {},
+  "pve:POST /cluster/ha/rules": {
+    "affinity": {"enum":["positive","negative"],"type":"string"},
+    "comment": {"maxLength":4096,"type":"string"},
+    "resources": {"format":"pve-ha-resource-id-list","required":true,"type":"string"},
+    "rule": {"format":"pve-configid","required":true,"type":"string"},
+  },
   "pve:POST /cluster/notifications/matchers": {
     "mode": {"default":"all","enum":["all","any"],"type":"string"},
     "name": {"format":"pve-configid","required":true,"type":"string"},
@@ -141,7 +146,13 @@ export const PVE_CLUSTER_CONSTRAINTS: Readonly<Record<string, EndpointConstraint
     "max_restart": {"default":"1","minimum":0,"type":"integer"},
     "state": {"default":"started","enum":["started","stopped","enabled","disabled","ignored"],"type":"string"},
   },
-  "pve:PUT /cluster/ha/rules/{rule}": {},
+  "pve:PUT /cluster/ha/rules/{rule}": {
+    "affinity": {"enum":["positive","negative"],"type":"string"},
+    "comment": {"maxLength":4096,"type":"string"},
+    "delete": {"format":"pve-configid-list","maxLength":4096,"type":"string"},
+    "digest": {"maxLength":64,"type":"string"},
+    "resources": {"format":"pve-ha-resource-id-list","type":"string"},
+  },
   "pve:PUT /cluster/notifications/matchers/{name}": {
     "delete": {"each":true,"format":"pve-configid","type":"array"},
     "digest": {"maxLength":64,"type":"string"},

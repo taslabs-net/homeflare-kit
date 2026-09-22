@@ -172,6 +172,14 @@ every property string — PBS `notify`, `tuning`, `maintenance-mode`, `backend`,
 schedule or a bad inner key still reaches the server, and this is the honest edge of the
 feature rather than an oversight.
 
+⛔ A parameter schema is not always one flat `properties` map. PVE spells `POST
+/cluster/ha/rules` as `allOf: [{properties}, {oneOf: […]}]` — a discriminated union — and a
+reader that asks for `parameters.properties` gets `undefined` and emits an empty table, which
+looks exactly like an endpoint with no rules. `allOf` branches MERGE (all apply); `oneOf`
+branches INTERSECT (only what every branch states identically, because enforcing a rule from
+one branch refuses a legal declaration of the other kind). `optional` is intersected toward
+optional, since its absence means required. Anything else STOPS the generator.
+
 ★ 30 parameters are arrays and 11 of them state real limits one level down, on `items`.
 Those merge into the row and the row says `each: true`, because `violations` checks every
 element of a repeated key. `required` is never taken from `items`.
