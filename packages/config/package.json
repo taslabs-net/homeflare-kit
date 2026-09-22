@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/config",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Shared tsconfig, oxlint, oxfmt, and non-npm release helpers for HomeFlare projects.",
   "license": "MIT",
   "author": "Timothy Schneider",
