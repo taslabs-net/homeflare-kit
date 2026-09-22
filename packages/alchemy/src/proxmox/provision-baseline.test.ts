@@ -84,4 +84,42 @@ describe('provisionBaseline', () => {
   test('refuses one user for both lanes', () => {
     expect(() => provisionBaseline({ readUser: 'hf-provision@pve' })).toThrow(/one user/);
   });
+
+  test('a comment per object, each defaulting to `comment` on its own', () => {
+    // \u2605 THE EXISTING-CLUSTER CASE: the group and the read user already carry their own live
+    //   comments, and only the provision user is new. One shared comment could not say this.
+    const baseline = provisionBaseline({
+      comment: 'shared',
+      groupComment: '',
+      provisionComment: 'mint target: provision (ops)',
+      readComment: 'mint target: read (ops)',
+    });
+    expect(baseline.group.comment).toBe('');
+    expect(baseline.users.map((u) => u.comment)).toEqual([
+      'mint target: provision (ops)',
+      'mint target: read (ops)',
+    ]);
+    // Overriding one leaves the others on `comment`; the generic case is still one string.
+    const one = provisionBaseline({ comment: 'shared', provisionComment: 'only this' });
+    expect([one.group.comment, ...one.users.map((u) => u.comment)]).toEqual([
+      'shared',
+      'only this',
+      'shared',
+    ]);
+    expect(provisionBaseline({ comment: 'shared' }).group.comment).toBe('shared');
+  });
+
+  test('every comment is refused by its own field name', () => {
+    const attempt = () =>
+      provisionBaseline({ groupComment: "it's", provisionComment: 'q{x}', readComment: '$(id)' });
+    expect(attempt).toThrow(/groupComment.*provisionComment.*readComment/);
+  });
+
+  test('readComment goes with its lane: unchecked, and unused, when readUser is null', () => {
+    // ⚠️ Nothing would ever paste it, so refusing it would be a refusal over a field the caller
+    //    is not using. The lane it belongs to is gone.
+    const none = provisionBaseline({ readComment: "would need quoting'", readUser: null });
+    expect(none.users.map((u) => u.lane)).toEqual(['provision']);
+    expect(() => provisionBaseline({ readComment: "would need quoting'" })).toThrow(/readComment/);
+  });
 });

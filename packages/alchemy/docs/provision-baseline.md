@@ -4,13 +4,14 @@ Every `@homeflare/alchemy/proxmox` resource runs as a short-lived PVE token that
 a **provision user**. That user, and the access it holds, is the baseline a cluster needs before a
 stack can manage anything on it. This subpath ships it as one description with two readers:
 
-| export                      | what it is                                                                                  |
-| --------------------------- | ------------------------------------------------------------------------------------------- |
-| `PROVISION_PRIVILEGES`      | the provision role's privileges: 27, sorted, the exact set                                  |
-| `PROVISION_DEFAULTS`        | the generic names in the last table, each overridable                                       |
-| `provisionBaseline(names)`  | the resolved baseline both readers use; refuses names that are not PVE-shaped               |
-| `declareProvisionBaseline`  | the baseline as `Proxmox.Role`, `Proxmox.Group`, `Proxmox.User` and `Proxmox.Acl` resources |
-| `provisionBootstrap(names)` | the one-time root commands for a new cluster or node, as a `sh` script                      |
+| export                      | what it is                                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------------------------- |
+| `PROVISION_PRIVILEGES`      | the provision role's privileges: 27, sorted, the exact set                                          |
+| `PROVISION_DEFAULTS`        | the generic names in the last table, each overridable                                               |
+| `ProvisionNames`            | those names, plus `groupComment` / `provisionComment` / `readComment`, each defaulting to `comment` |
+| `provisionBaseline(names)`  | the resolved baseline both readers use; refuses names that are not PVE-shaped                       |
+| `declareProvisionBaseline`  | the baseline as `Proxmox.Role`, `Proxmox.Group`, `Proxmox.User` and `Proxmox.Acl` resources         |
+| `provisionBootstrap(names)` | the one-time root commands for a new cluster or node, as a `sh` script                              |
 
 ## The chicken and the egg
 
@@ -52,6 +53,30 @@ So root makes it once, and the stack takes it over from there:
    clean adoption and the deploy writes nothing. From then on, a hand edit (a privilege added in
    the UI, a user dropped from the group) shows up as a diff on the next plan.
 
+## A cluster that already exists
+
+⚠️ **The common case is not a blank cluster.** One that already has a mint group and a
+read user — with their own live comments, which another stack may already declare at
+those values — must not have them rewritten by a bootstrap that only came to add a
+provision lane. A comment per object says that, and each one defaults to `comment`:
+
+```ts
+const names = {
+  role: 'LXCProvisioner',
+  groupComment: '', // live: no comment at all
+  readComment: 'mint target: read (ops)', // live: its own wording
+  provisionComment: 'mint target: provision (ops)', // the one new object
+};
+```
+
+The script then prints `group hf-mint: ok` and `user hf-read@pve: ok` and writes only
+the role, the new user and its grant. ⛔ With one shared comment it would modify all
+three, and the next deploy of the stack that declares the other two would write them
+back — a loop that looks like drift and is not.
+
+★ `readComment` goes with its lane: a `null` `readUser` drops the user, so the field is
+neither used nor checked.
+
 ## Every cluster, every node
 
 - **A new cluster:** run the bootstrap on one node, then deploy.
@@ -71,6 +96,8 @@ declareProvisionBaseline('pve', target, names); // the resources
 ```
 
 - `readUser: null` gives a baseline with no read lane.
+- `comment` is every object's comment; `groupComment`, `provisionComment` and
+  `readComment` override it one object at a time.
 - `readRole` must already exist (`PVEAuditor` is built in). The script stops before any write if
   it does not.
 - A name that is not PVE-shaped, or that would need quoting in a shell, is refused by both
