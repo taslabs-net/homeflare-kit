@@ -21,6 +21,7 @@
  */
 import { Glob } from 'bun';
 import { packForPublish } from './pack.ts';
+import { isAlreadyPublishedConflict, summaryRow } from './publish-conflict.ts';
 
 const root = new URL('..', import.meta.url);
 const rootPkg = await Bun.file(new URL('package.json', root)).json();
@@ -34,23 +35,30 @@ type Pkg = { readonly name: string; readonly version: string; readonly dir: stri
  *   printed "+ @homeflare/kit@0.1.0 published" five times, the workflow went green, and
  *   nothing reached npm — the run log contained not one `npm notice` line to say so.
  *   A step that reports success it did not verify is worse than a failing one.
+ *
+ * ⚠️ UPDATED 2026-09-23: `stream` used to mean `stdout/stderr: 'inherit'`, which shows
+ *   npm's output live but throws it away — `out` came back `''`, so nothing could ever
+ *   read what npm actually said. That is exactly what let a 409 "already published"
+ *   conflict read as an unexplained failure and abort the release (see
+ *   publish-conflict.ts). So this now PIPES either way and echoes the combined text for
+ *   a streamed call once the process exits, instead of letting the OS inherit it live.
+ *   The guarantee that comment demands — every byte npm wrote reaches the log — still
+ *   holds; only the timing changed, from live to "immediately after this command ends,"
+ *   which for one npm publish call is not a meaningful difference.
  */
 async function run(
   cmd: readonly string[],
   cwd: string,
   stream = false,
 ): Promise<{ code: number; out: string }> {
-  if (stream) {
-    const proc = Bun.spawn([...cmd], { cwd, stdout: 'inherit', stderr: 'inherit' });
-    return { code: await proc.exited, out: '' };
-  }
-
   const proc = Bun.spawn([...cmd], { cwd, stdout: 'pipe', stderr: 'pipe' });
   const [out, err] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
   ]);
-  return { code: await proc.exited, out: out + err };
+  const combined = out + err;
+  if (stream && combined !== '') process.stdout.write(combined);
+  return { code: await proc.exited, out: combined };
 }
 
 /**
@@ -109,6 +117,11 @@ for (const pattern of patterns) {
 }
 
 let published = 0;
+// ★ Packages skipped via the 409-conflict path, so the summary below can flag them
+//   distinctly rather than blending them into an ordinary "✅ on npm" row — see the
+//   note beside `isAlreadyPublishedConflict` in publish-conflict.ts on why this is the
+//   one thing that fix cannot verify for itself.
+const conflictSkipped = new Set<string>();
 
 for (const pkg of packages) {
   if (await isPublished(pkg)) {
@@ -130,7 +143,30 @@ for (const pkg of packages) {
   const flags = ['--access', 'public', ...(inCi ? ['--provenance'] : [])];
 
   const result = await run(['npm', 'publish', tarball, ...flags], pkg.dir, true);
-  if (result.code !== 0) throw new Error(`publish failed for ${pkg.name}`);
+  if (result.code !== 0) {
+    // ⚠️ MEASURED 2026-09-23, run 35887402292: `isPublished()` above raced npm's own CDN
+    //   lag (same lag as the ⚠️ note just below) and read an already-published version as
+    //   absent, so this ran `npm publish` again and npm answered 409 "already published".
+    //   The old code threw on ANY non-zero exit here and aborted the release before it
+    //   reached @homeflare/config@0.11.0 — see publish-conflict.ts for the full story,
+    //   the exact npm text, and why the match stays narrow (a 409 is not always this).
+    // ⛔ A DIFFERENT reason to fail must still abort. Only a 409 whose text says THIS
+    //   version was already staged or published is safe to treat as a no-op; anything
+    //   else — permissions, a missing package, the network, an unrelated 409 — throws
+    //   exactly as before.
+    if (!isAlreadyPublishedConflict(result, pkg.version)) {
+      throw new Error(`publish failed for ${pkg.name}`);
+    }
+    console.log(`~ ${pkg.name}@${pkg.version} already published (npm 409 after the fact)`);
+    conflictSkipped.add(pkg.name);
+    // ★ No ndjson entry, deliberately. The run that actually got this version onto npm
+    //   already wrote its git-tag event and changesets/action already created the tag and
+    //   the GitHub Release from it. Writing a second event here would tell the action to
+    //   push a tag that exists and create a release that exists — a duplicate, not a
+    //   correction. Not incrementing `published` is deliberate too: this run published
+    //   nothing for this package, it just found out late that an earlier run had.
+    continue;
+  }
 
   // ⛔ VERIFICATION IS A WARNING HERE, NOT A GATE — and that is the whole lesson.
   // ⚠️ MEASURED TWICE, 2026-09-15, AND IT COST TWO RELEASES. npm says it plainly: "Your
@@ -179,13 +215,7 @@ console.log(`\n${published} package(s) published, ${packages.length - published}
 const summaryPath = process.env['GITHUB_STEP_SUMMARY'];
 if (summaryPath !== undefined) {
   const rows = await Promise.all(
-    packages.map(async (p) => {
-      const live = await isPublished(p);
-      // ⚠️ "not visible yet" is NOT "missing". npm accepts a publish before it serves it,
-      //   so a row can read as pending on a release that worked perfectly. Say that,
-      //   rather than crying wolf on every slow propagation.
-      return `| \`${p.name}\` | ${p.version} | ${live ? '✅ on npm' : '⏳ not visible yet'} |`;
-    }),
+    packages.map(async (p) => summaryRow(p, await isPublished(p), conflictSkipped.has(p.name))),
   );
 
   const summary = [
