@@ -58,20 +58,53 @@ It still returns a plain `TypeSafeClient` — `systemOne()`, retries, parsing, a
 classes are all the official SDK's. What differs is only where the bytes go:
 
 - Sends exactly `Authorization: Bearer <token>`, `cf-aig-gateway-id`,
-  `cf-aig-no-wholesale: true`, `Content-Type: application/json`, `Accept` — measured
-  2026-09-23. The SDK's own `Authorization`, `X-TypeSafe-*`, and `User-Agent` headers
-  are never sent to Cloudflare.
-- **Version pinning is unavailable on this route** (measured 2026-09-23): Cloudflare's
-  `typesafe/jev` catalog input schema accepts only `{state, questions}` —
-  `additionalProperties: false`, no `model` field — so a requested `model` is read and
-  dropped, never forwarded, and a call is never refused because of it. The version that
-  actually answered comes back on every response as `x-homeflare-gateway-key-source`'s
-  sibling — read it via `.withResponse()`:
+  `cf-aig-no-wholesale: true`, `cf-aig-collect-log`, `Content-Type: application/json`,
+  `Accept` — measured 2026-09-23. The SDK's own `Authorization`, `X-TypeSafe-*`, and
+  `User-Agent` headers are never sent to Cloudflare, and neither `defaultHeaders` nor a
+  per-call `headers` option can add or override any of the six: the adapter builds this
+  exact set itself and never reads headers the SDK computed.
+- **Version pinning cannot be forwarded on this route** (measured 2026-09-23):
+  Cloudflare's `typesafe/jev` catalog input schema accepts only `{state, questions}` —
+  `additionalProperties: false`, no `model` field. **But a pin is still enforced, after
+  the fact** (Decision 23, 2026-09-23): pass an explicit version (anything other than
+  the aliases `jev-latest` / `jev-preview`) as `model` and, if Cloudflare answers with a
+  different version, the call rejects with the SDK's `UnprocessableEntityError` instead
+  of silently returning the wrong version's answer — that refusal happens only _after_
+  Cloudflare has run and billed the call, since it cannot be caught earlier on this
+  route. An alias, or no `model` at all (the SDK defaults it to `jev-latest`), is never
+  refused — but pointing `defaultModel` / `TYPESAFE_DEFAULT_MODEL` at a versioned id
+  makes _every_ call that omits `model` an explicit pin too (`gateway-model.ts`'s file
+  header has why). The model that actually answered comes back on every response — a
+  refusal included — as `x-homeflare-gateway-model`, alongside
+  `x-homeflare-gateway-key-source`; read either via `.withResponse()`, or narrow a
+  caught error with `modelMismatchOf()`:
 
   ```ts
-  const { data, response } = await client.systemOne({ ... }).withResponse();
-  console.log(data.model, response.headers.get('x-homeflare-gateway-key-source'));
+  import { createTypeSafeGatewayClient, modelMismatchOf, noul } from '@homeflare/typesafe';
+
+  const client = createTypeSafeGatewayClient({ accountId, token, gatewayId });
+  try {
+    const { data, response } = await client
+      .systemOne({ state: '...', questions: { billing: noul('...') }, model: 'jev-1.13.0' })
+      .withResponse();
+    console.log(data.model, response.headers.get('x-homeflare-gateway-model'));
+  } catch (err) {
+    const mismatch = modelMismatchOf(err);
+    if (mismatch) console.log('pinned', mismatch.requested, 'got', mismatch.answered);
+    else throw err;
+  }
   ```
+
+- **Gateway logging defaults off** (`collectLog?: boolean`, default `false`): sends
+  `cf-aig-collect-log: false`, so the AI Gateway keeps no log entry for this call —
+  measured 2026-09-23 against developers.cloudflare.com/ai-gateway/observability/logging
+  ("If cf-aig-collect-log is false, the entire log entry is skipped"), and **effective**
+  against the live estate gateway (`scripts/probe-collect-log.ts`, 2026-09-23): with
+  `collect_logs: true` on the gateway and 50 log entries already present in the
+  previous 24h (the control — this gateway does log by default), one real call sent
+  with the default (unset) `collectLog` produced zero log entries at or after the call,
+  checked three times over the following ~40s, and no `cf-aig-log-id` response header
+  came back either. Pass `collectLog: true` to keep a log entry for a specific call.
 
 ⛔ Not for `models.list()` or anything but `systemOne()` — the Cloudflare catalog route
 covers only that one call; everything else gets a `NotFoundError` without a network call.

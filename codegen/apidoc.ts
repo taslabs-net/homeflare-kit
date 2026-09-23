@@ -42,6 +42,12 @@ export interface VendorParam {
    *   parameter emits a row with no rule at all — see param-rules.ts.
    */
   readonly items?: VendorParam;
+  /**
+   * ⛔ A PROPERTY'S OWN ALTERNATIVES, NOT THE ENDPOINT-LEVEL `oneOf` `parameters.ts` resolves. See
+   *   `codegen/tsmap.ts`'s `VendorNode.oneOf` for the measurement; `isOptional` there reads this
+   *   same field and is the one place presence is decided, for both the types and this table.
+   */
+  readonly oneOf?: readonly VendorParam[];
 }
 
 export interface VendorEndpoint {

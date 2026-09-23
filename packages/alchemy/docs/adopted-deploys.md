@@ -57,6 +57,8 @@ API token on the cluster, just as it does for `alchemy plan`.
 | `Proxmox.CephDaemon` ⁶         | `nodes/{node}/ceph/{mon,mgr,mds}` (whole list, by `name`)       | read        | shared path, and no `updateForm`: GET, GET — no write                                                |
 | `Proxmox.CephFs` ⁶             | `nodes/{node}/ceph/fs` (whole list, by `name`)                  | read        | own: GET, present so returned untouched — no write                                                   |
 | `Proxmox.CephOsd` ⁶            | `nodes/{node}/ceph/osd` (the CRUSH tree)                        | read        | own: GET, host/class asserted; POSTs only with `dev` declared — no write                             |
+| `Proxmox.ApiToken` ⁷           | `access/users/{userid}/token/{tokenid}`                         | provision ¹ | shared path — PUT skipped on `matches`; POST refused (`reconcile` dies rather than mint one)         |
+| `Proxmox.ZfsPool` ⁷            | `nodes/{node}/disks/zfs/{name}`                                 | read        | own: GET; no PUT exists on this family; POST only with `devices` AND `raidlevel` both declared       |
 
 ¹ These object reads are gated on an allocate privilege, so the family reads with the provision
 lease (`readRole`, resource.ts). That is still a read.
@@ -83,6 +85,13 @@ declared flag reasserts a maintenance toggle on every deploy). Pinned by
 `src/proxmox/ceph-adopt.test.ts`, whose mutation check (retain flipped to destroy) shows nine
 DELETEs, one per mon, mgr and mds.
 
+⁷ Exported from the barrel 2026-09-23, decision 9. Both refuse to CREATE what they do not already
+have: ApiToken's `reconcile` dies by name rather than mint a secret it cannot store (api-token.ts);
+ZfsPool's `createPool` dies by name when `devices`/`raidlevel` are undeclared and the pool is not
+already there (zfs-pool-write.ts) — the adopt-only shape a stripe pool such as n1's `speed` needs,
+since PVE's own `raidlevel` enum has none. Pinned by `src/proxmox/api-token-adopt.test.ts` and
+`src/proxmox/zfs-pool-adopt.test.ts`, whose mutation rows show one PUT and one DELETE respectively.
+
 ## Before the fix: `Proxmox.CephPool`
 
 `reconcile` read the pool and, whenever it existed, PUT the declared `size`, `min_size`,
@@ -103,6 +112,11 @@ list shows six such tasks (2026-09-13 and 2026-09-20), one per declared pool per
 - `src/proxmox/ceph-adopt.test.ts` adopts a reference cluster's nine daemons, one CephFS and six
   OSDs (GETs only), undeclares all sixteen (no DELETE), and refuses an OSD on the wrong host
   without a write.
+- `src/proxmox/api-token-adopt.test.ts` adopts four token shapes read-only, refuses an absent
+  token, and shows a `privsep` flip PUTs exactly `comment`/`expire`/`privsep` once.
+- `src/proxmox/zfs-pool-adopt.test.ts` adopts five adopt-only pools read-only, refuses an absent
+  or vanished one before any POST, and shows `RemovalPolicy.destroy()` then undeclaring sends
+  exactly one DELETE.
 - `src/verify/verify.test.ts` pins Alchemy's own behaviour: `adopted` for a match and for a
   drift, and a reconcile for both. If an Alchemy upgrade changes that, the test fails and this
   page needs re-reading.

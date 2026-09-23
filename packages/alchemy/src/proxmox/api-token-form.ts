@@ -16,6 +16,10 @@ import type { ApiTokenAttributes, ApiTokenProps } from './api-token.ts';
  *   that costs a forever-diff: the schema gives `expire` the default "same as user", and the code
  *   never implements it. api-token.ts records what that means.
  */
+import type {
+  AccessUsersUseridTokenTokenidPostParams,
+  AccessUsersUseridTokenTokenidPutParams,
+} from './generated/pve.ts';
 import type { PveSpec } from './resource.ts';
 import { bool, int, text } from './values.ts';
 
@@ -56,10 +60,23 @@ export const fullTokenid = (props: ApiTokenProps) => `${props.userid}!${props.to
  *   required prop precisely so that it is never undeclared, so there is nothing for it to do and
  *   its `string | undefined` return would have to be asserted away to fit `Record<string,string>`.
  *   An assertion here would be a claim about the prop that the type already makes properly.
+ *
+ * ★ TYPED AGAINST THE GENERATED PUT AND POST PARAMS, NOT `Record<string, string>`, since
+ *   2026-09-23 — the `notification-matcher-form.ts` pattern: `Pick` rather than the whole type,
+ *   because neither `AccessUsersUseridTokenTokenidPutParams` nor …`PostParams` (generated/pve.ts)
+ *   carries `userid`/`tokenid` (they are path segments — see the ⛔ above) and Put alone also
+ *   carries `delete`/`regenerate`, which this family never sends. A schema drift on any of the
+ *   three fields this function DOES send fails `tsc` here rather than surfacing as a 400 on a live
+ *   cluster; api-token.test.ts pins the assignment both ways (Put and Post) without a cast.
+ *   `expire` is written as a template literal, not `String(...)`, because the generated type is
+ *   `` `${number}` ``, not `string` — `String(n)` widens to plain `string` and would not typecheck.
  */
-export const shape = (props: ApiTokenProps): Record<string, string> => ({
+export const shape = (
+  props: ApiTokenProps,
+): Pick<AccessUsersUseridTokenTokenidPutParams, 'comment' | 'expire' | 'privsep'> &
+  Pick<AccessUsersUseridTokenTokenidPostParams, 'comment' | 'expire' | 'privsep'> => ({
   comment: props.comment ?? '',
-  expire: String(props.expire),
+  expire: `${props.expire}`,
   privsep: props.privsep ? '1' : '0',
 });
 

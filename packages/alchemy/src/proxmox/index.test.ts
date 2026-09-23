@@ -7,6 +7,9 @@
  * ★ CephDaemon, CephFs and CephOsd are Resources since 2026-09-22: adopt-only by shape and retain
  *   on destroy (ceph-adopt.test.ts). ⛔ CephFlag stays Provider-only: a declared flag reasserts a
  *   maintenance toggle on every deploy (ceph-flag.ts).
+ * ★ ApiToken and ZfsPool are Resources since 2026-09-23, decision 9: ApiToken metadata-only,
+ *   ZfsPool adopt-only when `devices`/`raidlevel` are left undeclared (api-token-adopt.test.ts,
+ *   zfs-pool-adopt.test.ts).
  */
 import { expect, test } from 'bun:test';
 import { PbsDatastore, ProxmoxStorage } from './index.ts';
@@ -21,6 +24,7 @@ const resourceExports = [
   'PbsSyncJob',
   'PbsVerifyJob',
   'ProxmoxAcl',
+  'ProxmoxApiToken',
   'ProxmoxBackupJob',
   'ProxmoxCephDaemon',
   'ProxmoxCephFs',
@@ -39,6 +43,7 @@ const resourceExports = [
   'ProxmoxSdnZone',
   'ProxmoxStorage',
   'ProxmoxUser',
+  'ProxmoxZfsPool',
 ] as const;
 
 test('control-plane Resource constructors are on the public barrel', () => {
@@ -60,7 +65,5 @@ test('QEMU, NIC apply and the Ceph flag stay Provider-only', () => {
   expect(src).not.toMatch(/export \{ ProxmoxVm[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxNodeNetwork[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxNetworkApply[, }]/);
-  expect(src).not.toMatch(/export \{ ProxmoxApiToken[, }]/);
-  expect(src).not.toMatch(/export \{ ProxmoxZfsPool[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxCephFlag[, }]/);
 });

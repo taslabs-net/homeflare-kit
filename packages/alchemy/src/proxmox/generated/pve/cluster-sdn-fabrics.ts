@@ -29,7 +29,7 @@ export type ClusterSdnFabricsFabricGetReturn = readonly ({
   'lock-token'?: string;
   persistent_keepalive?: number;
   protocol: 'openfabric' | 'ospf' | 'wireguard' | 'bgp';
-  redistribute: readonly unknown[];
+  redistribute?: readonly string[];
   route_filter?: string;
 } & Record<string, unknown>)[];
 
@@ -45,7 +45,7 @@ export type ClusterSdnFabricsFabricPostParams = {
   'lock-token'?: string;
   persistent_keepalive?: `${number}`;
   protocol: 'openfabric' | 'ospf' | 'wireguard' | 'bgp';
-  redistribute: readonly string[];
+  redistribute?: readonly string[];
   route_filter?: string;
 };
 /** POST /cluster/sdn/fabrics/fabric — `data` payload after client unwrap. */
@@ -63,7 +63,7 @@ export type ClusterSdnFabricsFabricIdGetReturn = {
   'lock-token'?: string;
   persistent_keepalive?: number;
   protocol: 'openfabric' | 'ospf' | 'wireguard' | 'bgp';
-  redistribute: readonly unknown[];
+  redistribute?: readonly string[];
   route_filter?: string;
 } & Record<string, unknown>;
 
@@ -71,7 +71,17 @@ export type ClusterSdnFabricsFabricIdGetReturn = {
 export type ClusterSdnFabricsFabricIdPutParams = {
   area?: string;
   csnp_interval?: `${number}`;
-  delete: readonly string[];
+  delete?: readonly (
+    | 'ip_prefix'
+    | 'ip6_prefix'
+    | 'hello_interval'
+    | 'csnp_interval'
+    | 'route_filter'
+    | 'redistribute'
+    | 'route_map_in'
+    | 'route_map_out'
+    | 'area'
+    | 'persistent_keepalive')[];
   digest?: string;
   hello_interval?: `${number}`;
   ip6_prefix?: string;
@@ -79,7 +89,7 @@ export type ClusterSdnFabricsFabricIdPutParams = {
   'lock-token'?: string;
   persistent_keepalive?: `${number}`;
   protocol: 'openfabric' | 'ospf' | 'wireguard' | 'bgp';
-  redistribute: readonly string[];
+  redistribute?: readonly string[];
   route_filter?: string;
 };
 /** PUT /cluster/sdn/fabrics/fabric/{id} — `data` payload after client unwrap. */
@@ -96,7 +106,7 @@ export type ClusterSdnFabricsNodeGetReturn = readonly ({
   digest?: string;
   endpoint?: string;
   fabric_id: string;
-  interfaces: readonly unknown[];
+  interfaces?: readonly string[];
   ip?: string;
   ip6?: string;
   'lock-token'?: string;
@@ -115,7 +125,7 @@ export type ClusterSdnFabricsNodeFabric_idGetReturn = readonly ({
   digest?: string;
   endpoint?: string;
   fabric_id: string;
-  interfaces: readonly unknown[];
+  interfaces?: readonly string[];
   ip?: string;
   ip6?: string;
   'lock-token'?: string;
@@ -131,7 +141,7 @@ export type ClusterSdnFabricsNodeFabric_idPostParams = {
   allowed_ips?: readonly string[];
   digest?: string;
   endpoint?: string;
-  interfaces: readonly string[];
+  interfaces?: readonly string[];
   ip?: string;
   ip6?: string;
   'lock-token'?: string;
@@ -150,7 +160,7 @@ export type ClusterSdnFabricsNodeFabric_idNode_idGetReturn = {
   digest?: string;
   endpoint?: string;
   fabric_id: string;
-  interfaces: readonly unknown[];
+  interfaces?: readonly string[];
   ip?: string;
   ip6?: string;
   'lock-token'?: string;
@@ -164,10 +174,10 @@ export type ClusterSdnFabricsNodeFabric_idNode_idGetReturn = {
 /** PUT /cluster/sdn/fabrics/node/{fabric_id}/{node_id} — form/query parameters (path segments omitted). */
 export type ClusterSdnFabricsNodeFabric_idNode_idPutParams = {
   allowed_ips?: readonly string[];
-  delete: readonly string[];
+  delete?: readonly ('interfaces' | 'ip' | 'ip6' | 'allowed_ips' | 'endpoint' | 'peers')[];
   digest?: string;
   endpoint?: string;
-  interfaces: readonly string[];
+  interfaces?: readonly string[];
   ip?: string;
   ip6?: string;
   'lock-token'?: string;
@@ -197,7 +207,7 @@ export type ClusterSdnFabricsAllGetReturn = {
     'lock-token'?: string;
     persistent_keepalive?: number;
     protocol: 'openfabric' | 'ospf' | 'wireguard' | 'bgp';
-    redistribute: readonly unknown[];
+    redistribute?: readonly string[];
     route_filter?: string;
   } & Record<string, unknown>)[];
   nodes: readonly ({
@@ -205,7 +215,7 @@ export type ClusterSdnFabricsAllGetReturn = {
     digest?: string;
     endpoint?: string;
     fabric_id: string;
-    interfaces: readonly unknown[];
+    interfaces?: readonly string[];
     ip?: string;
     ip6?: string;
     'lock-token'?: string;

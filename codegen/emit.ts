@@ -8,6 +8,7 @@
  */
 import type { VendorEndpoint, VendorParam } from './apidoc.ts';
 import { type Product, isElementRule, patternRule, withItemRules } from './param-rules.ts';
+import { isOptional } from './tsmap.ts';
 
 export interface EmittedParam {
   readonly type?: string;
@@ -126,7 +127,11 @@ export const emitEndpoint = (
     if (inPath.has(name)) continue;
     const param = endpoint.params[name];
     if (param === undefined) continue;
-    const row = emitParam(param, param.optional !== 1 && param.optional !== true, product);
+    // ⚠️ `isOptional` IS THE SAME HELPER `codegen/tsmap.ts` USES FOR THE TYPES, so a property-level
+    //   `oneOf` whose every branch is optional (PVE SDN fabric `delete`/`redistribute`/`interfaces`,
+    //   measured 2026-09-23) is not tabled as required here either — a future fabric Resource's
+    //   `delete` would otherwise be refused at plan time for a key the vendor never requires.
+    const row = emitParam(param, !isOptional(param), product);
     if (row !== undefined) rows[name] = row;
   }
   return rows;
