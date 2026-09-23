@@ -73,9 +73,12 @@ being silently dropped by the wholesale `rules` PUT.
 - **A second same-named ruleset**: `DuplicateRuleset`, before reading either one.
 - **Widening `bypassActors`**: refused on update; `undefined` means unmanaged (the live
   value is carried forward unchanged), not "clear it".
-- **A live rule of an unmodeled type**, or a live `pull_request`/`requiredStatusChecks`
-  the declaration omits (rather than explicitly saying `false`): refused, naming the
-  field.
+- **A live rule of an unmodeled type**, or a live rule of ANY modeled type the
+  declaration omits by silence rather than by explicitly saying `false`: refused, naming
+  the field. This covers every rule, not only `pull_request`/`requiredStatusChecks` —
+  see `undeclaredLiveRuleRefusal`'s own comment for the concrete scenario (forgetting
+  `deletion: true` would otherwise silently drop branch-deletion protection) that made
+  this the general case rather than a special one.
 - **Adding a required check that has never reported success** on the default branch's
   current tip (checks + statuses): refused before any write. Documented limitation: this
   checks the current tip only, not full history (repository-ruleset-octokit.ts).

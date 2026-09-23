@@ -61,10 +61,24 @@ const liveRuleTypes = (live: RulesetRecord | undefined): Set<string> =>
 
 /**
  * Refuses (a) any live rule of a REFUSED type — this resource can never represent it, and the
- * PUT replaces `rules` wholesale, so silence would drop it; and (b) a live `pull_request` rule
- * the declaration says nothing about — the same "PUT replaces wholesale" hazard, for the rule
- * that carries the approval gate. `required_status_checks` gets its own, better-worded
- * `RequiredChecksOmitted` from {@link requiredChecksOmissionRefusal} instead.
+ * PUT replaces `rules` wholesale, so silence would drop it; and (b) ANY live rule of a MODELED
+ * type the declaration is silent about — same hazard, for every rule this resource owns.
+ *
+ * ⚠️ `declaredTypes` MUST BE PRESENCE, NOT TRUTHINESS — this is the fix for a real bug this
+ *   family's own design first shipped with. A plain `rules?.deletion` check cannot distinguish
+ *   "omitted" from "declared `false`", so `undeclaredLiveRuleRefusal` originally exempted every
+ *   boolean rule (`creation`/`update`/`deletion`/`requiredLinearHistory`/`requiredSignatures`/
+ *   `nonFastForward`) as "fully owned — omission IS the removal". Concretely, that meant: a
+ *   live ruleset has `deletion: true` (blocks branch deletion); a caller declares this resource
+ *   with `rules: { pullRequest: {...}, requiredStatusChecks: {...} }`, simply forgetting
+ *   `deletion: true` — an easy mistake, since omitting an optional boolean is not a type error.
+ *   The wholesale PUT would have sent `rules` without a `deletion` entry, silently REMOVING
+ *   branch-deletion protection on the very next `reconcile` — exactly the hazard this whole
+ *   guard exists to prevent, reached through the one door it left open. Found by a self-review
+ *   pass (no subagent available in this harness), not by a test; there is now one:
+ *   repository-ruleset-write-refusals.test.ts's "an omitted boolean rule" case.
+ *   `required_status_checks` still gets its own, better-worded `RequiredChecksOmitted` from
+ *   {@link requiredChecksOmissionRefusal} and is excluded here so it is not refused twice.
  */
 export function undeclaredLiveRuleRefusal(input: {
   readonly owner: string;
@@ -83,13 +97,10 @@ export function undeclaredLiveRuleRefusal(input: {
         ruleType: type,
       });
     }
-    // Plain-boolean rules (creation/update/deletion/requiredLinearHistory/requiredSignatures/
-    // nonFastForward) never reach a refusal here: this resource fully owns them, so an
-    // omission from the declaration IS the removal, not a surprise.
     if (
-      type === 'pull_request' &&
       coverage === 'modeled' &&
-      !input.declaredTypes.has('pull_request')
+      type !== 'required_status_checks' &&
+      !input.declaredTypes.has(type)
     ) {
       return new UndeclaredLiveRule({
         owner: input.owner,
@@ -100,6 +111,27 @@ export function undeclaredLiveRuleRefusal(input: {
     }
   }
   return undefined;
+}
+
+/** The wire `type` for every rule key present ON THE DECLARATION OBJECT ITSELF — `Object.hasOwn`,
+ * not truthiness, so `{ deletion: false }` (an explicit, deliberate removal) counts as declared
+ * and a bare omission does not. Feeds `undeclaredLiveRuleRefusal`'s `declaredTypes`. */
+export function declaredRuleTypes(rules: RepositoryRulesetProps['rules']): ReadonlySet<string> {
+  if (rules === undefined) return new Set();
+  const BOOLEAN_KEY_TO_TYPE: Record<string, string> = {
+    creation: 'creation',
+    update: 'update',
+    deletion: 'deletion',
+    requiredLinearHistory: 'required_linear_history',
+    requiredSignatures: 'required_signatures',
+    nonFastForward: 'non_fast_forward',
+  };
+  const types = new Set<string>();
+  for (const [key, type] of Object.entries(BOOLEAN_KEY_TO_TYPE)) {
+    if (Object.hasOwn(rules, key)) types.add(type);
+  }
+  if (Object.hasOwn(rules, 'pullRequest')) types.add('pull_request');
+  return types;
 }
 
 /** `requiredStatusChecks: undefined` while the live ruleset HAS one → refused, naming the live

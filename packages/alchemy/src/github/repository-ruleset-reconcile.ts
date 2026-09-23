@@ -14,6 +14,7 @@ import {
 import { canonicalizeWireRuleset, desiredWireRuleset } from './repository-ruleset-form.ts';
 import {
   bypassWideningRefusal,
+  declaredRuleTypes,
   newlyRequiredContexts,
   refuseUnreportedContexts,
   requiredChecksOmissionRefusal,
@@ -120,13 +121,7 @@ export const reconcileRuleset = <R = never>(input: {
       repository: repo,
       name: news.name,
       live: observed,
-      declaredTypes: new Set(
-        Object.entries({
-          pull_request: news.rules?.pullRequest !== undefined,
-        })
-          .filter(([, present]) => present)
-          .map(([type]) => type),
-      ),
+      declaredTypes: declaredRuleTypes(news.rules),
     });
     if (ruleRefusal !== undefined) return yield* Effect.fail(ruleRefusal);
 
