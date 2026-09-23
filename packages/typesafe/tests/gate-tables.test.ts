@@ -12,6 +12,7 @@ import {
   GITLEAKS_RULES_EMITTED,
   GITLEAKS_TABLE_DIGEST,
 } from '../src/gate/generated/gitleaks-rules.ts';
+import { sidekiqSensitiveUrl, slackWebhookUrl } from './gate-fixtures.ts';
 
 const GENERATED = new URL('../src/gate/generated/', import.meta.url);
 
@@ -108,6 +109,35 @@ describe('gate-tables: ReDoS budget', () => {
       const elapsed = performance.now() - started;
       expect(elapsed).toBeLessThan(BUDGET_MS);
     }
+  });
+});
+
+describe('gate-tables: hostname-dot escaping deviation (CodeQL, PR 162)', () => {
+  function ruleById(id: string) {
+    const rule = GITLEAKS_RULES_EMITTED.find((r) => r.id === id);
+    if (!rule) throw new Error(`fixture rule ${id} missing from GITLEAKS_RULES_EMITTED`);
+    return rule;
+  }
+
+  test('sidekiq-sensitive-url: hostname dots are escaped, still matches its shape, and a', () => {
+    const rule = ruleById('sidekiq-sensitive-url');
+    expect(rule.source).toContain('gems\\.contribsys\\.com');
+    expect(rule.source).toContain('enterprise\\.contribsys\\.com');
+    const re = new RegExp(rule.source, rule.flags);
+    expect(re.test(sidekiqSensitiveUrl('gate-tables-p1', 'gems'))).toBe(true);
+    expect(re.test(sidekiqSensitiveUrl('gate-tables-p2', 'enterprise'))).toBe(true);
+    // dot swapped for another character must no longer match — this is the whole point
+    // of escaping it: before the fix '.' matched any character here.
+    expect(re.test(sidekiqSensitiveUrl('gate-tables-n1', 'gems', 'X'))).toBe(false);
+    expect(re.test(sidekiqSensitiveUrl('gate-tables-n2', 'enterprise', 'X'))).toBe(false);
+  });
+
+  test('slack-webhook-url: hostname dot is escaped, still matches its shape, and a dot', () => {
+    const rule = ruleById('slack-webhook-url');
+    expect(rule.source).toContain('hooks\\.slack\\.com');
+    const re = new RegExp(rule.source, rule.flags);
+    expect(re.test(slackWebhookUrl('gate-tables-p3'))).toBe(true);
+    expect(re.test(slackWebhookUrl('gate-tables-n3', 'X'))).toBe(false);
   });
 });
 

@@ -89,6 +89,12 @@ export function renderEmitted(source: RenderSource, rules: readonly EmittedRule[
       `${rules.length} rules, rule sources as STRINGS (never regex literals) — scan.ts compiles`,
       'each lazily with new RegExp inside try/catch and fails the whole gate closed if any one',
       'does not compile at runtime.',
+      'DEVIATION: sidekiq-sensitive-url and slack-webhook-url each escape the literal "." in',
+      'their hostname (gems.contribsys.com / enterprise.contribsys.com / hooks.slack.com) so it',
+      'cannot match an arbitrary character — CodeQL "Incomplete regular expression for',
+      'hostnames" on PR 162. See HOSTNAME_DOT_ESCAPES in gen-gate-tables-rules.ts, including',
+      "the narrow IDNA-lookalike-dot caveat it records — not a blanket 'never a missed",
+      "secret' claim.",
       ...GITLEAKS_NOTICE,
     ],
   )}

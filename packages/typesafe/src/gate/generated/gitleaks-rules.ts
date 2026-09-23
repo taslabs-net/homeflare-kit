@@ -25,7 +25,7 @@ export interface DroppedGateRule {
   readonly reason: string;
 }
 
-export const GITLEAKS_TABLE_DIGEST = "7426dd084877f09ec4e39c44e9e7eaa1ff5f17dbe008192c49cd3d7d222640e9";
+export const GITLEAKS_TABLE_DIGEST = "d97abfee4e2f863bd8bdc99632a895df1fd640e9a8286d7fec08cce593ff52e9";
 
 export { GITLEAKS_RULES_EMITTED } from './gitleaks-rules-emitted.ts';
 export { GITLEAKS_RULES_DROPPED } from './gitleaks-rules-dropped.ts';
