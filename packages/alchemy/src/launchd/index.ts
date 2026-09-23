@@ -21,6 +21,8 @@ export type { LocalRunnerOptions } from './local-runner.ts';
 export { localRunner } from './local-runner.ts';
 export type { PlistDict, PlistValue } from './plist.ts';
 export { PlistError, renderPlist } from './plist.ts';
+export type { PortClaim } from './port-claims.ts';
+export { PortRefused, claimPorts, portClaimProblems } from './port-claims.ts';
 export { launchdProviders } from './providers.ts';
 export type { ExecResult, FileStat, HostRunner, HostUser, WriteOptions } from './runner.ts';
 export { HostRunnerService, canActAsRoot, hostRunnerLayer } from './runner.ts';

@@ -165,6 +165,11 @@ Nix job is booted out first. Per job:
 - **Rolling back** is the same three steps reversed: destroy (or remove) the resource, restore the
   job in the Nix config, activate.
 
+## Port collisions
+
+`claimPorts()` refuses two of a stack's own jobs on one port, in the stack program, before any
+job is declared: [launchd-ports.md](./launchd-ports.md).
+
 ## The runner
 
 `HostRunner` (see `src/launchd/runner.ts`) is `exec(argv)` (never through a shell), `readFile`,
