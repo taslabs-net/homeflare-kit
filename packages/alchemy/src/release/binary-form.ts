@@ -14,6 +14,7 @@
  */
 import type { HostFileAttributes } from '../launchd/host-file-form.ts';
 import { identityProblems, pathProblems } from '../launchd/host-file-form.ts';
+import { pinProblems } from './binary-pins.ts';
 
 /** One release archive, pinned: where it is published, and the bytes it must be. */
 export interface ReleaseArchive {
@@ -30,6 +31,17 @@ export interface ReleaseArchive {
   readonly size: number;
   /** The archive's SHA-256, lower-case hex, as the vendor's checksum file lists it. */
   readonly sha256: string;
+  /**
+   * The one directory the vendor wraps every entry in, exactly as its own archive names it —
+   * `'alertmanager-0.33.1.darwin-arm64'`, never `'alertmanager-0.33.1.darwin-arm64/'` (no trailing
+   * slash). Pinned from the walk-down, never derived from `asset` or `tag`: the vendor spells its
+   * wrapper however it likes (`darwin_arm64`, an `-enterprise` suffix, no version at all), so a
+   * computed name would drift onto a sibling the moment one vendor's naming changes. Omit it for a
+   * flat archive (Victoria, OpenBao); the tar reader then refuses a directory entry exactly as it
+   * always has (tar.ts).
+   * @default undefined — no wrapping directory; the archive is flat.
+   */
+  readonly root?: string;
 }
 
 export interface ReleaseBinaryProps {
@@ -82,6 +94,8 @@ export type PinnedDownload = {
   readonly member: string;
   /** The member's pinned SHA-256. */
   readonly memberSha256: string;
+  /** The one declared leading directory to strip, if the archive has one — `archive.root`. */
+  readonly root?: string;
 };
 
 export const DEFAULT_BINARY_MODE = 0o755;
@@ -109,6 +123,8 @@ export const pinnedDownload = (props: ReleaseBinaryProps): PinnedDownload => ({
   sha256: props.archive.sha256,
   size: props.archive.size,
   url: releaseUrl(props.archive.repo, props.archive.tag, props.archive.asset),
+  // ⚠️ exactOptionalPropertyTypes: never spell out `root: undefined`; leave the key off entirely.
+  ...(props.archive.root === undefined ? {} : { root: props.archive.root }),
 });
 
 export const modeProblems = (mode: number): string[] => {
@@ -123,83 +139,15 @@ export const modeProblems = (mode: number): string[] => {
   return found;
 };
 
-const HEX64 = /^[0-9a-f]{64}$/;
-export const MAX_ARCHIVE = 1 << 30;
-// ⛔ Strict on purpose: each is written into a URL or a path. GitHub's own owner and name alphabet.
-const REPO = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9._-]+$/;
-const SEGMENT = /^[A-Za-z0-9._-]+$/;
-// ★ ONLY WHAT THE READER HANDLES: a gzipped tar. A `.zip` or a bare binary is a new capability
-//   with its own walk-down, not a name this should accept and then fail to unpack.
-const TARBALL = /\.(tar\.gz|tgz)$/;
+// `pinProblems` (imported above, for `binaryProblems` below) and the constant it needs,
+// `MAX_ARCHIVE`, moved to binary-pins.ts, split out to stay under the file-size cap; re-exported
+// here so every importer of './binary-form.ts' is unchanged.
+export { MAX_ARCHIVE, pinProblems } from './binary-pins.ts';
 
-/** A single path segment that cannot climb, hide or name the directory itself. */
-const segmentProblem = (what: string, value: string): string | undefined =>
-  !SEGMENT.test(value) || value === '.' || value === '..'
-    ? `${what} must be one path segment of letters, digits, '.', '_' or '-': ${JSON.stringify(value)}`
-    : undefined;
-
-/** Everything wrong with the pins alone — plain strings in any declaration, resolved or not. */
-export const pinProblems = (props: {
-  readonly archive?: Partial<ReleaseArchive>;
-  readonly member?: unknown;
-  readonly sha256?: unknown;
-  readonly name?: unknown;
-}): string[] => {
-  const archive = props.archive ?? {};
-  const found: string[] = [];
-  const text = (what: string, value: unknown): string | undefined => {
-    if (typeof value === 'string') return value;
-    found.push(`${what} is required, as a plain string`);
-    return undefined;
-  };
-  const repo = text('archive.repo', archive.repo);
-  // ⚠️ `owner/..` passes the alphabet, and a URL parser normalises it away: the request would go
-  //   to `github.com/releases/…`, somewhere nobody pinned. Refused by name.
-  const repoName = repo?.slice(repo.indexOf('/') + 1);
-  if (repo !== undefined && (!REPO.test(repo) || repoName === '.' || repoName === '..'))
-    found.push(`archive.repo must be "owner/name": ${JSON.stringify(repo)}`);
-  for (const [what, value] of [
-    ['archive.tag', archive.tag],
-    ['name', props.name],
-  ] as const) {
-    const given = text(what, value);
-    const problem = given === undefined ? undefined : segmentProblem(what, given);
-    if (problem !== undefined) found.push(problem);
-  }
-  const asset = text('archive.asset', archive.asset);
-  if (asset !== undefined) {
-    const problem = segmentProblem('archive.asset', asset);
-    if (problem !== undefined) found.push(problem);
-    else if (!TARBALL.test(asset))
-      found.push(`archive.asset must be a .tar.gz or .tgz: "${asset}"`);
-  }
-  // ⛔ THE SIZE IS ALLOCATED UP FRONT (download.ts fills one buffer of exactly this many bytes), so
-  //   a typo'd size is a memory bomb in the deploying process. vmutils, the largest archive pinned,
-  //   is 123.6 MB; a gibibyte is a ceiling nothing single-binary should reach.
-  const size = archive.size;
-  if (typeof size !== 'number' || !Number.isSafeInteger(size) || size <= 0 || size > MAX_ARCHIVE) {
-    found.push(`archive.size must be the asset's byte count, 1 to ${String(MAX_ARCHIVE)}`);
-  }
-  for (const [what, value] of [
-    ['archive.sha256', archive.sha256],
-    ['sha256', props.sha256],
-  ] as const) {
-    const given = text(what, value);
-    if (given !== undefined && !HEX64.test(given))
-      found.push(`${what} must be 64 lower-case hex digits`);
-  }
-  const member = text('member', props.member);
-  // ⛔ The tar reader refuses these entries anyway; asking for one is a mistake to name at plan.
-  if (
-    member !== undefined &&
-    (member === '' || member.startsWith('/') || member.split('/').includes('..'))
-  ) {
-    found.push(`member must be a relative name inside the archive: ${JSON.stringify(member)}`);
-  }
-  return found;
-};
-
-const ARCHIVE_KEYS = ['repo', 'tag', 'asset', 'size', 'sha256'] as const;
+// ★ 'root' JOINED THIS LIST 2026-09-23. A state row from before this unit has no `root` at all
+//   (`undefined`), and `undefined !== undefined` is false, so an old row with no root and a new
+//   declaration that still has none does not move; declaring — or changing — a root does.
+const ARCHIVE_KEYS = ['repo', 'tag', 'asset', 'size', 'sha256', 'root'] as const;
 
 type Pins = Pick<ReleaseBinaryProps, 'archive' | 'member' | 'sha256'>;
 

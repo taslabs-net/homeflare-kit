@@ -1,0 +1,15 @@
+# Findings gitleaks itself would flag in files that legitimately carry vendor
+# secret-detection PATTERNS, not secrets — the same reason gitleaks' own gitleaks.toml
+# excludes itself (its global allowlist's first path entry is `gitleaks\.toml`).
+#
+# packages/typesafe/src/gate/generated/gitleaks-rules-emitted.ts is generated from
+# gitleaks' own config/gitleaks.toml (v8.30.1) — see that file's header for provenance.
+# The aws-amazon-bedrock-api-key-short-lived rule's own regex source is a fixed literal
+# string, not a variable pattern (see the rule's own entry in that file for the exact
+# text — not reproduced here, or THIS comment would trip the same rule), so committing
+# it verbatim trips gitleaks' OWN rule against the file that carries it.
+# Global fingerprint (file:rule-id:start-line) — regenerating the table renumbers
+# lines, so if `bun packages/typesafe/scripts/gen-gate-tables.ts --check` reports drift
+# alongside a new gitleaks failure on this file, re-run `gitleaks dir
+# packages/typesafe/src/gate/generated/` and update the line number below.
+packages/typesafe/src/gate/generated/gitleaks-rules-emitted.ts:aws-amazon-bedrock-api-key-short-lived:34

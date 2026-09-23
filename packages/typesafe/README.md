@@ -118,6 +118,54 @@ The value stays in OpenBao. Git only has the names:
 
 This package never reads the vault and never logs the value.
 
+## Payload gate
+
+Decision 22 (2026-09-23): a PR body or a private-repo source excerpt may be sent to
+TypeSafe only through `gate()` — it checks a caller-declared field allowlist (type,
+length and count caps) and scans for secret-shaped content, and returns either a frozen
+payload ready to send or a refusal that names a field path, a rule id and a reason —
+never the text that tripped it.
+
+```ts
+import {
+  createTypeSafeClientFromBinding,
+  gate,
+  noul,
+  type JudgmentSpec,
+} from '@homeflare/typesafe';
+
+const PR_BODY_SPEC: JudgmentSpec = {
+  body: { type: 'string', maxLength: 20000 },
+};
+
+const result = gate(PR_BODY_SPEC, {
+  state: { body: prBody },
+  questions: { risky: noul('Does this PR body describe a risky change?') },
+});
+
+if (result.kind !== 'send') {
+  // result.reason / result.path / result.rule — never the matched text.
+  throw new Error(`gate refused: ${result.reason} at ${result.path}`);
+}
+
+const client = createTypeSafeClientFromBinding(env);
+const { answers } = await client.systemOne({ state: result.state, questions: result.questions });
+```
+
+⛔ **A secret-shape refusal refuses the whole call. It never redacts and sends.** Every
+regex rule is translated from [gitleaks](https://github.com/gitleaks/gitleaks)'
+`config/gitleaks.toml` (pinned tag, provenance in
+`src/gate/generated/gitleaks-rules.ts`), plus Shannon-entropy detection
+(reimplementing [detect-secrets](https://github.com/Yelp/detect-secrets)'
+`Base64HighEntropyString` / `HexHighEntropyString`) and IANA-derived private-address
+detection. Global and per-rule gitleaks allowlists are deliberately **not** applied,
+which is stricter than gitleaks itself — so a full 40-character hex commit SHA in a PR
+body is refused too; that is documented over-refusal, not a bug.
+
+★ **The kit bakes in no estate values.** `options.internalHostnames` — an estate
+domain suffix like `*.internal` — is entirely the caller's to pass; this public package
+ships none.
+
 ## License
 
 MIT © Timothy Schneider

@@ -31,6 +31,20 @@ export { TYPESAFE_API_KEY, TYPESAFE_OPENBAO_PATH } from './location.ts';
 export { TypeSafeClient, choice, noul, score } from '@typesafe-ai/sdk';
 export type { TypeSafeClientConfig } from '@typesafe-ai/sdk';
 
+// Decision 22 (2026-09-23): PR bodies and private-repo source excerpts may be sent to
+// TypeSafe only through this gate — see src/gate/gate.ts's own header for why.
+export { gate } from './gate/gate.ts';
+export type {
+  GateOptions,
+  GatePayload,
+  GateReason,
+  GateResult,
+  JsonValue,
+  JudgmentFieldSpec,
+  JudgmentFieldType,
+  JudgmentSpec,
+} from './gate/gate.ts';
+
 /** Worker / script binding that holds the TypeSafe API key. */
 export type TypeSafeBinding = {
   readonly [TYPESAFE_API_KEY]: string;

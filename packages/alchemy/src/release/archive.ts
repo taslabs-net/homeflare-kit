@@ -24,12 +24,17 @@ import { type TarContents, tarReader } from './tar.ts';
 /** How much gzip is handed to the inflater at a time. */
 const SLICE = 1 << 20;
 
-/** Gunzip and read a tar, keeping only `wanted`. Throws ArchiveRefused. */
+/**
+ * Gunzip and read a tar, keeping only `wanted`. Throws ArchiveRefused.
+ * @param root The one declared leading directory to strip (tar.ts) — a directory-wrapped vendor
+ *   archive (the Prometheus family, measured 2026-09-23) without it, or one that carries no root.
+ */
 export const extractMembers = async (
   gzipped: Uint8Array,
   wanted: ReadonlySet<string>,
+  root?: string,
 ): Promise<TarContents> => {
-  const tar = tarReader(wanted);
+  const tar = tarReader(wanted, root);
   // ⚠️ FED IN SLICES, ON DEMAND. Enqueued whole, the 123.6 MB vmutils archive is inflated in one
   //   transform step and all 264 MB of output queue up before the first read: MEASURED 2026-09-22,
   //   a peak RSS of 1116 MB for vmalert alone under bun 1.4.0. `pull` hands over the next slice only
@@ -79,11 +84,12 @@ export const verifiedMember = async (
 ): Promise<Uint8Array> => {
   const archiveSha = sha256Hex(archive);
   if (archiveSha !== release.sha256) throw mismatch(release.url, release.sha256, archiveSha);
-  const { members, names } = await extractMembers(archive, new Set([release.member]));
+  const { members, names } = await extractMembers(archive, new Set([release.member]), release.root);
   const bytes = members.get(release.member);
   if (bytes === undefined) {
+    const under = release.root === undefined ? '' : ` under root "${release.root}/"`;
     throw new ArchiveRefused({
-      message: `${release.url} has no member named exactly "${release.member}" (it has ${names.map((n) => `"${n}"`).join(', ') || 'none'})`,
+      message: `${release.url} has no member named exactly "${release.member}"${under} (it has ${names.map((n) => `"${n}"`).join(', ') || 'none'})`,
     });
   }
   const memberSha = sha256Hex(bytes);

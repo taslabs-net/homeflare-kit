@@ -104,6 +104,7 @@ import { PAPERLESS_CONSTRAINTS_DIGEST, Tag as PaperlessTag, bodyViolations as pa
 import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, renderUnit, sshRunner } from '@homeflare/alchemy/linux';
 import { ReleaseBinary, VICTORIA_RELEASES, catalogBinary, identifyBinary, releaseProviders, releaseUrl } from '@homeflare/alchemy/release';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
+import { LITELLM_PROXY_API_KEY_ENV, LITELLM_PROXY_URL_ENV, LitellmCredentialsError, isLiteLLMPassThroughEndpoint, litellmProviders } from '@homeflare/alchemy/litellm';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 
 for (const [name, value] of Object.entries({
@@ -116,6 +117,7 @@ for (const [name, value] of Object.entries({
   PostgresDatabase, isPostgresDatabase, nameByteRefusal, quoteIdent,
   HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, ReleaseBinary, releaseProviders,
   parseVerifyArgs, verifySession, verifyStack,
+  litellmProviders, LitellmCredentialsError,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
 }
@@ -237,6 +239,21 @@ if (!/^[0-9a-f]{16}$/.test(PAPERLESS_CONSTRAINTS_DIGEST)) {
 }
 if (PaperlessTag === undefined) throw new Error('Paperless.Tag from dist is undefined');
 
+// ★ THE LITELLM SUBPATH THROUGH THE PUBLISHED FILE. Pure checks only — no LiteLLM proxy is
+//   reached: the env-var names LiteLLM's own CLI uses (credentials.ts), the resource's tag
+//   string, and the typed credentials error construct the way MeshNodeError does above.
+if (LITELLM_PROXY_URL_ENV !== 'LITELLM_PROXY_URL' || LITELLM_PROXY_API_KEY_ENV !== 'LITELLM_PROXY_API_KEY') {
+  throw new Error('litellm credential env var names from dist do not match the vendor CLI');
+}
+if (!isLiteLLMPassThroughEndpoint({ Type: 'LiteLLM.PassThroughEndpoint' }) || isLiteLLMPassThroughEndpoint({})) {
+  throw new Error('isLiteLLMPassThroughEndpoint from dist lost its resource type guard');
+}
+if (new LitellmCredentialsError({ message: 'smoke' }).message !== 'smoke') {
+  throw new Error('LitellmCredentialsError from dist did not construct');
+}
+if (typeof litellmProviders !== 'function') {
+  throw new Error('litellmProviders from dist is not callable');
+}
 // ★ THE POSTGRES SUBPATH THROUGH THE PUBLISHED FILE: a pure name-length refusal and the
 //   identifier quoter, so an export map pointing at a missing file fails here, not in a stack.
 if (!isPostgresDatabase(PostgresDatabase) || quoteIdent('a"b') !== '"a""b"') {
@@ -246,7 +263,7 @@ if (nameByteRefusal('a'.repeat(64))?.byteLength !== 64 || nameByteRefusal('a'.re
   throw new Error('postgres subpath from dist lost the NAMEDATALEN byte-length refusal');
 }
 
-console.log('all fourteen subpaths import and resolve');
+console.log('all fifteen subpaths import and resolve');
 `,
   );
 

@@ -234,6 +234,14 @@ response types are generated from it too, not hand-typed. ⛔ Every create carri
 `Unowned` on every match (never a silent adopt), and a custom field's `dataType` is refused at
 plan time rather than PATCHed or replaced: [docs/paperless.md](./docs/paperless.md).
 
+## LiteLLM — `@homeflare/alchemy/litellm`
+
+`LiteLLM.PassThroughEndpoint` declares one route on LiteLLM's proxy that forwards to an
+upstream target, generated from LiteLLM 1.100.0's own OpenAPI document. ⛔ Every pass-through
+endpoint lives in ONE `general_settings` field (a whole-list read-modify-write), a path already
+declared in `config.yaml` is refused rather than silently overridden, and a literal secret in a
+forwarded header is refused at plan: [docs/litellm.md](./docs/litellm.md).
+
 ## GitHub — `@homeflare/alchemy/github`
 
 `declareRepoPolicy` declares one repository's merge policy and its default-branch ruleset in a
