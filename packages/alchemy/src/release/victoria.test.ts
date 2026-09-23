@@ -1,12 +1,15 @@
 /**
  * The REAL Victoria data set against the vendor's own files — no network: fixtures/victoria/ holds
- * the four checksum files byte-for-byte as fetched on 2026-09-22 (each one's SHA-256 equals GitHub's
- * asset digest for it, which the data set also records), and the darwin-arm64 asset names the
- * release API listed.
+ * the four checksum files byte-for-byte as fetched on 2026-09-22 (each one's SHA-256 equalled
+ * GitHub's asset digest for it that day; the data set records it), and the darwin-arm64 asset
+ * names the release API listed.
  *
- * ★ THE CHAIN THIS PROVES: fixture bytes = the vendor file (its GitHub digest) → the parser reads
- *   exactly its lines → the data set equals those lines. A pin typed by hand, a member missed or a
- *   line the vendor added fails here, not on a host.
+ * ★ THE CHAIN THIS PROVES: fixture bytes = the recorded digest of the vendor file → the parser
+ *   reads exactly its lines → the data set equals those lines. A pin typed by hand, a member missed
+ *   or a line the vendor added fails here, not on a host.
+ * ⚠️ CONSISTENCY, NOT PROVENANCE. No network here: that the recorded digest is GITHUB'S was measured
+ *   once, on the recorded date. A change that edits a fixture and its pins together passes; review
+ *   is the gate for that.
  */
 import { describe, expect, test } from 'bun:test';
 import { sha256Hex } from '../launchd/job-form.ts';

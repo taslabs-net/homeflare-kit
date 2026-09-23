@@ -123,6 +123,11 @@ export type ReconcileOptions = {
   readonly adopt?: boolean;
   /** Progress for the deploy log — the engine's `session.note`. */
   readonly note?: (message: string) => Promise<void>;
+  /**
+   * What is wrong with the pins as the stack program DECLARED them (declared-pins.ts) — an Output
+   * there resolves to a plausible plain string by the time it reaches `props`. @default []
+   */
+  readonly declared?: readonly string[];
 };
 
 /** Install the declared binary unless it is already there, and return it as read back. */
@@ -132,7 +137,15 @@ export const reconcileBinary = async (
   props: ReleaseBinaryProps,
   options: ReconcileOptions = {},
 ): Promise<ReleaseBinaryAttributes> => {
-  const { adopt = false, note = async () => undefined } = options;
+  const { adopt = false, declared = [], note = async () => undefined } = options;
+  // ⛔ FIRST, before any host call: a digest the deploy computed is a fetch by another name.
+  if (declared.length > 0) {
+    throw refuse(
+      releaseBinaryPath(props),
+      `${declared.join('; ')}. A pin is copied into reviewed code, never computed during the ` +
+        `deploy (declared-pins.ts). ${NOTHING}`,
+    );
+  }
   const { download, want } = await desiredBinary(runner, props);
   // ⛔ The apply-time half of binary-diff.ts's in-place refusal, for an update whose `olds` say so.
   const olds = options.olds;

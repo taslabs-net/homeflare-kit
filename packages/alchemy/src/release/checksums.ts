@@ -4,9 +4,10 @@
  *
  * ★ WHY PARSE A FILE THE PROVIDER NEVER FETCHES. The pins are the ground truth at apply; this is
  *   the ground truth when a pin is WRITTEN. victoria.test.ts feeds it the exact bytes of all four
- *   recorded files (fixtures/victoria/, each matching GitHub's digest of that asset) and requires the
- *   catalog to equal what it reads, so a pin typed by hand, a line missed, or a member added by the vendor
- *   is a failing test rather than a trusted typo.
+ *   recorded files (fixtures/victoria/, each matching GitHub's digest of that asset AS READ on the
+ *   recorded date — no test re-reads it) and requires the catalog to equal what it reads, so a pin
+ *   typed by hand, a line missed, or a member added by the vendor is a failing test rather than a
+ *   trusted typo.
  * ⛔ STRICT, BECAUSE THE FORMAT IS KNOWN. Measured 2026-09-22 on all four files: `sha256sum` text
  *   mode — `<64 lowercase hex><two spaces><name>` per line, LF endings, a trailing newline, the
  *   archive on line 1 and one `-prod` member per line after it. Anything else (a `*` binary-mode

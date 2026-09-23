@@ -7,8 +7,10 @@
  *   non-literal pin fails the plan here, before a byte is fetched, whatever else is unresolved.
  *   ⚠️ A CREATE IS NEVER DIFFED: the engine plans a first deploy without calling diff, and skips
  *   the adoption probe while any prop is an Output. A pin wired from another resource's Output on
- *   a FIRST deploy therefore resolves at apply and is checked there for shape only; every later
- *   plan refuses it here.
+ *   a FIRST deploy therefore reaches no plan-time check; reconcile refuses it before any host call
+ *   or request, from the props as the stack program declared them (declared-pins.ts). 🔴 Until
+ *   2026-09-22 it was checked there for shape only, and a swapped archive with swapped digests
+ *   installed (apply-pins.test.ts).
  * ⛔ A NEW PIN IS A NEW PATH (binary-form.ts inPlaceRefusal). When the path is resolved and
  *   unchanged, a changed pin is refused here; when it is resolved and new, it is a `replace`.
  * ⚠️ WHILE THE DIRECTORY IS STILL AN OUTPUT the path is unknown, and the answer depends on whether

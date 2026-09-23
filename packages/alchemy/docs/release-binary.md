@@ -70,12 +70,18 @@ yield* LaunchdJob('vmalert', { programArguments: [vmalert.path, '--httpListenAdd
   `releaseProviders()` as to the jobs. There is no default: a binary goes
   wherever the runner reaches. It provides its own `FetchHttpClient.layer`.
 - **Your own pins work too.** The props are plain data, so a stack may write
-  them itself. They are still pinned in reviewed code and never fetched.
+  them itself. ⛔ They must be plain values in the stack program: a pin wired
+  from another resource's Output (a checksum file read at apply) is refused,
+  on a first deploy too (`apply-pins.test.ts`). ⚠️ A stack program that
+  fetches the file itself and passes plain strings cannot be told apart from
+  a reviewed pin; `catalogBinary()` over a reviewed data set is the path
+  that keeps them reviewed.
 
 ## What reconcile does, in order
 
 1. **Validate every prop**, before any host or network call. Every pin must be a
-   plain, well-formed value.
+   plain, well-formed value, as the stack program DECLARED it: by now an Output
+   has resolved to a plausible string (`declared-pins.ts`).
 2. **Check the directory exists** and is not a symlink, before any download.
 3. **Observe the path.** A symlink or directory there is refused. A file this
    resource does not own is refused without `--adopt`. A file already holding
@@ -109,15 +115,22 @@ refusal. And a plan knows exactly which bytes it will install without the
 network. Each data-set entry records the checksum file's URL, its own SHA-256
 and the date the pins were copied.
 
-⚠️ **The trust root is the GitHub release over TLS.** VictoriaMetrics publishes
-no signature, cosign bundle, SLSA provenance or GitHub attestation for these
-archives. A checksum proves integrity, not authorship.
+⚠️ **The trust root.** At apply it is the pins alone: TLS, GitHub's redirect,
+its CDN or a proxy can make a download fail, never make other bytes pass. The
+pins rest on one read of the GitHub release over TLS on the `recorded` date
+(trust on first use), checked against GitHub's own asset `digest`, then on
+review of that commit and the kit release the stack's lockfile resolves.
+VictoriaMetrics publishes no signature, cosign bundle, SLSA provenance or
+GitHub attestation for these archives: a checksum proves integrity, not
+authorship.
 
-★ **What CI proves without a network** (`victoria.test.ts`): the four checksum
-files sit in `src/release/fixtures/victoria/` byte-for-byte; each one's SHA-256
-equals GitHub's digest of that asset; the strict parser reads them; the data
-set equals what it reads; every asset is in the measured listing, and none is
-an `-enterprise`, `-cluster` or `vlutils` sibling.
+★ **What CI proves without a network** (`victoria.test.ts`) is consistency,
+not provenance: each committed checksum file in `src/release/fixtures/victoria/`
+hashes to the digest the data set records for it; the strict parser reads
+them; the data set equals what it reads; every asset is in the committed
+listing, and none is an `-enterprise`, `-cluster` or `vlutils` sibling.
+⚠️ That those recorded digests are GitHub's was measured once, not by CI. A
+change that edits a fixture and its pins together passes; review is the gate.
 
 ## Refusals
 
@@ -127,9 +140,10 @@ binary the data set does not pin, including `v1.151.0`, `1.151.0-enterprise`,
 `constructor`.
 
 At plan (the probe and `diff`), before anything is touched: a pin that is
-missing or not a plain value (an Output pin would be a fetch; ⚠️ a first deploy
-is never diffed, so there an Output pin is checked at apply for shape only); a
-repo that is not `owner/name`, or whose name is `.` or `..`; a tag, asset or
+missing or not a plain value (an Output pin would be a fetch; a first deploy is
+never diffed, so reconcile refuses it there, before any host call, from the
+props as declared); a repo that is not `owner/name`, or whose name is `.` or
+`..`; a tag, asset or
 name that is not one safe path segment; an asset that is not a `.tar.gz` or
 `.tgz` (a glob is not a name); a size that is not an integer from 1 byte to
 1 GiB (it is allocated up front); a digest that is not 64 lower-case hex; a
