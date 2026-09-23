@@ -17,8 +17,7 @@
  * That one file gives the repository:
  *
  *   · its FILES     — `bun run repo-shape:refresh` writes ci.yml, security.yml,
- *                     dependabot-automerge.yml, actionlint.yaml, dependabot.yml and
- *                     the changeset config;
+ *                     actionlint.yaml, dependabot.yml and the changeset config;
  *   · its DRIFT GATE — a `bun:test` calling `driftInRepoShape` fails on a hand edit;
  *   · its SETTINGS  — `renderRepoShape(shape).policy` is the options object
  *                     `@homeflare/alchemy`'s `declareRepoPolicy` takes, so the ruleset
@@ -34,11 +33,9 @@
  *   including the ones with no Alchemy stack, so it belongs to the package they all
  *   already have — and it takes no dependency on Alchemy or Effect to get there.
  */
-export { GROUP_BRANCH, GROUP_BRANCH_PREFIX, renderAutomerge } from './repo-shape/automerge.ts';
 export { renderCi, ACTIONLINT_VERSION, BUN_VERSION } from './repo-shape/ci.ts';
 export { renderActionlintConfig, renderChangesetConfig } from './repo-shape/companions.ts';
 export {
-  HOMEFLARE_GROUP,
   HOMEFLARE_PATTERN,
   renderDependabot,
   THIRD_PARTY_COOLDOWN_DAYS,

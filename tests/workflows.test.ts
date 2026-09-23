@@ -16,7 +16,7 @@ type Step = { readonly uses?: string; readonly run?: string };
 
 // ⚠️ NOT `as const`: test.each's signature takes a mutable array, so a readonly tuple
 //   fails to typecheck while passing at run time (TS2769).
-const workflows = ['ci', 'dependabot-automerge', 'release', 'security'];
+const workflows = ['ci', 'release', 'security'];
 
 async function stepsOf(name: string): Promise<readonly Step[]> {
   const text = await Bun.file(new URL(`../.github/workflows/${name}.yml`, import.meta.url)).text();
@@ -35,9 +35,11 @@ describe('workflows', () => {
     //   the smaller supply-chain surface, not an omission. What matters is that any
     //   action it DOES use is pinned.
     for (const ref of uses as readonly string[]) {
-      // ⛔ `owner/repo@ref` with a real ref. A bare `owner/repo` follows the default
-      //   branch, which is an unpinned supply-chain dependency.
-      expect(ref).toMatch(/^[\w.-]+\/[\w.-]+@v[\d.]+$/);
+      // ⛔ `owner/repo@ref` with a real ref — a `@vX.Y.Z` tag, OR a full 40-hex commit SHA
+      //   for the one action pinned that way on purpose (see the SHA test below). A bare
+      //   `owner/repo` follows the default branch, which is an unpinned supply-chain
+      //   dependency either way.
+      expect(ref).toMatch(/^[\w.-]+\/[\w.-]+@(v[\d.]+|[0-9a-f]{40})$/);
     }
   });
 

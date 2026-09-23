@@ -67,6 +67,41 @@ dropped `GITHUB_TOKEN`-from-env; a v1-shaped block fails by doing nothing recogn
 ★ Pins verified against the registry 2026-09-15: `checkout@v7`, `setup-node@v7`,
 `setup-bun@v2`, `changesets/action@v2.1.2`.
 
+## How a release reaches a consumer: `notify-consumers`
+
+★ **A publish dispatches `taslabs-net/homeflare-bumper`, which opens the bump PR in each
+consumer.** `release.yml`'s `notify-consumers` job runs after `release`, only when
+`needs.release.outputs.published == 'true'` — the output changesets/action itself sets,
+named exactly as its `action.yml` declares (`published`, `published-packages`; verified
+against the `v2.1.2` tag). A push that only opens the Version Packages PR has nothing to
+publish yet, so it never reaches this job.
+
+⛔ **`environment: consumers` is the trust boundary, same shape as `npm`.** `alchemy.run.ts`
+declares it, main-only. `KIT_DISPATCH_APP_KEY` stays an environment secret there — never
+Alchemy state, same reason `NPM_TOKEN` does. The job's own `permissions: {}` means its
+ambient `GITHUB_TOKEN` can do nothing at all; every write goes through the token the job
+mints for itself.
+
+⚠️ **`actions/create-github-app-token` is pinned by commit SHA, not a version tag — the
+one exception among this file's actions.** Every other `uses:` here carries a real
+version tag (`tests/workflows.test.ts` requires it); this one exchanges
+`KIT_DISPATCH_APP_KEY` for a token, so it gets the stricter pin anything that handles a
+secret should have. `tests/workflows-notify-consumers.test.ts` requires the 40-character
+SHA specifically.
+
+⛔ **The App may not exist yet, and that must never fail a release that already
+published.** `KIT_DISPATCH_APP_CLIENT_ID` is an environment variable Tim sets by hand
+(creating `homeflare-kit-dispatch` needs a browser — see the kit auto-bumper design's
+handoff). Every step past the first checks it is non-empty; when it is empty the job logs
+one `::notice::` and goes green, doing nothing, rather than turning a successful npm
+publish into a red workflow run.
+
+⚠️ **Everything the dispatch sends travels through `env`, never spliced into the shell
+line.** `PACKAGES` is `needs.release.outputs.published-packages` — changesets' own JSON,
+built from real package names and semver versions, but still untrusted enough not to
+`eval`. The command itself is fixed: `gh workflow run kit-bump.yml -R
+taslabs-net/homeflare-bumper -f packages="$PACKAGES" -f source="$SOURCE"`.
+
 ## Why the release refreshes the lockfile
 
 ⛔ **`bun pm pack` reads the workspace version from `bun.lock`, not from the sibling

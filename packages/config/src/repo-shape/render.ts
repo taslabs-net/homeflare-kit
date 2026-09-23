@@ -20,7 +20,6 @@
  *     test lives in `packages/alchemy/tests/repo-shape-policy.test.ts`, which is the one
  *     place that imports both.
  */
-import { renderAutomerge } from './automerge.ts';
 import { renderCi } from './ci.ts';
 import { renderActionlintConfig, renderChangesetConfig } from './companions.ts';
 import { renderDependabot } from './dependabot.ts';
@@ -68,7 +67,6 @@ export function renderRepoShape(shape: RepoShape): RenderedRepo {
     '.changeset/config.json': renderChangesetConfig(shape),
     '.github/dependabot.yml': renderDependabot(shape),
     '.github/workflows/ci.yml': renderCi(shape),
-    '.github/workflows/dependabot-automerge.yml': renderAutomerge(shape),
     '.github/workflows/security.yml': renderSecurity(shape),
   };
 
@@ -87,6 +85,5 @@ export const RENDERED_PATHS: readonly RenderedPath[] = [
   '.github/actionlint.yaml',
   '.github/dependabot.yml',
   '.github/workflows/ci.yml',
-  '.github/workflows/dependabot-automerge.yml',
   '.github/workflows/security.yml',
 ];

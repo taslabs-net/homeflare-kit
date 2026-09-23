@@ -7,6 +7,11 @@
  * ⛔ NPM_TOKEN STAYS A REPOSITORY SECRET. Putting it in the stack would write the
  *   token into Alchemy state. GitHub still injects repo secrets into an
  *   environment job.
+ * ★ Environment "consumers" IS THE SAME SHAPE, FOR THE SAME REASON. release.yml's
+ *   notify-consumers job mints a token from KIT_DISPATCH_APP_KEY there; the key stays an
+ *   environment secret Tim sets by hand (kit auto-bumper design, Tim 2026-09-23), never
+ *   Alchemy state. Deploying it is a handoff (scratchpad/handoffs/17-kit-consumers-env.sh)
+ *   — `alchemy deploy` refuses to run from an agent's terminal.
  * ★ STATE IS `Cloudflare.state()` — the account Durable Object already used by
  *   homeflare-forgejo, homeflare-proxmox, …. Keys live in Secrets Store as
  *   AlchemyStateStoreToken / AlchemyStateStoreEncryptionKey (the Cloudflare account,
@@ -43,6 +48,13 @@ export default Alchemy.Stack(
       owner: OWNER,
       repository: NAME,
       name: 'npm',
+      deploymentBranchPolicy: { customBranchPolicies: ['main'] },
+    });
+
+    yield* GitHub.Environment('consumers', {
+      owner: OWNER,
+      repository: NAME,
+      name: 'consumers',
       deploymentBranchPolicy: { customBranchPolicies: ['main'] },
     });
 
