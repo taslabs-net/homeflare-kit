@@ -40,8 +40,12 @@ import { ConfigError } from "@distilled.cloud/core/errors";
  * ever appended — see the module doc for why not).
  */
 export const normalizeBaseUrl = (baseUrl: string): string => {
-  const trimmed = baseUrl.replace(/\/+$/, "");
-  return trimmed.replace(/\/api$/, "");
+  // Linear on purpose: a `/\/+$/` regex backtracks polynomially on a long run of
+  // "/" that is not at the end (CodeQL js/polynomial-redos), and this is caller input.
+  let end = baseUrl.length;
+  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47) end--;
+  const trimmed = baseUrl.slice(0, end);
+  return trimmed.endsWith("/api") ? trimmed.slice(0, -4) : trimmed;
 };
 
 export interface Config {
