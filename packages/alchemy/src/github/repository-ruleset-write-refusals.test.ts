@@ -8,6 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import { makeGetOnlyFake, makeRecordingFake } from './repository-ruleset-fake-octokit.ts';
 import type { RulesetOctokit } from './repository-ruleset-probe.ts';
+import type { RepositoryRulesetRules } from './repository-ruleset.ts';
 import {
   BASE_PULL_REQUEST,
   fails,
@@ -89,6 +90,45 @@ describe('refusals make zero writes', () => {
     // Declares pullRequest but says nothing at all about `deletion` — not even `false`.
     const declaration = props({
       rules: { nonFastForward: true, pullRequest: BASE_PULL_REQUEST },
+    });
+    const error = await fails(reconcileWithOctokit(fake, declaration, { rulesetId: 1 }));
+    expect(tagOf(error)).toBe('UndeclaredLiveRule');
+  });
+
+  // Regression for a HIGH finding on this PR's own self-review: a `pullRequest` key present
+  // with an `undefined` VALUE (the shape an ordinary conditional spread produces, e.g.
+  // `{ pullRequest: cond ? {...} : undefined }`) must NOT count as "declared" the way
+  // `{ deletion: false }` does for the booleans above — `RepositoryRulesetPullRequestRule` has
+  // no `| false` variant, so there is no legitimate "declared removal" spelling for it, and
+  // `Object.hasOwn` cannot tell this from a real declaration. Before the fix, `declaredRuleTypes`
+  // used `Object.hasOwn` here too, so this case was never refused, and `buildWireRules`'s
+  // truthiness check then silently dropped the live `pull_request` rule from the wire body.
+  test('a pullRequest key present with an undefined value is NOT a declaration and blocks any write', async () => {
+    const live = {
+      id: 1,
+      name: 'main',
+      enforcement: 'active',
+      bypass_actors: [],
+      conditions: {},
+      rules: [
+        { type: 'deletion' },
+        { type: 'non_fast_forward' },
+        { type: 'pull_request', parameters: { required_approving_review_count: 2 } },
+      ],
+    };
+    const fake = makeGetOnlyFake({ widgets: live });
+    // Declares every OTHER live rule, but `pullRequest` as a present key holding `undefined` —
+    // exactly the shape `{ pullRequest: cond ? {...} : undefined }` produces at runtime.
+    // `RepositoryRulesetRules['pullRequest']` has no `| undefined` in its type (by design, see
+    // declaredRuleTypes's comment), so under this repo's `exactOptionalPropertyTypes` a literal
+    // `pullRequest: undefined` does not TYPE-CHECK here — the cast builds the exact RUNTIME
+    // shape a real caller's conditional would produce without fighting the checker over it.
+    const declaration = props({
+      rules: {
+        deletion: true,
+        nonFastForward: true,
+        pullRequest: undefined,
+      } as unknown as RepositoryRulesetRules,
     });
     const error = await fails(reconcileWithOctokit(fake, declaration, { rulesetId: 1 }));
     expect(tagOf(error)).toBe('UndeclaredLiveRule');

@@ -115,7 +115,26 @@ export function undeclaredLiveRuleRefusal(input: {
 
 /** The wire `type` for every rule key present ON THE DECLARATION OBJECT ITSELF — `Object.hasOwn`,
  * not truthiness, so `{ deletion: false }` (an explicit, deliberate removal) counts as declared
- * and a bare omission does not. Feeds `undeclaredLiveRuleRefusal`'s `declaredTypes`. */
+ * and a bare omission does not. Feeds `undeclaredLiveRuleRefusal`'s `declaredTypes`.
+ *
+ * ⚠️ `pullRequest` is deliberately NOT on this `hasOwn` list — it is checked by VALUE
+ *   (`!== undefined`) below instead, unlike the six booleans above it. `hasOwn` exists only to
+ *   let a field's type legitimately carry `| false` as "declared removal" distinct from
+ *   "omitted" (the boolean rules, and `requiredStatusChecks` — see `requiredChecksOmissionRefusal`,
+ *   which also uses a value check for the same reason). `RepositoryRulesetPullRequestRule` has no
+ *   `| false` variant (repository-ruleset.ts's `RepositoryRulesetRules`), so there is no way to
+ *   "declare pullRequest removed" — the only way to omit it is `undefined`, whether that is a
+ *   bare omission (`{ deletion: true }`) or an explicit key with an undefined value from a
+ *   conditional-spread declaration (`{ pullRequest: cond ? {...} : undefined }`, an ordinary
+ *   pattern — repo-baseline-data.ts's `requiredStatusChecks` spread is exactly this shape for a
+ *   field that already gets the value-check treatment). `Object.hasOwn` cannot tell those apart
+ *   from a real declaration: it saw `pullRequest` as present either way, so `declaredTypes` would
+ *   mark it declared, `undeclaredLiveRuleRefusal` would not refuse a live `pull_request` rule the
+ *   declaration never actually specified, and `buildWireRules`'s truthiness check on the same
+ *   `undefined` value would then omit it from the wire `rules` array the PUT sends — silently
+ *   dropping a live pull_request rule (e.g. required approvals) on the very next `reconcile`.
+ *   Regression: repository-ruleset-write-refusals.test.ts's "a pullRequest key present with an
+ *   undefined value" case. */
 export function declaredRuleTypes(rules: RepositoryRulesetProps['rules']): ReadonlySet<string> {
   if (rules === undefined) return new Set();
   const BOOLEAN_KEY_TO_TYPE: Record<string, string> = {
@@ -130,7 +149,7 @@ export function declaredRuleTypes(rules: RepositoryRulesetProps['rules']): Reado
   for (const [key, type] of Object.entries(BOOLEAN_KEY_TO_TYPE)) {
     if (Object.hasOwn(rules, key)) types.add(type);
   }
-  if (Object.hasOwn(rules, 'pullRequest')) types.add('pull_request');
+  if (rules.pullRequest !== undefined) types.add('pull_request');
   return types;
 }
 
