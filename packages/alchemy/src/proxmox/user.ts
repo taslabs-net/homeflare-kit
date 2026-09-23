@@ -186,6 +186,8 @@ const handlers = pveHandlers<UserProps, UserAttributes>({
    *   what a PUT can put back; a field that PVE reports but will not accept is drift nobody can
    *   fix, and diffing it would report an update on every plan forever.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pve:POST /access/users', update: 'pve:PUT /access/users/{userid}' },
   matches: (attributes, props) =>
     attributes.comment === (props.comment ?? '') &&
     attributes.email === (props.email ?? '') &&

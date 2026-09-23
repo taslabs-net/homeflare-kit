@@ -148,6 +148,7 @@ const ops = pveOperations<CephFsProps, CephFsAttributes>({
   /** ⚠️ The `{name}` path — longer than `path()`, deliberately. See the second ⛔ in the header. */
   collection: objectPath,
   createForm,
+  endpoint: { create: 'pve:POST /nodes/{node}/ceph/fs/{name}' }, // ⚠️ POSTed on the object.
   /**
    * ⛔ NOTHING IS COMPARED, AND THAT IS THE MOST DELIBERATE LINE IN THIS FILE. A CephFS has no
    *   readable, writable field: the index returns only the name and the pools behind it, and every

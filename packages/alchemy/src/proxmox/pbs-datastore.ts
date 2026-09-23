@@ -64,6 +64,7 @@ import {
   updateForm,
 } from './pbs-datastore-form.ts';
 import { guardBackend, guardPath, settle } from './pbs-datastore-guard.ts';
+import { guardDatastoreForms } from './pbs-datastore-endpoint.ts';
 import type { PveRequirements } from './resource.ts';
 import { formToSend } from './update-guard.ts';
 
@@ -181,7 +182,11 @@ export const PbsDatastoreProvider = () =>
          */
         diff: ({ news, output }) =>
           Effect.gen(function* () {
-            if (output === undefined || !isResolved(news)) return undefined;
+            if (!isResolved(news)) return undefined;
+            // ⛔ BEFORE the `output === undefined` return: that branch IS the create, which is the
+            //   one this family has never checked. resource.ts carries the argument in full.
+            yield* guardDatastoreForms(news);
+            if (output === undefined) return undefined;
             const live = yield* readOne(news);
             // ⚠️ `update`, not `create` — Alchemy's Diff admits only noop/update/replace, and an
             //   object Alchemy has state for but PBS does not is drift for reconcile to repair.
@@ -198,6 +203,8 @@ export const PbsDatastoreProvider = () =>
          * ⛔ THE `matches` GUARD BEFORE THE PUT IS resource.ts's, AND IT IS WHY ADOPTION IS FREE.
          */
         reconcile: Effect.fn(function* ({ news }) {
+          // ⚠️ Again here: an ADOPTED row's diff answer is discarded by Alchemy and reconcile runs.
+          yield* guardDatastoreForms(news);
           const live = yield* readOne(news);
           let upid: string | undefined;
           if (live === undefined) {

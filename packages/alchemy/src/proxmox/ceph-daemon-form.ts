@@ -28,8 +28,30 @@
  *   the task in the PVE UI before concluding the create failed.
  *
  */
-import type { CephDaemonProps } from './ceph-daemon.ts';
-import { flag } from './values.ts';
+import type { CephDaemonAttributes, CephDaemonKind, CephDaemonProps } from './ceph-daemon.ts';
+import type { EndpointPair } from './resource-spec.ts';
+import { bool, flag, num, text } from './values.ts';
+
+/**
+ * The vendor endpoint each kind is created at, as the generated tables key it.
+ *
+ * ⛔ ONE PER KIND, NOT A `{type}` PATH. PVE registers `mds`, `mgr` and `mon` as three separate
+ *   nodes with three separate parameter schemas — `hotstandby` belongs to the first and
+ *   `mon-address` to the third — so a single key would enforce one kind's rules on all three.
+ *   That is why `PveSpec['endpoint']` admits a function of props at all.
+ * ⛔ THE STRINGS MUST STAY LITERALS. `codegen/constraints.ts` finds the endpoints to table by
+ *   SCANNING THIS PACKAGE'S TEXT, so a key assembled from `props.kind` would be tabled by
+ *   nothing and `constraintsFor` would throw on the first deploy that reached it.
+ * ⚠️ THE PARAMETER NAMES DIFFER AND ARE THE VENDOR'S OWN — `{name}`, `{id}`, `{monid}`. The
+ *   generator resolves each against the schema, so a tidied-up spelling stops the build.
+ * ⚠️ NO `update` ON ANY OF THEM: none of the three has a PUT, which is why the spec declares no
+ *   `updateForm` either.
+ */
+export const DAEMON_ENDPOINTS: Readonly<Record<CephDaemonKind, EndpointPair>> = {
+  mds: { create: 'pve:POST /nodes/{node}/ceph/mds/{name}' },
+  mgr: { create: 'pve:POST /nodes/{node}/ceph/mgr/{id}' },
+  mon: { create: 'pve:POST /nodes/{node}/ceph/mon/{monid}' },
+};
 
 /**
  * PVE defaults the id to the nodename for all three kinds, and that default is resolved HERE
@@ -82,3 +104,35 @@ export const findRow = (live: unknown, props: CephDaemonProps) =>
   (Array.isArray(live) ? live : [])
     .filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null)
     .find((row) => row['name'] === daemonId(props));
+
+/**
+ * One live row as attributes, or `undefined` — "no daemon of this kind carries this name".
+ *
+ * ★ HERE RATHER THAN IN ceph-daemon.ts FOR THE REASON THAT FILE'S SIBLING EXISTS AT ALL: the
+ *   250-line cap, and a seam that is real. It reads the row `findRow` picked out of an answer its
+ *   caller already fetched, three lines above, so the lookup and the mapping now live together
+ *   instead of a function call apart.
+ *
+ * ⚠️ `undefined` WHEN NO ROW CARRIES THIS NAME: that is how the factory learns to create.
+ */
+export const daemonAttributes = (
+  live: Record<string, unknown>,
+  props: CephDaemonProps,
+): CephDaemonAttributes | undefined => {
+  const row = findRow(live, props);
+  if (row === undefined) return undefined;
+  return {
+    addr: text(row['addr']),
+    fsName: text(row['fs_name']),
+    host: text(row['host']),
+    kind: props.kind,
+    name: daemonId(props),
+    node: props.node,
+    quorum: bool(row['quorum']),
+    rank: num(row['rank'], -1),
+    service: bool(row['service']),
+    standbyReplay: bool(row['standby_replay']),
+    state: text(row['state']),
+    version: text(row['ceph_version_short']),
+  };
+};

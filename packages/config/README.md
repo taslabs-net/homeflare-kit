@@ -9,15 +9,16 @@ bun add -D @homeflare/config
 
 ## What it gives you
 
-| file                 | how to use it                                    |
-| -------------------- | ------------------------------------------------ |
-| `tsconfig.base.json` | `extends` — owned code, full strictness          |
-| `tsconfig.app.json`  | `extends` — Worker apps (source-publishing deps) |
-| `tsconfig.lib.json`  | `extends` — packages that publish types          |
-| `oxlintrc.json`      | `extends` — libraries                            |
-| `oxlintrc.app.json`  | `extends` — Worker / TanStack / Alchemy apps     |
-| `oxfmtrc.json`       | copy to `.oxfmtrc.json`                          |
-| `bunfig.toml`        | copy to `bunfig.toml`                            |
+| file                 | how to use it                                             |
+| -------------------- | --------------------------------------------------------- |
+| `tsconfig.base.json` | `extends` — owned code, full strictness                   |
+| `tsconfig.app.json`  | `extends` — Worker apps (source-publishing deps)          |
+| `tsconfig.lib.json`  | `extends` — packages that publish types                   |
+| `oxlintrc.json`      | `extends` — libraries                                     |
+| `oxlintrc.app.json`  | `extends` — Worker / TanStack / Alchemy apps              |
+| `oxfmtrc.json`       | copy to `.oxfmtrc.json`                                   |
+| `bunfig.toml`        | copy to `bunfig.toml`                                     |
+| `./versions`         | `import` — [the estate's version set](./docs/versions.md) |
 
 ## tsconfig
 
@@ -141,6 +142,52 @@ publish would inspect `@homeflare/config` itself.
 Alchemy still owns `GitHub.Repository` (visibility, `deleteBranchOnMerge`, `hasWiki`) and
 `Cloudflare.state()`. The kit `main` ruleset is `scripts/apply-main-ruleset.ts`, not an
 Alchemy resource — see `docs/github-hygiene.md`.
+
+## git hooks
+
+One hook layer for the whole estate. The behaviour ships here; a repo commits a
+delegating wrapper and nothing else.
+
+```sh
+bun add -D @homeflare/config husky
+npm pkg set scripts.prepare=husky
+bun install                                          # husky writes .husky/_
+bun node_modules/@homeflare/config/bin/hooks.ts install
+git add .husky/pre-commit .husky/pre-push package.json
+```
+
+| hook         | runs                                            | cost              |
+| ------------ | ----------------------------------------------- | ----------------- |
+| `pre-commit` | `oxfmt` + `oxlint --deny-warnings`, staged only | sub-second        |
+| `pre-push`   | the repo's own `bun run check`                  | whatever CI costs |
+
+⚠️ **pre-commit rewrites files.** It formats the staged formattable files (`.md`
+included — house `oxfmt` formats markdown, and a hook that skipped it would let an
+unformatted changeset through), names the ones it changed, and restages exactly those.
+Without the restage the commit would capture the unformatted bytes and CI would fail a
+file that reads as clean locally.
+
+⛔ **A file with unstaged edits on top is checked, never rewritten.** Restaging it would
+sweep work in progress into a commit nobody asked for.
+
+⛔ **pre-push always calls `check`, never `verify`.** `verify` means the consumer smoke
+test in this repo and a _live_ adoption verifier in `homeflare-proxmox`; a hook that
+guessed would run credentials-backed live checks on a push.
+
+⚠️ **A hook is a local convenience, not a gate.** It is skippable with `--no-verify`,
+absent from a fresh clone until `bun install` runs `prepare`, and silently inert when
+`core.hooksPath` points at a `.husky/_` that no install has created yet. The required
+checks on `main` stay the gate; this makes the cheap mistakes cheap to find.
+
+```ts
+import { problemsInHooks } from '@homeflare/config/hooks';
+
+expect(await problemsInHooks(process.cwd())).toEqual([]);
+```
+
+⛔ `problemsInHooks` is deliberately **not** part of `checkProject`. Every repo runs that
+checker from a test, so folding hook conformance in would turn every repo that has not
+adopted yet red on `main` in one commit. A repo opts in by calling this.
 
 ## License
 

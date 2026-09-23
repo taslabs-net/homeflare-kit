@@ -50,6 +50,7 @@ import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
+import { guardNetworkApply } from './apply-endpoints.ts';
 import { pveWith } from './client.ts';
 import { mint } from './credentials.ts';
 import { awaitTask, degradedReason, pendingCount } from './network-apply-read.ts';
@@ -172,6 +173,9 @@ const apply = (props: NetworkApplyProps) =>
      *   not have. The `provision` lease is 300s and non-renewable, which is far longer than a
      *   reload and is the reason no renew path is reached for.
      */
+    // ⛔ BEFORE THE MINT AND THE RELOAD. The apply takes no body, so this is the lookup rather
+    //   than a value check: a vendor that moved this endpoint fails here, not mid-ifreload.
+    yield* guardNetworkApply;
     const credential = yield* mint(props.target, 'provision');
     const upid = yield* pveWith<string>(props.target, credential, 'PUT', `nodes/${node}/network`);
     if (upid === undefined) {

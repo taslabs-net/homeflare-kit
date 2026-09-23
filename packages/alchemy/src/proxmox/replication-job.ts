@@ -224,6 +224,11 @@ const handlers = pveHandlers<ReplicationJobProps, ReplicationJobAttributes>({
    *   that is busy deleting itself, and matching that would be a noop over a vanishing object. It
    *   settles because `updateBody` actually clears the marker — see there.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: {
+    create: 'pve:POST /cluster/replication',
+    update: 'pve:PUT /cluster/replication/{id}',
+  },
   matches: (attributes, props) =>
     attributes.remove_job === '' &&
     attributes.schedule === (props.schedule ?? DEFAULT_SCHEDULE) &&

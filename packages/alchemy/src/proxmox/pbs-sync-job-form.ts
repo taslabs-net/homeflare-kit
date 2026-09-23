@@ -209,6 +209,8 @@ export const handlers = pveHandlers<SyncJobProps, SyncJobAttributes>({
    * ⚠️ `id`, `group-filter` AND `sync-direction` ARE OUT. The first is the path, a change to which
    *   is a different object; the other two are argued on their props in pbs-sync-job.ts.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pbs:POST /config/sync', update: 'pbs:PUT /config/sync/{id}' },
   matches: (attributes, props) =>
     attributes['remove-vanished'] === (props['remove-vanished'] === true) &&
     attributes.store === props.store &&

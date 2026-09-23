@@ -171,6 +171,11 @@ const handlers = pveHandlers<FirewallAliasProps, FirewallAliasAttributes>({
    *   is identity and case-only drift (see the header); `ipversion` is derived and unwritable.
    *   Comparing either would report an update that no update can settle.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: {
+    create: 'pve:POST /cluster/firewall/aliases',
+    update: 'pve:PUT /cluster/firewall/aliases/{name}',
+  },
   matches: (attributes, props) =>
     attributes.cidr === cidr(props.cidr) && attributes.comment === comment(props.comment),
   /**

@@ -210,6 +210,8 @@ const handlers = pveHandlers<SdnZoneProps, SdnZoneAttributes>({
    *   handled above by refusing to recognise a zone of the wrong one. Comparing either here would
    *   produce a diff whose update can never satisfy it.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pve:POST /cluster/sdn/zones', update: 'pve:PUT /cluster/sdn/zones/{zone}' },
   matches: (attributes, props) =>
     attributes.mtu === (props.mtu ?? 0) &&
     attributes.nodes === csv(props.nodes) &&

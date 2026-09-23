@@ -113,6 +113,57 @@ describe('run against a cluster', () => {
     expect(run.state.acl.map((g) => g.ugid)).toEqual(['hf-provision@pve']);
   });
 
+  test('an EXISTING cluster: only the new object is written, comments and all', async () => {
+    // \u2605 THE CASE ONE SHARED COMMENT COULD NOT DESCRIBE. The cluster already has the mint group
+    //   (no comment at all) and the read user (its own wording), both of them declared elsewhere
+    //   at those live values. Only the provision user is new. With per-object comments the script
+    //   writes exactly that user and its grant -- it does not touch the two that already match,
+    //   so nothing is left for another stack's next deploy to write back.
+    const existing: CliState = {
+      acl: [{ path: '/', propagate: 1, roleid: 'PVEAuditor', type: 'user', ugid: 'hf-read@pve' }],
+      // \u26a0\ufe0f '' IS "no comment live": the fake's view drops an empty one, as PVE does.
+      groups: { 'hf-mint': { comment: '' } },
+      roles: { ...freshCluster().roles, Provisioner: ['VM.Audit'] },
+      users: { 'hf-read@pve': { ...lane(['hf-mint']), comment: 'mint target: read (ops)' } },
+    };
+    const run = await runScript(
+      provisionBootstrap({
+        groupComment: '',
+        provisionComment: 'mint target: provision (ops)',
+        readComment: 'mint target: read (ops)',
+        role: 'Provisioner',
+      }),
+      existing,
+    );
+    expect(run.code).toBe(0);
+    expect(run.stdout).toContain('group hf-mint: ok');
+    expect(run.stdout).toContain('user hf-read@pve: ok');
+    // The only writes: the role widened to the baseline, the new user, and its grant.
+    expect(run.writes.map((w) => w.split(' ').slice(0, 3).join(' '))).toEqual([
+      'pveum role modify',
+      'pveum user add',
+      'pveum acl modify',
+    ]);
+    expect(run.state.groups['hf-mint']).toEqual({ comment: '' });
+    expect(run.state.users['hf-read@pve']?.comment).toBe('mint target: read (ops)');
+    expect(run.state.users['hf-provision@pve']?.comment).toBe('mint target: provision (ops)');
+    expect(run.state.roles['Provisioner']).toEqual([...PROVISION_PRIVILEGES]);
+
+    // \u26d4 NEGATIVE CONTROL, so this test can fail: the SAME cluster with one shared comment
+    //   rewrites both objects that already matched. That is the write per-object comments exist
+    //   to avoid, and it is what another stack's next deploy would put back.
+    const shared = await runScript(
+      provisionBootstrap({ comment: 'mint target: provision (ops)', role: 'Provisioner' }),
+      existing,
+    );
+    expect(shared.code).toBe(0);
+    expect(shared.writes.map((w) => w.split(' ').slice(0, 3).join(' '))).toContain(
+      'pveum group modify',
+    );
+    expect(shared.state.groups['hf-mint']).toEqual({ comment: 'mint target: provision (ops)' });
+    expect(shared.state.users['hf-read@pve']?.comment).toBe('mint target: provision (ops)');
+  });
+
   test("a site's own names flow through every step", async () => {
     const names = {
       mintGroup: 'mint',

@@ -206,6 +206,8 @@ const handlers = pveHandlers<HaRuleProps, HaRuleAttributes>({
    * ⚠️ THE COMMENT IS COMPARED AS PVE WILL STORE IT, not as it was declared — `commentText` and
    *   its ⛔ explain why a `%XX` in a comment does not survive the round trip.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pve:POST /cluster/ha/rules', update: 'pve:PUT /cluster/ha/rules/{rule}' },
   matches: (attributes, props) =>
     attributes.resources === csv(props.resources) &&
     attributes.affinity === props.affinity &&

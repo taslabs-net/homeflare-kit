@@ -143,6 +143,46 @@ guest that needs `/dev/net/tun` (a Mesh door) or `/dev/dri` is created in two st
 - **Pool membership, HA, firewall rules, snapshots, replication** are not declared here. Use their
   own resources, or manage them by hand.
 
+### ⛔ The guest's INSIDE is not reachable, and no kit Resource can change that
+
+This resource declares a guest's PVE-level config: the keys in
+`/nodes/{node}/lxc/{vmid}/config`. It cannot install a package, write a file into the guest, or
+define a service — and **neither can anything else built on PVE's API**, because PVE does not
+expose it for containers:
+
+| Reach inside  | QEMU VM                               | LXC container |
+| ------------- | ------------------------------------- | ------------- |
+| Run a command | `POST …/qemu/{vmid}/agent/exec`       | —             |
+| Write a file  | `POST …/qemu/{vmid}/agent/file-write` | —             |
+| Read a file   | `GET …/qemu/{vmid}/agent/file-read`   | —             |
+| cloud-init    | `…/qemu/{vmid}/cloudinit`             | —             |
+
+Measured across the whole `/nodes/{node}/lxc/{vmid}/…` endpoint set in
+`src/proxmox/generated/pve.ts`, and pinned by `src/proxmox/lxc-interior.test.ts` so that it fails
+the day PVE adds one. The only reach inside is `termproxy` / `vncwebsocket`, an interactive
+console for a person — not something a resource can diff.
+
+⚠️ **Sibling families are not at parity.** QEMU and LXC sit under the same `/nodes/{node}/…` tree
+and have completely different reach. Do not infer one from the other, here or anywhere else.
+
+So a generic, vendor-API-based Resource for a container's interior **cannot be written**: there is
+nothing to wrap. What is left, in the order that keeps a change declarative:
+
+1. **Bake it into the template.** Publish a rootfs tarball to `vztmpl` and name it as
+   `ostemplate`. ⚠️ `ostemplate` is create-only and never read back, so the interior gets no drift
+   detection, and changing it REPLACES the guest. Right for something stateless and immutable; a
+   decision for anything else.
+2. **A first-boot artifact** the image already carries, which configures itself from what it can
+   see locally.
+3. **A recorded one-time human step**, named as undeclared.
+
+⛔ **An exec-over-SSH resource is not option zero.** It is reachable, but not through the vendor,
+so it needs a credential and a network path _to the guest_ — and if the guest is what provides
+credentials, naming or network reach to others, that inverts the bootstrap: the new system's first
+boot then depends on its own output, and it fails when the dependency is down. The
+`@homeflare/alchemy/launchd` `HostRunner` seam is where such a runner would plug in, and the kit
+ships only `localRunner()` and `sudoRunner()` on purpose.
+
 ## Adopting
 
 ⛔ **No live guest is adopted without `adopt(true)` or `--adopt`, and an adoption never changes

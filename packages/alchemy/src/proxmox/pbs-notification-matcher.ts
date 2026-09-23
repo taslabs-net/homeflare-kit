@@ -69,6 +69,11 @@ const handlers = pveHandlers<PbsNotificationMatcherProps, NotificationMatcherAtt
   attributes: (live, props) => matcherAttributes(live, props.name),
   collection: () => 'config/notifications/matchers',
   createForm: matcherCreateForm,
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: {
+    create: 'pbs:POST /config/notifications/matchers',
+    update: 'pbs:PUT /config/notifications/matchers/{name}',
+  },
   matches: matcherMatches,
   path: (props) => `config/notifications/matchers/${props.name}`,
   updateForm: matcherUpdateForm,

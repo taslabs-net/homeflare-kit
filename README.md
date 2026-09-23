@@ -7,16 +7,16 @@
 The HomeFlare shared packages. One repo, one toolchain, one release stream — so that
 every app and Worker that consumes them is scaffolded the same way.
 
-| package                                          | what it is                                                                              |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| [`@homeflare/kit`](./packages/kit)               | Runtime-neutral primitives: env parsing, HTTP. Runs anywhere.                           |
-| [`@homeflare/cloudflare`](./packages/cloudflare) | Workers helpers: Access JWT, structured logging.                                        |
-| [`@homeflare/ui`](./packages/ui)                 | React components on [Cloudflare Kumo](https://github.com/cloudflare/kumo).              |
-| [`@homeflare/auth`](./packages/auth)             | D1 storage for official Better Auth. Not a factory.                                     |
-| [`@homeflare/typesafe`](./packages/typesafe)     | Official TypeSafe System One SDK, Worker key required.                                  |
-| [`@homeflare/alchemy`](./packages/alchemy)       | Custom Alchemy providers: Cloudflare, Proxmox, OpenBao, Forgejo, Talos, launchd, Caddy. |
-| [`@homeflare/site`](./packages/site)             | One typed site config; hostnames and addresses derived, the rest pinned.                |
-| [`@homeflare/config`](./packages/config)         | Shared tsconfig, oxlint and oxfmt presets.                                              |
+| package                                          | what it is                                                                                             |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| [`@homeflare/kit`](./packages/kit)               | Runtime-neutral primitives: env parsing, HTTP. Runs anywhere.                                          |
+| [`@homeflare/cloudflare`](./packages/cloudflare) | Workers helpers: Access JWT, structured logging.                                                       |
+| [`@homeflare/ui`](./packages/ui)                 | React components on [Cloudflare Kumo](https://github.com/cloudflare/kumo).                             |
+| [`@homeflare/auth`](./packages/auth)             | D1 storage for official Better Auth. Not a factory.                                                    |
+| [`@homeflare/typesafe`](./packages/typesafe)     | Official TypeSafe System One SDK, Worker key required.                                                 |
+| [`@homeflare/alchemy`](./packages/alchemy)       | Custom Alchemy providers: Cloudflare, Proxmox, OpenBao, Forgejo, Talos, launchd, Linux/systemd, Caddy. |
+| [`@homeflare/site`](./packages/site)             | One typed site config; hostnames and addresses derived, the rest pinned.                               |
+| [`@homeflare/config`](./packages/config)         | Shared tsconfig, oxlint and oxfmt presets.                                                             |
 
 ## Using them
 
@@ -45,6 +45,23 @@ repo: the API surface, the house versions, the traps worth knowing, and how to r
 a gap instead of hand-rolling one locally.
 
 Working **in this repo** instead? [AGENTS.md](./AGENTS.md) is the entry point.
+
+## What `@homeflare/alchemy` covers of the Proxmox API
+
+[`docs/api-coverage.md`](./docs/api-coverage.md) maps **every PVE and PBS endpoint that can change
+state** to the Resource that owns it, or to nothing. It is generated from the vendor schemas named
+in [`schemas/manifest.json`](./schemas/manifest.json) — product version and sha256 included — so it
+is a fact about a stated cluster version rather than a hand-counted list that drifts.
+[`docs/api-coverage.json`](./docs/api-coverage.json) is the complete machine-readable record.
+
+```sh
+bun run api:coverage          # regenerate from the cached vendor schemas
+bun run api:coverage --check  # writes nothing; exits 1 when the committed report is stale
+```
+
+⛔ **It is generated, so it is never hand-edited**, and `tests/api-coverage.test.ts` fails if a
+Resource claims an endpoint the schema no longer has. [`schemas/README.md`](./schemas/README.md)
+has the read-only fetch commands and why the raw documents stay out of git.
 
 ## Developing
 

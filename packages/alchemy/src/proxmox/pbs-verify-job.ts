@@ -193,6 +193,8 @@ const handlers = pveHandlers<PbsVerifyJobProps, PbsVerifyJobAttributes>({
    * ⚠️ `rechecks` IS ABSENT HERE ON PURPOSE. It is a rendering of the two fields on the lines
    *   above; comparing it too would report the same drift twice.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pbs:POST /config/verify', update: 'pbs:PUT /config/verify/{id}' },
   matches: (attributes, props) =>
     attributes.store === props.store &&
     // ⚠️ `null` IS COMPARED AGAINST `''`, NOT SKIPPED. A parked job is a declaration like any

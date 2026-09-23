@@ -53,7 +53,8 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { addressList, headerList, portOf, shape } from './notification-target-form.ts';
+import { targetEndpoint } from './notification-target-endpoint.ts';
+import { addressList, createShape, headerList, portOf, shape } from './notification-target-form.ts';
 import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
 import { text } from './values.ts';
 
@@ -180,7 +181,9 @@ const handlers = pveHandlers<NotificationTargetProps, NotificationTargetAttribut
   }),
   collection: (props) => `cluster/notifications/endpoints/${props.type}`,
   /** ⛔ `name` is create-only: PVE takes it in the body once, and in the path forever after. */
-  createForm: (props) => ({ ...shape(props), name: props.name }),
+  createForm: createShape,
+  /** ⚠️ A function, because the type picks the endpoint — see `targetEndpoint`. */
+  endpoint: targetEndpoint,
   /**
    * Each line reads "not declared, or equal"; `disable` is the one field with no undeclared case.
    *

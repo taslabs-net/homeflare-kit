@@ -54,6 +54,9 @@ export interface ProxmoxVm extends Resource<
 
 export const ProxmoxVm = Resource<ProxmoxVm>('Proxmox.Vm');
 
+/** ★ Exported so the constraint proof can run the REAL create form, not a retyped copy of it. */
+export const createForm = (props: VmProps) => ({ ...shape(props), vmid: String(props.vmid) });
+
 const shape = (props: VmProps) => ({
   cores: String(props.cores ?? 1),
   memory: String(props.memory ?? 512),
@@ -74,7 +77,12 @@ const handlers = pveHandlers<VmProps, VmAttributes>({
     vmid: props.vmid,
   }),
   collection: (props) => `nodes/${props.node}/qemu`,
-  createForm: (props) => ({ ...shape(props), vmid: String(props.vmid) }),
+  createForm,
+  /** The vendor rules both forms are checked against at plan time — resource-spec.ts. */
+  endpoint: {
+    create: 'pve:POST /nodes/{node}/qemu',
+    update: 'pve:PUT /nodes/{node}/qemu/{vmid}/config',
+  },
   matches: (attributes, props) =>
     attributes.name === (props.name ?? `vm${String(props.vmid)}`) &&
     attributes.memory === (props.memory ?? 512) &&
