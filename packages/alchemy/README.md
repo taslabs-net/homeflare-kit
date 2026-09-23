@@ -164,6 +164,31 @@ SystemdUnit('thing', { name: 'thing.service', sections: [...], restartOn: [confi
 - ⛔ **The directive set is systemd's:** unit files render verbatim; nothing here invents a schema.
 - Guide, the measured `systemctl` shapes and the limits: [docs/linux-host.md](./docs/linux-host.md).
 
+## Release binaries — `@homeflare/alchemy/release`
+
+`ReleaseBinary` installs one binary out of a pinned release archive into a directory you declare,
+verified twice. The pins are props; each vendor's pinned versions are a data set beside it
+(`VICTORIA_RELEASES` is the first). `releaseProviders(runner)` provides it.
+
+```ts
+const request = {
+  package: 'vmutils',
+  version: '1.151.0',
+  platform: 'darwin-arm64',
+  binary: 'vmalert',
+};
+ReleaseBinary('vmalert', { ...catalogBinary(VICTORIA_RELEASES, request), directory: dir.path });
+```
+
+- ⛔ **It installs; it never starts.** Put `binary.path` in your job's argv; that orders the two.
+- ⛔ **Pinned in code, never fetched:** a version the data set does not pin fails the plan. Exact
+  asset names, the archive verified before unpacking and the binary before writing, only the
+  declared member extracted, one writer (`HostRunner.writeFileAtomic`).
+- Guide: [docs/release-binary.md](./docs/release-binary.md) · data sets and adding a vendor:
+  [docs/release-binary-catalogs.md](./docs/release-binary-catalogs.md) · measured:
+  [docs/release-binary-measured.md](./docs/release-binary-measured.md) · upstream:
+  [docs/release-binary-upstream.md](./docs/release-binary-upstream.md).
+
 ## Caddy — `@homeflare/alchemy/caddy`
 
 `CaddyConfig` declares a running Caddy's config as Caddyfile text, applied through Caddy's own admin

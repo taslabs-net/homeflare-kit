@@ -21,6 +21,17 @@
  * ★ `install -S`: install(1) on macOS 27.2 (read 2026-09-21) always writes a temp file in the
  *   target directory and renames it, so the file is never torn, and -S adds the fsync that
  *   localRunner's `handle.sync()` does.
+ * ⚠️ BUT IT CHMODS AFTER THE RENAME. MEASURED 2026-09-22 (an lstat poller racing
+ *   `/usr/bin/install -S -m 0755`, 300 MB, six runs, target absent and present): the new inode
+ *   is visible at the path as 0600, then 0755 0.2–0.4 ms later. Only ever narrower than declared.
+ *   ⚠️ REASONED NOT MEASURED: a launchd start inside that window gets EACCES and retries after its
+ *   throttle, and an install killed inside it leaves a root-owned 0600 file the operator cannot
+ *   read back. Closing it needs a second privileged step (install to a temp name, then rename),
+ *   which is a change to this allowlist and wants its own red team.
+ * ⚠️ AND IT COPIES XATTRS, com.apple.quarantine included (MEASURED 2026-09-22: a quarantined
+ *   source installed as a quarantined target). The staged file is written by this process, and
+ *   node:fs writes here carried only com.apple.provenance (measured the same day) — so nothing
+ *   is quarantined today, but a quarantined staging file would be installed quarantined.
  * ⚠️ REASONED, NOT MEASURED: sudo's failure text (sudo-said.ts has the strings and their sources).
  * ⛔ EVERY CHECK BEFORE SUDO ALSO RUNS AT PLAN TIME (`checkWrite`, 2026-09-21): the mode, the
  *   directories from the prefix down, the read-back. Reads only, as the operator — never sudo.

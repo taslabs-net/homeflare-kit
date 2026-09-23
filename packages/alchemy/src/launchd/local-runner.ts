@@ -130,7 +130,9 @@ export const localRunner = (options: LocalRunnerOptions = {}): HostRunner => {
       try {
         const stats = await lstat(path);
         return {
+          dev: stats.dev,
           gid: stats.gid,
+          ino: stats.ino,
           kind: kindOf(stats),
           mode: stats.mode & 0o7777,
           size: stats.size,
