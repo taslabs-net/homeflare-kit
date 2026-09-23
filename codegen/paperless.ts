@@ -189,10 +189,14 @@ const main = async (): Promise<void> => {
         `family; this file covers only /api/${family.area}/.`,
     ),
   );
+  // ⛔ `t.file` ALREADY ENDS IN `.ts` (`emitFamilyModule`'s own return shape, openapi-types.ts) —
+  //   no rewrite needed, matching `paperless-render.ts#renderIndex`'s import line for the
+  //   constraints index. A CodeQL scan on PR 163 flagged an earlier `.replace(/\.ts$/, '.ts')`
+  //   here as a no-op substring replacement; this is that line with the dead call removed.
   const typesIndex =
     `/**\n * Every generated Paperless taxonomy type, re-exported — DO NOT EDIT BY HAND.\n *\n` +
     ` * Run: bun codegen/paperless.ts\n */\n${types
-      .map((t) => `export * from './${t.file.replace(/\.ts$/, '.ts')}';`)
+      .map((t) => `export * from './${t.file}';`)
       .join('\n')}\n`;
 
   const targets = [
