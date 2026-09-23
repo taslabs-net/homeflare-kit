@@ -42,7 +42,11 @@ export const API_PATH = "/api";
 
 /** Normalize an OPNsense origin (or an already-complete `/api` root, accepted for caller convenience) down to the bare origin every generated route's own `uri` already assumes. */
 export const normalizeBaseUrl = (baseUrl: string): string => {
-  const trimmed = baseUrl.replace(/\/+$/, "");
+  // A loop, not a trailing-slash regex: that backtracks polynomially on a long
+  // run of "/" (CodeQL js/polynomial-redos), the same fix as distilled-netbox's.
+  let end = baseUrl.length;
+  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47) end--;
+  const trimmed = baseUrl.slice(0, end);
   return trimmed.endsWith(API_PATH)
     ? trimmed.slice(0, -API_PATH.length)
     : trimmed;
