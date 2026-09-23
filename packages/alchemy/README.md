@@ -218,6 +218,16 @@ every cluster needs first. What it never does to a guest, and why: [docs/proxmox
 against a table generated from NetBox's own OpenAPI document before the request is built.
 ⛔ Adopt-first, `retain` on removal, and read/write shapes that differ: [docs/netbox.md](./docs/netbox.md).
 
+## Paperless — `@homeflare/alchemy/paperless`
+
+`Tag`, `DocumentType`, `StoragePath` and `CustomField` — the taxonomy Paperless-ngx writes
+through Django's internal models, create-or-update and never deleted. Every write is checked
+against a table generated from Paperless-ngx's own served OpenAPI document, and the request/
+response types are generated from it too, not hand-typed. ⛔ Every create carries `owner`
+(null when undeclared — omitting it lets the vendor default to the token user), `read` answers
+`Unowned` on every match (never a silent adopt), and a custom field's `dataType` is refused at
+plan time rather than PATCHed or replaced: [docs/paperless.md](./docs/paperless.md).
+
 ## GitHub — `@homeflare/alchemy/github`
 
 `declareRepoPolicy` declares one repository's merge policy and its default-branch ruleset in a

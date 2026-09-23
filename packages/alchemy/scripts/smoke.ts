@@ -98,6 +98,7 @@ import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { PROVISION_PRIVILEGES, PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, ProxmoxNotificationMatcher, alertmanagerAlertBody, declareProvisionBaseline, provisionBootstrap } from '@homeflare/alchemy/proxmox';
 import { NETBOX_CONSTRAINTS_DIGEST, NetboxPrefix, bodyViolations, constraintsFor } from '@homeflare/alchemy/netbox';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
+import { PAPERLESS_CONSTRAINTS_DIGEST, Tag as PaperlessTag, bodyViolations as paperlessBodyViolations, constraintsFor as paperlessConstraintsFor } from '@homeflare/alchemy/paperless';
 import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, renderUnit, sshRunner } from '@homeflare/alchemy/linux';
 import { ReleaseBinary, VICTORIA_RELEASES, catalogBinary, identifyBinary, releaseProviders, releaseUrl } from '@homeflare/alchemy/release';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
@@ -109,6 +110,7 @@ for (const [name, value] of Object.entries({
   PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxNotificationMatcher,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
   NetboxPrefix, bodyViolations, constraintsFor, NETBOX_CONSTRAINTS_DIGEST,
+  PaperlessTag, paperlessBodyViolations, paperlessConstraintsFor, PAPERLESS_CONSTRAINTS_DIGEST,
   HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, ReleaseBinary, releaseProviders,
   parseVerifyArgs, verifySession, verifyStack,
 })) {
@@ -220,7 +222,19 @@ if (!/^[0-9a-f]{16}$/.test(NETBOX_CONSTRAINTS_DIGEST)) {
   throw new Error('NetBox constraint digest from dist is not a digest');
 }
 
-console.log('all twelve subpaths import and resolve');
+// ★ THE PAPERLESS TABLE THROUGH THE PUBLISHED FILE, same reasoning as NetBox's above.
+if (paperlessConstraintsFor('paperless:POST /api/tags/')['name']?.maxLength !== 128) {
+  throw new Error('Paperless constraint table from dist lost the vendor maxLength');
+}
+if (paperlessBodyViolations('paperless:POST /api/tags/', { name: 'x'.repeat(129) }, true).length !== 1) {
+  throw new Error('Paperless constraint reader from dist stopped refusing an over-long name');
+}
+if (!/^[0-9a-f]{16}$/.test(PAPERLESS_CONSTRAINTS_DIGEST)) {
+  throw new Error('Paperless constraint digest from dist is not a digest');
+}
+if (PaperlessTag === undefined) throw new Error('Paperless.Tag from dist is undefined');
+
+console.log('all thirteen subpaths import and resolve');
 `,
   );
 

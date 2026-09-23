@@ -29,6 +29,9 @@ export interface JsonSchema {
   readonly pattern?: string;
   readonly format?: string;
   readonly default?: unknown;
+  /** ⚠️ `openapi-types.ts` reads both — a request type drops a `readOnly` field, never emits a `writeOnly` one. */
+  readonly readOnly?: boolean;
+  readonly writeOnly?: boolean;
   readonly description?: string;
 }
 
