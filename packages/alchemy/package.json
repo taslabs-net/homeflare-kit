@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/alchemy",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Custom Alchemy providers for Cloudflare, Proxmox, OpenBao, Forgejo, Talos, launchd and Caddy, and a verifier that proves adoptions are no-ops.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/alchemy#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
