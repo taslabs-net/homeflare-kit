@@ -84,11 +84,16 @@ yield* LaunchdJob('vmalert', { programArguments: [vmalert.path, '--httpListenAdd
    has resolved to a plausible string (`declared-pins.ts`).
 2. **Check the directory exists** and is not a symlink, before any download.
 3. **Observe the path.** A symlink or directory there is refused. A file this
-   resource does not own is refused without `--adopt`. A file already holding
-   the pinned bytes, mode and owner is done: no download, no write. ⚠️ At plan
-   the probe calls even that file `Unowned`. At apply, when a prop was an Output
-   and the probe never ran, it is accepted as the resume of an interrupted
-   install. That is Host.File's rule (`file-converge.ts`).
+   resource does not own is refused without `--adopt`, even one holding the
+   pinned bytes: at plan the probe calls it `Unowned`, and at apply, when a
+   prop was an Output and the probe never ran, reconcile refuses it the same
+   way (`binary-claim.ts`). ⛔ A file with other bytes is refused under
+   `--adopt` too, at plan and at apply: adopting it would overwrite it in
+   place, and the plan would print that as `adopted`. Under `--adopt`, the
+   pinned bytes are kept: no download, and a write only to fix mode or owner.
+   ⚠️ A rename is not an adoption: declare it with `renamedFrom()`. Under
+   `--adopt` the old name's delete removes the file the new name just claimed
+   (measured, `adopt-parity.test.ts`).
 4. **Download** `https://github.com/<repo>/releases/download/<tag>/<asset>`,
    into memory, never past the pinned size. Two binaries from one archive at
    once share one download.
@@ -152,9 +157,21 @@ mode that is setuid, setgid, sticky, group- or world-writable, or not
 owner-executable; an owner or group that is not a valid name or id; a new pin
 at the same path.
 
+⚠️ **Not on a first deploy with `directory: dir.path`.** Alchemy neither
+probes nor diffs a create whose props hold an Output, so there every check
+above runs at apply, after `HostDirectory` has made the directory (measured: a
+group-writable mode planned `create`, then the apply ran `mkdir` and refused).
+Nothing is written to the binary's path. A failed first install never bricks
+the next plan: the recovery read of its row answers "nothing recovered"
+(`binary-read.ts`).
+
+At plan, only under `--adopt` (the probe then hands `diff` what it read): a
+file at the path that is not the pinned binary, or not a regular file.
+
 At apply, before the download: a missing directory, or one that is a symlink; a
 symlink or directory at the path; a file the resource does not own (without
-`--adopt`); a chown without root.
+`--adopt`, even the pinned bytes; with it, anything but the pinned bytes); a
+chown without root.
 
 From the vendor: a status other than 200; a body past or short of the pinned
 size; an archive whose SHA-256 is not the pin; an archive entry that is

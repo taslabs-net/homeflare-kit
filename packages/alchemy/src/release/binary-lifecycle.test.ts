@@ -53,10 +53,11 @@ describe('installing', () => {
     expect(s.transport.requests).toEqual([]);
   });
 
-  test('⚠️ unprobed, the pinned bytes at the path are a resumed install: kept, not fetched', async () => {
+  // ⚠️ Only under --adopt (binary-claim.ts); without it, binary-refusals.test.ts refuses the same file.
+  test('unprobed, the pinned bytes at the path, under --adopt: kept, not fetched', async () => {
     const s = setup();
     s.fake.files.set(PATH, { bytes: BINARY.vmalert, gid: 0, kind: 'file', mode: 0o755, uid: 0 });
-    expect((await s.install()).sha256).toBe(sha256Hex(BINARY.vmalert));
+    expect((await s.install(s.props(), { adopt: true })).sha256).toBe(sha256Hex(BINARY.vmalert));
     expect([s.transport.requests, writes(s.fake)]).toEqual([[], []]);
   });
 

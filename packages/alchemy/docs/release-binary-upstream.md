@@ -73,6 +73,8 @@ that upstream wants it.
    **plain attributes, which means silent adoption**. A contribution would drop
    `adoptsAtApply` / `noteUnfinished`, ask the engine to hand `adopt` to
    `reconcile`, and settle whether a file on disk is ever adopted silently.
+   Worth keeping in any form: a file whose digest is not the pin is never
+   adopted, because adopting it is overwriting it (`binary-claim.ts`).
    ⚠️ `declared-pins.ts` reads the same `@internal` record (`.Props`) to refuse
    a pin that was an Output on a first deploy. Upstream applies `Input<T>` to
    every prop automatically, so "this prop must be a literal" is an engine
