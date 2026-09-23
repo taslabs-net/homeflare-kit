@@ -1,134 +1,146 @@
 /**
- * One shape for every NetBox object — the same four operations, different path and JSON body.
+ * One shape for every NetBox object — the same four operations, different distilled call.
  *
  * ⛔ THE ALTERNATIVE IS COPYING THE SAME HANDLERS PER RESOURCE. Prefixes, VLANs, devices, tenants
- *   and interfaces are all create / read / update / delete over `/api` with JSON bodies and a
- *   numeric primary key. Hand-rolling the fourth copy is where someone drops the read-back or the
+ *   and interfaces are all create / read / update / delete against `@distilled.cloud/netbox`'s
+ *   typed operations. Hand-rolling the fourth copy is where someone drops the read-back or the
  *   constraint guard and the plan lies.
+ *
+ * ★ SO THE FOUR OPERATIONS LIVE HERE, ONCE — mirroring `../forgejo/resource.ts`'s engine exactly,
+ *   plus the constraint-guard wiring every NetBox write already had (guardBody, unchanged).
+ *
+ * 🔴 WHY THIS REPLACED `client.ts`'s HAND-ROLLED `HttpClient` CALLS. Measured against Tim's
+ *   distilled research page 2026-09-23: upstream Alchemy only accepts providers that call
+ *   `@distilled.cloud/<vendor>` operations and `catchTag` their typed errors — not a raw
+ *   `fetch`/`HttpClient` client over a hand-maintained path table. `@distilled.cloud/netbox`
+ *   (published as `@homeflare/distilled-netbox@0.2.0`, aliased in — see
+ *   `docs/distilled-interim.md`) covers every operation this family calls.
+ *
+ * ⚠️ `NotFound` IS FOLDED TO "ABSENT" INSIDE EACH RESOURCE FILE'S OWN `fetchLive`, NOT HERE — the
+ *   direct successor to the old, centralized `absentOn404`, and the same split `../forgejo/resource.ts`
+ *   uses. `Effect.catchTag`'s tag-literal inference needs a concrete error union to resolve
+ *   `"NotFound"` against; a spec's `E` is only concrete at each resource file's own call site. A
+ *   NetBox *list* call (what `locateOne` below wraps) never 404s — narrowing happens by an empty
+ *   `results` page, not a status code — so nothing here folds a status at all.
  *
  * ★ ADOPT IS THE DEFAULT POSTURE, NOT A FLAG. `reconcile` LOCATES before it writes: an object the
  *   estate already has is bound, not duplicated. NetBox is a record that predates this code by
  *   years; a provider that created a second `10.20.10.0/24` on first deploy would be worse than
  *   no provider.
  *
- * ★ `defaultRemovalPolicy: 'retain'` ON EVERY FAMILY. NetBox holds the estate's record of what
- *   the network was DECIDED to be, and deleting a row deletes history — child prefixes reparent,
- *   IP assignments detach, and the change log is the only trace left. `retain` means the engine
- *   skips `delete` when a resource is orphaned unless the caller opts into
- *   `.pipe(RemovalPolicy.destroy())`. The `delete` handler is FULLY IMPLEMENTED anyway: a stub
- *   that silently does nothing lies to whoever reads the plan.
+ * ★ `defaultRemovalPolicy: 'retain'` ON EVERY FAMILY — declared per resource file (prefix.ts),
+ *   same as before this migration.
  */
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
+import { CredentialsFromEnv } from '@distilled.cloud/netbox/Credentials';
+import type { NetboxOpContext } from '@distilled.cloud/netbox/Protocol';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
-import { NetboxError, type NetboxList, type NetboxRow, netbox, soleMatch } from './client.ts';
 import { guardBody } from './constraint-guard.ts';
 import type { EndpointKey, NetboxBody } from './constraints.ts';
 
 /**
- * ★ WHAT EVERY OPERATION HERE NEEDS FROM THE RUNTIME, AND NOTHING MORE. The token comes from
- *   `NETBOX_TOKEN` in the environment, so there is no process to spawn and no `bao` to shell out
- *   to. Declaring a service you never use is not harmless — it makes a stack provide a layer for
- *   nothing, and it hides the one service you DO need.
+ * ★ WHAT EVERY HANDLER NEEDS FROM THE CALLER'S RUNTIME, after Credentials are provided below.
+ *   `Netbox.NetboxOpContext` is `Credentials | HttpClient.HttpClient`; `netboxHandlers` closes
+ *   over `CredentialsFromEnv` itself (`NETBOX_URL` / `NETBOX_TOKEN`, the names client.ts already
+ *   read — see the SDK's own credentials.ts note), so a consuming stack only has to provide
+ *   `HttpClient.HttpClient`, exactly as it did before this migration.
  */
 export type NetboxRequirements = HttpClient.HttpClient;
 
-export interface NetboxSpec<Props extends object, Attributes> {
-  /** `ipam/prefixes` — where a new one is POSTed and where `locate` filters. */
-  readonly collection: string;
-  /**
-   * The query that narrows the candidates, as `URLSearchParams` pairs.
-   *
-   * ⛔ ONLY FILTERS THE VENDOR DOCUMENT DECLARES, AND ONLY IN THE FORM IT DECLARES THEM. A
-   *   filter NetBox rejects answers 400, which `absentOn404` correctly does NOT fold to "absent" —
-   *   so a guessed filter shape is a hard failure on every plan, not a soft one.
-   * ★ IT DOES NOT HAVE TO BE UNIQUE. `identifies` finishes the job in this process, where the
-   *   rule is readable and testable offline.
-   */
-  readonly locate: (props: Props) => readonly (readonly [string, string])[];
-  /**
-   * Which of the returned rows IS this object.
-   *
-   * 🔴 THIS EXISTS BECAUSE THE OBVIOUS ALTERNATIVE WAS A GUESS. `Netbox.Prefix` first narrowed
-   *   server-side with `vrf_id=null`, the sentinel NetBox uses elsewhere for "no foreign key".
-   *   ⛔ MEASURED IN THE VENDOR'S OWN SOURCE at v4.7.0: `PrefixFilterSet.vrf_id` is a plain
-   *   `django_filters.ModelMultipleChoiceFilter` with NO `null_value`, so `'null'` is validated
-   *   against the VRF queryset, fails, and NetBox answers 400 under strict filtering. The
-   *   sentinel is real (`FILTERS_NULL_CHOICE_VALUE = 'null'`) but it is opt-in per filter, and
-   *   this one did not opt in.
-   * ★ SO THE DISCRIMINATOR MOVED INTO THIS PROCESS. It costs one page of candidates and buys a
-   *   rule that can be read, tested without a server, and cannot be wrong about a vendor's
-   *   filter semantics. Omit it when `locate` really is unique on its own.
-   */
-  readonly identifies?: (live: NetboxRow, props: Props) => boolean;
-  readonly attributes: (live: NetboxRow, props: Props) => Attributes | undefined;
-  readonly createBody: (props: Props) => NetboxBody;
-  /** ⚠️ PARTIAL BY DESIGN: NetBox updates are PATCH, so presence is not checked on this body. */
-  readonly updateBody?: (props: Props) => NetboxBody;
+/**
+ * ⚠️ NOT `limit=1`, AND NOT `limit=2` EITHER. One row is all a caller wants, but the page has to
+ *   be wide enough for an `identifies` narrowing to see every candidate a server-side filter
+ *   matched — a prefix that exists in several VRFs comes back several times, and a page of two
+ *   would hide the third.
+ * ★ TWENTY, AND THE NUMBER IS AN ASSERTION: a natural key matching more than twenty rows is not
+ *   a natural key. `count` is checked against it, so the failure is "your filter is too broad"
+ *   rather than a silent truncation. Unchanged from client.ts's original value.
+ */
+export const LOCATE_PAGE = 20;
+
+/**
+ * The single row a filtered list returns, or `undefined`.
+ *
+ * ⛔ MORE THAN ONE MATCH IS A DEFECT, NOT A REASON TO TAKE THE FIRST. A `locate` filter that is
+ *   not unique would let adopt bind to whichever row NetBox happened to order first, and the next
+ *   plan would bind to the other one and report drift that is not there.
+ */
+export const soleMatch = <T>(rows: readonly T[], describe: string): T | undefined => {
+  if (rows.length > 1) {
+    throw new Error(
+      `${describe} matched ${String(rows.length)} NetBox objects. An object's identity must be ` +
+        'unique; narrow it (the VRF, the site, the tenant) rather than taking the first row.',
+    );
+  }
+  return rows[0];
+};
+
+/**
+ * List, then narrow to at most one candidate — the same "which of these rows IS this object"
+ * problem a server-side filter cannot always answer (see prefix.ts's own note on `vrf_id`). Any
+ * NetBox resource whose locate is "filter server-side, then disambiguate in this process" reaches
+ * this once rather than reimplementing the page-width assertion and the ambiguity defect per
+ * resource — the direct successor to client.ts's `fetchLive` helper, generalized over the SDK's
+ * own paginated-list shape instead of a hand-decoded `NetboxList<NetboxRow>`.
+ */
+export const locateOne = <Row, E, R>(
+  list: Effect.Effect<{ readonly count: number; readonly results: readonly Row[] }, E, R>,
+  describe: string,
+  identifies?: (row: Row) => boolean,
+): Effect.Effect<Row | undefined, E, R> =>
+  list.pipe(
+    Effect.map((page) => {
+      if (page.count > LOCATE_PAGE) {
+        throw new Error(
+          `${describe}: the locate filter matched ${String(page.count)} rows, more than the ` +
+            `${String(LOCATE_PAGE)}-row page this reads. That is not a natural key — narrow the ` +
+            'filter rather than paging through candidates.',
+        );
+      }
+      const rows = identifies === undefined ? page.results : page.results.filter(identifies);
+      return soleMatch(rows, describe);
+    }),
+  );
+
+/**
+ * One NetBox object's distilled calls. `Live` is whatever the SDK decodes (a `Prefix`, a `VLAN`,
+ * …) — no more untyped `NetboxRow`. `E` is left to each resource file to declare (the union of the
+ * distilled operations it actually calls), so a call site's precise per-operation error union
+ * flows straight through instead of being widened by hand here.
+ */
+export type NetboxSpec<Props extends object, Live, Attributes, E> = {
+  /** Already folds any real "absent" outcome (an empty list, or a `catchTag('NotFound', ...)`). */
+  readonly fetchLive: (props: Props) => Effect.Effect<Live | undefined, E, NetboxOpContext>;
+  readonly attributes: (live: Live, props: Props) => Attributes | undefined;
   readonly matches: (attributes: Attributes, props: Props) => boolean;
+  readonly createBody: (props: Props) => NetboxBody;
+  readonly create: (props: Props, body: NetboxBody) => Effect.Effect<unknown, E, NetboxOpContext>;
+  /** Absent for a create-only family — reconcile then never attempts a write against an adopted row. */
+  readonly update?: {
+    /** ⚠️ PARTIAL BY DESIGN: NetBox updates are PATCH, so presence is not checked on this body. */
+    readonly body: (props: Props) => NetboxBody;
+    readonly call: (
+      props: Props,
+      live: Live,
+      body: NetboxBody,
+    ) => Effect.Effect<unknown, E, NetboxOpContext>;
+  };
+  readonly destroy: (props: Props, live: Live) => Effect.Effect<unknown, E, NetboxOpContext>;
   /** The generated constraint table to check each body against, by endpoint key. */
   readonly endpoint: { readonly create: EndpointKey; readonly update?: EndpointKey };
   /** For the message `soleMatch` raises and for read-back failures. */
   readonly describe: (props: Props) => string;
-}
+};
 
-/** ⚠️ Only 404 folds to "absent". A 403 or a 502 is a real failure — folding it would plan a create over an existing object. */
-const absentOn404 = <A>(io: Effect.Effect<A, NetboxError, NetboxRequirements>) =>
-  io.pipe(
-    Effect.catchIf(
-      (cause): cause is NetboxError => cause instanceof NetboxError && cause.status === 404,
-      () => Effect.succeed(undefined as A),
-    ),
-  );
-
-/**
- * ⚠️ NOT `limit=1`, AND NOT `limit=2` EITHER. One row is all a caller wants, but the page has to
- *   be wide enough for `identifies` to see every candidate `locate` matched — a prefix that
- *   exists in several VRFs comes back several times, and a page of two would hide the third.
- * ★ TWENTY, AND THE NUMBER IS AN ASSERTION: a natural key matching more than twenty rows is not
- *   a natural key. `count` is checked against it, so the failure is "your filter is too broad"
- *   rather than a silent truncation.
- */
-const LOCATE_PAGE = 20;
-
-const query = (pairs: readonly (readonly [string, string])[]): string =>
-  new URLSearchParams([
-    ...pairs.map(([k, v]) => [k, v] as [string, string]),
-    ['limit', String(LOCATE_PAGE)],
-  ]).toString();
-
-export const netboxOperations = <Props extends object, Attributes>(
-  spec: NetboxSpec<Props, Attributes>,
+export const netboxOperations = <Props extends object, Live, Attributes, E>(
+  spec: NetboxSpec<Props, Live, Attributes, E>,
 ) => {
-  const fetchLive = (props: Props) =>
-    absentOn404(
-      netbox<NetboxList<NetboxRow>>('GET', `${spec.collection}/?${query(spec.locate(props))}`),
-    ).pipe(
-      Effect.map((list) => {
-        if (list !== undefined && list.count > LOCATE_PAGE) {
-          throw new Error(
-            `${spec.describe(props)}: the locate filter matched ${String(list.count)} rows, more ` +
-              `than the ${String(LOCATE_PAGE)}-row page this reads. That is not a natural key — ` +
-              'narrow the filter rather than paging through candidates.',
-          );
-        }
-        const rows = list?.results ?? [];
-        const narrow = spec.identifies;
-        return soleMatch(
-          narrow === undefined ? rows : rows.filter((row) => narrow(row, props)),
-          spec.describe(props),
-        );
-      }),
-    );
-
-  /** ⛔ The numeric `id` is the wire path. NetBox has no update-by-natural-key. */
-  const objectPath = (live: NetboxRow): string => `${spec.collection}/${String(live['id'])}`;
-
   const read = (props: Props) =>
-    fetchLive(props).pipe(
-      Effect.map((live) => (live === undefined ? undefined : spec.attributes(live, props))),
-    );
+    spec
+      .fetchLive(props)
+      .pipe(Effect.map((live) => (live === undefined ? undefined : spec.attributes(live, props))));
 
   return {
     read,
@@ -139,29 +151,29 @@ export const netboxOperations = <Props extends object, Attributes>(
         const live = yield* read(news);
         if (live === undefined) return { action: 'update' } as const;
         if (spec.matches(live, news)) return { action: 'noop' } as const;
-        return spec.updateBody === undefined
+        return spec.update === undefined
           ? ({ action: 'replace' } as const)
           : ({ action: 'update' } as const);
       }),
 
     reconcile: (news: Props) =>
       Effect.gen(function* () {
-        const before = yield* fetchLive(news);
+        const before = yield* spec.fetchLive(news);
         if (before === undefined) {
           const body = spec.createBody(news);
           // ⛔ GUARD BEFORE THE REQUEST, WITH PRESENCE ON. This is the only place a missing
           //   required property can still be caught locally.
           yield* guardBody(spec.endpoint.create, body, true);
-          yield* netbox('POST', `${spec.collection}/`, body);
-        } else if (spec.updateBody !== undefined) {
+          yield* spec.create(news, body);
+        } else if (spec.update !== undefined) {
           const mapped = spec.attributes(before, news);
           // ⚠️ ADOPTION IS THE `mapped === undefined` CASE TOO: a row this spec cannot map is not
           //   a row to PATCH blindly.
           if (mapped !== undefined && !spec.matches(mapped, news)) {
-            const body = spec.updateBody(news);
+            const body = spec.update.body(news);
             yield* guardBody(spec.endpoint.update, body, false);
             if (Object.keys(body).length > 0) {
-              yield* netbox('PATCH', `${objectPath(before)}/`, body);
+              yield* spec.update.call(news, before, body);
             }
           }
         }
@@ -180,9 +192,9 @@ export const netboxOperations = <Props extends object, Attributes>(
 
     destroy: (olds: Props) =>
       Effect.gen(function* () {
-        const live = yield* fetchLive(olds);
+        const live = yield* spec.fetchLive(olds);
         if (live === undefined) return;
-        yield* netbox('DELETE', `${objectPath(live)}/`);
+        yield* spec.destroy(olds, live);
       }),
   };
 };
@@ -190,19 +202,28 @@ export const netboxOperations = <Props extends object, Attributes>(
 /**
  * The five provider handlers for a spec'd NetBox object, wired once.
  *
+ * ★ CREDENTIALS ARE PROVIDED HERE, ONCE, NOT BY EVERY CALLER. `CredentialsFromEnv` resolves
+ *   `NETBOX_URL` / `NETBOX_TOKEN` on the calling fiber per request, so this closure keeps that
+ *   laziness — nothing is captured at module load. ⛔ THE TOKEN IS NEVER A PROP: Alchemy persists
+ *   attributes unencrypted, so nothing stored in a stack file may be a credential.
+ *
+ * ⛔ IT STOPS AT THE HANDLERS AND DOES NOT RETURN THE LAYER — same reasoning as `forgejoHandlers`.
+ *
  * ⚠️ `list` answers empty. NetBox index endpoints return the whole estate — tens of thousands of
  *   rows on a real instance — so adoption stays explicit rather than sweeping.
  */
-export const netboxHandlers = <Props extends object, Attributes extends object>(
-  spec: NetboxSpec<Props, Attributes>,
+export const netboxHandlers = <Props extends object, Live, Attributes extends object, E>(
+  spec: NetboxSpec<Props, Live, Attributes, E>,
 ) => {
   const ops = netboxOperations(spec);
+  const withCredentials = <A>(effect: Effect.Effect<A, E, NetboxOpContext>) =>
+    Effect.provide(effect, CredentialsFromEnv);
   return {
     list: () => Effect.succeed([]),
-    read: ({ olds }: { olds: Props }) => ops.read(olds),
+    read: ({ olds }: { olds: Props }) => withCredentials(ops.read(olds)),
     diff: ({ news, output }: { news: Input<Props>; output: Attributes | undefined }) =>
-      ops.diff(news, output),
-    reconcile: ({ news }: { news: Props }) => ops.reconcile(news),
-    delete: ({ olds }: { olds: Props }) => ops.destroy(olds),
+      withCredentials(ops.diff(news, output)),
+    reconcile: ({ news }: { news: Props }) => withCredentials(ops.reconcile(news)),
+    delete: ({ olds }: { olds: Props }) => withCredentials(ops.destroy(olds)),
   };
 };

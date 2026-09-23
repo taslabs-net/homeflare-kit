@@ -28,13 +28,22 @@
  *   IP assignments; the record of why it existed survives only in the change log.
  *
  * ⛔ NO CREDENTIAL IS A PROP. `NETBOX_URL` and `NETBOX_TOKEN` are read from the environment at
- *   call time — the house convention, and the only shape that keeps a token out of Alchemy state.
+ *   call time, through `@distilled.cloud/netbox`'s `CredentialsFromEnv` (resource.ts) — the house
+ *   convention, and the only shape that keeps a token out of Alchemy state. Unchanged by this
+ *   migration off `client.ts`'s hand-rolled `HttpClient` calls onto distilled's typed operations.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
+import * as ipam from '@distilled.cloud/netbox/ipam';
 import * as Effect from 'effect/Effect';
 import { prefixBody, prefixMatches } from './prefix-form.ts';
-import { type NetboxRequirements, netboxHandlers } from './resource.ts';
+import {
+  LOCATE_PAGE,
+  type NetboxRequirements,
+  type NetboxSpec,
+  locateOne,
+  netboxHandlers,
+} from './resource.ts';
 import { choice, fk, text } from './values.ts';
 
 /**
@@ -92,45 +101,72 @@ export const NetboxPrefix = Resource<NetboxPrefix>('Netbox.Prefix', {
   defaultRemovalPolicy: 'retain',
 });
 
-const handlers = netboxHandlers<PrefixProps, PrefixAttributes>({
-  attributes: (live, props) => {
-    const id = live['id'];
-    if (typeof id !== 'number') return undefined;
-    return {
-      comments: text(live['comments']),
-      description: text(live['description']),
-      isPool: live['is_pool'] === true,
-      markUtilized: live['mark_utilized'] === true,
-      prefix: text(live['prefix']) || props.prefix,
-      prefixId: id,
-      status: choice(live['status']),
-      tenant: fk(live['tenant']),
-      vlan: fk(live['vlan']),
-      vrf: fk(live['vrf']),
-    };
-  },
-  collection: 'ipam/prefixes',
+const attributesOf = (live: ipam.Prefix, props: PrefixProps): PrefixAttributes => ({
+  comments: text(live.comments),
+  description: text(live.description),
+  isPool: live.is_pool === true,
+  markUtilized: live.mark_utilized === true,
+  prefix: live.prefix || props.prefix,
+  prefixId: live.id,
+  status: choice(live.status),
+  tenant: fk(live.tenant),
+  vlan: fk(live.vlan),
+  vrf: fk(live.vrf),
+});
+
+/**
+ * ★ EXPORTED for direct testing with an explicit fake `Credentials` layer — see
+ *   `fake-netbox.ts`/`prefix.test.ts`, the same seam `../forgejo/repository.ts` uses.
+ */
+export const spec: NetboxSpec<
+  PrefixProps,
+  ipam.Prefix,
+  PrefixAttributes,
+  | ipam.CreateIpamPrefixError
+  | ipam.ListIpamPrefixesError
+  | ipam.UpdateIpamPrefixesPartialError
+  | ipam.IpamPrefixesDestroyError
+> = {
+  attributes: attributesOf,
+  create: (_props, body) =>
+    ipam.createIpamPrefix({ body: body as unknown as ipam.WritablePrefixRequest }),
   createBody: prefixBody,
+  destroy: (_props, live) => ipam.ipamPrefixesDestroy({ id: live.id }),
   describe: (props) => `ipam/prefixes ${props.prefix}`,
   endpoint: {
     create: 'netbox:POST /api/ipam/prefixes/',
     update: 'netbox:PATCH /api/ipam/prefixes/{id}/',
   },
   /**
-   * 🔴 THE VRF IS **NOT** IN THIS FILTER, AND THE REASON IS A GUESS THAT WAS CAUGHT. This read
-   *   `vrf_id=null` for the global table — NetBox does define `FILTERS_NULL_CHOICE_VALUE = 'null'`
-   *   and does honour it on filters that opt in. ⛔ MEASURED IN THE VENDOR'S OWN SOURCE at
-   *   v4.7.0: `PrefixFilterSet.vrf_id` is a plain `django_filters.ModelMultipleChoiceFilter` with
-   *   no `null_value`, so `'null'` is validated against the VRF queryset, fails, and NetBox
-   *   answers 400 under strict filtering — on EVERY plan for EVERY global prefix.
-   * ★ So the CIDR narrows server-side with a filter the document plainly declares, and `identifies`
-   *   picks the VRF in this process. One extra page of candidates, no vendor semantics guessed.
+   * 🔴 THE VRF IS **NOT** IN THIS SERVER-SIDE FILTER, AND THE REASON IS A GUESS THAT WAS CAUGHT.
+   *   An earlier version filtered `vrf_id=null` for the global table — NetBox does define
+   *   `FILTERS_NULL_CHOICE_VALUE = 'null'` and does honour it on filters that opt in. ⛔ MEASURED
+   *   IN THE VENDOR'S OWN SOURCE at v4.7.0: `PrefixFilterSet.vrf_id` is a plain
+   *   `django_filters.ModelMultipleChoiceFilter` with NO `null_value`, so `'null'` is validated
+   *   against the VRF queryset, fails, and NetBox answers 400 under strict filtering. The
+   *   sentinel is real but it is opt-in per filter, and this one did not opt in.
+   * ★ SO THE DISCRIMINATOR STAYS IN THIS PROCESS, VIA `locateOne`'s `identifies` — one extra page
+   *   of candidates, no vendor semantics guessed. `listIpamPrefixes` never declares `NotFound`
+   *   (a list call 200s with an empty page, it does not 404), so there is no status to fold here.
    */
-  identifies: (live, props) => fk(live['vrf']) === props.vrf,
-  locate: (props) => [['prefix', props.prefix]],
+  fetchLive: (props) =>
+    locateOne(
+      ipam.listIpamPrefixes({ limit: LOCATE_PAGE, prefix: [props.prefix] }),
+      `ipam/prefixes ${props.prefix}`,
+      (row) => fk(row.vrf) === props.vrf,
+    ),
   matches: prefixMatches,
-  updateBody: prefixBody,
-});
+  update: {
+    body: prefixBody,
+    call: (_props, live, body) =>
+      ipam.updateIpamPrefixesPartial({
+        ...(body as unknown as Omit<ipam.UpdateIpamPrefixesPartialRequest, 'id'>),
+        id: live.id,
+      }),
+  },
+};
+
+export const handlers = netboxHandlers(spec);
 
 export const NetboxPrefixProvider = () =>
   Provider.effect(NetboxPrefix, Effect.succeed(NetboxPrefix.Provider.of(handlers)));

@@ -53,3 +53,14 @@ whole install, not one per subpath — `peers.test.ts`'s "no peer is marked opti
 enforces it. `@effect/sql-pg` is optional on `alchemy`'s own manifest (its module graph
 does not reach `SQL/Postgres` unless a stack imports it); here it stays a plain peer like
 every other one.
+
+★ **`@distilled.cloud/netbox` (added 2026-09-23, moving `/netbox` off a hand-rolled
+`HttpClient` client the same way `/forgejo` did) is NOT on this install line, and that is
+deliberate — see [distilled-interim.md](./distilled-interim.md).** The real
+`@distilled.cloud/netbox` is not published upstream yet, so this package aliases it onto
+`@homeflare/distilled-netbox@0.2.0`, a copy built the distilled way and shipped from this
+monorepo, as a plain **`dependencies`** entry (not a peer). A `dependencies` entry resolves
+automatically for every consumer that installs `@homeflare/alchemy` — nothing to add to a
+peer install line, and nothing for `peers.test.ts` to check. When the real package ships
+upstream, the alias's target changes (or the entry becomes a normal peer, matching
+`@distilled.cloud/forgejo` above) and this line still does not change for it.
