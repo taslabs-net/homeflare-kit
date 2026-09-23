@@ -1,5 +1,13 @@
 # `declareRepoPolicy` — the ruleset half's hazards
 
+⚠️ **Status 2026-09-23: `declareRepoPolicy` no longer takes this path.** It is rewired onto
+`GitHub.RepositoryRuleset` — the bridge resource in `repository-ruleset.ts` — which closes the
+duplicate-on-first-deploy hazard below by probing for a same-named ruleset before ever creating
+one, and fixes the never-noop hazard by normalizing before comparing (see
+[repository-ruleset.md](./repository-ruleset.md)). Everything on this page is still an accurate
+account of upstream `GitHub.Ruleset` itself, kept for anyone who declares it directly rather
+than through this kit, and as the record of why the bridge exists.
+
 Everything here is about `GitHub.Ruleset` in `alchemy@2.0.0-beta.79`, not about the
 policy this kit declares. It is extracted from [repo-policy.md](./repo-policy.md) so the
 reasoning stays whole rather than being shaved to fit a line cap.

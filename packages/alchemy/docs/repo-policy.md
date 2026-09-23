@@ -9,7 +9,7 @@ import { declareRepoPolicy } from '@homeflare/alchemy/github';
 import * as Effect from 'effect/Effect';
 
 Effect.gen(function* () {
-  // policy.repository → GitHub.Repository, policy.ruleset → GitHub.Ruleset
+  // policy.repository → GitHub.Repository, policy.ruleset → GitHub.RepositoryRuleset
   const policy = yield* declareRepoPolicy('api', {
     owner: 'my-org',
     repository: 'api',
@@ -18,8 +18,12 @@ Effect.gen(function* () {
 });
 ```
 
-Provide `GitHub.providers()`. This subpath ships **no provider of its own** — everything
-here composes Alchemy's first-class `GitHub.Repository` and `GitHub.Ruleset`.
+Provide `GitHub.providers()` **and** `RepositoryRulesetProvider()` from this subpath.
+⚠️ **Rewired 2026-09-23**: the ruleset half now composes this house's own
+`GitHub.RepositoryRuleset` (see [repository-ruleset.md](./repository-ruleset.md)), not
+upstream `GitHub.Ruleset` — every hazard [below](#-the-ruleset-half-has-hazards-of-its-own)
+describes upstream's behavior and is now what this bridge exists to close, not what
+`declareRepoPolicy` still does.
 
 `repoPolicy(options)` is the same thing without the resources: the two prop objects, pure,
 for a test or for a stack that wants to declare them itself.
@@ -105,16 +109,22 @@ not name a job behind a `paths:` filter, a matrix leg, or anything a skipped wor
 silence. Contexts are trimmed, de-duplicated and **sorted**, so writing the same two the
 other way round is not a diff.
 
-## ⛔ The ruleset half has hazards of its own
+## ⛔ The ruleset half's hazards — closed by the bridge, still worth reading
 
 The vendor `Ruleset` **cannot be adopted** — a first deploy onto a repository that
 already has a ruleset of that name creates a **second** one beside it, both enforcing —
 it **never plans a no-op**, and it replaces its `rules` and `bypass_actors` **wholesale**.
-None of that applies to the repository half.
+None of that ever applied to the repository half.
 
-⛔ Read [repo-policy-ruleset-hazards.md](./repo-policy-ruleset-hazards.md) before the
-first deploy. It carries the preflight `gh api repos/<owner>/<repo>/rulesets` command and
-the repository-half-only escape hatch.
+As of the 2026-09-23 rewire, `declareRepoPolicy`'s ruleset half goes through
+`GitHub.RepositoryRuleset`, which probes by name before creating and normalizes before
+comparing — see [repository-ruleset.md](./repository-ruleset.md). The wholesale-replace
+behavior is unchanged (it is how the underlying `PUT` works), now enforced as a named
+refusal rather than a silent drop.
+
+⛔ Read [repo-policy-ruleset-hazards.md](./repo-policy-ruleset-hazards.md) for the full
+account of upstream `GitHub.Ruleset`'s own behavior — still accurate for anyone who
+declares it directly rather than through this kit.
 
 ## Required reviews are opt-in, and `0` is refused
 
@@ -125,10 +135,15 @@ default, where a pull request is gated by its checks.
 
 ⛔ `requiredApprovals: 0` is **refused**, not treated as "no reviews". Zero approvals is
 the solo-maintainer shape — every change through a pull request, no second person — and
-it works only with `require_extra_approval_for_unattributed_changes: false`. Alchemy's
-`Ruleset` has no property for that field, and GitHub defaults it to `true` when it is
-omitted (measured 2026-09-17), which blocks the very pull requests the zero was meant to
-let through. Accepting it would ship a rule that does the opposite of what it says.
+it works only with `require_extra_approval_for_unattributed_changes: false`, which GitHub
+defaults to `true` when it is omitted (measured 2026-09-17), blocking the very pull
+requests the zero was meant to let through.
+⚠️ **Still refused after the 2026-09-23 rewire**, though the underlying resource
+(`GitHub.RepositoryRuleset`) can now send that flag — `RepoPolicyOptions` has no field to
+ask for it, so `repoPolicy` would otherwise ship a rule that does the opposite of what it
+says. A caller that genuinely wants `0` declares `RepositoryRuleset` directly with
+`extraApprovalForUnattributedChanges: false` (see
+[repository-ruleset.md](./repository-ruleset.md)) instead of going through this helper.
 
 ## ★ `strict` is always off, and is not a parameter
 

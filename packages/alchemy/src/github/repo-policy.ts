@@ -7,21 +7,19 @@
  *       checks: ['ci', 'secret scan'],
  *     });
  *
- * Provide `GitHub.providers()`; this subpath adds no provider of its own.
+ * Provide `GitHub.providers()` AND `RepositoryRulesetProvider()`; this subpath adds no GitHub
+ * provider of its own.
  *
- * ⛔ THE RULESET CANNOT BE ADOPTED, AND A FIRST DEPLOY ONTO A REPO THAT ALREADY HAS ONE
- *   MAKES A SECOND. Read out of alchemy@2.0.0-beta.79's own source on 2026-09-22
- *   (`node_modules/alchemy/lib/github/Ruleset.js`): `read` returns `undefined` whenever
- *   there is no prior output, and `reconcile` looks the live ruleset up only BY THE ID IN
- *   THAT OUTPUT — with none, it calls `createRepoRuleset` unconditionally. GitHub permits
- *   several rulesets with the same name on one repository, so nothing errors; the repo
- *   quietly ends up with two, both enforcing.
- *   ★ SO, BEFORE THE FIRST DEPLOY: `gh api repos/<owner>/<repo>/rulesets` and delete a
- *     hand-made ruleset of the same name, or give this one a `rulesetName` of its own.
- *     Afterwards the state carries the id and every later deploy converges that one.
- *   ⚠️ `GitHub.Repository` does NOT share the problem — its `reconcile` probes by name
- *     and converges onto whatever is live — so only half of this helper is adopt-safe,
- *     and the halves fail differently. See docs/repo-policy.md.
+ * ★ REWIRED 2026-09-23 onto `GitHub.RepositoryRuleset`, not upstream `GitHub.Ruleset` — the
+ *   ADOPT-SAFE bridge documented in repository-ruleset.ts. Only `builds` calls this, and its
+ *   ruleset has NEVER been created (LIVE SURVEY 2026-09-23: 0 rulesets live on `builds`), so
+ *   the swap changes no live resource's identity; a cold first deploy is the only deploy this
+ *   call has ever had. `homeflare/docs/repo-policy-ruleset-hazards.md`'s "before the first
+ *   deploy, check by hand" workaround is now enforced by the resource itself (the name-probe in
+ *   repository-ruleset-probe.ts) rather than left to the operator — see that doc for the
+ *   history, kept rather than deleted so the hazard `builds` almost hit stays legible.
+ * ⚠️ `GitHub.Repository` keeps its OWN upstream behavior unchanged — it already probed by name
+ *   and converged, so only the ruleset half of this helper needed the swap.
  *
  * ⛔ BOTH RESOURCES RETAIN. `retain` is already the vendor default for each of them; it
  *   is piped anyway so that a vendor change cannot quietly turn "drop this call from the
@@ -32,12 +30,12 @@ import * as GitHub from 'alchemy/GitHub';
 import * as RemovalPolicy from 'alchemy/RemovalPolicy';
 import * as Effect from 'effect/Effect';
 import { type RepoPolicyOptions, repoPolicy } from './repo-policy-form.ts';
+import { RepositoryRuleset } from './repository-ruleset.ts';
 
 export interface DeclareRepoPolicyOptions extends RepoPolicyOptions {
   /**
    * `true`/`false` pipe `adopt(…)` onto both resources; omitted, the deploy's own policy
-   * decides. ⚠️ It changes nothing about the ruleset hazard above: adoption routes on
-   * what a provider's `read` reports, and this one reports nothing without prior state.
+   * decides.
    */
   readonly adopt?: boolean;
 }
@@ -60,6 +58,8 @@ export const declareRepoPolicy = (id: string, options: DeclareRepoPolicyOptions)
       return options.adopt === undefined ? kept : kept.pipe(adopt(options.adopt));
     };
     const repository = yield* owned(GitHub.Repository(id, policy.repository));
-    const ruleset = yield* owned(GitHub.Ruleset(`${id}-ruleset`, policy.ruleset));
+    // `policy.ruleset` is a plain `RulesetProps` — every field `RepositoryRulesetProps` adds
+    // over it is optional, so it needs no translation to satisfy the bridge's props.
+    const ruleset = yield* owned(RepositoryRuleset(`${id}-ruleset`, policy.ruleset));
     return { policy, repository, ruleset };
   });
