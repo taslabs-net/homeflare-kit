@@ -41,15 +41,19 @@ then tidiness.
    type string `Cloudflare.MeshNode` sits inside upstream's own namespace (H14).
    **Options:** contribute `ha` upstream and raise the token-in-state concern, then switch;
    or keep the house resource as a recorded divergence. **Decision:** maintainer.
-4. **Unguarded `Bun.*` and `node:*` in shipped provider code** (S42). This is listed in
-   [the Bun line](#the-bun-line). The exported paths crash under Node, which is the runtime
-   this package promises its consumers.
+4. **Unguarded `Bun.*`, and the `node:*` modules upstream names, in shipped provider code**
+   (S42). This is listed in [the Bun line](#the-bun-line). The exported `Bun.*` paths crash
+   under Node, which is the runtime this package promises its consumers. The `node:*` paths
+   load on Node but break the Effect-only rule.
 5. **`launchd`, `linux` and `caddy` have promise-based seams (H3).** `HostRunner` and
    `CaddyAdmin` are plain `async` interfaces, with `node:child_process`, `node:fs/promises`
    and `node:http` behind them, and failures are untyped `Error` (S19, S21). The stated
    reason is that a consumer implements plain async functions. Upstream meets the same need
    by letting a caller provide `FileSystem`, `ChildProcessSpawner` or `CommandExecutor`
    layers, and `alchemy/Util/AtomicFile.writeFileAtomic` covers the temp-and-rename write.
+   ⚠️ Only in part. `local-runner.ts` creates its temp file with `O_EXCL`, mode 0600 and
+   `chown` before `chmod`, and it refuses a planted symlink. `writeFileAtomic` writes with
+   default flags and mode, `chmod`s afterwards, and never `chown`s.
    **Decision:** maintainer. These families are also host-specific, so "house-only" is a
    valid answer.
 6. **`openbao/*` has no upstream equivalent, and it conforms on the contract** (Effect
@@ -119,26 +123,42 @@ That leaves 17 files. The table lists them, plus `provision-cli-fake.ts`, which 
 out of `src/`. The six out-of-scope files still ship in the tarball's `src/`, but no export
 reaches them.
 ⚠️ The first version of this table said 16 files and left out `launchd/job-form.ts`.
+⚠️ Corrected 2026-09-22: 14 of the 17 break upstream's rule. `launchd/job-form.ts`,
+`proxmox/write-only.ts` and `proxmox/pbs-notification-target-wire.ts` use only synchronous
+`node:crypto` or `Buffer`. Upstream allows those inside `Effect.sync`
+(`AGENTS.md@v2.0.0-beta.79#Workflow`), and 40 upstream `src/` files import `node:crypto`,
+among them `Fly/Secret.ts` and `Railway/Variable.ts`. They were listed under a blanket
+`node:*` ban that upstream does not have.
 
-| file                                                       | API                                          | exp | portable replacement                        |
-| ---------------------------------------------------------- | -------------------------------------------- | --- | ------------------------------------------- |
-| `openbao/cloudflare-roles-config.ts`                       | `Bun.YAML`                                   | yes | parse on the tooling side; pass data in     |
-| `openbao/digest.ts` (14 importers)                         | `Bun.CryptoHasher`                           | —   | `sha256` from `alchemy/Util/sha256`         |
-| `openbao/cloudflare-parity-snapshot.ts`                    | `Bun.file`, `Bun.Glob`                       | —   | `FileSystem` + `Path`                       |
-| `openbao/approle-login-form.ts`                            | `Bun.file`                                   | —   | `FileSystem.readFileString`                 |
-| `openbao/approle-login-result.ts`                          | `Bun.inspect`                                | —   | a plain formatter                           |
-| `openbao/forgejo-bootstrap.ts`                             | `Bun.spawn`                                  | —   | unreferenced; `ChildProcessSpawner` or drop |
-| `talos/credentials.ts`                                     | `Bun.write/file/env/randomUUIDv7`, `node:fs` | —   | `FileSystem.makeTempFileScoped`             |
-| `talos/kubeconfig.ts`                                      | `Bun.file`                                   | yes | `FileSystem`                                |
-| `talos/talos-machine-config.ts`                            | `Bun.file`                                   | yes | `FileSystem`                                |
-| `talos/values.ts`                                          | `Bun.YAML`, `node:crypto`                    | —   | tooling-side parse; `alchemy/Util/sha256`   |
-| `launchd/local-runner.ts`                                  | `node:child_process`, `node:fs/promises`     | yes | H3 above                                    |
-| `launchd/sudo-stage.ts`                                    | `node:fs/promises`, `node:os`, `node:path`   | —   | `FileSystem`, `Path`                        |
-| `launchd/job-form.ts`                                      | `node:crypto` (`createHash`)                 | —   | `sha256` from `alchemy/Util/sha256`         |
-| `linux/ssh-runner.ts`                                      | `node:child_process`, `node:crypto`          | yes | H3 above                                    |
-| `caddy/local-admin.ts`                                     | `node:http` (unix socket)                    | yes | H3 above                                    |
-| `proxmox/write-only.ts`, `pbs-notification-target-wire.ts` | `node:crypto`, `node:buffer`                 | —   | `Effect.sync` + Web APIs                    |
-| `proxmox/provision-cli-fake.ts`                            | `Bun.spawn`, `node:fs`                       | —   | test-only; move out of `src/`               |
+| file                                                       | API                                          | exp | portable replacement                         |
+| ---------------------------------------------------------- | -------------------------------------------- | --- | -------------------------------------------- |
+| `openbao/cloudflare-roles-config.ts`                       | `Bun.YAML`                                   | yes | parse on the tooling side; pass data in      |
+| `openbao/digest.ts` (14 importers)                         | `Bun.CryptoHasher`                           | —   | `Crypto.digest` + hex; keep `canonical()` ⚠️ |
+| `openbao/cloudflare-parity-snapshot.ts`                    | `Bun.file`, `Bun.Glob`                       | —   | `FileSystem` + `Path`                        |
+| `openbao/approle-login-form.ts`                            | `Bun.file`                                   | —   | `FileSystem.readFileString`                  |
+| `openbao/approle-login-result.ts`                          | `Bun.inspect`                                | —   | a plain formatter                            |
+| `openbao/forgejo-bootstrap.ts`                             | `Bun.spawn`                                  | —   | unreferenced; `ChildProcessSpawner` or drop  |
+| `talos/credentials.ts`                                     | `Bun.write/file/env/randomUUIDv7`, `node:fs` | —   | `FileSystem.makeTempFileScoped`              |
+| `talos/kubeconfig.ts`                                      | `Bun.file`                                   | yes | `FileSystem`                                 |
+| `talos/talos-machine-config.ts`                            | `Bun.file`                                   | yes | `FileSystem`                                 |
+| `talos/values.ts`                                          | `Bun.YAML`, `node:crypto`                    | —   | tooling-side parse; hash may stay            |
+| `launchd/local-runner.ts`                                  | `node:child_process`, `node:fs/promises`     | yes | H3 above                                     |
+| `launchd/sudo-stage.ts`                                    | `node:fs/promises`, `node:os`, `node:path`   | —   | `FileSystem`, `Path`                         |
+| `launchd/job-form.ts`                                      | `node:crypto` (`createHash`)                 | —   | allowed in `Effect.sync`                     |
+| `linux/ssh-runner.ts`                                      | `node:child_process`, `node:crypto`          | yes | H3 above                                     |
+| `caddy/local-admin.ts`                                     | `node:http` (unix socket)                    | yes | H3 above                                     |
+| `proxmox/write-only.ts`, `pbs-notification-target-wire.ts` | `node:crypto`, `node:buffer`                 | —   | allowed in `Effect.sync` ⚠️                  |
+| `proxmox/provision-cli-fake.ts`                            | `Bun.spawn`, `node:fs`                       | —   | test-only; move out of `src/`                |
+
+The ⚠️ rows:
+
+- `openbao/digest.ts`: every `Bao.*` family persists this digest in state, so a swap must
+  hash the same bytes (`canonical()`, lowercase hex), or every row plans an update.
+  `Crypto.digest` from `effect/Crypto` is in every stack's services and fails with a typed
+  error; `alchemy/Util/sha256` wraps WebCrypto in `Effect.promise`.
+- `proxmox/write-only.ts`: a salted scrypt seal with `timingSafeEqual`. No Alchemy helper
+  replaces it. A plain `sha256` would make a write-only secret cheap to brute-force from
+  state, and it would change the persisted seal format.
 
 Test runners: 51 files import `node:test`/`node:assert` (openbao 42, proxmox 7, forgejo 1,
 talos 1), and 126 import `bun:test`. S43 says `bun:test`.

@@ -24,7 +24,9 @@ ranked ledger. It was measured read-only on `925454b`. The findings, in rank ord
 2. `forgejo/client.ts` is hand-rolled, while `@distilled.cloud/forgejo@1.0.0-rc.12` is
    generated against Forgejo 16.0.3.
 3. `MeshNode` is a deliberate twin of `Cloudflare.Tunnel.WarpConnector`.
-4. Shipped provider code calls `Bun.*` or `node:*` unguarded (17 files), and 51 test files
-   run on `node:test` instead of `bun:test`.
+4. Shipped provider code calls `Bun.*` or the `node:*` modules upstream bans (14 of 17
+   listed files; the other 3 use only synchronous `node:crypto` or `Buffer`, which upstream
+   allows inside `Effect.sync`), and 51 test files run on `node:test` instead of
+   `bun:test`.
 
 What the ledger records is the gap for each finding. It changes nothing.

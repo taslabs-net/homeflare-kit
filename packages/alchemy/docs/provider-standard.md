@@ -50,8 +50,9 @@ already ships is a finding, even when it works.
   never trusts `output` as proof, and it makes zero writes when nothing drifted.
 - **Delete (S11, S14).** `delete` is idempotent and bounded. A family whose deletion
   breaks its consumers defaults to `retain`, and still implements `delete` in full.
-- **List (S12).** `list` enumerates owned objects, or returns `[]` with the reason written
-  down. `nuke` is declared wherever nuke must never reach the object.
+- **List (S12).** `list` enumerates every object of the type in its scope, or returns `[]`
+  with the reason written down. A family whose objects carry ownership marks filters to
+  owned ones, as upstream's third-party providers do; the core contract does not ask for it. `nuke` is declared wherever nuke must never reach the object.
 - **Scope (S15).** The account, zone and region are resolved inside each operation. They
   are never props.
 
@@ -59,8 +60,10 @@ already ships is a finding, even when it works.
 
 - **Effect only (S19).** Provider code, helpers and tests use `FileSystem`, `Path`,
   `HttpClient` and `ChildProcessSpawner`. They never use `async`/`await`, a raw `Promise`,
-  `node:*` or bare `fetch`. When a promise cannot be avoided, use `Effect.tryPromise`, never
-  `Effect.promise`.
+  `node:fs`, `node:fs/promises`, `node:os`, `node:path` or bare `fetch`. A synchronous,
+  CPU-only Node call (`node:crypto` `createHash`, `Buffer`) goes inside `Effect.sync`, which
+  is upstream's own example. When a promise cannot be avoided, use `Effect.tryPromise`,
+  never `Effect.promise`.
 - **No defects (S20).** Lifecycle operations contain no `Effect.orDie` and no
   `Effect.die`. A refusal is a typed error.
 - **Typed errors (S21, S22).** Handle errors with `Effect.catchTag` over the SDK's union.
@@ -80,9 +83,11 @@ already ships is a finding, even when it works.
 `bun build --target node`, and consumers run `dist/` on Node.
 
 - **`src/**` provider code** (resources, providers, clients, and helpers a provider calls)
-  never calls `Bun.*` and never imports `bun:*` or `node:*`. A Node consumer calling an
-  exported helper that uses `Bun.YAML` fails with `ReferenceError: Bun is not defined` at
-  the call site.
+  never calls `Bun.*` and never imports `bun:*` or the `node:*` modules S19 names. A Node
+  consumer calling an exported helper that uses `Bun.YAML` fails with
+  `ReferenceError: Bun is not defined` at the call site. `node:crypto`, `node:http` and
+  `node:child_process` all load on Node. Where they break the standard, they break the
+  Effect-only rule, not the runtime.
 - **Tests, fakes, scripts and codegen** are Bun-native. That means `bun:test` (never
   `node:test`, never vitest), `Bun.serve` fakes on loopback, `Bun.YAML`, `Bun.file()`,
   `Bun.Glob` and `Bun.CryptoHasher`. Upstream runs its scripts and its test runner on Bun
