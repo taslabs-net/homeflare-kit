@@ -197,9 +197,9 @@ export const pinProblems = (props: {
 
 const ARCHIVE_KEYS = ['repo', 'tag', 'asset', 'size', 'sha256'] as const;
 
-/** Whether two declarations pin different bytes: another archive, member or member digest. */
 type Pins = Pick<ReleaseBinaryProps, 'archive' | 'member' | 'sha256'>;
 
+/** Whether two declarations pin different bytes: another archive, member or member digest. */
 export const pinsMoved = (olds: Pins, news: Pins): boolean =>
   olds.member !== news.member ||
   olds.sha256 !== news.sha256 ||
