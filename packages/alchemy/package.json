@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/alchemy",
-  "version": "0.24.0",
+  "version": "0.25.1",
   "description": "Custom Alchemy providers for Cloudflare, Proxmox, OpenBao, Forgejo, Talos, launchd and Caddy, and a verifier that proves adoptions are no-ops.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/alchemy#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
@@ -68,6 +68,10 @@
       "types": "./dist/linux/index.d.ts",
       "default": "./dist/linux/index.js"
     },
+    "./paperless": {
+      "types": "./dist/paperless/index.d.ts",
+      "default": "./dist/paperless/index.js"
+    },
     "./release": {
       "types": "./dist/release/index.d.ts",
       "default": "./dist/release/index.js"
@@ -91,7 +95,7 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/cloudflare/index.ts ./src/forgejo/index.ts ./src/github/index.ts ./src/openbao/index.ts ./src/talos/index.ts ./src/proxmox/index.ts ./src/netbox/index.ts ./src/postgres/index.ts ./src/launchd/index.ts ./src/linux/index.ts ./src/release/index.ts ./src/caddy/index.ts ./src/litellm/index.ts ./src/verify/index.ts ./src/verify/cli.ts --root ./src --outdir dist --target node --format esm --packages external --sourcemap=linked",
+    "build:js": "bun build ./src/index.ts ./src/cloudflare/index.ts ./src/forgejo/index.ts ./src/github/index.ts ./src/openbao/index.ts ./src/talos/index.ts ./src/proxmox/index.ts ./src/netbox/index.ts ./src/postgres/index.ts ./src/launchd/index.ts ./src/linux/index.ts ./src/paperless/index.ts ./src/release/index.ts ./src/caddy/index.ts ./src/litellm/index.ts ./src/verify/index.ts ./src/verify/cli.ts --root ./src --outdir dist --target node --format esm --packages external --sourcemap=linked",
     "build:types": "tsc --project tsconfig.build.json",
     "clean": "rm -rf dist",
     "types": "tsc --noEmit",

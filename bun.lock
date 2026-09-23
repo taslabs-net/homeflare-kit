@@ -18,7 +18,7 @@
     },
     "packages/alchemy": {
       "name": "@homeflare/alchemy",
-      "version": "0.22.0",
+      "version": "0.24.0",
       "bin": {
         "hf-adopt-verify": "./dist/verify/cli.js",
       },
@@ -42,9 +42,6 @@
         "effect": "4.0.0-rc.115",
         "mime": "4.1.0",
       },
-      "optionalPeers": [
-        "@effect/sql-pg",
-      ],
     },
     "packages/auth": {
       "name": "@homeflare/auth",
@@ -109,7 +106,7 @@
     },
     "packages/typesafe": {
       "name": "@homeflare/typesafe",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@typesafe-ai/sdk": "0.6.0",
       },

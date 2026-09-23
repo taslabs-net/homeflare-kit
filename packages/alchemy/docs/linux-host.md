@@ -157,6 +157,8 @@ unit reads converged — the same limit the Mac side records.
 - A failed start on a **create** removes the file this deploy wrote and reloads
   again, so the next deploy starts clean; on an **update** the file stays and
   state keeps the previous digest, so the next deploy retries.
+- For `started: false`, only `ActiveState=active` is drift and gets stopped — `activating` is a
+  timer-driven `Type=oneshot` mid-run and is left alone (`isUnitRunning`, unit-form.ts).
 - ⛔ A **masked** unit is someone's decision, not drift: refused, never unmasked.
 - ⛔ Deleting the declaration **stops the service** — stop, disable, remove the
   file, reload. A unit that must outlive its declaration is adopted, not deleted.

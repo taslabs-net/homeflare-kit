@@ -48,6 +48,8 @@ export const startFakeLitellm = (options?: {
     new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' }, status });
 
   const server = Bun.serve({
+    // ⚠️ Loopback, not the wildcard default — see proxmox/fake-pve-lxc.ts for the race.
+    hostname: '127.0.0.1',
     port: 0,
     fetch: async (req) => {
       const url = new URL(req.url);

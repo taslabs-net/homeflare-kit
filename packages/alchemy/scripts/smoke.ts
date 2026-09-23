@@ -100,6 +100,7 @@ import { PROVISION_PRIVILEGES, PbsNotificationMatcher, PbsNotificationTarget, Pb
 import { NETBOX_CONSTRAINTS_DIGEST, NetboxPrefix, bodyViolations, constraintsFor } from '@homeflare/alchemy/netbox';
 import { PostgresDatabase, isPostgresDatabase, nameByteRefusal, quoteIdent } from '@homeflare/alchemy/postgres';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
+import { PAPERLESS_CONSTRAINTS_DIGEST, Tag as PaperlessTag, bodyViolations as paperlessBodyViolations, constraintsFor as paperlessConstraintsFor } from '@homeflare/alchemy/paperless';
 import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, renderUnit, sshRunner } from '@homeflare/alchemy/linux';
 import { ReleaseBinary, VICTORIA_RELEASES, catalogBinary, identifyBinary, releaseProviders, releaseUrl } from '@homeflare/alchemy/release';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
@@ -112,6 +113,7 @@ for (const [name, value] of Object.entries({
   PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxNotificationMatcher,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
   NetboxPrefix, bodyViolations, constraintsFor, NETBOX_CONSTRAINTS_DIGEST,
+  PaperlessTag, paperlessBodyViolations, paperlessConstraintsFor, PAPERLESS_CONSTRAINTS_DIGEST,
   PostgresDatabase, isPostgresDatabase, nameByteRefusal, quoteIdent,
   HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, ReleaseBinary, releaseProviders,
   parseVerifyArgs, verifySession, verifyStack,
@@ -225,6 +227,18 @@ if (!/^[0-9a-f]{16}$/.test(NETBOX_CONSTRAINTS_DIGEST)) {
   throw new Error('NetBox constraint digest from dist is not a digest');
 }
 
+// ★ THE PAPERLESS TABLE THROUGH THE PUBLISHED FILE, same reasoning as NetBox's above.
+if (paperlessConstraintsFor('paperless:POST /api/tags/')['name']?.maxLength !== 128) {
+  throw new Error('Paperless constraint table from dist lost the vendor maxLength');
+}
+if (paperlessBodyViolations('paperless:POST /api/tags/', { name: 'x'.repeat(129) }, true).length !== 1) {
+  throw new Error('Paperless constraint reader from dist stopped refusing an over-long name');
+}
+if (!/^[0-9a-f]{16}$/.test(PAPERLESS_CONSTRAINTS_DIGEST)) {
+  throw new Error('Paperless constraint digest from dist is not a digest');
+}
+if (PaperlessTag === undefined) throw new Error('Paperless.Tag from dist is undefined');
+
 // ★ THE LITELLM SUBPATH THROUGH THE PUBLISHED FILE. Pure checks only — no LiteLLM proxy is
 //   reached: the env-var names LiteLLM's own CLI uses (credentials.ts), the resource's tag
 //   string, and the typed credentials error construct the way MeshNodeError does above.
@@ -249,7 +263,7 @@ if (nameByteRefusal('a'.repeat(64))?.byteLength !== 64 || nameByteRefusal('a'.re
   throw new Error('postgres subpath from dist lost the NAMEDATALEN byte-length refusal');
 }
 
-console.log('all thirteen subpaths import and resolve');
+console.log('all fifteen subpaths import and resolve');
 `,
   );
 

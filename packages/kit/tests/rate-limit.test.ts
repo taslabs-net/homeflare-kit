@@ -40,6 +40,7 @@ describe('rateLimitAware', () => {
     //   303ms — its own backoff — rather than the 1s the server asked for.
     let hits = 0;
     const server = Bun.serve({
+      hostname: '127.0.0.1',
       port: 0,
       fetch() {
         hits += 1;
@@ -50,7 +51,7 @@ describe('rateLimitAware', () => {
     });
 
     const started = Date.now();
-    const body = await client(`http://localhost:${server.port}`, rateLimitAware).get('/').text();
+    const body = await client(`http://127.0.0.1:${server.port}`, rateLimitAware).get('/').text();
     const elapsed = Date.now() - started;
     server.stop();
 
@@ -63,6 +64,7 @@ describe('rateLimitAware', () => {
   test('leaves plain retry-after to ky, so one 429 never sleeps twice', async () => {
     let hits = 0;
     const server = Bun.serve({
+      hostname: '127.0.0.1',
       port: 0,
       fetch() {
         hits += 1;
@@ -73,7 +75,7 @@ describe('rateLimitAware', () => {
     });
 
     const started = Date.now();
-    await client(`http://localhost:${server.port}`, rateLimitAware).get('/').text();
+    await client(`http://127.0.0.1:${server.port}`, rateLimitAware).get('/').text();
     const elapsed = Date.now() - started;
     server.stop();
 

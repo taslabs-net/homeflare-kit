@@ -185,6 +185,8 @@ export const fakeLinuxHost = (options: FakeLinuxOptions = {}) => {
       enabled: state.enabled ?? false,
       loadedSha: state.loadedSha === undefined ? digest(text) : state.loadedSha,
       ...(state.masked === undefined ? {} : { masked: state.masked }),
+      ...(state.activeState === undefined ? {} : { activeState: state.activeState }),
+      ...(state.subState === undefined ? {} : { subState: state.subState }),
     });
   };
 

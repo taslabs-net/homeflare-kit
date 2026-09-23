@@ -13,6 +13,7 @@ import {
   type SystemdUnitAttributes,
   type SystemdUnitProps,
   configDigest,
+  isUnitRunning,
   unitPathFor,
 } from './unit-form.ts';
 import {
@@ -81,10 +82,13 @@ export const settle = async (
   try {
     if (wantEnabled && (!isEnabled || step.changed)) await enableUnit(runner, props.name);
     if (!wantEnabled && isEnabled) await disableUnit(runner, props.name);
-    const active = step.status.activeState === 'active' || step.status.activeState === 'activating';
+    // ★ isUnitRunning (unit-form.ts): the same started-aware policy diffUnit uses, so a unit this
+    //   deploy never touches — a `started: false` oneshot mid-run — is never stopped here either.
+    //   `subState` is what tells that mid-run apart from a crash-restart backoff, which still stops.
+    const running = isUnitRunning(step.status.activeState, step.status.subState, wantStarted);
     if (!wantStarted) {
-      if (active) await stopUnit(runner, props.name);
-    } else if (!active) await startUnit(runner, props.name);
+      if (running) await stopUnit(runner, props.name);
+    } else if (!running) await startUnit(runner, props.name);
     else if (step.changed || step.configChanged) await restartUnit(runner, props.name);
   } catch (cause) {
     return undo(cause instanceof Error ? cause.message : String(cause));
@@ -96,7 +100,7 @@ export const settle = async (
    *   as drift, in either direction.
    */
   const after = await showUnit(runner, props.name);
-  if (wantStarted && after.activeState !== 'active' && after.activeState !== 'activating') {
+  if (wantStarted && !isUnitRunning(after.activeState, after.subState, wantStarted)) {
     return undo(`systemctl reported success but the unit is ${after.activeState}.`);
   }
   const settled = attributesOf(props, step.desired, after);

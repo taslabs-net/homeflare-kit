@@ -90,6 +90,57 @@ export const digestOf = (text: string): string => sha256Hex(new TextEncoder().en
 export const configDigest = (restartOn: readonly string[] | undefined): string =>
   digestOf((restartOn ?? []).join('\n'));
 
+/**
+ * Whether `activeState`/`subState` count as "the unit is running" against a declared `started` —
+ * the ONE place this decision is made, so `diffUnit` (unit-lifecycle.ts) and `settle`
+ * (unit-settle.ts) can never disagree about it.
+ *
+ * ⛔ WHY THIS EXISTS: a `Type=oneshot` service driven by a `.timer` (no `[Install]`, declared
+ *   `started: false, enabled: false` — its timer starts it, not this resource) reports
+ *   `ActiveState=activating` for the run's whole duration, not an instant. Written for the PVE
+ *   node-check unit that first hit this: ~1.2s, every 60s. A plan taken mid-run must not read that
+ *   run as drift, and a deploy must not `systemctl stop` a check that is already in flight.
+ * ★ systemd.service(5) §`Type=`, `oneshot` (man7.org mirror, read 2026-09-23): with no
+ *   `RemainAfterExit=`, the service manager holds the unit `activating` for as long as
+ *   `ExecStart=` runs, then moves it straight to `dead`/`inactive` (or `failed`) — it never passes
+ *   through `active`. So for `started: false`, `activating` is exactly a run in progress, and
+ *   `active` is the one state a oneshot never reaches on its own: that is the drift, and the only
+ *   thing settle stops.
+ * ⛔ CRASH-LOOP GUARD, added on adversarial review: `ActiveState=activating` is not only "starting
+ *   for the first time" — a service with `Restart=` waiting out its `RestartSec=` backoff between
+ *   crash attempts is ALSO `activating`, with `SubState=auto-restart` (or `auto-restart-queued`).
+ *   A unit declared `started: false` that is crash-looping sits there for nearly all of its
+ *   wall-clock time. Without this guard the oneshot exemption above would read that loop as
+ *   converged forever, and a deploy would never again issue the `stop` that ends it — silently
+ *   defeating `started: false` on exactly the unit that most needs it enforced. So only a genuine
+ *   start (`SubState` anything else — `start`, `start-pre`, `start-post`, …) gets the exemption;
+ *   an auto-restart substate counts as running regardless of `started`, same as `active` does.
+ * ★ SOURCE, not measured against a live host: systemd's own `service.c`
+ *   `state_translation_table` (github.com/systemd/systemd, read 2026-09-23) maps both
+ *   `SERVICE_AUTO_RESTART` and `SERVICE_AUTO_RESTART_QUEUED` to `UNIT_ACTIVATING`, and
+ *   `unit-def.c`'s `service_state_table` names their `SubState` strings `"auto-restart"` and
+ *   `"auto-restart-queued"`. ⚠️ REASONED NOT MEASURED: no unit was actually crash-looped and read
+ *   back with `systemctl show` for this change — the systemd source is the citation, unlike
+ *   systemctl.ts's own header, which is a live-host trace.
+ * ⚠️ THE TRADE-OFF THIS ACCEPTS: a `Type=notify` (or other long-running type) unit stuck in a
+ *   genuine `activating`/`start` with `started: false` — never reaching `active` and never
+ *   crash-looping either — reads as converged, not drift, until it reaches `active`. A unit hung
+ *   like that is exactly the case a human should look at, not one this predicate auto-corrects by
+ *   stopping it out from under whatever else depends on it.
+ * ★ `started: true` (the default, when omitted) is unchanged: `active` or `activating` (any
+ *   `subState`) both count as running, so a start already in flight is never started twice.
+ */
+export const isUnitRunning = (
+  activeState: string,
+  subState: string | undefined,
+  started: boolean,
+): boolean => {
+  if (activeState === 'active') return true;
+  if (activeState !== 'activating') return false;
+  if (subState === 'auto-restart' || subState === 'auto-restart-queued') return true;
+  return started;
+};
+
 /** Sections → an INI unit file. ★ Keys and values pass through untouched; see the file header. */
 export const renderUnit = (sections: readonly UnitSection[]): string =>
   `${sections

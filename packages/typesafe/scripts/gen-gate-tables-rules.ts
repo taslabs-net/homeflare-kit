@@ -47,6 +47,64 @@ export interface ClassifyResult {
   readonly regexRuleCount: number;
 }
 
+/**
+ * DELIBERATE DEVIATION FROM UPSTREAM — CodeQL "Incomplete regular expression for
+ * hostnames" on PR 162 (gitleaks-rules-emitted.ts lines 172/181, since regenerated).
+ * gitleaks writes a hostname literal like `gems.contribsys.com` with a bare `.`, which
+ * in a regex also matches any other character, e.g. `gemsXcontribsysXcom`. That is not
+ * a secret-detector vulnerability in the way an escape bug usually is: as a REGEX, `\.`
+ * is strictly narrower than `.`, so this only removes false accepts of a one-character-
+ * off lookalike host, never a real one. Fixed anyway because CodeQL is right that it is
+ * not the regex gitleaks meant.
+ *
+ * ⚠️ One measured, narrow caveat (adversarial review on this PR): gate/scan.ts's input
+ *   normalization is NFKC only, which does NOT fold IDNA-equivalent full-stop lookalikes
+ *   (U+3002 IDEOGRAPHIC FULL STOP, U+FF61 HALFWIDTH IDEOGRAPHIC FULL STOP) to ASCII `.`.
+ *   A real, IDNA-resolvable URL spelled with one of those in place of the dot was
+ *   incidentally caught by the OLD loose `.` (which matches any character) and is not
+ *   caught by `\.` for these two rules. This is not new: microsoft-teams-webhook already
+ *   escapes its dots upstream and already has this gap on main. Not fixed here — folding
+ *   IDNA lookalikes belongs in scan.ts's normalization, a broader change than this
+ *   generator fix — but recorded so it isn't mistaken for a non-issue.
+ *
+ * Each entry names the exact translated-source substring gitleaks emits (`before`) and
+ * its hostname-safe replacement (`after`) — applied only to the one rule id it names, and
+ * only if `before` is found verbatim (see applyHostnameDotEscapes). This is an explicit
+ * list, not a generic "escape every bare dot" rewrite: a generic rewrite would also hit
+ * the `.` gitleaks intentionally uses as a wildcard inside `[\w.-]` prefix classes on
+ * ~100 other rules (see gate-tables.test.ts), which is a wholly different construct
+ * (already inside a character class, where `.` is already literal) that must not change.
+ */
+const HOSTNAME_DOT_ESCAPES: readonly { id: string; before: string; after: string }[] = [
+  {
+    id: 'sidekiq-sensitive-url',
+    before: 'gems.contribsys.com|enterprise.contribsys.com',
+    after: 'gems\\.contribsys\\.com|enterprise\\.contribsys\\.com',
+  },
+  {
+    id: 'slack-webhook-url',
+    before: 'hooks.slack.com',
+    after: 'hooks\\.slack\\.com',
+  },
+];
+
+function applyHostnameDotEscapes(id: string, body: string): string {
+  let out = body;
+  for (const fix of HOSTNAME_DOT_ESCAPES) {
+    if (fix.id !== id) continue;
+    const occurrences = out.split(fix.before).length - 1;
+    if (occurrences !== 1) {
+      throw new Error(
+        `gen-gate-tables: hostname-dot-escape for ${id} expected exactly one occurrence of ` +
+          `${JSON.stringify(fix.before)} in its translated source, found ${occurrences} — upstream ` +
+          'gitleaks changed this rule; update or remove this deviation entry in gen-gate-tables-rules.ts.',
+      );
+    }
+    out = out.split(fix.before).join(fix.after);
+  }
+  return out;
+}
+
 function stripLeadingI(regex: string): { body: string; flags: string; hadLeadingI: boolean } {
   if (regex.startsWith('(?i)')) return { body: regex.slice(4), flags: 'i', hadLeadingI: true };
   return { body: regex, flags: '', hadLeadingI: false };
@@ -134,7 +192,7 @@ export function classifyRules(rules: readonly GitleaksRaw[]): ClassifyResult {
     const emit = (source: string): EmittedRule => ({
       id: r.id,
       description: r.description,
-      source,
+      source: applyHostnameDotEscapes(r.id, source),
       flags,
       ...(r.entropy !== undefined ? { entropy: r.entropy } : {}),
       ...(r.secretGroup !== undefined ? { secretGroup: r.secretGroup } : {}),

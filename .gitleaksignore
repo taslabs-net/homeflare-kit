@@ -12,4 +12,4 @@
 # lines, so if `bun packages/typesafe/scripts/gen-gate-tables.ts --check` reports drift
 # alongside a new gitleaks failure on this file, re-run `gitleaks dir
 # packages/typesafe/src/gate/generated/` and update the line number below.
-packages/typesafe/src/gate/generated/gitleaks-rules-emitted.ts:aws-amazon-bedrock-api-key-short-lived:34
+packages/typesafe/src/gate/generated/gitleaks-rules-emitted.ts:aws-amazon-bedrock-api-key-short-lived:40
