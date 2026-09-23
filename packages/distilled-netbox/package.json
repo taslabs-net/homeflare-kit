@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/distilled-netbox",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Interim npm home for @distilled.cloud/netbox — see docs/distilled-interim.md. Not published upstream yet; the kit aliases @distilled.cloud/netbox onto this package until it is.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/distilled-netbox#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
