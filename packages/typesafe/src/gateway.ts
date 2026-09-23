@@ -13,7 +13,7 @@
  *   all stay the official SDK's (see ../src/index.ts); this only swaps where the bytes
  *   go. The request/response mapping itself lives in ./gateway-map.ts.
  *
- * ★ WHY NO FRESH LIVE PROBE IN THIS CHANGE. The route, exact header set, response
+ * ★ WHY NO FRESH LIVE PROBE OF THE ROUTE ITSELF. The route, exact header set, response
  *   envelope, keySource, and model-pinning behaviour this file implements were already
  *   measured live on 2026-09-23 and published in
  *   plugins/homeflare-workflows/skills/typesafe-ai/references/ai-gateway.md — part of
@@ -23,6 +23,13 @@
  *   exists — so it was not run. gateway-map.ts's catalog input/output JSON Schemas
  *   were still re-fetched live for this change, since that read needs no credential and
  *   directly gates the request-shape logic below.
+ *
+ * ★ `cf-aig-collect-log` WAS PROBED (scripts/probe-collect-log.ts, 2026-09-23) —
+ *   EFFECTIVE: the live gateway had `collect_logs: true` and 50 entries already logged
+ *   in the previous 24h (control), and one real call sent with the default (unset)
+ *   `collectLog` produced zero entries at or after the call — checked three times over
+ *   ~40s — and no `cf-aig-log-id` response header. Full output in the PR that added
+ *   this option.
  */
 import { type Fetch, TypeSafeClient, type TypeSafeClientConfig } from '@typesafe-ai/sdk';
 import {
@@ -31,6 +38,7 @@ import {
   mapRequest,
   mapResponse,
 } from './gateway-map.ts';
+export { GATEWAY_MODEL_HEADER, type ModelMismatch, modelMismatchOf } from './gateway-model.ts';
 
 /** Options for {@link createTypeSafeGatewayClient}. Omits what the gateway itself owns. */
 export type TypeSafeGatewayOptions = Omit<TypeSafeClientConfig, 'apiKey' | 'baseURL' | 'fetch'> & {
@@ -46,6 +54,14 @@ export type TypeSafeGatewayOptions = Omit<TypeSafeClientConfig, 'apiKey' | 'base
   readonly gatewayId: string;
   /** Cloudflare model-catalog id. Default: `typesafe/jev`. */
   readonly catalogModel?: string;
+  /** Sends `cf-aig-collect-log: true`, so the gateway keeps a log entry for this
+   *  request. Default `false`: the gateway keeps no log entry — see
+   *  developers.cloudflare.com/ai-gateway/observability/logging (read 2026-09-23,
+   *  "If cf-aig-collect-log is false, the entire log entry is skipped"). Cannot be
+   *  overridden by `defaultHeaders` or a per-call `headers` option: the adapter builds
+   *  this header itself and never reads headers the SDK computed (see gateway-map.ts's
+   *  `mapRequest`, which never touches `init.headers`). */
+  readonly collectLog?: boolean;
   /** Wraps the real network call — swap in a test double. Default: `globalThis.fetch`. */
   readonly fetch?: Fetch;
 };
@@ -61,6 +77,7 @@ export function createTypeSafeGatewayClient(options: TypeSafeGatewayOptions): Ty
     token,
     gatewayId,
     catalogModel = 'typesafe/jev',
+    collectLog = false,
     fetch: inner = globalThis.fetch,
     ...rest
   } = options;
@@ -68,7 +85,7 @@ export function createTypeSafeGatewayClient(options: TypeSafeGatewayOptions): Ty
     throw new RangeError('createTypeSafeGatewayClient requires accountId, token and gatewayId');
   }
 
-  const route = { accountId, token, gatewayId, catalogModel };
+  const route = { accountId, token, gatewayId, catalogModel, collectLog };
 
   const adapter: Fetch = async (input, init) => {
     const mapped = mapRequest(input, init, route);
@@ -78,7 +95,7 @@ export function createTypeSafeGatewayClient(options: TypeSafeGatewayOptions): Ty
       ...mapped.request.init,
       ...(init?.signal ? { signal: init.signal } : {}),
     });
-    return mapResponse(cfResponse);
+    return mapResponse(cfResponse, mapped.requestedModel);
   };
 
   return new TypeSafeClient({

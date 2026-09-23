@@ -5,7 +5,7 @@ Custom [Alchemy](https://alchemy.run) providers for gaps the vendor SDK leaves.
 ```sh
 bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
         @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0 \
-        @distilled.cloud/cloudflare@1.0.0-rc.12
+        @distilled.cloud/cloudflare@1.0.0-rc.12 @effect/sql-pg@4.0.0-rc.115
 ```
 
 ⛔ **Every one of those is required, and you also need an `overrides` block** — see
@@ -205,6 +205,12 @@ with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:20
 - ⛔ **Delete never unloads or stops Caddy.** Order of file and load: [docs/caddy.md](./docs/caddy.md).
 - ★ **Managed Caddies run `--resume` with their own `XDG_CONFIG_HOME`**, so a restart runs the last
   config Caddy accepted — and after one, SIGUSR1 has no file to reload. Why, and the rest: same doc.
+
+## PostgreSQL — `@homeflare/alchemy/postgres`
+
+`Postgres.Database`: create-and-assert over a self-hosted PostgreSQL 18 cluster, over
+`@effect/sql-pg` — the same client upstream's own `alchemy/SQL/Postgres` binding uses. No
+`ALTER DATABASE`, no password prop, and `delete` always refuses: [docs/postgres.md](./docs/postgres.md).
 
 ## Proxmox — `@homeflare/alchemy/proxmox`
 
