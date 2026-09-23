@@ -34,7 +34,44 @@ describe('modeProblem', () => {
     ['4755 root is setuid', { mode: 0o4755 }, 'setuid/setgid'],
     ['2755 root is setgid', { mode: 0o2755, uid: 0 }, 'setuid/setgid'],
     ['6777 root is both', { mode: 0o6777 }, 'setuid/setgid and writable by group or other'],
-    ['0664 handed to another user is theirs to change', { mode: 0o664, uid: OPERATOR }, undefined],
+    [
+      '0664 handed to another user AND an explicitly non-root group is theirs to change',
+      { gid: 80, mode: 0o664, uid: OPERATOR },
+      undefined,
+    ],
+    // 🔴 Adversarial review, 2026-09-23, round 1: the non-root-uid exemption alone let a
+    //   setgid-root file through untouched as long as its OWNER was merely non-zero — the group is
+    //   root's just as much as the owner being uid 0 would be. gid 0 must keep every check active.
+    [
+      'setgid to root’s own group, handed to another OWNER, is still root’s file to protect',
+      { gid: 0, mode: 0o2775, uid: OPERATOR },
+      'setuid/setgid',
+    ],
+    [
+      'group-writable with root’s own group, handed to another owner',
+      { gid: 0, mode: 0o664, uid: OPERATOR },
+      'writable by group or other',
+    ],
+    [
+      'handed to another owner AND another group is genuinely theirs, setgid included',
+      { gid: 80, mode: 0o2775, uid: OPERATOR },
+      undefined,
+    ],
+    // 🔴 Adversarial review, round 2: an OMITTED gid is not "someone else's" either — GNU install,
+    //   run as root via sudo, defaults a missing -g to root's OWN group whenever the destination
+    //   directory is not itself setgid (none of this runner's prefixes are), so a `RemoteFile`
+    //   with an owner but no declared `group` reaches this check exactly as `gid: 0` would, and
+    //   must be refused exactly as `gid: 0` is above.
+    [
+      'setgid, handed to another owner, with the group simply never declared',
+      { mode: 0o2775, uid: OPERATOR },
+      'setuid/setgid',
+    ],
+    [
+      'group-writable, handed to another owner, with the group simply never declared',
+      { mode: 0o664, uid: OPERATOR },
+      'writable by group or other',
+    ],
   ] as const)('%s', (_name, options, found) => {
     const problem = modeProblem(options);
     if (found === undefined) expect(problem).toBeUndefined();
