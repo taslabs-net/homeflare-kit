@@ -10,12 +10,26 @@
  *   A repo configured with only `.oxfmtrc.mjs` got formatted with oxfmt's built-in defaults
  *   instead of its own style. Measured by the homeflare-desktop docs agent.
  */
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ENV, type Scratch, scratchRepo } from './hooks-harness.ts';
+import { ENV, type Scratch, pathWith, scratchRepo } from './hooks-harness.ts';
 
 let active: Scratch | undefined;
+
+/**
+ * ⛔ NEVER `env: ENV` DIRECTLY HERE. Measured on CI (PR 186, run 35929242841): the
+ *   GitHub-hosted runner has no `gitleaks`, `scanStagedSecrets` fails closed first (by
+ *   design — see gates.ts), and every one of these tests then saw only "gitleaks is not
+ *   installed" instead of the oxfmt/oxlint behaviour under test. `pathWith(0)` is the same
+ *   stub hooks-precommit.test.ts uses: a fake `gitleaks` that always exits 0, so these tests
+ *   never depend on the host actually having the real binary.
+ */
+let clean: Record<string, string | undefined> = ENV;
+
+beforeAll(async () => {
+  clean = { ...ENV, PATH: await pathWith(0) };
+});
 
 afterEach(async () => {
   await active?.remove();
@@ -42,7 +56,7 @@ describe('BUG 1 — every staged file excluded by ignore rules', () => {
     await repo.write('vendor/credentials.ts', 'export const   x=1;\n');
     await repo.git('add', 'vendor/credentials.ts');
 
-    const result = await repo.hook('pre-commit', { env: ENV });
+    const result = await repo.hook('pre-commit', { env: clean });
 
     expect(result.code).toBe(0);
     expect(result.output).toContain('no formattable staged files');
@@ -62,7 +76,7 @@ describe('BUG 1 — every staged file excluded by ignore rules', () => {
     await repo.write('vendor/credentials.ts', "export const x = 'already-formatted';\n");
     await repo.git('add', 'vendor/credentials.ts');
 
-    const result = await repo.hook('pre-commit', { env: ENV });
+    const result = await repo.hook('pre-commit', { env: clean });
 
     expect(result.code).toBe(0);
     expect(result.output).not.toContain('No files found to lint');
@@ -76,7 +90,7 @@ describe('BUG 1 — every staged file excluded by ignore rules', () => {
     await repo.write('broken.ts', 'export const x = {\n');
     await repo.git('add', 'broken.ts');
 
-    const result = await repo.hook('pre-commit', { env: ENV });
+    const result = await repo.hook('pre-commit', { env: clean });
 
     expect(result.code).toBe(1);
     expect(result.output).toContain('oxfmt could not format the staged files');
@@ -93,7 +107,7 @@ describe('BUG 2 — oxfmt config discovery', () => {
     await repo.write('sample.ts', 'export const greeting = "hello";\n');
     await repo.git('add', 'sample.ts');
 
-    const result = await repo.hook('pre-commit', { env: ENV });
+    const result = await repo.hook('pre-commit', { env: clean });
 
     expect(result.code).toBe(0);
     expect(result.output).toContain('rewrote and restaged');
@@ -108,7 +122,7 @@ describe('BUG 2 — oxfmt config discovery', () => {
     await repo.write('sample.ts', 'export const greeting = "hello";\n');
     await repo.git('add', 'sample.ts');
 
-    const result = await repo.hook('pre-commit', { env: ENV });
+    const result = await repo.hook('pre-commit', { env: clean });
 
     expect(result.code).toBe(0);
     expect(await repo.git('show', ':sample.ts')).toContain("'hello'");
@@ -121,7 +135,7 @@ describe('BUG 2 — oxfmt config discovery', () => {
     await repo.write('sample.ts', 'export const greeting = "hello";\n');
     await repo.git('add', 'sample.ts');
 
-    const result = await repo.hook('pre-commit', { env: ENV });
+    const result = await repo.hook('pre-commit', { env: clean });
 
     expect(result.code).toBe(1);
     expect(result.output).toContain('.oxfmtrc.mjs');
@@ -141,7 +155,7 @@ describe('BUG 2 — oxfmt config discovery', () => {
     await repo.write('notes.txt', 'unrelated change\n');
     await repo.git('add', 'notes.txt');
 
-    const result = await repo.hook('pre-commit', { env: ENV });
+    const result = await repo.hook('pre-commit', { env: clean });
 
     expect(result.code).toBe(0);
     expect(result.output).toContain('nothing staged to format');
