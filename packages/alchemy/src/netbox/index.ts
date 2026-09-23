@@ -8,7 +8,6 @@
  * ★ The constraint reader IS exported, because a consumer writing its own family needs the same
  *   guard — and because a table nobody can reach is a table nobody uses.
  */
-export { NetboxError, apiBase } from './client.ts';
 export {
   NETBOX_CONSTRAINTS,
   bodyViolations,
@@ -31,4 +30,11 @@ export {
   type PrefixProps,
   type PrefixStatus,
 } from './prefix.ts';
-export { type NetboxRequirements, type NetboxSpec, netboxHandlers } from './resource.ts';
+export {
+  LOCATE_PAGE,
+  locateOne,
+  type NetboxRequirements,
+  type NetboxSpec,
+  netboxHandlers,
+  soleMatch,
+} from './resource.ts';

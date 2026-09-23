@@ -23,6 +23,7 @@
         "hf-adopt-verify": "./dist/verify/cli.js",
       },
       "dependencies": {
+        "@distilled.cloud/netbox": "npm:@homeflare/distilled-netbox@0.2.0",
         "@distilled.cloud/proxmox": "npm:@homeflare/distilled-proxmox@0.2.0",
       },
       "devDependencies": {
@@ -73,7 +74,7 @@
     },
     "packages/config": {
       "name": "@homeflare/config",
-      "version": "0.11.0",
+      "version": "0.11.1",
     },
     "packages/distilled-netbox": {
       "name": "@homeflare/distilled-netbox",
@@ -90,7 +91,7 @@
     },
     "packages/distilled-paperless-ngx": {
       "name": "@homeflare/distilled-paperless-ngx",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@distilled.cloud/core": "1.0.0-rc.12",
       },
@@ -360,6 +361,8 @@
     "@distilled.cloud/hetzner": ["@distilled.cloud/hetzner@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-G6QzOXTNply63I90IjOtNofs0nHkEd1we/fgXiOjobLZt4+sKjjNBVTAHYHGMDeidbtxw270oF9JakgT11Pzww=="],
 
     "@distilled.cloud/neon": ["@distilled.cloud/neon@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-jiypsVQCcKa9qNgG9HULXNgXj1E4FFO96Hk9p2JX6CEHca7ePldJSJEOf7roogQGC7lrnldBDCiZrxQLOapD3Q=="],
+
+    "@distilled.cloud/netbox": ["@homeflare/distilled-netbox@workspace:packages/distilled-netbox"],
 
     "@distilled.cloud/planetscale": ["@distilled.cloud/planetscale@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-YCTB7soZtqzzgcCAUtrNHjAIsq92XS8cpjnbn3VU+sCQ0LnfnFGeMGJxQ/7qLHtx7Hv4+Ms8XNOs2Q5P81Skig=="],
 
