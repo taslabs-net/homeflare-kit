@@ -158,6 +158,7 @@ describe('the subpath', () => {
       'ChecksumMismatch',
       'DownloadFailed',
       'HostRunnerService',
+      'OPENBAO_RELEASES',
       'ReleaseBinary',
       'ReleaseBinaryProvider',
       'VICTORIA_RELEASES',

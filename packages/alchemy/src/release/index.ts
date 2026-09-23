@@ -22,12 +22,15 @@ export { ReleaseBinary, ReleaseBinaryProvider } from './binary.ts';
 export type {
   CatalogPackage,
   CatalogRequest,
+  ChecksumSignature,
+  ComputedDigest,
   IdentifiedBinary,
   PinnedArchive,
   PinnedBinary,
   ReleaseCatalog,
 } from './catalog.ts';
 export { catalogBinary, catalogDirectory, catalogProblems, identifyBinary } from './catalog.ts';
+export { OPENBAO_RELEASES } from './openbao.ts';
 export { releaseProviders } from './providers.ts';
 export { ArchiveRefused, BinaryRefused, ChecksumMismatch, DownloadFailed } from './refused.ts';
 export { VICTORIA_RELEASES } from './victoria.ts';

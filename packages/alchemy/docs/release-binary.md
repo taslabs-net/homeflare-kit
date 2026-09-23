@@ -1,7 +1,7 @@
 # Release binaries — `@homeflare/alchemy/release`
 
 Status: active
-Verified: 2026-09-22
+Verified: 2026-09-23
 
 `Release.Binary` (`ReleaseBinary`) installs one binary out of a pinned release
 archive, verified twice: the archive against its pinned SHA-256 before anything
@@ -37,8 +37,19 @@ const vmalert = yield* ReleaseBinary('vmalert', {
   directory: dir.path, // ★ an Output: the engine creates the directory first
   owner: 0, group: 0, mode: 0o555,
 });
-yield* LaunchdJob('vmalert', { programArguments: [vmalert.path, '--httpListenAddr=127.0.0.1:8880'], … });
+yield* LaunchdJob('vmalert-job', { programArguments: [vmalert.path, '--httpListenAddr=127.0.0.1:8880'], … });
 ```
+
+⚠️ **Give every resource its own logical id, even across different types.**
+alchemy@2.0.0-beta.79's FQN is `namespace + id` alone (`FQN.ts`) — it does
+NOT fold in the resource type. `stack.resources[fqn]` (`Resource.ts`)
+returns the **first** registration for a repeated id whatever type it was:
+`ReleaseBinary('vmalert', …)` then `LaunchdJob('vmalert', …)` in the same
+namespace silently hands the job call back the _binary_ resource, and the
+job is never registered at all — no error, no second row in the plan, just a
+job that does not exist. Measured against the installed alchemy package,
+2026-09-23. Naming them `'vmalert'` and `'vmalert-job'` (as above) avoids it;
+so does any other pair of distinct ids.
 
 - **`catalogBinary()` runs in your stack program.** A version, package,
   platform or binary the data set does not pin throws `BinaryRefused` there,

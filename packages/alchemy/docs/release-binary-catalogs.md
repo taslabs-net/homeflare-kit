@@ -1,7 +1,7 @@
 # Release binaries — the data sets, and adding one
 
 Status: active
-Verified: 2026-09-22
+Verified: 2026-09-23
 
 `Release.Binary` takes one pinned archive as props and knows no vendor. What
 each vendor published lives in a **data set** beside it (`src/release/<vendor>.ts`),
@@ -9,7 +9,7 @@ typed `ReleaseCatalog`, and `catalogBinary(dataSet, request)` turns one entry
 into props. This page is what is in the data sets, and the rule for adding to
 them. The guide is [release-binary.md](./release-binary.md).
 
-## `VICTORIA_RELEASES` — the only data set today
+## `VICTORIA_RELEASES`
 
 | package            | version | asset (darwin-arm64)                            | binaries (installed ← member)                                                                          |
 | ------------------ | ------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -35,6 +35,31 @@ change that re-pins both digest layers.
   `binaryPath()` already renders, so its argv and goldens need no path change.
   A stack that keeps its own digest slots (the mini's `PINS`) can compare them
   with `catalogBinary(...).sha256` in its own tests: two witnesses, one source.
+
+## `OPENBAO_RELEASES` — the first data set with a `computed` member
+
+| package   | version | asset (darwin_arm64)                | binaries (installed ← member)                               |
+| --------- | ------- | ----------------------------------- | ----------------------------------------------------------- |
+| `openbao` | 2.6.2   | `openbao_2.6.2_darwin_arm64.tar.gz` | `bao` ← `bao` (member digest: `computed`, ours — see below) |
+
+Walked down 2026-09-23, every command in
+[release-binary-openbao.md](./release-binary-openbao.md).
+
+- ★ **Platform key is `darwin_arm64`, underscore** — OpenBao's own asset
+  spelling, not Victoria's `darwin-arm64`. Each data set spells the platform
+  the way that vendor's asset names do; nothing here picks one estate-wide
+  convention (`openbao.ts`'s header has the rule and the one-line change if a
+  reviewer wants it unified).
+- ★ **The member digest is `computed`, not `members`.** `checksums.txt` lists
+  archives and every `.sbom.json`, never `bao` — the case this page used to
+  call out as "that field does not exist yet". It exists now: `catalogBinary`,
+  `catalogProblems` and `identifyBinary` all read `members` first, then
+  `computed`, and refuse a member pinned in both (`catalog.ts`).
+- ★ **GPG checked, Sigstore read but not verified.** `gpgv` against the key
+  published at openbao.org confirmed the signature over `checksums.txt`; the
+  key's own fingerprint matches OpenBao's install docs. `cosign` is not on
+  the mini, so the Sigstore bundle's workflow identity is recorded as
+  unverified, not as a passing check.
 
 ## Adding a version of a vendor already here
 
@@ -66,9 +91,9 @@ its data module's header with the date:
   estate census found (landscape PR 88) list **archives only**: Prometheus's
   `sha256sums.txt`, vector's `-SHA256SUMS`, pyroscope's and OpenBao's
   `checksums.txt`. For those the member digest is not a vendor fact. It is
-  computed from a verified archive, and the data set must say so rather than
-  file it beside the vendor's lines. That field does not exist yet; it arrives
-  with its first consumer.
+  computed from a verified archive, and the data set says so under
+  `computed` rather than filing it beside the vendor's `members` lines
+  (`catalog.ts`; `OPENBAO_RELEASES` above is the first consumer).
 - **Its binary's linkage** (`otool -L` on the extracted member, or `ldd`).
   Vendor binaries were measured self-contained **only for the five Victoria
   ones** (system libraries and `/usr/lib/libresolv.9.dylib` only). That is not
@@ -84,8 +109,8 @@ where `-version` prints, if anything ever runs it (Victoria's goes to stderr).
 The queue, from the census, each **not yet walked for this resource**:
 alertmanager, blackbox_exporter, node_exporter and postgres_exporter
 (Prometheus `sha256sums.txt`), unpoller (detached `.sig`; 5.2.7 renames
-`darwin_arm64` to `darwin_all`), pyroscope, vector, and `bao` (OpenBao, with
-GPG and Sigstore to check).
+`darwin_arm64` to `darwin_all`), pyroscope and vector. `bao` (OpenBao) is
+walked — see `OPENBAO_RELEASES` above.
 
 ⚠️ REASONED NOT MEASURED: the Prometheus-family archives wrap their files in a
 directory, and `tar.ts` refuses a directory entry (and any PAX header) for the

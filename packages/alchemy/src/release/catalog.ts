@@ -13,16 +13,55 @@
  * ⛔ ADD A VENDOR ONLY AFTER ITS OWN WALK-DOWN (docs/release-binary-catalogs.md): its checksum
  *   format read byte-exact, and its binary's linkage measured (`otool -L`). Vendor binaries were
  *   measured self-contained ONLY for the five Victoria ones; that is not a property of "Go".
+ * ★ `computed` IS A SECOND, LESSER OWNER OF A MEMBER'S DIGEST — never the vendor's, always ours,
+ *   for a checksum file that never lists the member at all (OpenBao: archives and SBOMs only,
+ *   never `bao`; docs/release-binary-openbao.md is the walk-down). `checksums.signature` records
+ *   how the checksum file's OWN authorship was checked, if a vendor publishes one to check.
  */
 import type { ReleaseArchive, ReleaseBinaryProps } from './binary-form.ts';
 import { BinaryRefused } from './refused.ts';
+
+/**
+ * A member digest WE computed, because the vendor's checksum file never lists it — read
+ * checksums.ts's header before adding one: most vendors list archives only.
+ */
+export interface ComputedDigest {
+  readonly sha256: string;
+  /** The date it was computed, from the archive whose pinned SHA-256 matched that day. */
+  readonly recorded: string;
+}
+
+/** How the checksum file itself was checked, beyond its own SHA-256 — openpgp today. */
+export interface ChecksumSignature {
+  readonly kind: 'openpgp';
+  /** The detached signature asset's URL. */
+  readonly url: string;
+  readonly sha256: string;
+  /** The public key it was checked against. */
+  readonly key: { readonly url: string; readonly sha256: string; readonly fingerprint: string };
+  /** The date `gpgv` was run, recorded once — never re-run at apply or by CI. */
+  readonly verified: string;
+}
 
 /** One release archive as a catalog records it: the pin, plus where every digest came from. */
 export interface PinnedArchive extends ReleaseArchive {
   /** Archive member → its SHA-256. Every member the vendor's checksum file lists, not just ours. */
   readonly members: Readonly<Record<string, string>>;
+  /**
+   * Archive member → a digest WE computed, for a checksum file that never lists it (OpenBao's
+   * lists archives and SBOMs, never `bao`). ⛔ NOT A VENDOR FACT: computed from the bytes of an
+   * archive whose own SHA-256 already matched the pin, never filed beside `members`. A member in
+   * both is refused (catalogProblems) — two owners of one pin is a data-set bug, not a choice.
+   */
+  readonly computed?: Readonly<Record<string, ComputedDigest>>;
   /** The checksum file the digests were copied from, its own SHA-256, and when. Never fetched. */
-  readonly checksums: { readonly url: string; readonly sha256: string; readonly recorded: string };
+  readonly checksums: {
+    readonly url: string;
+    readonly sha256: string;
+    readonly recorded: string;
+    /** How the checksum file's own authorship was checked, if at all. Optional: not every vendor publishes one. */
+    readonly signature?: ChecksumSignature;
+  };
 }
 
 /** One package (one archive per version and platform) of a vendor. */
@@ -59,6 +98,20 @@ const quoted = (names: Iterable<string>): string => [...names].map((n) => `"${n}
 
 // ★ A plain boolean, not a type guard: on a `Record<string, …>` a guard narrows the miss to `never`.
 const has = (record: object, key: string): boolean => Object.hasOwn(record, key);
+
+/**
+ * A member's SHA-256, vendor digest first, then computed — or `'both'` when it is pinned in both,
+ * which is refused rather than silently preferring one owner over the other.
+ */
+const memberDigest = (archive: PinnedArchive, member: string): string | 'both' | undefined => {
+  const vendor = has(archive.members, member) ? archive.members[member] : undefined;
+  const computed =
+    archive.computed !== undefined && has(archive.computed, member)
+      ? archive.computed[member]?.sha256
+      : undefined;
+  if (vendor !== undefined && computed !== undefined) return 'both';
+  return vendor ?? computed;
+};
 
 /** Everything wrong with a request against a catalog; empty when it resolves. */
 export const catalogProblems = (catalog: ReleaseCatalog, request: CatalogRequest): string[] => {
@@ -97,9 +150,16 @@ export const catalogProblems = (catalog: ReleaseCatalog, request: CatalogRequest
     );
   } else if (found.length === 0) {
     const member = entry.binaries[request.binary] ?? '';
-    if (!has(archive.members, member)) {
+    const digest = memberDigest(archive, member);
+    if (digest === 'both') {
       found.push(
-        `${request.package} ${request.version}'s checksum file lists no member "${member}"`,
+        `${request.package} ${request.version}'s member "${member}" is pinned twice — once as a ` +
+          'vendor digest and once as a computed one; a member has exactly one owner',
+      );
+    } else if (digest === undefined) {
+      found.push(
+        `${request.package} ${request.version} pins no digest for member "${member}" (checked ` +
+          'the vendor checksum file and any computed record)',
       );
     }
   }
@@ -118,7 +178,9 @@ export const catalogBinary = (catalog: ReleaseCatalog, request: CatalogRequest):
   const entry = own(catalog.packages, request.package);
   const archive = own(own(entry?.versions, request.version), request.platform);
   const member = own(entry?.binaries, request.binary);
-  const sha256 = member === undefined ? undefined : own(archive?.members, member);
+  const digest =
+    member === undefined || archive === undefined ? undefined : memberDigest(archive, member);
+  const sha256 = digest === 'both' ? undefined : digest;
   if (
     problems.length > 0 ||
     archive === undefined ||
@@ -163,7 +225,8 @@ export const identifyBinary = (
       for (const [version, platforms] of Object.entries(entry.versions)) {
         for (const [platform, archive] of Object.entries(platforms)) {
           for (const [binary, member] of Object.entries(entry.binaries)) {
-            if (archive.members[member] === sha256) {
+            const digest = memberDigest(archive, member);
+            if (digest !== 'both' && digest === sha256) {
               return { binary, package: pkg, platform, vendor: catalog.vendor, version };
             }
           }

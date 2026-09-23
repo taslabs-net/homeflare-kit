@@ -5,7 +5,9 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { binaryProblems } from './binary-form.ts';
+import type { ReleaseCatalog } from './catalog.ts';
 import { catalogBinary, catalogDirectory, catalogProblems, identifyBinary } from './catalog.ts';
+import { OPENBAO_RELEASES } from './openbao.ts';
 import { BinaryRefused } from './refused.ts';
 import { VICTORIA_RELEASES } from './victoria.ts';
 
@@ -92,5 +94,74 @@ describe('identifying an installed file', () => {
   test("an archive's digest is not a binary's: identity is by the member's own line", () => {
     const archive = 'cbe83f1d409cbb85fbf1c890c4a9b7fd34c1d74acec4dce2e0ebe46fcb260e38';
     expect(identifyBinary([VICTORIA_RELEASES], archive)).toBeUndefined();
+  });
+
+  test('by a COMPUTED digest, same as a vendor one — OpenBao pins bao only there', () => {
+    const computed = 'd476d17e81a35e6d70dd7e86a8ab2a3664313525118f1f1cfe0130e7a2b95f3a';
+    expect(identifyBinary([VICTORIA_RELEASES, OPENBAO_RELEASES], computed)).toEqual({
+      binary: 'bao',
+      package: 'openbao',
+      platform: 'darwin_arm64',
+      vendor: 'OpenBao',
+      version: '2.6.2',
+    });
+  });
+});
+
+/** A fabricated one-entry catalog, only to exercise the `computed`/`members` overlap refusal. */
+const doubled = (extra: {
+  members?: Record<string, string>;
+  computed?: Record<string, { sha256: string; recorded: string }>;
+}): ReleaseCatalog => ({
+  packages: {
+    thing: {
+      binaries: { thing: 'thing-bin' },
+      versions: {
+        '1.0.0': {
+          any: {
+            asset: 'thing-1.0.0.tar.gz',
+            checksums: {
+              recorded: '2026-09-23',
+              sha256: 'a'.repeat(64),
+              url: 'https://example.invalid/checksums.txt',
+            },
+            // ⚠️ Spread, not a plain key: `exactOptionalPropertyTypes` treats an explicit
+            //   `computed: undefined` as different from the key being absent.
+            ...(extra.computed !== undefined ? { computed: extra.computed } : {}),
+            members: extra.members ?? {},
+            repo: 'example/thing',
+            sha256: 'b'.repeat(64),
+            size: 1,
+            tag: 'v1.0.0',
+          },
+        },
+      },
+    },
+  },
+  vendor: 'Example',
+});
+
+const THING = { binary: 'thing', package: 'thing', platform: 'any', version: '1.0.0' };
+
+describe('a member pinned twice, once vendor and once computed', () => {
+  test('catalogProblems names it, rather than silently preferring one', () => {
+    const catalog = doubled({
+      computed: { 'thing-bin': { recorded: '2026-09-23', sha256: 'c'.repeat(64) } },
+      members: { 'thing-bin': 'c'.repeat(64) },
+    });
+    const problems = catalogProblems(catalog, THING);
+    expect(problems.join('; ')).toContain('pinned twice');
+    expect(() => catalogBinary(catalog, THING)).toThrow('pinned twice');
+  });
+
+  test('computed alone resolves; vendor alone resolves; neither refuses "no digest"', () => {
+    const computedOnly = doubled({
+      computed: { 'thing-bin': { recorded: '2026-09-23', sha256: 'c'.repeat(64) } },
+    });
+    expect(catalogBinary(computedOnly, THING).sha256).toBe('c'.repeat(64));
+    const vendorOnly = doubled({ members: { 'thing-bin': 'd'.repeat(64) } });
+    expect(catalogBinary(vendorOnly, THING).sha256).toBe('d'.repeat(64));
+    const neither = doubled({});
+    expect(() => catalogBinary(neither, THING)).toThrow('pins no digest');
   });
 });

@@ -1,0 +1,12 @@
+openbao_2.6.2_darwin_amd64.tar.gz
+openbao_2.6.2_darwin_amd64.tar.gz.gpgsig
+openbao_2.6.2_darwin_amd64.tar.gz.sbom.json
+openbao_2.6.2_darwin_amd64.tar.gz.sbom.json.gpgsig
+openbao_2.6.2_darwin_amd64.tar.gz.sbom.json.sigstore.json
+openbao_2.6.2_darwin_amd64.tar.gz.sigstore.json
+openbao_2.6.2_darwin_arm64.tar.gz
+openbao_2.6.2_darwin_arm64.tar.gz.gpgsig
+openbao_2.6.2_darwin_arm64.tar.gz.sbom.json
+openbao_2.6.2_darwin_arm64.tar.gz.sbom.json.gpgsig
+openbao_2.6.2_darwin_arm64.tar.gz.sbom.json.sigstore.json
+openbao_2.6.2_darwin_arm64.tar.gz.sigstore.json

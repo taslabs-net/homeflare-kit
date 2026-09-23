@@ -170,7 +170,7 @@ SystemdUnit('thing', { name: 'thing.service', sections: [...], restartOn: [confi
 
 `ReleaseBinary` installs one binary out of a pinned release archive into a directory you declare,
 verified twice. The pins are props; each vendor's pinned versions are a data set beside it
-(`VICTORIA_RELEASES` is the first). `releaseProviders(runner)` provides it.
+(`VICTORIA_RELEASES` and `OPENBAO_RELEASES`). `releaseProviders(runner)` provides it.
 
 ```ts
 const request = {
