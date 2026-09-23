@@ -19,15 +19,32 @@ const PACKAGES: string[] = await Array.fromAsync(
   new Bun.Glob('packages/*/package.json').scan({ cwd: root.pathname }),
 ).then((paths) => paths.map((path) => path.split('/')[1] ?? '').sort());
 
-async function manifest(
-  name: string,
-): Promise<{ files?: string[]; name: string; scripts?: Record<string, string> }> {
+async function manifest(name: string): Promise<{
+  files?: string[];
+  license?: string;
+  name: string;
+  scripts?: Record<string, string>;
+}> {
   return (await Bun.file(new URL(`packages/${name}/package.json`, root)).json()) as {
     files?: string[];
+    license?: string;
     name: string;
     scripts?: Record<string, string>;
   };
 }
+
+/**
+ * The text a `LICENSE` file must contain for a given `package.json.license`
+ * value. ⚠️ Almost every kit package is MIT — the one deliberate exception is
+ * a package that is itself a redistribution of someone else's licensed
+ * output (`@homeflare/distilled-netbox`'s `src/` is an unmodified copy of
+ * `alchemy-run/distilled`'s Apache-2.0 SDK output; relicensing a copy as MIT
+ * would misstate what it is). Add a case here, not a skip, for the next one.
+ */
+const LICENSE_TEXT: Record<string, string> = {
+  MIT: 'MIT License',
+  'Apache-2.0': 'Apache License',
+};
 
 describe.each(PACKAGES)('packages/%s', (pkg) => {
   test('ships every file it declares', async () => {
@@ -79,8 +96,14 @@ describe.each(PACKAGES)('packages/%s', (pkg) => {
   });
 
   test('carries the licence text it claims', async () => {
+    const { license: declared = 'MIT' } = await manifest(pkg);
+    const want = LICENSE_TEXT[declared];
+    // ⛔ An undeclared license name is a defect in THIS table, not something
+    //   to skip past — add it above before the package can pass.
+    expect(want, `no LICENSE_TEXT entry for "${declared}"`).toBeDefined();
+
     const license = await Bun.file(new URL(`packages/${pkg}/LICENSE`, root)).text();
-    expect(license).toContain('MIT License');
+    expect(license).toContain(want as string);
   });
 
   test('declares README and LICENSE so they reach the tarball', async () => {

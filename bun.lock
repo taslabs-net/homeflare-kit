@@ -18,7 +18,7 @@
     },
     "packages/alchemy": {
       "name": "@homeflare/alchemy",
-      "version": "0.24.0",
+      "version": "0.27.1",
       "bin": {
         "hf-adopt-verify": "./dist/verify/cli.js",
       },
@@ -70,7 +70,20 @@
     },
     "packages/config": {
       "name": "@homeflare/config",
-      "version": "0.10.0",
+      "version": "0.11.0",
+    },
+    "packages/distilled-netbox": {
+      "name": "@homeflare/distilled-netbox",
+      "version": "0.1.0",
+      "dependencies": {
+        "@distilled.cloud/core": "1.0.0-rc.12",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
     },
     "packages/kit": {
       "name": "@homeflare/kit",
@@ -106,7 +119,7 @@
     },
     "packages/typesafe": {
       "name": "@homeflare/typesafe",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@typesafe-ai/sdk": "0.6.0",
       },
@@ -362,6 +375,8 @@
     "@homeflare/cloudflare": ["@homeflare/cloudflare@workspace:packages/cloudflare"],
 
     "@homeflare/config": ["@homeflare/config@workspace:packages/config"],
+
+    "@homeflare/distilled-netbox": ["@homeflare/distilled-netbox@workspace:packages/distilled-netbox"],
 
     "@homeflare/kit": ["@homeflare/kit@workspace:packages/kit"],
 
