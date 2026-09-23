@@ -9,15 +9,16 @@ bun add -D @homeflare/config
 
 ## What it gives you
 
-| file                 | how to use it                                    |
-| -------------------- | ------------------------------------------------ |
-| `tsconfig.base.json` | `extends` — owned code, full strictness          |
-| `tsconfig.app.json`  | `extends` — Worker apps (source-publishing deps) |
-| `tsconfig.lib.json`  | `extends` — packages that publish types          |
-| `oxlintrc.json`      | `extends` — libraries                            |
-| `oxlintrc.app.json`  | `extends` — Worker / TanStack / Alchemy apps     |
-| `oxfmtrc.json`       | copy to `.oxfmtrc.json`                          |
-| `bunfig.toml`        | copy to `bunfig.toml`                            |
+| file                 | how to use it                                             |
+| -------------------- | --------------------------------------------------------- |
+| `tsconfig.base.json` | `extends` — owned code, full strictness                   |
+| `tsconfig.app.json`  | `extends` — Worker apps (source-publishing deps)          |
+| `tsconfig.lib.json`  | `extends` — packages that publish types                   |
+| `oxlintrc.json`      | `extends` — libraries                                     |
+| `oxlintrc.app.json`  | `extends` — Worker / TanStack / Alchemy apps              |
+| `oxfmtrc.json`       | copy to `.oxfmtrc.json`                                   |
+| `bunfig.toml`        | copy to `bunfig.toml`                                     |
+| `./versions`         | `import` — [the estate's version set](./docs/versions.md) |
 
 ## tsconfig
 
