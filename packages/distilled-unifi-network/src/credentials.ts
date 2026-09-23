@@ -56,9 +56,16 @@ export interface Config {
   readonly apiBaseUrl: string;
 }
 
-/** Drop a trailing slash; the base URL carries no other structure to fix up. */
-const normalizeBaseUrl = (baseUrl: string): string =>
-  baseUrl.replace(/\/+$/, "");
+/**
+ * Drop trailing slashes; the base URL carries no other structure to fix up.
+ * A loop, not `/\/+$/`: that regex backtracks polynomially on a long run of
+ * `/` (CodeQL js/polynomial-redos), the same fix as distilled-netbox's.
+ */
+const normalizeBaseUrl = (baseUrl: string): string => {
+  let end = baseUrl.length;
+  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47) end--;
+  return baseUrl.slice(0, end);
+};
 
 export class Credentials extends Context.Service<
   Credentials,
