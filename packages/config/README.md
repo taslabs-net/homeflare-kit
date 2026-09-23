@@ -83,7 +83,12 @@ cp node_modules/@homeflare/config/bunfig.toml  bunfig.toml
 ```
 
 ⚠️ `.oxfmtrc.json` needs the **leading dot**. Without it oxfmt silently uses its defaults,
-and the symptom is a formatter that rewrites your quotes.
+and the symptom is a formatter that rewrites your quotes. The same silent-defaults trap
+applies to `.oxfmtrc.mjs`/`.ts`/`.js`/`.cjs`/`.mts`/`.cts` in a bare `oxfmt`/`oxfmt .`
+invocation — `oxfmt`'s own auto-discovery finds only `.json`/`.jsonc`, even though `-c`
+accepts the rest. Prefer `.oxfmtrc.json`; the shared pre-commit hook resolves the other
+extensions and passes `--config` itself (`docs/hooks.md`), but your own `bun run format`
+script still needs to name the file explicitly if it isn't `.oxfmtrc.json`.
 
 ⛔ oxfmt has no `extends`. Extra `ignorePatterns` are a **merge**: generated OpenAPI,
 `vendor/`, `**/generated/**`, `**/*.gen.ts` stay out of the formatter. ⛔ Identity

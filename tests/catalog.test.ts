@@ -79,6 +79,11 @@ const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
   // code was never typechecked against. The exact pin is a kit-local
   // safety measure, not something to carry into the real upstream package.
   'distilled-netbox': ['effect'],
+  // Same reasoning as 'distilled-netbox' above — this is the second
+  // interim-package copy, not a new pattern.
+  'distilled-proxmox': ['effect'],
+  // Third interim-package copy, same reasoning again.
+  'distilled-paperless-ngx': ['effect'],
 };
 
 async function manifest(name: string): Promise<Manifest> {

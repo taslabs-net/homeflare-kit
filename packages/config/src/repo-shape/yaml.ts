@@ -6,9 +6,15 @@
  *   this house are the product. The rendered workflows are written as text with holes;
  *   only the step lists, whose shape varies per repository, go through here.
  *
- * ⚠️ Bun can PARSE YAML natively (`Bun.YAML.parse`) but does not stringify it, measured
- *   against Bun 1.4.0 on 2026-09-22. The tests parse what this writes with `Bun.YAML.parse`
- *   and compare structures, so a malformed emission fails rather than shipping.
+ * ⚠️ Bun.YAML.stringify EXISTS (`Object.keys(Bun.YAML)` is `["parse", "stringify"]`,
+ *   measured against Bun 1.4.0 on 2026-09-23) but its output does not fit these rules:
+ *   (a) a multi-line `run:` comes out as a double-quoted string with `\n` escapes, e.g.
+ *   `run: "echo a\necho b\n"`, not a `|` block scalar; (b) `09:00` comes out UNQUOTED,
+ *   e.g. `cron: 09:00`, the YAML 1.1 sexagesimal trap the `scalar()` comment below guards
+ *   against; (c) a mapping key is followed by a trailing space, e.g. `"steps: \n  - ..."`;
+ *   and (d) a plain JS object has nowhere to attach a comment, so it cannot carry one. The
+ *   tests parse what this writes with `Bun.YAML.parse` and compare structures, so a
+ *   malformed emission fails rather than shipping.
  */
 import type { JobStep } from './shape.ts';
 
@@ -54,12 +60,28 @@ function renderMapping(
 }
 
 /**
+ * Trim trailing `\n` characters the way `command.replace(/\n+$/, '')` used to, but
+ * linear instead of backtracking — the same pattern as `normalizeBaseUrl` in
+ * `packages/distilled-netbox/src/credentials.ts`. Exported so a test can compare it
+ * against the old regex directly.
+ *
+ * ⚠️ Linear on purpose: a `/\n+$/` regex backtracks polynomially on a long run of
+ *   "\n" that is not at the end (CodeQL js/polynomial-redos), and `command` here is
+ *   repository-configured step text.
+ */
+export function trimTrailingNewlines(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 10) end--;
+  return value.slice(0, end);
+}
+
+/**
  * ★ BLOCK SCALAR FOR EVERY MULTI-LINE `run:`. A folded or quoted form would join the
  *   lines, and a shell script whose `if` and `then` end up on one line is a syntax error
  *   at job time rather than at lint time. `|` keeps them exactly as written.
  */
 function renderRun(command: string, depth: number): string[] {
-  const lines = command.replace(/\n+$/, '').split('\n');
+  const lines = trimTrailingNewlines(command).split('\n');
   if (lines.length === 1) return [`${indent(depth)}run: ${scalar(lines[0] ?? '')}`];
   return [`${indent(depth)}run: |`, ...lines.map((line) => `${indent(depth + 1)}${line}`)];
 }
