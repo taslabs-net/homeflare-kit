@@ -8,6 +8,11 @@
  * 185 rules, rule sources as STRINGS (never regex literals) — scan.ts compiles
  * each lazily with new RegExp inside try/catch and fails the whole gate closed if any one
  * does not compile at runtime.
+ * DEVIATION: sidekiq-sensitive-url and slack-webhook-url each escape the literal "." in
+ * their hostname (gems.contribsys.com / enterprise.contribsys.com / hooks.slack.com) so it
+ * cannot match an arbitrary character — CodeQL "Incomplete regular expression for
+ * hostnames" on PR 162. See HOSTNAME_DOT_ESCAPES in gen-gate-tables-rules.ts: this only
+ * narrows the match (fewer false accepts of a near-miss host), never a missed secret.
  * Rule ids, descriptions and regex sources below are gitleaks' own — MIT License,
  * Copyright (c) 2019 Zachary Rice. This file carries the notice; it does not relicense
  * anything here, which stays under this package's own MIT license as a derived work.
@@ -169,7 +174,7 @@ export const GITLEAKS_RULES_EMITTED: readonly GateRule[] = [
   { id: "shopify-private-app-access-token", description: "Identified a Shopify private app access token, risking unauthorized access to private app data and store operations.", source: "shppa_[a-fA-F0-9]{32}", flags: "", entropy: 2 },
   { id: "shopify-shared-secret", description: "Found a Shopify shared secret, posing a risk to application authentication and e-commerce platform security.", source: "shpss_[a-fA-F0-9]{32}", flags: "", entropy: 2 },
   { id: "sidekiq-secret", description: "Discovered a Sidekiq Secret, which could lead to compromised background job processing and application data breaches.", source: "[\\w.-]{0,50}?(?:BUNDLE_ENTERPRISE__CONTRIBSYS__COM|BUNDLE_GEMS__CONTRIBSYS__COM)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-f0-9]{8}:[a-f0-9]{8})(?:[\\x60'\"\\s;]|\\\\[nr]|$)", flags: "i" },
-  { id: "sidekiq-sensitive-url", description: "Uncovered a Sidekiq Sensitive URL, potentially exposing internal job queues and sensitive operation details.", source: "\\bhttps?://([a-f0-9]{8}:[a-f0-9]{8})@(?:gems.contribsys.com|enterprise.contribsys.com)(?:[\\/|\\#|\\?|:]|$)", flags: "i" },
+  { id: "sidekiq-sensitive-url", description: "Uncovered a Sidekiq Sensitive URL, potentially exposing internal job queues and sensitive operation details.", source: "\\bhttps?://([a-f0-9]{8}:[a-f0-9]{8})@(?:gems\\.contribsys\\.com|enterprise\\.contribsys\\.com)(?:[\\/|\\#|\\?|:]|$)", flags: "i" },
   { id: "slack-app-token", description: "Detected a Slack App-level token, risking unauthorized access to Slack applications and workspace data.", source: "xapp-\\d-[A-Z0-9]+-\\d+-[a-z0-9]+", flags: "i", entropy: 2 },
   { id: "slack-bot-token", description: "Identified a Slack Bot token, which may compromise bot integrations and communication channel security.", source: "xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*", flags: "", entropy: 3 },
   { id: "slack-config-access-token", description: "Found a Slack Configuration access token, posing a risk to workspace configuration and sensitive data access.", source: "xoxe.xox[bp]-\\d-[A-Z0-9]{163,166}", flags: "i", entropy: 2 },
@@ -178,7 +183,7 @@ export const GITLEAKS_RULES_EMITTED: readonly GateRule[] = [
   { id: "slack-legacy-token", description: "Detected a Slack Legacy token, risking unauthorized access to older Slack integrations and user data.", source: "xox[os]-\\d+-\\d+-\\d+-[a-fA-F\\d]+", flags: "", entropy: 2 },
   { id: "slack-legacy-workspace-token", description: "Identified a Slack Legacy Workspace token, potentially compromising access to workspace data and legacy features.", source: "xox[ar]-(?:\\d-)?[0-9a-zA-Z]{8,48}", flags: "", entropy: 2 },
   { id: "slack-user-token", description: "Found a Slack User token, posing a risk of unauthorized user impersonation and data access within Slack workspaces.", source: "xox[pe](?:-[0-9]{10,13}){3}-[a-zA-Z0-9-]{28,34}", flags: "", entropy: 2 },
-  { id: "slack-webhook-url", description: "Discovered a Slack Webhook, which could lead to unauthorized message posting and data leakage in Slack channels.", source: "(?:https?://)?hooks.slack.com/(?:services|workflows|triggers)/[A-Za-z0-9+/]{43,56}", flags: "" },
+  { id: "slack-webhook-url", description: "Discovered a Slack Webhook, which could lead to unauthorized message posting and data leakage in Slack channels.", source: "(?:https?://)?hooks\\.slack\\.com/(?:services|workflows|triggers)/[A-Za-z0-9+/]{43,56}", flags: "" },
   { id: "snyk-api-token", description: "Uncovered a Snyk API token, potentially compromising software vulnerability scanning and code security.", source: "[\\w.-]{0,50}?(?:snyk[_.-]?(?:(?:api|oauth)[_.-]?)?(?:key|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[\\x60'\"\\s;]|\\\\[nr]|$)", flags: "i" },
   { id: "sonar-api-token", description: "Uncovered a Sonar API token, potentially compromising software vulnerability scanning and code security.", source: "[\\w.-]{0,50}?(?:sonar[_.-]?(login|token))(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}((?:squ_|sqp_|sqa_)?[a-z0-9=_\\-]{40})(?:[\\x60'\"\\s;]|\\\\[nr]|$)", flags: "i", secretGroup: 2 },
   { id: "sourcegraph-access-token", description: "Sourcegraph is a code search and navigation engine.", source: "\\b(\\b(sgp_(?:[a-fA-F0-9]{16}|local)_[a-fA-F0-9]{40}|sgp_[a-fA-F0-9]{40}|[a-fA-F0-9]{40})\\b)(?:[\\x60'\"\\s;]|\\\\[nr]|$)", flags: "i", entropy: 3 },

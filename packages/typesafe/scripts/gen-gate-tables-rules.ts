@@ -47,6 +47,55 @@ export interface ClassifyResult {
   readonly regexRuleCount: number;
 }
 
+/**
+ * DELIBERATE DEVIATION FROM UPSTREAM — CodeQL "Incomplete regular expression for
+ * hostnames" on PR 162 (gitleaks-rules-emitted.ts lines 172/181, since regenerated).
+ * gitleaks writes a hostname literal like `gems.contribsys.com` with a bare `.`, which
+ * in a regex also matches any other character, e.g. `gemsXcontribsysXcom`. That is not
+ * a secret-detector vulnerability — a looser `.` only matches MORE, so it cannot cause a
+ * real secret-bearing URL to be missed, only (in the near-zero-probability case of a
+ * one-character-off lookalike host) an extra refusal. Fixed anyway because CodeQL is
+ * right that it is not the regex gitleaks meant, and an escaped `.` is strictly more
+ * correct with no behavior change on any real input.
+ *
+ * Each entry names the exact translated-source substring gitleaks emits (`before`) and
+ * its hostname-safe replacement (`after`) — applied only to the one rule id it names, and
+ * only if `before` is found verbatim (see applyHostnameDotEscapes). This is an explicit
+ * list, not a generic "escape every bare dot" rewrite: a generic rewrite would also hit
+ * the `.` gitleaks intentionally uses as a wildcard inside `[\w.-]` prefix classes on
+ * ~100 other rules (see gate-tables.test.ts), which is a wholly different construct
+ * (already inside a character class, where `.` is already literal) that must not change.
+ */
+const HOSTNAME_DOT_ESCAPES: readonly { id: string; before: string; after: string }[] = [
+  {
+    id: 'sidekiq-sensitive-url',
+    before: 'gems.contribsys.com|enterprise.contribsys.com',
+    after: 'gems\\.contribsys\\.com|enterprise\\.contribsys\\.com',
+  },
+  {
+    id: 'slack-webhook-url',
+    before: 'hooks.slack.com',
+    after: 'hooks\\.slack\\.com',
+  },
+];
+
+function applyHostnameDotEscapes(id: string, body: string): string {
+  let out = body;
+  for (const fix of HOSTNAME_DOT_ESCAPES) {
+    if (fix.id !== id) continue;
+    const occurrences = out.split(fix.before).length - 1;
+    if (occurrences !== 1) {
+      throw new Error(
+        `gen-gate-tables: hostname-dot-escape for ${id} expected exactly one occurrence of ` +
+          `${JSON.stringify(fix.before)} in its translated source, found ${occurrences} — upstream ` +
+          'gitleaks changed this rule; update or remove this deviation entry in gen-gate-tables-rules.ts.',
+      );
+    }
+    out = out.split(fix.before).join(fix.after);
+  }
+  return out;
+}
+
 function stripLeadingI(regex: string): { body: string; flags: string; hadLeadingI: boolean } {
   if (regex.startsWith('(?i)')) return { body: regex.slice(4), flags: 'i', hadLeadingI: true };
   return { body: regex, flags: '', hadLeadingI: false };
@@ -134,7 +183,7 @@ export function classifyRules(rules: readonly GitleaksRaw[]): ClassifyResult {
     const emit = (source: string): EmittedRule => ({
       id: r.id,
       description: r.description,
-      source,
+      source: applyHostnameDotEscapes(r.id, source),
       flags,
       ...(r.entropy !== undefined ? { entropy: r.entropy } : {}),
       ...(r.secretGroup !== undefined ? { secretGroup: r.secretGroup } : {}),
