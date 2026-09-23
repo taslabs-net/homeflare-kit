@@ -12,18 +12,19 @@
  *   from the stack does not DELETE it unless the caller opts into `.pipe(RemovalPolicy.destroy())`.
  *   That matches the script's never-delete posture while still allowing a deliberate destroy.
  *
- * ⚠️ THE WIRE PATH USES NUMERIC ID, NOT NAME — measured on live org labels: PATCH and DELETE are
- *   `/orgs/{org}/labels/{id}`. `locate` lists by name; `wirePath` uses the id from that row.
+ * ⚠️ THE WIRE PATH USES NUMERIC ID, NOT NAME — measured on live org labels: edit and delete are
+ *   `orgEditLabel`/`orgDeleteLabel({ org, id })`. `fetchLive` lists by name; the id comes off that
+ *   row for `update`/`destroy`, the same seam the hand-rolled `wirePath` used.
  *
  * ⛔ TOKEN NEEDS `write:organization` FOR RECONCILE — the mcp-read token lacks it (POST 403
  *   measured 2026-09-13). Plan/deploy needs a provision-scoped credential in `FORGEJO_TOKEN`.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
+import * as organization from '@distilled.cloud/forgejo/organization';
 import * as Effect from 'effect/Effect';
-import { forgejo } from './client.ts';
 import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
-import { bool, color, text } from './values.ts';
+import { color } from './values.ts';
 
 export interface OrgLabelProps {
   /** Organization login — `homeflare` / `HomeFlare` must match the live org. */
@@ -57,43 +58,49 @@ export const ForgejoOrgLabel = Resource<ForgejoOrgLabel>('Forgejo.OrgLabel', {
   defaultRemovalPolicy: 'retain',
 });
 
-const handlers = forgejoHandlers<OrgLabelProps, OrgLabelAttributes>({
-  attributes: (live, props) => {
-    const id = live['id'];
-    if (typeof id !== 'number') return undefined;
-    return {
-      color: color(live['color']),
-      description: text(live['description']),
-      exclusive: bool(live['exclusive']),
-      labelId: id,
+const handlers = forgejoHandlers<
+  OrgLabelProps,
+  organization.Label,
+  OrgLabelAttributes,
+  | organization.OrgCreateLabelError
+  | organization.OrgEditLabelError
+  | organization.OrgDeleteLabelError
+  | organization.OrgListLabelsError
+>({
+  attributes: (live, props) => ({
+    color: color(live.color),
+    description: live.description ?? '',
+    exclusive: live.exclusive ?? false,
+    labelId: live.id,
+    name: props.name,
+    org: props.org,
+  }),
+  create: (props) =>
+    organization.orgCreateLabel({
+      color: color(props.color),
+      description: props.description ?? '',
+      exclusive: props.exclusive ?? false,
       name: props.name,
       org: props.org,
-    };
-  },
-  collection: (props) => `orgs/${props.org}/labels`,
-  createForm: (props) => ({
-    color: color(props.color),
-    description: props.description ?? '',
-    exclusive: props.exclusive ?? false,
-    name: props.name,
-  }),
-  locate: (props) =>
-    forgejo<Record<string, unknown>[]>('GET', `orgs/${props.org}/labels?limit=200`).pipe(
-      Effect.map((rows) =>
-        Array.isArray(rows) ? rows.find((row) => row['name'] === props.name) : undefined,
-      ),
+    }),
+  destroy: (props, live) => organization.orgDeleteLabel({ org: props.org, id: live.id }),
+  fetchLive: (props) =>
+    organization.orgListLabels({ org: props.org, limit: 200 }).pipe(
+      Effect.map((rows) => rows.find((row) => row.name === props.name)),
+      Effect.catchTag('NotFound', () => Effect.succeed(undefined)),
     ),
   matches: (attributes, props) =>
     attributes.color === color(props.color) &&
     attributes.description === (props.description ?? '') &&
     attributes.exclusive === (props.exclusive ?? false),
-  path: (props) => `orgs/${props.org}/labels/${props.name}`,
-  updateForm: (props) => ({
-    color: color(props.color),
-    description: props.description ?? '',
-    exclusive: props.exclusive ?? false,
-  }),
-  wirePath: (props, live) => `orgs/${props.org}/labels/${String(live['id'])}`,
+  update: (props, live) =>
+    organization.orgEditLabel({
+      color: color(props.color),
+      description: props.description ?? '',
+      exclusive: props.exclusive ?? false,
+      id: live.id,
+      org: props.org,
+    }),
 });
 
 export const ForgejoOrgLabelProvider = () =>

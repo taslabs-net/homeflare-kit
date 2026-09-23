@@ -18,12 +18,13 @@
     },
     "packages/alchemy": {
       "name": "@homeflare/alchemy",
-      "version": "0.24.0",
+      "version": "0.27.1",
       "bin": {
         "hf-adopt-verify": "./dist/verify/cli.js",
       },
       "devDependencies": {
         "@distilled.cloud/cloudflare": "1.0.0-rc.12",
+        "@distilled.cloud/forgejo": "1.0.0-rc.12",
         "@effect/platform-bun": "4.0.0-rc.115",
         "@effect/platform-node": "4.0.0-rc.115",
         "@effect/sql-pg": "4.0.0-rc.115",
@@ -35,6 +36,7 @@
       },
       "peerDependencies": {
         "@distilled.cloud/cloudflare": "1.0.0-rc.12",
+        "@distilled.cloud/forgejo": "1.0.0-rc.12",
         "@effect/platform-node": "4.0.0-rc.115",
         "@effect/sql-pg": "4.0.0-rc.115",
         "alchemy": "2.0.0-beta.79",
@@ -70,7 +72,7 @@
     },
     "packages/config": {
       "name": "@homeflare/config",
-      "version": "0.10.0",
+      "version": "0.11.0",
     },
     "packages/kit": {
       "name": "@homeflare/kit",
@@ -106,7 +108,7 @@
     },
     "packages/typesafe": {
       "name": "@homeflare/typesafe",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@typesafe-ai/sdk": "0.6.0",
       },
@@ -312,6 +314,8 @@
     "@distilled.cloud/core": ["@distilled.cloud/core@1.0.0-rc.12", "", { "dependencies": { "graphql": "16.11.0" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-YeH/uPohGXp2qIctbqVzBtQV+bUs+K5Zdac8qIid7/t6VlwY964SALme5znRdFu/rQgrloXnaej8iTSK9RIQdA=="],
 
     "@distilled.cloud/fly-io": ["@distilled.cloud/fly-io@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-ACgR8Kcx/OP8gAF+PnXYneGGZNUqyiQHrcTB3/lRcv5gQdacXhTAvreV/d0t7jclRo5BBdNxnd5TuuHpr9vDLA=="],
+
+    "@distilled.cloud/forgejo": ["@distilled.cloud/forgejo@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-e2671ORI5yjg5hlpI4oiWdyc/wm47T6F9Qbny1tNTQOn2f8W2M1An2Rt/c1f83fgO0Remb6u7pE4Qmd/Ld9Oig=="],
 
     "@distilled.cloud/hetzner": ["@distilled.cloud/hetzner@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-G6QzOXTNply63I90IjOtNofs0nHkEd1we/fgXiOjobLZt4+sKjjNBVTAHYHGMDeidbtxw270oF9JakgT11Pzww=="],
 

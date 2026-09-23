@@ -3,16 +3,27 @@
  *
  * ★ MEASURED 2026-09-13 against the live daemon (`GET /api/v1/repos/<org>/<repo>`):
  *   responses are flat JSON with `private`, `has_issues`, `default_branch`, etc. Create is
- *   `POST /orgs/{org}/repos`; read/update/delete use `/repos/{owner}/{repo}`.
+ *   `POST /orgs/{org}/repos`; read/update/delete use `/repos/{owner}/{repo}`. Now called through
+ *   `@distilled.cloud/forgejo`'s `organization.createOrgRepo` / `repository.{getRepo,editRepo,
+ *   deleteRepo}` instead of the retired hand-rolled client (resource.ts).
+ *
+ * ⛔ `CreateOrgRepoRequest` HAS NO `has_issues` / `has_wiki` / `has_projects`. Verified against
+ *   the package's typed schema: Forgejo's own `POST /orgs/{org}/repos` never accepted them either
+ *   (the hand-rolled client sent them anyway; Gitea's JSON decoder silently drops unknown keys,
+ *   so they were always ignored on create). `editRepo`'s schema does carry them, and
+ *   `updateForm`/`matches` below still converge them on the first non-create reconcile — the same
+ *   two-step behaviour the old client had, now provable at the type level instead of by reading
+ *   Gitea's source.
  *
  * ⛔ `defaultRemovalPolicy: 'retain'` — history, issues and packages in a repo are irreplaceable.
  *   Opt into deletion with `.pipe(RemovalPolicy.destroy())`; `delete` below is fully implemented.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
+import * as organization from '@distilled.cloud/forgejo/organization';
+import * as repository from '@distilled.cloud/forgejo/repository';
 import * as Effect from 'effect/Effect';
 import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
-import { bool, text } from './values.ts';
 
 export interface RepositoryProps {
   /** Organization login — the owner segment in `<org>/<repo>`. */
@@ -55,51 +66,56 @@ export const ForgejoRepository = Resource<ForgejoRepository>('Forgejo.Repository
   defaultRemovalPolicy: 'retain',
 });
 
-const handlers = forgejoHandlers<RepositoryProps, RepositoryAttributes>({
-  attributes: (live, props) => {
-    const id = live['id'];
-    if (typeof id !== 'number') return undefined;
-    return {
-      defaultBranch: text(live['default_branch'], 'main'),
-      description: text(live['description']),
-      empty: bool(live['empty']),
-      hasIssues: bool(live['has_issues'], true),
-      hasProjects: bool(live['has_projects'], true),
-      hasWiki: bool(live['has_wiki'], true),
+const editForm = (props: RepositoryProps) => ({
+  ...(props.defaultBranch === undefined ? {} : { default_branch: props.defaultBranch }),
+  ...(props.description === undefined ? {} : { description: props.description }),
+  ...(props.hasIssues === undefined ? {} : { has_issues: props.hasIssues }),
+  ...(props.hasProjects === undefined ? {} : { has_projects: props.hasProjects }),
+  ...(props.hasWiki === undefined ? {} : { has_wiki: props.hasWiki }),
+  ...(props.private === undefined ? {} : { private: props.private }),
+});
+
+const handlers = forgejoHandlers<
+  RepositoryProps,
+  repository.Repository,
+  RepositoryAttributes,
+  | organization.CreateOrgRepoError
+  | repository.GetRepoError
+  | repository.EditRepoError
+  | repository.DeleteRepoError
+>({
+  attributes: (live, props) => ({
+    defaultBranch: live.default_branch,
+    description: live.description ?? '',
+    empty: live.empty ?? false,
+    hasIssues: live.has_issues ?? true,
+    hasProjects: live.has_projects ?? true,
+    hasWiki: live.has_wiki ?? true,
+    name: props.name,
+    org: props.org,
+    private: live.private ?? true,
+    repoId: live.id,
+  }),
+  create: (props) =>
+    organization.createOrgRepo({
+      auto_init: props.autoInit ?? false,
+      description: props.description ?? '',
       name: props.name,
       org: props.org,
-      private: bool(live['private'], true),
-      repoId: id,
-    };
-  },
-  collection: (props) => `orgs/${props.org}/repos`,
-  createForm: (props) => ({
-    auto_init: props.autoInit ?? false,
-    description: props.description ?? '',
-    has_issues: props.hasIssues ?? true,
-    has_projects: props.hasProjects ?? true,
-    has_wiki: props.hasWiki ?? true,
-    name: props.name,
-    private: props.private ?? true,
-  }),
+      private: props.private ?? true,
+    }),
+  destroy: (props) => repository.deleteRepo({ owner: props.org, repo: props.name }),
+  fetchLive: (props) =>
+    repository
+      .getRepo({ owner: props.org, repo: props.name })
+      .pipe(Effect.catchTag('NotFound', () => Effect.succeed(undefined))),
   /**
    * ⛔ AN UNDECLARED FIELD IS NEITHER COMPARED NOR SENT — the rule every other family in this
    *   estate follows (storage.ts, backup-job.ts, and all four Pbs.* families say it in those
-   *   words), and this file was the exception.
+   *   words). Declaring a repo you only wanted to rename leaves its description and feature
+   *   toggles alone; dropping a line no longer resets a field.
    *
-   * 🔴 WHAT THE EXCEPTION DID. Five fields were compared against a DEFAULT rather than skipped:
-   *   `description ?? ''`, and `?? true` for private, hasIssues, hasWiki and hasProjects. So a
-   *   declaration that simply did not mention `hasWiki` asserted "the wiki is ON", and one that
-   *   did not mention `description` asserted "the description is EMPTY" — and `updateForm` sent
-   *   both. Declaring a repo you only wanted to rename would have wiped its description and
-   *   switched features on, reported as a plain `update`. Only `defaultBranch` was written
-   *   correctly, on the line below, which is what the other five now copy.
-   *
-   * ⚠️ THE PRICE, STATED: dropping a line no longer resets a field. Clear one out of band in the
-   *   Forgejo UI or with a direct PATCH. It costs no forever-diff, because an undeclared field is
-   *   not compared either.
-   *
-   * ⚠️ `private` IS THE ONE WORTH DECLARING ANYWAY ON EVERY REPO. Leaving it undeclared now means
+   * ⚠️ `private` IS THE ONE WORTH DECLARING ANYWAY ON EVERY REPO. Leaving it undeclared means
    *   Alchemy will not notice a repository being made public. That is the correct trade for a
    *   generic family — undeclared is unmanaged, not assumed — but it is a real gap, so say it
    *   explicitly in each declaration rather than relying on a default that no longer exists.
@@ -111,15 +127,8 @@ const handlers = forgejoHandlers<RepositoryProps, RepositoryAttributes>({
     (props.hasWiki === undefined || attributes.hasWiki === props.hasWiki) &&
     (props.hasProjects === undefined || attributes.hasProjects === props.hasProjects) &&
     (props.defaultBranch === undefined || attributes.defaultBranch === props.defaultBranch),
-  path: (props) => `repos/${props.org}/${props.name}`,
-  updateForm: (props) => ({
-    ...(props.defaultBranch === undefined ? {} : { default_branch: props.defaultBranch }),
-    ...(props.description === undefined ? {} : { description: props.description }),
-    ...(props.hasIssues === undefined ? {} : { has_issues: props.hasIssues }),
-    ...(props.hasProjects === undefined ? {} : { has_projects: props.hasProjects }),
-    ...(props.hasWiki === undefined ? {} : { has_wiki: props.hasWiki }),
-    ...(props.private === undefined ? {} : { private: props.private }),
-  }),
+  update: (props) =>
+    repository.editRepo({ owner: props.org, repo: props.name, ...editForm(props) }),
 });
 
 export const ForgejoRepositoryProvider = () =>

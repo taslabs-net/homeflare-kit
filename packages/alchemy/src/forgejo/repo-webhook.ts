@@ -2,7 +2,13 @@
  * `Forgejo.RepoWebhook` — one repository webhook under `/repos/{owner}/{repo}/hooks`.
  *
  * ★ READ OFF `<estate>/mcp-servers/docs/api/upstream/forgejo.json`: create is POST collection; read/update/delete
- *   use numeric hook id at `/repos/{owner}/{repo}/hooks/{id}`. `locate` lists and matches on `name`.
+ *   use numeric hook id at `/repos/{owner}/{repo}/hooks/{id}`. Now `repository.repoCreateHook` /
+ *   `repoListHooks` / `repoEditHook` / `repoDeleteHook`. `fetchLive` lists and matches on `url` —
+ *   see repo-webhook-form.ts for why name was never the real match key.
+ *
+ * ⚠️ `Hook.url` IS A REQUIRED STRING IN THE PACKAGE'S SCHEMA — the `config.url` fallback the
+ *   hand-rolled client carried (`stringRecord(live['config'])['url']`) is gone; a response
+ *   without `url` now fails the operation's decode.
  *
  * ⛔ NO WEBHOOK `secret` IN PROPS OR ATTRIBUTES. Optional HMAC material is env-only at write time
  *   (`FORGEJO_HOOK_SECRET_*` — see repo-webhook-form.ts). `hookConfigPublic` strips `secret` on read.
@@ -11,11 +17,11 @@
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
+import * as repository from '@distilled.cloud/forgejo/repository';
 import * as Effect from 'effect/Effect';
-import { forgejo } from './client.ts';
-import { createHookForm, hookUrl, updateHookForm } from './repo-webhook-form.ts';
+import { hookConfigForm } from './repo-webhook-form.ts';
 import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
-import { bool, hookConfigPublic, stringArray, text } from './values.ts';
+import { hookConfigPublic, stringArray } from './values.ts';
 
 export type RepoWebhookType =
   | 'dingtalk'
@@ -33,7 +39,7 @@ export type RepoWebhookType =
 export interface RepoWebhookProps {
   owner: string;
   repo: string;
-  /** Stable locate key — also sent as Hook.name on create. */
+  /** Stable locate key on this side only — Forgejo hooks have no `name` field (see the form file). */
   name: string;
   type: RepoWebhookType;
   url: string;
@@ -68,38 +74,50 @@ export interface ForgejoRepoWebhook extends Resource<
 
 export const ForgejoRepoWebhook = Resource<ForgejoRepoWebhook>('Forgejo.RepoWebhook');
 
-const handlers = forgejoHandlers<RepoWebhookProps, RepoWebhookAttributes>({
+const handlers = forgejoHandlers<
+  RepoWebhookProps,
+  repository.Hook,
+  RepoWebhookAttributes,
+  | repository.RepoCreateHookError
+  | repository.RepoEditHookError
+  | repository.RepoDeleteHookError
+  | repository.RepoListHooksError
+>({
   attributes: (live, props) => {
-    const id = live['id'];
-    if (typeof id !== 'number') return undefined;
-    const config = hookConfigPublic(live['config']);
-    const type = text(live['type']);
+    const config = hookConfigPublic(live.config);
     return {
-      active: bool(live['active'], true),
-      authorizationHeader: text(live['authorization_header']),
-      branchFilter: text(live['branch_filter']),
-      contentType: text(config['content_type'], text(live['content_type'], 'json')),
-      events: stringArray(live['events']),
-      hookId: id,
+      active: live.active ?? true,
+      authorizationHeader: live.authorization_header ?? '',
+      branchFilter: live.branch_filter ?? '',
+      contentType: config['content_type'] ?? live.content_type ?? 'json',
+      events: stringArray(live.events ?? []),
+      hookId: live.id,
       name: props.name,
       owner: props.owner,
       repo: props.repo,
-      type: type as RepoWebhookType,
-      url: hookUrl(live),
+      type: live.type as RepoWebhookType,
+      url: live.url,
     };
   },
-  collection: (props) => `repos/${props.owner}/${props.repo}/hooks`,
-  createForm: createHookForm,
-  locate: (props) =>
-    forgejo<Record<string, unknown>[]>(
-      'GET',
-      `repos/${props.owner}/${props.repo}/hooks?limit=200`,
-    ).pipe(
-      Effect.map((rows) =>
-        Array.isArray(rows)
-          ? rows.find((row) => text(row['name']) === props.name || hookUrl(row) === props.url)
-          : undefined,
-      ),
+  create: (props) =>
+    repository.repoCreateHook({
+      active: props.active ?? true,
+      ...(props.authorizationHeader === undefined
+        ? {}
+        : { authorization_header: props.authorizationHeader }),
+      ...(props.branchFilter === undefined ? {} : { branch_filter: props.branchFilter }),
+      config: hookConfigForm(props, true),
+      events: props.events,
+      owner: props.owner,
+      repo: props.repo,
+      type: props.type,
+    }),
+  destroy: (props, live) =>
+    repository.repoDeleteHook({ owner: props.owner, repo: props.repo, id: live.id }),
+  fetchLive: (props) =>
+    repository.repoListHooks({ owner: props.owner, repo: props.repo, limit: 200 }).pipe(
+      Effect.map((rows) => rows.find((row) => row.url === props.url)),
+      Effect.catchTag('NotFound', () => Effect.succeed(undefined)),
     ),
   matches: (attributes, props) =>
     attributes.type === props.type &&
@@ -109,9 +127,19 @@ const handlers = forgejoHandlers<RepoWebhookProps, RepoWebhookAttributes>({
     attributes.branchFilter === (props.branchFilter ?? '') &&
     attributes.authorizationHeader === (props.authorizationHeader ?? '') &&
     stringArray(props.events).join('\0') === attributes.events.join('\0'),
-  path: (props) => `repos/${props.owner}/${props.repo}/hooks/${props.name}`,
-  updateForm: updateHookForm,
-  wirePath: (props, live) => `repos/${props.owner}/${props.repo}/hooks/${String(live['id'])}`,
+  update: (props, live) =>
+    repository.repoEditHook({
+      active: props.active ?? true,
+      ...(props.authorizationHeader === undefined
+        ? {}
+        : { authorization_header: props.authorizationHeader }),
+      ...(props.branchFilter === undefined ? {} : { branch_filter: props.branchFilter }),
+      config: hookConfigForm(props, false),
+      events: props.events,
+      id: live.id,
+      owner: props.owner,
+      repo: props.repo,
+    }),
 });
 
 export const ForgejoRepoWebhookProvider = () =>

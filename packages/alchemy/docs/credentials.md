@@ -13,3 +13,9 @@ like a bad credential.
 
 The Proxmox subpath mints every call's token from an OpenBao mount instead; see
 [proxmox.md](./proxmox.md).
+
+The Forgejo subpath (2026-09-23, moved onto `@distilled.cloud/forgejo`) resolves credentials
+through the package's own `CredentialsFromEnv` layer, which reads `FORGEJO_URL` / `FORGEJO_TOKEN`
+— the same two variable names the retired hand-rolled client read, still resolved on the calling
+fiber per request, never captured at module scope. `Authorization: token <value>` (Forgejo's
+access-token scheme, not `Bearer`) is built by the package's protocol layer, not by this package.

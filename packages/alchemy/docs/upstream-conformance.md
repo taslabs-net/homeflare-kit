@@ -27,14 +27,25 @@ then tidiness.
    the `cloudflare` peer. That makes it contributable as `lockRules` on `R2.Bucket`, or as
    `Cloudflare.R2.BucketLock`. **Decision:** maintainer, on the upstream shape.
 
-2. **`forgejo/*` duplicates an upstream building block.** `client.ts` is a hand-rolled
-   Effect `HttpClient` client with a status-carrying `ForgejoError`, while
-   `@distilled.cloud/forgejo@1.0.0-rc.12` exists. That package's Smithy service version is
-   16.0.3, the version this family measured (S21, S23). Credentials come from
-   `FORGEJO_TOKEN` at call time instead of an Auth provider (S24). `read` never answers
-   `Unowned` (H1). **Replacement:** the distilled SDK plus an `alchemy/Auth` provider.
-   Untyped errors become distilled patches. **Decision:** maintainer, because it changes
-   the error surface.
+2. **`forgejo/*` duplicates an upstream building block.**
+   - ✅ **Client swap done** (Tim, 2026-09-23, decision 42 — "build inside the kit first,
+     dogfood and test"; PR fixing this row). Every call now goes through
+     `@distilled.cloud/forgejo@1.0.0-rc.12`'s typed operations, `catchTag('NotFound', ...)`
+     replaced the status-carrying `ForgejoError`, and `client.ts` is deleted. Verified
+     operation by operation against the package before relying on it (every operation this
+     family calls exists, every error it handles has a tag) — nothing was missing, so no
+     distilled patch was needed. State did not move: every prop and attribute stays
+     byte-identical, proven by keeping the family's existing tests unchanged plus new tests
+     against a fake Forgejo exercising the real distilled protocol. No stack in this estate
+     currently imports `@homeflare/alchemy/forgejo` (measured 2026-09-23 across
+     homeflare-landscape and the house monorepo), so there is no live plan to re-run —
+     `house/forgejo` in the house monorepo declares the same six resource types but against
+     its OWN independent hand-rolled copy under `house/forgejo/src/`, not this package; this
+     PR does not touch it.
+   - ⛔ **`read` still never answers `Unowned` (H1), open.** Credentials still come from
+     `FORGEJO_TOKEN` at call time rather than an `alchemy/Auth` provider (S24). Both need a
+     maintainer decision on the ownership-check shape before a distilled-backed
+     implementation is worth writing — the client swap did not attempt either.
 3. **`cloudflare/MeshNode` duplicates `Cloudflare.Tunnel.WarpConnector`.** The divergence is
    deliberate and documented in [mesh-node.md](./mesh-node.md): upstream persists the
    connector token in state as a `Redacted` attribute, and it cannot create an HA node. The

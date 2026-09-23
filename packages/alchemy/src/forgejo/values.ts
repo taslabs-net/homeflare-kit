@@ -1,27 +1,19 @@
 /**
  * Wire coercions shared across Forgejo resources.
  *
- * ★ GITEA/ FORGEJO JSON USES snake_case ON THE WIRE and camelCase in props — each resource
+ * ★ GITEA/FORGEJO JSON USES snake_case ON THE WIRE and camelCase in props — each resource
  *   translates at the form boundary; these helpers only normalise values for comparison.
+ *
+ * ⛔ `text`/`bool`/`int` FROM THE HAND-ROLLED CLIENT ERA ARE GONE. They coerced values out of an
+ *   untyped `Record<string, unknown>` response. `@distilled.cloud/forgejo`'s operations decode
+ *   into typed structs (`Repository`, `Label`, `BranchProtection`, …), so an optional field is
+ *   already `string | undefined` / `boolean | undefined` — a plain `live.field ?? fallback` at
+ *   the call site replaces every one of their call sites, and a malformed response now fails the
+ *   operation's decode instead of silently coercing to a fallback.
  */
 
-export const text = (value: unknown, fallback = '') =>
-  typeof value === 'string' ? value : fallback;
-
 /** Forgejo returns label colours without `#`; declarations may include it. */
-export const color = (value: unknown) => text(value).replace(/^#/, '').toLowerCase();
-
-export const bool = (value: unknown, fallback = false) =>
-  value === undefined || value === null ? fallback : value === true || value === 1 || value === '1';
-
-export const int = (value: unknown, fallback = 0) => {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return fallback;
-};
+export const color = (value: string) => value.replace(/^#/, '').toLowerCase();
 
 /** Wire arrays compared in sorted order — Gitea reshuffles nothing but callers should not depend on order. */
 export const stringArray = (value: unknown) =>

@@ -3,24 +3,31 @@
  *
  * ★ READ OFF `<estate>/mcp-servers/docs/api/upstream/forgejo.json` (Forgejo 16.x OpenAPI): create is
  *   `POST /orgs/{org}/teams`; read/update/delete use numeric id at `/teams/{id}` — not the name.
+ *   Now `organization.orgCreateTeam` / `orgListTeams` / `orgEditTeam` / `orgDeleteTeam`.
  *
- * ⚠️ PATCH AND DELETE USE `/teams/{id}` — same seam as org labels. `locate` lists by name;
- *   `wirePath` carries the id from that row.
+ * ⚠️ `orgEditTeam`/`orgDeleteTeam` TAKE ONLY `{ id, ... }` — NO `org` FIELD. The package's schema
+ *   confirms Forgejo's edit/delete routes are `/teams/{id}` with no org segment; `fetchLive` lists
+ *   by name and `update`/`destroy` carry the id off that row, same seam as org labels.
+ *
+ * ⚠️ `live.permission` IS TYPED `"none" | "read" | "write" | "admin" | "owner"` IN THE PACKAGE —
+ *   wider than this family's own `TeamPermission`. The guard below keeps the original behaviour:
+ *   an out-of-range value (`none`/`owner`) folds `attributes` to `undefined` rather than lying
+ *   about which of the three this family manages the team is at.
  *
  * ⛔ TOKEN NEEDS `write:organization` TO CREATE OR PATCH — read list/get needs `read:organization`.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
+import * as organization from '@distilled.cloud/forgejo/organization';
 import * as Effect from 'effect/Effect';
-import { forgejo } from './client.ts';
 import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
-import { bool, recordEqual, stringArray, stringRecord, text } from './values.ts';
+import { recordEqual, stringArray, stringRecord } from './values.ts';
 
 export type TeamPermission = 'read' | 'write' | 'admin';
 
 export interface OrgTeamProps {
   org: string;
-  /** Team name — primary locate key; sent on every PATCH body. */
+  /** Team name — primary locate key; sent on every edit body. */
   name: string;
   description?: string;
   permission?: TeamPermission;
@@ -62,31 +69,36 @@ const teamForm = (props: OrgTeamProps) => ({
   ...(props.unitsMap === undefined ? {} : { units_map: props.unitsMap }),
 });
 
-const handlers = forgejoHandlers<OrgTeamProps, OrgTeamAttributes>({
+const handlers = forgejoHandlers<
+  OrgTeamProps,
+  organization.Team,
+  OrgTeamAttributes,
+  | organization.OrgCreateTeamError
+  | organization.OrgEditTeamError
+  | organization.OrgDeleteTeamError
+  | organization.OrgListTeamsError
+>({
   attributes: (live, props) => {
-    const id = live['id'];
-    if (typeof id !== 'number') return undefined;
-    const permission = text(live['permission'], 'read');
+    const permission = live.permission ?? 'read';
     if (permission !== 'read' && permission !== 'write' && permission !== 'admin') return undefined;
     return {
-      canCreateOrgRepo: bool(live['can_create_org_repo']),
-      description: text(live['description']),
-      includesAllRepositories: bool(live['includes_all_repositories']),
+      canCreateOrgRepo: live.can_create_org_repo ?? false,
+      description: live.description ?? '',
+      includesAllRepositories: live.includes_all_repositories ?? false,
       name: props.name,
       org: props.org,
       permission,
-      teamId: id,
-      units: stringArray(live['units']),
-      unitsMap: stringRecord(live['units_map']),
+      teamId: live.id,
+      units: stringArray(live.units ?? []),
+      unitsMap: stringRecord(live.units_map ?? {}),
     };
   },
-  collection: (props) => `orgs/${props.org}/teams`,
-  createForm: teamForm,
-  locate: (props) =>
-    forgejo<Record<string, unknown>[]>('GET', `orgs/${props.org}/teams?limit=200`).pipe(
-      Effect.map((rows) =>
-        Array.isArray(rows) ? rows.find((row) => row['name'] === props.name) : undefined,
-      ),
+  create: (props) => organization.orgCreateTeam({ org: props.org, ...teamForm(props) }),
+  destroy: (_props, live) => organization.orgDeleteTeam({ id: live.id }),
+  fetchLive: (props) =>
+    organization.orgListTeams({ org: props.org, limit: 200 }).pipe(
+      Effect.map((rows) => rows.find((row) => row.name === props.name)),
+      Effect.catchTag('NotFound', () => Effect.succeed(undefined)),
     ),
   matches: (attributes, props) =>
     attributes.description === (props.description ?? '') &&
@@ -96,9 +108,7 @@ const handlers = forgejoHandlers<OrgTeamProps, OrgTeamAttributes>({
     (props.units === undefined ||
       stringArray(props.units).join('\0') === attributes.units.join('\0')) &&
     (props.unitsMap === undefined || recordEqual(attributes.unitsMap, props.unitsMap)),
-  path: (props) => `orgs/${props.org}/teams/${props.name}`,
-  updateForm: teamForm,
-  wirePath: (_props, live) => `teams/${String(live['id'])}`,
+  update: (props, live) => organization.orgEditTeam({ id: live.id, ...teamForm(props) }),
 });
 
 export const ForgejoOrgTeamProvider = () =>
