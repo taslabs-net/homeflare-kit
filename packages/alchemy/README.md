@@ -123,6 +123,8 @@ delete-first.
 - ⛔ **No secrets in props** (state is unencrypted): declare the path a secret renderer writes.
 - ⛔ **No silent sudo:** the system domain needs a deploy started as root, or a `privileged` runner.
 - ⚠️ `org.nixos.*` jobs are never adopted. Guide and nix-darwin cutover: [docs/launchd.md](./docs/launchd.md).
+- ★ `claimPorts()` refuses two of a stack's own jobs on one port, in the stack program, before any
+  is declared: [docs/launchd-ports.md](./docs/launchd-ports.md).
 
 ### Deploying as yourself — `sudoRunner()`
 
