@@ -41,6 +41,27 @@ const mustSucceed = (result: ExecResult, argv: readonly string[]): void => {
   }
 };
 
+/**
+ * The cleanup `rm`'s own failure, for the merged error below. 🔴 MEASURED (adversarial review,
+ *   round 3, 2026-09-23): a plain `ExecResult` (the shape `elevate()` resolves with for a command
+ *   that RAN but exited non-zero) has no useful `toString()` — `String(cleaned)` printed
+ *   `[object Object]`, silently dropping the one thing an operator doing manual cleanup needs:
+ *   what `rm` actually said. A thrown `Error` (a refused or transport-failed `rm`) still prints
+ *   its own message correctly, so only the `ExecResult` shape needed a name.
+ */
+const describeCleanupFailure = (cleaned: unknown): string => {
+  if (
+    typeof cleaned === 'object' &&
+    cleaned !== null &&
+    'exitCode' in cleaned &&
+    'stderr' in cleaned
+  ) {
+    const result = cleaned as ExecResult;
+    return `exit ${String(result.exitCode)}: ${result.stderr.trim().slice(0, 300)}`;
+  }
+  return cleaned instanceof Error ? cleaned.message : String(cleaned);
+};
+
 /** A privileged call: allowlisted, logged, run. Shared with sudo-runner.ts's own exec() routing. */
 export type Elevate = (
   argv: readonly string[],
@@ -133,7 +154,8 @@ export const writeUnderPrefix = async (
       if (cleaned !== undefined) {
         throw new Error(
           `${cause instanceof Error ? cause.message : String(cause)} — AND removing the leftover ` +
-            `temp ${temp} also failed (${String(cleaned)}); it needs manual cleanup as root.`,
+            `temp ${temp} also failed (${describeCleanupFailure(cleaned)}); it needs manual ` +
+            'cleanup as root.',
           { cause },
         );
       }

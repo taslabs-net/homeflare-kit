@@ -81,6 +81,9 @@ describe('writeFileAtomic under a prefix', () => {
     const write = runner.writeFileAtomic(DEST, new TextEncoder().encode('x'), { mode: 0o644 });
     await expect(write).rejects.toThrow('simulated failure');
     await expect(write).rejects.toThrow('also failed');
+    // 🔴 Adversarial review, round 3: `String(cleaned)` on the raw ExecResult printed
+    //   `[object Object]`, silently dropping rm's own stderr — assert the actual text survives.
+    await expect(write).rejects.toThrow('rm: simulated cleanup failure');
     const calls = privileged();
     expect(calls.map((c) => c[0])).toEqual([INSTALL, MV, RM]);
     await expect(write).rejects.toThrow(calls[0]?.at(-1) ?? 'unreachable');
