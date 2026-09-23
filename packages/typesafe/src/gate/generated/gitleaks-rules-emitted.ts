@@ -11,8 +11,9 @@
  * DEVIATION: sidekiq-sensitive-url and slack-webhook-url each escape the literal "." in
  * their hostname (gems.contribsys.com / enterprise.contribsys.com / hooks.slack.com) so it
  * cannot match an arbitrary character — CodeQL "Incomplete regular expression for
- * hostnames" on PR 162. See HOSTNAME_DOT_ESCAPES in gen-gate-tables-rules.ts: this only
- * narrows the match (fewer false accepts of a near-miss host), never a missed secret.
+ * hostnames" on PR 162. See HOSTNAME_DOT_ESCAPES in gen-gate-tables-rules.ts, including
+ * the narrow IDNA-lookalike-dot caveat it records — not a blanket 'never a missed
+ * secret' claim.
  * Rule ids, descriptions and regex sources below are gitleaks' own — MIT License,
  * Copyright (c) 2019 Zachary Rice. This file carries the notice; it does not relicense
  * anything here, which stays under this package's own MIT license as a derived work.

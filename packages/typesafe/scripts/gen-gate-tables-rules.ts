@@ -52,11 +52,20 @@ export interface ClassifyResult {
  * hostnames" on PR 162 (gitleaks-rules-emitted.ts lines 172/181, since regenerated).
  * gitleaks writes a hostname literal like `gems.contribsys.com` with a bare `.`, which
  * in a regex also matches any other character, e.g. `gemsXcontribsysXcom`. That is not
- * a secret-detector vulnerability — a looser `.` only matches MORE, so it cannot cause a
- * real secret-bearing URL to be missed, only (in the near-zero-probability case of a
- * one-character-off lookalike host) an extra refusal. Fixed anyway because CodeQL is
- * right that it is not the regex gitleaks meant, and an escaped `.` is strictly more
- * correct with no behavior change on any real input.
+ * a secret-detector vulnerability in the way an escape bug usually is: as a REGEX, `\.`
+ * is strictly narrower than `.`, so this only removes false accepts of a one-character-
+ * off lookalike host, never a real one. Fixed anyway because CodeQL is right that it is
+ * not the regex gitleaks meant.
+ *
+ * ⚠️ One measured, narrow caveat (adversarial review on this PR): gate/scan.ts's input
+ *   normalization is NFKC only, which does NOT fold IDNA-equivalent full-stop lookalikes
+ *   (U+3002 IDEOGRAPHIC FULL STOP, U+FF61 HALFWIDTH IDEOGRAPHIC FULL STOP) to ASCII `.`.
+ *   A real, IDNA-resolvable URL spelled with one of those in place of the dot was
+ *   incidentally caught by the OLD loose `.` (which matches any character) and is not
+ *   caught by `\.` for these two rules. This is not new: microsoft-teams-webhook already
+ *   escapes its dots upstream and already has this gap on main. Not fixed here — folding
+ *   IDNA lookalikes belongs in scan.ts's normalization, a broader change than this
+ *   generator fix — but recorded so it isn't mistaken for a non-issue.
  *
  * Each entry names the exact translated-source substring gitleaks emits (`before`) and
  * its hostname-safe replacement (`after`) — applied only to the one rule id it names, and
