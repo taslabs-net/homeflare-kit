@@ -256,7 +256,12 @@ export const updateServer = (
   withEntitlement(
     `updating MCP server "${serverId}"`,
     zeroTrust
-      .updateAccessAiControlMcpServer({ accountId, id: serverId, name: write.name, ...optional(write) })
+      .updateAccessAiControlMcpServer({
+        accountId,
+        id: serverId,
+        name: write.name,
+        ...optional(write),
+      })
       .pipe(Effect.map(observe)),
   );
 
