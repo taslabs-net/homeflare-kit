@@ -36,6 +36,7 @@ import { noteUnfinished } from '../ownership/resume.ts';
 import { diffBinary } from './binary-diff.ts';
 import type { ReleaseBinaryAttributes, ReleaseBinaryProps } from './binary-form.ts';
 import { deleteBinary, readBinary, reconcileBinary, refreshBinary } from './binary-lifecycle.ts';
+import { declaredPinProblems } from './declared-pins.ts';
 import { type DownloadPolicy, httpFetchArchive, sharingInFlight } from './download.ts';
 
 export type { ReleaseBinaryAttributes, ReleaseBinaryProps } from './binary-form.ts';
@@ -102,17 +103,22 @@ export const makeReleaseBinaryProvider = (internals: ReleaseBinaryInternals = {}
             : lift(() => diffBinary(runner, news, olds, output)),
 
         // ★ `--adopt` reaches the apply too: the probe never ran for a create with an Output prop.
+        // ⛔ So do the pins AS DECLARED: `news` is resolved by now, and a first deploy is never
+        //   diffed, so only the stack's own record can show a digest that was an Output.
         reconcile: ({ fqn, instanceId, news, olds, output, session }) =>
-          Effect.flatMap(adoptsAtApply({ fqn, instanceId, output }), (adopt) =>
-            lift(() =>
+          Effect.gen(function* () {
+            const declared = yield* declaredPinProblems(fqn);
+            const adopt = yield* adoptsAtApply({ fqn, instanceId, output });
+            return yield* lift(() =>
               reconcileBinary(runner, fetch, news, {
                 adopt,
+                declared,
                 note: (message) => Effect.runPromise(session.note(message)),
                 olds,
                 output,
               }),
-            ),
-          ),
+            );
+          }),
 
         delete: ({ output }) => lift(() => deleteBinary(runner, output)),
       });

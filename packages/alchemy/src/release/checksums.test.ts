@@ -25,6 +25,10 @@ describe('parseChecksums is strict', () => {
     ['a name listed twice', `${line}\n${line}\n`],
     ['a path in a name', `${'a'.repeat(64)}  bin/vmagent-prod\n`],
     ['an empty file', '\n'],
+    ['a tab for the two spaces', `${'a'.repeat(64)}\tvmagent-prod\n`],
+    ['one space', `${'a'.repeat(64)} vmagent-prod\n`],
+    ['a trailing space (a name that merely starts with another)', `${line} \n`],
+    ['a no-break space in the name', `${line}\u00a0-enterprise\n`],
   ])('refuses %s', (_, text) => {
     expect(() => parseChecksums(text)).toThrow();
   });

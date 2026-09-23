@@ -1,8 +1,10 @@
 /**
  * VictoriaMetrics' release archives, pinned — the first data set for Release.Binary, and vendor
  * facts only: every digest copied from the vendor's own checksum file for that archive and
- * cross-checked against GitHub's asset digest. Nothing here names a host, a path, a user or an
- * estate. victoria.test.ts holds every pin to the committed checksum files (fixtures/victoria/).
+ * cross-checked against GitHub's asset digest ON THE RECORDED DATE. Nothing here names a host, a
+ * path, a user or an estate. victoria.test.ts holds every pin to the committed checksum files
+ * (fixtures/victoria/) — ⚠️ consistency, not provenance: it cannot re-read GitHub, so a fixture
+ * edited together with its pins passes, and review is the gate for that.
  *
  * ★ PINNED IN CODE, NOT FETCHED AT APPLY. The checksum file is published by the same account, on
  *   the same release, over the same channel as the archive it describes — and these releases are
@@ -13,7 +15,9 @@
  *   committed here changes only through a reviewed kit release, so a swapped asset is a REFUSAL
  *   that names the digest it expected. It also means an apply makes one request, not two, and a
  *   plan knows exactly which bytes it will install without touching the network.
- * ⚠️ TRUST ROOT: THE GITHUB RELEASE OVER TLS, uploaded from a maintainer's personal account.
+ * ⚠️ TRUST ROOT. At apply, these pins alone: the transport (TLS, the redirect, the CDN) can fail
+ *   a download, never pass other bytes. The pins' own root is the GitHub release over TLS as read
+ *   on RECORDED (trust on first use), uploaded from a maintainer's personal account.
  *   VictoriaMetrics publishes no signature, cosign bundle, SLSA provenance or GitHub artifact
  *   attestation for these archives (measured 2026-09-22: no .sig/.asc/.pem/.bundle assets; the
  *   attestations API answers 404 for all four digests, next to a positive control that answers

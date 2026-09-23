@@ -25,6 +25,9 @@ VictoriaMetrics': the only data set so far. Host class: the Mac mini the stack i
   per `-prod` member, in `sha256sum` text mode (`<hex>  <name>`, LF, trailing
   newline). For all four, GitHub's asset `digest` equals line 1, and GitHub's
   digest of the checksum file equals the SHA-256 of the committed fixture.
+- **Re-read the same day by the supply-chain review** (`gh api …/releases/tags/<tag>`):
+  all four archives' and checksum files' sizes and `digest`s still equal the pins
+  and the recorded checksum-file digests. Nothing had been swapped since recording.
 - **Releases are mutable** (`"immutable": false`), uploaded from maintainers'
   personal accounts. **No signatures or attestations** exist for the archives:
   no `.sig`/`.asc`/`.pem`/`.bundle` assets, and the attestations API answers 404
