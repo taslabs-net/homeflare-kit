@@ -40,12 +40,21 @@ try {
 
   await Bun.write(
     join(scratch, 'consumer.ts'),
-    `import { TypeSafeClient, choice, createTypeSafeClient, noul, VERSION } from '@homeflare/typesafe';
+    `import { TypeSafeClient, choice, createTypeSafeClient, createTypeSafeGatewayClient, noul, VERSION } from '@homeflare/typesafe';
 
 if (typeof VERSION !== 'string' || VERSION.length === 0) throw new Error('VERSION missing');
 const client = createTypeSafeClient({ apiKey: 'smoke-key' });
 if (!(client instanceof TypeSafeClient)) throw new Error('not an official TypeSafeClient');
 if (typeof choice !== 'function' || typeof noul !== 'function') throw new Error('helpers missing');
+
+// No network call: fake ids only, proving the gateway client still IS a TypeSafeClient.
+const gatewayClient = createTypeSafeGatewayClient({
+  accountId: '0123456789abcdef0123456789abcdef',
+  token: 'fake-token',
+  gatewayId: 'example-gateway',
+});
+if (!(gatewayClient instanceof TypeSafeClient)) throw new Error('gateway client is not a TypeSafeClient');
+
 console.log('consumer ok', VERSION);
 `,
   );
