@@ -218,6 +218,14 @@ every cluster needs first. What it never does to a guest, and why: [docs/proxmox
 against a table generated from NetBox's own OpenAPI document before the request is built.
 ⛔ Adopt-first, `retain` on removal, and read/write shapes that differ: [docs/netbox.md](./docs/netbox.md).
 
+## LiteLLM — `@homeflare/alchemy/litellm`
+
+`LiteLLM.PassThroughEndpoint` declares one route on LiteLLM's proxy that forwards to an
+upstream target, generated from LiteLLM 1.100.0's own OpenAPI document. ⛔ Every pass-through
+endpoint lives in ONE `general_settings` field (a whole-list read-modify-write), a path already
+declared in `config.yaml` is refused rather than silently overridden, and a literal secret in a
+forwarded header is refused at plan: [docs/litellm.md](./docs/litellm.md).
+
 ## GitHub — `@homeflare/alchemy/github`
 
 `declareRepoPolicy` declares one repository's merge policy and its default-branch ruleset in a

@@ -101,6 +101,7 @@ import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from 
 import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, renderUnit, sshRunner } from '@homeflare/alchemy/linux';
 import { ReleaseBinary, VICTORIA_RELEASES, catalogBinary, identifyBinary, releaseProviders, releaseUrl } from '@homeflare/alchemy/release';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
+import { LITELLM_PROXY_API_KEY_ENV, LITELLM_PROXY_URL_ENV, LitellmCredentialsError, isLiteLLMPassThroughEndpoint, litellmProviders } from '@homeflare/alchemy/litellm';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 
 for (const [name, value] of Object.entries({
@@ -111,6 +112,7 @@ for (const [name, value] of Object.entries({
   NetboxPrefix, bodyViolations, constraintsFor, NETBOX_CONSTRAINTS_DIGEST,
   HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, ReleaseBinary, releaseProviders,
   parseVerifyArgs, verifySession, verifyStack,
+  litellmProviders, LitellmCredentialsError,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
 }
@@ -220,7 +222,23 @@ if (!/^[0-9a-f]{16}$/.test(NETBOX_CONSTRAINTS_DIGEST)) {
   throw new Error('NetBox constraint digest from dist is not a digest');
 }
 
-console.log('all twelve subpaths import and resolve');
+// ★ THE LITELLM SUBPATH THROUGH THE PUBLISHED FILE. Pure checks only — no LiteLLM proxy is
+//   reached: the env-var names LiteLLM's own CLI uses (credentials.ts), the resource's tag
+//   string, and the typed credentials error construct the way MeshNodeError does above.
+if (LITELLM_PROXY_URL_ENV !== 'LITELLM_PROXY_URL' || LITELLM_PROXY_API_KEY_ENV !== 'LITELLM_PROXY_API_KEY') {
+  throw new Error('litellm credential env var names from dist do not match the vendor CLI');
+}
+if (!isLiteLLMPassThroughEndpoint({ Type: 'LiteLLM.PassThroughEndpoint' }) || isLiteLLMPassThroughEndpoint({})) {
+  throw new Error('isLiteLLMPassThroughEndpoint from dist lost its resource type guard');
+}
+if (new LitellmCredentialsError({ message: 'smoke' }).message !== 'smoke') {
+  throw new Error('LitellmCredentialsError from dist did not construct');
+}
+if (typeof litellmProviders !== 'function') {
+  throw new Error('litellmProviders from dist is not callable');
+}
+
+console.log('all thirteen subpaths import and resolve');
 `,
   );
 
