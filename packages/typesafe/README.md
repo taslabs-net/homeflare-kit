@@ -72,9 +72,12 @@ classes are all the official SDK's. What differs is only where the bytes go:
   of silently returning the wrong version's answer — that refusal happens only _after_
   Cloudflare has run and billed the call, since it cannot be caught earlier on this
   route. An alias, or no `model` at all (the SDK defaults it to `jev-latest`), is never
-  refused. The model that actually answered comes back on every response — a refusal
-  included — as `x-homeflare-gateway-model`, alongside `x-homeflare-gateway-key-source`;
-  read either via `.withResponse()`, or narrow a caught error with `modelMismatchOf()`:
+  refused — but pointing `defaultModel` / `TYPESAFE_DEFAULT_MODEL` at a versioned id
+  makes _every_ call that omits `model` an explicit pin too (`gateway-model.ts`'s file
+  header has why). The model that actually answered comes back on every response — a
+  refusal included — as `x-homeflare-gateway-model`, alongside
+  `x-homeflare-gateway-key-source`; read either via `.withResponse()`, or narrow a
+  caught error with `modelMismatchOf()`:
 
   ```ts
   import { createTypeSafeGatewayClient, modelMismatchOf, noul } from '@homeflare/typesafe';

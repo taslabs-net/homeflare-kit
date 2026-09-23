@@ -24,7 +24,22 @@
  *   === true`, same file) — so a thrown mismatch would be silently retried, and every
  *   retry is a second billed `/ai/run` call. Build a synthetic `Response` instead, the
  *   same way gateway-map.ts's own local refusals do; 422 sits outside the SDK's default
- *   retryable status set (408/429/5xx, same file) so it is not retried either.
+ *   *retryable status set* (408/429/5xx, same file) so it is not retried by default
+ *   either — but a caller that explicitly adds 422 to their own `retry.httpStatuses`
+ *   (client-level or per-call, both are `Partial<RetryPolicy>` the SDK lets a caller
+ *   override) would retry, and bill, this refusal like any other 422; that is the
+ *   caller's own choice to make 422 retryable, identical to the pre-existing risk on
+ *   gateway-map.ts's unrelated "200 with an unexpected shape" 422, and not something
+ *   this guard can see or prevent from inside the fetch adapter.
+ *
+ * ★ `TYPESAFE_DEFAULT_MODEL` / `TypeSafeClientConfig.defaultModel` COUNTS AS EXPLICIT
+ *   TOO. `systemOne()` resolves `model: request.model ?? this.defaultModel` before this
+ *   guard ever sees the request (measured in the same SDK file) — gateway-map.ts's
+ *   `mapRequest` reads only the resolved string, with no way to tell a per-call pin
+ *   from a client-wide default. Point `defaultModel` at a versioned id and *every* call
+ *   that omits `model` becomes an explicit pin, refused the same as one spelled out per
+ *   call. Intentional and conservative — pin the default deliberately, or leave it at
+ *   the alias default and pin per call instead.
  *
  * The SDK builds its own `APIError` subclasses from `APIError.fromResponse()` (same
  * file) — 422 becomes `UnprocessableEntityError`. There is no seam to add a dedicated
