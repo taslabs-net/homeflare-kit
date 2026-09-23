@@ -94,11 +94,22 @@ then tidiness.
 
 ## Conforms
 
+- **`github/RepositoryRuleset`** (added 2026-09-23) closes the hazard the row above names:
+  probes by name (`read`/`reconcile` both), answers `Unowned` on a cold name match (H1),
+  normalizes before comparing so a matching live ruleset is a true noop, and refuses
+  (rather than silently drops) a live rule type it does not model. Two recorded
+  divergences: the type string sits in upstream's own `GitHub` namespace (H14), and the
+  client is Octokit rather than distilled because distilled's `S.Struct` request schemas
+  have no field for `require_extra_approval_for_unattributed_changes` (H15) — see
+  [repository-ruleset.md](./repository-ruleset.md). `declareRepoPolicy` is rewired onto
+  it; the row below is now describing upstream `GitHub.Ruleset` itself, which this family
+  does not touch and remains usable directly.
 - **`github/declareRepoPolicy`** composes upstream `GitHub.Repository` and
   `GitHub.Ruleset`. Its one hazard is upstream's own: `Ruleset.read` returns `undefined`
   without prior output, so a first deploy creates a duplicate
   ([repo-policy.md](./repo-policy.md)). The fix belongs upstream: read by name and answer
-  `Unowned`.
+  `Unowned`. Since 2026-09-23 `declareRepoPolicy` no longer takes this path (see the
+  `RepositoryRuleset` row above); this remains accurate for upstream `Ruleset` on its own.
 - **`cloudflare/website.ts`** sets house defaults over upstream `Website.Astro` and
   `Website.Vite`.
 - **`ownership/*`** is built only on `AdoptPolicy`, `Stack`, `State` and `Artifacts`. Its
