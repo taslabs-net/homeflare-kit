@@ -20,7 +20,15 @@ describe('the pre-commit warning', () => {
   // 🔴 A CHECK THAT CANNOT FAIL IS WORSE THAN NO CHECK: it reads as coverage in CI and in
   //   review, so nobody looks again. This repo has shipped that defect twice (see
   //   tests/package-files.test.ts). So the detector is exercised, not just referenced.
-  const manifest = ['{', '  "name": "@homeflare/x",', '  "version": "1.0.0",', '  "description": "…",', '  "homepage": "…",', '  "license": "MIT"', '}'].join('\n');
+  const manifest = [
+    '{',
+    '  "name": "@homeflare/x",',
+    '  "version": "1.0.0",',
+    '  "description": "…",',
+    '  "homepage": "…",',
+    '  "license": "MIT"',
+    '}',
+  ].join('\n');
 
   test('flags an edit on the line below "version"', () => {
     expect(adjacentEdits(manifest, [4])).toEqual([4]);

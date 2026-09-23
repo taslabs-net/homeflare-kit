@@ -71,9 +71,7 @@ async function git(args: readonly string[]): Promise<string> {
 }
 
 if (import.meta.main) {
-  const manifests = (await stagedFiles()).filter((f) =>
-    /^packages\/[^/]+\/package\.json$/.test(f),
-  );
+  const manifests = (await stagedFiles()).filter((f) => /^packages\/[^/]+\/package\.json$/.test(f));
   const flagged: string[] = [];
 
   for (const path of manifests) {
