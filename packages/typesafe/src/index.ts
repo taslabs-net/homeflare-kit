@@ -19,6 +19,7 @@ import { TypeSafeClient, type TypeSafeClientConfig } from '@typesafe-ai/sdk';
 import { TYPESAFE_API_KEY } from './location.ts';
 import { VERSION } from './version.ts';
 
+export { createTypeSafeGatewayClient, type TypeSafeGatewayOptions } from './gateway.ts';
 export { VERSION };
 export { TYPESAFE_API_KEY, TYPESAFE_OPENBAO_PATH } from './location.ts';
 export { TypeSafeClient, choice, noul, score } from '@typesafe-ai/sdk';
