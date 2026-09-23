@@ -8,6 +8,7 @@ import {
   type NetboxOpError,
   type NetboxOpContext,
 } from "../protocol.ts";
+import { netboxPaginate } from "../pagination.ts";
 import { UnknownNetboxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -5745,93 +5746,159 @@ export const getUsersUser: API.OperationMethod<
 
 export type ListUsersGroupsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of group objects. */
-export const listUsersGroups: API.OperationMethod<
+export const listUsersGroups: API.PaginatedOperationMethod<
   ListUsersGroupsRequest,
   PaginatedGroupList,
   ListUsersGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListUsersGroupsRequest,
-  output: PaginatedGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Group
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListUsersGroupsRequest,
+    output: PaginatedGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListUsersOwnerGroupsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of owner group objects. */
-export const listUsersOwnerGroups: API.OperationMethod<
+export const listUsersOwnerGroups: API.PaginatedOperationMethod<
   ListUsersOwnerGroupsRequest,
   PaginatedOwnerGroupList,
   ListUsersOwnerGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListUsersOwnerGroupsRequest,
-  output: PaginatedOwnerGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  OwnerGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListUsersOwnerGroupsRequest,
+    output: PaginatedOwnerGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListUsersOwnersError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of owner objects. */
-export const listUsersOwners: API.OperationMethod<
+export const listUsersOwners: API.PaginatedOperationMethod<
   ListUsersOwnersRequest,
   PaginatedOwnerList,
   ListUsersOwnersError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListUsersOwnersRequest,
-  output: PaginatedOwnerList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Owner
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListUsersOwnersRequest,
+    output: PaginatedOwnerList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListUsersPermissionsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of permission objects. */
-export const listUsersPermissions: API.OperationMethod<
+export const listUsersPermissions: API.PaginatedOperationMethod<
   ListUsersPermissionsRequest,
   PaginatedObjectPermissionList,
   ListUsersPermissionsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListUsersPermissionsRequest,
-  output: PaginatedObjectPermissionList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ObjectPermission
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListUsersPermissionsRequest,
+    output: PaginatedObjectPermissionList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListUsersTokensError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of token objects. */
-export const listUsersTokens: API.OperationMethod<
+export const listUsersTokens: API.PaginatedOperationMethod<
   ListUsersTokensRequest,
   PaginatedTokenList,
   ListUsersTokensError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListUsersTokensRequest,
-  output: PaginatedTokenList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Token
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListUsersTokensRequest,
+    output: PaginatedTokenList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListUsersUsersError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of user objects. */
-export const listUsersUsers: API.OperationMethod<
+export const listUsersUsers: API.PaginatedOperationMethod<
   ListUsersUsersRequest,
   PaginatedUserList,
   ListUsersUsersError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListUsersUsersRequest,
-  output: PaginatedUserList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  User
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListUsersUsersRequest,
+    output: PaginatedUserList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type UpdateUsersGroupError = Forbidden | NotFound | NetboxOpError;
 /** Put a group object. */

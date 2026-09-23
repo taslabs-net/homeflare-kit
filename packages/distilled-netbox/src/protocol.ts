@@ -4,10 +4,13 @@
  * NetBox speaks plain JSON with no response envelope: a detail endpoint
  * returns the object itself, a list endpoint returns
  * `{ count, next, previous, results: [...] }` as an ordinary output shape
- * (not a raw-response wrapper — `next`/`previous` are full URLs, which the
- * shared pagination heuristic does not match, so list operations are plain
- * request/response and a caller pages by `limit`/`offset` or by following
- * `next`; see scripts/convert.ts), a handful of custom sub-resource GETs
+ * (not a raw-response wrapper). `next`/`previous` are full URLs, not a bare
+ * token core's generic pagination strategies can follow directly — every
+ * list operation carries `smithy.api#paginated`
+ * (patches/<tag>/_pagination.json) and streams through the hand-written
+ * `netboxPaginate` strategy in ./pagination.ts, which parses `next`'s query
+ * string instead of forwarding it as a token; see that file for the full
+ * reasoning. A handful of custom sub-resource GETs
  * (`available-ips`, `available-vlans`, …) return a bare JSON array, and
  * many mutations answer `204 No Content`.
  *

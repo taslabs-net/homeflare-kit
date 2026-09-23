@@ -8,6 +8,7 @@ import {
   type NetboxOpError,
   type NetboxOpContext,
 } from "../protocol.ts";
+import { netboxPaginate } from "../pagination.ts";
 import { UnknownNetboxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -19954,192 +19955,313 @@ export type ListCircuitsCircuitGroupAssignmentsError =
   | Forbidden
   | NetboxOpError;
 /** Get a list of Circuit group assignment objects. */
-export const listCircuitsCircuitGroupAssignments: API.OperationMethod<
+export const listCircuitsCircuitGroupAssignments: API.PaginatedOperationMethod<
   ListCircuitsCircuitGroupAssignmentsRequest,
   PaginatedCircuitGroupAssignmentList,
   ListCircuitsCircuitGroupAssignmentsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCircuitsCircuitGroupAssignmentsRequest,
-  output: PaginatedCircuitGroupAssignmentList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CircuitGroupAssignment
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCircuitsCircuitGroupAssignmentsRequest,
+    output: PaginatedCircuitGroupAssignmentList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCircuitsCircuitGroupsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of circuit group objects. */
-export const listCircuitsCircuitGroups: API.OperationMethod<
+export const listCircuitsCircuitGroups: API.PaginatedOperationMethod<
   ListCircuitsCircuitGroupsRequest,
   PaginatedCircuitGroupList,
   ListCircuitsCircuitGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCircuitsCircuitGroupsRequest,
-  output: PaginatedCircuitGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CircuitGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCircuitsCircuitGroupsRequest,
+    output: PaginatedCircuitGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCircuitsCircuitsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of circuit objects. */
-export const listCircuitsCircuits: API.OperationMethod<
+export const listCircuitsCircuits: API.PaginatedOperationMethod<
   ListCircuitsCircuitsRequest,
   PaginatedCircuitList,
   ListCircuitsCircuitsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCircuitsCircuitsRequest,
-  output: PaginatedCircuitList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Circuit
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCircuitsCircuitsRequest,
+    output: PaginatedCircuitList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCircuitsCircuitTerminationsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of circuit termination objects. */
-export const listCircuitsCircuitTerminations: API.OperationMethod<
+export const listCircuitsCircuitTerminations: API.PaginatedOperationMethod<
   ListCircuitsCircuitTerminationsRequest,
   PaginatedCircuitTerminationList,
   ListCircuitsCircuitTerminationsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCircuitsCircuitTerminationsRequest,
-  output: PaginatedCircuitTerminationList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CircuitTermination
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCircuitsCircuitTerminationsRequest,
+    output: PaginatedCircuitTerminationList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCircuitsCircuitTypesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of circuit type objects. */
-export const listCircuitsCircuitTypes: API.OperationMethod<
+export const listCircuitsCircuitTypes: API.PaginatedOperationMethod<
   ListCircuitsCircuitTypesRequest,
   PaginatedCircuitTypeList,
   ListCircuitsCircuitTypesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCircuitsCircuitTypesRequest,
-  output: PaginatedCircuitTypeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CircuitType
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCircuitsCircuitTypesRequest,
+    output: PaginatedCircuitTypeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCircuitsProviderAccountsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of provider account objects. */
-export const listCircuitsProviderAccounts: API.OperationMethod<
+export const listCircuitsProviderAccounts: API.PaginatedOperationMethod<
   ListCircuitsProviderAccountsRequest,
   PaginatedProviderAccountList,
   ListCircuitsProviderAccountsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCircuitsProviderAccountsRequest,
-  output: PaginatedProviderAccountList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ProviderAccount
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCircuitsProviderAccountsRequest,
+    output: PaginatedProviderAccountList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCircuitsProviderNetworksError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of provider network objects. */
-export const listCircuitsProviderNetworks: API.OperationMethod<
+export const listCircuitsProviderNetworks: API.PaginatedOperationMethod<
   ListCircuitsProviderNetworksRequest,
   PaginatedProviderNetworkList,
   ListCircuitsProviderNetworksError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCircuitsProviderNetworksRequest,
-  output: PaginatedProviderNetworkList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ProviderNetwork
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCircuitsProviderNetworksRequest,
+    output: PaginatedProviderNetworkList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCircuitsProvidersError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of provider objects. */
-export const listCircuitsProviders: API.OperationMethod<
+export const listCircuitsProviders: API.PaginatedOperationMethod<
   ListCircuitsProvidersRequest,
   PaginatedProviderList,
   ListCircuitsProvidersError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCircuitsProvidersRequest,
-  output: PaginatedProviderList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Provider
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCircuitsProvidersRequest,
+    output: PaginatedProviderList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCircuitsVirtualCircuitsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of virtual circuit objects. */
-export const listCircuitsVirtualCircuits: API.OperationMethod<
+export const listCircuitsVirtualCircuits: API.PaginatedOperationMethod<
   ListCircuitsVirtualCircuitsRequest,
   PaginatedVirtualCircuitList,
   ListCircuitsVirtualCircuitsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCircuitsVirtualCircuitsRequest,
-  output: PaginatedVirtualCircuitList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VirtualCircuit
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCircuitsVirtualCircuitsRequest,
+    output: PaginatedVirtualCircuitList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCircuitsVirtualCircuitTerminationsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of virtual circuit termination objects. */
-export const listCircuitsVirtualCircuitTerminations: API.OperationMethod<
+export const listCircuitsVirtualCircuitTerminations: API.PaginatedOperationMethod<
   ListCircuitsVirtualCircuitTerminationsRequest,
   PaginatedVirtualCircuitTerminationList,
   ListCircuitsVirtualCircuitTerminationsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCircuitsVirtualCircuitTerminationsRequest,
-  output: PaginatedVirtualCircuitTerminationList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VirtualCircuitTermination
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCircuitsVirtualCircuitTerminationsRequest,
+    output: PaginatedVirtualCircuitTerminationList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCircuitsVirtualCircuitTypesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of virtual circuit type objects. */
-export const listCircuitsVirtualCircuitTypes: API.OperationMethod<
+export const listCircuitsVirtualCircuitTypes: API.PaginatedOperationMethod<
   ListCircuitsVirtualCircuitTypesRequest,
   PaginatedVirtualCircuitTypeList,
   ListCircuitsVirtualCircuitTypesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCircuitsVirtualCircuitTypesRequest,
-  output: PaginatedVirtualCircuitTypeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VirtualCircuitType
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCircuitsVirtualCircuitTypesRequest,
+    output: PaginatedVirtualCircuitTypeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type UpdateCircuitsCircuitError = Forbidden | NotFound | NetboxOpError;
 /** Put a circuit object. */

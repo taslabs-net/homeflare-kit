@@ -8,6 +8,7 @@ import {
   type NetboxOpError,
   type NetboxOpContext,
 } from "../protocol.ts";
+import { netboxPaginate } from "../pagination.ts";
 import { UnknownNetboxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -16865,159 +16866,269 @@ export const getVpnTunnelTermination: API.OperationMethod<
 
 export type ListVpnIkePoliciesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of IKE policy objects. */
-export const listVpnIkePolicies: API.OperationMethod<
+export const listVpnIkePolicies: API.PaginatedOperationMethod<
   ListVpnIkePoliciesRequest,
   PaginatedIKEPolicyList,
   ListVpnIkePoliciesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVpnIkePoliciesRequest,
-  output: PaginatedIKEPolicyList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  IKEPolicy
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVpnIkePoliciesRequest,
+    output: PaginatedIKEPolicyList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVpnIkeProposalsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of IKE proposal objects. */
-export const listVpnIkeProposals: API.OperationMethod<
+export const listVpnIkeProposals: API.PaginatedOperationMethod<
   ListVpnIkeProposalsRequest,
   PaginatedIKEProposalList,
   ListVpnIkeProposalsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVpnIkeProposalsRequest,
-  output: PaginatedIKEProposalList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  IKEProposal
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVpnIkeProposalsRequest,
+    output: PaginatedIKEProposalList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVpnIpsecPoliciesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of IPSec policy objects. */
-export const listVpnIpsecPolicies: API.OperationMethod<
+export const listVpnIpsecPolicies: API.PaginatedOperationMethod<
   ListVpnIpsecPoliciesRequest,
   PaginatedIPSecPolicyList,
   ListVpnIpsecPoliciesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVpnIpsecPoliciesRequest,
-  output: PaginatedIPSecPolicyList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  IPSecPolicy
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVpnIpsecPoliciesRequest,
+    output: PaginatedIPSecPolicyList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVpnIpsecProfilesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of IPSec profile objects. */
-export const listVpnIpsecProfiles: API.OperationMethod<
+export const listVpnIpsecProfiles: API.PaginatedOperationMethod<
   ListVpnIpsecProfilesRequest,
   PaginatedIPSecProfileList,
   ListVpnIpsecProfilesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVpnIpsecProfilesRequest,
-  output: PaginatedIPSecProfileList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  IPSecProfile
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVpnIpsecProfilesRequest,
+    output: PaginatedIPSecProfileList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVpnIpsecProposalsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of IPSec proposal objects. */
-export const listVpnIpsecProposals: API.OperationMethod<
+export const listVpnIpsecProposals: API.PaginatedOperationMethod<
   ListVpnIpsecProposalsRequest,
   PaginatedIPSecProposalList,
   ListVpnIpsecProposalsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVpnIpsecProposalsRequest,
-  output: PaginatedIPSecProposalList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  IPSecProposal
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVpnIpsecProposalsRequest,
+    output: PaginatedIPSecProposalList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVpnL2vpnsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of L2VPN objects. */
-export const listVpnL2vpns: API.OperationMethod<
+export const listVpnL2vpns: API.PaginatedOperationMethod<
   ListVpnL2vpnsRequest,
   PaginatedL2VPNList,
   ListVpnL2vpnsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVpnL2vpnsRequest,
-  output: PaginatedL2VPNList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  L2VPN
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVpnL2vpnsRequest,
+    output: PaginatedL2VPNList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVpnL2vpnTerminationsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of L2VPN termination objects. */
-export const listVpnL2vpnTerminations: API.OperationMethod<
+export const listVpnL2vpnTerminations: API.PaginatedOperationMethod<
   ListVpnL2vpnTerminationsRequest,
   PaginatedL2VPNTerminationList,
   ListVpnL2vpnTerminationsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVpnL2vpnTerminationsRequest,
-  output: PaginatedL2VPNTerminationList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  L2VPNTermination
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVpnL2vpnTerminationsRequest,
+    output: PaginatedL2VPNTerminationList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVpnTunnelGroupsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of tunnel group objects. */
-export const listVpnTunnelGroups: API.OperationMethod<
+export const listVpnTunnelGroups: API.PaginatedOperationMethod<
   ListVpnTunnelGroupsRequest,
   PaginatedTunnelGroupList,
   ListVpnTunnelGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVpnTunnelGroupsRequest,
-  output: PaginatedTunnelGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  TunnelGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVpnTunnelGroupsRequest,
+    output: PaginatedTunnelGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVpnTunnelsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of tunnel objects. */
-export const listVpnTunnels: API.OperationMethod<
+export const listVpnTunnels: API.PaginatedOperationMethod<
   ListVpnTunnelsRequest,
   PaginatedTunnelList,
   ListVpnTunnelsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVpnTunnelsRequest,
-  output: PaginatedTunnelList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Tunnel
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVpnTunnelsRequest,
+    output: PaginatedTunnelList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVpnTunnelTerminationsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of tunnel termination objects. */
-export const listVpnTunnelTerminations: API.OperationMethod<
+export const listVpnTunnelTerminations: API.PaginatedOperationMethod<
   ListVpnTunnelTerminationsRequest,
   PaginatedTunnelTerminationList,
   ListVpnTunnelTerminationsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVpnTunnelTerminationsRequest,
-  output: PaginatedTunnelTerminationList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  TunnelTermination
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVpnTunnelTerminationsRequest,
+    output: PaginatedTunnelTerminationList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type UpdateVpnIkePoliciesPartialError =
   | Forbidden
