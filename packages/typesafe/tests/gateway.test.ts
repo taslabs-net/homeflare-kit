@@ -108,6 +108,7 @@ describe('createTypeSafeGatewayClient', () => {
       Authorization: `Bearer ${FAKE_TOKEN}`,
       'cf-aig-gateway-id': FAKE_GATEWAY_ID,
       'cf-aig-no-wholesale': 'true',
+      'cf-aig-collect-log': 'false',
       'content-type': 'application/json',
       accept: 'application/json',
     });

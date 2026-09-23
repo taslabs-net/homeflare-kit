@@ -7,7 +7,7 @@ The install line for `@homeflare/alchemy`, and why every peer on it and every en
 ```sh
 bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
         @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0 \
-        @distilled.cloud/cloudflare@1.0.0-rc.12
+        @distilled.cloud/cloudflare@1.0.0-rc.12 @effect/sql-pg@4.0.0-rc.115
 ```
 
 🔴 **Why, measured 2026-09-16 on 0.1.0 and re-checked 2026-09-17 against Alchemy 78.**
@@ -37,3 +37,10 @@ that followed the 78 README does not drop a required line.
 subpath would degrade without it — measured 2026-09-16, the subpath does not load at all:
 `Cannot find package 'cloudflare'`. An optional peer should mean a feature is absent, not
 that an import fails.
+
+⚠️ **`@effect/sql-pg` (added for `/postgres`, 2026-09-23) is required too, for the same
+reason, not because every subpath imports it.** This package has one flat peer set for the
+whole install, not one per subpath — `peers.test.ts`'s "no peer is marked optional" test
+enforces it. `@effect/sql-pg` is optional on `alchemy`'s own manifest (its module graph
+does not reach `SQL/Postgres` unless a stack imports it); here it stays a plain peer like
+every other one.
