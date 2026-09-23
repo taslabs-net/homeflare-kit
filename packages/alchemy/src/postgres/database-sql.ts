@@ -105,9 +105,24 @@ export const roleExists = (pg: PgExecutor, role: string): Effect.Effect<boolean,
 /** `datlocprovider` is Postgres's internal 1-byte `"char"` type, which this client decodes as
  * raw bytes rather than text (measured 2026-09-23 against the live socket — `docs/postgres.md`);
  * the `CASE` maps it to the same three words `pg_collation.h@REL_18_6#collprovider_name` returns
- * for the same codes, so the row never crosses the wire as anything but ordinary `text`. */
+ * for the same codes, so the row never crosses the wire as anything but ordinary `text`.
+ *
+ * ⛔ `oid` AND `datconnlimit` ARE READ AT THEIR NATIVE CATALOG WIDTH — NEVER CAST TO `::int8`.
+ *   `pg_database.h@REL_18_6` types them `Oid oid` (4 bytes, builtin OID 26) and
+ *   `int32 datconnlimit` (4 bytes, builtin OID 23); `@effect/sql-pg`'s codec table
+ *   (`PgTypes.ts@4.0.0-rc.115`) decodes both of those as a plain JS `number`
+ *   (`readUint32`/`readInt32`), matching `PostgresDatabaseAttributes`'s declared `number`
+ *   fields. Casting either to `::int8` changes the WIRE type the server sends, so the same
+ *   codec table decodes it as a JS `bigint` instead (`OID.int8`'s codec calls
+ *   `DataView.getBigInt64`) — and alchemy's `encodeState`
+ *   (`node_modules/alchemy/lib/State/StateEncoding.js`) has no `bigint` branch, so
+ *   `JSON.stringify`ing the persisted state throws `TypeError: Do not know how to serialize a
+ *   BigInt` on every successful reconcile, and a live `bigint` compared against a declared
+ *   `number` in `firstDrift` below is never `===`, so a matching `connectionLimit` reads as
+ *   permanent drift. Measured 2026-09-23; regression test:
+ *   `database-bigint-serialization.test.ts`. */
 const SELECT_DATABASE_SQL = `SELECT
-    d.oid::int8 AS oid,
+    d.oid AS oid,
     d.datname AS name,
     pg_get_userbyid(d.datdba) AS owner,
     pg_encoding_to_char(d.encoding) AS encoding,
@@ -118,7 +133,7 @@ const SELECT_DATABASE_SQL = `SELECT
     d.datcollate AS collate,
     d.datctype AS ctype,
     d.datallowconn AS "allowConnections",
-    d.datconnlimit::int8 AS "connectionLimit",
+    d.datconnlimit AS "connectionLimit",
     d.datistemplate AS "isTemplate",
     t.spcname AS tablespace
   FROM pg_database d
