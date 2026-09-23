@@ -91,6 +91,8 @@ describe('refusals leave the host exactly as it was', () => {
     ['a relative directory', () => ({ directory: 'bin/vmutils-1.151.0' })],
     ['a setuid mode', () => ({ mode: 0o4755 })],
     ['a group-writable mode', () => ({ mode: 0o775 })],
+    // Measured 2026-09-22 before the fix: written, then EACCES on the read-back, left with no state.
+    ['an execute-only mode its owner cannot re-hash', () => ({ mode: 0o111 })],
   ])('%s: refused before any host call or download', async (_, change) => {
     const s = setup();
     s.fake.calls.length = 0;
@@ -124,6 +126,18 @@ describe('refusals leave the host exactly as it was', () => {
     s.fake.dirs.delete(VMUTILS_DIR);
     const error = await refused(s, () => s.install());
     expect(error.message).toContain(`directory ${VMUTILS_DIR} does not exist`);
+    expect(s.transport.requests).toEqual([]);
+  });
+
+  test('⛔ a directory others may write: refused before the download', async () => {
+    const s = setup();
+    const stat = s.fake.runner.stat;
+    s.fake.runner.stat = async (path) => {
+      const found = await stat(path);
+      return path === VMUTILS_DIR && found !== undefined ? { ...found, mode: 0o777 } : found;
+    };
+    const error = await refused(s, () => s.install());
+    expect(error.message).toContain('is writable by group or other (mode 0777)');
     expect(s.transport.requests).toEqual([]);
   });
 
@@ -161,6 +175,18 @@ describe('refusals leave the host exactly as it was', () => {
       write(path, bytes, { ...options, mode: 0o700 });
     const before = pathsOn(s.fake);
     await expect(s.install()).rejects.toThrow('does not match the declaration');
+    expect(pathsOn(s.fake)).toEqual(before);
+  });
+
+  test('⛔ a read-back that THROWS rolls the create back too, as a refusal', async () => {
+    const s = setup();
+    const read = s.fake.runner.readFile;
+    s.fake.runner.readFile = async (path) => {
+      if (s.fake.files.has(path)) throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      return read(path);
+    };
+    const before = pathsOn(s.fake);
+    await expect(s.install()).rejects.toThrow(`Release.Binary ${PATH}: the write returned but`);
     expect(pathsOn(s.fake)).toEqual(before);
   });
 });

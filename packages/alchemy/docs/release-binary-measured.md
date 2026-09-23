@@ -95,7 +95,45 @@ host that models `mkdir`/`rmdir`, and a fake HTTP server:
   `diff` now answers `update` there, and reconcile's in-place guard refuses it
   with the binary kept (`plan.test.ts` pins the refusal).
 
+## The install path on a real filesystem (red team, 2026-09-22)
+
+Measured on macOS 27.2 in temp directories only: no live host, no sudo.
+
+- 🔴 **One file under two spellings was lost, silently** (fixed;
+  `binary-alias.test.ts`). Respelling the directory through a symlinked parent,
+  or by case alone on case-insensitive APFS, planned a `replace`: the new
+  generation took the identical file as its resumed install, then Phase 2
+  deleted the old generation's path, which was the same file. The deploy
+  succeeded with no binary on disk. Now `diff` compares device and inode
+  (`launchd/file-identity.ts`) and answers `update`, and a move never removes
+  an old path that is the file it just verified.
+- 🔴 **An execute-only mode (`0o111`) was written and then unreadable** (fixed).
+  The read-back threw EACCES, the file stayed with no state, and every later
+  probe threw the same. Now the mode must be owner-readable, and a read-back
+  that throws rolls the create back like one that mismatches.
+- 🔴 **Two resources at one path both owned it** (fixed; `binary-claims.test.ts`).
+  `vmalert` and `vmalert-logs` declared at one path both created it; the deploy
+  that dropped `vmalert-logs` deleted the file `vmalert` still declared, and
+  reported `vmalert` as `noop`. A second claim on a path in one run is refused.
+- ⚠️ **`/usr/bin/install -S` chmods after the rename.** An lstat poller racing a
+  300 MB install saw the new inode at the path as `0600`, then `0755` 0.2–0.4 ms
+  later, six runs out of six. Never torn and never wider than declared. localRunner
+  sets the mode before its rename. Closing the window under `sudoRunner` changes
+  the sudo allowlist, so it has not been done.
+- ⚠️ **`install` copies extended attributes**, `com.apple.quarantine` included.
+  Files this process writes through `node:fs` carried only
+  `com.apple.provenance`, so no staged file is quarantined today.
+- ★ **Tar-slip cannot reach the disk by construction.** The installed path is
+  `<directory>/<name>`, with `name` one `[A-Za-z0-9._-]` segment; an archive
+  entry's name only selects bytes and never becomes a path.
+
 ## Reasoned, not measured
+
+- ⚠️ **REASONED NOT MEASURED: a quarantined binary would not start under
+  launchd.** Adoption (`--adopt`) and the resume rule accept a file by digest,
+  mode and owner, and never read xattrs. A binary that was downloaded by a
+  browser and placed by hand would be adopted with its quarantine. Remove it
+  (`xattr -d com.apple.quarantine`) before adopting.
 
 - ⚠️ **REASONED NOT MEASURED: a vendor binary runs under launchd from the
   installed path.** Strongly suggested — same signature class as the running

@@ -16,6 +16,7 @@
  *   the path from its owner first, then declare it here.
  */
 import type { Diff } from 'alchemy/Diff';
+import { leaveOldPath, oneFile } from './file-identity.ts';
 import type { HostFileAttributes } from './host-file-form.ts';
 import { sha256Hex } from './job-form.ts';
 import { type HostRunner, type WriteOptions, canActAsRoot } from './runner.ts';
@@ -100,7 +101,13 @@ export const diffTarget = async (
     return diff;
   };
   // ★ Create-before-delete: two paths can hold two files at once, so nothing forces deleteFirst.
-  if (want.path !== output.path) return writes({ action: 'replace' });
+  // ⛔ …unless the two paths are ONE file (file-identity.ts). That is a respelling, not a move: a
+  //   replace would let Phase 2 delete the old generation's path, which is the new one's file. An
+  //   update records the new spelling, and convergeFile keeps the file.
+  if (want.path !== output.path) {
+    const same = await oneFile(runner, want.path, output.path);
+    return writes({ action: same === true ? 'update' : 'replace' });
+  }
   if (want.sha256 !== output.sha256) return writes({ action: 'update' });
   const live = await readFileAttributes(runner, want.path);
   return live !== undefined && fileMatches(live, want)
@@ -154,6 +161,8 @@ export const convergeFile = async (
   const before = stat === undefined ? undefined : await readFileAttributes(runner, path);
   // ⚠️ An `output` at another path: the engine planned an UPDATE across a move, which it does
   //   when diff could not see the new path (host-file.ts). Finish it the way a replace would.
+  //   ★ A respelling of ONE file (file-identity.ts) still counts as moved here, so a file there
+  //   that does not match is refused below — never rewritten in place under the old spelling's pins.
   const moved = output !== undefined && output.path !== path;
   const prior = moved ? undefined : output;
   /**
@@ -183,16 +192,31 @@ export const convergeFile = async (
   }
   // ⚠️ READ BACK, never echo the declaration: a umask, an ACL or a runner that ignored `uid` shows
   //   up here as a refusal instead of as a forever-`update`.
-  const after = await readFileAttributes(runner, path);
-  if (after === undefined || !fileMatches(after, want)) {
-    // ⚠️ Roll back a CREATE: left behind, the next plan's recovery `read` finds a file with no
-    //   state, reports it `Unowned`, and every later deploy demands --adopt for our own file.
+  // ⚠️ Roll back a CREATE: left behind, the next plan's recovery `read` finds a file with no state,
+  //   reports it `Unowned`, and every later deploy demands --adopt for our own file. ⛔ Also when
+  //   the read-back THROWS: MEASURED 2026-09-22, a 0111 binary written as a non-root operator read
+  //   back EACCES and stayed, and every later plan's probe failed with the same EACCES.
+  const rollBack = async () => {
     if (before === undefined) await runner.removeFile(path).catch(() => undefined);
+  };
+  const after = await readFileAttributes(runner, path).catch(async (cause: unknown) => {
+    await rollBack();
+    throw refuse(path, `the write returned but reading it back failed: ${String(cause)}`);
+  });
+  if (after === undefined || !fileMatches(after, want)) {
+    await rollBack();
     throw refuse(path, 'the write returned but the file on disk does not match the declaration');
   }
   // ★ Create-before-delete, as the replace would have been: the old path goes only once the new
-  //   one is written and verified.
-  if (moved) await removeWholeFile(runner, output, refuse);
+  //   one is written and verified — and ⛔ never when the old path IS this file (file-identity.ts).
+  if (moved)
+    await leaveOldPath(
+      runner,
+      output.path,
+      path,
+      () => removeWholeFile(runner, output, refuse),
+      refuse,
+    );
   return after;
 };
 

@@ -53,8 +53,9 @@ export interface ReleaseBinaryProps {
    */
   directory: string;
   /**
-   * Permission bits. ⛔ Owner-executable, never group- or world-writable, never setuid, setgid or
-   * sticky — a writable binary is whoever-can-write's code, run as whoever runs the daemon.
+   * Permission bits. ⛔ Owner-readable and -executable, never group- or world-writable, never
+   * setuid, setgid or sticky — a writable binary is whoever-can-write's code, run as whoever runs
+   * the daemon. Its directory must not be group- or world-writable either (binary-lifecycle.ts).
    * @default 0o755
    */
   mode?: number;
@@ -116,6 +117,9 @@ export const modeProblems = (mode: number): string[] => {
   if ((mode & 0o7000) !== 0) found.push('mode must not set setuid, setgid or sticky');
   if ((mode & 0o022) !== 0) found.push('mode must not be group- or world-writable');
   if ((mode & 0o100) === 0) found.push('mode must let the owner execute it');
+  // ⛔ AND READ IT: every plan re-hashes the binary, and a write is read back. MEASURED 2026-09-22,
+  //   an execute-only 0111 written by a non-root operator failed its read-back with EACCES.
+  if ((mode & 0o400) === 0) found.push('mode must let the owner read it (it is re-hashed)');
   return found;
 };
 

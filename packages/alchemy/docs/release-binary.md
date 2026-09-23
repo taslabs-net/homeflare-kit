@@ -82,7 +82,8 @@ yield* LaunchdJob('vmalert', { programArguments: [vmalert.path, '--httpListenAdd
 1. **Validate every prop**, before any host or network call. Every pin must be a
    plain, well-formed value, as the stack program DECLARED it: by now an Output
    has resolved to a plausible string (`declared-pins.ts`).
-2. **Check the directory exists** and is not a symlink, before any download.
+2. **Check the directory exists**, is not a symlink, and is not writable by
+   group or other (they could rename a file over the binary), before any download.
 3. **Observe the path.** A symlink or directory there is refused. A file this
    resource does not own is refused without `--adopt`, even one holding the
    pinned bytes: at plan the probe calls it `Unowned`, and at apply, when a
@@ -103,11 +104,17 @@ yield* LaunchdJob('vmalert', { programArguments: [vmalert.path, '--httpListenAdd
 7. **Verify the member** against its own pinned SHA-256.
 8. **Write** through `HostRunner.writeFileAtomic`, the one writer every file
    resource uses: a temp file in the same directory, mode and owner set, then
-   rename. Under `sudoRunner`, one staged `install -S`.
-9. **Read back** and compare. A create that does not read back is removed.
+   rename. Under `sudoRunner`, one staged `install -S`, ⚠️ which sets the mode
+   just after its rename (measured: `0600` for under half a millisecond).
+9. **Read back** and compare. A create that does not read back, or whose
+   read-back fails, is removed.
 
 A binary with the right bytes but the wrong mode or owner is re-written from
 the bytes already on disk, re-hashed, without a download.
+
+⛔ A directory respelled to the same place (a symlinked parent, or case on
+APFS) is an `update` that keeps the file, never a `replace`: the replace's
+Phase 2 would delete the old path, which is the file (`launchd/file-identity.ts`).
 
 ## Trust: why the digests are pinned in code
 
@@ -154,7 +161,7 @@ name that is not one safe path segment; an asset that is not a `.tar.gz` or
 1 GiB (it is allocated up front); a digest that is not 64 lower-case hex; a
 member that is absolute or climbs. Also a relative or unnormalised directory; a
 mode that is setuid, setgid, sticky, group- or world-writable, or not
-owner-executable; an owner or group that is not a valid name or id; a new pin
+owner-readable and owner-executable; an owner or group that is not a valid name or id; a new pin
 at the same path.
 
 ⚠️ **Not on a first deploy with `directory: dir.path`.** Alchemy neither
@@ -168,7 +175,10 @@ the next plan: the recovery read of its row answers "nothing recovered"
 At plan, only under `--adopt` (the probe then hands `diff` what it read): a
 file at the path that is not the pinned binary, or not a regular file.
 
-At apply, before the download: a missing directory, or one that is a symlink; a
+At apply, before the download: a second resource installing the same path in
+one deploy (two jobs that run one binary share one `ReleaseBinary`; measured,
+two owners meant dropping either deleted the other's file); a missing
+directory, one that is a symlink, or one that group or other may write; a
 symlink or directory at the path; a file the resource does not own (without
 `--adopt`, even the pinned bytes; with it, anything but the pinned bytes); a
 chown without root.

@@ -21,6 +21,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { adoptsAtApply } from '../ownership/adopt.ts';
 import { noteUnfinished } from '../ownership/resume.ts';
+import { oneFile } from './file-identity.ts';
 import { lift, resolvedString } from './host-effect.ts';
 import type { HostFileAttributes, HostFileProps } from './host-file-form.ts';
 import { deleteFile, diffFile, readFileAttributes, reconcileFile } from './host-file-lifecycle.ts';
@@ -54,9 +55,14 @@ export const HostFileProvider = () =>
           // ⛔ A new path is a replace even while `content` is unresolved (an Output templated in):
           //   the engine's default would be an update, which writes the new path and never
           //   removes the old one. reconcileFile also defends, for a path that is an Output.
+          //   ⛔ Unless the new path is the old FILE under another spelling (file-identity.ts):
+          //   a replace's Phase 2 would delete it. The update then records the new spelling.
           const path = resolvedString(news, 'path');
-          return Effect.succeed(
-            path !== undefined && path !== output.path ? { action: 'replace' as const } : undefined,
+          if (path === undefined || path === output.path) return Effect.succeed(undefined);
+          return lift(async () =>
+            (await oneFile(runner, path, output.path)) === true
+              ? undefined
+              : { action: 'replace' as const },
           );
         },
 

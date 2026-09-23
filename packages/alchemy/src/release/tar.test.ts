@@ -82,8 +82,24 @@ describe('tar-slip and every other entry that could lie is refused, asked for or
     ['a repeated name', binary, 'appears twice'],
     ['a failed header checksum', { corruptChecksum: true, name: 'x' }, 'fails its checksum'],
     ['a base-256 size', { base256: true, bytes: bytesOf('z'), name: 'big' }, 'base-256'],
+    ['a character device', { name: 'tty', type: '3' }, 'a character device'],
+    ['a block device', { name: 'disk', type: '4' }, 'a block device'],
+    ['a contiguous file', { name: 'contig', type: '7' }, 'a contiguous file'],
+    ['a GNU long link', { name: '././@LongLink', type: 'K' }, 'GNU long-link'],
+    ['a PAX global header', { name: 'pax_global_header', type: 'g' }, 'PAX global'],
+    ['an empty name', { bytes: bytesOf('z'), name: '' }, 'empty name'],
   ] as const)('%s', (_, entry, message) => {
     expect(refusal(() => read(beside(entry)))).toContain(message);
+  });
+
+  test('a name that is not UTF-8 is refused, not decoded loosely into another name', () => {
+    const tar = tarOf([binary, { bytes: bytesOf('z'), name: 'x' }]);
+    const at = 1024; // the second header: one header block and one data block in
+    tar[at] = 0xff;
+    tar.fill(0x20, at + 148, at + 156);
+    const sum = tar.subarray(at, at + 512).reduce((total, byte) => total + byte, 0);
+    tar.set(bytesOf(`${sum.toString(8).padStart(6, '0')}\0 `), at + 148);
+    expect(refusal(() => read(tar))).toContain('not UTF-8');
   });
 
   test('a symlink under the asked-for name is refused, not followed', () => {

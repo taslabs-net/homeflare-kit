@@ -33,10 +33,23 @@ export type FileStat = {
   readonly uid: number;
   readonly gid: number;
   readonly size: number;
+  /**
+   * The entry's identity, device and inode, when the runner can say. ★ Two spellings of ONE file
+   *   (`/tmp/x` and `/private/tmp/x`; `Bin` and `bin` on case-insensitive APFS) differ as strings
+   *   and match here, and a move must not delete its old path when that path IS the new file
+   *   (file-identity.ts). Optional: a runner that leaves them out gets a check after the fact.
+   */
+  readonly dev?: number;
+  readonly ino?: number;
 };
 
 export type WriteOptions = {
-  /** Permission bits for the final file, applied BEFORE it becomes visible at `path`. */
+  /**
+   * Permission bits for the final file. localRunner applies them BEFORE the file is visible at
+   * `path`. ⚠️ sudoRunner's `install -S` does NOT: MEASURED 2026-09-22 on macOS 27.2 (an lstat
+   *   poller racing /usr/bin/install), the new inode appears at `path` as 0600 and is chmodded
+   *   0.2–0.4 ms later. Never torn, never wider than declared, but briefly not executable.
+   */
   readonly mode: number;
   /** Numeric owner; omitted means whoever the runner writes as. */
   readonly uid?: number;
@@ -69,7 +82,9 @@ export interface HostRunner {
   stat(path: string): Promise<FileStat | undefined>;
   /**
    * Write `bytes` so that `path` holds either the old file or the new one, never a torn mix:
-   * a temporary file in the same directory, mode and owner set on it, then rename(2) over `path`.
+   * a temporary file in the same directory, mode and owner set on it, then rename(2) over `path`
+   * (sudoRunner: the mode just after the rename, measured — see WriteOptions.mode; the owner too,
+   * ⚠️ REASONED NOT MEASURED, since measuring it needs root).
    * ⚠️ The parent directory must exist; creating it would invent an owner and mode nobody declared.
    */
   writeFileAtomic(path: string, bytes: Uint8Array, options: WriteOptions): Promise<void>;

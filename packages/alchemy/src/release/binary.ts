@@ -31,8 +31,18 @@ import { HostRunnerService } from '../launchd/runner.ts';
 import { adoptsAtApply } from '../ownership/adopt.ts';
 import { noteUnfinished } from '../ownership/resume.ts';
 import { diffBinary } from './binary-diff.ts';
-import type { ReleaseBinaryAttributes, ReleaseBinaryProps } from './binary-form.ts';
-import { deleteBinary, reconcileBinary, refreshBinary } from './binary-lifecycle.ts';
+import {
+  type ReleaseBinaryAttributes,
+  type ReleaseBinaryProps,
+  releaseBinaryPath,
+} from './binary-form.ts';
+import {
+  NOTHING,
+  deleteBinary,
+  reconcileBinary,
+  refreshBinary,
+  refuse,
+} from './binary-lifecycle.ts';
 import { readWithoutState } from './binary-read.ts';
 import { declaredPinProblems } from './declared-pins.ts';
 import { type DownloadPolicy, httpFetchArchive, sharingInFlight } from './download.ts';
@@ -83,6 +93,28 @@ export const makeReleaseBinaryProvider = (internals: ReleaseBinaryInternals = {}
       const runner = yield* HostRunnerService;
       const client = yield* HttpClient.HttpClient;
       const fetch = sharingInFlight(httpFetchArchive(client, internals.download));
+      /**
+       * ⛔ ONE PATH, ONE DECLARATION. MEASURED 2026-09-22 (binary-claims.test.ts, before this): two
+       *   resources installing one path in one deploy both planned `create`, shared one download,
+       *   and both recorded the file as theirs. Dropping either later — gating vmalert-logs off
+       *   along with its own ReleaseBinary, say — deleted the file the other still declared, and
+       *   that deploy reported the survivor `noop`. So a second resource claiming a path in the
+       *   same run is refused before it touches anything. Two jobs that run one binary share ONE
+       *   ReleaseBinary. ⚠️ Keyed by spelling: one file under two spellings is not caught here.
+       */
+      const claims = new Map<string, string>();
+      const claim = (fqn: string, props: ReleaseBinaryProps): void => {
+        const path = releaseBinaryPath(props);
+        const holder = claims.get(path);
+        if (holder !== undefined && holder !== fqn) {
+          throw refuse(
+            path,
+            `is already installed by ${holder} in this deploy; declare each binary path once, ` +
+              `and let every job that runs it share that one resource. ${NOTHING}`,
+          );
+        }
+        claims.set(path, fqn);
+      };
       return ReleaseBinary.Provider.of({
         list: () => Effect.succeed([]),
 
@@ -106,18 +138,25 @@ export const makeReleaseBinaryProvider = (internals: ReleaseBinaryInternals = {}
           Effect.gen(function* () {
             const declared = yield* declaredPinProblems(fqn);
             const adopt = yield* adoptsAtApply({ fqn, instanceId, output });
-            return yield* lift(() =>
-              reconcileBinary(runner, fetch, news, {
+            return yield* lift(async () => {
+              claim(fqn, news);
+              return reconcileBinary(runner, fetch, news, {
                 adopt,
                 declared,
                 note: (message) => Effect.runPromise(session.note(message)),
                 olds,
                 output,
-              }),
-            );
+              });
+            });
           }),
 
-        delete: ({ output }) => lift(() => deleteBinary(runner, output)),
+        // ★ A deleted resource gives its claim back, so a provider that outlives one deploy
+        //   never refuses the next resource declared at that path.
+        delete: ({ fqn, output }) =>
+          lift(async () => {
+            await deleteBinary(runner, output);
+            if (claims.get(output.path) === fqn) claims.delete(output.path);
+          }),
       });
     }),
   );

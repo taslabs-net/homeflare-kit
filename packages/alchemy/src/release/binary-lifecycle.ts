@@ -107,6 +107,21 @@ export const refreshBinary = async (
  */
 const directoryReady = async (runner: HostRunner, props: ReleaseBinaryProps): Promise<void> => {
   const stat = await runner.stat(props.directory);
+  /**
+   * ⛔ AND ONE ONLY ITS OWNER MAY WRITE. The mode rule (binary-form.ts modeProblems) refuses a
+   *   group- or world-writable binary because its writers could change the code a daemon runs. A
+   *   directory they may write gives them the same power by another call: rename(2) their own file
+   *   over the binary, and the next launchd start runs theirs. The sticky bit is no excuse — a
+   *   binary directory has no business being shared.
+   */
+  if (stat?.kind === 'directory' && (stat.mode & 0o022) !== 0) {
+    throw refuse(
+      releaseBinaryPath(props),
+      `directory ${props.directory} is writable by group or other (mode ` +
+        `${stat.mode.toString(8).padStart(4, '0')}), so whoever may write it may replace the ` +
+        `binary; declare it 0755 or narrower. ${NOTHING}`,
+    );
+  }
   if (stat?.kind === 'directory') return;
   const why = stat === undefined ? 'does not exist' : `is a ${stat.kind}, not a directory`;
   throw refuse(
