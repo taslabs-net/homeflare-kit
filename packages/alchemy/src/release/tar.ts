@@ -166,9 +166,9 @@ export const tarReader = (wanted: ReadonlySet<string>, root?: string) => {
     //   falls through to that check below and is refused as a directory, same as with no root.
     if (rootPrefix !== undefined && rawName === rootPrefix) {
       if (rootSeen) {
-        throw refuse(
-          `entry "${rawName}" is a second directory entry; only the declared root is accepted`,
-        );
+        // ⚠️ Whatever type THIS entry is, its name is already taken: refused for reusing the
+        //   root's name, not necessarily for being a second directory (it need not be one).
+        throw refuse(`entry "${rawName}" reuses the declared root's own name, appearing twice`);
       }
       const type = String.fromCharCode(header[156] ?? 0);
       const size = octal(header, 124, 12, `entry "${rawName}"'s size`);
@@ -184,8 +184,20 @@ export const tarReader = (wanted: ReadonlySet<string>, root?: string) => {
       if (!rawName.startsWith(rootPrefix)) {
         throw refuse(`entry "${rawName}" is outside the declared root "${rootPrefix}"`);
       }
+      // ⛔ THE STRIPPED NAME GETS THE SAME SAFETY CHECK AS A RAW ONE. `rawName` already passed
+      //   `nameProblem` above, but stripping a prefix can UNCOVER a `/` or `..` that was hiding
+      //   past it: `<root>//x` is not absolute as a whole name, but strips to `/x`, which is —
+      //   the exact thing this reader refuses a plain (rootless) archive for. MEASURED: without
+      //   this check, `<root>//x` beside `<root>/x` parsed to completion as two distinct entries,
+      //   `x` and `/x`, neither refused. `stripped` can never be empty here: the one raw name that
+      //   strips to '' is `rootPrefix` itself, handled above.
       stripped = rawName.slice(rootPrefix.length);
-      if (stripped === '') throw refuse(`entry "${rawName}" has an empty name under the root`);
+      const strippedProblem = nameProblem(stripped);
+      if (strippedProblem !== undefined) {
+        throw refuse(
+          `entry "${rawName}" strips to ${JSON.stringify(stripped)}, which ${strippedProblem}`,
+        );
+      }
     }
     name = stripped;
     const type = String.fromCharCode(header[156] ?? 0);

@@ -52,15 +52,24 @@ describe('a declared root strips exactly one leading directory', () => {
   test('a root declared but never present in the archive is refused', () => {
     expect(refusal(() => read(tarOf([binary]), ['alertmanager'], ROOT))).toContain('never appears');
   });
+
+  // 🔴 ADVERSARIAL REVIEW, 2026-09-23 (before merge): a stripped name was never re-checked by
+  //   `nameProblem`, so `<root>//x` — not absolute as a whole raw name, but stripping to `/x` —
+  //   parsed to completion as a second, distinct, un-refused entry `/x` beside `x`. Fixed in
+  //   tar.ts by running `nameProblem` on the STRIPPED name too, not only the raw one.
+  test('stripping cannot uncover an absolute name the reader would otherwise refuse', () => {
+    // `<root>//alertmanager` is not absolute AS A WHOLE NAME, so it passes nameProblem before
+    // stripping; only after `<root>/` is removed does it become the absolute name `/alertmanager`.
+    const evil = { bytes: bytesOf('evil'), name: `${ROOT}//alertmanager` };
+    expect(refusal(() => read(tarOf([wrapper, binary, evil]), ['alertmanager'], ROOT))).toContain(
+      'strips to "/alertmanager"',
+    );
+  });
 });
 
 describe('everything a declared root still refuses, whole archive', () => {
   test.each([
-    [
-      'a second directory entry (the root, twice)',
-      [wrapper, wrapper, binary],
-      'second directory entry',
-    ],
+    ['a second directory entry (the root, twice)', [wrapper, wrapper, binary], 'appearing twice'],
     [
       'an entry named <root>-evil/x: a segment match, not a string prefix',
       [wrapper, binary, { name: `${ROOT}-evil/x` }],
