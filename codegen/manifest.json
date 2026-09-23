@@ -101,6 +101,30 @@
       "sourceBlobSha1": "ea7f7e9c38c37d2139c6600db584b249571524a6"
     },
     {
+      "id": "paperless-openapi",
+      "vendor": "Paperless-ngx",
+      "product": "Paperless-ngx REST API (OpenAPI 3.0.3)",
+      "version": "3.1.1",
+      "versionCommand": "src/paperless/version.py on the host (3, 1, 1) — NEVER the document's own info.version, which reports the unrelated string '6.0.0 (10)' (SPECTACULAR_SETTINGS VERSION, not the app release)",
+      "sourceRole": "Paperless-ngx web service, loopback",
+      "sourcePath": "/api/schema/?format=json",
+      "file": "paperless/paperless_3.1.1_openapi.json",
+      "sha256": "d0fe550d2135e37b6846ec96ddafcf18395a5c9e433075d217745c35e1d8a830",
+      "bytes": 722398,
+      "fetchedAt": "2026-09-23T13:31:56Z",
+      "consumedBy": [
+        "packages/alchemy/src/paperless/generated/constraints/paperless-tags.ts",
+        "packages/alchemy/src/paperless/generated/constraints/paperless-document_types.ts",
+        "packages/alchemy/src/paperless/generated/constraints/paperless-storage_paths.ts",
+        "packages/alchemy/src/paperless/generated/constraints/paperless-custom_fields.ts",
+        "packages/alchemy/src/paperless/generated/types/tags.ts",
+        "packages/alchemy/src/paperless/generated/types/document-types.ts",
+        "packages/alchemy/src/paperless/generated/types/storage-paths.ts",
+        "packages/alchemy/src/paperless/generated/types/custom-fields.ts"
+      ],
+      "note": "No OpenAPI document is committed in the paperless-ngx repository at tag v3.1.1 — a tree search there finds only src/documents/schema.py and its test, never a checked-in openapi.json. This is therefore the RUNNING instance's own served document, read with no credential (measured 200, application/vnd.oai.openapi). Its provenance rests on the installed source being byte-identical to the v3.1.1 tag: git hash-object of the installed version.py, urls.py, documents/serialisers.py and paperless/settings/__init__.py all matched the tag's blobs. The urls.py match cross-checks the PATH surface against the tag's router registrations; it does NOT cover request bodies, which rest on the served document and the source-identity match alone. API version is pinned by AcceptHeaderVersioning: DEFAULT_VERSION '10', ALLOWED_VERSIONS ['9','10']. No servers[] and no estate identifiers appear in the document."
+    },
+    {
       "id": "litellm-openapi",
       "vendor": "BerriAI",
       "product": "LiteLLM Proxy (app.openapi())",
