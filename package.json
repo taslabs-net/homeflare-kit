@@ -32,7 +32,7 @@
     "summary": "bun run scripts/ci-summary.ts",
     "repo-shape:refresh": "bun run repo-shape.ts",
     "github:apply-ruleset": "bun run scripts/apply-main-ruleset.ts",
-    "prepare": "husky",
+    "prepare": "bun packages/config/bin/hooks.ts activate",
     "security:scan": "gitleaks dir --redact --no-banner ."
   },
   "devDependencies": {
@@ -42,7 +42,6 @@
     "@types/bun": "catalog:",
     "alchemy": "catalog:",
     "effect": "catalog:",
-    "husky": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "typescript": "catalog:"
@@ -64,7 +63,6 @@
     "oxfmt": "0.68.0",
     "@octokit/rest": "22.0.1",
     "@types/bun": "1.4.2",
-    "husky": "9.1.7",
     "@changesets/cli": "3.0.3",
     "@changesets/changelog-github": "1.0.1",
     "alchemy": "2.0.0-beta.79",

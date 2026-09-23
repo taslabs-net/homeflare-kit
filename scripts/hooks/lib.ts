@@ -19,19 +19,12 @@ export async function stagedFiles(): Promise<readonly string[]> {
 
 /**
  * Run a command, streaming its output. Returns its exit code.
- * ⚠️ `env` exists for one reason — see the comment in `verify.ts`. A hook that passes its
- *   inherited GIT_DIR to a test suite lets a test commit into the repository being
- *   pushed.
+ * ★ No `env` parameter any more: the one caller that needed it (the old full-`verify`
+ *   pre-push) is gone, and the shared pre-push in @homeflare/config strips the hook's
+ *   GIT_* itself — see packages/config/src/hooks/report.ts.
  */
-export async function run(
-  cmd: readonly string[],
-  env?: Record<string, string | undefined>,
-): Promise<number> {
-  const proc = Bun.spawn([...cmd], {
-    stdout: 'inherit',
-    stderr: 'inherit',
-    ...(env === undefined ? {} : { env }),
-  });
+export async function run(cmd: readonly string[]): Promise<number> {
+  const proc = Bun.spawn([...cmd], { stdout: 'inherit', stderr: 'inherit' });
   return await proc.exited;
 }
 

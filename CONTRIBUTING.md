@@ -60,29 +60,38 @@ its package. [docs/ci-triage.md](./docs/ci-triage.md) has what this cost to lear
 
 ## Git hooks
 
-`bun install` installs them (husky, via `prepare`). One script per concern, in
-`scripts/hooks/`:
+`bun install` activates them: `prepare` runs `activate`, which points `core.hooksPath` at
+the tracked `.husky/`. Because that path is relative and lives in the clone's shared
+config, every worktree runs its own checked-out hooks, including an agent's fresh
+`git worktree add`. Kit-only concerns live in `scripts/hooks/`, one script per concern:
 
-| hook       | runs                                                                                      | why                         |
-| ---------- | ----------------------------------------------------------------------------------------- | --------------------------- |
-| pre-commit | `secrets` → `foreign-locks` → **shared format/lint** → `actionlint` → `changeset-pending` | fast, staged files only     |
-| pre-push   | `verify`                                                                                  | the same gate CI runs, ~30s |
+| hook       | runs                                                                                             | why                         |
+| ---------- | ------------------------------------------------------------------------------------------------ | --------------------------- |
+| pre-commit | **shared** (`gitleaks` → format/lint) → `foreign-locks` → `actionlint` → `changeset-pending` → … | fast, staged files only     |
+| pre-push   | **shared**: `check`'s lint and types, and `bun test --changed=<base>`                            | seconds; CI runs everything |
 
-★ **The format/lint step is not kit's.** It lives in `@homeflare/config/hooks` and every
-repo in the estate runs the same one. Change the rule there, not here; the scripts
-either side of it are concerns only this repo has. ⚠️ This repo calls it by its
-workspace path (`packages/config/bin/hooks.ts`) because nothing here depends on the
-package, so Bun links no copy into `node_modules` — every other repo uses
+★ **The shared steps are not the kit's.** They live in `@homeflare/config/hooks`
+([its docs](./packages/config/docs/hooks.md)), and every repo in the estate runs the same
+ones. Change the rule there, not here. ⚠️ This repo calls them by their workspace path
+(`packages/config/bin/hooks.ts`) because nothing here depends on the package, so Bun
+links no copy into `node_modules`. Every other repo uses
 `node_modules/@homeflare/config/bin/hooks.ts`.
 
-⚠️ **That step rewrites staged files.** It runs `oxfmt` over the staged formattable
-files, names the ones it changed, and restages exactly those. A file with unstaged edits
-on top is checked and never rewritten — restaging it would commit work in progress.
+⚠️ **The pre-commit step rewrites staged files.** It runs `oxfmt` over the staged
+formattable files, names the ones it changed, and restages exactly those. A file with
+unstaged edits on top is checked and never rewritten, because restaging it would commit
+work in progress.
 
-⛔ **pre-push here runs `verify`, not `check`.** Kit's `verify` adds the consumer smoke
-test, which is the only gate that catches a tarball consumers cannot install. Elsewhere
-in the estate the shared pre-push runs `bun run check`; it never guesses at `verify`,
-because in `homeflare-proxmox` that name means a live adoption verifier.
+⚠️ **Until every branch has this, `bun install` on an older branch runs husky.** That
+resets the clone's `core.hooksPath` to `.husky/_`, which is the behaviour before this
+change. To restore it, run `bun packages/config/bin/hooks.ts activate`, or run
+`bun install` on a current branch.
+
+⛔ **pre-push no longer runs `verify`.** It used to run all of it on every push: ~60 s,
+every one of the ~2,500 tests, and the smoke test. On 2026-09-23 two unrelated,
+load-sensitive tests failed pushes that had nothing to do with them. The consumer smoke
+test still runs on every pull request, as CI's `package` job, and `bun run verify` is
+still the local command before a release-shaped change.
 
 ⛔ **Secrets are scanned first**, by [gitleaks](https://github.com/gitleaks/gitleaks).
 Everything else can be fixed after the fact; a credential in a public repo is compromised
