@@ -10,6 +10,7 @@
     "**/generated/**",
     "**/*.gen.ts",
     "**/vendor/**",
+    "packages/distilled-*/src/**",
     "**/*.openapi.yaml",
     "**/*.openapi.yml",
     "**/openapi.json",

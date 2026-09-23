@@ -68,6 +68,17 @@ const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
     'mime',
   ],
   site: ['effect'],
+  // Same Effect-rc reasoning as alchemy/site above — NOT because the real,
+  // not-yet-published @distilled.cloud/netbox itself pins exact (it will
+  // peer on a RANGE, matching every already-published @distilled.cloud/*
+  // sibling, e.g. `>=4.0.0-rc.115 || >=4.0.0`; this interim copy pins exact
+  // only because alchemy/site already established that an unpinned Effect
+  // rc range can resolve a DIFFERENT rc across packages in THIS workspace
+  // (measured 2026-09-16: `>=4.0.0-rc.112` resolved to rc.115 and
+  // `Config.string` vanished) — a version this package's copied generated
+  // code was never typechecked against. The exact pin is a kit-local
+  // safety measure, not something to carry into the real upstream package.
+  'distilled-netbox': ['effect'],
 };
 
 async function manifest(name: string): Promise<Manifest> {
