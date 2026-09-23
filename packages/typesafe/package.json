@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/typesafe",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Official TypeSafe System One SDK, wired for Worker bindings. Not a replacement client.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/typesafe#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
