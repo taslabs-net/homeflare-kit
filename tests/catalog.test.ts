@@ -48,9 +48,18 @@ const PACKAGES: readonly string[] = await Array.fromAsync(
  * - `@distilled.cloud/cloudflare` is pinned to the exact version alchemy itself pins (a plain
  *   dependency there), so MeshNode shares alchemy's copy of the SDK rather than a second one.
  *   packages/alchemy/tests/peers.test.ts asserts the two stay equal.
+ * - `@effect/sql-pg` is the same Effect-rc case as `effect` itself: alchemy's own peer is
+ *   `>=4.0.0-rc.115`, and the estate runs one aligned rc across the whole workspace (S37).
  */
 const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
-  alchemy: ['@distilled.cloud/cloudflare', '@effect/platform-node', 'alchemy', 'effect', 'mime'],
+  alchemy: [
+    '@distilled.cloud/cloudflare',
+    '@effect/platform-node',
+    '@effect/sql-pg',
+    'alchemy',
+    'effect',
+    'mime',
+  ],
   site: ['effect'],
 };
 
