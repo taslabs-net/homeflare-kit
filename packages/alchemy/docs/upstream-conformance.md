@@ -108,12 +108,16 @@ then tidiness.
    - ✅ **S23 fixed 2026-09-23** (branch `claude2/distilled-netbox-family`, mirroring the
      Forgejo migration above, decision 42). `Netbox.Prefix` now calls
      `@distilled.cloud/netbox`'s typed `ipam` operations instead of a hand-rolled `Effect
-HttpClient` client — `catchTag('NotFound', …)` replaces a status-carrying
-     `NetboxError`; `client.ts` is deleted. Not published upstream yet, so aliased onto
-     `@homeflare/distilled-netbox@0.2.0` as a plain `dependencies` entry, not a peer —
-     [distilled-interim.md](./distilled-interim.md). State did not move: props/attributes
-     stay byte-identical, proven by the family's unchanged existing tests plus new tests
-     against a fake NetBox exercising the real distilled protocol.
+HttpClient` client. The old status-carrying `NetboxError` and its `cause.status ===
+404` check are gone entirely — `Netbox.Prefix` locates by a server-side list filter,
+     which never 404s (an empty page is a normal 200), so nothing here checks a status
+     code at all, a stronger form of the same rule `catchTag('NotFound', …)` enforces for
+     a family that reads by direct key. `client.ts` is deleted. Not published upstream
+     yet, so aliased onto `@homeflare/distilled-netbox@0.2.0` as a plain `dependencies`
+     entry, not a peer — [distilled-interim.md](./distilled-interim.md). State did not
+     move: props/attributes stay byte-identical, proven by the family's unchanged
+     existing tests plus new tests against a fake NetBox exercising the real distilled
+     protocol.
    - ⛔ **Still diverges on credentials (S24):** `NETBOX_TOKEN` / `NETBOX_URL` are read at
      call time, now through the SDK's `CredentialsFromEnv` rather than a hand-rolled
      `token()` — same divergence, unchanged by the transport swap.

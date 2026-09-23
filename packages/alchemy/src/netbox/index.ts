@@ -30,4 +30,11 @@ export {
   type PrefixProps,
   type PrefixStatus,
 } from './prefix.ts';
-export { type NetboxRequirements, type NetboxSpec, netboxHandlers } from './resource.ts';
+export {
+  LOCATE_PAGE,
+  locateOne,
+  type NetboxRequirements,
+  type NetboxSpec,
+  netboxHandlers,
+  soleMatch,
+} from './resource.ts';

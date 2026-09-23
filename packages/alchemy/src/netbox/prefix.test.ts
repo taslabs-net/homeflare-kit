@@ -85,6 +85,12 @@ describe('Netbox.Prefix spec.fetchLive', () => {
     );
     expect(live?.id).toBe(7);
     expect(fake.seen[0]?.method).toBe('GET');
+    // ⚠️ Not just the path — the server-side filter this resource relies on to narrow
+    //   candidates before `identifies` runs. A future distilled bump that changed how an
+    //   array param serializes would silently stop narrowing on the wire; asserting only
+    //   `pathname` would never catch that.
+    const sent = new URL(`${FAKE_BASE}${fake.seen[0]?.path ?? ''}`);
+    expect(sent.searchParams.getAll('prefix')).toEqual(['10.0.0.0/24']);
   });
 
   /**
