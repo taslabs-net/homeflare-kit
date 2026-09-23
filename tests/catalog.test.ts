@@ -82,6 +82,8 @@ const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
   // Same reasoning as 'distilled-netbox' above — this is the second
   // interim-package copy, not a new pattern.
   'distilled-proxmox': ['effect'],
+  // Third interim-package copy, same reasoning again.
+  'distilled-paperless-ngx': ['effect'],
 };
 
 async function manifest(name: string): Promise<Manifest> {
