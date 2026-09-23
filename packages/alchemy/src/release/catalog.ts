@@ -191,9 +191,17 @@ export const catalogBinary = (catalog: ReleaseCatalog, request: CatalogRequest):
       message: `Release.Binary ${request.binary}: ${problems.join('; ')}. Nothing was fetched.`,
     });
   }
-  const { asset, repo, sha256: archiveSha256, size, tag } = archive;
+  const { asset, repo, root, sha256: archiveSha256, size, tag } = archive;
   return {
-    archive: { asset, repo, sha256: archiveSha256, size, tag },
+    // ⚠️ exactOptionalPropertyTypes: a conditional spread, never `root: undefined` spelled out.
+    archive: {
+      asset,
+      repo,
+      sha256: archiveSha256,
+      size,
+      tag,
+      ...(root === undefined ? {} : { root }),
+    },
     member,
     name: request.binary,
     sha256,
