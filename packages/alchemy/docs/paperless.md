@@ -65,13 +65,26 @@ referenced by every document that carries it, and Paperless does not offer a "de
 option. `delete` is fully implemented; dropping a declaration does not delete the object unless
 the caller opts into `.pipe(RemovalPolicy.destroy())`.
 
-## Locate is `name__iexact`, identity is exact `(name, owner)`
+## Locate is by name only before there is state; identity is the stored id after
 
 `MatchingModel` (Paperless-ngx `models.py:79-89`) has `UniqueConstraint(name, owner)` plus a
-unique name where owner is null. `matching.ts` locates candidates with a case-insensitive filter
-— wide enough to see every case-variant Paperless holds — and then narrows to the exact-case,
-exact-owner row in this process, the same locate-then-identify split `Netbox.Prefix` uses for its
-VRF. A locate that matches more than the 20-row page it reads is refused as "not a natural key".
+unique name where owner is null. Before a declaration has ever been deployed — a genuine first
+create, or the engine's own `--adopt` probe — `matching.ts` locates candidates with a
+case-insensitive `name__iexact` filter, wide enough to see every case-variant Paperless holds,
+and then narrows to the exact-case, exact-owner row in this process (the same locate-then-identify
+split `Netbox.Prefix` uses for its VRF). A locate that matches more than the 20-row page it reads
+is refused as "not a natural key".
+
+⛔ **Once a declaration has state, identity is the stored numeric id, not `(name, owner)`.**
+Renaming a tag, or re-owning any of the three owned families, is an ordinary edit — and locating
+by the _new_ name/owner would miss the row this declaration already wrote, PATCHing nothing and
+POSTing a second object under the new name while the original sat there permanently orphaned
+(`list()` always answers `[]` by design, so `nuke` can never find it either). `diff`/`reconcile`
+locate by the id Alchemy's engine already has on hand (`output.id`) instead: a changed name/owner
+becomes an in-place PATCH of that same id — Paperless allows renaming all four types by PATCH, and
+every document keeps its tag/type/path/field because the id never changes. If that id no longer
+exists live (deleted out of band), the plan refuses loudly rather than silently creating a
+replacement; adopt the live object back or drop it from state first.
 
 ## Generated, not hand-typed
 
