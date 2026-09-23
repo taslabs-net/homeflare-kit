@@ -30,9 +30,9 @@ Layer.mergeAll(linuxProviders(runner) /* the stack's other providers */);
   "nothing is there". This is the rule that stops a dropped link reading as a
   deleted config.
 - ⛔ **No silent sudo.** `privileged` is `false` and nothing here calls `sudo`.
-  A root-owned path needs a destination whose ssh **user is root**, or a
-  privileged runner of your own. The Linux twin of `sudoRunner()` — with its
-  own argv allowlist — is deliberately a separate, later change.
+  A root-owned path needs a destination whose ssh **user is root**, or
+  `sshSudoRunner()` — the Linux twin of `sudoRunner()`, with its own argv
+  allowlist: [linux-sudo.md](./linux-sudo.md).
 - The probe at construction (`uname -s`, `id -u`) refuses anything that is not
   Linux: the scripts use GNU/BusyBox spellings (`stat -c`, `base64`, `mv -f`).
 

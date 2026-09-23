@@ -155,7 +155,8 @@ export const unitText = (props: SystemdUnitProps): string =>
 export const unitPathFor = (props: SystemdUnitProps): string =>
   `${props.directory ?? DEFAULT_UNIT_DIRECTORY}/${props.name}`;
 
-const NAME = /^[A-Za-z0-9][A-Za-z0-9_.@:-]*\.([a-z]+)$/;
+/** ★ Exported so sudo-allowlist.ts validates a systemctl unit operand against the same pattern. */
+export const NAME = /^[A-Za-z0-9][A-Za-z0-9_.@:-]*\.([a-z]+)$/;
 /** systemd's own unit types. ★ Fixed vocabulary from `systemd.unit(5)`, not a guess at directives. */
 const TYPES = new Set([
   'automount',

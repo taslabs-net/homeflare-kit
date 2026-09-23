@@ -19,6 +19,8 @@ export type { RemoteFileAttributes, RemoteFileProps } from './remote-file-form.t
 export { RemoteFile, RemoteFileProvider } from './remote-file.ts';
 export type { SshRunnerOptions } from './ssh-runner.ts';
 export { sshRunner } from './ssh-runner.ts';
+export type { SshSudoRunnerOptions } from './sudo-runner.ts';
+export { sshSudoRunner } from './sudo-runner.ts';
 export type {
   ExecResult,
   FileStat,
