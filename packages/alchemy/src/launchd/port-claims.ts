@@ -37,8 +37,8 @@ const describeAddress = (address: string | undefined): string => address ?? 'uns
 const describeOwner = (owner: string): string => (owner === '' ? '(empty owner)' : owner);
 
 /**
- * Everything wrong with a set of claims; empty when none collide. ★ KEYS ON `port` ALONE, exactly
- *   like `lib-ports.nix`'s `assertNoCollision` — see the file header for why.
+ * Everything wrong with a set of claims; empty when none collide. ★ KEYS ON `port` ALONE — see the
+ *   file header for why.
  */
 export const portClaimProblems = (claims: readonly PortClaim[]): string[] => {
   const found: string[] = [];

@@ -83,11 +83,13 @@ refuses that pairing anyway — the port number is the key, exactly like the reg
 - **A job the stack does not pass.** `claimPorts` takes exactly the array a stack builds and
   hands it; there is no argv-parsing, no config-file reading and no host inspection here to
   recover a port a stack forgot to include. Leaving a job's claim out of the list is invisible to
-  this check, the same way a port left out of `lib-ports.nix` was invisible on 2026-09-02.
+  this check, the same way a port left out of a host's own Nix-based port registry was invisible
+  on 2026-09-02.
 - **A daemon still on Nix**, unless the migrating stack also passes that daemon's port as a claim
   of its own (owner naming the Nix job, so the message is legible during a cutover). Until a job
-  moves off Nix, `lib-ports.nix` is still the thing keeping it collision-free; `claimPorts` only
-  starts covering a port once a kit stack declares the job that binds it.
+  moves off Nix, that host's Nix-based port registry is still the thing keeping it
+  collision-free; `claimPorts` only starts covering a port once a kit stack declares the job that
+  binds it.
 - **Two protocols of the same port number.** Keying on the port alone means a daemon on `tcp/9094`
   and another on `udp/9094` would be refused as a collision, same as the Nix registry. No mini job
   does that today; if one needs to, the key widens deliberately, in its own change — not silently
