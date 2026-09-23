@@ -150,28 +150,10 @@ Three further things the check refuses, each because it hides a reason:
 
 ## What the renderer owns, and what it does not
 
-The rendered `check` job runs one step: `bun run check`, the repository's own gate.
-
-That is deliberate. A workflow that re-lists `lint`, `types` and `test` is a second copy
-of the gate, and a copy can check _less_ than the original. Measured 2026-09-22:
-`bun run check` in `homeflare-kit` is `lint && types && build && test`, and its
-`tests/dist.test.ts` skips itself when `dist/` is absent — so a workflow that ran the
-three lanes without the build would drop that test silently and still report green.
-`homeflare-alerts` runs `check:types` and `build:web` in its check; `homeflare-subnet-calc`
-delegates to `verify`. All fourteen have a `check` script, and all fourteen are local-only.
-
-So the split is:
-
-| Owned by the renderer                            | Owned by the repository                    |
-| ------------------------------------------------ | ------------------------------------------ |
-| Triggers, permissions, concurrency, runner label | What `bun run check` runs                  |
-| Action versions and their pins                   | Which extra jobs exist, each with a reason |
-| The aggregate `ci` job and its `needs`           | Its `package.json` scripts                 |
-| The actionlint, Dependabot and changeset configs | —                                          |
-
-The cost, said plainly: a red X says `check` rather than naming the lane. `bun run check`
-short-circuits on the first failure and names the lane in its output, which is the same
-signal a person gets locally.
+The rendered `check` job runs one step: `bun run check`, the repository's own gate — so
+the renderer owns the plumbing and the repository owns what its gate runs. That split,
+and every field of `RepoShape` with the measurement behind it, is in
+[repo-shape-inputs.md](./repo-shape-inputs.md).
 
 ## Bumping `@homeflare/config` will go red before it goes green
 

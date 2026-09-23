@@ -10,8 +10,8 @@
  *   `needs`, so adding a job never means editing a branch ruleset. `repoShapeChecks()`
  *   returns exactly `['ci', 'secret scan']`, which is what `declareRepoPolicy` requires.
  */
-import type { ExtraJob, RepoShape } from './shape.ts';
-import { runsOn } from './shape.ts';
+import type { ExtraJob, JobStep, RepoShape } from './shape.ts';
+import { nodeMajor, runsOn } from './shape.ts';
 import { renderSteps } from './yaml.ts';
 
 /** Bun the whole estate is pinned to. One line, one place. */
@@ -21,6 +21,7 @@ export const ACTIONLINT_VERSION = '1.7.12';
 
 const CHECKOUT = 'actions/checkout@v7';
 const SETUP_BUN = 'oven-sh/setup-bun@v2';
+const SETUP_NODE = 'actions/setup-node@v6';
 
 function runnerNote(shape: RepoShape): string {
   if (shape.runner !== 'mini') {
@@ -148,31 +149,49 @@ const VERIFY = `if [ "\${{ contains(needs.*.result, 'failure') }}" = "true" ] ||
   exit 1
 fi`;
 
-function prologue(): string {
-  return renderSteps(
-    [
-      { uses: CHECKOUT },
-      { uses: SETUP_BUN, with: { 'bun-version': BUN_VERSION } },
-      { run: 'bun install --frozen-lockfile' },
-    ],
-    3,
-  );
+const NODE_NOTE = `      # ⛔ REAL NODE, NOT BUN'S SHIM, AND ONLY WHERE THE GATE NEEDS IT. The mini's job
+      #   image has no node on PATH (ubuntu-latest always did), so a repository whose own
+      #   \`check\` spawns \`node\` — or whose framework demands a Node runtime — fails with
+      #   \`Executable not found in $PATH: "node"\` without this. Declared as \`node:\` in
+      #   repo-shape.ts, so it is one input rather than a hand-edited block per repository.
+      # ⚠️ NO PACKAGE-MANAGER CACHE: bun does the installing, so priming npm's cache costs
+      #   time and caches nothing anything here reads.`;
+
+function prologue(shape: RepoShape): string {
+  const node = nodeMajor(shape);
+  const bun: JobStep[] = [
+    { uses: SETUP_BUN, with: { 'bun-version': BUN_VERSION } },
+    { run: 'bun install --frozen-lockfile' },
+  ];
+  if (node === undefined) return renderSteps([{ uses: CHECKOUT }, ...bun], 3);
+  return [
+    renderSteps([{ uses: CHECKOUT }], 3),
+    NODE_NOTE,
+    renderSteps(
+      [{ uses: SETUP_NODE, with: { 'node-version': node, 'package-manager-cache': 'false' } }],
+      3,
+    ),
+    renderSteps(bun, 3),
+  ].join('\n');
 }
 
-function renderExtraJob(job: ExtraJob, on: string): string {
+function renderExtraJob(job: ExtraJob, shape: RepoShape, on: string): string {
   const needs =
     (job.needs ?? []).length === 0 ? '' : `    needs: [${(job.needs ?? []).join(', ')}]\n`;
+  // ★ A TIMEOUT IS THE JOB'S, NOT THE SHAPE'S. Only a job that starts something with its
+  //   own wait needs one, and it is rendered where a reader looks for it.
+  const timeout = job.timeout === undefined ? '' : `    timeout-minutes: ${job.timeout}\n`;
   const steps =
     job.bun === false
       ? renderSteps([{ uses: CHECKOUT }, ...job.steps], 3)
-      : [prologue(), renderSteps(job.steps, 3)].join('\n');
+      : [prologue(shape), renderSteps(job.steps, 3)].join('\n');
   // ★ The stated reason is rendered into the file. A job nobody can explain is a job
   //   nobody dares delete, so the explanation travels with it.
   return `  # ★ NOT PART OF THE STANDARD SHAPE — ${job.reason}
   ${job.id}:
     name: ${job.name}
 ${needs}    runs-on: ${on}
-    steps:
+${timeout}    steps:
 ${steps}
 `;
 }
@@ -190,7 +209,7 @@ ${CHECK_NOTE}
     name: check
     runs-on: ${on}
     steps:
-${prologue()}
+${prologue(shape)}
 ${renderSteps([{ run: 'bun run check' }], 3)}
 
 ${WORKFLOWS_NOTE}
@@ -203,7 +222,7 @@ ${ACTIONLINT_NOTE}
 ${renderSteps([{ name: 'Install actionlint (checksum-verified)', run: INSTALL_ACTIONLINT }], 3)}
 ${renderSteps([{ name: 'Lint workflows', run: './actionlint -color' }], 3)}
 
-${extras.map((job) => `${renderExtraJob(job, on)}\n`).join('')}${AGGREGATE_NOTE}
+${extras.map((job) => `${renderExtraJob(job, shape, on)}\n`).join('')}${AGGREGATE_NOTE}
   ci:
     name: ci
     if: always()
