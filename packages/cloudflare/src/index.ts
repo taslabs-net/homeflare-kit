@@ -26,7 +26,19 @@ export {
   type AccessContext,
   type AccessIdentityInfo,
 } from './access-identity.ts';
-export { verifyAccessJwt, type AccessIdentity, type AccessOptions } from './access.ts';
+/**
+ * ⚠️ `verifyAccessToken` IS THE SAME CHECK WITH THE TOKEN ALREADY IN HAND — for a caller
+ *   that read it from somewhere other than the header (a cookie, a WebSocket subprotocol).
+ *   It is not a lighter variant: identical issuer, audience and expiry checks.
+ *   ★ Protecting a non-Worker origin behind a reverse proxy? `@homeflare/cloudflare/access-auth`
+ *     is the ready-made `forward_auth` handler; you do not need to assemble one from these.
+ */
+export {
+  verifyAccessJwt,
+  verifyAccessToken,
+  type AccessIdentity,
+  type AccessOptions,
+} from './access.ts';
 export {
   protectedResourceMetadata,
   serveMcpMetadata,
