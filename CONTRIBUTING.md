@@ -82,6 +82,11 @@ formattable files, names the ones it changed, and restages exactly those. A file
 unstaged edits on top is checked and never rewritten, because restaging it would commit
 work in progress.
 
+⚠️ **Until every branch has this, `bun install` on an older branch runs husky.** That
+resets the clone's `core.hooksPath` to `.husky/_`, which is the behaviour before this
+change. To restore it, run `bun packages/config/bin/hooks.ts activate`, or run
+`bun install` on a current branch.
+
 ⛔ **pre-push no longer runs `verify`.** It used to run all of it on every push: ~60 s,
 every one of the ~2,500 tests, and the smoke test. On 2026-09-23 two unrelated,
 load-sensitive tests failed pushes that had nothing to do with them. The consumer smoke

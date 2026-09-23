@@ -121,11 +121,28 @@ describe('what a push is measured from', () => {
   });
 
   test('a new branch with nothing new checks nothing', async () => {
-    const main = await sha('main');
-    const result = await push(`refs/heads/same ${main} refs/heads/same ${ZERO}`);
+    await repo.git('switch', '--quiet', 'main');
+    try {
+      const result = await push(`refs/heads/same ${await sha()} refs/heads/same ${ZERO}`);
+      expect(result.code).toBe(0);
+      expect(result.output).toContain('no file differs');
+      expect(result.output).not.toContain('LINT-LANE-RAN');
+    } finally {
+      await repo.git('switch', '--quiet', 'feat');
+    }
+  });
+
+  test('a branch that is not checked out is reported NOT CHECKED — never passed', async () => {
+    // 🔴 Found in review: the lanes run on the working tree, so a push of another ref used to
+    //   run `bun test --changed` against the checkout, find nothing, and print "passed".
+    const other = (
+      await repo.git('commit-tree', '-p', 'HEAD', '-m', 'elsewhere', 'HEAD^{tree}')
+    ).trim();
+    const result = await push(`refs/heads/other ${other} refs/heads/other ${ZERO}`);
     expect(result.code).toBe(0);
-    expect(result.output).toContain('no file differs');
+    expect(result.output).toContain('NOT CHECKED');
     expect(result.output).not.toContain('LINT-LANE-RAN');
+    expect(result.output).not.toContain('passed');
   });
 
   test('no remote-tracking branch to measure from: every lane runs, tests in full', async () => {

@@ -78,6 +78,17 @@ needed and exits 0. It fails open, because the required checks on `main` are the
 `activate` does nothing under `CI`, or outside a git work tree. It never fails, because it
 runs inside `bun install`.
 
+⚠️ **While the rollout is in progress, husky can undo it.** `core.hooksPath` is one
+value for the whole clone. If a worktree on a branch from before adoption runs
+`bun install`, husky runs and resets it to `.husky/_`. That is the behaviour before this
+change: installed worktrees keep their hooks, because husky's runner calls the same
+tracked files, and never-installed worktrees have none. To restore it, run `bun install`
+on an adopted branch, or `bun node_modules/@homeflare/config/bin/hooks.ts activate`.
+
+⚠️ **Only a push of the checked-out commit can be checked.** The lanes run on the working
+tree. Pushing another ref, as in `git push origin other-branch`, is reported as
+**NOT CHECKED** and left to CI. It is never reported as passed.
+
 ```ts
 import { problemsInHooks } from '@homeflare/config/hooks';
 

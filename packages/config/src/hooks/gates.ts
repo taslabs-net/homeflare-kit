@@ -125,6 +125,16 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
     ok(`pre-push: ${scope.why} — nothing to check`);
     return;
   }
+  if (scope.kind === 'elsewhere') {
+    // ⛔ NOT A PASS, AND IT DOES NOT SAY ONE. The working tree is another commit; running the
+    //   lanes would certify content nobody checked. Failing would teach `--no-verify` for an
+    //   ordinary push, so it says what it did not do, and CI checks the ref.
+    note(`pre-push: ${scope.why} — the working tree is not what is being pushed`);
+    note(
+      '  NOT CHECKED here; CI checks it. To check it locally, check it out and push from there.',
+    );
+    return;
+  }
   let base: string | undefined;
   if (scope.kind === 'unscoped') {
     note(`pre-push: ${scope.why} — every lane runs, tests in full`);

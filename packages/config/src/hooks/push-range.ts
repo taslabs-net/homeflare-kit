@@ -34,7 +34,9 @@ export type PushScope =
       readonly why: string;
     }
   /** No usable base: run every lane, tests in full. */
-  | { readonly kind: 'unscoped'; readonly why: string };
+  | { readonly kind: 'unscoped'; readonly why: string }
+  /** The pushed commit is not what is checked out, so the working tree cannot vouch for it. */
+  | { readonly kind: 'elsewhere'; readonly why: string };
 
 /** git's "no such ref" sentinel — 40 zeros (64 under SHA-256). */
 const ZERO = /^0+$/;
@@ -111,8 +113,13 @@ async function baseFor(
 /**
  * Resolve the push git described on stdin. With no stdin (a manual run) the push is
  * `HEAD` to a new branch — measured from the merge base with the default branch.
- * ⚠️ ONLY THE FIRST NON-DELETION REF IS MEASURED. `git push --all` is rare in the estate,
- *   and the lanes run on the working tree either way, which is HEAD, not every ref.
+ * 🔴 THE LANES RUN ON THE WORKING TREE, SO ONLY A PUSH OF `HEAD` CAN BE CHECKED HERE. Found
+ *   in review 2026-09-23 and reproduced: `git push origin broken` from a clean `main`
+ *   measured the right files, then ran `bun test --changed` against `main`'s tree, found
+ *   nothing, and printed "passed". A ref that is not checked out now comes back
+ *   `elsewhere`, which the caller reports as NOT CHECKED — never as a pass. (The old
+ *   whole-`check` hook had the same blind spot; it just ran unrelated tests while in it.)
+ * ⚠️ WITH SEVERAL REFS, THE ONE AT `HEAD` IS MEASURED and the rest are named as unchecked.
  */
 export async function pushScope(
   root: string,
@@ -124,14 +131,23 @@ export async function pushScope(
     return { kind: 'empty', why: 'this push only deletes refs' };
   }
   const head = await out(root, ['rev-parse', 'HEAD']);
-  const ref = pushed[0] ?? {
+  const atHead = pushed.find((ref) => ref.localSha === head);
+  const others = pushed.filter((ref) => ref !== atHead).map((ref) => ref.localRef);
+  if (pushed.length > 0 && atHead === undefined) {
+    return {
+      kind: 'elsewhere',
+      why: `pushing ${others.join(', ')}, but the checkout is at ${short(head ?? '?')}`,
+    };
+  }
+  const ref = atHead ?? {
     localRef: 'HEAD',
     localSha: head ?? 'HEAD',
     remoteRef: '',
     remoteSha: '0'.repeat(40),
   };
   const found = await baseFor(root, remote, ref);
-  if (!('base' in found)) return { kind: 'unscoped', why: found.why };
+  const also = others.length > 0 ? `; ${others.join(', ')} not checked here` : '';
+  if (!('base' in found)) return { kind: 'unscoped', why: `${found.why}${also}` };
 
   const diff = await probe([
     'git',
@@ -145,8 +161,8 @@ export async function pushScope(
   ]);
   if (diff.code !== 0) return { kind: 'unscoped', why: `git diff ${short(found.base)} failed` };
   const changed = diff.stdout.split('\0').filter((path) => path !== '');
-  if (changed.length === 0) return { kind: 'empty', why: `no file differs ${found.why}` };
-  return { kind: 'scoped', base: found.base, changed, why: found.why };
+  if (changed.length === 0) return { kind: 'empty', why: `no file differs ${found.why}${also}` };
+  return { kind: 'scoped', base: found.base, changed, why: `${found.why}${also}` };
 }
 
 /**
