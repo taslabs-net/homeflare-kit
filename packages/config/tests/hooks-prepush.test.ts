@@ -6,7 +6,7 @@
  *   reach run, a build is left to CI, and every way of losing the base WIDENS the run.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ENV, type Scratch, scratchRepo, spawn } from './hooks-harness.ts';
@@ -148,6 +148,14 @@ describe('what a push reports', () => {
     expect(result.code).toBe(1);
     expect(result.output).toContain('`bun run lint` failed');
     expect(result.output).toContain('git push --no-verify');
+  });
+
+  test('in a worktree nobody has installed: skipped out loud, not failed', async () => {
+    await rm(join(repo.dir, 'node_modules'), { recursive: true, force: true });
+    const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`);
+    expect(result.code).toBe(0);
+    expect(result.output).toContain("run 'bun install'");
+    await mkdir(join(repo.dir, 'node_modules'));
   });
 
   test('is a no-op when the repo declares no check script', async () => {

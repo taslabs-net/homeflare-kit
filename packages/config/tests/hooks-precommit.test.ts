@@ -6,6 +6,7 @@
  *   secret scan must run first and fail closed. hooks-harness.ts says why none of it is mocked.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ENV, type Scratch, pathWith, scratchRepo } from './hooks-harness.ts';
 
@@ -44,6 +45,24 @@ describe('the secret scan', () => {
     expect(result.code).toBe(1);
     expect(result.output).toContain('NOT scanned');
     expect(result.output).toContain('brew install gitleaks');
+  });
+
+  test('in a worktree nobody has installed: the scan still runs, the rest skips out loud', async () => {
+    // ⚠️ A fresh worktree runs its hooks now; without node_modules, formatting would reach
+    //   for an unpinned `bunx oxfmt`. The secret scan needs only the gitleaks binary.
+    const bare = await scratchRepo('hf-hook-bare-');
+    try {
+      await rm(join(bare.dir, 'node_modules'), { recursive: true, force: true });
+      await bare.write('ugly.ts', UGLY);
+      await bare.git('add', 'ugly.ts');
+      const result = await bare.hook('pre-commit', { env: clean });
+      expect(result.code).toBe(0);
+      expect(result.output).toContain('gitleaks found no secret');
+      expect(result.output).toContain("run 'bun install'");
+      expect(await bare.git('show', ':ugly.ts')).toBe(UGLY);
+    } finally {
+      await bare.remove();
+    }
   });
 
   test('a clean scan says so and lets the commit continue', async () => {

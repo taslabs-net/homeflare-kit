@@ -9,6 +9,7 @@
  *   once `bun install` has run there. The required checks on `main` stay the gate — CI
  *   runs the whole `check`, every test, the build and the smoke test on every pull request.
  */
+import { existsSync } from 'node:fs';
 import { type Lane, planLanes } from './push-plan.ts';
 import { changesEverything, parsePushRefs, pushScope } from './push-range.ts';
 import { fail, note, ok, run, runLane, tool } from './report.ts';
@@ -22,9 +23,26 @@ import { fingerprints, staged } from './staged.ts';
  *   happens. Without the restage, oxfmt would fix the worktree while the commit kept
  *   the unformatted bytes — CI then fails on a file that reads as correct locally.
  */
+/**
+ * Has `bun install` run in this worktree?
+ *
+ * ⚠️ WITHOUT IT, SKIP — LOUDLY — RATHER THAN IMPROVISE. A fresh worktree now runs its hooks
+ *   (activate.ts), and in the repo that HOSTS this package they are reached by workspace
+ *   path, not through node_modules. There `tool()` would fall back to `bunx`, fetching an
+ *   unpinned oxfmt mid-commit, and a pre-push lane would die on "command not found". The
+ *   wrapper every other repo commits makes the same call one step earlier (install.ts).
+ */
+function installed(root: string, hook: 'pre-commit' | 'pre-push'): boolean {
+  if (existsSync(`${root}/node_modules`)) return true;
+  note(`${hook}: no node_modules in this worktree — run 'bun install'; skipping the rest`);
+  return false;
+}
+
 export async function preCommit(root: string): Promise<void> {
-  // ⛔ SECRETS FIRST, before anything can rewrite or pass — see secrets.ts.
+  // ⛔ SECRETS FIRST, before anything can rewrite or pass — see secrets.ts. It needs only the
+  //   gitleaks binary, so it runs even in a worktree nobody has installed yet.
   await scanStagedSecrets();
+  if (!installed(root, 'pre-commit')) return;
   const oxfmt = tool(root, 'oxfmt');
   const { formattable, code, partial } = await staged();
 
@@ -100,6 +118,7 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
     note('pre-push: no `check` script declared in package.json; nothing to run');
     return;
   }
+  if (!installed(root, 'pre-push')) return;
 
   const scope = await pushScope(root, args[0] ?? 'origin', parsePushRefs(stdin));
   if (scope.kind === 'empty') {
