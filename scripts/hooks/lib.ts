@@ -17,9 +17,21 @@ export async function stagedFiles(): Promise<readonly string[]> {
   return out.split('\n').filter((line) => line.length > 0);
 }
 
-/** Run a command, streaming its output. Returns its exit code. */
-export async function run(cmd: readonly string[]): Promise<number> {
-  const proc = Bun.spawn([...cmd], { stdout: 'inherit', stderr: 'inherit' });
+/**
+ * Run a command, streaming its output. Returns its exit code.
+ * ⚠️ `env` exists for one reason — see the comment in `verify.ts`. A hook that passes its
+ *   inherited GIT_DIR to a test suite lets a test commit into the repository being
+ *   pushed.
+ */
+export async function run(
+  cmd: readonly string[],
+  env?: Record<string, string | undefined>,
+): Promise<number> {
+  const proc = Bun.spawn([...cmd], {
+    stdout: 'inherit',
+    stderr: 'inherit',
+    ...(env === undefined ? {} : { env }),
+  });
   return await proc.exited;
 }
 

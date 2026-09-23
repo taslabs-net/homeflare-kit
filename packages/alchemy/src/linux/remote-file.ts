@@ -6,10 +6,13 @@
  *   the host already says what we declare; then read back and compared.
  * - read — lstat plus the SHA-256 of the file and of the part this resource owns.
  * - diff — the declared digest against the stored AND the on-disk one, plus mode and owner.
- * - replace — only when `path` changes; create-before-delete.
+ * - replace — only when `path` changes; create-before-delete. A region renamed inside one file
+ *   is an update that writes the new block, verifies it, then takes the old one out.
  * - delete — removes the file, or in region mode only the block.
  *
  * ⛔ NEVER A SECRET — see remote-file-form.ts.
+ * ⛔ THE REGION IS PART OF THE IDENTITY. Renaming it, or changing its comment token, moves the block;
+ *   swapping between owning the whole file and owning a block is refused (remote-file-plan.ts).
  * ⚠️ NOTHING IS ADOPTED WITHOUT `--adopt` (docs/ownership.md): a file already at the path, or a
  *   block already carrying the markers, reads as `Unowned`.
  * ★ IT IS A SEPARATE RESOURCE FROM `Host.File`, not a flag on it: the two have different attributes

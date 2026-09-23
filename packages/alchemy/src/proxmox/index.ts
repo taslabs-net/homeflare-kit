@@ -21,6 +21,18 @@
  * ★ THE VENDOR CONSTRAINT READER JOINED 2026-09-22 (codegen/README.md). `constraintsFor` and
  *   `violations` are exported so a CONSUMING stack can assert its own declarations offline — the
  *   `deploy:pbs` that failed on a 128-character comment had no way to ask that question.
+ * ★ THE CEPH DAEMON, FILESYSTEM AND OSD RESOURCES JOINED 2026-09-22, BECAUSE EACH IS ALREADY
+ *   ADOPT-ONLY BY SHAPE and a live cluster measured that way was waiting on nothing but this line.
+ *   `ProxmoxCephDaemon` (mon/mgr/mds) and `ProxmoxCephFs` compare nothing, so no edit can plan a
+ *   replace; `ProxmoxCephOsd` never POSTs unless `dev` is declared. All three default to `retain`,
+ *   so deleting a declaration drops a state row and leaves the quorum member, the filesystem or
+ *   the replica alone. ceph-adopt.test.ts pins adopting each as reads only, and removing each as
+ *   no DELETE, through Alchemy's own Plan and Apply.
+ * ⛔ `ProxmoxCephFlag` STAYS PROVIDER-ONLY, AND ON PURPOSE. A flag is a hand on the brake, not
+ *   configuration: a declared `noout: false` clears an operator's `noout` on EVERY deploy,
+ *   including one run for an unrelated resource in the middle of a maintenance window
+ *   (ceph-flag.ts has the whole argument). A stack that wants a flag set must reach for the
+ *   Provider deliberately; the barrel does not offer the sentence by default.
  * ★ Anything else unlisted is still reachable by path if you genuinely need
  *   it — that is a deliberate, visible act rather than an accident of barrelling.
  */
@@ -28,10 +40,10 @@ export { ProxmoxAcl, ProxmoxAclProvider } from './acl.ts';
 export { type AlertmanagerBodyOptions, alertmanagerAlertBody } from './alertmanager-body.ts';
 export { ProxmoxApiTokenProvider } from './api-token.ts';
 export { ProxmoxBackupJob, ProxmoxBackupJobProvider } from './backup-job.ts';
-export { ProxmoxCephDaemonProvider } from './ceph-daemon.ts';
+export { ProxmoxCephDaemon, ProxmoxCephDaemonProvider } from './ceph-daemon.ts';
 export { ProxmoxCephFlagProvider } from './ceph-flag.ts';
-export { ProxmoxCephFsProvider } from './ceph-fs.ts';
-export { ProxmoxCephOsdProvider } from './ceph-osd.ts';
+export { ProxmoxCephFs, ProxmoxCephFsProvider } from './ceph-fs.ts';
+export { ProxmoxCephOsd, ProxmoxCephOsdProvider } from './ceph-osd.ts';
 export { ProxmoxCephPool, ProxmoxCephPoolProvider } from './ceph-pool.ts';
 export { constraintsFor, formViolations } from './constraint-guard.ts';
 export {

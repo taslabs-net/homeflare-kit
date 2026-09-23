@@ -72,14 +72,18 @@ export function renderStep(step: JobStep, depth: number): string[] {
       ? renderRun(step.run ?? '', depth + 1)
       : [`${indent(depth + 1)}uses: ${step.uses}`];
 
-  if (step.name === undefined) {
-    // ⚠️ The first line of the item carries the dash, so an unnamed step's `run:` or
-    //   `uses:` is inlined after it and any block body follows at its own indent.
-    const [first = '', ...rest] = body;
-    lines.push(`${indent(depth)}- ${first.trimStart()}`, ...rest);
-  } else {
-    lines.push(`${indent(depth)}- name: ${scalar(step.name)}`, ...body);
-  }
+  // ★ `name:` then `if:` then the body, because that is the order a reader scans: what
+  //   this step is, whether it runs, what it does. All three are ordinary mapping keys
+  //   to GitHub, so the order is for the person reading the diff, not the parser.
+  const head: string[] = [];
+  if (step.name !== undefined) head.push(`${indent(depth + 1)}name: ${scalar(step.name)}`);
+  if (step.if !== undefined) head.push(`${indent(depth + 1)}if: ${scalar(step.if)}`);
+
+  // ⚠️ The first line of the item carries the dash, whichever key it turns out to be —
+  //   an unnamed, unconditional step still inlines its `run:` or `uses:` after the dash
+  //   and lets any block body follow at its own indent.
+  const [first = '', ...rest] = [...head, ...body];
+  lines.push(`${indent(depth)}- ${first.trimStart()}`, ...rest);
 
   if (step.with !== undefined && Object.keys(step.with).length > 0) {
     lines.push(`${indent(depth + 1)}with:`, ...renderMapping(step.with, depth + 2));
