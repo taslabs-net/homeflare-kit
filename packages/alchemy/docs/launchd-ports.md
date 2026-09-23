@@ -36,18 +36,13 @@ right before the jobs it describes), and fails the **plan** — nothing is fetch
 
 ## Why it keys on the port number alone
 
-`house/nix/homeflare-config/hosts/macmini/modules/lib-ports.nix` (a different repo —
-`homeflare/homeflare`, read at `92cff7f`, 2026-09-23) is the check this replaces for a
-kit-declared job. Its `assertNoCollision` is:
-
-```nix
-dupes = lib.subtractLists (lib.unique vals) vals;  # vals = lib.attrValues ports
-```
-
-— every port **value** in the registry, address and protocol never read. `portClaimProblems`
-reproduces that rule rather than a looser one, because that is the strictness the registry already
-enforces across the whole estate, and a kit-side check that disagreed with it would be a second,
-inconsistent source of truth.
+A stack's jobs share one estate, and a kit-side check that disagreed with the estate's existing
+port-collision convention — every port **value**, address and protocol never read — would be a
+second, looser source of truth rather than a replacement for the stricter one. So
+`portClaimProblems` reproduces that same strictness deliberately, keyed on the port number alone,
+rather than inventing a narrower rule of its own. (A host still on Nix keeps that convention
+enforced by its own port registry until the job migrates — see "What it cannot see" below; this
+doc states the kit's rule on its own terms and does not depend on that registry's file.)
 
 ### The measured bind table
 
@@ -88,15 +83,17 @@ refuses that pairing anyway — the port number is the key, exactly like the reg
 - **A job the stack does not pass.** `claimPorts` takes exactly the array a stack builds and
   hands it; there is no argv-parsing, no config-file reading and no host inspection here to
   recover a port a stack forgot to include. Leaving a job's claim out of the list is invisible to
-  this check, the same way a port left out of `lib-ports.nix` was invisible on 2026-09-02.
+  this check, the same way a port left out of a host's own Nix-based port registry was invisible
+  on 2026-09-02.
 - **A daemon still on Nix**, unless the migrating stack also passes that daemon's port as a claim
   of its own (owner naming the Nix job, so the message is legible during a cutover). Until a job
-  moves off Nix, `lib-ports.nix` is still the thing keeping it collision-free; `claimPorts` only
-  starts covering a port once a kit stack declares the job that binds it.
+  moves off Nix, that host's Nix-based port registry is still the thing keeping it
+  collision-free; `claimPorts` only starts covering a port once a kit stack declares the job that
+  binds it.
 - **Two protocols of the same port number.** Keying on the port alone means a daemon on `tcp/9094`
   and another on `udp/9094` would be refused as a collision, same as the Nix registry. No mini job
-  does that today (checked against the registry at `92cff7f`); if one needs to, the key widens
-  deliberately, in its own change — not silently here.
+  does that today; if one needs to, the key widens deliberately, in its own change — not silently
+  here.
 
 ## The error is a defect, not a typed channel
 
