@@ -1,5 +1,31 @@
 # @homeflare/alchemy
 
+## 0.27.2
+
+### Patch Changes
+
+- [#180](https://github.com/taslabs-net/homeflare-kit/pull/180) [`1a85198`](https://github.com/taslabs-net/homeflare-kit/commit/1a85198349981e04f475c0e08b0aa2a995719ef4) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The `forgejo/*` family (`Forgejo.Repository`, `Forgejo.BranchProtection`,
+  `Forgejo.OrgLabel`, `Forgejo.OrgTeam`, `Forgejo.RepoWebhook`,
+  `Forgejo.OrgSecret`, `Forgejo.TeamMember`) now calls
+  `@distilled.cloud/forgejo@1.0.0-rc.12`'s typed operations instead of a
+  hand-rolled `Effect HttpClient` client — `catchTag('NotFound', …)` in place
+  of a status-carrying `ForgejoError`. `client.ts` is gone; nothing else in
+  this package imported it. Credentials still resolve from `FORGEJO_URL` /
+  `FORGEJO_TOKEN` at call time, now through the package's own
+  `CredentialsFromEnv` layer. Every operation this family calls exists in the
+  package and every error it handles carries a tag, so no distilled patch was
+  needed. Props and attributes are unchanged — an adopted repository, label,
+  team, webhook, branch protection rule, org secret or team membership still
+  plans noop.
+
+- [#179](https://github.com/taslabs-net/homeflare-kit/pull/179) [`0419d30`](https://github.com/taslabs-net/homeflare-kit/commit/0419d30860e4f6ffbf42e0e1257bd5845a00a418) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Cloudflare.R2BucketLock` now calls `@distilled.cloud/cloudflare/r2`
+  (`getBucketLock`/`putBucketLock`) instead of the `cloudflare` npm SDK, the same
+  distilled package `MeshNode` already used — `catchTag('NoSuchBucket', …)` in
+  place of an `instanceof NotFoundError` status check. The `cloudflare` peer
+  dependency and `client.ts` are gone; nothing else in this package imported
+  them. Props, attributes and the wire body are unchanged — an adopted lock
+  still plans noop.
+
 ## 0.27.1
 
 ### Patch Changes
