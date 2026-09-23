@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -498,20 +499,34 @@ export const getTag: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type ListTagsError = BadRequest | Forbidden | PaperlessNgxOpError;
+export type ListTagsError =
+  | BadRequest
+  | Forbidden
+  | NotFound
+  | PaperlessNgxOpError;
 /** Build a children map once to avoid per-parent queries in the serializer. */
-export const listTags: API.OperationMethod<
+export const listTags: API.PaginatedOperationMethod<
   ListTagsRequest,
   PaginatedTagList,
   ListTagsError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListTagsRequest,
-  output: PaginatedTagList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  Tag
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListTagsRequest,
+    output: PaginatedTagList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type TagsDestroyError = Forbidden | NotFound | PaperlessNgxOpError;
 /** Mixin to add document count to queryset, permissions-aware if needed */

@@ -38,6 +38,12 @@
       "worker": "./src/errors.ts",
       "default": "./dist/errors.js"
     },
+    "./Pagination": {
+      "types": "./dist/pagination.d.ts",
+      "bun": "./src/pagination.ts",
+      "worker": "./src/pagination.ts",
+      "default": "./dist/pagination.js"
+    },
     "./Traits": {
       "types": "./dist/traits.d.ts",
       "bun": "./src/traits.ts",

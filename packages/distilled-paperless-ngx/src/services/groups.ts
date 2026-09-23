@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -239,19 +240,33 @@ export const groupsDestroy: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type ListGroupsError = BadRequest | Forbidden | PaperlessNgxOpError;
-export const listGroups: API.OperationMethod<
+export type ListGroupsError =
+  | BadRequest
+  | Forbidden
+  | NotFound
+  | PaperlessNgxOpError;
+export const listGroups: API.PaginatedOperationMethod<
   ListGroupsRequest,
   PaginatedGroupList,
   ListGroupsError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListGroupsRequest,
-  output: PaginatedGroupList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  Group
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListGroupsRequest,
+    output: PaginatedGroupList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type UpdateGroupError =
   | BadRequest

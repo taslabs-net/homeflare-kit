@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -578,20 +579,31 @@ export const getDocumentType: API.OperationMethod<
 export type ListDocumentTypesError =
   | BadRequest
   | Forbidden
+  | NotFound
   | PaperlessNgxOpError;
 /** Mixin to add document count to queryset, permissions-aware if needed */
-export const listDocumentTypes: API.OperationMethod<
+export const listDocumentTypes: API.PaginatedOperationMethod<
   ListDocumentTypesRequest,
   PaginatedDocumentTypeList,
   ListDocumentTypesError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDocumentTypesRequest,
-  output: PaginatedDocumentTypeList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  DocumentType
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDocumentTypesRequest,
+    output: PaginatedDocumentTypeList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type UpdateDocumentTypeError =
   | BadRequest

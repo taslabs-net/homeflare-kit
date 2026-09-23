@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -277,20 +278,31 @@ export const getCustomField: API.OperationMethod<
 export type ListCustomFieldsError =
   | BadRequest
   | Forbidden
+  | NotFound
   | PaperlessNgxOpError;
 /** Mixin to add document count to queryset, permissions-aware if needed */
-export const listCustomFields: API.OperationMethod<
+export const listCustomFields: API.PaginatedOperationMethod<
   ListCustomFieldsRequest,
   PaginatedCustomFieldList,
   ListCustomFieldsError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCustomFieldsRequest,
-  output: PaginatedCustomFieldList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  CustomField
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCustomFieldsRequest,
+    output: PaginatedCustomFieldList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type UpdateCustomFieldError =
   | BadRequest

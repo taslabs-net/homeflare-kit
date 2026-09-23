@@ -6,8 +6,14 @@
  * endpoint returns the object itself, a list endpoint returns
  * `{ count, next, previous, results: [...] }` as an ordinary output shape
  * (not a raw-response wrapper — `next`/`previous` are full URLs, which the
- * shared pagination heuristic does not match, exactly NetBox's case; see
- * scripts/convert.ts), and many mutations answer `204 No Content`.
+ * shared v0 pagination HEURISTIC does not match, exactly NetBox's case; see
+ * scripts/convert.ts), and many mutations answer `204 No Content`. Every
+ * page-number list operation still paginates: a `/shapes` patch in the
+ * tag's own `patches/<tag>/_undeclared-errors.json` stamps
+ * `smithy.api#paginated` by hand (the same technique
+ * packages/cloudflare/patches/dns/listRecords.json uses), and
+ * src/pagination.ts documents why core's `paginatePageNumber` strategy
+ * still terminates correctly even though `next` is a URL, not a number.
  *
  * Authentication is DRF's `TokenAuthentication` — `Authorization: Token
  * <token>` — NOT `Bearer`. Confirmed against the pinned v3.1.1 document's own
@@ -34,6 +40,26 @@
  * 502 lands on `BadGateway` with the proxy's HTML as its `body`, never
  * silently as "not found". Same three shapes, same reasoning, as NetBox's
  * identical DRF stack (src/protocol.ts there).
+ *
+ * ⚠️ THE 302 TRAP: a wrong `apiBaseUrl` (pointed at the web UI's origin, an
+ * old path, or a reverse proxy that redirects unauthenticated/unknown
+ * routes to a login page) does NOT fail cleanly. Measured live 2026-09-23:
+ * `GET /api/no-such-endpoint/` → `302`, a redirect to the web UI, not JSON.
+ * `makeRestProtocol`'s shared `decode` (packages/core/src/protocol-rest.ts)
+ * only branches on `status >= 400`; every 3xx falls into the SAME path as a
+ * real 2xx success and is handed to the operation's output schema decoder.
+ * Depending on whether the underlying `HttpClient` follows the redirect,
+ * that means either the HTML page's text fails to decode against the
+ * expected JSON shape, or an empty/short redirect body decodes as `{}` and
+ * fails the same way — a confusing schema-decode error, not a clear
+ * "wrong URL" or network error. There is no cheap fix: `RestProtocolOptions`
+ * has no hook for inspecting `response.status` before the `>= 400` branch,
+ * `transformResponse` only runs on the already-2xx-shaped body, and adding
+ * a status-range check would mean changing distilled core itself, which is
+ * out of bounds for a package-level patch (core's quirks-go-in-protocol.ts
+ * rule cuts the other way here — the package has no hook to use). So this
+ * is DOCUMENTED, not handled: if a call fails with a schema-decode error
+ * instead of a typed Paperless-ngx error, check `apiBaseUrl` first.
  */
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";

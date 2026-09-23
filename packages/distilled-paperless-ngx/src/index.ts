@@ -32,5 +32,6 @@ export {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "./protocol.ts";
+export { paginatePageNumber } from "./pagination.ts";
 export * as Retry from "./retry.ts";
 export * as Services from "./services/index.ts";

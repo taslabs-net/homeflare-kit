@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -650,19 +651,33 @@ export const getTasksStatusCount: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type ListTasksError = BadRequest | Forbidden | PaperlessNgxOpError;
-export const listTasks: API.OperationMethod<
+export type ListTasksError =
+  | BadRequest
+  | Forbidden
+  | NotFound
+  | PaperlessNgxOpError;
+export const listTasks: API.PaginatedOperationMethod<
   ListTasksRequest,
   PaginatedTaskSerializerV10List,
   ListTasksError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListTasksRequest,
-  output: PaginatedTaskSerializerV10List,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  TaskSerializerV10
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListTasksRequest,
+    output: PaginatedTaskSerializerV10List,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type ListTasksActiveError = BadRequest | Forbidden | PaperlessNgxOpError;
 /** Currently pending and running tasks (capped at 50). */

@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -183,20 +184,31 @@ export const getProcessedMail: API.OperationMethod<
 export type ListProcessedMailError =
   | BadRequest
   | Forbidden
+  | NotFound
   | PaperlessNgxOpError;
 /** Pass a user object to serializer */
-export const listProcessedMail: API.OperationMethod<
+export const listProcessedMail: API.PaginatedOperationMethod<
   ListProcessedMailRequest,
   PaginatedProcessedMailList,
   ListProcessedMailError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListProcessedMailRequest,
-  output: PaginatedProcessedMailList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  ProcessedMail2
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListProcessedMailRequest,
+    output: PaginatedProcessedMailList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type ProcessedMailBulkDeleteError =
   | BadRequest
