@@ -52,6 +52,21 @@ export async function capture(cmd: readonly string[]): Promise<string> {
   return (await probe(cmd)).stdout;
 }
 
+/**
+ * Run a command, relaying its stdout live-enough (after it exits) while also handing the
+ * caller the text — gates.ts reads oxfmt's own "on N files" summary from it. `stderr` stays
+ * `inherit`: diagnostics (a parse error, "no files matched") must show immediately, and nothing
+ * here needs to inspect them.
+ */
+export async function runCaptured(
+  cmd: readonly string[],
+): Promise<{ readonly code: number; readonly stdout: string }> {
+  const proc = Bun.spawn([...cmd], { stdout: 'pipe', stderr: 'inherit' });
+  const stdout = await new Response(proc.stdout).text();
+  process.stdout.write(stdout);
+  return { code: await proc.exited, stdout };
+}
+
 /** Capture a command's stdout AND its exit code — git plumbing that answers by status. */
 export async function probe(cmd: readonly string[]): Promise<{ code: number; stdout: string }> {
   const proc = Bun.spawn([...cmd], { stdout: 'pipe', stderr: 'ignore' });

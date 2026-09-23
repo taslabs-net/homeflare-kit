@@ -31,6 +31,25 @@ does nothing reads as coverage.
 since house `oxfmt` formats markdown), names the ones it changed, and restages exactly
 those. A file with unstaged edits on top is checked, never rewritten.
 
+⛔ **A staged file entirely excluded by oxfmt's or oxlint's own `ignorePatterns` is not a
+failure.** Measured 2026-09-23: committing only a vendored, ignored file (`staged()`
+classifies by extension only, not by ignore rules) made oxfmt exit non-zero with
+"Expected at least one target file. All matched files may have been excluded by ignore
+rules." Both tools run with `--no-error-on-unmatched-pattern` (their own documented
+answer — `oxfmt --help` / `oxlint --help`, pinned versions checked directly) so "nothing
+here was formattable" passes and says so: `✓ pre-commit: no formattable staged files`. A
+real formatting or lint problem still fails exactly as before — the flag only changes the
+all-excluded case.
+
+⛔ **The hook resolves `.oxfmtrc.*` itself instead of trusting bare `oxfmt` to find it.**
+Measured 2026-09-23 against the pinned version: bare `oxfmt` auto-discovers only
+`.oxfmtrc.json` and `.oxfmtrc.jsonc`. A repo configured with `.oxfmtrc.mjs` (or `.ts`,
+`.js`, `.cjs`, `.mts`, `.cts` — all valid `-c/--config` targets per `oxfmt --help`, none
+auto-discovered) got formatted with oxfmt's built-in defaults instead of its own style,
+silently. The hook now scans the repo root for exactly one such file and passes it with
+`--config`; two or more (none of them `.json`/`.jsonc`) fails the commit loudly rather
+than guess which one governs — see `src/hooks/oxfmt-config.ts`.
+
 ## pre-push, scoped to the push
 
 The base comes from git. The hook reads the pushed refs on stdin:
