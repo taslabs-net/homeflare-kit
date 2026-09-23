@@ -89,6 +89,19 @@
         "effect": "4.0.0-rc.115",
       },
     },
+    "packages/distilled-opnsense": {
+      "name": "@homeflare/distilled-opnsense",
+      "version": "0.1.0",
+      "dependencies": {
+        "@distilled.cloud/core": "1.0.0-rc.12",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
+    },
     "packages/distilled-paperless-ngx": {
       "name": "@homeflare/distilled-paperless-ngx",
       "version": "0.2.0",
@@ -439,6 +452,8 @@
     "@homeflare/config": ["@homeflare/config@workspace:packages/config"],
 
     "@homeflare/distilled-netbox": ["@homeflare/distilled-netbox@workspace:packages/distilled-netbox"],
+
+    "@homeflare/distilled-opnsense": ["@homeflare/distilled-opnsense@workspace:packages/distilled-opnsense"],
 
     "@homeflare/distilled-paperless-ngx": ["@homeflare/distilled-paperless-ngx@workspace:packages/distilled-paperless-ngx"],
 
