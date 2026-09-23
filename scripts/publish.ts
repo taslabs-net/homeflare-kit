@@ -21,7 +21,7 @@
  */
 import { Glob } from 'bun';
 import { packForPublish } from './pack.ts';
-import { isAlreadyPublishedConflict } from './publish-conflict.ts';
+import { isAlreadyPublishedConflict, summaryRow } from './publish-conflict.ts';
 
 const root = new URL('..', import.meta.url);
 const rootPkg = await Bun.file(new URL('package.json', root)).json();
@@ -117,6 +117,11 @@ for (const pattern of patterns) {
 }
 
 let published = 0;
+// ★ Packages skipped via the 409-conflict path, so the summary below can flag them
+//   distinctly rather than blending them into an ordinary "✅ on npm" row — see the
+//   note beside `isAlreadyPublishedConflict` in publish-conflict.ts on why this is the
+//   one thing that fix cannot verify for itself.
+const conflictSkipped = new Set<string>();
 
 for (const pkg of packages) {
   if (await isPublished(pkg)) {
@@ -153,6 +158,7 @@ for (const pkg of packages) {
       throw new Error(`publish failed for ${pkg.name}`);
     }
     console.log(`~ ${pkg.name}@${pkg.version} already published (npm 409 after the fact)`);
+    conflictSkipped.add(pkg.name);
     // ★ No ndjson entry, deliberately. The run that actually got this version onto npm
     //   already wrote its git-tag event and changesets/action already created the tag and
     //   the GitHub Release from it. Writing a second event here would tell the action to
@@ -209,13 +215,7 @@ console.log(`\n${published} package(s) published, ${packages.length - published}
 const summaryPath = process.env['GITHUB_STEP_SUMMARY'];
 if (summaryPath !== undefined) {
   const rows = await Promise.all(
-    packages.map(async (p) => {
-      const live = await isPublished(p);
-      // ⚠️ "not visible yet" is NOT "missing". npm accepts a publish before it serves it,
-      //   so a row can read as pending on a release that worked perfectly. Say that,
-      //   rather than crying wolf on every slow propagation.
-      return `| \`${p.name}\` | ${p.version} | ${live ? '✅ on npm' : '⏳ not visible yet'} |`;
-    }),
+    packages.map(async (p) => summaryRow(p, await isPublished(p), conflictSkipped.has(p.name))),
   );
 
   const summary = [

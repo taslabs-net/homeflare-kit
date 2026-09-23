@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isAlreadyPublishedConflict } from './publish-conflict.ts';
+import { isAlreadyPublishedConflict, summaryRow } from './publish-conflict.ts';
 
 describe('isAlreadyPublishedConflict', () => {
   test('the real 409 text from run 35887402292 (staged wording)', () => {
@@ -75,5 +75,24 @@ describe('isAlreadyPublishedConflict', () => {
 
   test('a successful publish (exit 0) is never classified as a conflict', () => {
     expect(isAlreadyPublishedConflict({ code: 0, out: '' }, '0.5.0')).toBe(false);
+  });
+});
+
+describe('summaryRow', () => {
+  const pkg = { name: '@homeflare/alchemy', version: '0.25.1' };
+
+  test('a 409-conflict skip is flagged for a human, not shown as an ordinary success', () => {
+    const row = summaryRow(pkg, true, true);
+    expect(row).toContain('verify this is your content');
+    expect(row).not.toContain('✅ on npm');
+  });
+
+  test('an ordinary live package still reads as on npm', () => {
+    expect(summaryRow(pkg, true, false)).toBe('| `@homeflare/alchemy` | 0.25.1 | ✅ on npm |');
+  });
+
+  test('an ordinary not-yet-visible package still reads as pending', () => {
+    const row = summaryRow(pkg, false, false);
+    expect(row).toContain('⏳ not visible yet');
   });
 });

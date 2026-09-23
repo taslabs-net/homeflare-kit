@@ -52,3 +52,34 @@ export function isAlreadyPublishedConflict(
   const quotedVersion = match[1];
   return quotedVersion === undefined || quotedVersion === version;
 }
+
+/**
+ * One row of the release job summary table (`GITHUB_STEP_SUMMARY`).
+ *
+ * ⚠️ WHY A CONFLICT SKIP GETS ITS OWN STATUS, NOT "✅ on npm". `isAlreadyPublishedConflict`
+ *   can only read npm's error TEXT — it has no way to confirm the version now on the
+ *   registry is actually the content THIS run meant to publish, versus a genuine version
+ *   collision (two runs independently computing the same next version from different
+ *   changesets, a known changesets/action race when two releases land close together).
+ *   A same-content race is exactly what this fix targets and is safe to wave through; a
+ *   real collision would silently and permanently drop a package's intended change —
+ *   npm versions are immutable, so nothing about a later run fixes it. This function
+ *   cannot tell the two apart either, so it does not claim to: it marks the row for a
+ *   human to glance at, in the one place operators already look after every release,
+ *   rather than letting it blend into the routine "already on the registry" case.
+ * ★ "not visible yet" is NOT "missing". npm accepts a publish before it serves it, so an
+ *   ordinary row can read as pending on a release that worked perfectly — say that,
+ *   rather than crying wolf on every slow propagation.
+ */
+export function summaryRow(
+  pkg: { readonly name: string; readonly version: string },
+  live: boolean,
+  wasConflictSkip: boolean,
+): string {
+  const status = wasConflictSkip
+    ? '⚠️ published via a 409 race — verify this is your content'
+    : live
+      ? '✅ on npm'
+      : '⏳ not visible yet';
+  return `| \`${pkg.name}\` | ${pkg.version} | ${status} |`;
+}
