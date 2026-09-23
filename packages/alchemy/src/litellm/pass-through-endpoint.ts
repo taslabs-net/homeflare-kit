@@ -168,7 +168,10 @@ export const passThroughHandlers = {
       if (!isResolved(news)) return undefined;
       yield* refuseLiteralSecrets(news.headers);
       if (output === undefined) return undefined;
-      if (needsReplace(output, news)) return { action: 'replace' } as const;
+      // ⛔ deleteFirst: TRUE — a create-first replace mints a new instanceId/id before the old row
+      //   on `path` is gone, so the new generation's `reconcile` would refuse it as a foreign
+      //   conflict (Apply.ts). Same fix this kit's other unique-identity providers use.
+      if (needsReplace(output, news)) return { action: 'replace', deleteFirst: true } as const;
       return matches(output, news)
         ? ({ action: 'noop' } as const)
         : ({ action: 'update' } as const);

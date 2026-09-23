@@ -7,10 +7,14 @@
  *   (so two concurrent requests can interleave), then writes back what it captured — not what is
  *   there by the time it writes. Two `create` calls that race lose one row, exactly like the
  *   vendor field would without the client's per-base-URL semaphore serialising them.
- * ⚠️ WHAT THIS FAKE DOES NOT MODEL: PROXY_ADMIN vs. a lesser role (any correct bearer token is
- *   accepted for every route here); and update-of-a-missing-id, which is not measured at the tag —
- *   this fake 400s it, the same status a missing delete gets, as a documented TEST SIMPLIFICATION,
- *   not a vendor fact (docs/litellm.md says so too).
+ * ⚠️ WHAT THIS FAKE DOES NOT MODEL: PROXY_ADMIN vs. a lesser role for most routes (any correct
+ *   bearer token is accepted); and update-of-a-missing-id, which is not measured at the tag — this
+ *   fake 400s it, the same status a missing delete gets, as a documented TEST SIMPLIFICATION, not a
+ *   vendor fact (docs/litellm.md says so too). `forbidDelete` is the one exception: it models the
+ *   real asymmetry client.ts's header describes — `DELETE` routes through
+ *   `update_config_general_settings`, which 400s `not_allowed_access` for a non-PROXY_ADMIN caller
+ *   (or a disconnected DB) on a row that is genuinely still live, the SAME status a missing-id
+ *   delete gets (proxy_server.py:16389-16416 at v1.100.0).
  */
 import type { PassThroughGenericEndpoint } from './generated/pass-through.ts';
 
@@ -32,8 +36,11 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export const startFakeLitellm = (options?: {
   readonly masterKey?: string;
   readonly seed?: readonly PassThroughGenericEndpoint[];
+  /** Every `DELETE` 400s `not_allowed_access`, whether or not the row exists — see the file header. */
+  readonly forbidDelete?: boolean;
 }): FakeLitellm => {
   const masterKey = options?.masterKey ?? 'sk-test-master';
+  const forbidDelete = options?.forbidDelete ?? false;
   let rows: PassThroughGenericEndpoint[] = [...(options?.seed ?? [])];
   const requests: FakeRequest[] = [];
 
@@ -84,6 +91,7 @@ export const startFakeLitellm = (options?: {
 
       if (req.method === 'DELETE' && url.pathname === '/config/pass_through_endpoint') {
         const id = url.searchParams.get('endpoint_id');
+        if (forbidDelete) return json(400, { error: 'not_allowed_access' });
         const before = rows;
         await sleep(RACE_WINDOW_MS);
         if (!before.some((row) => row.id === id)) {

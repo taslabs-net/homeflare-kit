@@ -19,8 +19,11 @@
  * ⛔ NO MESSAGE SNIFFING (S21). Every status this file maps becomes a typed tag; nothing here or
  *   above it matches an error body's text. Deleting an id LiteLLM does not have answers 400
  *   (measured against the tag's `pass_through_endpoint_delete` — the id is looked up in the list
- *   and a miss raises `HTTPException(400)`, not 404), and `deletePassThroughEndpoint` treats
- *   ANY 400 on that one call as "already gone" purely by status and method — see its own comment.
+ *   and a miss raises `HTTPException(400)`, not 404) — but so does a genuinely-live row when the
+ *   caller isn't PROXY_ADMIN, or the DB is disconnected (`update_config_general_settings`,
+ *   proxy_server.py:16389-16416 at the tag): the SAME status, for a delete that did NOT happen.
+ *   `deletePassThroughEndpoint` tells them apart by re-listing (a GET, which needs no PROXY_ADMIN —
+ *   proxy_server.py:3245-3251) rather than by the 400's body text — see its own comment.
  */
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
@@ -165,10 +168,13 @@ export const updatePassThroughEndpoint = (
 /**
  * DELETE /config/pass_through_endpoint?endpoint_id=… — idempotent BY THIS FUNCTION, not by the
  * vendor. ⚠️ Measured at v1.100.0: deleting an id the list does not have raises `HTTPException(400)`
- * from `pass_through_endpoint_delete`, the same status a malformed call would get — there is no
- * distinct "not found" status to catch narrowly. This function treats ANY 400 from THIS ONE CALL
- * as already-deleted, which is sound because the only required input is `endpoint_id` and nothing
- * else about the call can be malformed; it is a status-only decision, not a message match (S21).
+ * from `pass_through_endpoint_delete` — but the SAME route also 400s `not_allowed_access` for a
+ * non-PROXY_ADMIN caller or a disconnected DB (`update_config_general_settings`,
+ * proxy_server.py:16389-16416), on a row that never got deleted. A 400 alone cannot tell the two
+ * apart, so THIS FUNCTION DOESN'T GUESS FROM THE STATUS ALONE: on 400 it re-lists (a GET — no
+ * PROXY_ADMIN required, proxy_server.py:3245-3251) and only treats the delete as already-done if
+ * `endpointId` is genuinely absent; otherwise the delete failed and this re-fails with the ORIGINAL
+ * error, not a message match (S21 — a status-and-a-real-read decision, never body text).
  */
 export const deletePassThroughEndpoint = (
   endpointId: string,
@@ -178,7 +184,12 @@ export const deletePassThroughEndpoint = (
       'DELETE',
       `/config/pass_through_endpoint?endpoint_id=${encodeURIComponent(endpointId)}`,
     ).pipe(
-      Effect.catchTag('LitellmBadRequestError', () => Effect.void),
+      Effect.catchTag('LitellmBadRequestError', (original) =>
+        Effect.gen(function* () {
+          const rows = yield* listPassThroughEndpoints();
+          if (rows.some((row) => row.id === endpointId)) return yield* Effect.fail(original);
+        }),
+      ),
       Effect.asVoid,
     ),
   );
