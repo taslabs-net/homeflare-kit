@@ -122,6 +122,10 @@ if ((await install.exited) !== 0) throw new Error('the published hook runner can
 if ((await problemsInHooks(process.cwd())).length === 0) {
   throw new Error('problemsInHooks passed a project with no prepare script');
 }
+// ⛔ \`activate\` RUNS INSIDE EVERY CONSUMER'S \`bun install\` (their \`prepare\`). Outside a
+//   git work tree — this scratch project — it must say so and exit 0, never break the install.
+const activate = Bun.spawn(['bun', runner, 'activate'], { cwd: process.cwd(), stderr: 'pipe' });
+if ((await activate.exited) !== 0) throw new Error('the published runner cannot activate hooks');
 
 // ⛔ The estate's version set is only useful if a consumer can read it from the tarball.
 if (ESTATE_VERSIONS.bun !== BUN_VERSION) throw new Error('ESTATE_VERSIONS.bun drifted from BUN_VERSION');
@@ -134,7 +138,7 @@ for (const name of ['oxlintrc.json', 'oxlintrc.app.json', 'oxfmtrc.json', 'tscon
   if (text.trim().length === 0) throw new Error(name + ' resolved but is empty');
 }
 
-console.log('consumer ok —', problems.length, 'conformance problems, 7 config files, hook runner installs');
+console.log('consumer ok —', problems.length, 'conformance problems, 7 config files, hook runner installs and activates');
 `,
   );
   console.log('importing and exercising…');

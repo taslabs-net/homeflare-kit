@@ -28,7 +28,7 @@ const BYPASS: Record<Hook, string> = {
  * ⛔ So the hook strips them rather than trusting fourteen test suites to remember. The
  *   gate must see the repository through `cwd`, the way CI does.
  */
-function withoutGitEnv(): Record<string, string | undefined> {
+export function withoutGitEnv(): Record<string, string | undefined> {
   return Object.fromEntries(
     Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')),
   );
@@ -49,10 +49,34 @@ export async function run(cmd: readonly string[], isolated = false): Promise<num
 
 /** Capture a command's stdout. Used for git plumbing only. */
 export async function capture(cmd: readonly string[]): Promise<string> {
+  return (await probe(cmd)).stdout;
+}
+
+/** Capture a command's stdout AND its exit code — git plumbing that answers by status. */
+export async function probe(cmd: readonly string[]): Promise<{ code: number; stdout: string }> {
   const proc = Bun.spawn([...cmd], { stdout: 'pipe', stderr: 'ignore' });
-  const text = await new Response(proc.stdout).text();
-  await proc.exited;
-  return text;
+  const stdout = await new Response(proc.stdout).text();
+  return { code: await proc.exited, stdout };
+}
+
+/**
+ * Run one pre-push lane through `sh -c` at `root`, as `bun run` would run a script line.
+ *
+ * ⚠️ `node_modules/.bin` FIRST ON PATH, because a lane opened up from a script is no longer
+ *   run by `bun run`, which is what used to put it there — `vitest` or `oxfmt` in an expanded
+ *   script would otherwise be "command not found" on a machine without a global copy.
+ * 🔴 AND WITHOUT THE HOOK'S `GIT_*` — see `withoutGitEnv`.
+ */
+export async function runLane(command: string, root: string): Promise<number> {
+  const env = withoutGitEnv();
+  env['PATH'] = `${root}/node_modules/.bin:${env['PATH'] ?? ''}`;
+  const proc = Bun.spawn(['sh', '-c', command], {
+    cwd: root,
+    env,
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  return await proc.exited;
 }
 
 /**
@@ -60,8 +84,9 @@ export async function capture(cmd: readonly string[]): Promise<string> {
  *
  * ⚠️ NOT `bunx` BY DEFAULT. On a cache miss `bunx` downloads from the registry, and a
  *   git hook that reaches the network mid-commit is a hang waiting for a flaky link.
- *   husky puts `node_modules/.bin` on PATH, but this runs outside husky in tests, so
- *   the local binary is named outright when it exists and `bunx` is only the fallback.
+ *   Git runs the hook with the caller's PATH, which has no `node_modules/.bin` (husky
+ *   used to add it; the hooks no longer run through husky), so the local binary is named
+ *   outright when it exists and `bunx` is only the fallback.
  */
 export function tool(root: string, name: string): readonly string[] {
   const local = `${root}/node_modules/.bin/${name}`;
