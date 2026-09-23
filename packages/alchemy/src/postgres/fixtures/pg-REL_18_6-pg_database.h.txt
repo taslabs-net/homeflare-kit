@@ -1,0 +1,67 @@
+# path: src/include/catalog/pg_database.h
+# blob: 54f0d38c9c9e1cd4d419b05b296b8f84875e9768
+# tag: REL_18_6 (commit 724edf9bde9d356724ad384a2e196edc3c9f80f7)
+# fetched: 2026-09-23 via gh api repos/postgres/postgres/contents/...?ref=724edf9bde9d356724ad384a2e196edc3c9f80f7
+# excerpt: the CATALOG(pg_database...) { ... } FormData_pg_database struct only (lines 29-89 of the full file)
+#
+CATALOG(pg_database,1262,DatabaseRelationId) BKI_SHARED_RELATION BKI_ROWTYPE_OID(1248,DatabaseRelation_Rowtype_Id) BKI_SCHEMA_MACRO
+{
+	/* oid */
+	Oid			oid;
+
+	/* database name */
+	NameData	datname;
+
+	/* owner of database */
+	Oid			datdba BKI_DEFAULT(POSTGRES) BKI_LOOKUP(pg_authid);
+
+	/* character encoding */
+	int32		encoding;
+
+	/* locale provider, see pg_collation.collprovider */
+	char		datlocprovider;
+
+	/* allowed as CREATE DATABASE template? */
+	bool		datistemplate;
+
+	/* new connections allowed? */
+	bool		datallowconn;
+
+	/* database has login event triggers? */
+	bool		dathasloginevt;
+
+	/*
+	 * Max connections allowed. Negative values have special meaning, see
+	 * DATCONNLIMIT_* defines below.
+	 */
+	int32		datconnlimit;
+
+	/* all Xids < this are frozen in this DB */
+	TransactionId datfrozenxid;
+
+	/* all multixacts in the DB are >= this */
+	TransactionId datminmxid;
+
+	/* default table space for this DB */
+	Oid			dattablespace BKI_LOOKUP(pg_tablespace);
+
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
+	/* LC_COLLATE setting */
+	text		datcollate BKI_FORCE_NOT_NULL;
+
+	/* LC_CTYPE setting */
+	text		datctype BKI_FORCE_NOT_NULL;
+
+	/* ICU locale ID */
+	text		datlocale;
+
+	/* ICU collation rules */
+	text		daticurules;
+
+	/* provider-dependent version of collation data */
+	text		datcollversion BKI_DEFAULT(_null_);
+
+	/* access permissions */
+	aclitem		datacl[1];
+#endif
+} FormData_pg_database;

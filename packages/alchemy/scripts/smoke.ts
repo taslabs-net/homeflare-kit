@@ -82,6 +82,7 @@ try {
       'cloudflare@4.5.0',
       'mime@4.1.0',
       '@distilled.cloud/cloudflare@1.0.0-rc.12',
+      '@effect/sql-pg@4.0.0-rc.115',
     ],
     scratch,
   );
@@ -97,6 +98,7 @@ import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement,
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { PROVISION_PRIVILEGES, PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, ProxmoxNotificationMatcher, alertmanagerAlertBody, declareProvisionBaseline, provisionBootstrap } from '@homeflare/alchemy/proxmox';
 import { NETBOX_CONSTRAINTS_DIGEST, NetboxPrefix, bodyViolations, constraintsFor } from '@homeflare/alchemy/netbox';
+import { PostgresDatabase, isPostgresDatabase, nameByteRefusal, quoteIdent } from '@homeflare/alchemy/postgres';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
 import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, renderUnit, sshRunner } from '@homeflare/alchemy/linux';
 import { ReleaseBinary, VICTORIA_RELEASES, catalogBinary, identifyBinary, releaseProviders, releaseUrl } from '@homeflare/alchemy/release';
@@ -110,6 +112,7 @@ for (const [name, value] of Object.entries({
   PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxNotificationMatcher,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
   NetboxPrefix, bodyViolations, constraintsFor, NETBOX_CONSTRAINTS_DIGEST,
+  PostgresDatabase, isPostgresDatabase, nameByteRefusal, quoteIdent,
   HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, ReleaseBinary, releaseProviders,
   parseVerifyArgs, verifySession, verifyStack,
   litellmProviders, LitellmCredentialsError,
@@ -236,6 +239,14 @@ if (new LitellmCredentialsError({ message: 'smoke' }).message !== 'smoke') {
 }
 if (typeof litellmProviders !== 'function') {
   throw new Error('litellmProviders from dist is not callable');
+}
+// ★ THE POSTGRES SUBPATH THROUGH THE PUBLISHED FILE: a pure name-length refusal and the
+//   identifier quoter, so an export map pointing at a missing file fails here, not in a stack.
+if (!isPostgresDatabase(PostgresDatabase) || quoteIdent('a"b') !== '"a""b"') {
+  throw new Error('postgres subpath from dist lost isPostgresDatabase or quoteIdent');
+}
+if (nameByteRefusal('a'.repeat(64))?.byteLength !== 64 || nameByteRefusal('a'.repeat(63)) !== undefined) {
+  throw new Error('postgres subpath from dist lost the NAMEDATALEN byte-length refusal');
 }
 
 console.log('all thirteen subpaths import and resolve');

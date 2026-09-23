@@ -268,14 +268,14 @@
           "owner": "Proxmox.ApiToken",
           "parameters": 5,
           "path": "/access/users/{userid}/token/{tokenid}",
-          "unenforced": ["expire", "tokenid", "userid"]
+          "unenforced": ["tokenid", "userid"]
         },
         {
           "method": "PUT",
           "owner": "Proxmox.ApiToken",
           "parameters": 7,
           "path": "/access/users/{userid}/token/{tokenid}",
-          "unenforced": ["delete", "expire", "tokenid", "userid"]
+          "unenforced": ["delete", "tokenid", "userid"]
         },
         {
           "method": "PUT",
@@ -824,41 +824,14 @@
           "owner": "Proxmox.MetricServer",
           "parameters": 24,
           "path": "/cluster/metrics/server/{id}",
-          "unenforced": [
-            "id",
-            "max-body-size",
-            "mtu",
-            "otel-headers",
-            "otel-max-body-size",
-            "otel-resource-attributes",
-            "otel-timeout",
-            "path",
-            "port",
-            "server",
-            "timeout",
-            "type"
-          ]
+          "unenforced": ["id", "path", "server", "type"]
         },
         {
           "method": "PUT",
           "owner": "Proxmox.MetricServer",
           "parameters": 25,
           "path": "/cluster/metrics/server/{id}",
-          "unenforced": [
-            "delete",
-            "digest",
-            "id",
-            "max-body-size",
-            "mtu",
-            "otel-headers",
-            "otel-max-body-size",
-            "otel-resource-attributes",
-            "otel-timeout",
-            "path",
-            "port",
-            "server",
-            "timeout"
-          ]
+          "unenforced": ["delete", "id", "path", "server"]
         },
         {
           "method": "POST",
@@ -879,7 +852,7 @@
           "owner": "Proxmox.NotificationTarget",
           "parameters": 7,
           "path": "/cluster/notifications/endpoints/gotify/{name}",
-          "unenforced": ["delete", "digest", "name"]
+          "unenforced": ["delete", "name"]
         },
         {
           "method": "POST",
@@ -900,7 +873,7 @@
           "owner": "Proxmox.NotificationTarget",
           "parameters": 9,
           "path": "/cluster/notifications/endpoints/sendmail/{name}",
-          "unenforced": ["delete", "digest", "mailto", "mailto-user", "name"]
+          "unenforced": ["delete", "mailto", "mailto-user", "name"]
         },
         {
           "method": "POST",
@@ -921,7 +894,7 @@
           "owner": "Proxmox.NotificationTarget",
           "parameters": 14,
           "path": "/cluster/notifications/endpoints/smtp/{name}",
-          "unenforced": ["delete", "digest", "mailto", "mailto-user", "name"]
+          "unenforced": ["delete", "mailto", "mailto-user", "name"]
         },
         {
           "method": "POST",
@@ -942,7 +915,7 @@
           "owner": "Proxmox.NotificationTarget",
           "parameters": 10,
           "path": "/cluster/notifications/endpoints/webhook/{name}",
-          "unenforced": ["delete", "digest", "name"]
+          "unenforced": ["delete", "name"]
         },
         {
           "method": "POST",
@@ -1424,7 +1397,6 @@
             "delete",
             "dhcp-dns-server",
             "dhcp-range",
-            "digest",
             "dnszoneprefix",
             "gateway",
             "subnet"
@@ -1512,7 +1484,7 @@
           "owner": "Proxmox.CephFs",
           "parameters": 4,
           "path": "/nodes/{node}/ceph/fs/{name}",
-          "unenforced": ["name", "node", "pg_num"]
+          "unenforced": ["name", "node"]
         },
         {
           "method": "POST",
@@ -1568,7 +1540,7 @@
           "owner": "Proxmox.CephOsd",
           "parameters": 9,
           "path": "/nodes/{node}/ceph/osd",
-          "unenforced": ["db_dev_size", "node", "osds-per-device", "wal_dev_size"]
+          "unenforced": ["node"]
         },
         {
           "method": "DELETE",
@@ -1603,16 +1575,7 @@
           "owner": "Proxmox.CephPool",
           "parameters": 13,
           "path": "/nodes/{node}/ceph/pool",
-          "unenforced": [
-            "erasure-coding",
-            "min_size",
-            "name",
-            "node",
-            "pg_num",
-            "pg_num_min",
-            "size",
-            "target_size"
-          ]
+          "unenforced": ["erasure-coding", "name", "node"]
         },
         {
           "method": "DELETE",
@@ -1626,7 +1589,7 @@
           "owner": "Proxmox.CephPool",
           "parameters": 11,
           "path": "/nodes/{node}/ceph/pool/{name}",
-          "unenforced": ["min_size", "name", "node", "pg_num", "pg_num_min", "size", "target_size"]
+          "unenforced": ["name", "node"]
         },
         {
           "method": "POST",
@@ -1770,7 +1733,7 @@
           "owner": "Proxmox.ZfsPool",
           "parameters": 8,
           "path": "/nodes/{node}/disks/zfs",
-          "unenforced": ["ashift", "devices", "draid-config", "name", "node"]
+          "unenforced": ["devices", "draid-config", "name", "node"]
         },
         {
           "method": "DELETE",
@@ -1874,33 +1837,23 @@
           "parameters": 46,
           "path": "/nodes/{node}/lxc",
           "unenforced": [
-            "bwlimit",
-            "cores",
-            "cpulimit",
-            "cpuunits",
-            "description",
             "dev[n]",
             "entrypoint",
             "env",
             "features",
             "hookscript",
             "hostname",
-            "memory",
             "mp[n]",
             "nameserver",
             "net[n]",
             "node",
-            "ostemplate",
-            "password",
             "pool",
             "rootfs",
             "searchdomain",
             "startup",
             "storage",
-            "swap",
             "tags",
             "timezone",
-            "tty",
             "unused[n]",
             "vmid"
           ]
@@ -1935,19 +1888,13 @@
           "parameters": 37,
           "path": "/nodes/{node}/lxc/{vmid}/config",
           "unenforced": [
-            "cores",
-            "cpulimit",
-            "cpuunits",
             "delete",
-            "description",
             "dev[n]",
-            "digest",
             "entrypoint",
             "env",
             "features",
             "hookscript",
             "hostname",
-            "memory",
             "mp[n]",
             "nameserver",
             "net[n]",
@@ -1956,10 +1903,8 @@
             "rootfs",
             "searchdomain",
             "startup",
-            "swap",
             "tags",
             "timezone",
-            "tty",
             "unused[n]",
             "vmid"
           ]
@@ -2131,7 +2076,7 @@
           "owner": "Proxmox.Lxc",
           "parameters": 5,
           "path": "/nodes/{node}/lxc/{vmid}/resize",
-          "unenforced": ["digest", "node", "size", "vmid"]
+          "unenforced": ["node", "vmid"]
         },
         {
           "method": "POST",
@@ -2261,17 +2206,12 @@
             "gateway",
             "gateway6",
             "iface",
-            "mtu",
             "netmask",
-            "netmask6",
             "node",
             "ovs_bonds",
             "ovs_bridge",
-            "ovs_options",
             "ovs_ports",
-            "ovs_tag",
             "slaves",
-            "vlan-id",
             "vlan-raw-device"
           ]
         },
@@ -2306,17 +2246,12 @@
             "gateway",
             "gateway6",
             "iface",
-            "mtu",
             "netmask",
-            "netmask6",
             "node",
             "ovs_bonds",
             "ovs_bridge",
-            "ovs_options",
             "ovs_ports",
-            "ovs_tag",
             "slaves",
-            "vlan-id",
             "vlan-raw-device"
           ]
         },
@@ -2329,19 +2264,12 @@
             "affinity",
             "agent",
             "amd-sev",
-            "archive",
             "audio0",
-            "balloon",
             "boot",
             "bootdisk",
-            "bwlimit",
             "cdrom",
             "cicustom",
-            "cores",
             "cpu",
-            "cpulimit",
-            "cpuunits",
-            "description",
             "efidisk0",
             "hookscript",
             "hostpci[n]",
@@ -2353,37 +2281,27 @@
             "ivshmem",
             "machine",
             "memory",
-            "migrate_downtime",
-            "migrate_speed",
             "name",
             "nameserver",
             "net[n]",
             "node",
             "numa[n]",
-            "parallel[n]",
             "pool",
             "rng0",
             "sata[n]",
             "scsi[n]",
-            "serial[n]",
-            "shares",
             "smbios1",
-            "smp",
-            "sockets",
             "spice_enhancements",
             "sshkeys",
-            "startdate",
             "startup",
             "storage",
             "tags",
             "tpmstate0",
             "unused[n]",
             "usb[n]",
-            "vcpus",
             "vga",
             "virtio[n]",
             "virtiofs[n]",
-            "vmgenid",
             "vmid",
             "vmstatestorage",
             "watchdog"
@@ -2590,18 +2508,12 @@
             "agent",
             "amd-sev",
             "audio0",
-            "balloon",
             "boot",
             "bootdisk",
             "cdrom",
             "cicustom",
-            "cores",
             "cpu",
-            "cpulimit",
-            "cpuunits",
             "delete",
-            "description",
-            "digest",
             "efidisk0",
             "hookscript",
             "hostpci[n]",
@@ -2612,36 +2524,26 @@
             "ivshmem",
             "machine",
             "memory",
-            "migrate_downtime",
-            "migrate_speed",
             "name",
             "nameserver",
             "net[n]",
             "node",
             "numa[n]",
-            "parallel[n]",
             "revert",
             "rng0",
             "sata[n]",
             "scsi[n]",
-            "serial[n]",
-            "shares",
             "smbios1",
-            "smp",
-            "sockets",
             "spice_enhancements",
             "sshkeys",
-            "startdate",
             "startup",
             "tags",
             "tpmstate0",
             "unused[n]",
             "usb[n]",
-            "vcpus",
             "vga",
             "virtio[n]",
             "virtiofs[n]",
-            "vmgenid",
             "vmid",
             "vmstatestorage",
             "watchdog"
@@ -3260,8 +3162,8 @@
       "sha256Short": "9def8f13",
       "system": "pve",
       "totals": {
-        "ownedUnenforcedParams": 495,
-        "unenforcedParams": 1561,
+        "ownedUnenforcedParams": 393,
+        "unenforcedParams": 1459,
         "ownedWriteEndpoints": 88,
         "ownedWritePaths": 59,
         "writeEndpoints": 337,
@@ -4027,7 +3929,7 @@
           "owner": "Pbs.NotificationTarget",
           "parameters": 9,
           "path": "/config/notifications/endpoints/sendmail",
-          "unenforced": ["comment", "mailto", "mailto-user", "name"]
+          "unenforced": []
         },
         {
           "method": "DELETE",
@@ -4041,14 +3943,14 @@
           "owner": "Pbs.NotificationTarget",
           "parameters": 9,
           "path": "/config/notifications/endpoints/sendmail/{name}",
-          "unenforced": ["comment", "digest", "mailto", "mailto-user", "name"]
+          "unenforced": ["name"]
         },
         {
           "method": "POST",
           "owner": "Pbs.NotificationTarget",
           "parameters": 13,
           "path": "/config/notifications/endpoints/smtp",
-          "unenforced": ["comment", "mailto", "mailto-user", "name", "port"]
+          "unenforced": []
         },
         {
           "method": "DELETE",
@@ -4062,14 +3964,14 @@
           "owner": "Pbs.NotificationTarget",
           "parameters": 14,
           "path": "/config/notifications/endpoints/smtp/{name}",
-          "unenforced": ["comment", "digest", "mailto", "mailto-user", "name", "port"]
+          "unenforced": ["name"]
         },
         {
           "method": "POST",
           "owner": "Pbs.NotificationTarget",
           "parameters": 9,
           "path": "/config/notifications/endpoints/webhook",
-          "unenforced": ["comment", "header", "name", "secret", "url"]
+          "unenforced": ["header", "secret"]
         },
         {
           "method": "DELETE",
@@ -4083,7 +3985,7 @@
           "owner": "Pbs.NotificationTarget",
           "parameters": 10,
           "path": "/config/notifications/endpoints/webhook/{name}",
-          "unenforced": ["comment", "digest", "header", "name", "secret", "url"]
+          "unenforced": ["header", "name", "secret"]
         },
         {
           "method": "POST",
@@ -4777,8 +4679,8 @@
       "sha256Short": "274ab9f6",
       "system": "pbs",
       "totals": {
-        "ownedUnenforcedParams": 62,
-        "unenforcedParams": 568,
+        "ownedUnenforcedParams": 38,
+        "unenforcedParams": 544,
         "ownedWriteEndpoints": 27,
         "ownedWritePaths": 18,
         "writeEndpoints": 182,

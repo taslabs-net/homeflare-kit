@@ -6,20 +6,22 @@
  *   moment the worker runs. Every other decision in this file follows from that one sentence, and
  *   each of them is written out below rather than left to be inferred.
  *
- * ⛔ DESTROY IS REFUSED. `delete` MAKES NO API CALL — removing this resource from a stack leaves
- *   the zpool and its data exactly where they are, and Alchemy simply forgets about them. The
- *   asymmetry is the whole argument: an ORPHANED pool is recoverable (declare it again, or destroy
- *   it by hand once a human has looked at which disks are in it), a DESTROYED pool is not. Alchemy
- *   deletes for reasons that have nothing to do with anybody intending it — a line removed from a
- *   stack file, a resource renamed so the old id is dropped, a whole stack torn down by the wrong
- *   command, a replace triggered by a prop nobody meant to touch. Handing `zpool destroy` to any
- *   of those is not a feature. MEASURED in the node's own source: the DELETE handler forks
- *   `zfsremove`, which runs `zpool destroy <name>` unconditionally, and with `cleanup-disks` then
- *   calls `wipe_blockdev` on every member. Neither flag is offered as a prop, because there is no
- *   call here for them to reach.
- *   ★ THE OPERATOR'S PATH IS `pvesh delete /nodes/<node>/disks/zfs/<name>`, typed by a person who
- *     has just looked at the pool. Do not "complete the CRUD" by wiring `delete` to `ops.destroy`:
- *     that one line turns a text edit into an unrecoverable one.
+ * ⛔ ★ CORRECTED 2026-09-23 — THIS PARAGRAPH PREVIOUSLY SAID "DESTROY IS REFUSED" AND "`delete`
+ *   MAKES NO API CALL". THAT WAS FALSE: MEASURED against this file's own `handlers.delete` below,
+ *   which calls `destroyPool`, which sends `DELETE /nodes/{node}/disks/zfs/{name}` — the node's
+ *   own source forks `zfsremove`, which runs `zpool destroy <name>` unconditionally, and with
+ *   `cleanup-disks` then calls `wipe_blockdev` on every member (neither flag is offered as a prop,
+ *   because there is no call here for them to reach). `delete` is FULLY IMPLEMENTED, per S14
+ *   (alchemy-provider-standard): a `delete` that silently does nothing lies to whoever reads the
+ *   plan. What actually keeps an ordinary removed declaration from reaching it is
+ *   `defaultRemovalPolicy: 'retain'` below — Alchemy SKIPS `provider.delete` entirely for an
+ *   orphaned or destroyed resource under `retain`, so the state row drops and the zpool and its
+ *   data are left exactly where they are. The asymmetry is still the whole argument: an ORPHANED
+ *   pool is recoverable (declare it again, or destroy it by hand once a human has looked at which
+ *   disks are in it), a DESTROYED pool is not — which is why `retain` is the default rather than a
+ *   documented caution, and why `delete` runs only for a caller who opts in by name with
+ *   `.pipe(RemovalPolicy.destroy())`. See the ★ on `defaultRemovalPolicy` in resource-spec.ts, and
+ *   zfs-pool-adopt.test.ts's mutation row, which pins exactly one DELETE reaching the fake cluster.
  *
  * ⛔ THERE IS NO PUT ON THIS FAMILY AT ALL. MEASURED from the cluster's own published schema
  *   (`/usr/share/pve-docs/api-viewer/apidoc.js`, read on node-b 2026-09-13): `/nodes/{node}/disks/zfs`
@@ -47,7 +49,8 @@
  * ⚠️ TWO HANDLERS ARE OVERRIDDEN AND THE OTHER THREE COME FROM THE FACTORY — see the ★ above
  *   `handlers`. `delete` is the ⛔ above. `reconcile` is because the create is a FORKED WORKER, so
  *   the factory's immediate read-back would report a successful create as a failure; the measured
- *   detail is in the ⛔ on `createPool` in zfs-pool-create.ts.
+ *   detail, and the adopt-only refusal decision 9 adds, are both in `createPool` in
+ *   zfs-pool-write.ts.
  *
  * ⚠️ PRIVILEGES, FROM THE SCHEMA. Read and diff need `Sys.Audit` on `/` — both GETs check it.
  *   Reconcile needs `Sys.Modify` on `/` for the POST. `Datastore.Allocate` on `/storage` is NOT
@@ -57,29 +60,23 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import {
-  type PveRequirements,
-  type PveSpec,
-  type WithTarget,
-  pveHandlers,
-  pveOperations,
-} from './resource.ts';
-import { text } from './values.ts';
-import { ZFS_POOL_ENDPOINT, createForm, createPool, destroyPool } from './zfs-pool-write.ts';
+import type { NodesNodeDisksZfsPostParams } from './generated/pve.ts';
+import { type PveRequirements, type WithTarget, pveHandlers, pveOperations } from './resource.ts';
+import { spec } from './zfs-pool-spec.ts';
+import { createPool, destroyPool } from './zfs-pool-write.ts';
 
-/** PVE's layouts. ⚠️ Each has a minimum disk count PVE enforces, and `raid10` needs an even one. */
-export type ZfsRaidLevel =
-  | 'single'
-  | 'mirror'
-  | 'raid10'
-  | 'raidz'
-  | 'raidz2'
-  | 'raidz3'
-  | 'draid'
-  | 'draid2'
-  | 'draid3';
+/**
+ * PVE's layouts, generated (2026-09-23) from `NodesNodeDisksZfsPostParams['raidlevel']`
+ * (`generated/pve.ts`, manifest `pve-apidoc` pve-manager 9.2.11 sha256 9def8f13…) rather than
+ * hand-typed, per decision 9. ⚠️ Each has a minimum disk count PVE enforces, and `raid10` needs an
+ * even one. ⛔ THERE IS NO `stripe` IN THIS ENUM. n1's `speed` pool is one (decision 14 accepts it
+ * as-is): `ZfsPoolProps` below is why a stripe pool is declarable at all — as an ADOPT-ONLY
+ * declaration with no `raidlevel`, never as a full one.
+ */
+export type ZfsRaidLevel = NonNullable<NodesNodeDisksZfsPostParams['raidlevel']>;
 
-export type ZfsCompression = 'on' | 'off' | 'gzip' | 'lz4' | 'lzjb' | 'zle' | 'zstd';
+/** Generated the same way, from `NodesNodeDisksZfsPostParams['compression']`. */
+export type ZfsCompression = NonNullable<NodesNodeDisksZfsPostParams['compression']>;
 
 /**
  * ⛔ THERE IS NO `add_storage`, `cleanup-config` OR `cleanup-disks` PROP, AND THAT IS NOT AN
@@ -112,9 +109,19 @@ export interface ZfsPoolProps extends WithTarget {
    *   `csv` sorts, and sorting this list silently re-pairs the mirrors into a different pool.
    * ⚠️ PVE's only guard is `assert_disk_unused`, i.e. its own `disk_is_used` over the same `used`
    *   column the Disks view shows. A blank disk it considers free is wiped with no confirmation.
+   *
+   * ⛔ OPTIONAL SINCE DECISION 9 (2026-09-23), AND OMITTING IT MEANS SOMETHING SPECIFIC: leaving
+   *   both this and `raidlevel` undeclared declares an ADOPT-ONLY pool — one this resource may
+   *   read and report but never build. That is the only shape available for a pool PVE's own POST
+   *   schema cannot fully describe, such as n1's `speed`, whose layout is a stripe and whose
+   *   `raidlevel` enum (above) has no stripe to declare. `createForm` (zfs-pool-write.ts) omits
+   *   both keys when they are absent, and `createPool` refuses before any POST if the pool it
+   *   would need to build is not already there — an adopt-only declaration never creates. Declare
+   *   both fields together for a pool this resource should build from scratch; declaring only one
+   *   of the two is refused the same way, since PVE's POST requires both.
    */
-  devices: readonly string[];
-  raidlevel: ZfsRaidLevel;
+  devices?: readonly string[];
+  raidlevel?: ZfsRaidLevel;
   /**
    * Sector size exponent, 9–16, PVE default 12.
    *
@@ -173,63 +180,6 @@ export interface ProxmoxZfsPool extends Resource<
 export const ProxmoxZfsPool = Resource<ProxmoxZfsPool>('Proxmox.ZfsPool', {
   defaultRemovalPolicy: 'retain',
 });
-
-/**
- * The device paths at the bottom of PVE's vdev tree, in the order ZFS reports them.
- *
- * ⚠️ "NO CHILDREN" IS THE LEAF TEST, AND IT IS NOT A GUESS — MEASURED in the node's `preparetree`,
- *   which sets `leaf` to 0 when there are children and 1 otherwise. Reading the flag would work
- *   equally well; recursing on `children` needs no second field to be present and is what makes
- *   nested sections (mirrors inside a raid10, `spares`, `cache`) flatten correctly.
- */
-const leafDevices = (children: unknown): string[] =>
-  Array.isArray(children)
-    ? children.flatMap((entry: unknown) => {
-        const vdev = entry as { children?: unknown; name?: unknown };
-        const nested = leafDevices(vdev.children);
-        return nested.length > 0 ? nested : [text(vdev.name)].filter((name) => name !== '');
-      })
-    : [];
-
-const spec: PveSpec<ZfsPoolProps, ZfsPoolAttributes> = {
-  /**
-   * ⚠️ `scan`, `status` AND `action` ARE DELIBERATELY NOT ATTRIBUTES. All three are advisory
-   *   strings ZFS rewrites on its own — `scan` on every scrub, the other two as feature flags and
-   *   faults come and go — so keeping them would rewrite this resource's state row for reasons no
-   *   declaration caused. Same reasoning as `digest` in storage.ts.
-   */
-  attributes: (live, props) => {
-    // ⚠️ A detail answer with no `name` is not a pool. `name` is non-optional in PVE's schema, so
-    //   this is a shape check rather than a default — and "absent" is the honest reading of a
-    //   reply that does not describe the object that was asked for.
-    if (text(live['name']) === '') return undefined;
-    return {
-      devices: leafDevices(live['children']).join(','),
-      errors: text(live['errors'], 'unknown'),
-      name: props.name,
-      node: props.node,
-      state: text(live['state'], 'unknown'),
-    };
-  },
-  collection: (props) => `nodes/${props.node}/disks/zfs`,
-  createForm,
-  endpoint: ZFS_POOL_ENDPOINT,
-  /**
-   * ⛔ IT ALWAYS ANSWERS TRUE, AND THAT IS THE POINT OF THIS FILE. A pool that is there under the
-   *   declared name on the declared node IS the declaration, because there is nothing else the two
-   *   can be compared on: every create parameter is write-only (see the ⛔ in the header) and
-   *   everything the read does return is telemetry that moves by itself. So declaring what is live
-   *   plans as `noop` — the only honest answer available, and the one the live cluster needs:
-   *   `rpool` exists on node-b, node-c and node-d with nothing about its construction readable.
-   *   ⛔ ANYTHING ADDED HERE IS A REPLACE, NOT AN UPDATE. `updateForm` is omitted because PVE has
-   *     no PUT, so `resource.ts` turns a false into `{action:'replace'}` — delete then create — on
-   *     a family whose delete is `zpool destroy`. A comparison added here would be one plan away
-   *     from destroying a pool over a field it cannot even read back. If a future PVE grows a PUT,
-   *     add `updateForm` FIRST and only then consider comparing what that PUT accepts.
-   */
-  matches: () => true,
-  path: (props) => `nodes/${props.node}/disks/zfs/${props.name}`,
-};
 
 const ops = pveOperations(spec);
 

@@ -1,0 +1,26 @@
+# path: doc/src/sgml/ref/create_database.sgml
+# blob: 4da8aeebb50a29e89bd9f68a8deac4b1a3ec7b18
+# tag: REL_18_6 (commit 724edf9bde9d356724ad384a2e196edc3c9f80f7)
+# fetched: 2026-09-23 via gh api repos/postgres/postgres/contents/...?ref=724edf9bde9d356724ad384a2e196edc3c9f80f7
+# excerpt: the <synopsis> block only (lines 23-42 of the full file), cut per house doc-size convention
+#
+<synopsis>
+CREATE DATABASE <replaceable class="parameter">name</replaceable>
+    [ WITH ] [ OWNER [=] <replaceable class="parameter">user_name</replaceable> ]
+           [ TEMPLATE [=] <replaceable class="parameter">template</replaceable> ]
+           [ ENCODING [=] <replaceable class="parameter">encoding</replaceable> ]
+           [ STRATEGY [=] <replaceable class="parameter">strategy</replaceable> ]
+           [ LOCALE [=] <replaceable class="parameter">locale</replaceable> ]
+           [ LC_COLLATE [=] <replaceable class="parameter">lc_collate</replaceable> ]
+           [ LC_CTYPE [=] <replaceable class="parameter">lc_ctype</replaceable> ]
+           [ BUILTIN_LOCALE [=] <replaceable class="parameter">builtin_locale</replaceable> ]
+           [ ICU_LOCALE [=] <replaceable class="parameter">icu_locale</replaceable> ]
+           [ ICU_RULES [=] <replaceable class="parameter">icu_rules</replaceable> ]
+           [ LOCALE_PROVIDER [=] <replaceable class="parameter">locale_provider</replaceable> ]
+           [ COLLATION_VERSION = <replaceable>collation_version</replaceable> ]
+           [ TABLESPACE [=] <replaceable class="parameter">tablespace_name</replaceable> ]
+           [ ALLOW_CONNECTIONS [=] <replaceable class="parameter">allowconn</replaceable> ]
+           [ CONNECTION LIMIT [=] <replaceable class="parameter">connlimit</replaceable> ]
+           [ IS_TEMPLATE [=] <replaceable class="parameter">istemplate</replaceable> ]
+           [ OID [=] <replaceable class="parameter">oid</replaceable> ]
+</synopsis>

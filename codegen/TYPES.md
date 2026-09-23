@@ -117,6 +117,37 @@ re-flowing it to fill 100 columns makes one added mount point rewrite forty line
 says so in its own header and `tests/schema-types.test.ts` pins the list — a ninth is a real
 change, not a formality.
 
+## A property's own `oneOf` decides presence and element type too
+
+Measured 2026-09-23 against `pve-apidoc` 9.2.11/f6997e698c7933ea, sha256 9def8f13611184ee. This
+is a PROPERTY's alternatives, not the endpoint-level `oneOf`/`allOf` `codegen/parameters.ts`
+resolves (`Proxmox.HaRule`): six PVE SDN fabric request parameters and seven return fields under
+`/cluster/sdn/fabrics/*` — `delete`, `redistribute`, `interfaces` — are spelled `{oneOf: […],
+type: 'array'}` with no outer `optional`, one branch per routing protocol, every branch marked
+`optional: 1`. Read for only the outer key, that is a required field; the vendor's own schema
+says the opposite.
+
+**The rule**: a property is optional when it says so itself, or when it has a non-empty `oneOf`
+whose EVERY branch says so — one branch that does not is not a vote, and keeps the whole property
+required. An array property with no `items` of its own but a `oneOf` gets its element type from
+the union of what each branch's own `items` maps to (the ordinary `paramType`/`returnType` rule),
+deduplicated in schema order; a branch with no `items` of its own falls back to the existing
+default (`string` for a param, `unknown` for a return).
+
+⛔ **What stays unclaimed.** The vendor also attaches `instance-types` (which protocol a branch
+belongs to) and `type-property: 'protocol'` to twenty of these `oneOf`-adjacent properties across
+the fabric family — a discriminated union on `protocol`, the same shape `codegen/parameters.ts`
+already reads at the endpoint level for `Proxmox.HaRule`. This generator does not read either key
+here: the branches are flattened into ONE object regardless of `protocol`, so the element type is
+a SUPERSET across protocols rather than the narrower per-protocol set — `PUT
+.../fabric/{id}`'s `delete` accepts any of ten members from four protocols' enums, not just the
+five an `openfabric` fabric's own branch states, and a value another branch's `items` rules out is
+not caught by the type. Nothing enforces the vendor's per-branch VALUE rules inside a `oneOf`
+either, only presence and the element type's shape. Deciding whether the fabric family's `Params`
+types should be a discriminated union on `protocol` — matching `Proxmox.HaRule`'s
+`instance-type` — is that family's own decision when `SdnFabric`/`SdnFabricNode` are built, not
+this generator's.
+
 ## Never hand-edit the output
 
 `bun codegen/types.ts --check` regenerates into memory and fails on any file that differs or

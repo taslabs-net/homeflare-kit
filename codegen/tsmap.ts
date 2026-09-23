@@ -29,9 +29,20 @@
  *   would be a type no form builder in this package could return.
  */
 import type { TsExpr, TsField } from './tsexpr.ts';
-import { atom, quote, union } from './tsexpr.ts';
+import { atom, inline, quote, union } from './tsexpr.ts';
 
-/** One property of a vendor parameter or return schema. Only the keys this mapping reads. */
+/**
+ * One property of a vendor parameter or return schema. Only the keys this mapping reads.
+ *
+ * ⛔ `oneOf` HERE IS A PROPERTY'S OWN ALTERNATIVES, NOT THE ENDPOINT-LEVEL COMBINATOR
+ *   `codegen/parameters.ts` resolves. MEASURED 2026-09-23 on pve-manager 9.2.11: six PVE SDN
+ *   fabric request parameters (`delete`, `redistribute`, `interfaces` across the fabric and node
+ *   write endpoints) and seven fabric return fields are each spelled `{oneOf: […], type: 'array',
+ *   …}` with no outer `optional` — one branch per routing protocol (openfabric/bgp/ospf/
+ *   wireguard) — and every branch says `optional: 1`. A reader that does not open `oneOf` sees
+ *   `type: 'array'` alone and emits a REQUIRED field, which contradicts the vendor: a `bgp` fabric
+ *   update never has to send `delete`.
+ */
 export interface VendorNode {
   readonly type?: string;
   readonly optional?: number | boolean;
@@ -39,6 +50,7 @@ export interface VendorNode {
   readonly items?: VendorNode;
   readonly properties?: Readonly<Record<string, VendorNode>>;
   readonly additionalProperties?: number | boolean;
+  readonly oneOf?: readonly VendorNode[];
 }
 
 /**
@@ -50,7 +62,17 @@ export interface VendorNode {
  */
 export const NUMERIC_STRING = `\`\${number}\``;
 
-const isOptional = (node: VendorNode): boolean => node.optional === 1 || node.optional === true;
+/**
+ * Whether a property is absent-safe: it says so itself, or — property-level `oneOf`, see the
+ * interface above — every branch does. ⚠️ A SINGLE BRANCH WITHOUT `optional` KEEPS THE WHOLE
+ * PROPERTY REQUIRED: `oneOf` branches are alternatives, not a vote, and a protocol that did not
+ * mark its own branch optional has not told this generator it may be left out.
+ */
+export const isOptional = (node: VendorNode): boolean => {
+  if (node.optional === 1 || node.optional === true) return true;
+  const branches = node.oneOf;
+  return Array.isArray(branches) && branches.length > 0 && branches.every(isOptional);
+};
 
 /**
  * ⛔ `enum: null` AND `properties: null` BOTH OCCUR. Measured on the whole of both schemas: the
@@ -74,6 +96,59 @@ const object = (
 const enumUnion = (values: readonly (string | number)[]): TsExpr =>
   union(values.map((value) => quote(String(value))));
 
+/**
+ * Every distinct member `inline()` would print, in first-seen order. A `union` expression is
+ * flattened to its own parts (so alternatives across branches merge the way TypeScript's own
+ * `A | B` would); anything else contributes its one printed form.
+ */
+const parts = (expr: TsExpr): readonly string[] =>
+  expr.kind === 'union' ? expr.parts : [inline(expr)];
+
+/**
+ * An array's element type when a property-level `oneOf` (see `VendorNode`) stands in for `items`.
+ * ⛔ ASSUME NOTHING: each branch is mapped by the SAME rule (`mapItem`, i.e. `paramType` or
+ *   `returnType`) that would apply outside a `oneOf`, over that branch's OWN `items` — never the
+ *   branch itself, which is `type: 'array'` too and would otherwise wrap the result an array deep.
+ *   A branch that states no `items` of its own falls back to the existing default (`fallback`).
+ * ★ THE RESULT IS THE UNION OF THOSE MAPPED TYPES, DEDUPLICATED IN SCHEMA ORDER — branch order,
+ *   then member order within a branch — which is exactly what `A | B | C | D` prints to when A-D
+ *   are themselves unions: TypeScript has no nested union, so flattening here changes nothing a
+ *   compiler would not already do, and it keeps the printed type from repeating a member two
+ *   protocols happen to share (PVE fabric `delete`: `route_filter` is in three branches).
+ */
+const oneOfItemType = (
+  branches: readonly VendorNode[],
+  mapItem: (node: VendorNode) => TsExpr,
+  fallback: TsExpr,
+): TsExpr => {
+  const seen = new Set<string>();
+  const flat: string[] = [];
+  for (const branch of branches) {
+    const type =
+      branch.items === undefined || branch.items === null ? fallback : mapItem(branch.items);
+    for (const part of parts(type)) {
+      if (!seen.has(part)) {
+        seen.add(part);
+        flat.push(part);
+      }
+    }
+  }
+  return flat.length === 1 ? atom(flat[0] as string) : union(flat);
+};
+
+/** An array's element type: `items` when the vendor stated one, else its property-level `oneOf`. */
+const arrayItemType = (
+  node: VendorNode,
+  mapItem: (node: VendorNode) => TsExpr,
+  fallback: TsExpr,
+): TsExpr => {
+  if (node.items !== undefined && node.items !== null) return mapItem(node.items);
+  const branches = node.oneOf;
+  if (Array.isArray(branches) && branches.length > 0)
+    return oneOfItemType(branches, mapItem, fallback);
+  return fallback;
+};
+
 /** A request parameter's type. See the header: the wire is text, so every leaf is a string. */
 export const paramType = (node: VendorNode): TsExpr => {
   const values = list(node.enum);
@@ -82,9 +157,7 @@ export const paramType = (node: VendorNode): TsExpr => {
   if (node.type === 'array') {
     // ⚠️ AN ARRAY IS REPEATED KEYS ON THE WIRE, NOT A JSON LIST (client.ts `encode`). PBS builds
     //   its `Vec` from `delete=a&delete=b`; PVE takes a comma string and its callers pass one.
-    const item =
-      node.items === undefined || node.items === null ? atom('string') : paramType(node.items);
-    return { item, kind: 'array' };
+    return { item: arrayItemType(node, paramType, atom('string')), kind: 'array' };
   }
   if (node.type === 'integer' || node.type === 'number') return atom(NUMERIC_STRING);
   return atom('string');
@@ -107,9 +180,10 @@ export const returnType = (node: VendorNode | undefined): TsExpr => {
   if (values !== undefined) return enumUnion(values);
   if (node.type === 'null') return atom('null');
   if (node.type === 'array') {
-    // ⚠️ ONE PVE ENDPOINT DECLARES `type: 'array'` WITH NO `items`. Measured on 9.2.11; the
-    //   element type is genuinely unstated, so it is `unknown` rather than an invented shape.
-    return { item: returnType(node.items ?? undefined), kind: 'array' };
+    // ⚠️ ONE PVE ENDPOINT DECLARES `type: 'array'` WITH NO `items` AND NO `oneOf`. Measured on
+    //   9.2.11; the element type is genuinely unstated, so it is `unknown` rather than an
+    //   invented shape. `arrayItemType` falls through to the same `unknown` when that happens.
+    return { item: arrayItemType(node, returnType, atom('unknown')), kind: 'array' };
   }
   const properties = object(node.properties);
   if (properties !== undefined) {

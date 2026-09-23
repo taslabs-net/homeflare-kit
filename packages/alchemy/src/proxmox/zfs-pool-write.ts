@@ -38,20 +38,51 @@ import type { ZfsPoolAttributes, ZfsPoolProps } from './zfs-pool.ts';
  *   declaration asked for, and this is the one call that writes to physical disks.
  */
 /**
- * The vendor rules the create form is checked against at plan time.
+ * The vendor rules a FULL declaration's create form is checked against at plan time.
  *
  * ⛔ HERE RATHER THAN INLINE IN zfs-pool.ts BECAUSE THAT FILE IS ALREADY OVER THE 250-LINE CAP,
  *   and a `pve:POST …` literal has to live in a non-test source file for the generator to table
- *   it at all. The spec imports it on the line it already imports `createForm` from.
+ *   it at all. zfs-pool-spec.ts imports it on the line it already imports `createForm` from.
  * ⚠️ NO UPDATE KEY: PVE registers no PUT under `/nodes/{node}/disks/zfs`, which is exactly why
  *   the spec declares no `updateForm` and a changed prop is a REPLACE.
+ * ⚠️ `spec.endpoint` DOES NOT RETURN THIS CONSTANT DIRECTLY — see the ★ on `zfsPoolEndpoint`
+ *   below, and the ⛔ on `devices`/`raidlevel` in zfs-pool.ts (decision 9, 2026-09-23).
  */
 export const ZFS_POOL_ENDPOINT: EndpointPair = { create: 'pve:POST /nodes/{node}/disks/zfs' };
 
+/**
+ * ★ `PveSpec['endpoint']` AS A FUNCTION OF PROPS, THE WAY notification-target.ts AND
+ *   ceph-daemon.ts ALREADY DO IT FOR A DIFFERENT REASON (resource-spec.ts's ⚠️ on that field).
+ *   Here the reason is decision 9's adopt-only mode: `guardCreate` runs on the FIRST plan of
+ *   ANY declaration (resource.ts `ops.diff`, `output === undefined` branch) and checks the
+ *   create form's REQUIRED fields whenever `endpoint.create` resolves to a key — and PVE marks
+ *   both `devices` and `raidlevel` required (measured, codegen/constraints's `pve-nodes-disks`
+ *   row). An adopt-only declaration deliberately omits both, so returning the real key there
+ *   would refuse a MATCHING adoption at plan time, before `read` ever ran — exactly the gap
+ *   `guardCreate`/`guardUpdate` being exported (resource.ts's ★) says this family must not fall
+ *   through. Returning `{}` (no `create` key) makes `guardCreate` a no-op (`constraint-guard.ts`:
+ *   `create === undefined ? Effect.void : …`) for an adopt-only declaration, while a FULL one
+ *   (`devices` and `raidlevel` both present) is checked exactly as before.
+ * ⚠️ THE RUNTIME BACKSTOP IS `createPool` BELOW, NOT THIS FUNCTION. Skipping the plan-time guard
+ *   for an adopt-only declaration does not skip the check that the pool is actually there —
+ *   `createPool` refuses before any POST when the read comes back absent and either field is
+ *   undefined, which is what a genuinely absent adopt-only declaration hits at apply time.
+ */
+export const zfsPoolEndpoint = (props: ZfsPoolProps): EndpointPair =>
+  props.devices === undefined || props.raidlevel === undefined ? {} : ZFS_POOL_ENDPOINT;
+
+/**
+ * ⚠️ EVERY KEY IS OMITTED WHEN ABSENT, `devices` AND `raidlevel` INCLUDED — not just the
+ *   optional ones. An adopt-only declaration (both undefined, decision 9) must produce a form
+ *   `createPool`'s own guard can inspect for their absence, and one this function itself does
+ *   not throw building: `props.devices.join(',')` on an undefined `devices` is exactly the
+ *   `TypeError` the plan-time guard hit before this change, because `guardCreate` evaluates
+ *   `spec.createForm(props)` eagerly (resource-guard.ts) — before it even looks at `presence`.
+ */
 export const createForm = (props: ZfsPoolProps): Record<string, string> => ({
-  devices: props.devices.join(','),
+  ...(props.devices === undefined ? {} : { devices: props.devices.join(',') }),
   name: props.name,
-  raidlevel: props.raidlevel,
+  ...(props.raidlevel === undefined ? {} : { raidlevel: props.raidlevel }),
   ...(props.ashift === undefined ? {} : { ashift: String(props.ashift) }),
   ...(props.compression === undefined ? {} : { compression: props.compression }),
   ...(props['draid-config'] === undefined ? {} : { 'draid-config': props['draid-config'] }),
@@ -84,6 +115,17 @@ const SETTLE_ATTEMPTS = 30;
  * ⚠️ SHORT POLLS WITH A HARD CAP, NOT ONE LONG WAIT. `read` cannot tell "not yet" from "forbidden"
  *   — both are `undefined` — so the loop gives up with the UPID rather than retrying forever, and
  *   the UPID is the only thing that leads to the worker's real error.
+ *
+ * ⛔ THE ADOPT-ONLY GUARD, RIGHT AFTER THE READ AND BEFORE ANYTHING ELSE. Decision 9 (2026-09-23):
+ *   omitting `devices` and `raidlevel` declares a pool this resource may only ADOPT, for a pool
+ *   PVE's own schema cannot fully describe — n1's `speed` is a stripe, and `raidlevel`'s enum has
+ *   no stripe (zfs-pool.ts). `zfsPoolEndpoint` above already keeps the vendor constraint guard
+ *   from refusing such a declaration at PLAN time; this is the matching refusal at APPLY time, for
+ *   the one case that guard cannot see — the pool genuinely is not there. MEASURED without it: a
+ *   tolerant `createForm` sends `POST … {name: "rpool"}` with no `devices`/`raidlevel`, which PVE's
+ *   own schema would 400 on eventually, but only after the request left this process; refusing
+ *   here is the same `Effect.die` idiom as every other refusal in this package, and it costs
+ *   nothing this pool did not already lack.
  */
 export const createPool = <E, R>(
   props: ZfsPoolProps,
@@ -94,6 +136,17 @@ export const createPool = <E, R>(
   Effect.gen(function* () {
     const existing = yield* read(props);
     if (existing !== undefined) return existing;
+
+    if (props.devices === undefined || props.raidlevel === undefined) {
+      return yield* Effect.die(
+        new Error(
+          `${props.node}/${props.name}: this is an adopt-only declaration (no \`devices\` or ` +
+            '`raidlevel`) and the pool is not there to adopt. An adopt-only Proxmox.ZfsPool never ' +
+            'creates -- declare both fields for a pool this resource should build, or point this ' +
+            'declaration at a pool that already exists on this node.',
+        ),
+      );
+    }
 
     const upid = yield* pve<string>(
       props.target,
@@ -127,11 +180,12 @@ export const createPool = <E, R>(
   });
 
 /**
- * ⛔ `DELETE /nodes/{node}/disks/zfs/{name}` RUNS `zpool destroy` AND THE DATASETS GO WITH IT.
- *   It is implemented rather than stubbed, because a `delete` that silently does nothing lies to
- *   whoever reads the plan. What keeps a deleted line from destroying a pool is the resource's
- *   `defaultRemovalPolicy: 'retain'` above — an orphaned pool is forgotten, not destroyed, and a
- *   caller who means it says `.pipe(RemovalPolicy.destroy())`.
+ * ⛔ `DELETE /nodes/{node}/disks/zfs/{name}` RUNS `zpool destroy` AND THE DATASETS GO WITH IT. Per
+ *   S14 (alchemy-provider-standard), it is implemented rather than stubbed — a `delete` that
+ *   silently does nothing lies to whoever reads the plan — and what keeps an ordinary removed
+ *   declaration from reaching it is the resource's `defaultRemovalPolicy: 'retain'` (zfs-pool.ts):
+ *   an orphaned pool is forgotten, not destroyed, unless a caller opts in with
+ *   `.pipe(RemovalPolicy.destroy())`. See the corrected header in zfs-pool.ts.
  *
  * ⚠️ `cleanup-config` IS NOT SENT. It would additionally remove the PVE storage entry pointing
  *   at this pool, which is a different object with its own resource (`Proxmox.Storage`); one
