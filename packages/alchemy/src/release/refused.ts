@@ -1,11 +1,14 @@
 /**
- * Release.Binary's failures as typed errors, so a caller can `catchTag` the one it expects — each
- * carrying the house refusal sentence (`Release.Binary <path>: …`) as its `message`.
+ * Release.Binary's failures as tagged errors — each carrying the house refusal sentence
+ * (`Release.Binary <path>: …`) as its `message`.
  *
- * ★ TYPED BECAUSE ALCHEMY UPSTREAM REQUIRES IT (its AGENTS.md at v2.0.0-beta.79: Data.TaggedError,
- *   `catchTag`, never a cast on `_tag`), and a provider written to be contributed should not need
- *   its error channel rewritten to get there. The MESSAGE stays the kit's wording, so a deploy log
- *   reads the same as every other house family's.
+ * ★ TAGGED BECAUSE ALCHEMY UPSTREAM REQUIRES IT (its AGENTS.md at v2.0.0-beta.79: Data.TaggedError,
+ *   `catchTag`, never a cast on `_tag`), so the classes need no rewrite on the way there. The
+ *   MESSAGE stays the kit's wording, so a deploy log reads the same as every other house family's.
+ * ⚠️ TAGGED IS NOT YET TYPED END TO END — measured in error-channel.test.ts. catalogBinary() throws,
+ *   so in a stack program its BinaryRefused is a DEFECT that `catchTag` never sees; and the provider
+ *   runs every lifecycle call through the house `lift()`, which keeps the instance at runtime but
+ *   types the channel as `Error`. No caller can name one of these tags today without a cast.
  * ★ THE TAGS NAME NO VENDOR. Downloading a pinned archive, refusing an unsafe one and comparing
  *   digests are the same for every catalog (docs/release-binary-upstream.md).
  */
