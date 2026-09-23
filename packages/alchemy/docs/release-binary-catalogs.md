@@ -93,12 +93,16 @@ GPG and Sigstore to check).
   like python-build-standalone needs its `lib/`. That is a **tree mode**:
   unpack an archive into a directory. It is a separate, later capability with
   its own walk-down, not a flag bent onto `Release.Binary`. Grafana's darwin
-  builds also come from grafana.com's downloads API, not a GitHub release.
+  builds also come from grafana.com's downloads API, not a GitHub release. (The
+  house's stdlib-only Python jobs are tracked for a Bun/TS rewrite instead of a
+  vendored interpreter, decided 2026-09-23.)
 - **Another source kind.** Only GitHub release downloads, whose URL is
   `https://github.com/<repo>/releases/download/<tag>/<asset>`. A second kind
   (grafana.com JSON, Codeberg) arrives with its first consumer.
 - **Another archive format.** Only `.tar.gz`/`.tgz`. A `.zip` or a bare
   binary is refused at plan rather than downloaded and then not unpacked.
 - **Builds from source.** Postgres, pgBackRest and Valkey ship no darwin
-  binary. A house CI job that builds one and publishes a GitHub release with a
-  `SHA256SUMS` file would make it an ordinary data set.
+  binary. Caddy with its plugins and cloudflare-exporter are to be built by the
+  public `taslabs-net/homeflare-builds` repo, which publishes GitHub releases
+  with a `SHA256SUMS` file (decided 2026-09-23). Each then becomes an ordinary
+  data set, after its own walk-down like any vendor's.
