@@ -86,6 +86,19 @@
         "effect": "4.0.0-rc.115",
       },
     },
+    "packages/distilled-proxmox": {
+      "name": "@homeflare/distilled-proxmox",
+      "version": "0.1.0",
+      "dependencies": {
+        "@distilled.cloud/core": "1.0.0-rc.12",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
+    },
     "packages/kit": {
       "name": "@homeflare/kit",
       "version": "0.3.0",
@@ -382,6 +395,8 @@
     "@homeflare/config": ["@homeflare/config@workspace:packages/config"],
 
     "@homeflare/distilled-netbox": ["@homeflare/distilled-netbox@workspace:packages/distilled-netbox"],
+
+    "@homeflare/distilled-proxmox": ["@homeflare/distilled-proxmox@workspace:packages/distilled-proxmox"],
 
     "@homeflare/kit": ["@homeflare/kit@workspace:packages/kit"],
 
