@@ -33,12 +33,19 @@
  *   including one run for an unrelated resource in the middle of a maintenance window
  *   (ceph-flag.ts has the whole argument). A stack that wants a flag set must reach for the
  *   Provider deliberately; the barrel does not offer the sentence by default.
+ * ★ `ProxmoxApiToken` AND `ProxmoxZfsPool` JOINED 2026-09-23, PER TIM'S DECISION 9: the kit builds
+ *   an ApiToken export that is metadata-only (`comment`/`expire`/`privsep` — `reconcile` refuses
+ *   to mint a secret it cannot store, api-token.ts) and a ZfsPool export that is adopt-only when
+ *   `devices`/`raidlevel` are left undeclared (for a pool PVE's own schema cannot fully describe,
+ *   such as a stripe — zfs-pool.ts). Neither can CREATE what it does not already have devices and
+ *   a raidlevel, or a live token, to build from. Pinned by api-token-adopt.test.ts and
+ *   zfs-pool-adopt.test.ts.
  * ★ Anything else unlisted is still reachable by path if you genuinely need
  *   it — that is a deliberate, visible act rather than an accident of barrelling.
  */
 export { ProxmoxAcl, ProxmoxAclProvider } from './acl.ts';
 export { type AlertmanagerBodyOptions, alertmanagerAlertBody } from './alertmanager-body.ts';
-export { ProxmoxApiTokenProvider } from './api-token.ts';
+export { ProxmoxApiToken, ProxmoxApiTokenProvider } from './api-token.ts';
 export { ProxmoxBackupJob, ProxmoxBackupJobProvider } from './backup-job.ts';
 export { ProxmoxCephDaemon, ProxmoxCephDaemonProvider } from './ceph-daemon.ts';
 export { ProxmoxCephFlagProvider } from './ceph-flag.ts';
@@ -105,4 +112,4 @@ export { ProxmoxSdnZone, ProxmoxSdnZoneProvider } from './sdn-zone.ts';
 export { ProxmoxStorage, ProxmoxStorageProvider } from './storage.ts';
 export { ProxmoxUser, ProxmoxUserProvider } from './user.ts';
 export { type FromEnv } from '../secrets/write-only.ts';
-export { ProxmoxZfsPoolProvider } from './zfs-pool.ts';
+export { ProxmoxZfsPool, ProxmoxZfsPoolProvider } from './zfs-pool.ts';

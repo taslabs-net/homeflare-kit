@@ -20,9 +20,14 @@
  *     whole of a token's policy, and declaring them is real work: it is how `expire` stops being
  *     whatever somebody typed in 2024. Mint NEW tokens where the secret can be caught — OpenBao's
  *     `proxmox-c1` mount, or a human at `pveum user token add`.
- *   ⚠️ THE CREATE PATH IS LEFT REACHABLE RATHER THAN STUBBED. A create that silently did nothing
- *     would be the same lie as the stubbed delete resource.ts's ★ refuses; the honest arrangement
- *     is a create that works and a header that says what it produces.
+ *   ⛔ ★ CORRECTED 2026-09-23 — THIS PARAGRAPH PREVIOUSLY SAID "THE CREATE PATH IS LEFT REACHABLE
+ *     RATHER THAN STUBBED… the honest arrangement is a create that works". THAT CONTRADICTED THE
+ *     `reconcile` BELOW, WHICH REFUSES: `handlers.reconcile` calls `Effect.die` by name when `read`
+ *     answers absent, before any POST — metadata-only per decision 9 (2026-09-23), exported on the
+ *     barrel as an adopt-and-manage-only Resource. A create that silently did nothing WOULD be the
+ *     lie resource.ts's ★ describes for a stubbed delete; refusing loudly, by name, with the two
+ *     ways to get a usable token, is the honest arrangement instead — see the ★ further down and
+ *     api-token-adopt.test.ts's absent-token row, which pins the refusal and zero writes.
  *
  * ⛔ THERE IS NO `regenerate` PROP, AND IT IS NOT AN OVERSIGHT. PVE's own description: "All users
  *   of the previous secret will lose access after this operation." A prop for it would revoke a
