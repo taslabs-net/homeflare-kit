@@ -23,7 +23,7 @@ import * as Provider from 'alchemy/Provider';
 import * as organization from '@distilled.cloud/forgejo/organization';
 import * as repository from '@distilled.cloud/forgejo/repository';
 import * as Effect from 'effect/Effect';
-import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
+import { type ForgejoRequirements, type ForgejoSpec, forgejoHandlers } from './resource.ts';
 
 export interface RepositoryProps {
   /** Organization login — the owner segment in `<org>/<repo>`. */
@@ -75,7 +75,16 @@ const editForm = (props: RepositoryProps) => ({
   ...(props.private === undefined ? {} : { private: props.private }),
 });
 
-const handlers = forgejoHandlers<
+/**
+ * ★ EXPORTED, NOT JUST PASSED INLINE TO `forgejoHandlers` BELOW — so a test can call
+ *   `spec.fetchLive` / `spec.attributes` directly (repository.test.ts does), against an explicit
+ *   fake `Credentials` layer, without touching `forgejoHandlers`'s baked-in `CredentialsFromEnv`.
+ *   That layer resolves `FORGEJO_URL` / `FORGEJO_TOKEN` through Effect's `Config`, whose default
+ *   provider snapshots `process.env` once — a test-time `process.env` mutation is invisible to it,
+ *   so the only way to run this exact production code against a fake server is to call it with an
+ *   explicit `Credentials` layer, bypassing the env read entirely.
+ */
+export const spec: ForgejoSpec<
   RepositoryProps,
   repository.Repository,
   RepositoryAttributes,
@@ -83,7 +92,7 @@ const handlers = forgejoHandlers<
   | repository.GetRepoError
   | repository.EditRepoError
   | repository.DeleteRepoError
->({
+> = {
   attributes: (live, props) => ({
     defaultBranch: live.default_branch,
     description: live.description ?? '',
@@ -129,7 +138,9 @@ const handlers = forgejoHandlers<
     (props.defaultBranch === undefined || attributes.defaultBranch === props.defaultBranch),
   update: (props) =>
     repository.editRepo({ owner: props.org, repo: props.name, ...editForm(props) }),
-});
+};
+
+export const handlers = forgejoHandlers(spec);
 
 export const ForgejoRepositoryProvider = () =>
   Provider.effect(ForgejoRepository, Effect.succeed(ForgejoRepository.Provider.of(handlers)));

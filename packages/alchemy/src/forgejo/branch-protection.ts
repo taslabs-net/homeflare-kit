@@ -20,7 +20,7 @@ import * as Provider from 'alchemy/Provider';
 import * as repository from '@distilled.cloud/forgejo/repository';
 import * as Effect from 'effect/Effect';
 import { createBranchProtectionForm, editBranchProtectionForm } from './branch-protection-form.ts';
-import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
+import { type ForgejoRequirements, type ForgejoSpec, forgejoHandlers } from './resource.ts';
 import { stringArray } from './values.ts';
 
 export interface BranchProtectionProps {
@@ -65,7 +65,8 @@ export const ForgejoBranchProtection = Resource<ForgejoBranchProtection>(
   { defaultRemovalPolicy: 'retain' },
 );
 
-const handlers = forgejoHandlers<
+/** ★ EXPORTED for direct testing with an explicit fake `Credentials` layer — see repository.ts. */
+export const spec: ForgejoSpec<
   BranchProtectionProps,
   repository.BranchProtection,
   BranchProtectionAttributes,
@@ -73,7 +74,7 @@ const handlers = forgejoHandlers<
   | repository.RepoGetBranchProtectionError
   | repository.RepoEditBranchProtectionError
   | repository.RepoDeleteBranchProtectionError
->({
+> = {
   attributes: (live, props) => ({
     applyToAdmins: live.apply_to_admins ?? false,
     branchName: props.branchName,
@@ -121,7 +122,9 @@ const handlers = forgejoHandlers<
       name: props.branchName,
       ...editBranchProtectionForm(props),
     }),
-});
+};
+
+export const handlers = forgejoHandlers(spec);
 
 export const ForgejoBranchProtectionProvider = () =>
   Provider.effect(

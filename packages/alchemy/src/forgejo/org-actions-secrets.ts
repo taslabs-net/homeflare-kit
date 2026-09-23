@@ -25,7 +25,7 @@ import * as Provider from 'alchemy/Provider';
 import * as organization from '@distilled.cloud/forgejo/organization';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
-import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
+import { type ForgejoRequirements, type ForgejoSpec, forgejoHandlers } from './resource.ts';
 import { orgSecretEnvKey } from './values.ts';
 
 export interface OrgSecretProps {
@@ -69,7 +69,8 @@ const secretData = (org: string, name: string) =>
     return raw.trim();
   });
 
-const handlers = forgejoHandlers<
+/** ★ EXPORTED for direct testing with an explicit fake `Credentials` layer — see repository.ts. */
+export const spec: ForgejoSpec<
   OrgSecretProps,
   organization.Secret,
   OrgSecretAttributes,
@@ -77,7 +78,7 @@ const handlers = forgejoHandlers<
   | organization.UpdateOrgSecretError
   | organization.DeleteOrgSecretError
   | ForgejoSecretEnvUnsetError
->({
+> = {
   attributes: (live, props) => ({
     createdAt: live.created_at,
     name: props.name,
@@ -98,7 +99,9 @@ const handlers = forgejoHandlers<
             organization.updateOrgSecret({ data, org: props.org, secretname: props.name }),
           ),
         ),
-});
+};
+
+export const handlers = forgejoHandlers(spec);
 
 export const ForgejoOrgSecretProvider = () =>
   Provider.effect(ForgejoOrgSecret, Effect.succeed(ForgejoOrgSecret.Provider.of(handlers)));

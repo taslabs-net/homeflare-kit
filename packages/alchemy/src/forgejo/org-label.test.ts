@@ -14,6 +14,7 @@ import { describe, expect, test } from 'bun:test';
 import * as organization from '@distilled.cloud/forgejo/organization';
 import * as Effect from 'effect/Effect';
 import { fakeFailure, fakeForgejo, fakeForgejoLayer } from './fake-forgejo.ts';
+import { spec } from './org-label.ts';
 
 const LABELS_PATH = '/api/v1/orgs/homeflare/labels';
 
@@ -53,5 +54,47 @@ describe('Forgejo.OrgLabel fetchLive', () => {
     const fake = fakeForgejo(() => fakeFailure(401, 'bad token'));
     const failure = await Effect.runPromise(Effect.flip(fetchLabel(fake.fetch, 'bug')));
     expect(failure._tag).toBe('Unauthorized');
+  });
+});
+
+describe('Forgejo.OrgLabel spec — the actual exported production functions', () => {
+  // ⛔ Proves the real `fetchLive` + `attributes` in org-label.ts, not a parallel
+  //   reimplementation — see the same note in repository.test.ts.
+  const props = { color: 'ff0000', name: 'bug', org: 'homeflare' };
+
+  const readThrough = (fetchFn: typeof globalThis.fetch) =>
+    Effect.runPromise(
+      spec.fetchLive(props).pipe(
+        Effect.map((live) => (live === undefined ? undefined : spec.attributes(live, props))),
+        Effect.provide(fakeForgejoLayer(fetchFn)),
+      ),
+    );
+
+  test('spec.fetchLive + spec.attributes match the old field mapping', async () => {
+    const fake = fakeForgejo((method, url) =>
+      method === 'GET' && url.pathname === LABELS_PATH
+        ? Response.json([
+            { color: 'FF0000', description: 'something is broken', id: 7, name: 'bug' },
+          ])
+        : fakeFailure(404, 'not found'),
+    );
+    // ⚠️ `color()` lowercases — the wire value `FF0000` must compare equal to the declared `ff0000`.
+    expect(await readThrough(fake.fetch)).toEqual({
+      color: 'ff0000',
+      description: 'something is broken',
+      exclusive: false,
+      labelId: 7,
+      name: 'bug',
+      org: 'homeflare',
+    });
+  });
+
+  test('a label absent from the list through spec.fetchLive is undefined', async () => {
+    const fake = fakeForgejo((method, url) =>
+      method === 'GET' && url.pathname === LABELS_PATH
+        ? Response.json([{ color: '00ff00', id: 9, name: 'enhancement' }])
+        : fakeFailure(404, 'not found'),
+    );
+    expect(await readThrough(fake.fetch)).toBeUndefined();
   });
 });

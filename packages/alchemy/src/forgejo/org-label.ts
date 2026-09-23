@@ -23,7 +23,7 @@ import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as organization from '@distilled.cloud/forgejo/organization';
 import * as Effect from 'effect/Effect';
-import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
+import { type ForgejoRequirements, type ForgejoSpec, forgejoHandlers } from './resource.ts';
 import { color } from './values.ts';
 
 export interface OrgLabelProps {
@@ -58,7 +58,8 @@ export const ForgejoOrgLabel = Resource<ForgejoOrgLabel>('Forgejo.OrgLabel', {
   defaultRemovalPolicy: 'retain',
 });
 
-const handlers = forgejoHandlers<
+/** ★ EXPORTED for direct testing with an explicit fake `Credentials` layer — see repository.ts. */
+export const spec: ForgejoSpec<
   OrgLabelProps,
   organization.Label,
   OrgLabelAttributes,
@@ -66,7 +67,7 @@ const handlers = forgejoHandlers<
   | organization.OrgEditLabelError
   | organization.OrgDeleteLabelError
   | organization.OrgListLabelsError
->({
+> = {
   attributes: (live, props) => ({
     color: color(live.color),
     description: live.description ?? '',
@@ -101,7 +102,9 @@ const handlers = forgejoHandlers<
       id: live.id,
       org: props.org,
     }),
-});
+};
+
+export const handlers = forgejoHandlers(spec);
 
 export const ForgejoOrgLabelProvider = () =>
   Provider.effect(ForgejoOrgLabel, Effect.succeed(ForgejoOrgLabel.Provider.of(handlers)));

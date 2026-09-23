@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import * as organization from '@distilled.cloud/forgejo/organization';
 import * as Effect from 'effect/Effect';
 import { fakeFailure, fakeForgejo, fakeForgejoLayer } from './fake-forgejo.ts';
-import { ForgejoTeamNotFoundError } from './team-member.ts';
+import { ForgejoTeamNotFoundError, spec } from './team-member.ts';
 
 const TEAMS_PATH = '/api/v1/orgs/homeflare/teams';
 const TEAMS_LIST_PATH = `${TEAMS_PATH}?limit=200`;
@@ -52,5 +52,46 @@ describe('Forgejo.TeamMember fetchLive', () => {
     expect(failure._tag).toBe('ForgejoTeamNotFoundError');
     expect(failure.message).toContain('Ghosts');
     expect(fake.seen.map((s) => s.path)).toEqual([TEAMS_LIST_PATH]);
+  });
+});
+
+describe('Forgejo.TeamMember spec — the actual exported production functions', () => {
+  // ⛔ Proves the real `fetchLive` + `attributes` in team-member.ts, not a parallel
+  //   reimplementation — see the same note in repository.test.ts.
+  const props = { org: 'homeflare', team: 'Owners', username: 'tim' };
+
+  const readThrough = (fetchFn: typeof globalThis.fetch) =>
+    Effect.runPromise(
+      spec.fetchLive(props).pipe(
+        Effect.map((live) => (live === undefined ? undefined : spec.attributes(live, props))),
+        Effect.provide(fakeForgejoLayer(fetchFn)),
+      ),
+    );
+
+  test('a member on the team reads through spec.fetchLive + spec.attributes', async () => {
+    const fake = fakeForgejo((method, url) => {
+      if (method === 'GET' && url.pathname === TEAMS_PATH) {
+        return Response.json([{ id: 5, name: 'Owners' }]);
+      }
+      if (method === 'GET' && url.pathname === MEMBER_PATH(5)) {
+        return Response.json({ id: 99, login: 'tim' });
+      }
+      return fakeFailure(404, 'not found');
+    });
+    expect(await readThrough(fake.fetch)).toEqual({
+      org: 'homeflare',
+      team: 'Owners',
+      teamId: 5,
+      username: 'tim',
+    });
+  });
+
+  test('a member not on the team through spec.fetchLive is undefined', async () => {
+    const fake = fakeForgejo((method, url) =>
+      method === 'GET' && url.pathname === TEAMS_PATH
+        ? Response.json([{ id: 5, name: 'Owners' }])
+        : fakeFailure(404, 'not a member'),
+    );
+    expect(await readThrough(fake.fetch)).toBeUndefined();
   });
 });

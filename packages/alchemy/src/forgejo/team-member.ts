@@ -16,8 +16,9 @@
  *
  * ⚠️ THE TEAM ITSELF IS ONLY LOCATED HERE, NEVER MANAGED. A missing team fails the plan by name
  *   instead of folding into "absent" — `ForgejoTeamNotFoundError` is this family's own domain
- *   error, not one of the distilled SDK's typed HTTP errors, so `resource.ts`'s `absentOnNotFound`
- *   (which only `catchTag`s the SDK's `NotFound`) never touches it. A PUT can add a member but
+ *   error, not one of the distilled SDK's typed HTTP errors, so the `catchTag('NotFound', ...)`
+ *   at the end of `fetchLive` below (see resource.ts's header for why every `fetchLive` folds its
+ *   own `NotFound` rather than one shared helper) never touches it. A PUT can add a member but
  *   cannot create a team.
  *
  * ⛔ TOKEN NEEDS `write:organization` TO ADD OR REMOVE, and an identity allowed to manage the team.
@@ -27,7 +28,7 @@ import * as Provider from 'alchemy/Provider';
 import * as organization from '@distilled.cloud/forgejo/organization';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
-import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
+import { type ForgejoRequirements, type ForgejoSpec, forgejoHandlers } from './resource.ts';
 
 export interface TeamMemberProps {
   org: string;
@@ -76,7 +77,8 @@ const teamIdOf = (props: TeamMemberProps) =>
     }),
   );
 
-const handlers = forgejoHandlers<
+/** ★ EXPORTED for direct testing with an explicit fake `Credentials` layer — see repository.ts. */
+export const spec: ForgejoSpec<
   TeamMemberProps,
   TeamMemberLive,
   TeamMemberAttributes,
@@ -85,7 +87,7 @@ const handlers = forgejoHandlers<
   | organization.OrgListTeamMemberError
   | organization.OrgListTeamsError
   | ForgejoTeamNotFoundError
->({
+> = {
   attributes: (live, props) => {
     if (live.login.toLowerCase() !== props.username.toLowerCase()) return undefined;
     return { org: props.org, team: props.team, teamId: live.teamId, username: props.username };
@@ -105,7 +107,9 @@ const handlers = forgejoHandlers<
       : Effect.flatMap(teamIdOf(props), (id) =>
           Effect.asVoid(organization.orgAddTeamMember({ id, username: props.username })),
         ),
-});
+};
+
+export const handlers = forgejoHandlers(spec);
 
 export const ForgejoTeamMemberProvider = () =>
   Provider.effect(ForgejoTeamMember, Effect.succeed(ForgejoTeamMember.Provider.of(handlers)));

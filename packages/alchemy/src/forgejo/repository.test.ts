@@ -14,6 +14,7 @@ import { describe, expect, test } from 'bun:test';
 import * as repository from '@distilled.cloud/forgejo/repository';
 import * as Effect from 'effect/Effect';
 import { FAKE_BASE, fakeFailure, fakeForgejo, fakeForgejoLayer } from './fake-forgejo.ts';
+import { spec } from './repository.ts';
 
 const REPO_PATH = '/api/v1/repos/homeflare/kit';
 
@@ -80,5 +81,45 @@ describe('Forgejo.Repository fetchLive', () => {
       ),
     );
     expect(failure._tag).toBe('Unauthorized');
+  });
+});
+
+describe('Forgejo.Repository spec — the actual exported production functions', () => {
+  // ⛔ THE POINT OF THIS BLOCK. The describe above proves the SDK's own `getRepo` +
+  //   `catchTag('NotFound', ...)` idiom works; it does not touch a single line of
+  //   repository.ts. This block calls `spec.fetchLive` and `spec.attributes` — the exact object
+  //   `forgejoHandlers(spec)` wraps into `ForgejoRepositoryProvider` — so a typo that dropped or
+  //   mistagged the `catchTag` in `fetchLive`, or a drifted `attributes()` mapping, fails HERE.
+  const props = { name: 'kit', org: 'homeflare' };
+
+  const readThrough = (fetchFn: typeof globalThis.fetch) =>
+    Effect.runPromise(
+      spec.fetchLive(props).pipe(
+        Effect.map((live) => (live === undefined ? undefined : spec.attributes(live, props))),
+        Effect.provide(fakeForgejoLayer(fetchFn)),
+      ),
+    );
+
+  test('spec.fetchLive + spec.attributes match the old field mapping', async () => {
+    const fake = fakeForgejo((method, url) =>
+      method === 'GET' && url.pathname === REPO_PATH ? liveRepo() : fakeFailure(404, 'not found'),
+    );
+    expect(await readThrough(fake.fetch)).toEqual({
+      defaultBranch: 'main',
+      description: 'the kit',
+      empty: false,
+      hasIssues: true,
+      hasProjects: true,
+      hasWiki: false,
+      name: 'kit',
+      org: 'homeflare',
+      private: true,
+      repoId: 42,
+    });
+  });
+
+  test('a 404 through spec.fetchLive is undefined, not a thrown failure', async () => {
+    const fake = fakeForgejo(() => fakeFailure(404, 'repository does not exist'));
+    expect(await readThrough(fake.fetch)).toBeUndefined();
   });
 });

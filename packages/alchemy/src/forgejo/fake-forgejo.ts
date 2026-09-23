@@ -37,7 +37,17 @@ export const fakeForgejo = (route: (method: string, url: URL) => Response) => {
   return { fetch, seen };
 };
 
-/** distilled Credentials + the real FetchHttpClient over the fake — what `resource.ts` provides. */
+/**
+ * distilled Credentials + the real FetchHttpClient over the fake — `ForgejoOpContext`, what every
+ * resource file's exported `spec.fetchLive` needs.
+ *
+ * ⚠️ NOT PAIRED WITH `handlers` (each resource file's `forgejoHandlers(spec)` export). `handlers`
+ *   bakes in `CredentialsFromEnv`, which resolves `FORGEJO_URL` / `FORGEJO_TOKEN` through Effect's
+ *   `Config` — whose default provider snapshots `process.env` once and never re-reads it (measured
+ *   2026-09-23: mutating `process.env` mid-test-run had no effect). So a test cannot point
+ *   `handlers` at a fake server; it calls `spec.fetchLive`/`spec.attributes` directly instead, with
+ *   this explicit layer, exercising exactly the same production code without that env seam.
+ */
 export const fakeForgejoLayer = (
   fetchFn: typeof globalThis.fetch,
   creds: Layer.Layer<Credentials> = credentials({ baseUrl: FAKE_BASE, token: FAKE_TOKEN }),

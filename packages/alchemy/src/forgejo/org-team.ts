@@ -20,7 +20,7 @@ import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as organization from '@distilled.cloud/forgejo/organization';
 import * as Effect from 'effect/Effect';
-import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
+import { type ForgejoRequirements, type ForgejoSpec, forgejoHandlers } from './resource.ts';
 import { recordEqual, stringArray, stringRecord } from './values.ts';
 
 export type TeamPermission = 'read' | 'write' | 'admin';
@@ -69,7 +69,8 @@ const teamForm = (props: OrgTeamProps) => ({
   ...(props.unitsMap === undefined ? {} : { units_map: props.unitsMap }),
 });
 
-const handlers = forgejoHandlers<
+/** ★ EXPORTED for direct testing with an explicit fake `Credentials` layer — see repository.ts. */
+export const spec: ForgejoSpec<
   OrgTeamProps,
   organization.Team,
   OrgTeamAttributes,
@@ -77,7 +78,7 @@ const handlers = forgejoHandlers<
   | organization.OrgEditTeamError
   | organization.OrgDeleteTeamError
   | organization.OrgListTeamsError
->({
+> = {
   attributes: (live, props) => {
     const permission = live.permission ?? 'read';
     if (permission !== 'read' && permission !== 'write' && permission !== 'admin') return undefined;
@@ -109,7 +110,9 @@ const handlers = forgejoHandlers<
       stringArray(props.units).join('\0') === attributes.units.join('\0')) &&
     (props.unitsMap === undefined || recordEqual(attributes.unitsMap, props.unitsMap)),
   update: (props, live) => organization.orgEditTeam({ id: live.id, ...teamForm(props) }),
-});
+};
+
+export const handlers = forgejoHandlers(spec);
 
 export const ForgejoOrgTeamProvider = () =>
   Provider.effect(ForgejoOrgTeam, Effect.succeed(ForgejoOrgTeam.Provider.of(handlers)));

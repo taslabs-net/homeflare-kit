@@ -20,7 +20,7 @@ import * as Provider from 'alchemy/Provider';
 import * as repository from '@distilled.cloud/forgejo/repository';
 import * as Effect from 'effect/Effect';
 import { hookConfigForm } from './repo-webhook-form.ts';
-import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
+import { type ForgejoRequirements, type ForgejoSpec, forgejoHandlers } from './resource.ts';
 import { hookConfigPublic, stringArray } from './values.ts';
 
 export type RepoWebhookType =
@@ -74,7 +74,8 @@ export interface ForgejoRepoWebhook extends Resource<
 
 export const ForgejoRepoWebhook = Resource<ForgejoRepoWebhook>('Forgejo.RepoWebhook');
 
-const handlers = forgejoHandlers<
+/** ★ EXPORTED for direct testing with an explicit fake `Credentials` layer — see repository.ts. */
+export const spec: ForgejoSpec<
   RepoWebhookProps,
   repository.Hook,
   RepoWebhookAttributes,
@@ -82,7 +83,7 @@ const handlers = forgejoHandlers<
   | repository.RepoEditHookError
   | repository.RepoDeleteHookError
   | repository.RepoListHooksError
->({
+> = {
   attributes: (live, props) => {
     const config = hookConfigPublic(live.config);
     return {
@@ -140,7 +141,9 @@ const handlers = forgejoHandlers<
       owner: props.owner,
       repo: props.repo,
     }),
-});
+};
+
+export const handlers = forgejoHandlers(spec);
 
 export const ForgejoRepoWebhookProvider = () =>
   Provider.effect(ForgejoRepoWebhook, Effect.succeed(ForgejoRepoWebhook.Provider.of(handlers)));
