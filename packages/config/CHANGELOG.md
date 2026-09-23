@@ -1,5 +1,31 @@
 # @homeflare/config
 
+## 0.10.0
+
+### Minor Changes
+
+- [#145](https://github.com/taslabs-net/homeflare-kit/pull/145) [`139379d`](https://github.com/taslabs-net/homeflare-kit/commit/139379de0628410e4382083e5406f390cc94e338) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `repo-shape` renders the path a kit release takes into a consumer. `.github/dependabot.yml` gains a `homeflare` group for `@homeflare/*`, first and taking every update type, and its bun block now runs daily with a `cooldown` that exempts `@homeflare/*` — Dependabot applies a 3-day cooldown even when none is configured, so without the exemption "daily" would have meant three days late. Third-party packages keep roughly their weekly pace through a 7-day cooldown, because Dependabot refuses two bun blocks over the same directory and so cannot give one group its own schedule. A new rendered workflow, `.github/workflows/dependabot-automerge.yml`, arms `gh pr merge --auto --squash` on that group's pull request and nothing else: no third-party action, no top-level permissions, `contents: write` and `pull-requests: write` on its one job, gated on Dependabot as both author and actor and on the group's exact branch name. It refuses, with a failed check and nothing armed, on a base branch whose rules require no status check: there `gh pr merge --auto` merges a CLEAN or UNSTABLE pull request at once instead of arming it. `docs/repo-shape-dependabot.md` cites each choice. ⚠️ The bun half does nothing yet: Dependabot's bundled bun reads `bun.lock` lockfileVersion 1 and every estate lockfile is 2, so it waits on dependabot/dependabot-core pull request 16071. Refresh with `bun run repo-shape:refresh` after bumping; the drift test fails until you do.
+
+- [#127](https://github.com/taslabs-net/homeflare-kit/pull/127) [`a5b9b63`](https://github.com/taslabs-net/homeflare-kit/commit/a5b9b63cc23708e69ad17ed61a2e9cd020246f66) Thanks [@taslabs-net](https://github.com/taslabs-net)! - repo-shape: `node:` and a job `timeout:`, so the two repositories with a real Node
+  requirement can take the standard instead of excepting out of it.
+
+  Measured 2026-09-22: the mini's CI job image carries no `node` on `PATH` (ubuntu-latest
+  always did). Two repositories had hand-written the identical `actions/setup-node@v6`
+  block for two real reasons — homeflare-alerts' `tests/alchemy-import.test.ts` spawns
+  `node` to prove the modules load the way the Alchemy CLI loads them, and homeflare-blog's
+  Payload requires Node >= 24.15. Rendering without it would have forced both to
+  `except({ file: '.github/workflows/ci.yml', … })`, handing the estate's two most
+  complicated CI files straight back to hand-editing.
+
+  `node: 24` renders `actions/setup-node@v6` with `package-manager-cache: false` ahead of
+  `setup-bun`, in `check` and in every extra job that takes the bun prologue, and never in
+  `workflow lint`, which installs nothing. `extraJob({ …, timeout: 15 })` renders
+  `timeout-minutes:` for a job that starts something with its own wait — a browser that
+  never paints holds a self-hosted slot for GitHub's 360-minute default rather than
+  reporting red, and on a 3-slot pool that is the whole pool.
+
+  Both are inputs, not exceptions: a repository that declares one keeps its drift check.
+
 ## 0.9.0
 
 ### Minor Changes
