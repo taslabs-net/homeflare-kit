@@ -185,9 +185,22 @@ export const matchingOperations = <
         return after;
       }),
 
-    destroy: (olds: Props) =>
+    /**
+     * ⛔ `output.id` FIRST, SAME SWITCH AS `fetchLive` (PR 163 re-review). The engine always
+     *   passes `output` here too (`Apply.ts`'s delete call sites all carry `output: attr`) —
+     *   `olds` is only the PROPS as last persisted, which drifts from the live object exactly
+     *   the way `news` did pre-fix: rename it out of band (by hand, or by another tool) after
+     *   the last successful reconcile, and a name-only locate silently finds nothing, `destroy`
+     *   returns as if there were nothing to delete, and the engine drops the state row anyway —
+     *   reporting "deleted" while the live object survives, permanently orphaned (the same
+     *   consequence `matching.ts`'s header describes for the original bug, on the delete path
+     *   the original fix didn't touch). A 404 on the `output.id` itself is NOT an error here,
+     *   unlike `fetchLive`'s die — it means the object is already gone, which is exactly the
+     *   idempotent success `delete` is supposed to report (S11, alchemy-provider-standard).
+     */
+    destroy: (olds: Props, output: Attributes | undefined) =>
       Effect.gen(function* () {
-        const live = yield* fetchByName(olds);
+        const live = output === undefined ? yield* fetchByName(olds) : yield* fetchById(output.id);
         if (live === undefined) return;
         yield* absentOn404(paperless('DELETE', `${objectPath(live)}/`));
       }),
@@ -218,6 +231,9 @@ export const matchingHandlers = <
     //   otherwise refuses the engine's own `output: Attributes | undefined` at the call site.
     reconcile: ({ news, output }: { news: Props; output?: Attributes | undefined }) =>
       ops.reconcile(news, output),
-    delete: ({ olds }: { olds: Props }) => ops.destroy(olds),
+    // ⚠️ `output` PASSED THROUGH, NOT DROPPED — see `destroy`'s own header above (PR 163
+    //   re-review). Same `| undefined` reasoning as `reconcile` just above.
+    delete: ({ olds, output }: { olds: Props; output?: Attributes | undefined }) =>
+      ops.destroy(olds, output),
   };
 };

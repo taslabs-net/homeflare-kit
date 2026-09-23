@@ -86,6 +86,11 @@ every document keeps its tag/type/path/field because the id never changes. If th
 exists live (deleted out of band), the plan refuses loudly rather than silently creating a
 replacement; adopt the live object back or drop it from state first.
 
+`destroy` locates the same way — by `output.id` once state exists, so a row renamed out of band
+after its last deploy is still found and deleted by id rather than silently missed by a
+now-stale name. Unlike `diff`/`reconcile`, a missing `output.id` at delete time is not a refusal:
+the object being already gone is exactly the idempotent success `delete` reports.
+
 ## Generated, not hand-typed
 
 `generated/types/*.ts` and `generated/constraints/*.ts` come from `bun codegen/paperless.ts`

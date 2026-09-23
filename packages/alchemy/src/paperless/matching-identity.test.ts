@@ -15,6 +15,12 @@
  *     refusing;
  *   - the first-create and adopt tests already passed pre-fix (the no-state path was never
  *     broken) and are here to prove the fix does not disturb them.
+ *
+ * ★ THE LAST `describe` BELOW IS A SECOND ROUND (re-review of this same PR): the d3983ff fix
+ *   rewired `diff`/`reconcile` to locate by `output.id`, but left `destroy` locating by
+ *   `(name, owner)` alone — the exact pre-fix mechanism, with the exact pre-fix consequence
+ *   (silently missing a live-but-renamed row) just on the delete path instead of update. See
+ *   `matching.ts`'s `destroy` for the fix this suite proves.
  */
 import { describe, expect, test } from 'bun:test';
 import { paperless } from './client.ts';
@@ -151,6 +157,38 @@ describe('the no-state path is unaffected (PR 163)', () => {
       expect(fake.rows('tags').length).toBe(1);
       expect(after?.id).toBe(readAttrs?.id);
       expect(fake.seen.filter((s) => s.method === 'POST').length).toBe(1);
+    });
+  });
+});
+
+describe('delete locates by output.id, not by (possibly stale) olds.name (re-review)', () => {
+  test('a row renamed out of band is still found and deleted, by id', async () => {
+    await withFake(async (fake) => {
+      const handlers = matchingHandlers(spec);
+      const created = await run(handlers.reconcile({ news: { name: 'Invoices' } }));
+      if (created === undefined) throw new Error('unreachable: reconcile always returns attrs');
+
+      // Nothing this package did — a human (or another tool) renamed the live object directly
+      // in Paperless. State's `olds` still says the OLD name; `output` still holds the real id.
+      await run(paperless('PATCH', `tags/${String(created.id)}/`, { name: 'Renamed Elsewhere' }));
+
+      await run(handlers.delete({ olds: { name: 'Invoices' }, output: created }));
+
+      expect(fake.rows('tags').length).toBe(0);
+      const deletes = fake.seen.filter((s) => s.method === 'DELETE');
+      expect(deletes.length).toBe(1);
+      expect(deletes[0]?.path).toBe(`/api/tags/${String(created.id)}/`);
+    });
+  });
+
+  test('with no output (no-state path), delete still falls back to locating by name', async () => {
+    await withFake(async (fake) => {
+      const handlers = matchingHandlers(spec);
+      await run(handlers.reconcile({ news: { name: 'Invoices' } }));
+
+      await run(handlers.delete({ olds: { name: 'Invoices' } }));
+
+      expect(fake.rows('tags').length).toBe(0);
     });
   });
 });
