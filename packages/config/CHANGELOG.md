@@ -1,5 +1,33 @@
 # @homeflare/config
 
+## 0.11.1
+
+### Patch Changes
+
+- [#189](https://github.com/taslabs-net/homeflare-kit/pull/189) [`c130404`](https://github.com/taslabs-net/homeflare-kit/commit/c13040449b7f63fb55009a355d25cb2b54e37454) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix CodeQL alert 5, js/polynomial-redos (high), in `renderRun`
+  (`packages/config/src/repo-shape/yaml.ts`, in from PR 125 / commit bc3e1fa). It ran
+  `command.replace(/\n+$/, '')` on repository-configured step text, and that regex
+  backtracks polynomially on a long run of trailing `\n`.
+
+  Trailing `\n` characters are now trimmed with a linear loop, `trimTrailingNewlines`,
+  the same pattern as `normalizeBaseUrl` in `packages/distilled-netbox/src/credentials.ts`
+  (PR 184). Behaviour is byte-identical: a test compares it against the old regex over
+  seven edge cases plus a 100,000-newline input, and asserts the long input stays fast.
+
+- [#186](https://github.com/taslabs-net/homeflare-kit/pull/186) [`4e46ce3`](https://github.com/taslabs-net/homeflare-kit/commit/4e46ce33d2e175b10b0148da194c0ed9ff093117) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix two shared pre-commit bugs, both measured 2026-09-23:
+
+  - A staged file wholly excluded by oxfmt's or oxlint's own `ignorePatterns` (a vendored,
+    ignored path, say) made the commit fail with "oxfmt could not format the staged files",
+    even though there was nothing left to format. Both tools now run with their own
+    documented `--no-error-on-unmatched-pattern`, so the step passes and says
+    `no formattable staged files`; a real formatting or lint failure still fails exactly as
+    before.
+  - The hook ran bare `oxfmt`, which auto-discovers only `.oxfmtrc.json`/`.oxfmtrc.jsonc`
+    (checked against the pinned version). A repo configured with `.oxfmtrc.mjs` got
+    formatted with oxfmt's built-in defaults instead of its own style, silently. The hook
+    now resolves the repo's actual `.oxfmtrc.*` and passes it with `--config`; two or more
+    unrecognized configs fail the commit loudly instead of guessing which one governs.
+
 ## 0.11.0
 
 ### Minor Changes
