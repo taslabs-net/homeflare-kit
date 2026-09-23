@@ -32,7 +32,7 @@ import {
   targetForm,
 } from './pbs-notification-target-form.ts';
 import { targetAttributes } from './pbs-notification-target-wire.ts';
-import { seal } from './write-only.ts';
+import { seal } from '../secrets/write-only.ts';
 
 type Props = PbsNotificationTargetProps;
 type Attributes = PbsNotificationTargetAttributes;

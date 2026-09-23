@@ -104,5 +104,5 @@ export { ProxmoxSdnVnet, ProxmoxSdnVnetProvider } from './sdn-vnet.ts';
 export { ProxmoxSdnZone, ProxmoxSdnZoneProvider } from './sdn-zone.ts';
 export { ProxmoxStorage, ProxmoxStorageProvider } from './storage.ts';
 export { ProxmoxUser, ProxmoxUserProvider } from './user.ts';
-export { type FromEnv } from './write-only.ts';
+export { type FromEnv } from '../secrets/write-only.ts';
 export { ProxmoxZfsPoolProvider } from './zfs-pool.ts';

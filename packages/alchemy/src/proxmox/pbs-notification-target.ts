@@ -31,7 +31,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { handlers } from './pbs-notification-target-lifecycle.ts';
 import type { PveRequirements, WithPbsTarget } from './resource.ts';
-import type { FromEnv } from './write-only.ts';
+import type { FromEnv } from '../secrets/write-only.ts';
 
 export type PbsNotificationTargetType = 'sendmail' | 'smtp' | 'webhook';
 

@@ -2,6 +2,12 @@
  * Values a declaration may SEND and must never STORE — a webhook secret, a header carrying a
  * credential, an smtp password — and the one form in which a plan may still remember them.
  *
+ * ★ FAMILY-NEUTRAL ON PURPOSE, MOVED HERE FROM `proxmox/` 2026-09-22. The rule it encodes is not
+ *   about Proxmox: Alchemy's state store is the same unencrypted store for every provider, so the
+ *   Cloudflare MCP server entry's `auth_credentials` needs exactly this shape. A second copy under
+ *   `cloudflare/` would be two seal formats for one rule; a cross-family import would make
+ *   Cloudflare depend on Proxmox. Neither; it lives on its own.
+ *
  * ⛔ A SECRET PROP IS A SECRET IN THE STATE STORE, WHATEVER TYPE IT HAS. Alchemy persists props as
  *   well as attributes — `delete` is handed `olds`, which can only have come from the store — and
  *   it does not encrypt either: `StateEncoding.ts` TAGS a `Redacted` value and writes the inner
