@@ -11,7 +11,8 @@
  *   so. The kit is the one repository where the source IS the dependency.
  *
  * ⛔ EDIT THIS FILE, NOT THE FILES IT RENDERS. `bun run repo-shape:refresh` rewrites
- *   .github/workflows/ci.yml, .github/workflows/security.yml, .github/dependabot.yml and
+ *   .github/workflows/ci.yml, .github/workflows/security.yml,
+ *   .github/workflows/dependabot-automerge.yml, .github/dependabot.yml and
  *   .changeset/config.json from here; `tests/repo-shape.test.ts` fails `bun run check`
  *   on a hand edit before the refresh ever gets a chance to revert it.
  */

@@ -16,6 +16,7 @@ import {
   except,
   exceptionSummary,
   refreshRepoShape,
+  renderRepoShape,
   repoShapeCli,
 } from '../src/repo-shape.ts';
 
@@ -25,6 +26,13 @@ const SHAPE: RepoShape = {
   repository: 'homeflare-proxmox',
   runner: 'mini',
 };
+
+/**
+ * ★ COUNTED FROM THE RENDER, NOT WRITTEN AS A NUMBER. These asserted a literal 5 until the
+ *   auto-merge workflow made it 6; a count that tracks the renderer is the one that says
+ *   "every rendered file" rather than "the files there were on the day this was written".
+ */
+const RENDERED = Object.keys(renderRepoShape(SHAPE).files).length;
 
 const made: string[] = [];
 
@@ -42,7 +50,7 @@ describe('an empty repository', () => {
   test('is reported as missing every rendered file, with the command to fix it', async () => {
     const dir = await scratch();
     const report = await driftInRepoShape(dir, SHAPE);
-    expect(report.problems).toHaveLength(5);
+    expect(report.problems).toHaveLength(RENDERED);
     expect(report.problems.every((problem) => problem.includes('bun run repo-shape:refresh'))).toBe(
       true,
     );
@@ -53,7 +61,7 @@ describe('refresh then check', () => {
   test('a refreshed repository has no drift', async () => {
     const dir = await scratch();
     const result = await refreshRepoShape(dir, SHAPE);
-    expect(result.written).toHaveLength(5);
+    expect(result.written).toHaveLength(RENDERED);
     expect((await driftInRepoShape(dir, SHAPE)).problems).toEqual([]);
   });
 
@@ -62,7 +70,7 @@ describe('refresh then check', () => {
     await refreshRepoShape(dir, SHAPE);
     const again = await refreshRepoShape(dir, SHAPE);
     expect(again.written).toEqual([]);
-    expect(again.unchanged).toHaveLength(5);
+    expect(again.unchanged).toHaveLength(RENDERED);
   });
 });
 

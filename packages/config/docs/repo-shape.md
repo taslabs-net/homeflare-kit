@@ -161,7 +161,7 @@ and every field of `RepoShape` with the measurement behind it, is in
 renderer changes — a new action version, a fixed permission — every repository that bumps
 `@homeflare/config` fails `bun run check` on the next run, because its committed files are
 now the _old_ render. That includes the Dependabot pull request that does the bumping,
-which cannot fix itself.
+which cannot fix itself ([repo-shape-dependabot.md](repo-shape-dependabot.md) says why).
 
 The fix is one command, and the failure names it. The rule that follows:
 
