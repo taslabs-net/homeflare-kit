@@ -116,21 +116,39 @@ that upstream wants it.
     fails with `BinaryRefused`, and the provider would fail with the tag union
     instead of `lift()`'s `Error`. `error-channel.test.ts` fails the moment
     either changes, so this page moves with it.
-11. **The tar reader accepts one measured layout.** Measured 2026-09-22 against
-    `extractMembers`: macOS's default `tar czf` (bsdtar 3.5.3) writes a PAX `x`
-    header before every entry (a sub-second `mtime` and the
-    `com.apple.provenance` xattr), so even a one-file archive is refused whole.
-    `--no-mac-metadata` still writes them; `--format ustar` passes. A wrapping
-    directory entry is refused whole. Go's `archive/tar` writing root-level
-    files passes. The house accepts this on purpose: the Victoria archives are
-    flat, and homeflare-builds writes plain ustar. ⚠️ REASONED NOT MEASURED:
-    the Prometheus family's archives (`alertmanager-0.34.1.darwin-arm64.tar.gz`)
-    wrap their files in a directory, so the queue in
-    release-binary-catalogs.md needs a reader change, not only a data set.
-    Generic replacement: skip directory entries, and links that are not the
-    declared member, because nothing is ever written from an entry name; read
-    PAX records and refuse only a `path`, `linkpath` or `size` record. The
-    member digest still guards the bytes.
+11. **The tar reader accepts two measured layouts: flat, and one declared
+    root.** Measured 2026-09-22 against `extractMembers`: macOS's default
+    `tar czf` (bsdtar 3.5.3) writes a PAX `x` header before every entry (a
+    sub-second `mtime` and the `com.apple.provenance` xattr), so even a
+    one-file archive is refused whole. `--no-mac-metadata` still writes them;
+    `--format ustar` passes. Go's `archive/tar` writing root-level files
+    passes. The house accepts this on purpose: the Victoria archives are flat,
+    and homeflare-builds writes plain ustar.
+    ★ **MEASURED 2026-09-23, no longer reasoned**: all four Prometheus-family
+    darwin-arm64 archives (`alertmanager-0.33.1.darwin-arm64.tar.gz` — the
+    estate pins **0.33.1**, not the 0.34.1 this page previously cited —
+    `blackbox_exporter-0.28.0`, `node_exporter-1.12.1`,
+    `postgres_exporter-0.20.1`) wrap every entry in exactly one directory
+    (typeflag `5`, size 0, first) and carry no PAX or GNU long-name entries
+    (release-binary-catalogs.md has the full table and commands). The house
+    chose the **narrow fix**, not the generic one below: `tarReader(wanted,
+root)` accepts exactly one entry named `<root>/`, requires every other
+    name to begin with that exact segment, and strips the prefix before a name
+    is matched, listed or checked for a duplicate — refusing a second
+    directory entry, a `<root>-evil/x` sibling (a segment match, not a string
+    prefix), anything outside the root, and a `<root>/` that is not an empty
+    directory. Without `root` the refusal is unchanged: a directory entry, the
+    wrapper included, is still refused whole.
+    ⚠️ **The generic replacement below is still the more upstreamable shape**
+    and was NOT what the house built here: skip directory entries, and links
+    that are not the declared member, because nothing is ever written from an
+    entry name; read PAX records and refuse only a `path`, `linkpath` or
+    `size` record. The member digest still guards the bytes either way. The
+    house's narrower `root` prop is easier to review (a vendor's wrapper name
+    is pinned, not inferred) but does not reach an archive with no declared
+    wrapper, or more than one PAX record kind, the way the generic reader
+    would; a PR to upstream would need to pick one, and a house-only
+    consumption doesn't have to.
 12. **One source, one tag alphabet, other prop names.** `releaseUrl` fixes
     `https://github.com`. Upstream's GitHub family also reaches GitHub
     Enterprise (`normalizeGitHubBaseUrl`, `GitHub/BaseUrl.ts`). A tag must be

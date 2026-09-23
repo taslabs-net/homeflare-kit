@@ -1,7 +1,7 @@
 # Release binaries — every refusal
 
 Status: active
-Verified: 2026-09-22
+Verified: 2026-09-23
 
 Everything `Release.Binary` refuses, by where it is refused. The guide is
 [release-binary.md](./release-binary.md). ★ One page per subject: the guide says
@@ -16,13 +16,15 @@ At plan (the probe and `diff`), before anything is touched: a pin that is
 missing or not a plain value (an Output pin would be a fetch; a first deploy
 is never diffed, so reconcile refuses it there, before any host call, from the
 props as declared); a repo that is not `owner/name`, or whose name is `.` or
-`..`; a tag, asset or name that is not one safe path segment; an asset that is
-not a `.tar.gz` or `.tgz` (a glob is not a name); a size that is not an
-integer from 1 byte to 1 GiB (it is allocated up front); a digest that is not
-64 lower-case hex; a member that is absolute or climbs. Also a relative or
-unnormalised directory; a mode that is setuid, setgid, sticky, group- or
-world-writable, or not owner-readable and owner-executable; an owner or group
-that is not a valid name or id; a new pin at the same path.
+`..`; a tag, asset, name or **root** that is not one safe path segment (`root`
+added 2026-09-23: refuses `''`, `'.'`, `'..'` and anything with a `/`, same as
+a tag or asset); an asset that is not a `.tar.gz` or `.tgz` (a glob is not a
+name); a size that is not an integer from 1 byte to 1 GiB (it is allocated up
+front); a digest that is not 64 lower-case hex; a member that is absolute or
+climbs. Also a relative or unnormalised directory; a mode that is setuid,
+setgid, sticky, group- or world-writable, or not owner-readable and
+owner-executable; an owner or group that is not a valid name or id; a new pin
+at the same path.
 
 ⚠️ **Not on a first deploy with `directory: dir.path`.** Alchemy neither
 probes nor diffs a create whose props hold an Output, so there every check
@@ -50,6 +52,18 @@ or contiguous file, is a GNU long-name or PAX header, is named twice, fails its
 header checksum, uses base-256, is neither ustar nor GNU, a lone zero block,
 data after the end, a truncated archive; the declared member missing; the
 member's SHA-256 not its pin. Every one of these ends `Nothing was written.`
+
+**With `archive.root` declared** (tar.ts, 2026-09-23 — the Prometheus family's
+own shape, walked down for this): a second entry named `<root>/`; any entry
+whose first path segment is not exactly `root` — `<root>-evil/x` is a
+different segment, not a prefix match, and is refused the same as a plain
+top-level file beside the wrapper; the `<root>/` entry itself being anything
+but an empty (size-0) directory, including a hard link or symlink at that
+exact name; and the declared root never appearing in the archive at all.
+Every other refusal above — PAX, GNU long-name, `..`, links, devices, a
+duplicate name — still applies to entries _inside_ the root, unchanged.
+**Without `root`,** a directory entry (the wrapper included) is refused
+exactly as it always was: byte-identical to a reader with no root support.
 
 After the write: a file that does not read back as declared (a create is
 removed). Errors are tagged (`BinaryRefused`, `DownloadFailed`,

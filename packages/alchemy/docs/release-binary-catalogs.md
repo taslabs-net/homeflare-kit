@@ -112,10 +112,46 @@ alertmanager, blackbox_exporter, node_exporter and postgres_exporter
 `darwin_arm64` to `darwin_all`), pyroscope and vector. `bao` (OpenBao) is
 walked — see `OPENBAO_RELEASES` above.
 
-⚠️ REASONED NOT MEASURED: the Prometheus-family archives wrap their files in a
-directory, and `tar.ts` refuses a directory entry (and any PAX header) for the
-whole archive. Walking those down includes a reader change, not only a data
-set ([release-binary-upstream.md](./release-binary-upstream.md), gap 11).
+### The Prometheus family's shape, MEASURED 2026-09-23
+
+★ **Now measured, not reasoned.** All four Prometheus-family darwin-arm64
+archives wrap every entry in one directory, so `tar.ts` refused each one
+whole — before this unit, on `entry "<root>/" is a directory`. Walking them
+down needed a reader change, not only a data set: `tarReader(wanted, root)`
+now strips exactly one DECLARED leading directory, pinned as `archive.root`
+(gap 11 below, and tar.ts's own header comment, carry the full detail).
+
+Read at `2026-09-23T14:33Z` with `gh api repos/<owner>/<repo>/releases/tags/<tag>`,
+then downloaded to a scratch directory (not executed) and re-hashed:
+
+| package (darwin-arm64)                           | asset                                          | size (B)   | `digest` matches  | wrapper directory (root)                |
+| ------------------------------------------------ | ---------------------------------------------- | ---------- | ----------------- | --------------------------------------- |
+| `prometheus/alertmanager` v0.33.1                | `alertmanager-0.33.1.darwin-arm64.tar.gz`      | 37,247,168 | yes (`a94fbe54…`) | `alertmanager-0.33.1.darwin-arm64`      |
+| `prometheus/blackbox_exporter` v0.28.0           | `blackbox_exporter-0.28.0.darwin-arm64.tar.gz` | 15,705,022 | yes (`ec6c70cc…`) | `blackbox_exporter-0.28.0.darwin-arm64` |
+| `prometheus/node_exporter` v1.12.1               | `node_exporter-1.12.1.darwin-arm64.tar.gz`     | 5,368,643  | yes (`35b246a3…`) | `node_exporter-1.12.1.darwin-arm64`     |
+| `prometheus-community/postgres_exporter` v0.20.1 | `postgres_exporter-0.20.1.darwin-arm64.tar.gz` | 10,072,235 | yes (`4dd2b9e7…`) | `postgres_exporter-0.20.1.darwin-arm64` |
+
+`tar -tvzf` on each downloaded archive (nothing extracted) showed: entry 1 is
+the wrapper (typeflag `5`, size 0, `runner`/`circleci` owned), then only
+root-level regular files under it — the exporter binary, `LICENSE`, `NOTICE`,
+and for alertmanager also `amtool` and `alertmanager.yml`. No PAX (`x`/`g`) or
+GNU long-name (`L`/`K`) entries in any of the four. Re-run afterward with the
+worktree's OWN `tarReader(wanted, root)` over the same downloaded bytes: every
+archive now parses to completion and returns the named member at its full
+pinned size (e.g. `alertmanager` → 47,058,626 bytes) — see
+`tar-root.test.ts` and `binary-root.test.ts` for the same proof as committed
+fixtures.
+
+⛔ **This unit adds the reader capability and its tests, not a new catalog
+entry.** No `PinnedArchive` for alertmanager, blackbox_exporter,
+node_exporter or postgres_exporter exists here yet — that is a follow-up data
+module (its own walk-down of the checksum format: `sha256sums.txt`, archives
+only, so member digests would be `computed` like OpenBao's) and its own PR.
+
+⚠️ **`vector` is NOT covered by this measurement or this reader change.**
+Vector's queue entry (above) has its own archive shape, unmeasured here; do
+not assume it also wraps in a single directory without walking it down
+separately.
 
 ## What this resource is not for
 

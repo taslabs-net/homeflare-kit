@@ -15,10 +15,25 @@
  *   non-zero bytes after the end marker; an archive that stops before it.
  * ★ GNU LONG NAMES ('L', 'K') AND PAX HEADERS ('x', 'g') ARE REFUSED, NOT INTERPRETED. Each renames
  *   the entry after it: a reader that honours them must get them exactly right to match exactly,
- *   and one that skips them matches under the wrong name. The four pinned archives use neither
- *   (measured 2026-09-22 with `tar -tvzf` on each: every entry a root-level regular file with a
- *   short name), so refusing costs nothing today, and a vendor format change becomes a refusal that
- *   says what changed instead of a silent mis-read.
+ *   and one that skips them matches under the wrong name. Refusing costs nothing for an archive
+ *   that carries neither, and a vendor format change becomes a refusal that says what changed
+ *   instead of a silent mis-read.
+ * ★ AN OPTIONAL `root`: ONE DECLARED LEADING DIRECTORY, STRIPPED, NEVER GUESSED. Measured
+ *   2026-09-23: `gh api repos/<o>/<r>/releases/tags/<tag>` for each asset URL and digest, the
+ *   archive downloaded into a scratch directory (never executed), re-hashed against GitHub's
+ *   `digest`, then read by THIS reader (a driver script importing `tarReader`) both before and
+ *   after this change — refused whole either way without `root`, and, with it, parsed to
+ *   completion: `alertmanager-0.33.1.darwin-arm64.tar.gz` (37,247,168 B),
+ *   `blackbox_exporter-0.28.0.darwin-arm64.tar.gz` (15,705,022 B),
+ *   `node_exporter-1.12.1.darwin-arm64.tar.gz` (5,368,643 B) and
+ *   `postgres_exporter-0.20.1.darwin-arm64.tar.gz` (10,072,235 B) each recompute to GitHub's own
+ *   `digest`, and each wraps every entry in exactly one directory (typeflag '5', size 0, first)
+ *   named `<binary>-<version>.darwin-arm64/`, holding only root-level regular files (the binary,
+ *   `LICENSE`, `NOTICE`, and for alertmanager also `amtool` and `alertmanager.yml`) — no PAX or
+ *   GNU long-name entries, so this reader's refusal of both stays exactly as costly as before.
+ *   Without `root`, EVERY refusal above still holds byte-for-byte: a directory entry — the wrapper
+ *   included — is refused the same way it always was (docs/release-binary-catalogs.md,
+ *   docs/release-binary-upstream.md gap 11).
  */
 import { ArchiveRefused } from './refused.ts';
 
@@ -101,8 +116,15 @@ export type TarContents = {
   readonly names: readonly string[];
 };
 
-/** A push parser: `push` each chunk of the unzipped stream, then `finish`. Either may throw. */
-export const tarReader = (wanted: ReadonlySet<string>) => {
+/**
+ * A push parser: `push` each chunk of the unzipped stream, then `finish`. Either may throw.
+ *
+ * @param root When given, exactly one typeflag-'5' entry named `<root>/`, size 0, is accepted and
+ *   dropped rather than refused as a directory; every OTHER entry name must begin with the SEGMENT
+ *   `<root>/` (a `<root>-evil/x` sibling does not) and is reported, matched and kept under that
+ *   prefix stripped off. Omitted, behaviour is byte-identical to a reader with no root at all.
+ */
+export const tarReader = (wanted: ReadonlySet<string>, root?: string) => {
   const header = new Uint8Array(BLOCK);
   const members = new Map<string, Uint8Array>();
   const names: string[] = [];
@@ -114,6 +136,8 @@ export const tarReader = (wanted: ReadonlySet<string>) => {
   let zeros = 0;
   let name = '';
   let parts: Uint8Array[] | undefined;
+  let rootSeen = false;
+  const rootPrefix = root === undefined ? undefined : `${root}/`;
 
   const endEntry = () => {
     if (parts !== undefined) members.set(name, concatBytes(parts));
@@ -134,18 +158,45 @@ export const tarReader = (wanted: ReadonlySet<string>) => {
     if (!posix && magic !== 'ustar  \u0000')
       throw refuse('an entry header is neither ustar nor GNU');
     const prefix = posix ? text(header, 345, 155) : '';
-    name = prefix === '' ? text(header, 0, 100) : `${prefix}/${text(header, 0, 100)}`;
-    const problem = nameProblem(name);
-    if (problem !== undefined) throw refuse(`entry ${JSON.stringify(name)} ${problem}`);
+    const rawName = prefix === '' ? text(header, 0, 100) : `${prefix}/${text(header, 0, 100)}`;
+    const problem = nameProblem(rawName);
+    if (problem !== undefined) throw refuse(`entry ${JSON.stringify(rawName)} ${problem}`);
+    // ★ THE DECLARED ROOT IS RECOGNISED BEFORE THE GENERAL TYPE CHECK, and only by exact name: a
+    //   directory entry under any other name — nested, or a second copy of the root itself — still
+    //   falls through to that check below and is refused as a directory, same as with no root.
+    if (rootPrefix !== undefined && rawName === rootPrefix) {
+      if (rootSeen) {
+        throw refuse(
+          `entry "${rawName}" is a second directory entry; only the declared root is accepted`,
+        );
+      }
+      const type = String.fromCharCode(header[156] ?? 0);
+      const size = octal(header, 124, 12, `entry "${rawName}"'s size`);
+      if (type !== '5' || size !== 0) {
+        throw refuse(`entry "${rawName}" is the declared root but is not an empty directory`);
+      }
+      rootSeen = true;
+      phase = 'header';
+      return;
+    }
+    let stripped = rawName;
+    if (rootPrefix !== undefined) {
+      if (!rawName.startsWith(rootPrefix)) {
+        throw refuse(`entry "${rawName}" is outside the declared root "${rootPrefix}"`);
+      }
+      stripped = rawName.slice(rootPrefix.length);
+      if (stripped === '') throw refuse(`entry "${rawName}" has an empty name under the root`);
+    }
+    name = stripped;
     const type = String.fromCharCode(header[156] ?? 0);
     if (type !== '0' && type !== '\0') {
       const kind = KINDS[type] ?? `of unknown type ${JSON.stringify(type)}`;
-      throw refuse(`entry "${name}" is ${kind}; only regular files are accepted`);
+      throw refuse(`entry "${rawName}" is ${kind}; only regular files are accepted`);
     }
-    if (seen.has(name)) throw refuse(`entry "${name}" appears twice`);
+    if (seen.has(name)) throw refuse(`entry "${rawName}" appears twice`);
     seen.add(name);
     names.push(name);
-    remaining = octal(header, 124, 12, `entry "${name}"'s size`);
+    remaining = octal(header, 124, 12, `entry "${rawName}"'s size`);
     padding = (BLOCK - (remaining % BLOCK)) % BLOCK;
     parts = wanted.has(name) ? [] : undefined;
     phase = 'data';
@@ -188,6 +239,9 @@ export const tarReader = (wanted: ReadonlySet<string>) => {
 
   const finish = (): TarContents => {
     if (phase !== 'end') throw refuse('the archive stops before its end-of-archive marker');
+    if (rootPrefix !== undefined && !rootSeen) {
+      throw refuse(`the declared root "${rootPrefix}" never appears in the archive`);
+    }
     return { members, names };
   };
 
