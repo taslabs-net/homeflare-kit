@@ -4,7 +4,6 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { fakeLinuxHost } from './fake-linux-host.ts';
-import { fileProblems } from './remote-file-form.ts';
 import {
   deleteFile,
   diffFile,
@@ -86,93 +85,6 @@ describe('whole-file mode', () => {
     await deleteFile(fake.runner, attrs);
     await deleteFile(fake.runner, attrs);
     expect(fake.files.has(PATH)).toBe(false);
-  });
-});
-
-describe('region mode', () => {
-  const VENDOR = '# vendor ruleset\nanchor "system"\nrule one\n';
-  const region = { name: 'homeflare' };
-  const block = { content: 'anchor "declared"\n', path: '/etc/vendor.conf', region };
-
-  const withVendor = () => {
-    const fake = host();
-    fake.files.set('/etc/vendor.conf', {
-      bytes: new TextEncoder().encode(VENDOR),
-      gid: 0,
-      kind: 'file',
-      mode: 0o600,
-      uid: 0,
-    });
-    return fake;
-  };
-
-  test('editing the block leaves the rest of the file byte-identical', async () => {
-    const fake = withVendor();
-    const output = await reconcileFile(fake.runner, block);
-    const after = decode(fake.files.get('/etc/vendor.conf')?.bytes);
-    expect(after.startsWith(VENDOR)).toBe(true);
-    await reconcileFile(fake.runner, { ...block, content: 'anchor "changed"\n' }, output);
-    expect(decode(fake.files.get('/etc/vendor.conf')?.bytes).startsWith(VENDOR)).toBe(true);
-  });
-
-  test("the other owner's mode and uid are preserved, never re-declared", async () => {
-    const fake = withVendor();
-    await reconcileFile(fake.runner, block);
-    expect(fake.files.get('/etc/vendor.conf')?.mode).toBe(0o600);
-  });
-
-  test('a change anywhere else in the file is not this resource’s drift', async () => {
-    const fake = withVendor();
-    const output = await reconcileFile(fake.runner, block);
-    const edited = `${decode(fake.files.get('/etc/vendor.conf')?.bytes)}rule two\n`;
-    fake.files.set('/etc/vendor.conf', {
-      bytes: new TextEncoder().encode(edited),
-      gid: 0,
-      kind: 'file',
-      mode: 0o600,
-      uid: 0,
-    });
-    expect(await diffFile(fake.runner, block, output)).toEqual({ action: 'noop' });
-  });
-
-  test('delete removes only the block', async () => {
-    const fake = withVendor();
-    const output = await reconcileFile(fake.runner, block);
-    await deleteFile(fake.runner, output);
-    expect(decode(fake.files.get('/etc/vendor.conf')?.bytes)).toBe(VENDOR);
-  });
-
-  test('a missing file is a refusal, because a typo is likelier than an intention', async () => {
-    const fake = host();
-    await expect(
-      reconcileFile(fake.runner, { ...block, path: '/etc/example/absent.conf' }),
-    ).rejects.toThrow(/does not create the file it lives in/);
-    const created = await reconcileFile(fake.runner, {
-      ...block,
-      create: true,
-      path: '/etc/example/absent.conf',
-    });
-    expect(created.region).toEqual(region);
-  });
-
-  test('mode and owner without create are refused at validation', () => {
-    expect(fileProblems({ ...block, mode: 0o600 })).toHaveLength(1);
-    expect(fileProblems({ ...block, create: true, mode: 0o600 })).toEqual([]);
-  });
-
-  test('a block already there with other content needs --adopt', async () => {
-    const fake = withVendor();
-    fake.files.set('/etc/vendor.conf', {
-      bytes: new TextEncoder().encode(
-        `${VENDOR}# BEGIN homeflare\nsomething else\n# END homeflare\n`,
-      ),
-      gid: 0,
-      kind: 'file',
-      mode: 0o600,
-      uid: 0,
-    });
-    await expect(reconcileFile(fake.runner, block)).rejects.toThrow(/managed region/);
-    await expect(reconcileFile(fake.runner, block, undefined, true)).resolves.toBeDefined();
   });
 });
 

@@ -34,6 +34,21 @@ const tokens = (spec: RegionSpec) => {
   };
 };
 
+/**
+ * Whether two declarations name the SAME block.
+ *
+ * ⛔ THE COMMENT TOKEN IS PART OF THE IDENTITY, not a formatting preference. The markers are
+ *   matched as literal whole lines, so `# BEGIN pf` and `// BEGIN pf` are two different blocks:
+ *   changing the token leaves the old block invisible to every later read, exactly as renaming
+ *   does. A resource that treated either as a mere content change would splice a second block in
+ *   and never be able to find the first one again.
+ * ★ Whole-file mode is its own identity: `undefined` equals only `undefined`.
+ */
+export const sameRegion = (a: RegionSpec | undefined, b: RegionSpec | undefined): boolean =>
+  a === undefined || b === undefined
+    ? a === undefined && b === undefined
+    : a.name === b.name && (a.comment ?? DEFAULT_COMMENT) === (b.comment ?? DEFAULT_COMMENT);
+
 export const regionProblems = (spec: RegionSpec): string[] => {
   const found: string[] = [];
   const comment = spec.comment ?? DEFAULT_COMMENT;

@@ -28,6 +28,7 @@ import {
   planWrite,
   readFileAttributes,
   refuse,
+  relocation,
 } from './remote-file-plan.ts';
 
 export { readFileAttributes } from './remote-file-plan.ts';
@@ -42,7 +43,8 @@ export const diffFile = async (
   output: RemoteFileAttributes,
 ): Promise<Diff> => {
   const want = await identity(runner, news);
-  if (news.path !== output.path) {
+  // ⛔ A mode flip throws HERE, at plan time, before anything is written (remote-file-plan.ts).
+  if (relocation(news, output) === 'path') {
     // ★ Create-before-delete: two paths hold two files at once, so nothing forces deleteFirst.
     await runner.checkWrite?.(news.path, { mode: news.mode ?? DEFAULT_MODE, ...want });
     return { action: 'replace' };
@@ -80,8 +82,13 @@ export const reconcileFile = async (
         'a root destination or a privileged HostRunner. This provider never calls sudo itself.',
     );
   }
-  const moved = output !== undefined && output.path !== props.path;
-  const prior = moved ? undefined : output;
+  /**
+   * ⛔ WHAT WE OWNED LAST TIME MAY NOT BE WHAT WE OWN NOW. A new path, or a new region name or
+   *   comment token, means the old block or file is still out there and must be taken back — and
+   *   a flip between the two modes is refused outright (remote-file-plan.ts relocation).
+   */
+  const move = output === undefined ? 'none' : relocation(props, output);
+  const prior = move === 'none' ? output : undefined;
   const planned = await planWrite(runner, props, want);
   const live = ownedDigest(planned.before, props.region);
   const declared = digestOf(props.content);
@@ -127,10 +134,21 @@ export const reconcileFile = async (
       'the write returned but the file on disk does not match the declaration',
     );
   }
-  // ★ Create-before-delete, as the replace would have been: the old path goes once the new one is
-  //   written and verified.
-  if (moved && output !== undefined) await deleteFile(runner, output);
-  return after;
+  // ★ Create-before-delete, as the replace would have been: the old path — or, for a rename inside
+  //   one file, the old block — goes once the new one is written and verified.
+  if (move === 'none' || output === undefined) return after;
+  await deleteFile(runner, output);
+  if (move === 'path') return after;
+  /**
+   * ⛔ A REGION RENAME TOOK THE OLD BLOCK OUT OF THIS SAME FILE, so `after` — read before that
+   *   removal — describes bytes that no longer exist. Storing it would make the whole-file digest
+   *   wrong from the moment it was written and every later plan would read it as drift.
+   */
+  const settled = await readFileAttributes(runner, props.path, props.region);
+  if (settled === undefined || settled.contentSha256 !== declared) {
+    throw refuse(props.path, 'removing the previous managed block did not leave ours intact');
+  }
+  return settled;
 };
 
 /**

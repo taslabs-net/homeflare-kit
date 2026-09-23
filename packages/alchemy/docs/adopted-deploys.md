@@ -54,6 +54,9 @@ API token on the cluster, just as it does for `alchemy plan`.
 | `Pbs.Datastore`                | `config/datastore/{name}`                                       | read (PBS)  | own: GET, path/backend guards, PUT skipped on `matches`, settle GET — no write                       |
 | `Proxmox.SdnApply`             | 5 × `cluster/sdn/*?pending=1` + fabrics `?pending` / `?running` | read        | own: counts staged objects; zero returns at once — **no `PUT /cluster/sdn`**                         |
 | `Proxmox.CephPool` ⁴           | `nodes/{node}/ceph/pool/{name}/status?verbose=1`                | read        | own: GET, **PUT skipped on `matches` (was: always `PUT nodes/{node}/ceph/pool/{name}`)**, settle GET |
+| `Proxmox.CephDaemon` ⁶         | `nodes/{node}/ceph/{mon,mgr,mds}` (whole list, by `name`)       | read        | shared path, and no `updateForm`: GET, GET — no write                                                |
+| `Proxmox.CephFs` ⁶             | `nodes/{node}/ceph/fs` (whole list, by `name`)                  | read        | own: GET, present so returned untouched — no write                                                   |
+| `Proxmox.CephOsd` ⁶            | `nodes/{node}/ceph/osd` (the CRUSH tree)                        | read        | own: GET, host/class asserted; POSTs only with `dev` declared — no write                             |
 
 ¹ These object reads are gated on an allocate privilege, so the family reads with the provision
 lease (`readRole`, resource.ts). That is still a read.
@@ -73,6 +76,13 @@ compares a seal kept in the previous state ([pbs-notifications.md](./pbs-notific
 adopted target has no seal, so its secret values are presence-only and adoption writes nothing.
 Pinned by `src/proxmox/pbs-notification-target-state.test.ts`.
 
+⁶ Exported from the barrel 2026-09-22. None has a PUT, and CephDaemon and CephFs compare nothing,
+so a present object is `noop` and can never plan a replace. All three retain on destroy: removing
+the declaration plans `orphaned` and sends no DELETE. `Proxmox.CephFlag` stays Provider-only (a
+declared flag reasserts a maintenance toggle on every deploy). Pinned by
+`src/proxmox/ceph-adopt.test.ts`, whose mutation check (retain flipped to destroy) shows nine
+DELETEs, one per mon, mgr and mds.
+
 ## Before the fix: `Proxmox.CephPool`
 
 `reconcile` read the pool and, whenever it existed, PUT the declared `size`, `min_size`,
@@ -90,6 +100,9 @@ list shows six such tasks (2026-09-13 and 2026-09-20), one per declared pool per
 - `src/proxmox/adopt-noop.test.ts` does the same for each reconcile shape: the shared path
   (`Proxmox.Pool`), the wrapper (`Proxmox.Acl`), and the two hand-written ones (`Pbs.Datastore`,
   `Proxmox.SdnApply`). A drifted Pool row proves the harness sees a write when there is one.
+- `src/proxmox/ceph-adopt.test.ts` adopts a reference cluster's nine daemons, one CephFS and six
+  OSDs (GETs only), undeclares all sixteen (no DELETE), and refuses an OSD on the wrong host
+  without a write.
 - `src/verify/verify.test.ts` pins Alchemy's own behaviour: `adopted` for a match and for a
   drift, and a reconcile for both. If an Alchemy upgrade changes that, the test fails and this
   page needs re-reading.
