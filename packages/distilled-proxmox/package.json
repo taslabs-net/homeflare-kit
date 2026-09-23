@@ -1,0 +1,91 @@
+{
+  "name": "@homeflare/distilled-proxmox",
+  "version": "0.1.0",
+  "description": "Interim npm home for @distilled.cloud/proxmox — see docs/distilled-interim.md. Not published upstream yet; the kit aliases @distilled.cloud/proxmox onto this package until it is.",
+  "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/distilled-proxmox#readme",
+  "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
+  "license": "Apache-2.0",
+  "author": "Timothy Schneider",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taslabs-net/homeflare-kit.git",
+    "directory": "packages/distilled-proxmox"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "bun": "./src/index.ts",
+      "worker": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./Credentials": {
+      "types": "./dist/credentials.d.ts",
+      "bun": "./src/credentials.ts",
+      "worker": "./src/credentials.ts",
+      "default": "./dist/credentials.js"
+    },
+    "./Errors": {
+      "types": "./dist/errors.d.ts",
+      "bun": "./src/errors.ts",
+      "worker": "./src/errors.ts",
+      "default": "./dist/errors.js"
+    },
+    "./Traits": {
+      "types": "./dist/traits.d.ts",
+      "bun": "./src/traits.ts",
+      "worker": "./src/traits.ts",
+      "default": "./dist/traits.js"
+    },
+    "./Protocol": {
+      "types": "./dist/protocol.d.ts",
+      "bun": "./src/protocol.ts",
+      "worker": "./src/protocol.ts",
+      "default": "./dist/protocol.js"
+    },
+    "./Task": {
+      "types": "./dist/task.d.ts",
+      "bun": "./src/task.ts",
+      "worker": "./src/task.ts",
+      "default": "./dist/task.js"
+    },
+    "./Retry": {
+      "types": "./dist/retry.d.ts",
+      "bun": "./src/retry.ts",
+      "worker": "./src/retry.ts",
+      "default": "./dist/retry.js"
+    },
+    "./*": {
+      "types": "./dist/services/*.d.ts",
+      "bun": "./src/services/*.ts",
+      "worker": "./src/services/*.ts",
+      "default": "./dist/services/*.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "types": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "smoke": "bun run scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@distilled.cloud/core": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:"
+  },
+  "peerDependencies": {
+    "effect": "4.0.0-rc.115"
+  }
+}
