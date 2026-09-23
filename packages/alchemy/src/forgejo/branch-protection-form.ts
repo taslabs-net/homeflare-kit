@@ -1,12 +1,13 @@
 /**
- * Create/PATCH bodies for `Forgejo.BranchProtection` — extracted for the 250-line cap.
+ * Create/edit request bodies for `Forgejo.BranchProtection` — extracted for the 250-line cap.
  *
- * ★ READ OFF `<estate>/mcp-servers/docs/api/upstream/forgejo.json` — create posts
- *   `CreateBranchProtectionOption`; update sends `EditBranchProtectionOption` fields only.
+ * ★ `repoCreateBranchProtection`'s request carries `branch_name`; `repoEditBranchProtection`'s
+ *   carries `name` (the rule-name path segment) instead — both are covered by the two exports
+ *   below, so branch-protection.ts never builds the field list twice.
  */
 import type { BranchProtectionProps } from './branch-protection.ts';
 
-export const branchProtectionForm = (props: BranchProtectionProps) => ({
+const shared = (props: BranchProtectionProps) => ({
   ...(props.applyToAdmins === undefined ? {} : { apply_to_admins: props.applyToAdmins }),
   ...(props.dismissStaleApprovals === undefined
     ? {}
@@ -25,5 +26,11 @@ export const branchProtectionForm = (props: BranchProtectionProps) => ({
   ...(props.statusCheckContexts === undefined
     ? {}
     : { status_check_contexts: props.statusCheckContexts }),
-  rule_name: props.branchName,
 });
+
+export const createBranchProtectionForm = (props: BranchProtectionProps) => ({
+  ...shared(props),
+  branch_name: props.branchName,
+});
+
+export const editBranchProtectionForm = (props: BranchProtectionProps) => shared(props);

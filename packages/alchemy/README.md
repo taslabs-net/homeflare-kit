@@ -5,7 +5,8 @@ Custom [Alchemy](https://alchemy.run) providers for gaps the vendor SDK leaves.
 ```sh
 bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
         @effect/platform-node@4.0.0-rc.115 mime@4.1.0 \
-        @distilled.cloud/cloudflare@1.0.0-rc.12 @effect/sql-pg@4.0.0-rc.115
+        @distilled.cloud/cloudflare@1.0.0-rc.12 @distilled.cloud/forgejo@1.0.0-rc.12 \
+        @effect/sql-pg@4.0.0-rc.115
 ```
 
 ⛔ **Every one of those is required, and you also need an `overrides` block** — see

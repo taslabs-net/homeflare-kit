@@ -7,7 +7,8 @@ The install line for `@homeflare/alchemy`, and why every peer on it and every en
 ```sh
 bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
         @effect/platform-node@4.0.0-rc.115 mime@4.1.0 \
-        @distilled.cloud/cloudflare@1.0.0-rc.12 @effect/sql-pg@4.0.0-rc.115
+        @distilled.cloud/cloudflare@1.0.0-rc.12 @distilled.cloud/forgejo@1.0.0-rc.12 \
+        @effect/sql-pg@4.0.0-rc.115
 ```
 
 🔴 **Why, measured 2026-09-16 on 0.1.0 and re-checked 2026-09-17 against Alchemy 78.**
@@ -39,6 +40,12 @@ the subpath did not load at all: `Cannot find package 'cloudflare'`) until 2026-
 `R2BucketLock` moved off the `cloudflare` npm SDK onto `@distilled.cloud/cloudflare/r2`, the same
 one `MeshNode` already called. Nothing else in this package imported it, so the peer — and the
 `client.ts` wrapper it existed for — were dropped rather than left declared and unused.
+
+⚠️ **`@distilled.cloud/forgejo` (added 2026-09-23, moving `/forgejo` off a hand-rolled
+`HttpClient` client) is required for the same reason `@distilled.cloud/cloudflare` is: it is
+a plain dependency of this package, not something a hoisting installer can hide from a strict
+one.** Pinned to `1.0.0-rc.12` — the distilled release's own lockstep version, not alchemy's,
+since alchemy does not bundle a Forgejo SDK the way it bundles Cloudflare's.
 
 ⚠️ **`@effect/sql-pg` (added for `/postgres`, 2026-09-23) is required too, for the same
 reason, not because every subpath imports it.** This package has one flat peer set for the

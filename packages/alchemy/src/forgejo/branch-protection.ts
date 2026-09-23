@@ -2,8 +2,13 @@
  * `Forgejo.BranchProtection` — one rule at `/repos/{owner}/{repo}/branch_protections/{name}`.
  *
  * ★ READ OFF `<estate>/mcp-servers/docs/api/upstream/forgejo.json`: create is POST collection;
- *   read/update/delete use the branch/rule name in the path segment `{name}`. Response carries
- *   `rule_name` (preferred) and deprecated `branch_name`.
+ *   read/update/delete use the branch/rule name in the path segment `{name}`. Now through
+ *   `@distilled.cloud/forgejo`'s `repository.repoCreateBranchProtection` /
+ *   `repoGetBranchProtection` / `repoEditBranchProtection` / `repoDeleteBranchProtection`.
+ *
+ * ⚠️ `BranchProtection.rule_name` IS A REQUIRED STRING IN THE PACKAGE'S SCHEMA — the deprecated
+ *   `branch_name` fallback the hand-rolled client carried is gone; a response missing `rule_name`
+ *   now fails the operation's own decode instead of this family silently treating it as absent.
  *
  * ⛔ `defaultRemovalPolicy: 'retain'` — dropping a protection rule from the stack must not silently
  *   unprotect a branch; opt into `.pipe(RemovalPolicy.destroy())` to DELETE.
@@ -12,10 +17,11 @@
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
+import * as repository from '@distilled.cloud/forgejo/repository';
 import * as Effect from 'effect/Effect';
-import { branchProtectionForm } from './branch-protection-form.ts';
-import { type ForgejoRequirements, forgejoHandlers } from './resource.ts';
-import { bool, int, stringArray, text } from './values.ts';
+import { createBranchProtectionForm, editBranchProtectionForm } from './branch-protection-form.ts';
+import { type ForgejoRequirements, type ForgejoSpec, forgejoHandlers } from './resource.ts';
+import { stringArray } from './values.ts';
 
 export interface BranchProtectionProps {
   owner: string;
@@ -59,26 +65,45 @@ export const ForgejoBranchProtection = Resource<ForgejoBranchProtection>(
   { defaultRemovalPolicy: 'retain' },
 );
 
-const handlers = forgejoHandlers<BranchProtectionProps, BranchProtectionAttributes>({
-  attributes: (live, props) => {
-    const ruleName = text(live['rule_name'], text(live['branch_name']));
-    if (ruleName === '') return undefined;
-    return {
-      applyToAdmins: bool(live['apply_to_admins']),
-      branchName: props.branchName,
-      dismissStaleApprovals: bool(live['dismiss_stale_approvals']),
-      enablePush: bool(live['enable_push'], true),
-      enableStatusCheck: bool(live['enable_status_check']),
-      ignoreStaleApprovals: bool(live['ignore_stale_approvals']),
+/** ★ EXPORTED for direct testing with an explicit fake `Credentials` layer — see repository.ts. */
+export const spec: ForgejoSpec<
+  BranchProtectionProps,
+  repository.BranchProtection,
+  BranchProtectionAttributes,
+  | repository.RepoCreateBranchProtectionError
+  | repository.RepoGetBranchProtectionError
+  | repository.RepoEditBranchProtectionError
+  | repository.RepoDeleteBranchProtectionError
+> = {
+  attributes: (live, props) => ({
+    applyToAdmins: live.apply_to_admins ?? false,
+    branchName: props.branchName,
+    dismissStaleApprovals: live.dismiss_stale_approvals ?? false,
+    enablePush: live.enable_push ?? true,
+    enableStatusCheck: live.enable_status_check ?? false,
+    ignoreStaleApprovals: live.ignore_stale_approvals ?? false,
+    owner: props.owner,
+    repo: props.repo,
+    requireSignedCommits: live.require_signed_commits ?? false,
+    requiredApprovals: live.required_approvals ?? 0,
+    statusCheckContexts: stringArray(live.status_check_contexts ?? []),
+  }),
+  create: (props) =>
+    repository.repoCreateBranchProtection({
       owner: props.owner,
       repo: props.repo,
-      requireSignedCommits: bool(live['require_signed_commits']),
-      requiredApprovals: int(live['required_approvals']),
-      statusCheckContexts: stringArray(live['status_check_contexts']),
-    };
-  },
-  collection: (props) => `repos/${props.owner}/${props.repo}/branch_protections`,
-  createForm: branchProtectionForm,
+      ...createBranchProtectionForm(props),
+    }),
+  destroy: (props) =>
+    repository.repoDeleteBranchProtection({
+      owner: props.owner,
+      repo: props.repo,
+      name: props.branchName,
+    }),
+  fetchLive: (props) =>
+    repository
+      .repoGetBranchProtection({ owner: props.owner, repo: props.repo, name: props.branchName })
+      .pipe(Effect.catchTag('NotFound', () => Effect.succeed(undefined))),
   matches: (attributes, props) =>
     attributes.requiredApprovals === (props.requiredApprovals ?? 0) &&
     attributes.enablePush === (props.enablePush ?? true) &&
@@ -90,9 +115,16 @@ const handlers = forgejoHandlers<BranchProtectionProps, BranchProtectionAttribut
     (props.statusCheckContexts === undefined ||
       stringArray(props.statusCheckContexts).join('\0') ===
         attributes.statusCheckContexts.join('\0')),
-  path: (props) => `repos/${props.owner}/${props.repo}/branch_protections/${props.branchName}`,
-  updateForm: branchProtectionForm,
-});
+  update: (props) =>
+    repository.repoEditBranchProtection({
+      owner: props.owner,
+      repo: props.repo,
+      name: props.branchName,
+      ...editBranchProtectionForm(props),
+    }),
+};
+
+export const handlers = forgejoHandlers(spec);
 
 export const ForgejoBranchProtectionProvider = () =>
   Provider.effect(

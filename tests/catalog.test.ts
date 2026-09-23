@@ -48,12 +48,19 @@ const PACKAGES: readonly string[] = await Array.fromAsync(
  * - `@distilled.cloud/cloudflare` is pinned to the exact version alchemy itself pins (a plain
  *   dependency there), so MeshNode shares alchemy's copy of the SDK rather than a second one.
  *   packages/alchemy/tests/peers.test.ts asserts the two stay equal.
+ * - `@distilled.cloud/forgejo` (2026-09-23) is pinned exactly for the same rc-line reason as
+ *   `effect` — every `@distilled.cloud/*` package in a lockstep release depends on
+ *   `@distilled.cloud/core` at one exact version, so two consumers resolving two different
+ *   `forgejo` rcs would each drag in a different `core` too. Unlike `cloudflare`, it is not
+ *   alchemy's own dependency (alchemy bundles no Forgejo SDK), so there is no cross-check
+ *   against `node_modules/alchemy/package.json` for it.
  * - `@effect/sql-pg` is the same Effect-rc case as `effect` itself: alchemy's own peer is
  *   `>=4.0.0-rc.115`, and the estate runs one aligned rc across the whole workspace (S37).
  */
 const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
   alchemy: [
     '@distilled.cloud/cloudflare',
+    '@distilled.cloud/forgejo',
     '@effect/platform-node',
     '@effect/sql-pg',
     'alchemy',

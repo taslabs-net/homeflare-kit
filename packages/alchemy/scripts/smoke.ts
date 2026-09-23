@@ -17,7 +17,10 @@
  *        declares it; the peer stays so a 78-era install line still works.
  *   `/cloudflare` imports `@distilled.cloud/cloudflare` (R2BucketLock and MeshNode both, since
  *   2026-09-23). It is alchemy's own dependency, so a hoisting installer hides a missing peer
- *   and a strict one (pnpm) does not; the install below names it, as the README does.
+ *   and a strict one (pnpm) does not; the install below names it, as the README does. `/forgejo`
+ *   (2026-09-23, moved off a hand-rolled `HttpClient` client) imports `@distilled.cloud/forgejo`
+ *   the same way, but it is NOT alchemy's own dependency — nothing hides a missing peer for it
+ *   either way, and the install below still names it, matching the README.
  *   ⛔ None of them failed at INSTALL. All three threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
@@ -81,6 +84,7 @@ try {
       '@effect/platform-node@4.0.0-rc.115',
       'mime@4.1.0',
       '@distilled.cloud/cloudflare@1.0.0-rc.12',
+      '@distilled.cloud/forgejo@1.0.0-rc.12',
       '@effect/sql-pg@4.0.0-rc.115',
     ],
     scratch,
