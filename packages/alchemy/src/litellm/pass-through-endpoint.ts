@@ -198,6 +198,11 @@ export const passThroughHandlers = {
         //   so ANY conflict here fails rather than risking a second row on one path.
         if (conflict !== undefined) return yield* Effect.fail(conflictRefusal(conflict, news.path));
         yield* createPassThroughEndpoint(createBody(news, objectId));
+      } else if (mine.is_from_config === true) {
+        // ⛔ NEVER UPDATE OR DELETE AN `is_from_config` ROW, even one this resource's own
+        //   deterministic id happens to match (a config.yaml author could in principle choose the
+        //   same id `createPhysicalName` would). Refuse rather than silently editing the file's row.
+        return yield* Effect.fail(new LitellmConfigPathConflictError({ path: news.path }));
       } else if (needsReplace(toAttributes(mine, objectId), news)) {
         yield* deletePassThroughEndpoint(objectId);
         yield* createPassThroughEndpoint(createBody(news, objectId));
