@@ -105,6 +105,7 @@
   "devDependencies": {
     "@distilled.cloud/cloudflare": "1.0.0-rc.12",
     "@distilled.cloud/forgejo": "1.0.0-rc.12",
+    "@distilled.cloud/proxmox": "link:@distilled.cloud/proxmox",
     "@effect/platform-bun": "4.0.0-rc.115",
     "@effect/platform-node": "4.0.0-rc.115",
     "@effect/sql-pg": "4.0.0-rc.115",
