@@ -18,7 +18,7 @@
     },
     "packages/alchemy": {
       "name": "@homeflare/alchemy",
-      "version": "0.27.1",
+      "version": "0.27.2",
       "bin": {
         "hf-adopt-verify": "./dist/verify/cli.js",
       },
@@ -74,6 +74,19 @@
     },
     "packages/distilled-netbox": {
       "name": "@homeflare/distilled-netbox",
+      "version": "0.2.0",
+      "dependencies": {
+        "@distilled.cloud/core": "1.0.0-rc.12",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
+    },
+    "packages/distilled-paperless-ngx": {
+      "name": "@homeflare/distilled-paperless-ngx",
       "version": "0.1.0",
       "dependencies": {
         "@distilled.cloud/core": "1.0.0-rc.12",
@@ -87,7 +100,7 @@
     },
     "packages/distilled-proxmox": {
       "name": "@homeflare/distilled-proxmox",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@distilled.cloud/core": "1.0.0-rc.12",
       },
@@ -392,6 +405,8 @@
     "@homeflare/config": ["@homeflare/config@workspace:packages/config"],
 
     "@homeflare/distilled-netbox": ["@homeflare/distilled-netbox@workspace:packages/distilled-netbox"],
+
+    "@homeflare/distilled-paperless-ngx": ["@homeflare/distilled-paperless-ngx@workspace:packages/distilled-paperless-ngx"],
 
     "@homeflare/distilled-proxmox": ["@homeflare/distilled-proxmox@workspace:packages/distilled-proxmox"],
 
