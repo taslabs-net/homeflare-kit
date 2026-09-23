@@ -1,39 +1,42 @@
 # Dependabot, and how a kit release reaches a consumer
 
-`repo-shape` renders `.github/dependabot.yml` and `.github/workflows/dependabot-automerge.yml`
-together. The first opens one pull request per kit release in each consumer (the
-`homeflare` group); the second arms GitHub's auto-merge on that pull request and on nothing
-else. The branch ruleset's required checks decide whether it merges.
+`repo-shape` renders `.github/dependabot.yml`. It watches everything EXCEPT the packages
+this kit publishes: an `ignore` entry names `@homeflare/*` in the bun block, so Dependabot
+never proposes them.
 
-**Status (2026-09-22): the Actions half works; the bun half is blocked upstream.** See
-[the blocker](#the-blocker-bunlock-lockfileversion-2) — it is the trigger for everything
-below doing anything.
+**Retired 2026-09-23 (kit auto-bumper design, Tim): the `homeflare` group and the
+rendered `dependabot-automerge.yml`.** They used to be how a kit release reached a
+consumer — grouped, checked daily, merged on green. `taslabs-net/homeflare-bumper` does
+that job now, dispatched from this repo's own `release.yml` (`notify-consumers`) with a
+schedule backstop. The `ignore` below exists **so the two never compete**: without it, a
+Dependabot bump and a bumper bump could open two pull requests for the same version at
+once.
+
+**Status (2026-09-22): the Actions half works; the bun half is blocked upstream regardless
+of the ignore.** See [the blocker](#the-blocker-bunlock-lockfileversion-2).
 
 ## Why
 
 Merging and releasing a kit change are automated. Bumping a consumer was not, and it is the
 leg that silently stops: measured 2026-09-22, `homeflare-proxmox` and `homeflare-mini`
 pinned `@homeflare/alchemy` 0.13.0 and `@homeflare/config` 0.5.1 while the kit had published
-0.19.1 and 0.8.0. Tim's decision (2026-09-23): kit releases reach consumers by Dependabot,
-grouped, checked daily, merged on green; no GitHub organization and no tokens.
+0.19.1 and 0.8.0. Tim's decision (2026-09-23): `homeflare-bumper` carries a kit release into
+every consumer; Dependabot's job is everything else.
 
 ## What each rendered choice rests on
 
 Read on 2026-09-22 from GitHub's docs and from dependabot-core's source at v0.397.0.
 
-| Choice                                                     | Why                                                                                                                                                           | Source                                                                                                 |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| One bun block, daily                                       | Two blocks for one ecosystem and target branch must have "no overlap in directories defined", so a group cannot have its own schedule                         | [options reference: `directories`][options]                                                            |
-| `cooldown.exclude: ['@homeflare/*']`                       | Dependabot applies a 3-day cooldown "even when `cooldown` is not configured"; without the exclude, a release waits three days                                 | [options reference: `cooldown`][options]                                                               |
-| `cooldown.default-days: 7`                                 | Keeps third-party updates to roughly the weekly pace they had, by age rather than by calendar                                                                 | same                                                                                                   |
-| `homeflare` group first, no `update-types`                 | "If a dependency matches more than one rule, it's included in the first group that it matches"; a kit release moves as one set                                | [options reference: `groups`][options]                                                                 |
-| `daily` means Monday–Friday                                | "Use `daily` to run on every weekday, Monday to Friday"                                                                                                       | [options reference: `schedule`][options]                                                               |
-| Auto-merge by `gh pr merge --auto`                         | GitHub's documented pattern for Dependabot pull requests                                                                                                      | [Automating Dependabot with GitHub Actions][automating]                                                |
-| Refuse when the base branch requires no check              | `gh pr merge --auto` merges a CLEAN or UNSTABLE pull request at once instead of arming it, so only a required status check keeps the bump waiting for `check` | cli/cli `pkg/cmd/pr/merge/merge.go`, `isImmediatelyMergeable` (v2.101.0)                               |
-| No `dependabot/fetch-metadata`                             | The same page labels it "not certified by GitHub"; the house CI is first-party only                                                                           | same                                                                                                   |
-| Group recognised by branch name                            | `dependabot/bun/homeflare-<10 hex>`: prefix, package manager, directory (root collapses), then group name and the first 10 hex of an MD5 digest               | dependabot-core `common/lib/dependabot/pull_request_creator/branch_namer/dependency_group_strategy.rb` |
-| `contents: write` + `pull-requests: write` on the job only | A Dependabot-started run gets a read-only `GITHUB_TOKEN` unless the `permissions` key raises it; these two are what GitHub's own example grants               | [Troubleshooting Dependabot on GitHub Actions][troubleshoot]                                           |
-| `--squash`                                                 | The house policy (`declareRepoPolicy`) allows squash merges only                                                                                              | `@homeflare/alchemy` `repo-policy-form.ts`                                                             |
+| Choice                                        | Why                                                                                                                                           | Source                                      |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `ignore: [{dependency-name: '@homeflare/*'}]` | `dependency-name`, "optionally using `*` to match zero or more characters" — stops Dependabot proposing what the bumper owns                  | [options reference: `ignore`][options]      |
+| `cooldown.default-days: 7`                    | Third-party updates are proposed once a release is a week old, by age rather than by calendar                                                 | [options reference: `cooldown`][options]    |
+| One bun block, weekly                         | Two blocks for one ecosystem and target branch must have "no overlap in directories defined" — moot now, kept for the directories split below | [options reference: `directories`][options] |
+
+The bumper's own citations — `gh pr merge --auto`'s CLEAN/UNSTABLE trap, the App's token
+scoping, and everything else that used to live in this repo's now-deleted
+`dependabot-automerge.yml` — moved with it, to `taslabs-net/homeflare-bumper` (not
+measured here whether its docs have landed yet; check that repo directly).
 
 ## Where Dependabot runs, and the billing lock
 
@@ -82,27 +85,14 @@ and rejects unsafe git tags. Downgrading the lockfile to suit Dependabot gives b
 
 ## What still needs a person
 
-- **A kit release that changes what `@homeflare/config` renders.** The group's pull
-  request fails the drift test by design ([repo-shape.md](repo-shape.md), "Bumping
-  `@homeflare/config` will go red before it goes green"). Run `bun run repo-shape:refresh`
-  on the Dependabot branch and push; the push starts CI as any person's push does.
-  ⛔ The workflow cannot do it: "events triggered by the `GITHUB_TOKEN` will not create a
-  new workflow run" ([GITHUB_TOKEN][token]), so a refreshed commit pushed with it would
-  never get its checks.
-- **A repository whose base branch requires no status check.** The arming job fails on
-  purpose there (measured 2026-09-22: `homeflare-builds`, whose ruleset is not deployed yet,
-  and `homeflare-desktop`). `gh pr merge --auto` would otherwise merge the bump at once,
-  before `check` ran. Deploy the repository's ruleset; the next Dependabot rebase arms it.
-- **A release whose plan changes.** A merged bump deploys nothing, but the next deploy of
-  that consumer applies whatever the new kit plans. Read the plan before deploying.
-
-⚠️ **The merge itself starts no workflow on `main`.** Auto-merge armed with `GITHUB_TOKEN`
-merges as that token, and its push triggers nothing. The rendered `ci.yml` has no push
-trigger anyway, and a bump carries no changeset, so nothing is lost — but a repository that
-adds a `push: main` workflow should know it will not run for these merges.
+- **A kit release whose plan changes.** A merged bump — from either path — deploys
+  nothing, but the next deploy of that consumer applies whatever the new kit plans. Read
+  the plan before deploying.
+- **Whatever the bumper itself hands off.** Its own auto-merge refusals, App setup, and
+  key rotation are documented where it lives, `taslabs-net/homeflare-bumper` — not here.
 
 ⚠️ **`open-pull-requests-limit: 5` is per block.** Five stale third-party pull requests
-could, in principle, hold the group back. dependabot-core runs grouped updates before
+could, in principle, crowd out a new one. dependabot-core runs grouped updates before
 ungrouped ones in each job (`group_update_all_versions.rb`), but the limit is enforced by
 the service, whose code is not public — so this is reasoned, not measured.
 
@@ -119,8 +109,6 @@ which only says "The updater encountered one or more errors".
 
 [options]: https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference
 [automating]: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/automating-dependabot-with-github-actions
-[troubleshoot]: https://docs.github.com/en/code-security/reference/supply-chain-security/troubleshoot-dependabot/dependabot-on-actions
 [concepts]: https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-on-actions
 [reference]: https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-on-actions
 [selfhosted]: https://docs.github.com/en/code-security/dependabot/maintain-dependencies/managing-dependabot-on-self-hosted-runners
-[token]: https://docs.github.com/en/actions/concepts/security/github_token

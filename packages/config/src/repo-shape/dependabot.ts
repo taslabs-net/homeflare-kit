@@ -1,36 +1,29 @@
 /**
- * `.github/dependabot.yml`, rendered — and the one group that carries kit releases.
+ * `.github/dependabot.yml`, rendered.
  *
  * ★ MEASURED BEFORE IT WAS RENDERED (2026-09-22): 1 of 14 repositories had a Dependabot
  *   config. Twelve took no dependency or Action updates at all, and nothing said so.
  *
- * ★ THE `homeflare` GROUP IS HOW A KIT RELEASE REACHES A CONSUMER (Tim, 2026-09-23:
- *   "Dependabot, grouped", checked daily, merged on green). Measured the same day, the
- *   leg nobody automated had drifted: proxmox and mini pinned `@homeflare/alchemy` 0.13.0
- *   while the kit had published 0.19.1. `automerge.ts` renders the workflow that arms
- *   auto-merge on this group's pull request and on nothing else.
+ * ⛔ `@homeflare/*` IS IGNORED HERE, NOT GROUPED (retired 2026-09-23, kit auto-bumper
+ *   design, Tim). A `homeflare` group and a rendered `dependabot-automerge.yml`
+ *   used to carry kit releases into a consumer; both are gone. `homeflare-bumper` does
+ *   that job now, over `workflow_dispatch` from this repo's own release, with a schedule
+ *   backstop — a Dependabot bump running at the same time would open a SECOND, competing
+ *   pull request for the same version bump. The `ignore` entry below is what stops that:
+ *   Dependabot never proposes `@homeflare/*` at all, so there is only ever one bump PR.
  *
  * Every Dependabot claim below was read from GitHub's docs or dependabot-core's source on
  * 2026-09-22 (dependabot-core v0.397.0); `docs/repo-shape-dependabot.md` has the citations.
  */
 import type { RepoShape } from './shape.ts';
 
-/**
- * The group's identifier. ⛔ IT IS ALSO HALF OF A BRANCH NAME the auto-merge workflow
- *   matches — dependabot-core names a group's branch `dependabot/bun/<group>-<10 hex>`
- *   (branch_namer/dependency_group_strategy.rb) — so it is exported, not retyped there.
- *   Dependabot requires an identifier that starts and ends with a letter.
- */
-export const HOMEFLARE_GROUP = 'homeflare';
-
 /** The first-party scope. Every package the kit publishes is under it. */
 export const HOMEFLARE_PATTERN = '@homeflare/*';
 
 /**
- * ★ SEVEN DAYS FOR THIRD-PARTY VERSIONS. The bun block has to run daily for the kit's sake
- *   (see below), so the weekly pace the estate had for everything else is kept by age
- *   instead of by calendar: a third-party release is proposed once it is a week old. That
- *   is also the supply-chain half — a compromised release is usually yanked within days.
+ * ★ SEVEN DAYS. A third-party release is proposed once it is a week old rather than on
+ *   Dependabot's undocumented-but-real 3-day default — that is also the supply-chain
+ *   half, since a compromised release is usually yanked within days.
  */
 export const THIRD_PARTY_COOLDOWN_DAYS = 7;
 
@@ -65,41 +58,33 @@ version: 2
 
 updates:
   # ── The toolchain (bun.lock) ────────────────────────────────────────────────
-  # ⚠️ BLOCKED UPSTREAM, 2026-09-22: bun 1.4 writes bun.lock \`lockfileVersion\` 2 and
-  #   Dependabot's updater bundles bun 1.3.14, which reads up to 1, so this block fails in
-  #   every estate repository with "Unsupported bun.lock 'lockfileVersion' 2". The fix is
+  # ⚠️ STILL BLOCKED UPSTREAM, 2026-09-22 — unrelated to the ignore below. bun 1.4 writes
+  #   bun.lock \`lockfileVersion\` 2 and Dependabot's updater bundles bun 1.3.14, which reads
+  #   up to 1, so this whole block fails in every estate repository with "Unsupported
+  #   bun.lock 'lockfileVersion' 2" before it reads a single manifest. The fix is
   #   dependabot/dependabot-core pull request 16071. The github-actions block is unaffected.
-  # ⛔ ONE BUN BLOCK, SO ONE SCHEDULE. Dependabot refuses two blocks for one ecosystem and
-  #   target branch whose directories overlap, so the \`homeflare\` group cannot be daily
-  #   while the rest stays weekly. The block is daily; \`cooldown\` slows the rest.
   - package-ecosystem: bun
     directories:
 ${bunDirs.map((dir) => `      - ${dir}`).join('\n')}
     schedule:
-      # ⚠️ Dependabot's \`daily\` is Monday to Friday; a weekend kit release lands on Monday.
-      interval: daily
+      interval: weekly
+      day: monday
       time: '09:00'
       timezone: America/New_York
-    # ⛔ THE EXCLUDE IS NOT OPTIONAL. Dependabot applies a 3-day cooldown to every version
-    #   update even when this key is absent, so without it a kit release would wait three
-    #   days before its bump opened — and "daily" would quietly mean "three days late".
     cooldown:
       default-days: ${THIRD_PARTY_COOLDOWN_DAYS}
-      exclude: ['${HOMEFLARE_PATTERN}']
+    # ⛔ NEVER PROPOSED HERE. \`homeflare-bumper\` opens the one pull request that bumps
+    #   \`@homeflare/*\` (kit auto-bumper design, Tim 2026-09-23) — a Dependabot
+    #   update for the same package would race it and, on the weeks they disagree, leave
+    #   two open pull requests fighting over the same \`package.json\` line.
+    ignore:
+      - dependency-name: '${HOMEFLARE_PATTERN}'
     open-pull-requests-limit: 5
     commit-message:
       prefix: 'chore'
       include: scope
     labels: [dependencies]
     groups:
-      # ★ FIRST, AND EVERY UPDATE TYPE. A kit release is one set of packages built to work
-      #   together, so they move as one pull request; \`bun run check\` is what reads it, and
-      #   .github/workflows/dependabot-automerge.yml merges it when that is green.
-      #   ⚠️ A release that changes what @homeflare/config renders fails the drift test here
-      #   by design; \`bun run repo-shape:refresh\` on the branch is the one-command fix.
-      ${HOMEFLARE_GROUP}:
-        patterns: ['${HOMEFLARE_PATTERN}']
-
       # oxfmt and oxlint move together and only affect style. Minor and patch bumps are
       # noise unless they fail CI, which is what CI is for.
       lint-and-format:

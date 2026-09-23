@@ -18,6 +18,12 @@
 #   v1-shaped block fails by doing nothing recognisable rather than by erroring.
 # ⚠️ v2 also stopped writing .npmrc from NPM_TOKEN. actions/setup-node's registry-url is
 #   what writes it; without that step the token is present and ignored (reads as ENEEDAUTH).
+#
+# ⛔ notify-consumers PINS actions/create-github-app-token BY COMMIT SHA, NOT a `@v3.2.0`
+#   tag — every other action in this file carries a version tag. This one is the exception
+#   because it exchanges a private key for a token — the stricter pin anything that
+#   handles a secret should have (kit auto-bumper design, Tim 2026-09-23). SHA verified
+#   against the v3.2.0 tag 2026-09-23: bcd2ba49218906704ab6c1aa796996da409d3eb1.
 name: release
 
 on:
@@ -40,6 +46,12 @@ jobs:
     # ★ Publish sits in the `npm` Environment that alchemy.run.ts declares.
     #   NPM_TOKEN stays a repository secret — GitHub still injects it here.
     environment: npm
+    # ★ WHAT notify-consumers READS. changesets/action's own outputs, named exactly as its
+    #   action.yml declares them (verified against the v2.1.2 tag, 2026-09-23) — `published`
+    #   and the hyphenated `published-packages`, not renamed here.
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
+      published-packages: ${{ steps.changesets.outputs.published-packages }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -92,7 +104,10 @@ jobs:
       # ⛔ publish-script is OURS, not `changeset publish`. See docs/releasing.md: npm pack
       #   resolves neither `workspace:*` nor `catalog:`, so changesets' own publish path
       #   would ship both literally and break every consumer install.
-      - uses: changesets/action@v2.1.2
+      # ★ id: changesets — notify-consumers (below) reads this step's `published` and
+      #   `published-packages` outputs through the job outputs declared above.
+      - id: changesets
+        uses: changesets/action@v2.1.2
         with:
           version-script: bun run version
           publish-script: bun run release
@@ -173,3 +188,51 @@ jobs:
             echo
             echo "Approved:$approved"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ⛔ ONLY WHEN THIS RUN ACTUALLY PUBLISHED. `release` runs on every push to main,
+  #   including the push that opens the Version Packages PR itself — that push has no
+  #   packages to bump yet. `needs.release.outputs.published` is changesets/action's own
+  #   answer, so a consumer only ever hears about a release that happened.
+  # ⛔ NO SECRET REACHES THIS JOB UNTIL IT NEEDS ONE. `environment: consumers` is the trust
+  #   boundary for KIT_DISPATCH_APP_KEY (alchemy.run.ts declares it, main-only, like `npm`);
+  #   `permissions: {}` means the job's own GITHUB_TOKEN can do nothing at all — every write
+  #   it makes goes through the minted App token instead.
+  notify-consumers:
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    environment: consumers
+    permissions: {}
+    steps:
+      # ⚠️ THE APP MAY NOT EXIST YET. `vars.KIT_DISPATCH_APP_CLIENT_ID` is unset until Tim
+      #   creates homeflare-kit-dispatch and populates the `consumers` environment (a human
+      #   step — the App's manifest flow needs a browser). Until then this job must go
+      #   green with a notice, never red: a release already published, and failing here
+      #   would page for a consumer bump that was always going to wait on a person anyway.
+      - name: Skip if the dispatch App is not configured yet
+        if: vars.KIT_DISPATCH_APP_CLIENT_ID == ''
+        run: echo "::notice::KIT_DISPATCH_APP_CLIENT_ID is unset; skipping the consumer dispatch (homeflare-kit-dispatch not installed yet)"
+
+      - name: Mint a token for homeflare-bumper
+        id: token
+        if: vars.KIT_DISPATCH_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.KIT_DISPATCH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.KIT_DISPATCH_APP_KEY }}
+          owner: taslabs-net
+          repositories: homeflare-bumper
+          permission-actions: write
+
+      # ⛔ EVERYTHING THROUGH env, NOTHING SPLICED INTO THE SHELL LINE. `published-packages`
+      #   is changesets' own JSON, built from every changeset in this release — a crafted
+      #   package name or version there does not get to touch the command GitHub runs.
+      - name: Dispatch kit-bump.yml on homeflare-bumper
+        if: vars.KIT_DISPATCH_APP_CLIENT_ID != ''
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          PACKAGES: ${{ needs.release.outputs.published-packages }}
+          SOURCE: homeflare-kit@${{ github.sha }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh workflow run kit-bump.yml -R taslabs-net/homeflare-bumper -f packages="$PACKAGES" -f source="$SOURCE"

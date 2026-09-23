@@ -86,7 +86,6 @@ export type RenderedPath =
   | '.github/actionlint.yaml'
   | '.github/dependabot.yml'
   | '.github/workflows/ci.yml'
-  | '.github/workflows/dependabot-automerge.yml'
   | '.github/workflows/security.yml';
 
 export interface RepoShapeException {

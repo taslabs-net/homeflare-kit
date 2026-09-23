@@ -23,4 +23,18 @@ describe('alchemy.run.ts', () => {
     expect(src).toContain('GitHub.providers()');
     expect(src).toContain('Layer.mergeAll');
   });
+
+  test("declares a 'consumers' environment shaped like 'npm', main-only", () => {
+    // ★ release.yml's notify-consumers job needs this environment to exist before
+    //   KIT_DISPATCH_APP_KEY can be scoped to it — same trust boundary as npm's
+    //   NPM_TOKEN, main-only so a feature branch can never mint a dispatch token.
+    const npmIdx = src.indexOf("GitHub.Environment('npm'");
+    const consumersIdx = src.indexOf("GitHub.Environment('consumers'");
+    expect(npmIdx).toBeGreaterThan(-1);
+    expect(consumersIdx).toBeGreaterThan(-1);
+
+    const consumersBlock = src.slice(consumersIdx, src.indexOf('});', consumersIdx));
+    expect(consumersBlock).toContain("name: 'consumers'");
+    expect(consumersBlock).toContain("customBranchPolicies: ['main']");
+  });
 });
