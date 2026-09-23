@@ -25,9 +25,16 @@ export type Staged = {
   readonly partial: readonly string[];
 };
 
+/**
+ * 🔴 `-z`, AND SPLIT ON NUL. Measured 2026-09-22: without it git applies `core.quotePath`
+ *   and a file named `café .ts` comes back as the literal 12 characters
+ *   `"caf\303\251 .ts"` — quotes, backslashes and octal escapes. Passing that to oxfmt
+ *   names a file that does not exist, so every commit touching it fails with a message
+ *   about the wrong path, and the fix anyone would reach for is `--no-verify`.
+ */
 async function names(args: readonly string[]): Promise<readonly string[]> {
-  const out = await capture(['git', ...args]);
-  return out.split('\n').filter((line) => line.length > 0);
+  const out = await capture(['git', ...args, '-z']);
+  return out.split('\0').filter((line) => line.length > 0);
 }
 
 /** Classify the index. Deletions are excluded — there is nothing to format in them. */

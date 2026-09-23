@@ -9,5 +9,5 @@
   //   this workspace is far too small to need (TS6306/TS6310, measured 2026-09-15).
   "extends": "./packages/config/tsconfig.base.json",
   "compilerOptions": { "types": ["bun"] },
-  "include": ["tests", "scripts", "codegen", "alchemy.run.ts"]
+  "include": ["tests", "scripts", "codegen", "alchemy.run.ts", "repo-shape.ts"]
 }

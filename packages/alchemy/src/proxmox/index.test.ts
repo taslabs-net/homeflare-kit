@@ -4,6 +4,9 @@
  * ⛔ Vm stays Provider-only. NodeNetwork/NetworkApply stay off the barrel — they stage
  *   interfaces.new. ★ Lxc is a Resource since 2026-09-21: adopt-first, refuse-not-replace,
  *   retain on destroy (lxc.ts).
+ * ★ CephDaemon, CephFs and CephOsd are Resources since 2026-09-22: adopt-only by shape and retain
+ *   on destroy (ceph-adopt.test.ts). ⛔ CephFlag stays Provider-only: a declared flag reasserts a
+ *   maintenance toggle on every deploy (ceph-flag.ts).
  */
 import { expect, test } from 'bun:test';
 import { PbsDatastore, ProxmoxStorage } from './index.ts';
@@ -19,6 +22,9 @@ const resourceExports = [
   'PbsVerifyJob',
   'ProxmoxAcl',
   'ProxmoxBackupJob',
+  'ProxmoxCephDaemon',
+  'ProxmoxCephFs',
+  'ProxmoxCephOsd',
   'ProxmoxGroup',
   'ProxmoxHaResource',
   'ProxmoxHaRule',
@@ -50,14 +56,11 @@ test('the provisioning baseline is on the barrel: the list, the declaration, the
   expect(barrel.provisionBootstrap()).toStartWith('#!/bin/sh\n');
 });
 
-test('QEMU and NIC apply stay Provider-only', () => {
+test('QEMU, NIC apply and the Ceph flag stay Provider-only', () => {
   expect(src).not.toMatch(/export \{ ProxmoxVm[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxNodeNetwork[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxNetworkApply[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxApiToken[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxZfsPool[, }]/);
-  expect(src).not.toMatch(/export \{ ProxmoxCephOsd[, }]/);
-  expect(src).not.toMatch(/export \{ ProxmoxCephFs[, }]/);
-  expect(src).not.toMatch(/export \{ ProxmoxCephDaemon[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxCephFlag[, }]/);
 });

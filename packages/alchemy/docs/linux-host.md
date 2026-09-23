@@ -107,6 +107,9 @@ one declared line
 - ⛔ **Ambiguity is a refusal.** Two BEGIN markers, an END before its BEGIN, or
   a BEGIN with no END each name the line rather than guess.
 - **Delete removes only the block**, leaving the rest byte-identical.
+- ⛔ **The region's name and comment token are its identity.** Changing either
+  moves the block: the new one is written and verified, then the old one goes.
+  Switching between whole-file and region mode at one path is refused.
 - ⚠️ A file with no final newline gains exactly one when the block is appended.
   That is the only byte added outside the block, and it is not taken back.
 
@@ -158,7 +161,14 @@ unit reads converged — the same limit the Mac side records.
 - ⛔ Deleting the declaration **stops the service** — stop, disable, remove the
   file, reload. A unit that must outlive its declaration is adopted, not deleted.
 - A name or directory change is a **delete-first replace**: two unit files for
-  one name cannot both be the one systemd reads.
+  one name cannot both be the one systemd reads. The new identity is checked
+  at plan time, read-only — valid, writable, not masked, unclaimed, and the
+  runner's own check on the new path — and the old unit must be deletable,
+  before that swap is promised. A file byte-identical to this render is the
+  declaration's own leftover, not someone else's unit. A rename the plan could
+  not see (a name still an Output) gets the same checks at apply, before the
+  old unit is stopped; one whose `content` is still an Output gets the checks
+  that need only the name — deletable, writable, not masked — in the plan.
 
 ### The directive set is systemd's, not the kit's
 

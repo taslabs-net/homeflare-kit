@@ -44,6 +44,21 @@ export type RepoRunner =
 /** One step in a rendered job. Either a `uses:` or a `run:`, never both. */
 export type JobStep = {
   readonly name?: string;
+  /**
+   * The step's `if:` condition, verbatim.
+   *
+   * ★ WIDENED RATHER THAN EXCEPTED, 2026-09-22. homeflare-kit's `consumer smoke test`
+   *   ends with a step that renders the packed tarball sizes onto the run summary, and
+   *   it carries `if: always()` on purpose — a FAILED smoke test is exactly when the
+   *   sizes are worth reading. Without this field kit had two options and both were
+   *   worse: drop the condition, losing the summary on the only runs that need it, or
+   *   `except('.github/workflows/ci.yml')`, which buys one repository its file back and
+   *   costs the estate the guarantee on it. One optional key gives every repository the
+   *   same freedom, which is the order of preference this module documents.
+   * ⚠️ NOT VALIDATED. GitHub's expression grammar is the vendor's; a bad condition is
+   *   caught by `actionlint` in the `workflow lint` job, which is where it belongs.
+   */
+  readonly if?: string;
   readonly env?: Readonly<Record<string, string>>;
 } & (
   | {

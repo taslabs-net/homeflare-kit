@@ -17,9 +17,33 @@ const BYPASS: Record<Hook, string> = {
   'pre-push': 'git push --no-verify',
 };
 
-/** Run a command, streaming its output. Returns its exit code. */
-export async function run(cmd: readonly string[]): Promise<number> {
-  const proc = Bun.spawn([...cmd], { stdout: 'inherit', stderr: 'inherit' });
+/**
+ * 🔴 A GIT HOOK EXPORTS `GIT_DIR` AND `GIT_INDEX_FILE`, AND EVERYTHING IT SPAWNS
+ *   INHERITS THEM. Measured 2026-09-22 at the cost of two junk files and a stray commit
+ *   on this repository's `main`: `pre-push` runs `bun run check`, `check` runs the test
+ *   suite, and a test that builds a throwaway git repository and commits in it commits
+ *   into THIS repository instead — `cwd` is ignored once `GIT_DIR` is set. The estate's
+ *   own `packages/site/tests/checkout.test.ts` already carried a comment warning about
+ *   exactly this, which is how much a convention is worth.
+ * ⛔ So the hook strips them rather than trusting fourteen test suites to remember. The
+ *   gate must see the repository through `cwd`, the way CI does.
+ */
+function withoutGitEnv(): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')),
+  );
+}
+
+/**
+ * Run a command, streaming its output. Returns its exit code.
+ * `isolated` drops the inherited `GIT_*` variables — see `withoutGitEnv`.
+ */
+export async function run(cmd: readonly string[], isolated = false): Promise<number> {
+  const proc = Bun.spawn([...cmd], {
+    stdout: 'inherit',
+    stderr: 'inherit',
+    ...(isolated ? { env: withoutGitEnv() } : {}),
+  });
   return await proc.exited;
 }
 

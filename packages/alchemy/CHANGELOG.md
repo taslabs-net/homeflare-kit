@@ -1,5 +1,89 @@
 # @homeflare/alchemy
 
+## 0.20.0
+
+### Minor Changes
+
+- [#139](https://github.com/taslabs-net/homeflare-kit/pull/139) [`70e8899`](https://github.com/taslabs-net/homeflare-kit/commit/70e8899fe70cf5426bcbf11b498a658b60f9488b) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `ProxmoxCephDaemon`, `ProxmoxCephFs` and `ProxmoxCephOsd` from `@homeflare/alchemy/proxmox`, so a stack can adopt a live cluster's Ceph monitors, managers, metadata servers, CephFS and OSDs. Each is adopt-only by shape: none has an update path, the daemon and filesystem compare nothing so they can never plan a replace, and an OSD is created only when `dev` is declared. All three retain on destroy, so removing a declaration drops its state row and never sends a DELETE. `ProxmoxCephFlag` stays Provider-only on purpose: a declared flag reasserts a maintenance toggle such as `noout` on every deploy.
+
+### Patch Changes
+
+- [#135](https://github.com/taslabs-net/homeflare-kit/pull/135) [`925454b`](https://github.com/taslabs-net/homeflare-kit/commit/925454b5d9fbefea061a3a204e4b0093a79c0bdc) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Two ways a `Remote.File` managed region could break its own promise, and a systemd rename that
+  refused too late. All three found by reviewing the merged diff and reproduced against the fake
+  Linux host before anything was changed.
+
+  🔴 **A REGION RENAME LEFT THE OLD BLOCK IN THE FILE FOREVER.** Only `path` was identity, so changing
+  `region.name` — or its `comment` token, which is part of the marker line — planned a routine
+  `update`: the new markers were spliced in, the old ones were never touched, and `delete` could only
+  ever look for the name in state, which was now the new one. Reproduced: a vendor file ended up
+  carrying two `BEGIN` blocks and destroying the resource removed one of them. For the named
+  consumers that is two `anchor` lines in a packet filter and a duplicate entry in a host table, with
+  nothing in the stack able to take either back. A rename is now a MOVE: the new block is written and
+  verified, then the old one is removed, and the stored digest is re-read afterwards so it describes
+  the file that is actually there.
+
+  🔴 **DROPPING `region` TOOK OVER A FILE THIS RESOURCE DID NOT OWN.** Same cause, worse effect: the
+  plan said `update` and the apply replaced every byte of the other owner's file with this resource's
+  few lines. That is the one thing the managed-region design exists to make impossible. A flip between
+  owning the whole file and owning a block — in either direction, at the same path — is now a
+  PLAN-TIME REFUSAL, because neither order is safe: writing the whole file first destroys the other
+  owner's bytes before anything can be undone, and removing the block first destroys our own claim and
+  then refuses. Destroy the resource and declare a new one.
+
+  🔴 **A `Systemd.Unit` RENAME WHOSE `content` WAS STILL AN OUTPUT WAS NOT CHECKED AT ALL.** The
+  resolved rename is checked in the plan since the systemd preflight; the branch `diffHandler` takes
+  while `content` is unresolved — exactly the deploy that templates a rendered config's digest into
+  the unit — still returned `{ action: 'replace', deleteFirst: true }` with no check, and Alchemy
+  deletes the old unit BEFORE reconciling the new one. A rename onto a masked name therefore took the
+  service down and only then refused. The half of the check that needs only the new name — the old
+  unit deletable, the new one writable and not masked — now runs there too. ⛔ This forbids nothing
+  that used to work: the identical refusal was always going to fire in reconcile, just later and with
+  nothing running.
+
+- [#142](https://github.com/taslabs-net/homeflare-kit/pull/142) [`1905f18`](https://github.com/taslabs-net/homeflare-kit/commit/1905f18c30f7ae2a6d7294d588bf18396b64f4ed) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Two new docs, and no code change.
+
+  `docs/provider-standard.md` is the kit-side statement of the house standard for a custom
+  Alchemy provider. It keeps the standard's rule numbers, and each rule is cited upstream at
+  `alchemy@2.0.0-beta.79`. It covers four things. First, use upstream's resource when one
+  exists. Second, route every vendor call through `@distilled.cloud/<vendor>` when that
+  package exists. Third, use Alchemy's own helpers (`alchemy/Util/sha256`, `Util/poll`,
+  `Util/AtomicFile`, `Diff`, `Tags`, `PhysicalName`, `AdoptPolicy`, `Auth` and `Test/Bun`)
+  rather than house copies. Fourth, keep `src/**` provider code runtime-portable, because
+  this package builds with `--target node`, while tests, fakes, scripts and codegen stay
+  Bun-native. The page also records, per family, the vendor version each one was walked
+  against and where that record lives. Six families record it only in prose.
+
+  `docs/upstream-conformance.md` is the audit of every family against that standard, as a
+  ranked ledger. It was measured read-only on `925454b`. The findings, in rank order:
+
+  1. `R2BucketLock` uses `Effect.orDie` and `Effect.promise`. Its reconcile trusts `output`
+     rather than the live lock, and it sits on a second Cloudflare SDK where
+     `@distilled.cloud/cloudflare/r2` already has the lock operations.
+  2. `forgejo/client.ts` is hand-rolled, while `@distilled.cloud/forgejo@1.0.0-rc.12` is
+     generated against Forgejo 16.0.3.
+  3. `MeshNode` is a deliberate twin of `Cloudflare.Tunnel.WarpConnector`.
+  4. Shipped provider code calls `Bun.*` or the `node:*` modules upstream bans (14 of 17
+     listed files; the other 3 use only synchronous `node:crypto` or `Buffer`, which upstream
+     allows inside `Effect.sync`), and 51 test files run on `node:test` instead of
+     `bun:test`.
+
+  What the ledger records is the gap for each finding. It changes nothing.
+
+## 0.19.1
+
+### Patch Changes
+
+- [#128](https://github.com/taslabs-net/homeflare-kit/pull/128) [`ba55148`](https://github.com/taslabs-net/homeflare-kit/commit/ba5514820e32f9d546f1a5eb0f92c7f156f2a978) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Estate topology out of the constraint proofs. PR [#118](https://github.com/taslabs-net/homeflare-kit/issues/118)'s create-form proofs used the real
+  declarations verbatim, which put a metrics hostname, a cluster's `api-path-prefix` and three Ceph
+  pool names into `src` — and `src` ships in the npm tarball of a public repository, so they would
+  have stayed in the git history forever. `lxc-harness.ts` states the rule and these tests did not
+  follow it: a production-SHAPED declaration with placeholder values, because the proof is about
+  which keys the create form sends and which bounds they face, never about the strings.
+
+  No behaviour changes; the same forms are checked against the same tables.
+
+- [#136](https://github.com/taslabs-net/homeflare-kit/pull/136) [`64d4c36`](https://github.com/taslabs-net/homeflare-kit/commit/64d4c36091054fa05b716f1d4029c1feea955289) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Check a systemd rename at plan time. A unit's name or directory change is a delete-first replace, and Alchemy deletes the old unit before reconciling the new one, so a masked name, a unit file someone else owns, or a runner that will not write the new path used to be noticed only after the old unit was already stopped. Those checks now run while planning, and again at apply when the new name was still an Output and the diff could not see the rename. A file byte-identical to this declaration's render stays exempt: it is a deploy that died between write and reload.
+
 ## 0.19.0
 
 ### Minor Changes

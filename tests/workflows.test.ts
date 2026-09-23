@@ -139,7 +139,30 @@ describe('workflows', () => {
     expect(doc.jobs.release.environment).toBe('npm');
   });
 
-  test('the test job builds before it tests, so the dist guard cannot skip itself', async () => {
+  test('the gate builds before it tests, so the dist guard cannot skip itself', async () => {
+    // ⛔ THE GUARANTEE MOVED, IT DID NOT GO AWAY (2026-09-22). This used to read the
+    //   ordering out of ci.yml's `check` job, back when that job listed `bun run build`
+    //   and `bun test` as separate steps. The rendered workflow runs ONE step —
+    //   `bun run check` — so the ordering now lives in the script this asserts against,
+    //   which is also the ordering a person gets locally. Asserting it here rather than
+    //   in the YAML is the point of the split: the renderer owns the plumbing, this
+    //   repository owns what its gate runs.
+    // ⚠️ WHY IT MATTERS: packages/kit/tests/dist.test.ts SKIPS ITSELF when dist/ is
+    //   absent, so a `check` that tested before it built would drop that test and still
+    //   report green — silently, which is the only kind of failure worth a guard.
+    const pkg = (await Bun.file(new URL('../package.json', import.meta.url)).json()) as {
+      scripts: Record<string, string>;
+    };
+    const check = pkg.scripts['check'] ?? '';
+
+    expect(check.indexOf('bun run build')).toBeGreaterThan(-1);
+    expect(check.indexOf('bun run build')).toBeLessThan(check.indexOf('bun test'));
+  });
+
+  test('the ci job runs that gate rather than a second copy of its lanes', async () => {
+    // ★ A WORKFLOW THAT RE-LISTS lint/types/test IS A COPY, AND A COPY CAN CHECK LESS.
+    //   That is exactly how the build step above would go missing from CI while still
+    //   passing locally. One step, one gate, one place to change it.
     const text = await Bun.file(new URL('../.github/workflows/ci.yml', import.meta.url)).text();
     const doc = Bun.YAML.parse(text) as {
       jobs: Record<string, { steps: readonly Step[] }>;
@@ -148,7 +171,7 @@ describe('workflows', () => {
       s.run === undefined ? [] : [s.run],
     );
 
-    expect(runs.indexOf('bun run build')).toBeLessThan(runs.indexOf('bun test'));
+    expect(runs).toEqual(['bun install --frozen-lockfile', 'bun run check']);
   });
 
   test('ci exposes one aggregate check that depends on every other job', async () => {

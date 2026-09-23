@@ -8,8 +8,11 @@
  *       completion holding one of the mini's 3 slots for a result nobody would read;
  *     · `pull-requests: read` missing in 2, which makes every pull-request scan fail 403
  *       before it inspects a single line;
- *     · `gitleaks/gitleaks-action` pinned at `@v2` in 5 and `@v3` in 8, after GitHub
- *       removed the Node 20 runtime v2 needs (2026-09-16);
+ *     · `gitleaks/gitleaks-action` pinned at `@v2` in 5 and `@v3` in 8. v2 declares
+ *       `runs: node20`; GitHub removed that runtime from its HOSTED runner images on
+ *       2026-09-16, so v2 fails on ubuntu-latest and still runs on the mini. Moving to
+ *       v3 drops that dependency before any job moves back to a hosted runner — it is
+ *       not repairing a scan that is currently broken;
  *     · the weekly cron at three different minutes.
  *   One renderer makes all thirteen the same file, and the next such fix is one commit.
  */
@@ -68,10 +71,13 @@ const FETCH_NOTE = `        with:
           #   in the history, still fetchable, and still compromised.
           fetch-depth: 0`;
 
-const GITLEAKS_NOTE = `      # ⛔ v3, NOT v2. GitHub removed the Node 20 runtime from hosted runners on 2026-09-16
-      #   (gitleaks/gitleaks-action's own v3.0.0 migration notes, verified 2026-09-17), so
-      #   v2 (\`runs: node20\`) fails outright now, with no opt-out flag. v3 changes only the
-      #   runtime to node24 — inputs, outputs and behaviour are unchanged.
+const GITLEAKS_NOTE = `      # ⛔ v3, NOT v2. v2 declares \`runs: node20\`. GitHub removed that runtime from
+      #   its HOSTED runner images on 2026-09-16 (gitleaks/gitleaks-action's own v3.0.0
+      #   migration notes, verified 2026-09-17), so v2 fails on ubuntu-latest and still
+      #   runs on the mini's self-hosted runner. Moving to v3 drops a dependency on a
+      #   runtime the platform has already withdrawn, before any job moves back to a
+      #   hosted runner — it is not repairing a scan that is currently broken. v3
+      #   changes only the runtime to node24 — inputs, outputs and behaviour are unchanged.
       # ★ arm64-SAFE ON THE MINI, verified rather than assumed: v3's src/gitleaks.js builds
       #   its download URL from \`process.arch\`, so the runner asks for
       #   gitleaks_<version>_linux_arm64.tar.gz, an asset its default release publishes
