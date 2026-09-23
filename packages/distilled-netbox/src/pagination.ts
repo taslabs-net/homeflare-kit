@@ -85,9 +85,28 @@ export const netboxPaginate: Pagination.PaginationStrategy = (
         return [response, { input: state.input, done: true }] as const;
       }
 
+      // A multi-select filter (e.g. `?tag=a&tag=b`) appears in `next` as
+      // REPEATED same-key pairs, not one comma-joined value — core's own
+      // request builder serializes an array-typed query member that way
+      // (protocol-http.ts's `appendQuery`). A naive last-write-wins merge
+      // would silently drop every value but the last on every page after
+      // the first, with no error (buildRequest reads `inputObj[key]`
+      // directly and dispatches on `Array.isArray` at runtime, so a
+      // demoted scalar just serializes as one value instead of failing).
+      // Group by key instead, and keep a key as an array whenever `next`
+      // repeats it OR the field was already array-typed on this input —
+      // a filter narrowed to one surviving value must not lose its shape.
       const nextInput: Record<string, unknown> = { ...state.input };
-      for (const [key, value] of query) {
-        nextInput[key] = coerce(value);
+      const byKey = new Map<string, string[]>();
+      for (const key of query.keys()) {
+        if (!byKey.has(key)) byKey.set(key, query.getAll(key));
+      }
+      for (const [key, values] of byKey) {
+        const wasArray = Array.isArray(state.input[key]);
+        nextInput[key] =
+          values.length > 1 || wasArray
+            ? values.map(coerce)
+            : coerce(values[0] as string);
       }
 
       return [response, { input: nextInput, done: false }] as const;
