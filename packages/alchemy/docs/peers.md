@@ -6,7 +6,7 @@ The install line for `@homeflare/alchemy`, and why every peer on it and every en
 
 ```sh
 bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
-        @effect/platform-node@4.0.0-rc.115 cloudflare@4.5.0 mime@4.1.0 \
+        @effect/platform-node@4.0.0-rc.115 mime@4.1.0 \
         @distilled.cloud/cloudflare@1.0.0-rc.12 @distilled.cloud/forgejo@1.0.0-rc.12 \
         @effect/sql-pg@4.0.0-rc.115
 ```
@@ -34,10 +34,12 @@ import the Proxmox subpath.
 declaring it (measured 2026-09-17). 79 declares it; the peer stays so a consumer
 that followed the 78 README does not drop a required line.
 
-⚠️ So is `cloudflare`. It was marked optional in 0.1.1, which claimed the `/cloudflare`
-subpath would degrade without it — measured 2026-09-16, the subpath does not load at all:
-`Cannot find package 'cloudflare'`. An optional peer should mean a feature is absent, not
-that an import fails.
+★ `cloudflare` **is gone, not merely tolerated.** It was a required peer (marked optional in
+0.1.1, which claimed the `/cloudflare` subpath would degrade without it — measured 2026-09-16,
+the subpath did not load at all: `Cannot find package 'cloudflare'`) until 2026-09-23, when
+`R2BucketLock` moved off the `cloudflare` npm SDK onto `@distilled.cloud/cloudflare/r2`, the same
+one `MeshNode` already called. Nothing else in this package imported it, so the peer — and the
+`client.ts` wrapper it existed for — were dropped rather than left declared and unused.
 
 ⚠️ **`@distilled.cloud/forgejo` (added 2026-09-23, moving `/forgejo` off a hand-rolled
 `HttpClient` client) is required for the same reason `@distilled.cloud/cloudflare` is: it is

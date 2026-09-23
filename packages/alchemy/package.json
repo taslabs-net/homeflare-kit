@@ -109,7 +109,6 @@
     "@effect/platform-node": "4.0.0-rc.115",
     "@effect/sql-pg": "4.0.0-rc.115",
     "alchemy": "2.0.0-beta.79",
-    "cloudflare": "4.5.0",
     "effect": "4.0.0-rc.115",
     "handlebars": "catalog:",
     "mime": "4.1.0"
@@ -120,7 +119,6 @@
     "@effect/platform-node": "4.0.0-rc.115",
     "@effect/sql-pg": "4.0.0-rc.115",
     "alchemy": "2.0.0-beta.79",
-    "cloudflare": ">=4.5.0",
     "effect": "4.0.0-rc.115",
     "mime": "4.1.0"
   }

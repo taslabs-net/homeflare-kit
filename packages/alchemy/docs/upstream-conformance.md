@@ -11,25 +11,38 @@ A decision marked **maintainer** is not an agent's to make.
 Findings are ranked by what they can break: runtime safety first, then contributability,
 then tidiness.
 
-1. **`cloudflare/R2BucketLock` diverges on four rules.**
-   - `readLock` ends in `Effect.orDie` (S20).
-   - `reconcileLock` and `deleteLock` use `Effect.promise` (S19).
-   - `reconcileLock` skips the PUT whenever `output.rules` equals the declaration, without
-     reading the live lock (S10). So neither `--force` nor `drift --repair` can restore
-     lock rules that were removed out of band. ⚠️ Reasoned from the source, not measured
-     live.
-   - `accountId` is a prop (S15).
+1. **`cloudflare/R2BucketLock` diverges on three rules.**
 
-   It is built on a second Cloudflare SDK, `cloudflare@4.5.0` (S23). Upstream
-   `Cloudflare.R2.Bucket` has lifecycle and CORS rules but no lock, so this is a real gap.
-   **Fix:** move to `@distilled.cloud/cloudflare/r2` `getBucketLock`/`putBucketLock`,
-   observe before the PUT, and resolve the account from `CloudflareEnvironment`. Then drop
-   the `cloudflare` peer. That makes it contributable as `lockRules` on `R2.Bucket`, or as
+   ✅ **S23 fixed 2026-09-23** (branch `claude2/distilled-r2-bucket-lock`, an agent task
+   scoped to exactly this SDK swap): it now calls `@distilled.cloud/cloudflare/r2`'s
+   `getBucketLock`/`putBucketLock`, the same package `MeshNode` uses, with
+   `catchTag('NoSuchBucket', …)` in place of the old `instanceof NotFoundError` status
+   check. The `cloudflare` peer and `client.ts` are gone from the package — nothing else
+   imported either. As a side effect this also cleared the `Effect.promise` calls in
+   `reconcileLock`/`deleteLock` (S19): distilled's operations are already Effects, so there
+   is nothing left to promise-wrap.
+
+   Still open, and out of scope for that task (props/attributes were required to stay
+   byte-identical, so neither touches the wire contract):
+   - `readLock`, and now `reconcileLock`/`deleteLock` too, end in `Effect.orDie` for the
+     error channel distilled leaves after `NoSuchBucket` (S20). A full fix means a typed
+     refusal error for `InvalidRoute`/`CloudflareRateLimited`/`CloudflareError`, which is a
+     separate, larger change than the transport swap.
+   - `reconcileLock` still skips the PUT whenever `output.rules` equals the declaration,
+     without reading the live lock (S10). Neither `--force` nor `drift --repair` can
+     restore lock rules removed out of band. ⚠️ Reasoned from the source, not measured live.
+   - `accountId` is still a prop (S15).
+
+   Upstream `Cloudflare.R2.Bucket` has lifecycle and CORS rules but no lock, so this is
+   still a real gap. **Remaining fix:** observe before the PUT, and resolve the account
+   from `CloudflareEnvironment` — the same shape change `MeshNode` uses instead of a prop.
+   That makes it contributable as `lockRules` on `R2.Bucket`, or as
    `Cloudflare.R2.BucketLock`. **Decision:** maintainer, on the upstream shape.
 
 2. **`forgejo/*` duplicates an upstream building block.**
-   - ✅ **Client swap done** (Tim, 2026-09-23, decision 42 — "build inside the kit first,
-     dogfood and test"; PR fixing this row). Every call now goes through
+   - ✅ **S23 fixed 2026-09-23** (branch `claude2/distilled-forgejo`, PR #180 — Tim, decision
+     42, "build inside the kit first, dogfood and test"; an agent task scoped to exactly this
+     SDK swap). Every call now goes through
      `@distilled.cloud/forgejo@1.0.0-rc.12`'s typed operations, `catchTag('NotFound', ...)`
      replaced the status-carrying `ForgejoError`, and `client.ts` is deleted. Verified
      operation by operation against the package before relying on it (every operation this
@@ -39,7 +52,7 @@ then tidiness.
      against a fake Forgejo exercising the real distilled protocol. No stack in this estate
      currently imports `@homeflare/alchemy/forgejo` (measured 2026-09-23 across
      homeflare-landscape and the house monorepo), so there is no live plan to re-run —
-     `house/forgejo` in the house monorepo declares the same six resource types but against
+     `house/forgejo` in the house monorepo declares the same seven resource types but against
      its OWN independent hand-rolled copy under `house/forgejo/src/`, not this package; this
      PR does not touch it.
    - ⛔ **`read` still never answers `Unowned` (H1), open.** Credentials still come from

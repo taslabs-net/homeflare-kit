@@ -6,8 +6,9 @@
  *   `GET …/warp_connector/{id}/token` (developers.cloudflare.com/mesh/get-started, read
  *   2026-09-21). There is no separate "mesh node" endpoint.
  *
- * ★ OVER `@distilled.cloud/cloudflare`, THE SDK ALCHEMY'S OWN CLOUDFLARE PROVIDERS USE, not the
- *   `cloudflare` npm SDK the R2 lock uses. Measured 2026-09-21: `cloudflare@4.5.0`'s
+ * ★ OVER `@distilled.cloud/cloudflare`, THE SDK ALCHEMY'S OWN CLOUDFLARE PROVIDERS USE — and, as
+ *   of 2026-09-23, the same one `R2BucketLock` calls too (r2-bucket-lock.ts), not the `cloudflare`
+ *   npm SDK either used before that. Measured 2026-09-21: `cloudflare@4.5.0`'s
  *   `WARPConnectorCreateParams` has only `account_id` and `name`, so it cannot create an HA node.
  *   distilled `1.0.0-rc.12` (the version alchemy@2.0.0-beta.79 pins) has `ha?: boolean` on
  *   `CreateTunnelWarpConnectorRequest`, typed errors (`TunnelNotFound` code 1002 / 404,
