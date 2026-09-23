@@ -9,6 +9,18 @@
  * package's provenance rests on: it is the endpoint measured read-only on
  * CT100 to pin the NetBox version (`v4.7.0`) the SDK was generated against
  * — see ../README.md and ../../alchemy/docs/distilled-interim.md.
+ *
+ * A second check runs `listCoreDataSources.pages()` against a two-page fake
+ * response (`next` a full URL on page 1, `null` on page 2) and asserts the
+ * SECOND request's URL carries the `offset` parsed out of page 1's `next`,
+ * AND that a multi-valued array filter (`id=1&id=2`, echoed back by `next`
+ * as repeated same-key pairs — how core's own request builder serializes an
+ * array-typed query member) survives onto that second request intact rather
+ * than collapsing to its last value. This is the packed-tarball equivalent
+ * of `netboxPaginate`'s own unit coverage in the distilled clone, proving
+ * the wiring (patches → generated `pagination: {...}` block →
+ * `netboxPaginate` import) survives packing and a real consumer install,
+ * not just the source tree.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -51,6 +63,7 @@ try {
     `import * as Netbox from '@homeflare/distilled-netbox';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import * as Stream from 'effect/Stream';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
 import * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
 
@@ -93,6 +106,68 @@ if ((result as Record<string, unknown>)['netbox-version'] !== '4.7.0') {
 
 console.log('request built:', captured.method, captured.url);
 console.log('consumer ok');
+
+// --- pagination: follow a URL-valued \`next\` across two pages ---
+// A minimal-but-valid DataSource (every required member of the generated
+// schema filled; \`type\`/\`status\` members are themselves all-optional).
+const dataSource = (id: number) => ({
+  id,
+  url: \`https://netbox.example.com/api/core/data-sources/\${id}/\`,
+  display_url: \`https://netbox.example.com/core/data-sources/\${id}/\`,
+  display: \`ds-\${id}\`,
+  name: \`ds-\${id}\`,
+  type: {},
+  source_url: 'https://example.com/repo.git',
+  status: {},
+  created: null,
+  last_updated: null,
+  last_synced: null,
+  file_count: 0,
+});
+const pageUrls: string[] = [];
+let call = 0;
+const pagingClient = HttpClient.make((request) => {
+  pageUrls.push(request.url);
+  call += 1;
+  // Page 1's \`next\` echoes an \`id\` filter TWICE (\`id=1&id=2\`, the same
+  // repeated-key shape core's request builder just used to send it) — this
+  // is what a real multi-select NetBox filter looks like on the wire, and
+  // is the case netboxPaginate must not collapse to a single surviving id.
+  const body =
+    call === 1
+      ? {
+          count: 2,
+          next: 'https://netbox.example.com/api/core/data-sources/?id=1&id=2&limit=1&offset=1',
+          previous: null,
+          results: [dataSource(1)],
+        }
+      : { count: 2, next: null, previous: 'https://netbox.example.com/api/core/data-sources/?id=1&id=2&limit=1&offset=0', results: [dataSource(2)] };
+  return Effect.succeed(
+    HttpClientResponse.fromWeb(request, new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })),
+  );
+});
+
+const itemsStream = (Netbox.Services.core.listCoreDataSources as any).items({
+  limit: 1,
+  id: [1, 2],
+}) as Stream.Stream<unknown, unknown, unknown>;
+const items = await Effect.runPromise(
+  Stream.runCollect(itemsStream).pipe(
+    Effect.map((c) => Array.from(c as Iterable<unknown>)),
+    Effect.provide(Layer.succeed(HttpClient.HttpClient, pagingClient)),
+    Effect.provide(Netbox.credentials({ token: 'smoke-token', baseUrl: 'https://netbox.example.com' })),
+  ) as Effect.Effect<unknown[], unknown, never>,
+);
+
+if (call !== 2) throw new Error(\`expected 2 requests, got \${call}\`);
+if (!pageUrls[1]?.includes('offset=1')) throw new Error(\`2nd request did not carry the parsed offset: \${pageUrls[1]}\`);
+const secondIdCount = (pageUrls[1]?.match(/(?:^|[?&])id=/g) ?? []).length;
+if (secondIdCount !== 2) {
+  throw new Error(\`2nd request lost the multi-valued id filter (expected id=1&id=2, got \${secondIdCount} id= occurrences): \${pageUrls[1]}\`);
+}
+if (items.length !== 2) throw new Error(\`expected 2 items across both pages, got \${JSON.stringify(items)}\`);
+
+console.log('pagination ok:', pageUrls.join(' -> '));
 `,
   );
 

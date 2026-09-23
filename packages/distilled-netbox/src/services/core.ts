@@ -8,6 +8,7 @@ import {
   type NetboxOpError,
   type NetboxOpContext,
 } from "../protocol.ts";
+import { netboxPaginate } from "../pagination.ts";
 import { UnknownNetboxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -5306,78 +5307,133 @@ export const getCoreObjectType: API.OperationMethod<
 
 export type ListCoreDataFilesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of data file objects. */
-export const listCoreDataFiles: API.OperationMethod<
+export const listCoreDataFiles: API.PaginatedOperationMethod<
   ListCoreDataFilesRequest,
   PaginatedDataFileList,
   ListCoreDataFilesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCoreDataFilesRequest,
-  output: PaginatedDataFileList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  DataFile
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCoreDataFilesRequest,
+    output: PaginatedDataFileList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCoreDataSourcesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of data source objects. */
-export const listCoreDataSources: API.OperationMethod<
+export const listCoreDataSources: API.PaginatedOperationMethod<
   ListCoreDataSourcesRequest,
   PaginatedDataSourceList,
   ListCoreDataSourcesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCoreDataSourcesRequest,
-  output: PaginatedDataSourceList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  DataSource
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCoreDataSourcesRequest,
+    output: PaginatedDataSourceList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCoreJobsError = BadRequest | Forbidden | NetboxOpError;
 /** Retrieve a list of job results */
-export const listCoreJobs: API.OperationMethod<
+export const listCoreJobs: API.PaginatedOperationMethod<
   ListCoreJobsRequest,
   PaginatedJobList,
   ListCoreJobsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCoreJobsRequest,
-  output: PaginatedJobList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Job
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCoreJobsRequest,
+    output: PaginatedJobList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCoreObjectChangesError = BadRequest | Forbidden | NetboxOpError;
 /** Retrieve a list of recent changes. */
-export const listCoreObjectChanges: API.OperationMethod<
+export const listCoreObjectChanges: API.PaginatedOperationMethod<
   ListCoreObjectChangesRequest,
   PaginatedObjectChangeList,
   ListCoreObjectChangesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCoreObjectChangesRequest,
-  output: PaginatedObjectChangeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ObjectChange
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCoreObjectChangesRequest,
+    output: PaginatedObjectChangeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListCoreObjectTypesError = BadRequest | Forbidden | NetboxOpError;
 /** Read-only list of ObjectTypes. */
-export const listCoreObjectTypes: API.OperationMethod<
+export const listCoreObjectTypes: API.PaginatedOperationMethod<
   ListCoreObjectTypesRequest,
   PaginatedObjectTypeList,
   ListCoreObjectTypesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCoreObjectTypesRequest,
-  output: PaginatedObjectTypeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ObjectType
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCoreObjectTypesRequest,
+    output: PaginatedObjectTypeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type UpdateCoreDataSourceError = Forbidden | NotFound | NetboxOpError;
 /** Put a data source object. */

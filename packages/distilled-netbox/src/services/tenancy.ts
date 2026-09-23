@@ -8,6 +8,7 @@ import {
   type NetboxOpError,
   type NetboxOpContext,
 } from "../protocol.ts";
+import { netboxPaginate } from "../pagination.ts";
 import { UnknownNetboxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -8689,102 +8690,168 @@ export type ListTenancyContactAssignmentsError =
   | Forbidden
   | NetboxOpError;
 /** Get a list of contact assignment objects. */
-export const listTenancyContactAssignments: API.OperationMethod<
+export const listTenancyContactAssignments: API.PaginatedOperationMethod<
   ListTenancyContactAssignmentsRequest,
   PaginatedContactAssignmentList,
   ListTenancyContactAssignmentsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListTenancyContactAssignmentsRequest,
-  output: PaginatedContactAssignmentList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ContactAssignment
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListTenancyContactAssignmentsRequest,
+    output: PaginatedContactAssignmentList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListTenancyContactGroupsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of contact group objects. */
-export const listTenancyContactGroups: API.OperationMethod<
+export const listTenancyContactGroups: API.PaginatedOperationMethod<
   ListTenancyContactGroupsRequest,
   PaginatedContactGroupList,
   ListTenancyContactGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListTenancyContactGroupsRequest,
-  output: PaginatedContactGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ContactGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListTenancyContactGroupsRequest,
+    output: PaginatedContactGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListTenancyContactRolesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of contact role objects. */
-export const listTenancyContactRoles: API.OperationMethod<
+export const listTenancyContactRoles: API.PaginatedOperationMethod<
   ListTenancyContactRolesRequest,
   PaginatedContactRoleList,
   ListTenancyContactRolesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListTenancyContactRolesRequest,
-  output: PaginatedContactRoleList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ContactRole
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListTenancyContactRolesRequest,
+    output: PaginatedContactRoleList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListTenancyContactsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of contact objects. */
-export const listTenancyContacts: API.OperationMethod<
+export const listTenancyContacts: API.PaginatedOperationMethod<
   ListTenancyContactsRequest,
   PaginatedContactList,
   ListTenancyContactsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListTenancyContactsRequest,
-  output: PaginatedContactList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Contact
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListTenancyContactsRequest,
+    output: PaginatedContactList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListTenancyTenantGroupsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of tenant group objects. */
-export const listTenancyTenantGroups: API.OperationMethod<
+export const listTenancyTenantGroups: API.PaginatedOperationMethod<
   ListTenancyTenantGroupsRequest,
   PaginatedTenantGroupList,
   ListTenancyTenantGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListTenancyTenantGroupsRequest,
-  output: PaginatedTenantGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  TenantGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListTenancyTenantGroupsRequest,
+    output: PaginatedTenantGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListTenancyTenantsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of tenant objects. */
-export const listTenancyTenants: API.OperationMethod<
+export const listTenancyTenants: API.PaginatedOperationMethod<
   ListTenancyTenantsRequest,
   PaginatedTenantList,
   ListTenancyTenantsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListTenancyTenantsRequest,
-  output: PaginatedTenantList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Tenant
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListTenancyTenantsRequest,
+    output: PaginatedTenantList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type TenancyContactAssignmentsBulkPartialUpdateError =
   | BadRequest

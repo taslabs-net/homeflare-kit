@@ -42,6 +42,12 @@ const program = Netbox.Services.ipam
   );
 ```
 
+Every `list*` operation also carries `.pages()` (a `Stream` of raw pages) and
+`.items()` (a `Stream` flattened to `results`' element type), following
+NetBox's `next` URL via the hand-written `netboxPaginate` strategy in
+`src/pagination.ts` — core's generic pagination strategies can't follow a
+URL-valued `next` directly, see that file for why.
+
 Kit code never imports `@homeflare/distilled-netbox` directly — always
 `@distilled.cloud/netbox`, aliased in the consuming package's `package.json`
 (`"@distilled.cloud/netbox": "npm:@homeflare/distilled-netbox@<version>"`), so
@@ -58,9 +64,11 @@ pnpm --filter @distilled.cloud/netbox run typecheck
 pnpm format && pnpm specs:check
 ```
 
-Then copy `src/` here verbatim, bump this package's own `version` (a patch
-release — the generated content changed, not this package's own shape), add
-a changeset, and let the kit's normal release flow publish it.
+Then copy `src/` here verbatim, add a changeset (patch — the generated
+content changed but nothing new is callable; minor — a new capability like
+pagination becomes callable, per the kit's own new-feature-vs-swap
+convention), and let the kit's normal release flow publish it and bump this
+package's own `version`.
 
 ## License
 

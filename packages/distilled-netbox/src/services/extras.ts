@@ -8,6 +8,7 @@ import {
   type NetboxOpError,
   type NetboxOpContext,
 } from "../protocol.ts";
+import { netboxPaginate } from "../pagination.ts";
 import { UnknownNetboxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -27896,18 +27897,29 @@ export type ExtrasExportTemplatesListError =
   | Forbidden
   | NetboxOpError;
 /** Get a list of export template objects. */
-export const extrasExportTemplatesList: API.OperationMethod<
+export const extrasExportTemplatesList: API.PaginatedOperationMethod<
   ExtrasExportTemplatesListRequest,
   PaginatedExportTemplateList,
   ExtrasExportTemplatesListError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ExtrasExportTemplatesListRequest,
-  output: PaginatedExportTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ExportTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ExtrasExportTemplatesListRequest,
+    output: PaginatedExportTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ExtrasExportTemplatesPartialUpdateError =
   | Forbidden
@@ -28842,327 +28854,536 @@ export const getExtrasWebhook: API.OperationMethod<
 
 export type ListExtrasBookmarksError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of bookmark objects. */
-export const listExtrasBookmarks: API.OperationMethod<
+export const listExtrasBookmarks: API.PaginatedOperationMethod<
   ListExtrasBookmarksRequest,
   PaginatedBookmarkList,
   ListExtrasBookmarksError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasBookmarksRequest,
-  output: PaginatedBookmarkList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Bookmark
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasBookmarksRequest,
+    output: PaginatedBookmarkList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasConfigContextProfilesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of config context profile objects. */
-export const listExtrasConfigContextProfiles: API.OperationMethod<
+export const listExtrasConfigContextProfiles: API.PaginatedOperationMethod<
   ListExtrasConfigContextProfilesRequest,
   PaginatedConfigContextProfileList,
   ListExtrasConfigContextProfilesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasConfigContextProfilesRequest,
-  output: PaginatedConfigContextProfileList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ConfigContextProfile
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasConfigContextProfilesRequest,
+    output: PaginatedConfigContextProfileList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasConfigContextsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of config context objects. */
-export const listExtrasConfigContexts: API.OperationMethod<
+export const listExtrasConfigContexts: API.PaginatedOperationMethod<
   ListExtrasConfigContextsRequest,
   PaginatedConfigContextList,
   ListExtrasConfigContextsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasConfigContextsRequest,
-  output: PaginatedConfigContextList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ConfigContext
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasConfigContextsRequest,
+    output: PaginatedConfigContextList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasConfigTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of config template objects. */
-export const listExtrasConfigTemplates: API.OperationMethod<
+export const listExtrasConfigTemplates: API.PaginatedOperationMethod<
   ListExtrasConfigTemplatesRequest,
   PaginatedConfigTemplateList,
   ListExtrasConfigTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasConfigTemplatesRequest,
-  output: PaginatedConfigTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ConfigTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasConfigTemplatesRequest,
+    output: PaginatedConfigTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasCustomFieldChoiceSetsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of custom field choice set objects. */
-export const listExtrasCustomFieldChoiceSets: API.OperationMethod<
+export const listExtrasCustomFieldChoiceSets: API.PaginatedOperationMethod<
   ListExtrasCustomFieldChoiceSetsRequest,
   PaginatedCustomFieldChoiceSetList,
   ListExtrasCustomFieldChoiceSetsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasCustomFieldChoiceSetsRequest,
-  output: PaginatedCustomFieldChoiceSetList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CustomFieldChoiceSet
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasCustomFieldChoiceSetsRequest,
+    output: PaginatedCustomFieldChoiceSetList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasCustomFieldsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of custom field objects. */
-export const listExtrasCustomFields: API.OperationMethod<
+export const listExtrasCustomFields: API.PaginatedOperationMethod<
   ListExtrasCustomFieldsRequest,
   PaginatedCustomFieldList,
   ListExtrasCustomFieldsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasCustomFieldsRequest,
-  output: PaginatedCustomFieldList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CustomField
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasCustomFieldsRequest,
+    output: PaginatedCustomFieldList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasCustomLinksError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of custom link objects. */
-export const listExtrasCustomLinks: API.OperationMethod<
+export const listExtrasCustomLinks: API.PaginatedOperationMethod<
   ListExtrasCustomLinksRequest,
   PaginatedCustomLinkList,
   ListExtrasCustomLinksError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasCustomLinksRequest,
-  output: PaginatedCustomLinkList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CustomLink
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasCustomLinksRequest,
+    output: PaginatedCustomLinkList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasEventRulesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of event rule objects. */
-export const listExtrasEventRules: API.OperationMethod<
+export const listExtrasEventRules: API.PaginatedOperationMethod<
   ListExtrasEventRulesRequest,
   PaginatedEventRuleList,
   ListExtrasEventRulesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasEventRulesRequest,
-  output: PaginatedEventRuleList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  EventRule
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasEventRulesRequest,
+    output: PaginatedEventRuleList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasImageAttachmentsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of image attachment objects. */
-export const listExtrasImageAttachments: API.OperationMethod<
+export const listExtrasImageAttachments: API.PaginatedOperationMethod<
   ListExtrasImageAttachmentsRequest,
   PaginatedImageAttachmentList,
   ListExtrasImageAttachmentsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasImageAttachmentsRequest,
-  output: PaginatedImageAttachmentList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ImageAttachment
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasImageAttachmentsRequest,
+    output: PaginatedImageAttachmentList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasJournalEntriesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of journal entry objects. */
-export const listExtrasJournalEntries: API.OperationMethod<
+export const listExtrasJournalEntries: API.PaginatedOperationMethod<
   ListExtrasJournalEntriesRequest,
   PaginatedJournalEntryList,
   ListExtrasJournalEntriesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasJournalEntriesRequest,
-  output: PaginatedJournalEntryList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  JournalEntry
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasJournalEntriesRequest,
+    output: PaginatedJournalEntryList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasNotificationGroupsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of notification group objects. */
-export const listExtrasNotificationGroups: API.OperationMethod<
+export const listExtrasNotificationGroups: API.PaginatedOperationMethod<
   ListExtrasNotificationGroupsRequest,
   PaginatedNotificationGroupList,
   ListExtrasNotificationGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasNotificationGroupsRequest,
-  output: PaginatedNotificationGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  NotificationGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasNotificationGroupsRequest,
+    output: PaginatedNotificationGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasNotificationsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of notification objects. */
-export const listExtrasNotifications: API.OperationMethod<
+export const listExtrasNotifications: API.PaginatedOperationMethod<
   ListExtrasNotificationsRequest,
   PaginatedNotificationList,
   ListExtrasNotificationsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasNotificationsRequest,
-  output: PaginatedNotificationList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Notification
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasNotificationsRequest,
+    output: PaginatedNotificationList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasSavedFiltersError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of saved filter objects. */
-export const listExtrasSavedFilters: API.OperationMethod<
+export const listExtrasSavedFilters: API.PaginatedOperationMethod<
   ListExtrasSavedFiltersRequest,
   PaginatedSavedFilterList,
   ListExtrasSavedFiltersError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasSavedFiltersRequest,
-  output: PaginatedSavedFilterList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  SavedFilter
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasSavedFiltersRequest,
+    output: PaginatedSavedFilterList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasScriptsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of script objects. */
-export const listExtrasScripts: API.OperationMethod<
+export const listExtrasScripts: API.PaginatedOperationMethod<
   ListExtrasScriptsRequest,
   PaginatedScriptList,
   ListExtrasScriptsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasScriptsRequest,
-  output: PaginatedScriptList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Script
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasScriptsRequest,
+    output: PaginatedScriptList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasSubscriptionsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of subscription objects. */
-export const listExtrasSubscriptions: API.OperationMethod<
+export const listExtrasSubscriptions: API.PaginatedOperationMethod<
   ListExtrasSubscriptionsRequest,
   PaginatedSubscriptionList,
   ListExtrasSubscriptionsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasSubscriptionsRequest,
-  output: PaginatedSubscriptionList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Subscription
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasSubscriptionsRequest,
+    output: PaginatedSubscriptionList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasTableConfigsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of table config objects. */
-export const listExtrasTableConfigs: API.OperationMethod<
+export const listExtrasTableConfigs: API.PaginatedOperationMethod<
   ListExtrasTableConfigsRequest,
   PaginatedTableConfigList,
   ListExtrasTableConfigsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasTableConfigsRequest,
-  output: PaginatedTableConfigList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  TableConfig
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasTableConfigsRequest,
+    output: PaginatedTableConfigList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasTaggedObjectsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of tagged item objects. */
-export const listExtrasTaggedObjects: API.OperationMethod<
+export const listExtrasTaggedObjects: API.PaginatedOperationMethod<
   ListExtrasTaggedObjectsRequest,
   PaginatedTaggedItemList,
   ListExtrasTaggedObjectsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasTaggedObjectsRequest,
-  output: PaginatedTaggedItemList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  TaggedItem
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasTaggedObjectsRequest,
+    output: PaginatedTaggedItemList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasTagsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of tag objects. */
-export const listExtrasTags: API.OperationMethod<
+export const listExtrasTags: API.PaginatedOperationMethod<
   ListExtrasTagsRequest,
   PaginatedTagList,
   ListExtrasTagsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasTagsRequest,
-  output: PaginatedTagList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Tag
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasTagsRequest,
+    output: PaginatedTagList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListExtrasWebhooksError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of webhook objects. */
-export const listExtrasWebhooks: API.OperationMethod<
+export const listExtrasWebhooks: API.PaginatedOperationMethod<
   ListExtrasWebhooksRequest,
   PaginatedWebhookList,
   ListExtrasWebhooksError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListExtrasWebhooksRequest,
-  output: PaginatedWebhookList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Webhook
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListExtrasWebhooksRequest,
+    output: PaginatedWebhookList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type RunExtrasScriptError =
   | BadRequest

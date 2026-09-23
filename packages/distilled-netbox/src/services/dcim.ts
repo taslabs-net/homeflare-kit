@@ -8,6 +8,7 @@ import {
   type NetboxOpError,
   type NetboxOpContext,
 } from "../protocol.ts";
+import { netboxPaginate } from "../pagination.ts";
 import { UnknownNetboxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -125785,18 +125786,29 @@ export const getDcimRackRole: API.OperationMethod<
 
 export type GetDcimRacksElevationError = Forbidden | NotFound | NetboxOpError;
 /** Rack elevation representing the list of rack units. Also supports rendering the elevation as an SVG. */
-export const getDcimRacksElevation: API.OperationMethod<
+export const getDcimRacksElevation: API.PaginatedOperationMethod<
   GetDcimRacksElevationRequest,
   PaginatedRackUnitList,
   GetDcimRacksElevationError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: GetDcimRacksElevationRequest,
-  output: PaginatedRackUnitList,
-  errors: [Forbidden, NotFound, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  RackUnit
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: GetDcimRacksElevationRequest,
+    output: PaginatedRackUnitList,
+    errors: [Forbidden, NotFound, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type GetDcimRackTypeError = Forbidden | NotFound | NetboxOpError;
 /** Get a rack type object. */
@@ -125938,51 +125950,84 @@ export const getDcimVirtualDeviceContext: API.OperationMethod<
 
 export type ListDcimCableBundlesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of cable bundle objects. */
-export const listDcimCableBundles: API.OperationMethod<
+export const listDcimCableBundles: API.PaginatedOperationMethod<
   ListDcimCableBundlesRequest,
   PaginatedCableBundleList,
   ListDcimCableBundlesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimCableBundlesRequest,
-  output: PaginatedCableBundleList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CableBundle
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimCableBundlesRequest,
+    output: PaginatedCableBundleList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimCablesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of cable objects. */
-export const listDcimCables: API.OperationMethod<
+export const listDcimCables: API.PaginatedOperationMethod<
   ListDcimCablesRequest,
   PaginatedCableList,
   ListDcimCablesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimCablesRequest,
-  output: PaginatedCableList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Cable
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimCablesRequest,
+    output: PaginatedCableList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimCableTerminationsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of cable termination objects. */
-export const listDcimCableTerminations: API.OperationMethod<
+export const listDcimCableTerminations: API.PaginatedOperationMethod<
   ListDcimCableTerminationsRequest,
   PaginatedCableTerminationList,
   ListDcimCableTerminationsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimCableTerminationsRequest,
-  output: PaginatedCableTerminationList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CableTermination
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimCableTerminationsRequest,
+    output: PaginatedCableTerminationList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimConnectedDeviceError =
   | BadRequest
@@ -126004,822 +126049,1372 @@ export const listDcimConnectedDevice: API.OperationMethod<
 
 export type ListDcimConsolePortsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of console port objects. */
-export const listDcimConsolePorts: API.OperationMethod<
+export const listDcimConsolePorts: API.PaginatedOperationMethod<
   ListDcimConsolePortsRequest,
   PaginatedConsolePortList,
   ListDcimConsolePortsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimConsolePortsRequest,
-  output: PaginatedConsolePortList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ConsolePort
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimConsolePortsRequest,
+    output: PaginatedConsolePortList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimConsolePortTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of console port template objects. */
-export const listDcimConsolePortTemplates: API.OperationMethod<
+export const listDcimConsolePortTemplates: API.PaginatedOperationMethod<
   ListDcimConsolePortTemplatesRequest,
   PaginatedConsolePortTemplateList,
   ListDcimConsolePortTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimConsolePortTemplatesRequest,
-  output: PaginatedConsolePortTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ConsolePortTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimConsolePortTemplatesRequest,
+    output: PaginatedConsolePortTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimConsoleServerPortsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of console server port objects. */
-export const listDcimConsoleServerPorts: API.OperationMethod<
+export const listDcimConsoleServerPorts: API.PaginatedOperationMethod<
   ListDcimConsoleServerPortsRequest,
   PaginatedConsoleServerPortList,
   ListDcimConsoleServerPortsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimConsoleServerPortsRequest,
-  output: PaginatedConsoleServerPortList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ConsoleServerPort
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimConsoleServerPortsRequest,
+    output: PaginatedConsoleServerPortList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimConsoleServerPortTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of console server port template objects. */
-export const listDcimConsoleServerPortTemplates: API.OperationMethod<
+export const listDcimConsoleServerPortTemplates: API.PaginatedOperationMethod<
   ListDcimConsoleServerPortTemplatesRequest,
   PaginatedConsoleServerPortTemplateList,
   ListDcimConsoleServerPortTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimConsoleServerPortTemplatesRequest,
-  output: PaginatedConsoleServerPortTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ConsoleServerPortTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimConsoleServerPortTemplatesRequest,
+    output: PaginatedConsoleServerPortTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimCoolingFeedsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of cooling feed objects. */
-export const listDcimCoolingFeeds: API.OperationMethod<
+export const listDcimCoolingFeeds: API.PaginatedOperationMethod<
   ListDcimCoolingFeedsRequest,
   PaginatedCoolingFeedList,
   ListDcimCoolingFeedsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimCoolingFeedsRequest,
-  output: PaginatedCoolingFeedList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CoolingFeed
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimCoolingFeedsRequest,
+    output: PaginatedCoolingFeedList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimCoolingIntakesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of cooling intake objects. */
-export const listDcimCoolingIntakes: API.OperationMethod<
+export const listDcimCoolingIntakes: API.PaginatedOperationMethod<
   ListDcimCoolingIntakesRequest,
   PaginatedCoolingIntakeList,
   ListDcimCoolingIntakesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimCoolingIntakesRequest,
-  output: PaginatedCoolingIntakeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CoolingIntake
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimCoolingIntakesRequest,
+    output: PaginatedCoolingIntakeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimCoolingIntakeTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of cooling intake template objects. */
-export const listDcimCoolingIntakeTemplates: API.OperationMethod<
+export const listDcimCoolingIntakeTemplates: API.PaginatedOperationMethod<
   ListDcimCoolingIntakeTemplatesRequest,
   PaginatedCoolingIntakeTemplateList,
   ListDcimCoolingIntakeTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimCoolingIntakeTemplatesRequest,
-  output: PaginatedCoolingIntakeTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CoolingIntakeTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimCoolingIntakeTemplatesRequest,
+    output: PaginatedCoolingIntakeTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimCoolingOutflowsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of cooling outflow objects. */
-export const listDcimCoolingOutflows: API.OperationMethod<
+export const listDcimCoolingOutflows: API.PaginatedOperationMethod<
   ListDcimCoolingOutflowsRequest,
   PaginatedCoolingOutflowList,
   ListDcimCoolingOutflowsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimCoolingOutflowsRequest,
-  output: PaginatedCoolingOutflowList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CoolingOutflow
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimCoolingOutflowsRequest,
+    output: PaginatedCoolingOutflowList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimCoolingOutflowTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of cooling outflow template objects. */
-export const listDcimCoolingOutflowTemplates: API.OperationMethod<
+export const listDcimCoolingOutflowTemplates: API.PaginatedOperationMethod<
   ListDcimCoolingOutflowTemplatesRequest,
   PaginatedCoolingOutflowTemplateList,
   ListDcimCoolingOutflowTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimCoolingOutflowTemplatesRequest,
-  output: PaginatedCoolingOutflowTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CoolingOutflowTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimCoolingOutflowTemplatesRequest,
+    output: PaginatedCoolingOutflowTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimCoolingSourcesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of cooling source objects. */
-export const listDcimCoolingSources: API.OperationMethod<
+export const listDcimCoolingSources: API.PaginatedOperationMethod<
   ListDcimCoolingSourcesRequest,
   PaginatedCoolingSourceList,
   ListDcimCoolingSourcesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimCoolingSourcesRequest,
-  output: PaginatedCoolingSourceList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  CoolingSource
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimCoolingSourcesRequest,
+    output: PaginatedCoolingSourceList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimDeviceBaysError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of device bay objects. */
-export const listDcimDeviceBays: API.OperationMethod<
+export const listDcimDeviceBays: API.PaginatedOperationMethod<
   ListDcimDeviceBaysRequest,
   PaginatedDeviceBayList,
   ListDcimDeviceBaysError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimDeviceBaysRequest,
-  output: PaginatedDeviceBayList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  DeviceBay
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimDeviceBaysRequest,
+    output: PaginatedDeviceBayList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimDeviceBayTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of device bay template objects. */
-export const listDcimDeviceBayTemplates: API.OperationMethod<
+export const listDcimDeviceBayTemplates: API.PaginatedOperationMethod<
   ListDcimDeviceBayTemplatesRequest,
   PaginatedDeviceBayTemplateList,
   ListDcimDeviceBayTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimDeviceBayTemplatesRequest,
-  output: PaginatedDeviceBayTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  DeviceBayTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimDeviceBayTemplatesRequest,
+    output: PaginatedDeviceBayTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimDeviceRolesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of device role objects. */
-export const listDcimDeviceRoles: API.OperationMethod<
+export const listDcimDeviceRoles: API.PaginatedOperationMethod<
   ListDcimDeviceRolesRequest,
   PaginatedDeviceRoleList,
   ListDcimDeviceRolesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimDeviceRolesRequest,
-  output: PaginatedDeviceRoleList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  DeviceRole
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimDeviceRolesRequest,
+    output: PaginatedDeviceRoleList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimDevicesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of device objects. */
-export const listDcimDevices: API.OperationMethod<
+export const listDcimDevices: API.PaginatedOperationMethod<
   ListDcimDevicesRequest,
   PaginatedDeviceList,
   ListDcimDevicesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimDevicesRequest,
-  output: PaginatedDeviceList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Device
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimDevicesRequest,
+    output: PaginatedDeviceList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimDeviceTypesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of device type objects. */
-export const listDcimDeviceTypes: API.OperationMethod<
+export const listDcimDeviceTypes: API.PaginatedOperationMethod<
   ListDcimDeviceTypesRequest,
   PaginatedDeviceTypeList,
   ListDcimDeviceTypesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimDeviceTypesRequest,
-  output: PaginatedDeviceTypeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  DeviceType
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimDeviceTypesRequest,
+    output: PaginatedDeviceTypeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimFrontPortsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of front port objects. */
-export const listDcimFrontPorts: API.OperationMethod<
+export const listDcimFrontPorts: API.PaginatedOperationMethod<
   ListDcimFrontPortsRequest,
   PaginatedFrontPortList,
   ListDcimFrontPortsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimFrontPortsRequest,
-  output: PaginatedFrontPortList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  FrontPort
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimFrontPortsRequest,
+    output: PaginatedFrontPortList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimFrontPortTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of front port template objects. */
-export const listDcimFrontPortTemplates: API.OperationMethod<
+export const listDcimFrontPortTemplates: API.PaginatedOperationMethod<
   ListDcimFrontPortTemplatesRequest,
   PaginatedFrontPortTemplateList,
   ListDcimFrontPortTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimFrontPortTemplatesRequest,
-  output: PaginatedFrontPortTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  FrontPortTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimFrontPortTemplatesRequest,
+    output: PaginatedFrontPortTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimInterfacesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of interface objects. */
-export const listDcimInterfaces: API.OperationMethod<
+export const listDcimInterfaces: API.PaginatedOperationMethod<
   ListDcimInterfacesRequest,
   PaginatedInterfaceList,
   ListDcimInterfacesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimInterfacesRequest,
-  output: PaginatedInterfaceList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Interface
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimInterfacesRequest,
+    output: PaginatedInterfaceList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimInterfaceTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of interface template objects. */
-export const listDcimInterfaceTemplates: API.OperationMethod<
+export const listDcimInterfaceTemplates: API.PaginatedOperationMethod<
   ListDcimInterfaceTemplatesRequest,
   PaginatedInterfaceTemplateList,
   ListDcimInterfaceTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimInterfaceTemplatesRequest,
-  output: PaginatedInterfaceTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  InterfaceTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimInterfaceTemplatesRequest,
+    output: PaginatedInterfaceTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimInventoryItemRolesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of inventory item role objects. */
-export const listDcimInventoryItemRoles: API.OperationMethod<
+export const listDcimInventoryItemRoles: API.PaginatedOperationMethod<
   ListDcimInventoryItemRolesRequest,
   PaginatedInventoryItemRoleList,
   ListDcimInventoryItemRolesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimInventoryItemRolesRequest,
-  output: PaginatedInventoryItemRoleList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  InventoryItemRole
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimInventoryItemRolesRequest,
+    output: PaginatedInventoryItemRoleList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimInventoryItemsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of inventory item objects. */
-export const listDcimInventoryItems: API.OperationMethod<
+export const listDcimInventoryItems: API.PaginatedOperationMethod<
   ListDcimInventoryItemsRequest,
   PaginatedInventoryItemList,
   ListDcimInventoryItemsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimInventoryItemsRequest,
-  output: PaginatedInventoryItemList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  InventoryItem
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimInventoryItemsRequest,
+    output: PaginatedInventoryItemList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimInventoryItemTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of inventory item template objects. */
-export const listDcimInventoryItemTemplates: API.OperationMethod<
+export const listDcimInventoryItemTemplates: API.PaginatedOperationMethod<
   ListDcimInventoryItemTemplatesRequest,
   PaginatedInventoryItemTemplateList,
   ListDcimInventoryItemTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimInventoryItemTemplatesRequest,
-  output: PaginatedInventoryItemTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  InventoryItemTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimInventoryItemTemplatesRequest,
+    output: PaginatedInventoryItemTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimLocationsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of location objects. */
-export const listDcimLocations: API.OperationMethod<
+export const listDcimLocations: API.PaginatedOperationMethod<
   ListDcimLocationsRequest,
   PaginatedLocationList,
   ListDcimLocationsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimLocationsRequest,
-  output: PaginatedLocationList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Location
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimLocationsRequest,
+    output: PaginatedLocationList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimMacAddressesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of MAC address objects. */
-export const listDcimMacAddresses: API.OperationMethod<
+export const listDcimMacAddresses: API.PaginatedOperationMethod<
   ListDcimMacAddressesRequest,
   PaginatedMACAddressList,
   ListDcimMacAddressesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimMacAddressesRequest,
-  output: PaginatedMACAddressList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  MACAddress
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimMacAddressesRequest,
+    output: PaginatedMACAddressList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimManufacturersError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of manufacturer objects. */
-export const listDcimManufacturers: API.OperationMethod<
+export const listDcimManufacturers: API.PaginatedOperationMethod<
   ListDcimManufacturersRequest,
   PaginatedManufacturerList,
   ListDcimManufacturersError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimManufacturersRequest,
-  output: PaginatedManufacturerList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Manufacturer
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimManufacturersRequest,
+    output: PaginatedManufacturerList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimModuleBaysError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of module bay objects. */
-export const listDcimModuleBays: API.OperationMethod<
+export const listDcimModuleBays: API.PaginatedOperationMethod<
   ListDcimModuleBaysRequest,
   PaginatedModuleBayList,
   ListDcimModuleBaysError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimModuleBaysRequest,
-  output: PaginatedModuleBayList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ModuleBay
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimModuleBaysRequest,
+    output: PaginatedModuleBayList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimModuleBayTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of module bay template objects. */
-export const listDcimModuleBayTemplates: API.OperationMethod<
+export const listDcimModuleBayTemplates: API.PaginatedOperationMethod<
   ListDcimModuleBayTemplatesRequest,
   PaginatedModuleBayTemplateList,
   ListDcimModuleBayTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimModuleBayTemplatesRequest,
-  output: PaginatedModuleBayTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ModuleBayTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimModuleBayTemplatesRequest,
+    output: PaginatedModuleBayTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimModuleBayTypesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of module bay type objects. */
-export const listDcimModuleBayTypes: API.OperationMethod<
+export const listDcimModuleBayTypes: API.PaginatedOperationMethod<
   ListDcimModuleBayTypesRequest,
   PaginatedModuleBayTypeList,
   ListDcimModuleBayTypesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimModuleBayTypesRequest,
-  output: PaginatedModuleBayTypeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ModuleBayType
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimModuleBayTypesRequest,
+    output: PaginatedModuleBayTypeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimModulesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of module objects. */
-export const listDcimModules: API.OperationMethod<
+export const listDcimModules: API.PaginatedOperationMethod<
   ListDcimModulesRequest,
   PaginatedModuleList,
   ListDcimModulesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimModulesRequest,
-  output: PaginatedModuleList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Module
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimModulesRequest,
+    output: PaginatedModuleList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimModuleTypeProfilesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of module type profile objects. */
-export const listDcimModuleTypeProfiles: API.OperationMethod<
+export const listDcimModuleTypeProfiles: API.PaginatedOperationMethod<
   ListDcimModuleTypeProfilesRequest,
   PaginatedModuleTypeProfileList,
   ListDcimModuleTypeProfilesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimModuleTypeProfilesRequest,
-  output: PaginatedModuleTypeProfileList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ModuleTypeProfile
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimModuleTypeProfilesRequest,
+    output: PaginatedModuleTypeProfileList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimModuleTypesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of module type objects. */
-export const listDcimModuleTypes: API.OperationMethod<
+export const listDcimModuleTypes: API.PaginatedOperationMethod<
   ListDcimModuleTypesRequest,
   PaginatedModuleTypeList,
   ListDcimModuleTypesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimModuleTypesRequest,
-  output: PaginatedModuleTypeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ModuleType
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimModuleTypesRequest,
+    output: PaginatedModuleTypeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimPlatformsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of platform objects. */
-export const listDcimPlatforms: API.OperationMethod<
+export const listDcimPlatforms: API.PaginatedOperationMethod<
   ListDcimPlatformsRequest,
   PaginatedPlatformList,
   ListDcimPlatformsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimPlatformsRequest,
-  output: PaginatedPlatformList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Platform
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimPlatformsRequest,
+    output: PaginatedPlatformList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimPowerFeedsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of power feed objects. */
-export const listDcimPowerFeeds: API.OperationMethod<
+export const listDcimPowerFeeds: API.PaginatedOperationMethod<
   ListDcimPowerFeedsRequest,
   PaginatedPowerFeedList,
   ListDcimPowerFeedsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimPowerFeedsRequest,
-  output: PaginatedPowerFeedList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  PowerFeed
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimPowerFeedsRequest,
+    output: PaginatedPowerFeedList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimPowerOutletsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of power outlet objects. */
-export const listDcimPowerOutlets: API.OperationMethod<
+export const listDcimPowerOutlets: API.PaginatedOperationMethod<
   ListDcimPowerOutletsRequest,
   PaginatedPowerOutletList,
   ListDcimPowerOutletsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimPowerOutletsRequest,
-  output: PaginatedPowerOutletList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  PowerOutlet
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimPowerOutletsRequest,
+    output: PaginatedPowerOutletList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimPowerOutletTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of power outlet template objects. */
-export const listDcimPowerOutletTemplates: API.OperationMethod<
+export const listDcimPowerOutletTemplates: API.PaginatedOperationMethod<
   ListDcimPowerOutletTemplatesRequest,
   PaginatedPowerOutletTemplateList,
   ListDcimPowerOutletTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimPowerOutletTemplatesRequest,
-  output: PaginatedPowerOutletTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  PowerOutletTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimPowerOutletTemplatesRequest,
+    output: PaginatedPowerOutletTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimPowerPanelsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of power panel objects. */
-export const listDcimPowerPanels: API.OperationMethod<
+export const listDcimPowerPanels: API.PaginatedOperationMethod<
   ListDcimPowerPanelsRequest,
   PaginatedPowerPanelList,
   ListDcimPowerPanelsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimPowerPanelsRequest,
-  output: PaginatedPowerPanelList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  PowerPanel
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimPowerPanelsRequest,
+    output: PaginatedPowerPanelList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimPowerPortsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of power port objects. */
-export const listDcimPowerPorts: API.OperationMethod<
+export const listDcimPowerPorts: API.PaginatedOperationMethod<
   ListDcimPowerPortsRequest,
   PaginatedPowerPortList,
   ListDcimPowerPortsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimPowerPortsRequest,
-  output: PaginatedPowerPortList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  PowerPort
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimPowerPortsRequest,
+    output: PaginatedPowerPortList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimPowerPortTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of power port template objects. */
-export const listDcimPowerPortTemplates: API.OperationMethod<
+export const listDcimPowerPortTemplates: API.PaginatedOperationMethod<
   ListDcimPowerPortTemplatesRequest,
   PaginatedPowerPortTemplateList,
   ListDcimPowerPortTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimPowerPortTemplatesRequest,
-  output: PaginatedPowerPortTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  PowerPortTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimPowerPortTemplatesRequest,
+    output: PaginatedPowerPortTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimRackGroupsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of rack group objects. */
-export const listDcimRackGroups: API.OperationMethod<
+export const listDcimRackGroups: API.PaginatedOperationMethod<
   ListDcimRackGroupsRequest,
   PaginatedRackGroupList,
   ListDcimRackGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimRackGroupsRequest,
-  output: PaginatedRackGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  RackGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimRackGroupsRequest,
+    output: PaginatedRackGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimRackReservationsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of rack reservation objects. */
-export const listDcimRackReservations: API.OperationMethod<
+export const listDcimRackReservations: API.PaginatedOperationMethod<
   ListDcimRackReservationsRequest,
   PaginatedRackReservationList,
   ListDcimRackReservationsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimRackReservationsRequest,
-  output: PaginatedRackReservationList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  RackReservation
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimRackReservationsRequest,
+    output: PaginatedRackReservationList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimRackRolesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of rack role objects. */
-export const listDcimRackRoles: API.OperationMethod<
+export const listDcimRackRoles: API.PaginatedOperationMethod<
   ListDcimRackRolesRequest,
   PaginatedRackRoleList,
   ListDcimRackRolesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimRackRolesRequest,
-  output: PaginatedRackRoleList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  RackRole
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimRackRolesRequest,
+    output: PaginatedRackRoleList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimRacksError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of rack objects. */
-export const listDcimRacks: API.OperationMethod<
+export const listDcimRacks: API.PaginatedOperationMethod<
   ListDcimRacksRequest,
   PaginatedRackList,
   ListDcimRacksError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimRacksRequest,
-  output: PaginatedRackList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Rack
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimRacksRequest,
+    output: PaginatedRackList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimRackTypesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of rack type objects. */
-export const listDcimRackTypes: API.OperationMethod<
+export const listDcimRackTypes: API.PaginatedOperationMethod<
   ListDcimRackTypesRequest,
   PaginatedRackTypeList,
   ListDcimRackTypesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimRackTypesRequest,
-  output: PaginatedRackTypeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  RackType
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimRackTypesRequest,
+    output: PaginatedRackTypeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimRearPortsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of rear port objects. */
-export const listDcimRearPorts: API.OperationMethod<
+export const listDcimRearPorts: API.PaginatedOperationMethod<
   ListDcimRearPortsRequest,
   PaginatedRearPortList,
   ListDcimRearPortsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimRearPortsRequest,
-  output: PaginatedRearPortList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  RearPort
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimRearPortsRequest,
+    output: PaginatedRearPortList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimRearPortTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of rear port template objects. */
-export const listDcimRearPortTemplates: API.OperationMethod<
+export const listDcimRearPortTemplates: API.PaginatedOperationMethod<
   ListDcimRearPortTemplatesRequest,
   PaginatedRearPortTemplateList,
   ListDcimRearPortTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimRearPortTemplatesRequest,
-  output: PaginatedRearPortTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  RearPortTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimRearPortTemplatesRequest,
+    output: PaginatedRearPortTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimRegionsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of region objects. */
-export const listDcimRegions: API.OperationMethod<
+export const listDcimRegions: API.PaginatedOperationMethod<
   ListDcimRegionsRequest,
   PaginatedRegionList,
   ListDcimRegionsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimRegionsRequest,
-  output: PaginatedRegionList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Region
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimRegionsRequest,
+    output: PaginatedRegionList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimSiteGroupsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of site group objects. */
-export const listDcimSiteGroups: API.OperationMethod<
+export const listDcimSiteGroups: API.PaginatedOperationMethod<
   ListDcimSiteGroupsRequest,
   PaginatedSiteGroupList,
   ListDcimSiteGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimSiteGroupsRequest,
-  output: PaginatedSiteGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  SiteGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimSiteGroupsRequest,
+    output: PaginatedSiteGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimSitesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of site objects. */
-export const listDcimSites: API.OperationMethod<
+export const listDcimSites: API.PaginatedOperationMethod<
   ListDcimSitesRequest,
   PaginatedSiteList,
   ListDcimSitesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimSitesRequest,
-  output: PaginatedSiteList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Site
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimSitesRequest,
+    output: PaginatedSiteList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimVirtualChassisError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of virtual chassis objects. */
-export const listDcimVirtualChassis: API.OperationMethod<
+export const listDcimVirtualChassis: API.PaginatedOperationMethod<
   ListDcimVirtualChassisRequest,
   PaginatedVirtualChassisList,
   ListDcimVirtualChassisError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimVirtualChassisRequest,
-  output: PaginatedVirtualChassisList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VirtualChassis
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimVirtualChassisRequest,
+    output: PaginatedVirtualChassisList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListDcimVirtualDeviceContextsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of virtual device context objects. */
-export const listDcimVirtualDeviceContexts: API.OperationMethod<
+export const listDcimVirtualDeviceContexts: API.PaginatedOperationMethod<
   ListDcimVirtualDeviceContextsRequest,
   PaginatedVirtualDeviceContextList,
   ListDcimVirtualDeviceContextsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListDcimVirtualDeviceContextsRequest,
-  output: PaginatedVirtualDeviceContextList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VirtualDeviceContext
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListDcimVirtualDeviceContextsRequest,
+    output: PaginatedVirtualDeviceContextList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type UpdateDcimCableError = Forbidden | NotFound | NetboxOpError;
 /** Put a cable object. */

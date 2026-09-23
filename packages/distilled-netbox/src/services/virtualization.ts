@@ -8,6 +8,7 @@ import {
   type NetboxOpError,
   type NetboxOpContext,
 } from "../protocol.ts";
+import { netboxPaginate } from "../pagination.ts";
 import { UnknownNetboxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -15283,126 +15284,203 @@ export type ListVirtualizationClusterGroupsError =
   | Forbidden
   | NetboxOpError;
 /** Get a list of cluster group objects. */
-export const listVirtualizationClusterGroups: API.OperationMethod<
+export const listVirtualizationClusterGroups: API.PaginatedOperationMethod<
   ListVirtualizationClusterGroupsRequest,
   PaginatedClusterGroupList,
   ListVirtualizationClusterGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVirtualizationClusterGroupsRequest,
-  output: PaginatedClusterGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ClusterGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVirtualizationClusterGroupsRequest,
+    output: PaginatedClusterGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVirtualizationClustersError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of cluster objects. */
-export const listVirtualizationClusters: API.OperationMethod<
+export const listVirtualizationClusters: API.PaginatedOperationMethod<
   ListVirtualizationClustersRequest,
   PaginatedClusterList,
   ListVirtualizationClustersError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVirtualizationClustersRequest,
-  output: PaginatedClusterList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Cluster
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVirtualizationClustersRequest,
+    output: PaginatedClusterList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVirtualizationClusterTypesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of cluster type objects. */
-export const listVirtualizationClusterTypes: API.OperationMethod<
+export const listVirtualizationClusterTypes: API.PaginatedOperationMethod<
   ListVirtualizationClusterTypesRequest,
   PaginatedClusterTypeList,
   ListVirtualizationClusterTypesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVirtualizationClusterTypesRequest,
-  output: PaginatedClusterTypeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ClusterType
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVirtualizationClusterTypesRequest,
+    output: PaginatedClusterTypeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVirtualizationInterfacesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of interface objects. */
-export const listVirtualizationInterfaces: API.OperationMethod<
+export const listVirtualizationInterfaces: API.PaginatedOperationMethod<
   ListVirtualizationInterfacesRequest,
   PaginatedVMInterfaceList,
   ListVirtualizationInterfacesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVirtualizationInterfacesRequest,
-  output: PaginatedVMInterfaceList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VMInterface
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVirtualizationInterfacesRequest,
+    output: PaginatedVMInterfaceList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVirtualizationVirtualDisksError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of virtual disk objects. */
-export const listVirtualizationVirtualDisks: API.OperationMethod<
+export const listVirtualizationVirtualDisks: API.PaginatedOperationMethod<
   ListVirtualizationVirtualDisksRequest,
   PaginatedVirtualDiskList,
   ListVirtualizationVirtualDisksError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVirtualizationVirtualDisksRequest,
-  output: PaginatedVirtualDiskList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VirtualDisk
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVirtualizationVirtualDisksRequest,
+    output: PaginatedVirtualDiskList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVirtualizationVirtualMachinesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of virtual machine objects. */
-export const listVirtualizationVirtualMachines: API.OperationMethod<
+export const listVirtualizationVirtualMachines: API.PaginatedOperationMethod<
   ListVirtualizationVirtualMachinesRequest,
   PaginatedVirtualMachineList,
   ListVirtualizationVirtualMachinesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVirtualizationVirtualMachinesRequest,
-  output: PaginatedVirtualMachineList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VirtualMachine
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVirtualizationVirtualMachinesRequest,
+    output: PaginatedVirtualMachineList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListVirtualizationVirtualMachineTypesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of virtual machine type objects. */
-export const listVirtualizationVirtualMachineTypes: API.OperationMethod<
+export const listVirtualizationVirtualMachineTypes: API.PaginatedOperationMethod<
   ListVirtualizationVirtualMachineTypesRequest,
   PaginatedVirtualMachineTypeList,
   ListVirtualizationVirtualMachineTypesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListVirtualizationVirtualMachineTypesRequest,
-  output: PaginatedVirtualMachineTypeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VirtualMachineType
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListVirtualizationVirtualMachineTypesRequest,
+    output: PaginatedVirtualMachineTypeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type UpdateVirtualizationClusterError =
   | Forbidden

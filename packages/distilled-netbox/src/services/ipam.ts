@@ -8,6 +8,7 @@ import {
   type NetboxOpError,
   type NetboxOpContext,
 } from "../protocol.ts";
+import { netboxPaginate } from "../pagination.ts";
 import { UnknownNetboxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -28078,33 +28079,55 @@ export const ipamVrfsDestroy: API.OperationMethod<
 
 export type ListIpamAggregatesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of aggregate objects. */
-export const listIpamAggregates: API.OperationMethod<
+export const listIpamAggregates: API.PaginatedOperationMethod<
   ListIpamAggregatesRequest,
   PaginatedAggregateList,
   ListIpamAggregatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamAggregatesRequest,
-  output: PaginatedAggregateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Aggregate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamAggregatesRequest,
+    output: PaginatedAggregateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamAsnRangesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of ASN range objects. */
-export const listIpamAsnRanges: API.OperationMethod<
+export const listIpamAsnRanges: API.PaginatedOperationMethod<
   ListIpamAsnRangesRequest,
   PaginatedASNRangeList,
   ListIpamAsnRangesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamAsnRangesRequest,
-  output: PaginatedASNRangeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ASNRange
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamAsnRangesRequest,
+    output: PaginatedASNRangeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamAsnRangesAvailableAsnsError =
   | Forbidden
@@ -28126,81 +28149,136 @@ export const listIpamAsnRangesAvailableAsns: API.OperationMethod<
 
 export type ListIpamAsnsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of ASN objects. */
-export const listIpamAsns: API.OperationMethod<
+export const listIpamAsns: API.PaginatedOperationMethod<
   ListIpamAsnsRequest,
   PaginatedASNList,
   ListIpamAsnsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamAsnsRequest,
-  output: PaginatedASNList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ASN
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamAsnsRequest,
+    output: PaginatedASNList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamFhrpGroupAssignmentsError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of FHRP group assignment objects. */
-export const listIpamFhrpGroupAssignments: API.OperationMethod<
+export const listIpamFhrpGroupAssignments: API.PaginatedOperationMethod<
   ListIpamFhrpGroupAssignmentsRequest,
   PaginatedFHRPGroupAssignmentList,
   ListIpamFhrpGroupAssignmentsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamFhrpGroupAssignmentsRequest,
-  output: PaginatedFHRPGroupAssignmentList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  FHRPGroupAssignment
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamFhrpGroupAssignmentsRequest,
+    output: PaginatedFHRPGroupAssignmentList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamFhrpGroupsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of FHRP group objects. */
-export const listIpamFhrpGroups: API.OperationMethod<
+export const listIpamFhrpGroups: API.PaginatedOperationMethod<
   ListIpamFhrpGroupsRequest,
   PaginatedFHRPGroupList,
   ListIpamFhrpGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamFhrpGroupsRequest,
-  output: PaginatedFHRPGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  FHRPGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamFhrpGroupsRequest,
+    output: PaginatedFHRPGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamIpAddressesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of IP address objects. */
-export const listIpamIpAddresses: API.OperationMethod<
+export const listIpamIpAddresses: API.PaginatedOperationMethod<
   ListIpamIpAddressesRequest,
   PaginatedIPAddressList,
   ListIpamIpAddressesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamIpAddressesRequest,
-  output: PaginatedIPAddressList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  IPAddress
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamIpAddressesRequest,
+    output: PaginatedIPAddressList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamIpRangesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of IP range objects. */
-export const listIpamIpRanges: API.OperationMethod<
+export const listIpamIpRanges: API.PaginatedOperationMethod<
   ListIpamIpRangesRequest,
   PaginatedIPRangeList,
   ListIpamIpRangesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamIpRangesRequest,
-  output: PaginatedIPRangeList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  IPRange
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamIpRangesRequest,
+    output: PaginatedIPRangeList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamIpRangesAvailableIpsError =
   | Forbidden
@@ -28222,18 +28300,29 @@ export const listIpamIpRangesAvailableIps: API.OperationMethod<
 
 export type ListIpamPrefixesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of prefix objects. */
-export const listIpamPrefixes: API.OperationMethod<
+export const listIpamPrefixes: API.PaginatedOperationMethod<
   ListIpamPrefixesRequest,
   PaginatedPrefixList,
   ListIpamPrefixesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamPrefixesRequest,
-  output: PaginatedPrefixList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Prefix
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamPrefixesRequest,
+    output: PaginatedPrefixList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamPrefixesAvailableIpsError =
   | Forbidden
@@ -28273,96 +28362,162 @@ export const listIpamPrefixesAvailablePrefixes: API.OperationMethod<
 
 export type ListIpamRirsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of RIR objects. */
-export const listIpamRirs: API.OperationMethod<
+export const listIpamRirs: API.PaginatedOperationMethod<
   ListIpamRirsRequest,
   PaginatedRIRList,
   ListIpamRirsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamRirsRequest,
-  output: PaginatedRIRList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  RIR
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamRirsRequest,
+    output: PaginatedRIRList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamRolesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of role objects. */
-export const listIpamRoles: API.OperationMethod<
+export const listIpamRoles: API.PaginatedOperationMethod<
   ListIpamRolesRequest,
   PaginatedRoleList,
   ListIpamRolesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamRolesRequest,
-  output: PaginatedRoleList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Role
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamRolesRequest,
+    output: PaginatedRoleList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamRouteTargetsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of route target objects. */
-export const listIpamRouteTargets: API.OperationMethod<
+export const listIpamRouteTargets: API.PaginatedOperationMethod<
   ListIpamRouteTargetsRequest,
   PaginatedRouteTargetList,
   ListIpamRouteTargetsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamRouteTargetsRequest,
-  output: PaginatedRouteTargetList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  RouteTarget
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamRouteTargetsRequest,
+    output: PaginatedRouteTargetList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamServicesError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of application service objects. */
-export const listIpamServices: API.OperationMethod<
+export const listIpamServices: API.PaginatedOperationMethod<
   ListIpamServicesRequest,
   PaginatedServiceList,
   ListIpamServicesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamServicesRequest,
-  output: PaginatedServiceList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  Service
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamServicesRequest,
+    output: PaginatedServiceList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamServiceTemplatesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of application service template objects. */
-export const listIpamServiceTemplates: API.OperationMethod<
+export const listIpamServiceTemplates: API.PaginatedOperationMethod<
   ListIpamServiceTemplatesRequest,
   PaginatedServiceTemplateList,
   ListIpamServiceTemplatesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamServiceTemplatesRequest,
-  output: PaginatedServiceTemplateList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  ServiceTemplate
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamServiceTemplatesRequest,
+    output: PaginatedServiceTemplateList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamVlanGroupsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of VLAN group objects. */
-export const listIpamVlanGroups: API.OperationMethod<
+export const listIpamVlanGroups: API.PaginatedOperationMethod<
   ListIpamVlanGroupsRequest,
   PaginatedVLANGroupList,
   ListIpamVlanGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamVlanGroupsRequest,
-  output: PaginatedVLANGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VLANGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamVlanGroupsRequest,
+    output: PaginatedVLANGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamVlanGroupsAvailableVlansError =
   | Forbidden
@@ -28384,69 +28539,113 @@ export const listIpamVlanGroupsAvailableVlans: API.OperationMethod<
 
 export type ListIpamVlansError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of VLAN objects. */
-export const listIpamVlans: API.OperationMethod<
+export const listIpamVlans: API.PaginatedOperationMethod<
   ListIpamVlansRequest,
   PaginatedVLANList,
   ListIpamVlansError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamVlansRequest,
-  output: PaginatedVLANList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VLAN
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamVlansRequest,
+    output: PaginatedVLANList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamVlanTranslationPoliciesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of VLAN translation policy objects. */
-export const listIpamVlanTranslationPolicies: API.OperationMethod<
+export const listIpamVlanTranslationPolicies: API.PaginatedOperationMethod<
   ListIpamVlanTranslationPoliciesRequest,
   PaginatedVLANTranslationPolicyList,
   ListIpamVlanTranslationPoliciesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamVlanTranslationPoliciesRequest,
-  output: PaginatedVLANTranslationPolicyList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VLANTranslationPolicy
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamVlanTranslationPoliciesRequest,
+    output: PaginatedVLANTranslationPolicyList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamVlanTranslationRulesError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of VLAN translation rule objects. */
-export const listIpamVlanTranslationRules: API.OperationMethod<
+export const listIpamVlanTranslationRules: API.PaginatedOperationMethod<
   ListIpamVlanTranslationRulesRequest,
   PaginatedVLANTranslationRuleList,
   ListIpamVlanTranslationRulesError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamVlanTranslationRulesRequest,
-  output: PaginatedVLANTranslationRuleList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VLANTranslationRule
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamVlanTranslationRulesRequest,
+    output: PaginatedVLANTranslationRuleList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListIpamVrfsError = BadRequest | Forbidden | NetboxOpError;
 /** Get a list of VRF objects. */
-export const listIpamVrfs: API.OperationMethod<
+export const listIpamVrfs: API.PaginatedOperationMethod<
   ListIpamVrfsRequest,
   PaginatedVRFList,
   ListIpamVrfsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListIpamVrfsRequest,
-  output: PaginatedVRFList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  VRF
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListIpamVrfsRequest,
+    output: PaginatedVRFList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type UpdateIpamAggregateError = Forbidden | NotFound | NetboxOpError;
 /** Put a aggregate object. */

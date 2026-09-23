@@ -8,6 +8,7 @@ import {
   type NetboxOpError,
   type NetboxOpContext,
 } from "../protocol.ts";
+import { netboxPaginate } from "../pagination.ts";
 import { UnknownNetboxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -7070,54 +7071,87 @@ export type ListWirelessWirelessLanGroupsError =
   | Forbidden
   | NetboxOpError;
 /** Get a list of wireless LAN group objects. */
-export const listWirelessWirelessLanGroups: API.OperationMethod<
+export const listWirelessWirelessLanGroups: API.PaginatedOperationMethod<
   ListWirelessWirelessLanGroupsRequest,
   PaginatedWirelessLANGroupList,
   ListWirelessWirelessLanGroupsError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListWirelessWirelessLanGroupsRequest,
-  output: PaginatedWirelessLANGroupList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  WirelessLANGroup
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListWirelessWirelessLanGroupsRequest,
+    output: PaginatedWirelessLANGroupList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListWirelessWirelessLansError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of wireless LAN objects. */
-export const listWirelessWirelessLans: API.OperationMethod<
+export const listWirelessWirelessLans: API.PaginatedOperationMethod<
   ListWirelessWirelessLansRequest,
   PaginatedWirelessLANList,
   ListWirelessWirelessLansError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListWirelessWirelessLansRequest,
-  output: PaginatedWirelessLANList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  WirelessLAN
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListWirelessWirelessLansRequest,
+    output: PaginatedWirelessLANList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type ListWirelessWirelessLinksError =
   | BadRequest
   | Forbidden
   | NetboxOpError;
 /** Get a list of wireless link objects. */
-export const listWirelessWirelessLinks: API.OperationMethod<
+export const listWirelessWirelessLinks: API.PaginatedOperationMethod<
   ListWirelessWirelessLinksRequest,
   PaginatedWirelessLinkList,
   ListWirelessWirelessLinksError,
-  NetboxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListWirelessWirelessLinksRequest,
-  output: PaginatedWirelessLinkList,
-  errors: [BadRequest, Forbidden, UnknownNetboxError],
-  protocol: NetboxProtocol,
-  retry: Retry.Retry,
-}));
+  NetboxOpContext,
+  WirelessLink
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListWirelessWirelessLinksRequest,
+    output: PaginatedWirelessLinkList,
+    errors: [BadRequest, Forbidden, UnknownNetboxError],
+    protocol: NetboxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "cursor",
+      inputToken: "offset",
+      outputToken: "next",
+      items: "results",
+      pageSize: "limit",
+    } as const,
+  }),
+  netboxPaginate,
+) as any;
 
 export type UpdateWirelessWirelessLanError =
   | Forbidden
