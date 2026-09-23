@@ -31,6 +31,15 @@ export class Forbidden
     [{ status: 403 }],
   ) {}
 
+export class NotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<NotFound>()("NotFound", {
+      code: S.Number,
+      message: S.String,
+    }).pipe(C.withBadRequestError),
+    [{ status: 404 }],
+  ) {}
+
 export type CreateTrashRequestDocumentsList = Array<number>;
 export const CreateTrashRequestDocumentsList = /*@__PURE__*/ S.Array(
   S.Number,
@@ -96,7 +105,11 @@ export const createTrash: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type ListTrashError = BadRequest | Forbidden | PaperlessNgxOpError;
+export type ListTrashError =
+  | BadRequest
+  | Forbidden
+  | NotFound
+  | PaperlessNgxOpError;
 export const listTrash: API.OperationMethod<
   ListTrashRequest,
   ListTrashResponse,
@@ -105,7 +118,7 @@ export const listTrash: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: ListTrashRequest,
   output: ListTrashResponse,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
+  errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
   protocol: PaperlessNgxProtocol,
   retry: Retry.Retry,
 }));

@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -533,20 +534,31 @@ export const getStoragePath: API.OperationMethod<
 export type ListStoragePathsError =
   | BadRequest
   | Forbidden
+  | NotFound
   | PaperlessNgxOpError;
 /** Mixin to add document count to queryset, permissions-aware if needed */
-export const listStoragePaths: API.OperationMethod<
+export const listStoragePaths: API.PaginatedOperationMethod<
   ListStoragePathsRequest,
   PaginatedStoragePathList,
   ListStoragePathsError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListStoragePathsRequest,
-  output: PaginatedStoragePathList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  StoragePath
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListStoragePathsRequest,
+    output: PaginatedStoragePathList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type StoragePathsDestroyError =
   | Forbidden

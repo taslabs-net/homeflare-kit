@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -789,19 +790,30 @@ export const getWorkflowTrigger: API.OperationMethod<
 export type ListWorkflowTriggersError =
   | BadRequest
   | Forbidden
+  | NotFound
   | PaperlessNgxOpError;
-export const listWorkflowTriggers: API.OperationMethod<
+export const listWorkflowTriggers: API.PaginatedOperationMethod<
   ListWorkflowTriggersRequest,
   PaginatedWorkflowTriggerList,
   ListWorkflowTriggersError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListWorkflowTriggersRequest,
-  output: PaginatedWorkflowTriggerList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  WorkflowTrigger
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListWorkflowTriggersRequest,
+    output: PaginatedWorkflowTriggerList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type UpdateWorkflowTriggerError =
   | BadRequest

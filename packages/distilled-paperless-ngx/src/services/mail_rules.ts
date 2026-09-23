@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -667,20 +668,34 @@ export const getMailRule: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type ListMailRulesError = BadRequest | Forbidden | PaperlessNgxOpError;
+export type ListMailRulesError =
+  | BadRequest
+  | Forbidden
+  | NotFound
+  | PaperlessNgxOpError;
 /** Pass a user object to serializer */
-export const listMailRules: API.OperationMethod<
+export const listMailRules: API.PaginatedOperationMethod<
   ListMailRulesRequest,
   PaginatedMailRuleList,
   ListMailRulesError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListMailRulesRequest,
-  output: PaginatedMailRuleList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  MailRule
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListMailRulesRequest,
+    output: PaginatedMailRuleList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type MailRulesDestroyError = Forbidden | NotFound | PaperlessNgxOpError;
 /** Pass a user object to serializer */

@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -590,20 +591,31 @@ export const getCorrespondent: API.OperationMethod<
 export type ListCorrespondentsError =
   | BadRequest
   | Forbidden
+  | NotFound
   | PaperlessNgxOpError;
 /** Mixin to add document count to queryset, permissions-aware if needed */
-export const listCorrespondents: API.OperationMethod<
+export const listCorrespondents: API.PaginatedOperationMethod<
   ListCorrespondentsRequest,
   PaginatedCorrespondentList,
   ListCorrespondentsError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListCorrespondentsRequest,
-  output: PaginatedCorrespondentList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  Correspondent
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListCorrespondentsRequest,
+    output: PaginatedCorrespondentList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type UpdateCorrespondentError =
   | BadRequest

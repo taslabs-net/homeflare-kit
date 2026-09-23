@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -736,20 +737,34 @@ export const getSavedView: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type ListSavedViewsError = BadRequest | Forbidden | PaperlessNgxOpError;
+export type ListSavedViewsError =
+  | BadRequest
+  | Forbidden
+  | NotFound
+  | PaperlessNgxOpError;
 /** Prefetch Django-Guardian permissions for a list before serialization, to avoid N+1 queries. */
-export const listSavedViews: API.OperationMethod<
+export const listSavedViews: API.PaginatedOperationMethod<
   ListSavedViewsRequest,
   PaginatedSavedViewList,
   ListSavedViewsError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListSavedViewsRequest,
-  output: PaginatedSavedViewList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  SavedView
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListSavedViewsRequest,
+    output: PaginatedSavedViewList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type SavedViewsDestroyError = Forbidden | NotFound | PaperlessNgxOpError;
 /** Prefetch Django-Guardian permissions for a list before serialization, to avoid N+1 queries. */

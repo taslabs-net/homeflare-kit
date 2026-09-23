@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -374,19 +375,33 @@ export const getUser: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type ListUsersError = BadRequest | Forbidden | PaperlessNgxOpError;
-export const listUsers: API.OperationMethod<
+export type ListUsersError =
+  | BadRequest
+  | Forbidden
+  | NotFound
+  | PaperlessNgxOpError;
+export const listUsers: API.PaginatedOperationMethod<
   ListUsersRequest,
   PaginatedUserList,
   ListUsersError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListUsersRequest,
-  output: PaginatedUserList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  User
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListUsersRequest,
+    output: PaginatedUserList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type UpdateUserError =
   | BadRequest

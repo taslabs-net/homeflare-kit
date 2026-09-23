@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -376,20 +377,31 @@ export const getShareLinkBundle: API.OperationMethod<
 export type ListShareLinkBundlesError =
   | BadRequest
   | Forbidden
+  | NotFound
   | PaperlessNgxOpError;
 /** Pass a user object to serializer */
-export const listShareLinkBundles: API.OperationMethod<
+export const listShareLinkBundles: API.PaginatedOperationMethod<
   ListShareLinkBundlesRequest,
   PaginatedShareLinkBundleList,
   ListShareLinkBundlesError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListShareLinkBundlesRequest,
-  output: PaginatedShareLinkBundleList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  ShareLinkBundle
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListShareLinkBundlesRequest,
+    output: PaginatedShareLinkBundleList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type RebuildShareLinkBundleError =
   | BadRequest

@@ -8,6 +8,7 @@ import {
   type PaperlessNgxOpError,
   type PaperlessNgxOpContext,
 } from "../protocol.ts";
+import { paginatePageNumber } from "../pagination.ts";
 import { UnknownPaperlessNgxError } from "../errors.ts";
 import * as Retry from "../retry.ts";
 
@@ -225,20 +226,34 @@ export const getShareLink: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type ListShareLinksError = BadRequest | Forbidden | PaperlessNgxOpError;
+export type ListShareLinksError =
+  | BadRequest
+  | Forbidden
+  | NotFound
+  | PaperlessNgxOpError;
 /** Pass a user object to serializer */
-export const listShareLinks: API.OperationMethod<
+export const listShareLinks: API.PaginatedOperationMethod<
   ListShareLinksRequest,
   PaginatedShareLinkList,
   ListShareLinksError,
-  PaperlessNgxOpContext
-> = /*@__PURE__*/ API.make(() => ({
-  input: ListShareLinksRequest,
-  output: PaginatedShareLinkList,
-  errors: [BadRequest, Forbidden, UnknownPaperlessNgxError],
-  protocol: PaperlessNgxProtocol,
-  retry: Retry.Retry,
-}));
+  PaperlessNgxOpContext,
+  ShareLink
+> = /*@__PURE__*/ API.makePaginated(
+  () => ({
+    input: ListShareLinksRequest,
+    output: PaginatedShareLinkList,
+    errors: [BadRequest, Forbidden, NotFound, UnknownPaperlessNgxError],
+    protocol: PaperlessNgxProtocol,
+    retry: Retry.Retry,
+    pagination: {
+      mode: "page",
+      inputToken: "page",
+      outputToken: "next",
+      items: "results",
+    } as const,
+  }),
+  paginatePageNumber,
+) as any;
 
 export type ShareLinksDestroyError = Forbidden | NotFound | PaperlessNgxOpError;
 /** Pass a user object to serializer */
