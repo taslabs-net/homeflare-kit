@@ -40,9 +40,10 @@ try {
 
   await Bun.write(
     join(scratch, 'consumer.ts'),
-    `import { TypeSafeClient, choice, createTypeSafeClient, createTypeSafeGatewayClient, noul, VERSION } from '@homeflare/typesafe';
+    `import { TypeSafeClient, choice, createTypeSafeClient, createTypeSafeGatewayClient, gate, noul, VERSION } from '@homeflare/typesafe';
 
 if (typeof VERSION !== 'string' || VERSION.length === 0) throw new Error('VERSION missing');
+if (gate({}, { state: {}, questions: {} }).kind !== 'send') throw new Error('gate() did not send a clean empty payload');
 const client = createTypeSafeClient({ apiKey: 'smoke-key' });
 if (!(client instanceof TypeSafeClient)) throw new Error('not an official TypeSafeClient');
 if (typeof choice !== 'function' || typeof noul !== 'function') throw new Error('helpers missing');
