@@ -12,9 +12,12 @@
  * to `API.makePaginated` with `outputToken: "next"`. That strategy only
  * treats a token as the next page number when it is `typeof "number"`
  * (never true for a URL) — otherwise it advances the local page counter by
- * one and terminates the stream once the token comes back `null` — which is
- * exactly DRF's last-page signal. So iteration is correct even though the
- * token is a URL: the strategy never needs to dereference it, only to
- * notice when it disappears.
+ * one, and terminates on EITHER of two independent signals: `next` coming
+ * back `null` (DRF's own last-page marker), or `results` coming back empty
+ * on any page (belt-and-suspenders — Paperless-ngx never actually returns
+ * this for a page within range, since an out-of-range `page` 404s instead,
+ * measured live 2026-09-23; see `patches/<tag>/_undeclared-errors.json`).
+ * So iteration is correct even though the token is a URL: the strategy
+ * never needs to dereference it, only to notice when it disappears.
  */
 export { paginatePageNumber } from "@distilled.cloud/core/pagination";
