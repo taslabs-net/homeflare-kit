@@ -92,6 +92,8 @@ const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
   'distilled-opnsense': ['effect'],
   // Seventh interim-package copy, same reasoning again.
   'distilled-litellm': ['effect'],
+  // Eighth interim-package copy, same reasoning again.
+  'distilled-caddy': ['effect'],
 };
 
 async function manifest(name: string): Promise<Manifest> {
