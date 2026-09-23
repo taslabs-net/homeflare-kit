@@ -35,6 +35,7 @@ import type { Input } from 'alchemy/Input';
 import { diffTarget } from '../launchd/file-converge.ts';
 import { resolvedString } from '../launchd/host-effect.ts';
 import type { HostRunner } from '../launchd/runner.ts';
+import { adoptionProblem } from './binary-claim.ts';
 import {
   type ReleaseBinaryAttributes,
   type ReleaseBinaryProps,
@@ -52,6 +53,10 @@ export const diffBinary = async (
 ): Promise<Diff | undefined> => {
   const problems = pinProblems((news ?? {}) as Parameters<typeof pinProblems>[0]);
   if (problems.length > 0) throw refuse(output.path, `${problems.join('; ')}. ${NOTHING}`);
+  // ⛔ A TAKEOVER IS ONLY EVER OF THE PINNED BINARY (binary-claim.ts): `output` here is a read of a
+  //   path with no state, so the plan refuses what it would otherwise print as `adopted`.
+  const takeover = adoptionProblem(output.sha256, olds.sha256);
+  if (takeover !== undefined) throw refuse(output.path, `${takeover}. ${NOTHING}`);
   // ★ pinProblems passed, so every pin — and `name` — is a plain value; only these are read below.
   const pins = news as Pick<ReleaseBinaryProps, 'archive' | 'member' | 'sha256' | 'name'>;
   const directory = resolvedString(news, 'directory');

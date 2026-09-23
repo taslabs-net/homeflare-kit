@@ -23,6 +23,7 @@ import type { HostFileAttributes } from '../launchd/host-file-form.ts';
 import { sha256Hex } from '../launchd/job-form.ts';
 import type { HostRunner } from '../launchd/runner.ts';
 import { verifiedMember } from './archive.ts';
+import { claimProblem } from './binary-claim.ts';
 import {
   DEFAULT_BINARY_MODE,
   type PinnedDownload,
@@ -153,6 +154,14 @@ export const reconcileBinary = async (
     throw refuse(want.path, `${inPlaceRefusal(olds, props)}. ${NOTHING}`);
   }
   await directoryReady(runner, props);
+  // ⛔ WITH NO STATE, ONLY THE PINNED BINARY UNDER --adopt (binary-claim.ts).
+  // ⚠️ NOT an update across a move (`output` at another path): --adopt can never speak for one, so
+  //   refusing identical bytes there would strand the resume of our own interrupted move with no
+  //   remedy but a hand removal. Other bytes there stay refused (file-converge.ts).
+  if (options.output === undefined) {
+    const problem = await claimProblem(runner, want, adopt);
+    if (problem !== undefined) throw refuse(want.path, `${problem}. ${NOTHING}`);
+  }
   const bytesFor = async (before: HostFileAttributes | undefined): Promise<Uint8Array> => {
     // ★ The right bytes with the wrong mode or owner: re-write what is there, re-hashed, rather
     //   than download 123 MB to get the same bytes back.

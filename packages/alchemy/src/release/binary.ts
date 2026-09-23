@@ -15,17 +15,14 @@
  * ⛔ IT INSTALLS; IT NEVER STARTS. No launchctl, no systemctl, no restart: the job that runs the
  *   binary is the stack's own `LaunchdJob`, which puts this resource's `path` in its argv so the
  *   engine installs first and restarts the job when the path moves.
- * ⚠️ NOTHING IS ADOPTED WITHOUT `--adopt` AT PLAN: the probe reads a file already at the path as
- *   `Unowned` — even one holding exactly the pinned bytes (docs/ownership.md). With `--adopt`, such
- *   a file is recognised by its digest and taken over without a download.
- * ⚠️ AT APPLY, WHERE THE PLAN COULD NOT ASK (a prop was an Output, so Alchemy skipped the probe), a
- *   file with the pinned bytes, mode and owner is accepted as the resume of an interrupted install
- *   — Host.File's rule, shared in file-converge.ts. Anything else there is refused without
- *   `--adopt`. A deliberately identical file placed by another owner is therefore indistinguishable
- *   from our own half-finished create; declare each path once.
+ * ⚠️ NOTHING IS ADOPTED WITHOUT `--adopt`, AT PLAN OR AT APPLY: the probe reads a file already at
+ *   the path as `Unowned` — even one holding exactly the pinned bytes (docs/ownership.md) — and
+ *   where the probe never ran (a prop was an Output) reconcile refuses it the same way. With
+ *   `--adopt`, a file holding the pinned bytes is recognised by its digest and taken over without
+ *   a download. ⛔ A file with OTHER bytes is never adopted, `--adopt` or not: that would be an
+ *   overwrite in place that the plan prints as `adopted` (binary-claim.ts, both halves).
  */
 import { Resource } from 'alchemy';
-import { Unowned } from 'alchemy/AdoptPolicy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
@@ -35,7 +32,8 @@ import { adoptsAtApply } from '../ownership/adopt.ts';
 import { noteUnfinished } from '../ownership/resume.ts';
 import { diffBinary } from './binary-diff.ts';
 import type { ReleaseBinaryAttributes, ReleaseBinaryProps } from './binary-form.ts';
-import { deleteBinary, readBinary, reconcileBinary, refreshBinary } from './binary-lifecycle.ts';
+import { deleteBinary, reconcileBinary, refreshBinary } from './binary-lifecycle.ts';
+import { readWithoutState } from './binary-read.ts';
 import { declaredPinProblems } from './declared-pins.ts';
 import { type DownloadPolicy, httpFetchArchive, sharingInFlight } from './download.ts';
 
@@ -89,13 +87,12 @@ export const makeReleaseBinaryProvider = (internals: ReleaseBinaryInternals = {}
         list: () => Effect.succeed([]),
 
         // ⛔ The probe (no `output`) validates every prop first, so a malformed pin fails the plan
-        //   here — before any host call, let alone a download.
-        read: ({ olds, output }) =>
-          lift(async () => {
-            if (output !== undefined) return refreshBinary(runner, output);
-            const found = await readBinary(runner, olds);
-            return found === undefined ? undefined : Unowned(found);
-          }),
+        //   here — before any host call, let alone a download. A recovery read never fails its
+        //   caller (binary-read.ts): its props are the failed deploy's.
+        read: ({ fqn, instanceId, olds, output }) =>
+          output === undefined
+            ? readWithoutState(runner, { fqn, instanceId, olds })
+            : lift(() => refreshBinary(runner, output)),
 
         diff: ({ instanceId, news, olds, output }) =>
           output === undefined

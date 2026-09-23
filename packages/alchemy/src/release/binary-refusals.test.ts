@@ -135,6 +135,25 @@ describe('refusals leave the host exactly as it was', () => {
     expect(s.transport.requests).toEqual([]);
   });
 
+  // ⛔ binary-claim.ts: with no state, only the pinned binary, and only under --adopt.
+  test('the pinned bytes at the path with no state, without --adopt: refused, not claimed', async () => {
+    const s = setup();
+    s.fake.files.set(PATH, { bytes: BINARY.vmalert, gid: 0, kind: 'file', mode: 0o755, uid: 0 });
+    const error = await refused(s, () => s.install());
+    expect(error.message).toContain('it holds the pinned binary, but this stack holds no state');
+    expect(s.transport.requests).toEqual([]);
+  });
+
+  test('other bytes at the path under --adopt: refused before the download, their file kept', async () => {
+    const s = setup();
+    const theirs = bytesOf('theirs');
+    s.fake.files.set(PATH, { bytes: theirs, gid: 0, kind: 'file', mode: 0o755, uid: 0 });
+    const error = await refused(s, () => s.install(s.props(), { adopt: true }));
+    expect(error.message).toContain(`a file hashing to ${sha256Hex(theirs)} is there`);
+    expect(s.transport.requests).toEqual([]);
+    expect(s.fake.files.get(PATH)?.bytes).toEqual(theirs);
+  });
+
   test('a write that does not read back as declared: the create is rolled back', async () => {
     const s = setup();
     const write = s.fake.runner.writeFileAtomic;
