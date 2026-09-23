@@ -1,5 +1,110 @@
 # @homeflare/alchemy
 
+## 0.24.0
+
+### Minor Changes
+
+- [#157](https://github.com/taslabs-net/homeflare-kit/pull/157) [`2a69523`](https://github.com/taslabs-net/homeflare-kit/commit/2a69523410521f8373d2c216070f788df0ca2a64) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `LiteLLM.PassThroughEndpoint` to `@homeflare/alchemy/litellm`, the kit's first LiteLLM
+  resource: one row of LiteLLM's `/config/pass_through_endpoint` family, a route on the proxy that
+  forwards requests to an upstream target. Types are generated from LiteLLM **1.100.0**'s own
+  OpenAPI document (tag `v1.100.0`, commit `e4f25265704e2b2c6cf6e81be2e4c5cffff896f4`), dumped the
+  way the vendor's own CI dumps it — `prisma generate` against `litellm/proxy/schema.prisma`, then
+  the `dumpSpec` program embedded in `ui/litellm-dashboard/scripts/gen-api-types.mjs`, run with
+  `app.routes`' `include_in_schema` forced `True` the way the dashboard's generator does — because
+  the reference proxy's `/openapi.json` could not be reached when this was walked (jetsam restart
+  loop). Cross-checked byte-identically: regenerating with `openapi-typescript@7.13.0` reproduces
+  the tag's committed `ui/litellm-dashboard/src/lib/http/schema.d.ts` exactly, sha256
+  `8bc5d9c9…40b83f9`, 2,334,248 bytes on both sides. The dump itself is sha256
+  `1b3e4d23…4b006399f` (`codegen/manifest.json`'s `litellm-openapi` entry).
+
+  Every pass-through endpoint lives in one `general_settings.pass_through_endpoints` field — every
+  create, update and delete is a read-modify-write of the whole list — so every mutating call is
+  wrapped in a per-base-URL `Effect` semaphore, and `reconcile` reads back after writing rather
+  than trusting the call that just returned. A path already held by a `config.yaml` entry
+  (`is_from_config: true`) is refused at plan rather than silently overridden; a foreign DB row on
+  the same path is `Unowned` and needs `--adopt`; a literal secret in a forwarded `Authorization`,
+  `x-api-key` or `cf-aig-authorization` header is refused unless it carries LiteLLM's own
+  `os.environ/NAME` reference form. Clearing `timeout`, `methods` or `guardrails` is planned as a
+  replace (delete then create), because LiteLLM's update route merges with `exclude_none` and can
+  never clear an already-set field. Credentials (`LITELLM_PROXY_URL`, `LITELLM_PROXY_API_KEY` —
+  LiteLLM's own variable names) are read fresh from the environment on every call, never a prop.
+
+  Deferred: the Claude OAuth model, key and team slice, which needs estate answers only Tim can
+  give. See `docs/litellm.md`.
+
+- [#156](https://github.com/taslabs-net/homeflare-kit/pull/156) [`6b4b58c`](https://github.com/taslabs-net/homeflare-kit/commit/6b4b58c9a207dd4351d80e514ee4b7d09cc74ea0) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Create-and-assert a database on a self-hosted cluster: `Postgres.Database` in the new
+  `@homeflare/alchemy/postgres` subpath. Walked against PostgreSQL 18.6 (`REL_18_6`, commit
+  `724edf9b`) — upstream `alchemy@2.0.0-beta.79` has vendor-API Postgres resources (Planetscale,
+  Neon, Prisma, Fly, Railway) and a runtime binding over `@effect/sql-pg`, but nothing for a
+  database you run yourself, so this builds on that same `@effect/sql-pg` `PgClient` upstream's
+  own `alchemy/SQL/Postgres` uses (new optional peer, `@effect/sql-pg@4.0.0-rc.115`).
+
+  Create-and-assert only: every optional prop (`encoding`, `localeProvider`, `lcCollate`,
+  `lcCtype`, `allowConnections`, `connectionLimit`, `isTemplate`, `tablespace`) is asserted once
+  at create and compared against the live row on every later plan — a mismatch is a typed
+  `PostgresDatabaseDrift` refusal, never an `ALTER DATABASE`. `name` is refused at plan past 63
+  UTF-8 bytes (`NAMEDATALEN`), because the server would otherwise silently truncate it with only
+  a `NOTICE`. A rename is refused at plan; `diff` never answers `replace` (a replace here is DROP
+  then CREATE, on data). `delete` always refuses with a typed tag and `defaultRemovalPolicy` is
+  `retain` — dropping a database stays a human act on the host. `CREATE DATABASE` takes no bind
+  parameters at all (measured at `gram.y`), so every value is quoted by hand: a single-token
+  identifier quoter for the name (deliberately NOT `alchemy`'s own `sql(value)`, which
+  dot-splits a qualified name and would break on a name containing `.`), and a string-literal
+  quoter for the rest. `read` always answers `Unowned` for a match — a database carries no
+  ownership mark, so an adopting stack needs `adopt(true)`.
+
+  Measured path (2026-09-23): only a Unix socket reaches the maintenance database on the mini —
+  no `pg_hba` rule opens it over TCP. A JS client reaches that socket: `@effect/sql-pg` under
+  Bun, live-checked from scratch space, connected and read all 24 live databases.
+
+- [#160](https://github.com/taslabs-net/homeflare-kit/pull/160) [`26f45bd`](https://github.com/taslabs-net/homeflare-kit/commit/26f45bda0108744994c63b611ca27492aef715fe) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Release.Binary` can now install from a directory-wrapped vendor archive. `tarReader(wanted, root)`
+  (`packages/alchemy/src/release/tar.ts`) accepts an optional `root`: exactly one declared leading
+  directory (typeflag `5`, size 0) is stripped from every entry name before it is matched, listed or
+  checked for a duplicate. Every entry outside that declared root, a second directory entry, a
+  `<root>-evil/x` sibling (a segment match, not a string prefix), and a `<root>/` entry that is not
+  an empty directory are refused whole, same as every existing refusal (PAX, GNU long-name, `..`,
+  links, devices). Without `root`, behaviour is unchanged: a directory entry — the wrapper included —
+  is still refused exactly as it always was.
+
+  `ReleaseArchive.root?: string` (`binary-form.ts`) carries the pin; `pinProblems` (split out to the
+  new `binary-pins.ts` to stay under the file's 250-line cap, re-exported so no importer moves)
+  refuses a root that is not one safe path segment. `catalogBinary` (`catalog.ts`) carries
+  `archive.root` through when a catalog entry has one. A state row from before this change has no
+  `root`, and `undefined === undefined`, so it is not treated as a moved pin; declaring or changing a
+  root is.
+
+  Measured 2026-09-23 by downloading each vendor's own GitHub release asset into a scratch directory
+  (never executed) and re-hashing: all four Prometheus-family darwin-arm64 archives —
+  `alertmanager` v0.33.1 (37,247,168 B), `blackbox_exporter` v0.28.0 (15,705,022 B), `node_exporter`
+  v1.12.1 (5,368,643 B), `prometheus-community/postgres_exporter` v0.20.1 (10,072,235 B) — recompute
+  to GitHub's own asset `digest`, wrap every entry in exactly one directory named
+  `<binary>-<version>.darwin-arm64/`, and carry no PAX or GNU long-name entries. The worktree's own
+  `tarReader(wanted, root)` was re-run against those same downloaded bytes and now parses each to
+  completion, returning the named member at its full pinned size (`docs/release-binary-catalogs.md`
+  has the full table and commands; `tar-root.test.ts` and `binary-root.test.ts` hold the same proof
+  as committed fixtures).
+
+  This unit adds the reader capability and its tests only. `VICTORIA_RELEASES` and
+  `OPENBAO_RELEASES` are unchanged — no catalog entry for alertmanager, blackbox_exporter,
+  node_exporter or postgres_exporter exists yet; that is its own data-set walk-down and PR.
+
+### Patch Changes
+
+- [#161](https://github.com/taslabs-net/homeflare-kit/pull/161) [`5500f3e`](https://github.com/taslabs-net/homeflare-kit/commit/5500f3e83e90b9e7a0bbad457527f994a741d0d2) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Correct the last stale claim in `Proxmox.ZfsPool`'s docs, per Tim's decision 28 (2026-09-23).
+
+  PR 154 already corrected `zfs-pool.ts`'s header, which previously said destroy was refused and
+  `delete` made no API call — false, since `destroyPool` sends a real `DELETE` under
+  `.pipe(RemovalPolicy.destroy())`, guarded only by the resource's default `retain` removal policy.
+  That fix missed one line: the file's "PRIVILEGES, FROM THE SCHEMA" paragraph still said `delete`
+  "needs nothing at all, since it calls nothing" — the same mistake, left uncorrected in a second
+  place. It now says `delete` needs `Sys.Modify` on `/`, the same as `reconcile`'s POST, per
+  `ceph-osd.ts`'s own privilege comparison (measured against the same 2026-09-13 apidoc read),
+  which names `disks/zfs` as one of the sibling families whose write verbs — not only the create —
+  carry a `Sys.Modify` check.
+
+  No behaviour change. `RemovalPolicy.destroy()` reaching a single `DELETE`, and `retain` sending
+  none, are already pinned in `zfs-pool-adopt.test.ts` (added by PR 154); this PR touches docs only.
+
 ## 0.23.0
 
 ### Minor Changes
