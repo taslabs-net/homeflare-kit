@@ -20,7 +20,11 @@
  *   and a strict one (pnpm) does not; the install below names it, as the README does. `/forgejo`
  *   (2026-09-23, moved off a hand-rolled `HttpClient` client) imports `@distilled.cloud/forgejo`
  *   the same way, but it is NOT alchemy's own dependency — nothing hides a missing peer for it
- *   either way, and the install below still names it, matching the README.
+ *   either way, and the install below still names it, matching the README. `/netbox` (2026-09-23,
+ *   the same move) imports `@distilled.cloud/netbox` too, but THAT one IS this package's own
+ *   plain `dependencies` entry (aliased onto `@homeflare/distilled-netbox` — see
+ *   docs/distilled-interim.md), not a peer: `bun add` below resolves it automatically from the
+ *   packed tarball, so nothing needs to be named for it here or in the README's install line.
  *   ⛔ None of them failed at INSTALL. All three threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
