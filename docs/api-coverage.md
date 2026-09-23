@@ -39,15 +39,15 @@ proof.
 
 | system | version                                       | sha256      | write endpoints |      owned | write paths | owned paths | unenforced params | owned unenforced |
 | ------ | --------------------------------------------- | ----------- | --------------: | ---------: | ----------: | ----------: | ----------------: | ---------------: |
-| PVE    | pve-manager/9.2.11/f6997e698c7933ea           | `9def8f13…` |             337 | 88 (26.1%) |         258 |          59 |              1561 |              495 |
-| PBS    | proxmox-backup-server 4.2.6-1 (running 4.2.3) | `274ab9f6…` |             182 | 27 (14.8%) |         141 |          18 |               568 |               62 |
+| PVE    | pve-manager/9.2.11/f6997e698c7933ea           | `9def8f13…` |             337 | 88 (26.1%) |         258 |          59 |              1459 |              393 |
+| PBS    | proxmox-backup-server 4.2.6-1 (running 4.2.3) | `274ab9f6…` |             182 | 27 (14.8%) |         141 |          18 |               544 |               38 |
 
 ## Owned endpoints, by Resource
 
 | resource                      | system | write endpoints | unenforced params | source                                                              |
 | ----------------------------- | ------ | --------------: | ----------------: | ------------------------------------------------------------------- |
 | `Proxmox.Acl`                 | PVE    |               1 |                 4 | `packages/alchemy/src/proxmox/acl.ts`                               |
-| `Proxmox.ApiToken`            | PVE    |               3 |                 9 | `packages/alchemy/src/proxmox/api-token.ts`                         |
+| `Proxmox.ApiToken`            | PVE    |               3 |                 7 | `packages/alchemy/src/proxmox/api-token.ts`                         |
 | `Proxmox.Group`               | PVE    |               3 |                 3 | `packages/alchemy/src/proxmox/group.ts`                             |
 | `Proxmox.Role`                | PVE    |               3 |                 5 | `packages/alchemy/src/proxmox/role.ts`                              |
 | `Proxmox.User`                | PVE    |               3 |                 7 | `packages/alchemy/src/proxmox/user.ts`                              |
@@ -55,29 +55,29 @@ proof.
 | `Proxmox.FirewallAlias`       | PVE    |               3 |                 7 | `packages/alchemy/src/proxmox/firewall-alias.ts`                    |
 | `Proxmox.HaResource`          | PVE    |               3 |                 6 | `packages/alchemy/src/proxmox/ha-resource.ts`                       |
 | `Proxmox.HaRule`              | PVE    |               3 |                 6 | `packages/alchemy/src/proxmox/ha-rule.ts`                           |
-| `Proxmox.MetricServer`        | PVE    |               3 |                26 | `packages/alchemy/src/proxmox/metric-server.ts`                     |
+| `Proxmox.MetricServer`        | PVE    |               3 |                 9 | `packages/alchemy/src/proxmox/metric-server.ts`                     |
 | `Proxmox.NotificationMatcher` | PVE    |               3 |                 6 | `packages/alchemy/src/proxmox/notification-matcher.ts`              |
-| `Proxmox.NotificationTarget`  | PVE    |              12 |                28 | `packages/alchemy/src/proxmox/notification-target.ts`               |
+| `Proxmox.NotificationTarget`  | PVE    |              12 |                24 | `packages/alchemy/src/proxmox/notification-target.ts`               |
 | `Proxmox.ReplicationJob`      | PVE    |               3 |                 9 | `packages/alchemy/src/proxmox/replication-job.ts`                   |
 | `Proxmox.Pool`                | PVE    |               3 |                 5 | `packages/alchemy/src/proxmox/pool.ts`                              |
 | `Proxmox.Storage`             | PVE    |               3 |                36 | `packages/alchemy/src/proxmox/storage.ts`                           |
 | `Proxmox.SdnApply`            | PVE    |               1 |                 0 | `packages/alchemy/src/proxmox/sdn-apply.ts`                         |
 | `Proxmox.SdnZone`             | PVE    |               3 |                20 | `packages/alchemy/src/proxmox/sdn-zone.ts`                          |
 | `Proxmox.SdnVnet`             | PVE    |               3 |                 5 | `packages/alchemy/src/proxmox/sdn-vnet.ts`                          |
-| `Proxmox.SdnSubnet`           | PVE    |               3 |                14 | `packages/alchemy/src/proxmox/sdn-subnet.ts`                        |
+| `Proxmox.SdnSubnet`           | PVE    |               3 |                13 | `packages/alchemy/src/proxmox/sdn-subnet.ts`                        |
 | `Proxmox.CephDaemon`          | PVE    |               6 |                13 | `packages/alchemy/src/proxmox/ceph-daemon.ts`                       |
 | `Proxmox.CephFlag`            | PVE    |               1 |                 0 | `packages/alchemy/src/proxmox/ceph-flag.ts`                         |
-| `Proxmox.CephFs`              | PVE    |               2 |                 4 | `packages/alchemy/src/proxmox/ceph-fs-wire.ts`                      |
-| `Proxmox.CephOsd`             | PVE    |               2 |                 5 | `packages/alchemy/src/proxmox/ceph-osd-write.ts`                    |
-| `Proxmox.CephPool`            | PVE    |               3 |                16 | `packages/alchemy/src/proxmox/ceph-pool.ts`                         |
-| `Proxmox.Lxc`                 | PVE    |               4 |                62 | `packages/alchemy/src/proxmox/lxc-lifecycle.ts`                     |
+| `Proxmox.CephFs`              | PVE    |               2 |                 3 | `packages/alchemy/src/proxmox/ceph-fs-wire.ts`                      |
+| `Proxmox.CephOsd`             | PVE    |               2 |                 2 | `packages/alchemy/src/proxmox/ceph-osd-write.ts`                    |
+| `Proxmox.CephPool`            | PVE    |               3 |                 6 | `packages/alchemy/src/proxmox/ceph-pool.ts`                         |
+| `Proxmox.Lxc`                 | PVE    |               4 |                42 | `packages/alchemy/src/proxmox/lxc-lifecycle.ts`                     |
 | `Proxmox.NetworkApply`        | PVE    |               1 |                 1 | `packages/alchemy/src/proxmox/network-apply.ts`                     |
-| `Proxmox.NodeNetwork`         | PVE    |               3 |                47 | `packages/alchemy/src/proxmox/node-network.ts`                      |
-| `Proxmox.Vm`                  | PVE    |               2 |               120 | `packages/alchemy/src/proxmox/qemu.ts`                              |
-| `Proxmox.ZfsPool`             | PVE    |               2 |                 7 | `packages/alchemy/src/proxmox/zfs-pool.ts`                          |
+| `Proxmox.NodeNetwork`         | PVE    |               3 |                37 | `packages/alchemy/src/proxmox/node-network.ts`                      |
+| `Proxmox.Vm`                  | PVE    |               2 |                87 | `packages/alchemy/src/proxmox/qemu.ts`                              |
+| `Proxmox.ZfsPool`             | PVE    |               2 |                 6 | `packages/alchemy/src/proxmox/zfs-pool.ts`                          |
 | `Pbs.Datastore`               | PBS    |               3 |                11 | `packages/alchemy/src/proxmox/pbs-datastore.ts`                     |
 | `Pbs.NotificationMatcher`     | PBS    |               3 |                 2 | `packages/alchemy/src/proxmox/pbs-notification-matcher.ts`          |
-| `Pbs.NotificationTarget`      | PBS    |              12 |                40 | `packages/alchemy/src/proxmox/pbs-notification-target-lifecycle.ts` |
+| `Pbs.NotificationTarget`      | PBS    |              12 |                16 | `packages/alchemy/src/proxmox/pbs-notification-target-lifecycle.ts` |
 | `Pbs.PruneJob`                | PBS    |               3 |                 3 | `packages/alchemy/src/proxmox/pbs-prune-job.ts`                     |
 | `Pbs.SyncJob`                 | PBS    |               3 |                 3 | `packages/alchemy/src/proxmox/pbs-sync-job.ts`                      |
 | `Pbs.VerifyJob`               | PBS    |               3 |                 3 | `packages/alchemy/src/proxmox/pbs-verify-job.ts`                    |
