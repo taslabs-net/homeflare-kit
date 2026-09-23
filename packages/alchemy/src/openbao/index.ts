@@ -23,11 +23,13 @@ export {
   revokeSelf,
   revokeSelfEffect,
 } from './approle-login.ts';
+export type { BaoAuthMethodAttributes, BaoAuthMethodProps } from './auth-method.ts';
 export { BaoAuthMethod, BaoAuthMethodProvider } from './auth-method.ts';
-export type { BaoAuthRoleProps } from './auth-role.ts';
+export type { BaoAuthRoleAttributes, BaoAuthRoleProps } from './auth-role.ts';
 export { BaoAuthRole, BaoAuthRoleProvider } from './auth-role.ts';
 export type { BaoIdentity, BaoIdentityExpected, BaoIdentityFailure } from './bao-identity.ts';
 export { BaoIdentityError, assertBaoIdentity, assertBaoIdentityEffect } from './bao-identity.ts';
+export type { BaoCloudflareRoleAttributes, BaoCloudflareRoleProps } from './cloudflare-role.ts';
 export { BaoCloudflareRole, BaoCloudflareRoleProvider } from './cloudflare-role.ts';
 export {
   CloudflarePermissionGroups,
@@ -42,7 +44,12 @@ export type { HostAppRolesInput, HostRoleClass, HostRoleHost } from './host-appr
 export { HOST_ROLE_SEPARATOR, hostAppRoles, hostRoleName } from './host-approles.ts';
 export type { BaoJwtAuthConfigProps } from './jwt-config.ts';
 export { BaoJwtAuthConfig, BaoJwtAuthConfigProvider } from './jwt-config.ts';
-export type { BaoJwtRoleProps, BaoJwtRoleType } from './jwt-role.ts';
+export type {
+  BaoJwtCallbackMode,
+  BaoJwtRoleAttributes,
+  BaoJwtRoleProps,
+  BaoJwtRoleType,
+} from './jwt-role.ts';
 export { BaoJwtRole, BaoJwtRoleProvider } from './jwt-role.ts';
 export type { BaoKubernetesAliasSource, BaoKubernetesRoleProps } from './kubernetes-role.ts';
 export { BaoKubernetesRole, BaoKubernetesRoleProvider } from './kubernetes-role.ts';
@@ -50,10 +57,15 @@ export type { BaoMfaLoginEnforcementProps } from './mfa-enforcement.ts';
 export { BaoMfaLoginEnforcement, BaoMfaLoginEnforcementProvider } from './mfa-enforcement.ts';
 export type { BaoMfaTotpMethodProps, BaoTotpAlgorithm } from './mfa-totp.ts';
 export { BaoMfaTotpMethod, BaoMfaTotpMethodProvider } from './mfa-totp.ts';
+export type { BaoMountAttributes, BaoMountProps } from './mount.ts';
 export { BaoMount, BaoMountProvider } from './mount.ts';
+export type { BaoPkiRoleAttributes, BaoPkiRoleProps } from './pki-role.ts';
 export { BaoPkiRole, BaoPkiRoleProvider } from './pki-role.ts';
-export type { BaoPluginProps, BaoPluginType } from './plugin.ts';
+export type { BaoPluginAttributes, BaoPluginProps, BaoPluginType } from './plugin.ts';
 export { BaoPlugin, BaoPluginProvider } from './plugin.ts';
+export type { BaoPolicyAttributes, BaoPolicyProps } from './policy.ts';
 export { BaoPolicy, BaoPolicyProvider } from './policy.ts';
+export type { BaoProxmoxRoleAttributes, BaoProxmoxRoleProps } from './proxmox-role.ts';
 export { BaoProxmoxRole, BaoProxmoxRoleProvider } from './proxmox-role.ts';
+export type { BaoSshRoleAttributes, BaoSshRoleProps } from './ssh-role.ts';
 export { BaoSshRole, BaoSshRoleProvider } from './ssh-role.ts';

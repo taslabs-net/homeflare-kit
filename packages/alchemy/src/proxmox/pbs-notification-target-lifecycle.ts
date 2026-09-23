@@ -15,6 +15,8 @@ import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Effect from 'effect/Effect';
 import { pve } from './client.ts';
+import { guardForm } from './constraint-guard.ts';
+import { pbsTargetEndpoint } from './pbs-notification-target-endpoint.ts';
 import type {
   PbsNotificationTargetAttributes,
   PbsNotificationTargetProps,
@@ -142,25 +144,25 @@ export const handlers = {
         const carry = { header: true, sealed: true } as const;
         yield* requireValues(news, groups, carry);
         const collection = `config/notifications/endpoints/${news.type}`;
-        yield* pve(
-          news.target,
-          'provision',
-          'POST',
-          collection,
-          targetForm(news, groups, carry, 'create'),
-        );
+        const form = targetForm(news, groups, carry, 'create');
+        /**
+         * ⛔ WITH PRESENCE, BECAUSE THIS BRANCH IS UNCONDITIONALLY THE CREATE. PBS marks `name` on
+         *   every family and `server`/`from-address` on smtp, `url`/`method` on webhook — and it
+         *   is the same `comment: maxLength 128` that failed `POST /config/verify`.
+         * ⚠️ THE FORM CARRIES SECRETS ON THIS PATH. `violations` reads values and builds only the
+         *   parameter NAME into its message (constraints.ts), so a refusal never quotes one.
+         */
+        yield* guardForm(pbsTargetEndpoint(news).create, form, true);
+        yield* pve(news.target, 'provision', 'POST', collection, form);
         sealed = seal(groups.sealed.values);
       } else {
         const carry = toCarry(live, news, groups, sealed);
         if (carry !== undefined) {
           yield* requireValues(news, groups, carry);
-          yield* pve(
-            news.target,
-            'provision',
-            'PUT',
-            path(news),
-            targetForm(news, groups, carry, 'update'),
-          );
+          const form = targetForm(news, groups, carry, 'update');
+          /** ⚠️ NO PRESENCE: an update form is partial by design — it carries what `toCarry` said. */
+          yield* guardForm(pbsTargetEndpoint(news).update, form, false);
+          yield* pve(news.target, 'provision', 'PUT', path(news), form);
           if (carry.sealed) sealed = seal(groups.sealed.values);
         }
       }

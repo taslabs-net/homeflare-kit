@@ -193,6 +193,8 @@ const handlers = pveHandlers<SdnVnetProps, SdnVnetAttributes>({
    *   would report an update on every plan until somebody ran the apply, and then report another
    *   one the moment anybody else staged anything at all.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pve:POST /cluster/sdn/vnets', update: 'pve:PUT /cluster/sdn/vnets/{vnet}' },
   matches: (attributes, props) =>
     attributes.zone === props.zone &&
     attributes.alias === (props.alias ?? '') &&

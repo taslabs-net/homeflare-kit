@@ -88,7 +88,10 @@ export const opts: Opts = { a: undefined };
     join(scratch, 'consumer.ts'),
     `import { checkProject } from '@homeflare/config/check';
 import { shouldRelease, tagEvent } from '@homeflare/config/release';
+import { problemsInHooks } from '@homeflare/config/hooks';
 import { problemsInReleaseConfig } from '@homeflare/config/require-release-config';
+import { ESTATE_VERSIONS } from '@homeflare/config/versions';
+import { BUN_VERSION } from '@homeflare/config/repo-shape';
 
 const problems = await checkProject(process.cwd());
 if (!Array.isArray(problems)) throw new Error('checkProject did not return a list');
@@ -109,6 +112,21 @@ const releaseProblems = await problemsInReleaseConfig({
 });
 if (releaseProblems.length !== 0) throw new Error('problemsInReleaseConfig failed a public package');
 
+// ⛔ THE HOOK RUNNER IS NOT AN EXPORT — a repo's .husky wrapper reaches it by PATH,
+//   so an \`exports\` map cannot protect it. If \`files\` ever drops "bin" or "src", every
+//   repo in the estate silently loses its hooks and nothing else fails.
+const runner = process.cwd() + '/node_modules/@homeflare/config/bin/hooks.ts';
+if (!(await Bun.file(runner).exists())) throw new Error('bin/hooks.ts is not in the tarball');
+const install = Bun.spawn(['bun', runner, 'install'], { cwd: process.cwd(), stderr: 'pipe' });
+if ((await install.exited) !== 0) throw new Error('the published hook runner cannot install hooks');
+if ((await problemsInHooks(process.cwd())).length === 0) {
+  throw new Error('problemsInHooks passed a project with no prepare script');
+}
+
+// ⛔ The estate's version set is only useful if a consumer can read it from the tarball.
+if (ESTATE_VERSIONS.bun !== BUN_VERSION) throw new Error('ESTATE_VERSIONS.bun drifted from BUN_VERSION');
+if (!/^\\d+\\.\\d+\\.\\d+/.test(ESTATE_VERSIONS.alchemy)) throw new Error('ESTATE_VERSIONS.alchemy is not a version');
+
 // Every non-code export must resolve as a real file.
 for (const name of ['oxlintrc.json', 'oxlintrc.app.json', 'oxfmtrc.json', 'tsconfig.base.json', 'tsconfig.lib.json', 'tsconfig.app.json', 'bunfig.toml']) {
   const path = Bun.resolveSync('@homeflare/config/' + name, process.cwd());
@@ -116,7 +134,7 @@ for (const name of ['oxlintrc.json', 'oxlintrc.app.json', 'oxfmtrc.json', 'tscon
   if (text.trim().length === 0) throw new Error(name + ' resolved but is empty');
 }
 
-console.log('consumer ok —', problems.length, 'conformance problems reported, 7 config files resolve');
+console.log('consumer ok —', problems.length, 'conformance problems, 7 config files, hook runner installs');
 `,
   );
   console.log('importing and exercising…');

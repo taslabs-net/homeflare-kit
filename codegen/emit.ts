@@ -1,0 +1,160 @@
+/**
+ * Turning vendor parameters into the committed constraint table.
+ *
+ * ⛔ THE TABLE IS DATA AND THE FILE IS GENERATED, so the only hand-written thing here is the
+ *   choice of WHICH rules survive. Everything that does survive is copied, never inferred: if the
+ *   vendor did not state a bound, no bound is emitted, and the reader in
+ *   `packages/alchemy/src/proxmox/constraints.ts` therefore cannot enforce one.
+ */
+import type { VendorEndpoint, VendorParam } from './apidoc.ts';
+import { type Product, isElementRule, patternRule, withItemRules } from './param-rules.ts';
+
+export interface EmittedParam {
+  readonly type?: string;
+  readonly required?: boolean;
+  readonly maxLength?: number;
+  readonly minLength?: number;
+  readonly minimum?: number;
+  readonly maximum?: number;
+  readonly enum?: readonly string[];
+  readonly pattern?: string;
+  readonly patternFlags?: string;
+  readonly patternSource?: string;
+  readonly format?: string;
+  readonly default?: string;
+  /** The value rules describe each ELEMENT of a repeated key — see param-rules.ts. */
+  readonly each?: true;
+}
+
+/** `{node}` in `/nodes/{node}/network`. */
+const pathParams = (path: string): ReadonlySet<string> =>
+  new Set([...path.matchAll(/\{([^}]+)\}/g)].map((m) => m[1] as string));
+
+/**
+ * ⚠️ A PBS `format` IS AN OBJECT, A PVE `format` IS A STRING. Only the string is a validator NAME
+ *   worth recording; the object is a sub-schema for the inside of a property string, and flattening
+ *   it into this table would claim a rule about a field that is really a packed list.
+ */
+const formatName = (format: VendorParam['format']): string | undefined =>
+  typeof format === 'string' ? format : undefined;
+
+/**
+ * A bound as a number, whatever the vendor typed it as.
+ *
+ * ⛔ THIS IS A READ, NOT AN INFERENCE. The vendor STATES the bound; PVE just spells two of them as
+ *   JSON strings (`bwlimit`'s `minimum: "0"`, `count`'s `maximum: "16777216"`). Parsing is a
+ *   faithful reading of a value that is there. Left as a string the comparison in `constraints.ts`
+ *   would be `1 < "0"`, which JavaScript coerces and happens to get right for these two — and
+ *   would get wrong the day a release publishes `"1.5"` or `"1e6"`.
+ * ⛔ AND A BOUND THAT IS NOT A NUMBER AT ALL IS DROPPED RATHER THAN GUESSED AT, which is the same
+ *   rule the untranslatable patterns follow: unenforced and honest beats enforced and wrong.
+ */
+const bound = (value: number | string | undefined): number | undefined => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== 'string' || value.trim() === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const scalarDefault = (value: unknown): string | undefined =>
+  typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+    ? String(value)
+    : undefined;
+
+/**
+ * ⚠️ BUILT AS A WIDER RECORD AND PRUNED, NOT AS AN `EmittedParam`. `exactOptionalPropertyTypes` is
+ *   on, so an explicit `undefined` is not an absent key — and `prune` is what makes it one.
+ */
+const emitParam = (
+  vendor: VendorParam,
+  required: boolean,
+  product: Product,
+): EmittedParam | undefined => {
+  // ⚠️ AN ARRAY'S RULES COME FROM ITS `items` FIRST — see param-rules.ts. Everything below then
+  //   reads one flat parameter, so no rule kind has two places to be looked for.
+  const param = withItemRules(vendor);
+  const out: Record<string, unknown> = {
+    default: scalarDefault(param.default),
+    each: isElementRule(vendor) ? true : undefined,
+    enum: param.enum,
+    format: formatName(param.format),
+    maxLength: bound(param.maxLength),
+    maximum: bound(param.maximum),
+    minLength: bound(param.minLength),
+    minimum: bound(param.minimum),
+    required: required ? true : undefined,
+    type: param.type,
+    ...patternRule(param.pattern, product),
+  };
+  // ⚠️ A row with only a `type` states nothing enforceable and nothing a reader needs; dropping it
+  //   keeps the committed table to the rules that exist.
+  const interesting = [
+    'required',
+    'maxLength',
+    'minLength',
+    'minimum',
+    'maximum',
+    'enum',
+    'patternSource',
+    'format',
+  ].some((key) => out[key] !== undefined);
+  return interesting ? prune(out) : undefined;
+};
+
+/** Drops the absent keys and sorts what is left, so the emitted table is byte-stable. */
+const prune = (value: Record<string, unknown>): EmittedParam =>
+  Object.fromEntries(
+    Object.entries(value)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : 1)),
+  ) as EmittedParam;
+
+/**
+ * One endpoint's constrained parameters, path segments removed.
+ *
+ * ⛔ A PATH PARAMETER IS NOT IN THE FORM. `spec.path(props)` builds `config/verify/v-r2-offsite`
+ *   itself, so `{id}` never appears as a form key — and leaving it in the table would make every
+ *   create refuse itself for a missing required parameter that was never missing.
+ */
+export const emitEndpoint = (
+  endpoint: VendorEndpoint,
+  product: Product,
+): Readonly<Record<string, EmittedParam>> => {
+  const inPath = pathParams(endpoint.path);
+  const rows: Record<string, EmittedParam> = {};
+  for (const name of Object.keys(endpoint.params).sort()) {
+    if (inPath.has(name)) continue;
+    const param = endpoint.params[name];
+    if (param === undefined) continue;
+    const row = emitParam(param, param.optional !== 1 && param.optional !== true, product);
+    if (row !== undefined) rows[name] = row;
+  }
+  return rows;
+};
+
+/**
+ * The table's identity, independent of how the file is formatted.
+ *
+ * ★ A DIGEST OF THE DATA, NOT OF THE FILE TEXT, so `oxfmt` reflowing the generated literal does
+ *   not read as a stale generation — while changing a single 128 to 129 by hand does.
+ */
+export const digest = (table: Readonly<Record<string, unknown>>): string =>
+  new Bun.CryptoHasher('sha256')
+    .update(JSON.stringify(sortedByKey(table)))
+    .digest('hex')
+    .slice(0, 16);
+
+/**
+ * ⛔ TOP-LEVEL KEYS SORTED BEFORE HASHING, because the generator builds the merged table per area
+ *   and the published module spreads it per import — two different insertion orders over the same
+ *   data. Without this the digest disagrees with itself and the staleness test fails on a repo
+ *   that is perfectly current. (Parameter keys are already sorted by `emitEndpoint`.)
+ */
+export const sortedByKey = (
+  table: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> =>
+  Object.fromEntries(
+    Object.keys(table)
+      .sort()
+      .map((key) => [key, table[key]]),
+  );

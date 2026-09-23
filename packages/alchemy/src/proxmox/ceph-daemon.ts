@@ -49,10 +49,15 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { collectionPath, createForm, daemonId, daemonPath, findRow } from './ceph-daemon-form.ts';
+import {
+  DAEMON_ENDPOINTS,
+  collectionPath,
+  createForm,
+  daemonAttributes,
+  daemonPath,
+} from './ceph-daemon-form.ts';
 import { pve } from './client.ts';
 import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
-import { bool, num, text } from './values.ts';
 
 /**
  * Which Ceph daemon this is. The discriminant picks the collection, the create parameters and
@@ -176,28 +181,12 @@ export const ProxmoxCephDaemon = Resource<ProxmoxCephDaemon>('Proxmox.CephDaemon
 });
 
 const handlers = pveHandlers<CephDaemonProps, CephDaemonAttributes>({
-  /** ⚠️ `undefined` when no row carries this name: that is how the factory learns to create. */
-  attributes: (live, props) => {
-    const row = findRow(live, props);
-    if (row === undefined) return undefined;
-    return {
-      addr: text(row['addr']),
-      fsName: text(row['fs_name']),
-      host: text(row['host']),
-      kind: props.kind,
-      name: daemonId(props),
-      node: props.node,
-      quorum: bool(row['quorum']),
-      rank: num(row['rank'], -1),
-      service: bool(row['service']),
-      standbyReplay: bool(row['standby_replay']),
-      state: text(row['state']),
-      version: text(row['ceph_version_short']),
-    };
-  },
+  attributes: daemonAttributes,
   /** ⛔ The ID path, not the collection — POST is registered on `{id}`, exactly like a metric server. */
   collection: daemonPath,
   createForm,
+  /** ⚠️ A function, because the kind picks the endpoint — see `DAEMON_ENDPOINTS`. */
+  endpoint: (props: CephDaemonProps) => DAEMON_ENDPOINTS[props.kind],
   /**
    * ⛔ TOTAL, AND THIS IS THE REASON THE FILE EXISTS RATHER THAN A SHORTCUT PAST WRITING IT. Every
    *   field a declaration can carry is CREATE-ONLY and unreadable — `mon-address` comes back as a

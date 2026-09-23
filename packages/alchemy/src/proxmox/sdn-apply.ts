@@ -35,6 +35,7 @@ import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
+import { guardSdnApply } from './apply-endpoints.ts';
 import { pve } from './client.ts';
 import type { PveRequirements } from './resource.ts';
 import type { WithTarget } from './resource.ts';
@@ -121,6 +122,9 @@ export const ProxmoxSdnApplyProvider = () =>
           const staged = yield* read(news);
           if (staged.pending === 0) return staged;
 
+          // ⛔ BEFORE THE PUBLISH. The apply takes no body, so this is the lookup rather than a
+          //   value check: a vendor that moved this endpoint fails here, not on three nodes.
+          yield* guardSdnApply;
           yield* pve(news.target, 'provision', 'PUT', 'cluster/sdn');
           /**
            * ⛔ READ BACK, FOR THE SAME REASON THE FACTORY DOES. PVE answers 200 on writes that did

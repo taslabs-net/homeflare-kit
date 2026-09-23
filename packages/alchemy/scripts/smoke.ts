@@ -96,7 +96,9 @@ import { declareRepoPolicy, repoPolicy } from '@homeflare/alchemy/github';
 import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles } from '@homeflare/alchemy/openbao';
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { PROVISION_PRIVILEGES, PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, ProxmoxNotificationMatcher, alertmanagerAlertBody, declareProvisionBaseline, provisionBootstrap } from '@homeflare/alchemy/proxmox';
+import { NETBOX_CONSTRAINTS_DIGEST, NetboxPrefix, bodyViolations, constraintsFor } from '@homeflare/alchemy/netbox';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
+import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, renderUnit, sshRunner } from '@homeflare/alchemy/linux';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 
@@ -105,6 +107,8 @@ for (const [name, value] of Object.entries({
   R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, declareRepoPolicy, repoPolicy, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, declareProvisionBaseline,
   PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxNotificationMatcher,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
+  NetboxPrefix, bodyViolations, constraintsFor, NETBOX_CONSTRAINTS_DIGEST,
+  HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner,
   parseVerifyArgs, verifySession, verifyStack,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
@@ -114,6 +118,12 @@ for (const [name, value] of Object.entries({
 //   (a Bun-only API in dist, a node: builtin that fails to resolve) fails here, not in a stack.
 if (!renderPlist({ Label: 'com.example.smoke' }).includes('<string>com.example.smoke</string>')) {
   throw new Error('renderPlist from dist did not render');
+}
+
+// ★ The Linux subpath's renderer through the PUBLISHED file, for the same reason: it is the one
+//   pure function the systemd family exposes, and a dist that cannot load node:crypto fails here.
+if (renderUnit([{ lines: [['ExecStart', '/bin/true']], name: 'Service' }]) !== '[Service]\\nExecStart=/bin/true\\n') {
+  throw new Error('renderUnit from dist did not render');
 }
 
 // ★ MeshNode's error type through the PUBLISHED file: a distilled SDK missing from the install
@@ -187,7 +197,21 @@ try {
 }
 if (!scoped) throw new Error('repoPolicy from dist allowed an exclude that matches no ref');
 
-console.log('all nine subpaths import and resolve');
+// ★ THE NETBOX TABLE THROUGH THE PUBLISHED FILE. The constraint data is a GENERATED module the
+//   bundler inlines, so a build that tree-shook it away — or an export map that resolved the
+//   subpath to a file without it — would pass the import above and then refuse nothing at all on
+//   a consumer's plan. Exercising a real vendor limit is the only way that failure is visible.
+if (constraintsFor('netbox:POST /api/ipam/prefixes/')['description']?.maxLength !== 200) {
+  throw new Error('NetBox constraint table from dist lost the vendor maxLength');
+}
+if (bodyViolations('netbox:POST /api/ipam/prefixes/', { description: 'x'.repeat(201), prefix: '10.0.0.0/24' }, true).length !== 1) {
+  throw new Error('NetBox constraint reader from dist stopped refusing an over-long description');
+}
+if (!/^[0-9a-f]{16}$/.test(NETBOX_CONSTRAINTS_DIGEST)) {
+  throw new Error('NetBox constraint digest from dist is not a digest');
+}
+
+console.log('all eleven subpaths import and resolve');
 `,
   );
 

@@ -19,6 +19,7 @@
  */
 import * as Effect from 'effect/Effect';
 import { pve } from './client.ts';
+import type { EndpointPair } from './resource-spec.ts';
 import { text } from './values.ts';
 import type { ZfsPoolAttributes, ZfsPoolProps } from './zfs-pool.ts';
 
@@ -36,6 +37,17 @@ import type { ZfsPoolAttributes, ZfsPoolProps } from './zfs-pool.ts';
  *   are unreadable afterwards either way — but it would put a number in the request that no
  *   declaration asked for, and this is the one call that writes to physical disks.
  */
+/**
+ * The vendor rules the create form is checked against at plan time.
+ *
+ * ⛔ HERE RATHER THAN INLINE IN zfs-pool.ts BECAUSE THAT FILE IS ALREADY OVER THE 250-LINE CAP,
+ *   and a `pve:POST …` literal has to live in a non-test source file for the generator to table
+ *   it at all. The spec imports it on the line it already imports `createForm` from.
+ * ⚠️ NO UPDATE KEY: PVE registers no PUT under `/nodes/{node}/disks/zfs`, which is exactly why
+ *   the spec declares no `updateForm` and a changed prop is a REPLACE.
+ */
+export const ZFS_POOL_ENDPOINT: EndpointPair = { create: 'pve:POST /nodes/{node}/disks/zfs' };
+
 export const createForm = (props: ZfsPoolProps): Record<string, string> => ({
   devices: props.devices.join(','),
   name: props.name,

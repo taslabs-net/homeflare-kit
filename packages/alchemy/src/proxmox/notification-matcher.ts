@@ -64,6 +64,11 @@ const handlers = pveHandlers<NotificationMatcherProps, NotificationMatcherAttrib
   attributes: (live, props) => matcherAttributes(live, props.name),
   collection: () => 'cluster/notifications/matchers',
   createForm: matcherCreateForm,
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: {
+    create: 'pve:POST /cluster/notifications/matchers',
+    update: 'pve:PUT /cluster/notifications/matchers/{name}',
+  },
   matches: matcherMatches,
   path: (props) => `cluster/notifications/matchers/${props.name}`,
   updateForm: matcherUpdateForm,

@@ -181,6 +181,7 @@ const handlers = pveHandlers<CephFlagProps, CephFlagAttributes>({
    *   only body `cluster/ceph/flags` has ever documented. Nothing sends it today.
    */
   createForm: (props) => ({ [props.flag]: flag(props.value) ?? '0' }),
+  endpoint: { update: 'pve:PUT /cluster/ceph/flags/{flag}' }, // ⛔ No create: see above.
   /**
    * ⚠️ `value` IS THE ONLY THING COMPARED, AND THE LIST OF THINGS DELIBERATELY NOT COMPARED IS THE
    *   point of this resource. `flag` is props-derived (see `CephFlagAttributes`). `description`

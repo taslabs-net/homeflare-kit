@@ -133,6 +133,25 @@ export const body = (props: NodeNetworkProps): Record<string, string> => ({
 });
 
 /**
+ * The create form: `body` plus the name of the interface being created.
+ *
+ * 🔴 `iface` WAS MISSING UNTIL 2026-09-22, AND EVERY CREATE THIS FAMILY HAS EVER PLANNED WOULD
+ *   HAVE 400ed. `POST /nodes/{node}/network` declares `iface` REQUIRED (`pve-iface`, 2..20) and
+ *   `{node}` is its only path parameter, so the name has to travel in the BODY — unlike the PUT,
+ *   where `/network/{iface}` carries it and `updateBody` is right to leave it out. Nothing caught
+ *   it because no NodeNetwork has been created from a declaration yet: C1's three nodes were all
+ *   adopted, which takes the PUT path. Found by wiring this family to the vendor's own table,
+ *   which is exactly the 128-character comment again with a different parameter.
+ *
+ * ⚠️ NOT ADDED TO `body`, BECAUSE THE PUT MUST NOT CARRY IT. `additionalProperties => 0` on the
+ *   update schema makes a second copy of the name a 400 rather than an ignored hint.
+ */
+export const createBody = (props: NodeNetworkProps): Record<string, string> => ({
+  ...body(props),
+  iface: props.iface,
+});
+
+/**
  * The update form: `body` plus the two fields that can only be cleared explicitly.
  *
  * ⛔ `delete=cidr` IS SENT WHENEVER `cidr` IS UNDECLARED, AND IT IS THE LESSER OF TWO EVILS RATHER

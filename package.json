@@ -16,9 +16,11 @@
   "type": "module",
   "scripts": {
     "build": "bun run --filter '*' build",
+    "api:coverage": "bun run scripts/api-coverage.ts",
     "clean": "bun run --filter '*' clean",
-    "lint": "oxfmt --check . && oxlint .",
+    "lint": "oxfmt --check . && oxlint --deny-warnings .",
     "lint:fix": "oxfmt . && oxlint --fix .",
+    "format": "oxfmt .",
     "types": "tsc --noEmit && bun run --filter '*' types",
     "test": "bun test",
     "check": "bun run lint && bun run types && bun run build && bun test",
@@ -28,6 +30,7 @@
     "version": "changeset version && bun run scripts/sync-versions.ts",
     "release": "bun run build && bun run scripts/publish.ts",
     "summary": "bun run scripts/ci-summary.ts",
+    "repo-shape:refresh": "bun run repo-shape.ts",
     "github:apply-ruleset": "bun run scripts/apply-main-ruleset.ts",
     "prepare": "husky",
     "security:scan": "gitleaks dir --redact --no-banner ."

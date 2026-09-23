@@ -217,6 +217,8 @@ const handlers = pveHandlers<StorageProps, StorageAttributes>({
    *   PVE returns the create-only fields on read but refuses them on PUT, so diffing one could only
    *   plan an update that no write can apply: a plan that reports work on every run, forever.
    */
+  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
+  endpoint: { create: 'pve:POST /storage', update: 'pve:PUT /storage/{storage}' },
   matches: (attributes, props) =>
     sameList(props.content, attributes.content) &&
     sameList(props.nodes, attributes.nodes) &&

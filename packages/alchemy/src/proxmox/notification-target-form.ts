@@ -102,3 +102,14 @@ export const shape = (props: NotificationTargetProps): Record<string, string> =>
   ...set('url', props.url),
   ...set('username', props.username),
 });
+
+/**
+ * The create form: `shape` plus the name PVE takes in the body exactly once.
+ *
+ * ★ EXPORTED SO THE CONSTRAINT PROOF CAN RUN THE REAL FORM rather than a retyped copy of it.
+ * ⛔ `name` IS CREATE-ONLY: PVE takes it in the body on the POST and in the path forever after.
+ */
+export const createShape = (props: NotificationTargetProps): Record<string, string> => ({
+  ...shape(props),
+  name: props.name,
+});

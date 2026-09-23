@@ -142,6 +142,28 @@ one is logged (argv only, never content) before it runs. A plan never calls sudo
   could not read back, and another user's `gui/<uid>`. A plan that will write runs the same checks.
 - Full list, sudoers cautions and limits: [docs/launchd-sudo.md](./docs/launchd-sudo.md).
 
+## Linux hosts — `@homeflare/alchemy/linux`
+
+The same `HostRunner` seam, over ssh, plus the three families the launchd subpath had no Linux twin
+for: `HostDirectory` (because no file resource creates a parent), `RemoteFile` (a whole file, or one
+**managed block** inside a file somebody else owns) and `SystemdUnit` / `SystemdTimer`.
+`linuxProviders(await sshRunner({ host }))` provides all four.
+
+```ts
+RemoteFile('block', { path: '/etc/example.conf', region: { name: 'homeflare' }, content: 'a line\n' });
+SystemdUnit('thing', { name: 'thing.service', sections: [...], restartOn: [config.sha256] });
+```
+
+- ⛔ **A deploy never mass-restarts.** A unit restarts only when its own file changed, when state or
+  systemd says the loaded copy is stale, or when a digest the declaration listed changed. An adopted
+  unit that already matches is not restarted, reloaded or started.
+- ⛔ **Every byte outside a managed region is identical**, and a delete removes only the block.
+- ⛔ **Fail closed over ssh:** `BatchMode=yes`, host verification untouched, and a remote result
+  without its framing marker is an Error — never "nothing is there".
+- ⛔ **No silent sudo:** a root-owned path needs a root ssh destination or your own privileged runner.
+- ⛔ **The directive set is systemd's:** unit files render verbatim; nothing here invents a schema.
+- Guide, the measured `systemctl` shapes and the limits: [docs/linux-host.md](./docs/linux-host.md).
+
 ## Caddy — `@homeflare/alchemy/caddy`
 
 `CaddyConfig` declares a running Caddy's config as Caddyfile text, applied through Caddy's own admin
@@ -161,6 +183,13 @@ with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:20
 
 PVE and PBS objects over the PVE API, `ProxmoxLxc` for containers, and the provisioning baseline
 every cluster needs first. What it never does to a guest, and why: [docs/proxmox.md](./docs/proxmox.md).
+
+## NetBox — `@homeflare/alchemy/netbox`
+
+`Netbox.Prefix` declares one IP prefix and the decision recorded against it — including
+`status: 'deprecated'`, which is how a retired range stops being folklore. Every write is checked
+against a table generated from NetBox's own OpenAPI document before the request is built.
+⛔ Adopt-first, `retain` on removal, and read/write shapes that differ: [docs/netbox.md](./docs/netbox.md).
 
 ## GitHub — `@homeflare/alchemy/github`
 

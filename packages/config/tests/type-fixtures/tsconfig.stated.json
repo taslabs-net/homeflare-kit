@@ -1,0 +1,6 @@
+{
+  // The same settings, over the fixture that MUST compile.
+  "extends": "../../tsconfig.lib.json",
+  "compilerOptions": { "types": ["bun"], "noEmit": true },
+  "files": ["stated.ts"]
+}
