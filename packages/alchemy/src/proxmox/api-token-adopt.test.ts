@@ -4,10 +4,11 @@
  * `comment`/`expire`/`privsep`, never mint a token this resource cannot hand anybody the secret
  * for (api-token.ts's header).
  *
- * ★ FOUR LIVE SHAPES, MEASURED SHAPES FROM api-token.ts's OWN HEADER: `metrics@pve!exporter` (no
- *   comment), `iac@pve!apply` (commented), and a real non-zero `expire` offered as BOTH a JSON
- *   number and a JSON string — PVE returns either depending on path, and `int()` (values.ts) must
- *   not care which.
+ * ★ FOUR LIVE SHAPES: `metrics@pve!exporter` and `iac@pve!apply` are the no-comment / commented
+ *   shapes named in api-token.ts's own header; `svc@pve!lease1` and `svc@pve!lease2` are
+ *   PLACEHOLDERS (never an estate mint-user account — see the ⛔ on declaring under one in
+ *   api-token.ts's header) exercising a real non-zero `expire` offered as BOTH a JSON number and
+ *   a JSON string, which PVE does depending on path — `int()` (values.ts) must not care which.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
@@ -27,8 +28,8 @@ type Live = { comment?: string; expire: number | string; privsep: number };
 const tokens = new Map<string, Live>([
   ['access/users/metrics@pve/token/exporter', { expire: 0, privsep: 0 }],
   ['access/users/iac@pve/token/apply', { comment: 'automation', expire: 0, privsep: 0 }],
-  ['access/users/hf-read@pve/token/lease1', { expire: 1789327175, privsep: 0 }],
-  ['access/users/hf-read@pve/token/lease2', { comment: 'lease', expire: '1789327175', privsep: 0 }],
+  ['access/users/svc@pve/token/lease1', { expire: 1789327175, privsep: 0 }],
+  ['access/users/svc@pve/token/lease2', { comment: 'lease', expire: '1789327175', privsep: 0 }],
 ]);
 
 const cluster = () =>
@@ -66,8 +67,8 @@ const declared = () =>
   Effect.all([
     token('metrics@pve', 'exporter', {}),
     token('iac@pve', 'apply', { comment: 'automation' }),
-    token('hf-read@pve', 'lease1', {}),
-    token('hf-read@pve', 'lease2', { comment: 'lease' }),
+    token('svc@pve', 'lease1', {}),
+    token('svc@pve', 'lease2', { comment: 'lease' }),
   ]);
 
 describe('adopting a metadata-only ApiToken declaration', () => {
