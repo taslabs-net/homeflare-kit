@@ -66,11 +66,36 @@ ${body}`;
  *   public API and is deliberately smaller than its directory; this one's whole job is to publish
  *   everything the vendor documents.
  */
+export interface Overlap {
+  /** The other product's barrel, e.g. `pbs` in `pve.ts`'s header. */
+  readonly other: string;
+  /** How many exported names both barrels carry. */
+  readonly shared: number;
+}
+
+/**
+ * ⛔ THE ONE COLLISION `tsc` WILL NOT CATCH. Within a barrel a duplicate name fails to compile;
+ *   across the two barrels it compiles and means two different types, so importing from the wrong
+ *   file gives a type that is quietly wrong about the payload rather than an error.
+ */
+const overlap = (product: string, { other, shared }: Overlap): string =>
+  shared === 0
+    ? ''
+    : `
+ *
+ * ⛔ ${shared} OF THESE NAMES ARE ALSO EXPORTED BY \`${other}.ts\`, MEANING SOMETHING ELSE. Both
+ *   products document a \`/nodes/{node}\` subtree, so a name like \`NodesNodeCertificatesGetReturn\`
+ *   exists on each side — here an array of objects, there \`null\`. Nothing stops a ${other} call
+ *   importing the ${product} spelling: it compiles, and the type is simply wrong about the payload.
+ *   Import from the barrel that names your product. tests/schema-types.test.ts pins this count, so
+ *   a vendor upgrade that adds a collision fails there rather than at runtime.`;
+
 export const renderBarrel = (
   entry: ManifestSchema,
   product: string,
   modules: readonly Module[],
   census: Census,
+  sharing: Overlap,
 ): string =>
   `/**
  * Generated ${entry.product} API types — DO NOT EDIT BY HAND.
@@ -84,7 +109,7 @@ ${provenance(entry)}
  *
  * ⚠️ ${census.numeric} request parameters are typed \`\\\`\${number}\\\`\` because the vendor calls them
  *   integer or number. They were \`string\` before, which accepted 'banana'. A caller holding a
- *   number writes \\\`\${n}\\\` — \`String(n)\` is a plain \`string\` and will not typecheck, deliberately.
+ *   number writes \\\`\${n}\\\` — \`String(n)\` is a plain \`string\` and will not typecheck, deliberately.${overlap(product, sharing)}
  */
 ${modules.map((module) => `export * from './${product}/${module.name}.ts';`).join('\n')}
 `;

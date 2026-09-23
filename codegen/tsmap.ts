@@ -129,7 +129,18 @@ export const returnType = (node: VendorNode | undefined): TsExpr => {
     //   can. Only an explicit `0`/`false` closes the object.
     const closed = node.additionalProperties === 0 || node.additionalProperties === false;
     const open = !closed;
-    if (fields.length === 0 && open) return atom('Record<string, unknown>');
+    // ⛔ `{}` IS NOT "THE EMPTY OBJECT" IN TYPESCRIPT — IT IS EVERY VALUE EXCEPT null AND undefined.
+    //   A CLOSED object with no declared properties used to fall through to `{ fields: [] }` and
+    //   render as `{}`, which typechecks against `42`, `'banana'` and `true`. That is WEAKER than
+    //   `unknown`, which at least forces a narrowing before use, so the one place the vendor said
+    //   least was the one place the generated type asserted nothing while looking specific.
+    // ⚠️ ONE ENDPOINT HITS IT ON THESE VERSIONS: PBS `GET /nodes/{node}/disks/zfs/{name}` declares
+    //   `properties: {}` and `additionalProperties: false` with the description "zpool vdev tree
+    //   with status" — serde emits the `false` for a Rust field that is an untyped value, so the
+    //   vendor's own prose says the payload is NOT empty. `Record<string, never>` would therefore
+    //   be a claim its description contradicts, and the rule this file is built on is that only
+    //   what the schema says gets asserted: `type: 'object'`, and nothing about the fields.
+    if (fields.length === 0) return atom('Record<string, unknown>');
     return { fields, kind: 'object', open };
   }
   // ⚠️ `type: 'object'` WITH NO `properties` STATES NOTHING, so it is `unknown` and not
