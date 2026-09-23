@@ -84,6 +84,8 @@ const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
   'distilled-proxmox': ['effect'],
   // Third interim-package copy, same reasoning again.
   'distilled-paperless-ngx': ['effect'],
+  // Fourth interim-package copy, same reasoning again.
+  'distilled-unifi-network': ['effect'],
 };
 
 async function manifest(name: string): Promise<Manifest> {
