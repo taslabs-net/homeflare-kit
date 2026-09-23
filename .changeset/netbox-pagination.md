@@ -19,8 +19,15 @@ input instead — the same provider-local `PaginationStrategy` override
 `@distilled.cloud/cloudflare`'s `cloudflarePaginate` uses for its own
 generic-dispatcher gap.
 
+`netboxPaginate` groups `next`'s query entries by key rather than
+last-write-wins, so a multi-select filter (`tag`, `id`, `contact`, ...) —
+which NetBox echoes back as repeated same-key pairs, e.g. `id=1&id=2` —
+survives onto every later page intact instead of collapsing to its last
+value.
+
 Copied forward from the distilled clone (`homeflare/netbox` branch,
 `packages/netbox` — not pushed upstream, per decision 42) per
 `packages/alchemy/docs/distilled-interim.md`. `types` and `scripts/smoke.ts`
-(extended to follow a synthetic two-page `next` chain end-to-end through
-the packed tarball) both pass.
+(extended to follow a synthetic two-page `next` chain — including a
+multi-valued `id` filter — end-to-end through the packed tarball) both
+pass.
