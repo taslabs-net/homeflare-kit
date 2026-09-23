@@ -185,7 +185,16 @@ export const fakePve = (): FakePve => {
     return json({ data: null, message: 'unhandled\n' }, 501);
   };
 
-  const server = Bun.serve({ fetch: handle, port: 0 });
+  // 🔴 LOOPBACK, NOT THE DEFAULT WILDCARD — AND THAT WAS THE FLAKE. Measured 2026-09-23 on
+  //   macOS: `Bun.serve({ port: 0 })` binds 0.0.0.0, and the kernel will hand a wildcard
+  //   port-0 bind a port some OTHER socket already holds on 127.0.0.1 (16,373 binds in, it
+  //   did). Loopback traffic then goes to the more specific listener, so this fake's own
+  //   requests reached another process's server — another test suite's fake, when several
+  //   agents run `bun test` at once — and a plan failed with "Transport error" on a GET to a
+  //   server that was up. A 127.0.0.1 port-0 bind is never handed a port in use on
+  //   127.0.0.1, and nothing more specific can shadow it. tests/loopback-servers.test.ts
+  //   keeps every test server this way.
+  const server = Bun.serve({ fetch: handle, hostname: '127.0.0.1', port: 0 });
   const port = String(server.port);
   const remapped = (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
