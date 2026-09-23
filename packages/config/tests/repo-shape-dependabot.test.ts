@@ -5,6 +5,9 @@
  *   present in a file Dependabot or GitHub refuses to load.
  */
 import { describe, expect, test } from 'bun:test';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   GROUP_BRANCH,
   GROUP_BRANCH_PREFIX,
@@ -129,7 +132,51 @@ describe('the auto-merge workflow', () => {
     // ⚠️ Actions expressions, compared verbatim — not template literals.
     // oxlint-disable-next-line no-template-curly-in-string
     expect(step?.env?.['HEAD_REF']).toBe('${{ github.head_ref }}');
+    // oxlint-disable-next-line no-template-curly-in-string
+    expect(step?.env?.['BASE_REF']).toBe('${{ github.base_ref }}');
     expect(step?.run).not.toContain('${{');
+  });
+});
+
+/**
+ * ⛔ RUN, NOT READ: the rendered step under bash, with `gh` replaced by a stub on PATH that
+ *   answers the rules read with `REQUIRED` and records every call. `gh pr merge --auto` merges
+ *   at once when nothing requires a check (automerge.ts), so the refusal is the behaviour.
+ */
+describe('the arming step, executed', () => {
+  const arm = (required: string, headRef = `dependabot/bun/${HOMEFLARE_GROUP}-0a1b2c3d4e`) => {
+    const dir = mkdtempSync(join(tmpdir(), 'automerge-'));
+    const calls = join(dir, 'calls');
+    writeFileSync(
+      join(dir, 'gh'),
+      '#!/bin/sh\necho "$*" >> "$CALLS"\n[ "$1" = api ] && echo "$REQUIRED"\nexit 0\n',
+    );
+    chmodSync(join(dir, 'gh'), 0o755);
+    const run = automerge(MINI).jobs['arm']?.steps.at(-1)?.run ?? '';
+    const env = { BASE_REF: 'main', CALLS: calls, GITHUB_REPOSITORY: 'o/r', HEAD_REF: headRef };
+    const proc = Bun.spawnSync(['bash', '-c', run], {
+      env: { ...env, PATH: `${dir}:${process.env['PATH'] ?? ''}`, PR_URL: 'u', REQUIRED: required },
+    });
+    const log = existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n') : [];
+    rmSync(dir, { force: true, recursive: true });
+    return { code: proc.exitCode, calls: log };
+  };
+
+  test('a base branch that requires no status check: fails, and never calls merge', () => {
+    const { code, calls } = arm('0');
+    expect(code).toBe(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toStartWith('api repos/o/r/rules/branches/main ');
+  });
+
+  test('a required check on the base branch: arms auto-merge, squash', () => {
+    const { code, calls } = arm('1');
+    expect(code).toBe(0);
+    expect(calls.at(-1)).toBe('pr merge --auto --squash u');
+  });
+
+  test('not the group branch: reads nothing, arms nothing', () => {
+    expect(arm('1', 'dependabot/bun/homeflare/config-0.9.0')).toEqual({ code: 0, calls: [] });
   });
 });
 

@@ -6,6 +6,15 @@
  *   decide whether it ever merges. Nothing here merges anything itself, and a merge
  *   deploys nothing — every stack in the estate is deployed by hand.
  *
+ * ⛔ `gh pr merge --auto` IS NOT ALWAYS "ARM". When the pull request is already CLEAN,
+ *   UNSTABLE or HAS_HOOKS it merges AT ONCE instead (cli/cli `pkg/cmd/pr/merge/merge.go`,
+ *   `isImmediatelyMergeable`, read at v2.101.0 — the version the mini's job image ships).
+ *   UNSTABLE is "mergeable, with a non-passing status", which is every pull request on a
+ *   branch whose rules require no check: before `check` has run, and even after it failed.
+ *   So the step reads the base branch's active rules first and refuses — a red check, never
+ *   a merge — when none requires a status check. Measured 2026-09-22: homeflare-builds (its
+ *   ruleset not deployed yet) and homeflare-desktop have none.
+ *
  * ⛔ FIRST-PARTY ONLY: A `run:` STEP AND THE GitHub CLI, NO `uses:` AT ALL. GitHub's own
  *   example ("Automating Dependabot with GitHub Actions") identifies the update with
  *   `dependabot/fetch-metadata`, which the same page marks as "not certified by GitHub".
@@ -44,6 +53,8 @@ const HEADER = `# Arms auto-merge on Dependabot's @homeflare/* group, and on not
 #   Nothing here merges anything itself, and merging deploys nothing.
 # ⛔ NO THIRD-PARTY ACTION. GitHub's own example uses dependabot/fetch-metadata, which its
 #   docs mark "not certified by GitHub"; the group is recognised by its branch name instead.
+# ⛔ NO REQUIRED CHECK ON THE BASE BRANCH, NO ARMING: there \`gh pr merge --auto\` would merge
+#   at once, unchecked. The job fails instead, so the pull request waits for a person.
 # ⚠️ A RENDERER CHANGE STILL NEEDS A PERSON. When a kit release changes what @homeflare/config
 #   renders, the bump fails \`check\` (the drift test) and never goes green. Run
 #   \`bun run repo-shape:refresh\` on Dependabot's branch and push. ⛔ This workflow does not do
@@ -77,6 +88,14 @@ if [[ ! "$HEAD_REF" =~ ${GROUP_BRANCH} ]]; then
   echo "::notice::$HEAD_REF is not the ${HOMEFLARE_GROUP} group's branch; auto-merge not armed"
   exit 0
 fi
+# ⛔ gh merges a CLEAN or UNSTABLE pull request at once rather than arming it. Only a branch
+#   rule that requires a status check keeps it BLOCKED until the checks have passed.
+required=$(gh api "repos/$GITHUB_REPOSITORY/rules/branches/$BASE_REF" \\
+  --jq '[.[] | select(.type == "required_status_checks")] | length')
+if [ "$required" = 0 ]; then
+  echo "::error::$BASE_REF requires no status check, so gh would merge at once; auto-merge not armed"
+  exit 1
+fi
 # ★ --squash: the house repositories allow squash merges only (declareRepoPolicy).
 gh pr merge --auto --squash "$PR_URL"`;
 
@@ -86,6 +105,8 @@ export function renderAutomerge(shape: RepoShape): string {
   //   at job time, so they must reach the file verbatim (see security.ts for the same note).
   // oxlint-disable-next-line no-template-curly-in-string
   const headRef = '${{ github.head_ref }}';
+  // oxlint-disable-next-line no-template-curly-in-string
+  const baseRef = '${{ github.base_ref }}';
   // oxlint-disable-next-line no-template-curly-in-string
   const prUrl = '${{ github.event.pull_request.html_url }}';
   // oxlint-disable-next-line no-template-curly-in-string
@@ -112,7 +133,7 @@ ${PERMISSIONS_NOTE}
 ${renderSteps(
   [
     {
-      env: { GH_TOKEN: token, HEAD_REF: headRef, PR_URL: prUrl },
+      env: { BASE_REF: baseRef, GH_TOKEN: token, HEAD_REF: headRef, PR_URL: prUrl },
       name: 'Arm auto-merge on the homeflare group',
       run: ARM,
     },

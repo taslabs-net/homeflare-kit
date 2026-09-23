@@ -8,6 +8,8 @@
 #   Nothing here merges anything itself, and merging deploys nothing.
 # ⛔ NO THIRD-PARTY ACTION. GitHub's own example uses dependabot/fetch-metadata, which its
 #   docs mark "not certified by GitHub"; the group is recognised by its branch name instead.
+# ⛔ NO REQUIRED CHECK ON THE BASE BRANCH, NO ARMING: there `gh pr merge --auto` would merge
+#   at once, unchecked. The job fails instead, so the pull request waits for a person.
 # ⚠️ A RENDERER CHANGE STILL NEEDS A PERSON. When a kit release changes what @homeflare/config
 #   renders, the bump fails `check` (the drift test) and never goes green. Run
 #   `bun run repo-shape:refresh` on Dependabot's branch and push. ⛔ This workflow does not do
@@ -48,9 +50,18 @@ jobs:
             echo "::notice::$HEAD_REF is not the homeflare group's branch; auto-merge not armed"
             exit 0
           fi
+          # ⛔ gh merges a CLEAN or UNSTABLE pull request at once rather than arming it. Only a branch
+          #   rule that requires a status check keeps it BLOCKED until the checks have passed.
+          required=$(gh api "repos/$GITHUB_REPOSITORY/rules/branches/$BASE_REF" \
+            --jq '[.[] | select(.type == "required_status_checks")] | length')
+          if [ "$required" = 0 ]; then
+            echo "::error::$BASE_REF requires no status check, so gh would merge at once; auto-merge not armed"
+            exit 1
+          fi
           # ★ --squash: the house repositories allow squash merges only (declareRepoPolicy).
           gh pr merge --auto --squash "$PR_URL"
         env:
+          BASE_REF: '${{ github.base_ref }}'
           GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
           HEAD_REF: '${{ github.head_ref }}'
           PR_URL: '${{ github.event.pull_request.html_url }}'
