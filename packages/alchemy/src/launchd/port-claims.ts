@@ -3,13 +3,12 @@
  * runtime-portable (no `Bun.*`, no `node:*`), so a future Linux consumer (systemd units, under
  * `/linux`) can import it unchanged.
  *
- * ★ MIRRORS house/nix's REGISTRY, NOT A NEW RULE. `lib-ports.nix` (house @ 92cff7f) collides on
- *   `lib.attrValues ports` alone — `dupes = lib.subtractLists (lib.unique vals) vals` — keying on
- *   the PORT NUMBER by itself; address and protocol are never read. `portClaimProblems` below keys
- *   the same way on purpose: it replaces that check for the jobs a kit stack declares, and a looser
- *   or stricter rule would silently diverge from the registry it takes over from. What that trades
- *   away — a wildcard bind beside a specific one on the same port both succeed, silently splitting
- *   traffic — is measured in docs/launchd-ports.md, not assumed.
+ * ★ KEYS ON THE PORT NUMBER ALONE, NOT A NEW RULE. `portClaimProblems` below matches the estate's
+ *   existing port-collision strictness — address and protocol never read — deliberately: a looser
+ *   or stricter rule here would be a second, inconsistent source of truth for jobs migrating off a
+ *   host's own port registry (still enforcing that same strictness until a job leaves it). What
+ *   this trades away — a wildcard bind beside a specific one on the same port both succeed,
+ *   silently splitting traffic — is measured in docs/launchd-ports.md, not assumed.
  * ★ IN THE STACK PROGRAM, NOT A PROVIDER — same shape as `catalogBinary()` (../release/catalog.ts).
  *   Two reasons, both structural to Alchemy 2.0.0-beta.79: Alchemy never diffs a first `create`
  *   whose props still hold an unresolved `Output`, and every mini job's `programArguments` carries
