@@ -25,7 +25,7 @@ import type {
   PbsNotificationTargetProps,
 } from './pbs-notification-target.ts';
 import { base64, headerDigest, names, wireItem } from './pbs-notification-target-wire.ts';
-import { type Environment, type FromEnv, resolveAll, sealMatches } from './write-only.ts';
+import { type Environment, type FromEnv, resolveAll, sealMatches } from '../secrets/write-only.ts';
 
 type Props = PbsNotificationTargetProps;
 type Field = keyof Props;

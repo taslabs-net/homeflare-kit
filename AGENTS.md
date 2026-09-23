@@ -14,6 +14,7 @@ consumer receives, not by what is convenient in this tree.
 | touching the build, lint or types      | [Toolchain](#toolchain) · [Bun-native](#bun-native-not-library-native)                     |
 | anything that publishes                | [docs/releasing.md](./docs/releasing.md)                                                   |
 | opening a PR                           | [CONTRIBUTING.md](./CONTRIBUTING.md)                                                       |
+| **a required check never APPEARS**     | [docs/ci-triage.md](./docs/ci-triage.md) — check `mergeStateStatus` first                  |
 | **consuming these packages elsewhere** | [llms.txt](./llms.txt) — not this file                                                     |
 
 ⛔ Comments in the source carry measured facts and the incidents behind them. When a rule

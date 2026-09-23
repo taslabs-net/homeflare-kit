@@ -3,7 +3,7 @@
  * outside `mkdtemp`; the only programs it spawns are echo/false and a read-only user lookup.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { localRunner } from './local-runner.ts';
@@ -78,6 +78,17 @@ describe('read, stat, remove', () => {
       size: 1,
     });
     expect((await runner.stat(dir))?.kind).toBe('directory');
+  });
+
+  test('stat carries identity: one file under two spellings has one dev and ino', async () => {
+    await mkdir(join(dir, 'real'));
+    await writeFile(join(dir, 'real', 'f'), 'x');
+    await symlink(join(dir, 'real'), join(dir, 'link'));
+    const [a, b] = await Promise.all(
+      [join(dir, 'real', 'f'), join(dir, 'link', 'f')].map((p) => runner.stat(p)),
+    );
+    expect(a?.ino).toBeNumber();
+    expect([b?.dev, b?.ino]).toEqual([a?.dev, a?.ino]);
   });
 
   test('readFile returns the bytes; removeFile is idempotent', async () => {

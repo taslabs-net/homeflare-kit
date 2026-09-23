@@ -241,4 +241,4 @@ export type NodesNodeDisksZfsPostParams = {
 export type NodesNodeDisksZfsPostReturn = string;
 
 /** GET /nodes/{node}/disks/zfs/{name} — `data` payload after client unwrap. */
-export type NodesNodeDisksZfsNameGetReturn = {};
+export type NodesNodeDisksZfsNameGetReturn = Record<string, unknown>;

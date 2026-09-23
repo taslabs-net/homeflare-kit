@@ -13,3 +13,6 @@ bun run scripts/hooks/foreign-locks.ts || exit 1
 bun packages/config/bin/hooks.ts pre-commit || exit 1
 bun run scripts/hooks/actionlint.ts || exit 1
 bun run scripts/hooks/changeset-pending.ts || exit 1
+# ⚠️ LAST, because it is advisory. A line next to "version" conflicts with every release,
+#   and a conflicted PR gets NO ci run at all — see scripts/hooks/release-adjacency.ts.
+bun run scripts/hooks/release-adjacency.ts || exit 1

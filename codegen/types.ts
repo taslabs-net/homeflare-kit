@@ -19,11 +19,11 @@ import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseApidoc } from './apidoc.ts';
 import { resolveParameters } from './parameters.ts';
-import { REPO_ROOT, readManifest, verifiedText } from './schema-cache.ts';
+import { type ManifestSchema, REPO_ROOT, readManifest, verifiedText } from './schema-cache.ts';
 import { NUMERIC_STRING, type VendorNode, paramType } from './tsmap.ts';
 import { type Block, type Endpoint, blockFor, endpoints } from './types-endpoint.ts';
 import { type Census, renderBarrel, renderModule } from './types-render.ts';
-import { CAP, split } from './types-split.ts';
+import { CAP, type Module, split } from './types-split.ts';
 
 const OUT_DIR = join(REPO_ROOT, 'packages/alchemy/src/proxmox/generated');
 const PRODUCTS = [
@@ -81,6 +81,27 @@ const checkNames = (product: string, blocks: readonly Block[]): void => {
   }
 };
 
+/**
+ * Type names that BOTH products export, which `checkNames` cannot see because it runs per product.
+ *
+ * ⛔ THIS IS A SECOND KIND OF COLLISION AND IT IS THE QUIET ONE. Within a product a clash is a
+ *   `tsc` error in the `export *` barrel. Across products it compiles perfectly: `pve.ts` and
+ *   `pbs.ts` are separate barrels, so the same name simply means two different types, and a file
+ *   that imports it from the wrong one gets a type that is silently wrong about the payload.
+ * ⚠️ IT ARRIVED WITH FULL COVERAGE. The 646 + 69 declarations the old generator emitted shared
+ *   ZERO names; at 1059 + 560 the two products share many, because both document `/nodes/{node}`
+ *   subtrees, and most of those have DIFFERENT shapes — PVE's `NodesNodeCertificatesGetReturn` is
+ *   `readonly Record<string, unknown>[]` where PBS's is `null`.
+ * ★ RECORDED RATHER THAN RENAMED. Renaming would churn exports that are correct in their own
+ *   barrel; the count goes in both barrel headers and tests/schema-types.test.ts pins it, so a
+ *   vendor upgrade that adds one is a failing test instead of a wrong type nobody looked at.
+ */
+const sharedNames = (names: ReadonlyMap<string, ReadonlySet<string>>): readonly string[] => {
+  const [first, second] = [...names.values()];
+  if (first === undefined || second === undefined) return [];
+  return [...first].filter((name) => second.has(name)).sort();
+};
+
 /** A digest of the generated TEXT, so a hand-edit anywhere in the tree fails the staleness test. */
 export const digestOf = (files: ReadonlyMap<string, string>): string => {
   const hasher = new Bun.CryptoHasher('sha256');
@@ -99,6 +120,12 @@ export const generate = async (): Promise<{
   const census: Record<string, Census> = {};
   const irreducible: string[] = [];
 
+  // ⚠️ TWO PASSES, BECAUSE A BARREL HEADER STATES A FACT ABOUT THE OTHER PRODUCT. The shared-name
+  //   count cannot be known until both products have been read, so the modules are built first and
+  //   the barrels rendered after.
+  const built = new Map<string, { modules: readonly Module[]; product: string }>();
+  const names = new Map<string, ReadonlySet<string>>();
+
   for (const { id, product } of PRODUCTS) {
     const entry = manifest.schemas.find((schema) => schema.id === id);
     if (entry === undefined) throw new Error(`codegen/manifest.json has no '${id}' entry`);
@@ -111,15 +138,25 @@ export const generate = async (): Promise<{
       files.set(`packages/alchemy/src/proxmox/generated/${product}/${module.name}.ts`, text);
       if (module.irreducible) irreducible.push(`${product}/${module.name}.ts`);
     }
-    const counts: Census = {
+    census[product] = {
       declarations: blocks.reduce((total, block) => total + block.names.length, 0),
       endpoints: all.length,
       numeric: numericParams(all),
     };
-    census[product] = counts;
+    built.set(id, { modules, product });
+    names.set(product, new Set(blocks.flatMap((block) => block.names)));
+  }
+
+  const shared = sharedNames(names);
+  for (const [id, { modules, product }] of built) {
+    const entry = manifest.schemas.find((schema) => schema.id === id) as ManifestSchema;
+    const other = PRODUCTS.find((candidate) => candidate.product !== product)?.product ?? '';
     files.set(
       `packages/alchemy/src/proxmox/generated/${product}.ts`,
-      renderBarrel(entry, product, modules, counts),
+      renderBarrel(entry, product, modules, census[product] as Census, {
+        other,
+        shared: shared.length,
+      }),
     );
   }
   return { census, files, irreducible };

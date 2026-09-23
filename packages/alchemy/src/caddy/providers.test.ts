@@ -220,10 +220,14 @@ describe('the barrel', () => {
       'CaddyConfigProvider',
       'CaddyUnreachableError',
       'DEFAULT_ADMIN_ADDRESS',
+      // Caddyfile TEXT for an Access-protected route, not a resource — see
+      // access-forward-auth.ts. It pairs with @homeflare/cloudflare/access-auth.
+      'accessForwardAuth',
       'caddyAdminLayer',
       'caddyProviders',
       'caddyWithFile',
       'localCaddyAdmin',
+      'verifierProblems',
     ]);
   });
 });

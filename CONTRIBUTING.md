@@ -24,6 +24,12 @@ tarball with whatever they like. See [AGENTS.md](./AGENTS.md).)
    version PR is generated from these files, so a missing one means a silent no-op.
 4. `bun run verify` before pushing. CI runs the same thing; failing locally is faster.
 5. Conventional Commits: `<type>[scope]: <description>`.
+6. ⚠️ **If a required check never APPEARS** — not red, absent — run
+   `gh pr view <n> --json mergeable,mergeStateStatus` BEFORE opening the Actions tab.
+   `DIRTY` means the PR conflicts, GitHub cannot compute its merge ref, and no
+   `pull_request` run was ever created, so there is nothing red to find. Rebase; nothing
+   else helps. ⛔ `gh pr checks` prints green and exits 0 on such a PR — measured
+   2026-09-22, [docs/ci-triage.md](./docs/ci-triage.md).
 
 ## What a good change looks like
 
@@ -42,6 +48,15 @@ and the word "measured" beat an assertion.
 **Files stay small**: code ≤250 lines, documents ≤200. Over the cap you _extract_ into a
 file that does one thing. ⛔ You do not delete comments to fit — the comments are the
 expensive part.
+
+**Nothing a PR edits sits next to a line a release rewrites.** `changeset version`
+rewrites `"version"` in every published manifest, and git conflicts within exactly one
+line of it — which is why `"description"` now lives BELOW the `repository` block.
+⛔ Do not move it back, and do not put a new key beside `"version"`:
+`tests/release-adjacency.test.ts` fails if you do. ★ Ordering rather than "never edit
+`description`", because every description edit in this repo's history was a capability
+landing where the sentence genuinely had to change — a ban would make each npm page lag
+its package. [docs/ci-triage.md](./docs/ci-triage.md) has what this cost to learn.
 
 ## Git hooks
 

@@ -87,18 +87,19 @@ to a throttled **token** — which takes down everything sharing that credential
 
 ## @homeflare/cloudflare — Workers only
 
-⛔ **Three auth paths, not alternatives.** Pick by where your code runs:
+⛔ **Four auth paths, not alternatives.** Pick by where your code runs:
 
 | your code | use |
 | --- | --- |
 | a Worker **behind** Access | `accessIdentity(ctx)` — the edge already enforced the policy |
-| an origin with no `ctx.access` | `verifyAccessJwt(request)` — service-to-service, non-Worker |
+| an origin with no `ctx.access` | `verifyAccessJwt(request)` / `verifyAccessToken(token)` |
+| a **non-Worker** behind a reverse proxy | `accessForwardAuth()` — `@homeflare/cloudflare/access-auth` |
 | an **MCP server** | `serveMcpMetadata()` — RFC 9728 discovery |
 
 ```ts
 import {
   accessIdentity, hasAccess,                          // ctx.access — prefer this
-  verifyAccessJwt,                                    // JWT — no ctx.access available
+  verifyAccessJwt, verifyAccessToken,                 // JWT — no ctx.access available
   serveMcpMetadata, unauthorizedResponse, wellKnownPath, protectedResourceMetadata,
   log, breakered, BREAKER_COOLDOWN_MS, VERSION,
 } from '@homeflare/cloudflare';
@@ -112,24 +113,23 @@ const who = await accessIdentity(ctx);
 if (who === undefined) return new Response('Access did not run', { status: 401 });
 who.email; who.groups;
 
-// ⚠️ Read groups from HERE, not from a token: Cloudflare trims the JWT's `custom` claim
-//   at ~1 KB silently, so token-read groups can be incomplete.
+// ⚠️ Read groups from HERE, not a token: Cloudflare silently trims the JWT `custom` claim at ~1 KB.
 
-// Only where ctx.access does not exist:
-const claims = await verifyAccessJwt(request, {
-  teamDomain: env.TEAM_DOMAIN,   // https://<team>.cloudflareaccess.com
-  audience: env.POLICY_AUD,      // ⛔ never omit
-});
+// Only where ctx.access does not exist. teamDomain is https://<team>.cloudflareaccess.com
+const claims = await verifyAccessJwt(request, { teamDomain: env.TEAM_DOMAIN, audience: env.AUD });
 
 const rlog = log.with({ requestId, path: url.pathname });
 rlog.info('handled', { status, ms });   // also .debug .warn .error
 ```
 
 ⛔ Never omit `audience`. Any Access app in the account mints a JWT the team domain will
-verify; the AUD tag is the only thing saying the token was minted for THIS app.
+verify; the AUD tag is the only thing saying the token was minted for THIS app. Verification
+throws on a missing header, bad signature, wrong audience or expiry — deliberately, so a
+forgotten `if (!ok)` cannot become an open door.
 
-Verification throws on a missing header, bad signature, wrong audience, or expiry —
-deliberately, so a forgotten `if (!ok)` cannot become an open door.
+Non-Worker behind a proxy? `accessForwardAuth({ teamDomain, audience })` from
+`@homeflare/cloudflare/access-auth` answers Caddy `forward_auth` — 204 + `X-Access-Email`/
+`X-Access-Sub`, else 401/403, fails closed, never logs a token; `@homeflare/alchemy/caddy` renders the Caddyfile. ⛔ Loopback-bind verifier AND upstream, or the check is decorative.
 
 ⚠️ JWKS fetches go through a circuit breaker (`breakered`, `BREAKER_COOLDOWN_MS`),
 installed at jose's own `customFetch` seam. Measured on jose 6.2.12: five verifications

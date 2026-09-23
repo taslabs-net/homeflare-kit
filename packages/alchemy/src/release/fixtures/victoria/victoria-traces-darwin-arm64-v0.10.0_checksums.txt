@@ -1,0 +1,2 @@
+cbe83f1d409cbb85fbf1c890c4a9b7fd34c1d74acec4dce2e0ebe46fcb260e38  victoria-traces-darwin-arm64-v0.10.0.tar.gz
+4759ec89a466129b9eefc22244a111e1f489739340747805fd93b58fd0f7b2dd  victoria-traces-prod

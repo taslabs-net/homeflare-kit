@@ -29,6 +29,16 @@ export interface AccessOptions {
   readonly teamDomain: string;
   /** The application's AUD tag, from Zero Trust → Access → Applications. */
   readonly audience: string;
+  /**
+   * Reject a token older than this, by `iat`. Seconds, or a jose duration like `'8h'`.
+   * ★ OPT-IN BECAUSE `exp` ALREADY BOUNDS THE TOKEN. Access sets the session lifetime in
+   *   `exp`, so this is a second, shorter leash for a surface that wants one — not a
+   *   missing check. ⚠️ Setting it below the Access session duration logs users out
+   *   mid-session with a 401 they cannot fix by retrying.
+   */
+  readonly maxTokenAge?: string | number;
+  /** Seconds of clock skew tolerated on `exp`/`nbf`/`iat`. jose's default is 0. */
+  readonly clockTolerance?: string | number;
 }
 
 /** The subset of Access claims worth depending on. */
@@ -79,9 +89,35 @@ export async function verifyAccessJwt(
   const token = request.headers.get(ACCESS_HEADER);
   if (token === null) throw new Error('access: no Cf-Access-Jwt-Assertion header');
 
+  return await verifyAccessToken(token, options);
+}
+
+/**
+ * Verify a token string that the caller has already located, returning the identity.
+ *
+ * ★ EXTRACTED SO THERE IS EXACTLY ONE VERIFICATION, NOT TWO. `verifyAccessJwt` reads the
+ *   header; the forward_auth handler (`@homeflare/cloudflare/access-auth`) also accepts
+ *   the `CF_Authorization` cookie, because Cloudflare's own documentation says the cookie
+ *   "is not guaranteed to be passed" and the reverse is true too — a request that arrives
+ *   through a proxy hop may carry one and not the other. Both funnel here, so a fix to the
+ *   checks below cannot land on one path and miss the other.
+ *
+ * ⛔ THROWS ON EVERY FAILURE, exactly like `verifyAccessJwt`. Same reasoning: a boolean a
+ *   caller forgets to test is an open door.
+ */
+export async function verifyAccessToken(
+  token: string,
+  options: AccessOptions,
+): Promise<AccessIdentity> {
   const { payload } = await jwtVerify(token, keysFor(options.teamDomain), {
     issuer: options.teamDomain,
     audience: options.audience,
+    // ⛔ SPREAD, NOT `maxTokenAge: options.maxTokenAge`. `exactOptionalPropertyTypes` is on,
+    //   and passing an explicit `undefined` is not the same as omitting the key — jose
+    //   reads `'maxTokenAge' in options`, so the undefined form would enable the check
+    //   with an undefined bound.
+    ...(options.maxTokenAge === undefined ? {} : { maxTokenAge: options.maxTokenAge }),
+    ...(options.clockTolerance === undefined ? {} : { clockTolerance: options.clockTolerance }),
   });
 
   return {
