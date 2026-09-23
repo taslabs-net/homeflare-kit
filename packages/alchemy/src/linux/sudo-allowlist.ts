@@ -26,6 +26,7 @@ import {
   octalMode,
   prefixOf,
 } from '../launchd/sudo-allowlist.ts';
+import { chownProblem, forceNumericOwner } from './sudo-allowlist-chown.ts';
 import { CHMOD, CHOWN, MKDIR, RMDIR, dirProgramProblem } from './sudo-allowlist-dir.ts';
 
 export { INSTALL, SUDO, SudoRefusedError, checkPrefixes, octalMode, prefixOf };
@@ -51,24 +52,20 @@ const ABS_OF: Readonly<Record<string, string>> = {
   rmdir: RMDIR,
   systemctl: SYSTEMCTL_ABS,
 };
-/** The bare argv a provider sends → the absolute argv sudo may run. Unknown programs pass through. */
+/**
+ * The bare argv a provider sends → the absolute argv sudo may run. Unknown programs pass through.
+ * ★ `chown`'s owner argument is ALSO rewritten here, to the `+`-forced form `sudo-allowlist-dir.ts`
+ *   and `sudo-allowlist-chown.ts` now require — `directory-lifecycle.ts` never has to know that
+ *   syntax exists, and the allowlist checks exactly what will actually reach `sudo`.
+ */
 export const canonicalize = (argv: readonly string[]): readonly string[] => {
   const abs = ABS_OF[argv[0] ?? ''];
+  const program = abs ?? argv[0];
+  if (program === CHOWN) {
+    const [owner, ...rest] = argv.slice(1);
+    return [CHOWN, owner === undefined ? '' : forceNumericOwner(owner), ...rest];
+  }
   return abs === undefined ? argv : [abs, ...argv.slice(1)];
-};
-
-const ID = /^\d+$/;
-/** `install`'s optional owner flags: none, `-o N`, `-g N`, or `-o N -g N`. Numeric ids only. */
-const idsOk = (ids: readonly string[]): boolean => {
-  if (ids.length === 0) return true;
-  if (ids.length === 2) return (ids[0] === '-o' || ids[0] === '-g') && ID.test(ids[1] ?? '');
-  return (
-    ids.length === 4 &&
-    ids[0] === '-o' &&
-    ID.test(ids[1] ?? '') &&
-    ids[2] === '-g' &&
-    ID.test(ids[3] ?? '')
-  );
 };
 
 const dirOf = (path: string): string => path.slice(0, path.lastIndexOf('/')) || '/';
@@ -80,17 +77,23 @@ export type AllowContext = {
   readonly temp?: string;
 };
 
+/**
+ * ⛔ NEVER `-o`/`-g` — see sudo-allowlist-chown.ts's header. `install` always writes the fresh temp
+ *   owned by whoever `sudo` runs it as (root:root), with no name lookup at all; a non-root owner or
+ *   group is set afterward by a separate, `+`-forced `chown` on that same temp, before `mv`.
+ */
 const installProblem = (args: readonly string[], context: AllowContext): string | undefined => {
-  const [m, mode, ...rest] = args;
-  if (m !== '-m' || mode === undefined || !/^[0-7]{4}$/.test(mode)) {
-    return 'install takes exactly `-m <4 octal digits> [-o <uid>] [-g <gid>] -T -- <staged> <temp>`';
+  const [m, mode, t, dd, source, dest, ...extra] = args;
+  if (
+    m !== '-m' ||
+    mode === undefined ||
+    !/^[0-7]{4}$/.test(mode) ||
+    t !== '-T' ||
+    dd !== '--' ||
+    extra.length !== 0
+  ) {
+    return 'install takes exactly `-m <4 octal digits> -T -- <staged> <temp>`';
   }
-  const at = rest.indexOf('-T');
-  const tail = at === -1 ? [] : rest.slice(at);
-  if (at === -1 || !idsOk(rest.slice(0, at)) || tail.length !== 4 || tail[1] !== '--') {
-    return 'install takes exactly `-m <4 octal digits> [-o <uid>] [-g <gid>] -T -- <staged> <temp>`';
-  }
-  const [, , source, dest] = tail;
   if (source === undefined || source !== context.staged) {
     return 'install copies only the file this runner staged';
   }
@@ -173,7 +176,8 @@ export const privilegedProblem = (
   if (program === MV) return mvProblem(args, context);
   if (program === RM) return rmProblem(args, context);
   if (program === SYSTEMCTL_ABS) return systemctlProblem(args, context.prefixes);
-  if (program === MKDIR || program === CHMOD || program === CHOWN || program === RMDIR) {
+  if (program === CHOWN) return chownProblem(args, context);
+  if (program === MKDIR || program === CHMOD || program === RMDIR) {
     return dirProgramProblem(program, args, context.prefixes);
   }
   return `${String(program)} is not on the sudo allowlist`;

@@ -70,6 +70,66 @@ describe('writeFileAtomic under a prefix', () => {
     expect([...fake.files.keys()].some((path) => path.includes('.hf-'))).toBe(false);
     expect([...fake.dirs.keys()].some((path) => path.startsWith('/tmp/hf-sudo-'))).toBe(false);
   });
+
+  // 🔴 Adversarial review, round 2: a failed CLEANUP rm after a failed mv used to be swallowed
+  //   silently — the operator learned only about the mv failure, never that a root-owned temp
+  //   was now littered on the host. The thrown error must say so and name the path.
+  test('a cleanup rm that ALSO fails is reported, not swallowed — names the leftover temp', async () => {
+    const { privileged, runner, state } = fakeSudoHost();
+    state.mvFailure = { exitCode: 1, stderr: 'mv: simulated failure', stdout: '' };
+    state.rmFailure = { exitCode: 1, stderr: 'rm: simulated cleanup failure', stdout: '' };
+    const write = runner.writeFileAtomic(DEST, new TextEncoder().encode('x'), { mode: 0o644 });
+    await expect(write).rejects.toThrow('simulated failure');
+    await expect(write).rejects.toThrow('also failed');
+    const calls = privileged();
+    expect(calls.map((c) => c[0])).toEqual([INSTALL, MV, RM]);
+    await expect(write).rejects.toThrow(calls[0]?.at(-1) ?? 'unreachable');
+  });
+
+  // 🔴 Adversarial review, round 2: install never carries -o/-g (coreutils has no way to force
+  //   numeric there); a non-root owner or group is set by a separate, +-forced chown on the same
+  //   temp, before mv — and only when one is actually declared, never for a plain root write.
+  test('a non-root owner is set by a +-forced chown on the temp, between install and mv', async () => {
+    const { fake, privileged, runner } = fakeSudoHost();
+    const path = '/usr/local/bin/hf-thing';
+    await runner.writeFileAtomic(path, new TextEncoder().encode('x'), {
+      gid: 60,
+      mode: 0o644,
+      uid: 900,
+    });
+    const calls = privileged();
+    expect(calls.map((c) => c[0])).toEqual([INSTALL, CHOWN, MV]);
+    expect(calls[0]?.includes('-o')).toBe(false);
+    expect(calls[0]?.includes('-g')).toBe(false);
+    expect(calls[1]).toEqual([CHOWN, '+900:+60', '--', calls[0]?.at(-1) ?? '']);
+    expect(fake.files.get(path)).toMatchObject({ gid: 60, uid: 900 });
+  });
+
+  test('a plain root write never chowns — install’s own default already matches', async () => {
+    const { privileged, runner } = fakeSudoHost();
+    await runner.writeFileAtomic(DEST, new TextEncoder().encode('x'), { mode: 0o644 });
+    expect(privileged().map((c) => c[0])).toEqual([INSTALL, MV]);
+  });
+
+  test('the derived temp is verified absent before install runs', async () => {
+    const { base, privileged, runner } = fakeSudoHost();
+    // The temp's 12-hex suffix is random, so simulate a collision by making `stat` claim
+    // something is already at any `.hf-….tmp` path — `dest` itself is unaffected, so vetWrite's
+    // own read of it still sees the real (absent) state.
+    const originalStat = base.stat;
+    base.stat = async (path) =>
+      /\.hf-[0-9a-f]{12}\.tmp$/.test(path)
+        ? { gid: 0, kind: 'file', mode: 0o600, size: 0, uid: 0 }
+        : originalStat(path);
+    await expect(
+      runner.writeFileAtomic(DEST, new TextEncoder().encode('x'), { mode: 0o644 }),
+    ).rejects.toBeInstanceOf(SudoRefusedError);
+    await expect(
+      runner.writeFileAtomic(DEST, new TextEncoder().encode('x'), { mode: 0o644 }),
+    ).rejects.toThrow('already exists');
+    // ★ Refused before `install` ever ran — nothing was staged as root over a collision.
+    expect(privileged()).toEqual([]);
+  });
 });
 
 describe('checkWrite', () => {
@@ -99,13 +159,13 @@ describe('removeFile', () => {
 });
 
 describe('exec routing', () => {
-  test('mkdir/chown under a prefix run as root with absolute argv', async () => {
+  test('mkdir/chown under a prefix run as root with absolute argv, chown +-forced', async () => {
     const { fake, privileged, runner } = fakeSudoHost();
     await runner.exec(['mkdir', '-m', '750', '--', '/usr/local/bin/sub']);
     await runner.exec(['chown', '0:0', '--', '/usr/local/bin/sub']);
     expect(privileged()).toEqual([
       [MKDIR, '-m', '750', '--', '/usr/local/bin/sub'],
-      [CHOWN, '0:0', '--', '/usr/local/bin/sub'],
+      [CHOWN, '+0:+0', '--', '/usr/local/bin/sub'],
     ]);
     expect(fake.modes.get('/usr/local/bin/sub')).toEqual({ gid: 0, mode: 0o750, uid: 0 });
   });

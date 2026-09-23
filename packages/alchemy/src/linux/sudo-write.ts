@@ -7,13 +7,21 @@
  *   destination's own directory (fresh, so "writes through" changes nothing that mattered), then
  *   `mv`s that temp file onto `path` — rename(2), same directory, so the swap is atomic and never
  *   torn, exactly what `ssh-scripts.ts writeScript` already does for the unprivileged case.
+ * ⛔ `install` NEVER TAKES `-o`/`-g` — see sudo-allowlist-chown.ts's header (coreutils' own
+ *   `get_ids()` has no way to force numeric ids, unlike `chown`). It always installs owned by
+ *   whoever `sudo` runs it as; a non-root owner or group is set afterward by a separate,
+ *   `+`-forced `chown` on that same temp file, before `mv`.
+ * ⛔ THE DERIVED TEMP IS VERIFIED ABSENT, AS THE OPERATOR, BEFORE `install` RUNS. A 12-hex-char
+ *   collision is astronomically unlikely, but "unlikely" is not the bar a privileged write is held
+ *   to elsewhere in this runner, and the check costs one `stat` this runner already knows how to do.
  * ⛔ ON ANY FAILURE AFTER `install` SUCCEEDS, THE TEMP IS REMOVED (also as root, since only root
  *   can now touch it). A left-behind `.foo.hf-xxxx.tmp` would read, on the next plan, as an extra
- *   file under the prefix that guard would find and no code would explain.
+ *   file under the prefix that guard would find and no code would explain — and if THAT cleanup
+ *   itself fails, the thrown error says so and names the path, rather than silently swallowing it.
  */
 import { randomBytes } from 'node:crypto';
 import type { ExecResult, HostRunner, WriteOptions } from '../launchd/runner.ts';
-import { INSTALL, MV, RM, SudoRefusedError, octalMode, prefixOf } from './sudo-allowlist.ts';
+import { CHOWN, INSTALL, MV, RM, SudoRefusedError, octalMode, prefixOf } from './sudo-allowlist.ts';
 import { assertInstallable, operatorGroups } from './sudo-guard.ts';
 import type { Staged } from './sudo-stage.ts';
 
@@ -61,11 +69,33 @@ export const vetWrite = async (
   return { mode, prefix };
 };
 
+/** `+<uid>`, `:+<gid>`, or `+<uid>:+<gid>` — omitted sides leave that half of ownership alone. */
+const safeOwnerSpec = (uid: number | undefined, gid: number | undefined): string =>
+  `${uid === undefined ? '' : `+${uid}`}${gid === undefined ? '' : `:+${gid}`}`;
+
 /**
- * Stage, `install` into a fresh temp file beside `path`, `mv` it into place. Cleans up the temp on
- * a failed `mv`, and always disposes the stage — whether or not the write succeeded.
+ * A non-root owner or group, when one was declared: `install` leaves the temp root:root (see the
+ * file header), so this is the ONLY call that can hand it to someone else. `undefined` from either
+ * side when that half already matches `install`'s own default (0/omitted), so a plain root-owned
+ * write costs nothing extra here.
+ */
+const chownNeeded = (
+  options: WriteOptions,
+): { readonly uid?: number; readonly gid?: number } | undefined => {
+  const uid = options.uid !== undefined && options.uid !== 0 ? options.uid : undefined;
+  const gid = options.gid !== undefined && options.gid !== 0 ? options.gid : undefined;
+  return uid === undefined && gid === undefined
+    ? undefined
+    : { ...(uid === undefined ? {} : { uid }), ...(gid === undefined ? {} : { gid }) };
+};
+
+/**
+ * Stage, `install` into a fresh temp file beside `path`, `chown` it if a non-root owner was
+ * declared, `mv` it into place. Cleans up the temp on a failed `mv`, and always disposes the
+ * stage — whether or not the write succeeded.
  */
 export const writeUnderPrefix = async (
+  base: HostRunner,
   elevate: Elevate,
   stage: (bytes: Uint8Array) => Promise<Staged>,
   path: string,
@@ -76,24 +106,37 @@ export const writeUnderPrefix = async (
   const temp = deriveTemp(path);
   const staged = await stage(bytes);
   try {
-    const installArgv = [
-      INSTALL,
-      '-m',
-      mode,
-      ...(options.uid === undefined ? [] : ['-o', String(options.uid)]),
-      ...(options.gid === undefined ? [] : ['-g', String(options.gid)]),
-      '-T',
-      '--',
-      staged.path,
-      temp,
-    ];
-    mustSucceed(await elevate(installArgv, { staged: staged.path, temp }), installArgv);
+    const installArgv = [INSTALL, '-m', mode, '-T', '--', staged.path, temp];
+    const before = async () => {
+      const existing = await base.stat(temp);
+      if (existing !== undefined) {
+        throw new SudoRefusedError(
+          `sshSudoRunner ${temp}: already exists (a ${existing.kind}); refusing to install over ` +
+            'it. Nothing ran as root.',
+        );
+      }
+    };
+    mustSucceed(await elevate(installArgv, { staged: staged.path, temp }, before), installArgv);
     try {
+      const owner = chownNeeded(options);
+      if (owner !== undefined) {
+        const chownArgv = [CHOWN, safeOwnerSpec(owner.uid, owner.gid), '--', temp];
+        mustSucceed(await elevate(chownArgv, { temp }), chownArgv);
+      }
       const mvArgv = [MV, '-f', '-T', '--', temp, path];
       mustSucceed(await elevate(mvArgv, { temp }), mvArgv);
     } catch (cause) {
       const rmArgv = [RM, '-f', '--', temp];
-      await elevate(rmArgv, { temp }).catch(() => undefined);
+      const cleaned = await elevate(rmArgv, { temp })
+        .then((result) => (result.exitCode === 0 ? undefined : result))
+        .catch((rmCause: unknown) => rmCause);
+      if (cleaned !== undefined) {
+        throw new Error(
+          `${cause instanceof Error ? cause.message : String(cause)} — AND removing the leftover ` +
+            `temp ${temp} also failed (${String(cleaned)}); it needs manual cleanup as root.`,
+          { cause },
+        );
+      }
       throw cause;
     }
   } finally {

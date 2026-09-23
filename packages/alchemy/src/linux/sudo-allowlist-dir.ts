@@ -18,6 +18,16 @@
  *   OWNER always has write access through the owner bits alone, so no mode restriction can make a
  *   non-root-owned directory here safe — which is why `chown` below is refused to anything but
  *   root outright, not merely mode-restricted.
+ * 🔴 MEASURED (adversarial review, round 2, 2026-09-23, cited against gnulib's `lib/userspec.c`,
+ *   used by GNU `chown`): a purely-numeric owner string is looked up as a NAME first —
+ *   `*u == '+' ? NULL : getpwnam(u)` — and only parsed as a raw number when no such account
+ *   exists. If a host ever had a user or group literally NAMED `"0"`, `chown 0 -- path` would
+ *   silently chown to THAT account, not uid 0 — bypassing this file's own root-only restriction
+ *   without tripping it. `+` skips the name lookup outright (`if it starts with '+', skip the
+ *   look-up`, `userspec.c`), so the allowlist now requires it: `sudo-allowlist.ts`'s
+ *   `canonicalize()` rewrites the bare `0`/`:0`/`0:0` argv `directory-lifecycle.ts` actually sends
+ *   into the forced-numeric form below before this check ever runs, so the unprivileged caller
+ *   never has to know this syntax exists.
  */
 import { prefixOf } from '../launchd/sudo-allowlist.ts';
 
@@ -45,8 +55,12 @@ const dirModeProblem = (mode: number | undefined): string | undefined => {
     : undefined;
 };
 
-/** `chown`'s owner argument — root only, in every shape `directory-lifecycle.ts`'s `ownerArg()` builds. */
-const ROOT_OWNER = /^(0|:0|0:0)$/;
+/**
+ * `chown`'s owner argument — root only, and `+`-forced so a same-named account can never be
+ * resolved instead of uid/gid `0`. `canonicalize()` builds these from the bare `0`/`:0`/`0:0`
+ * `directory-lifecycle.ts`'s `ownerArg()` sends; this checks what actually reaches `sudo`.
+ */
+const ROOT_OWNER = /^(\+0|:\+0|\+0:\+0)$/;
 
 export const dirProgramProblem = (
   program: string,
@@ -79,8 +93,8 @@ export const dirProgramProblem = (
       extra.length === 0 &&
       under(path)
       ? undefined
-      : 'chown takes exactly `0`, `:0` or `0:0` -- <path under a declared prefix>` — root only; ' +
-          'a directory this runner elevates never hands ownership to anyone else';
+      : 'chown takes exactly `+0`, `:+0` or `+0:+0` -- <path under a declared prefix>` — root ' +
+          'only, forced numeric; a directory this runner elevates never hands ownership to anyone else';
   }
   const [end, path, ...extra] = args;
   return end === '--' && extra.length === 0 && under(path)

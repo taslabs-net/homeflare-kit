@@ -79,12 +79,18 @@ sudo.
   refuse. Measured 2026-09-21: `/Library/LaunchDaemons`, `/private/etc`, `/opt` and `/usr/local`,
   and everything above them, carry none.
 - **A root-owned file that would be group- or world-writable, setuid or setgid** (`mode & 0o6022`;
-  root-owned means an omitted owner, uid `0`, **or gid `0`** — either alone keeps every check
-  active). ⛔ Anyone in that class could rewrite a file root installed (a daemon's config, a script
-  it runs), and a setuid root file runs as root for whoever executes it. 🔴 MEASURED (adversarial
-  review, 2026-09-23): checking only `uid` let `{uid: 501, gid: 0, mode: 0o2775}` — setgid to
-  root's own group, group-writable, merely OWNED by uid 501 — through untouched. A file handed to
-  another owner is theirs to change only when its GROUP is genuinely theirs too.
+  root-owned means an omitted owner, uid `0`, **or an omitted or `0` gid** — any of the four keeps
+  every check active). ⛔ Anyone in that class could rewrite a file root installed (a daemon's
+  config, a script it runs), and a setuid root file runs as root for whoever executes it. 🔴
+  MEASURED (adversarial review, 2026-09-23, two rounds): round 1 found checking only `uid` let
+  `{uid: 501, gid: 0, mode: 0o2775}` — setgid to root's own group, group-writable, merely OWNED by
+  uid 501 — through untouched. Round 2 found the round-1 fix still missed an OMITTED `gid`: on the
+  Linux sibling runner, GNU `install` run as root via `sudo -n` defaults a missing `-g` to root's
+  own group whenever the destination directory is not itself setgid (measured true of every prefix
+  this codebase declares), so `{uid: 501, mode: 0o2775}` — `group` simply never declared — reaches
+  the identical escalation by omission; this check is shared code, so it is fixed the same way on
+  both platforms rather than relied on to differ safely by OS default. A file handed to another
+  owner is theirs to change only when BOTH the uid and the gid are explicitly, genuinely theirs.
 - A path outside every prefix that needs root: another user as the owner, say.
 - A symlink or missing directory between the prefix and the file, or anything but a regular file
   at the path. ⚠️ `install src <directory>` copies _into_ the directory, and a symlink to one does

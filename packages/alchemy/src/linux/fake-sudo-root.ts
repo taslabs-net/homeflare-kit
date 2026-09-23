@@ -18,8 +18,8 @@ import type { fakeLinuxHost } from './fake-linux-host.ts';
 
 type Fake = ReturnType<typeof fakeLinuxHost>;
 
-/** What a test can force `sudo`'s next `mv` to answer instead of actually moving anything. */
-export type RootState = { mvFailure?: ExecResult };
+/** What a test can force `sudo`'s next `mv` / `rm` to answer instead of actually running it. */
+export type RootState = { mvFailure?: ExecResult; rmFailure?: ExecResult };
 
 const ok = (stdout = ''): ExecResult => ({ exitCode: 0, stderr: '', stdout });
 const fail = (exitCode: number, stderr: string): ExecResult => ({ exitCode, stderr, stdout: '' });
@@ -45,15 +45,6 @@ const dirRoot = (fake: Fake, argv: readonly string[]): ExecResult | undefined =>
     const live = path === undefined ? undefined : fake.modes.get(path);
     if (live === undefined) return fail(1, `chmod: ${String(path)}: No such file or directory`);
     live.mode = Number.parseInt(mode ?? '755', 8);
-    return ok();
-  }
-  if (program === CHOWN) {
-    const [owner, , path] = args;
-    const live = path === undefined ? undefined : fake.modes.get(path);
-    if (live === undefined || owner === undefined) {
-      return fail(1, `chown: ${String(path)}: No such file or directory`);
-    }
-    applyOwner(live, owner);
     return ok();
   }
   if (program === RMDIR) {
@@ -113,11 +104,40 @@ const fileRoot = (
     return ok();
   }
   if (program === RM) {
+    if (state.rmFailure !== undefined) {
+      const failure = state.rmFailure;
+      delete state.rmFailure; // ★ once, like a real transient failure
+      return failure;
+    }
     const [, , path] = args;
     if (path !== undefined) fake.files.delete(path);
     return ok();
   }
   return undefined;
+};
+
+/**
+ * `chown` on either a directory (`fake.modes`) or a file (`fake.files` — the derived temp,
+ * `sudo-write.ts`'s own non-root-owner step). `applyOwner` accepts the `+`-forced spec
+ * unchanged: `Number('+501')` parses to `501` in JS, same as a bare digit string.
+ */
+const chownRoot = (fake: Fake, argv: readonly string[]): ExecResult | undefined => {
+  if (argv[0] !== CHOWN) return undefined;
+  const [owner, , path] = argv.slice(1);
+  if (owner === undefined || path === undefined) {
+    return fail(1, `chown: ${String(path)}: No such file or directory`);
+  }
+  const dir = fake.modes.get(path);
+  if (dir !== undefined) {
+    applyOwner(dir, owner);
+    return ok();
+  }
+  const file = fake.files.get(path);
+  if (file !== undefined) {
+    applyOwner(file, owner);
+    return ok();
+  }
+  return fail(1, `chown: ${path}: No such file or directory`);
 };
 
 /** Everything `/usr/bin/sudo -n --` may run, dispatched as root against the same fake host. */
@@ -126,6 +146,8 @@ export const asRoot = async (
   argv: readonly string[],
   state: RootState = {},
 ): Promise<ExecResult> => {
+  const chown = chownRoot(fake, argv);
+  if (chown !== undefined) return chown;
   const dir = dirRoot(fake, argv);
   if (dir !== undefined) return dir;
   const file = fileRoot(fake, argv, state);

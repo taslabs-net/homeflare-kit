@@ -123,7 +123,7 @@ export const makeSshSudoRunner = (prefixList: readonly string[], deps: SshSudoDe
       if (vetted === undefined) {
         return base.writeFileAtomic(path, bytes, options).catch(outsidePrefixHint(path, prefixes));
       }
-      await writeUnderPrefix(elevate, deps.stage, path, bytes, options, vetted.mode);
+      await writeUnderPrefix(base, elevate, deps.stage, path, bytes, options, vetted.mode);
     },
   };
 };

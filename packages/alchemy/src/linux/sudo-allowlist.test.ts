@@ -13,6 +13,7 @@ import {
   RM,
   RMDIR,
   SYSTEMCTL_ABS,
+  canonicalize,
   checkPrefixes,
   octalMode,
   prefixOf,
@@ -39,9 +40,7 @@ describe('checkPrefixes / prefixOf', () => {
 describe('install shapes', () => {
   test.each([
     [[INSTALL, '-m', '0644', '-T', '--', STAGED, TEMP]],
-    [[INSTALL, '-m', '0755', '-o', '0', '-T', '--', STAGED, TEMP]],
-    [[INSTALL, '-m', '0644', '-g', '0', '-T', '--', STAGED, TEMP]],
-    [[INSTALL, '-m', '0644', '-o', '0', '-g', '0', '-T', '--', STAGED, TEMP]],
+    [[INSTALL, '-m', '0755', '-T', '--', STAGED, TEMP]],
   ])('allows %j', (argv) => {
     expect(allowed(argv)).toBeUndefined();
   });
@@ -55,10 +54,33 @@ describe('install shapes', () => {
     ['a temp outside every prefix', [INSTALL, '-m', '0644', '-T', '--', STAGED, '/tmp/x.tmp']],
     ['no -T', [INSTALL, '-m', '0644', '--', STAGED, TEMP]],
     ['a three-digit mode', [INSTALL, '-m', '644', '-T', '--', STAGED, TEMP]],
-    ['an owner by name', [INSTALL, '-m', '0644', '-o', 'root', '-T', '--', STAGED, TEMP]],
-    ['-g before -o', [INSTALL, '-m', '0644', '-g', '0', '-o', '0', '-T', '--', STAGED, TEMP]],
     ['-S (the Mac flag)', [INSTALL, '-S', '-m', '0644', '-T', '--', STAGED, TEMP]],
     ['two destinations', [INSTALL, '-m', '0644', '-T', '--', STAGED, TEMP, TEMP]],
+    // 🔴 Adversarial review, round 2: install has no `+`-forcing mechanism at all (coreutils'
+    //   `get_ids()` always tries getpwnam/getgrnam first), so -o/-g are refused outright now —
+    //   ownership is set afterward by a separate, `+`-forced chown on the same temp (below).
+    ['-o, now refused outright', [INSTALL, '-m', '0644', '-o', '0', '-T', '--', STAGED, TEMP]],
+    ['-g, now refused outright', [INSTALL, '-m', '0644', '-g', '0', '-T', '--', STAGED, TEMP]],
+  ])('refuses %s', (_name, argv) => {
+    expect(allowed(argv)).toBeString();
+  });
+});
+
+describe('the file-ownership chown, bound to the derived temp', () => {
+  test.each([
+    [[CHOWN, '+900', '--', TEMP]],
+    [[CHOWN, ':+60', '--', TEMP]],
+    [[CHOWN, '+900:+60', '--', TEMP]],
+  ])('allows %j', (argv) => {
+    expect(allowed(argv)).toBeUndefined();
+  });
+
+  test.each([
+    ['a bare digit, not +-forced', [CHOWN, '900', '--', TEMP]],
+    ['a name', [CHOWN, '+root', '--', TEMP]],
+    ['a path that is not the derived temp', [CHOWN, '+900', '--', '/usr/local/bin/other']],
+    ['only the group side forced', [CHOWN, '900:+60', '--', TEMP]],
+    ['only the owner side forced', [CHOWN, '+900:60', '--', TEMP]],
   ])('refuses %s', (_name, argv) => {
     expect(allowed(argv)).toBeString();
   });
@@ -93,9 +115,12 @@ describe('directory shapes', () => {
     [[MKDIR, '-m', '750', '--', '/etc/systemd/system/sub']],
     [[MKDIR, '-m', '700', '--', '/etc/systemd/system/sub']],
     [[CHMOD, '750', '--', '/usr/local/bin/sub']],
-    [[CHOWN, '0', '--', '/usr/local/bin/sub']],
-    [[CHOWN, ':0', '--', '/usr/local/bin/sub']],
-    [[CHOWN, '0:0', '--', '/usr/local/bin/sub']],
+    // ★ +-forced: this is what canonicalize() actually sends to sudo for a directory chown; the
+    //   bare `0`/`:0`/`0:0` directory-lifecycle.ts itself sends is covered by the canonicalize
+    //   test below, and is refused HERE on purpose (privilegedProblem checks the final argv).
+    [[CHOWN, '+0', '--', '/usr/local/bin/sub']],
+    [[CHOWN, ':+0', '--', '/usr/local/bin/sub']],
+    [[CHOWN, '+0:+0', '--', '/usr/local/bin/sub']],
     [[RMDIR, '--', '/etc/systemd/system/sub']],
   ])('allows %j', (argv) => {
     expect(allowed(argv)).toBeUndefined();
@@ -106,6 +131,10 @@ describe('directory shapes', () => {
     ['a prefix-sibling', [MKDIR, '-m', '750', '--', '/usr/local/bin-x/sub']],
     ['a path that walks out', [MKDIR, '-m', '750', '--', '/etc/systemd/system/../x']],
     ['chown by name', [CHOWN, 'root', '--', '/usr/local/bin/sub']],
+    [
+      'chown, bare digit not +-forced (round 2 of the review)',
+      [CHOWN, '0', '--', '/usr/local/bin/sub'],
+    ],
     ['chmod without --', [CHMOD, '750', '/usr/local/bin/sub']],
     ['rmdir of two paths', [RMDIR, '--', '/usr/local/bin/sub', '/etc/systemd/system/sub']],
     // 🔴 The three shapes the adversarial review found reachable, 2026-09-23 — see
@@ -120,6 +149,7 @@ describe('directory shapes', () => {
     ['chown to a non-root uid', [CHOWN, '900', '--', '/usr/local/bin/sub']],
     ['chown to a non-root gid only', [CHOWN, ':60', '--', '/usr/local/bin/sub']],
     ['chown to a non-root uid and gid', [CHOWN, '900:60', '--', '/usr/local/bin/sub']],
+    ['chown to a non-root uid, even +-forced', [CHOWN, '+900', '--', '/usr/local/bin/sub']],
   ])('refuses %s', (_name, argv) => {
     expect(allowed(argv)).toBeString();
   });
@@ -144,6 +174,39 @@ describe('systemctl shapes', () => {
     ['a unit that is not a valid name', [SYSTEMCTL_ABS, 'enable', '--', 'not a unit']],
   ])('refuses %s', (_name, argv) => {
     expect(allowed(argv)).toBeString();
+  });
+});
+
+describe('canonicalize', () => {
+  test('rewrites a bare directory chown to the +-forced form the allowlist now requires', () => {
+    expect(canonicalize(['chown', '0', '--', '/usr/local/bin/sub'])).toEqual([
+      CHOWN,
+      '+0',
+      '--',
+      '/usr/local/bin/sub',
+    ]);
+    expect(canonicalize(['chown', ':0', '--', '/usr/local/bin/sub'])).toEqual([
+      CHOWN,
+      ':+0',
+      '--',
+      '/usr/local/bin/sub',
+    ]);
+    expect(canonicalize(['chown', '900:60', '--', '/usr/local/bin/sub'])).toEqual([
+      CHOWN,
+      '+900:+60',
+      '--',
+      '/usr/local/bin/sub',
+    ]);
+  });
+
+  test('leaves every other program alone', () => {
+    expect(canonicalize(['mkdir', '-m', '750', '--', '/usr/local/bin/sub'])).toEqual([
+      MKDIR,
+      '-m',
+      '750',
+      '--',
+      '/usr/local/bin/sub',
+    ]);
   });
 });
 

@@ -31,47 +31,64 @@ macOS's `sudoRunner()` writes a file with one privileged call: `install -S`
 stages a temp file beside the target and renames it, atomically, inside
 `install` itself. **GNU `install` has no such mode** — it opens the
 destination and writes through it (`src/linux/ssh-scripts.ts`'s own header).
-So this runner does the staging and the atomic swap itself, across THREE
-privileged calls instead of one:
+So this runner does the staging and the atomic swap itself:
 
-| step | who      | what                                                                |
-| ---- | -------- | ------------------------------------------------------------------- |
-| 1    | operator | `mktemp -d` (0700), then `writeFileAtomic` the bytes into it (0600) |
-| 2    | **root** | `install -m <4 octal> [-o uid] [-g gid] -T -- <staged> <temp>`      |
-| 3    | **root** | `mv -f -T -- <temp> <dest>` — rename(2), same directory, atomic     |
+| step | who        | what                                                                |
+| ---- | ---------- | ------------------------------------------------------------------- |
+| 1    | operator   | `mktemp -d` (0700), then `writeFileAtomic` the bytes into it (0600) |
+| 2    | **root**   | `install -m <4 octal> -T -- <staged> <temp>` — no `-o`/`-g`, ever   |
+| 3    | **root**\* | `chown +<uid>[:+<gid>]` — only when a non-root owner was declared   |
+| 4    | **root**   | `mv -f -T -- <temp> <dest>` — rename(2), same directory, atomic     |
 
 `<temp>` is `<dest's directory>/.<basename>.hf-<12 hex>.tmp`, derived per
 call and verified **absent** by the operator before step 2 runs. `install`
-writes into a file NOTHING has opened yet, so "writes through" changes
-nothing that mattered; `mv` is the one call that ever touches `<dest>`, and
-rename(2) is atomic by construction. On any failure after step 2, step 3's
-temp is removed with `sudo -n rm -f -- <temp>`; the operator's own staging
-directory is removed either way.
+never takes `-o`/`-g`: unlike `chown`, GNU `install`'s own `get_ids()`
+(coreutils `src/install.c`) always tries `getpwnam`/`getgrnam` on the string
+FIRST, with no way to force numeric parsing — so `install -o 0` on a host
+that ever had a user literally named `"0"` would install owned by THAT
+account, not uid 0. `install` therefore always leaves the temp owned by
+whoever `sudo` ran it as (root:root), and a declared non-root owner or group
+is set afterward by step 3's `chown`, which DOES support forcing numeric
+parsing (`+<id>`, skipping the name lookup — gnulib's `userspec.c`). `mv` is
+the one call that ever touches `<dest>`, and rename(2) is atomic by
+construction. On any failure after step 2, the temp is removed with
+`sudo -n rm -f -- <temp>` — if THAT also fails, the thrown error says so and
+names the path, rather than leaving it a silent mystery. The operator's own
+staging directory is removed either way.
 
 ## What runs as root: the whole list
 
 Each is `/usr/bin/sudo -n -- <argv>`, every program by absolute path.
 
-| when                                 | argv                                                                             |
-| ------------------------------------ | -------------------------------------------------------------------------------- |
-| a file under a prefix — stage→temp   | `/usr/bin/install -m <0644> [-o <uid>] [-g <gid>] -T -- <staged> <temp>`         |
-| a file under a prefix — temp→dest    | `/usr/bin/mv -f -T -- <temp> <dest>`                                             |
-| a file under a prefix is removed     | `/usr/bin/rm -f -- <path>`                                                       |
-| a directory under a prefix is made   | `/usr/bin/mkdir -m <octal> -- <path>` — never setuid/setgid or group/other-write |
-| its mode is fixed                    | `/usr/bin/chmod <octal> -- <path>` — same restriction                            |
-| its owner is fixed                   | `/usr/bin/chown <owner> -- <path>` — **root only**: `0`, `:0` or `0:0`           |
-| it is removed                        | `/usr/bin/rmdir -- <path>`                                                       |
-| after any unit-file write/removal    | `/usr/bin/systemctl daemon-reload`                                               |
-| a unit is enabled/disabled/started/… | `/usr/bin/systemctl <verb> -- <unit>`                                            |
+| when                                 | argv                                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------------------- |
+| a file under a prefix — stage→temp   | `/usr/bin/install -m <0644> -T -- <staged> <temp>`                                  |
+| its owner, if not root:root          | `/usr/bin/chown +<uid>[:+<gid>] -- <temp>` — numeric, `+`-forced, bound to `<temp>` |
+| a file under a prefix — temp→dest    | `/usr/bin/mv -f -T -- <temp> <dest>`                                                |
+| a file under a prefix is removed     | `/usr/bin/rm -f -- <path>`                                                          |
+| a directory under a prefix is made   | `/usr/bin/mkdir -m <octal> -- <path>` — never setuid/setgid or group/other-write    |
+| its mode is fixed                    | `/usr/bin/chmod <octal> -- <path>` — same restriction                               |
+| its owner is fixed                   | `/usr/bin/chown <owner> -- <path>` — **root only**: `+0`, `:+0` or `+0:+0`          |
+| it is removed                        | `/usr/bin/rmdir -- <path>`                                                          |
+| after any unit-file write/removal    | `/usr/bin/systemctl daemon-reload`                                                  |
+| a unit is enabled/disabled/started/… | `/usr/bin/systemctl <verb> -- <unit>`                                               |
 
-`enable`/`disable`/`start`/`stop`/`restart` elevate only when the unit's
-**own `FragmentPath`** (read first, as the operator, via `systemctl show`) is
-either empty (no unit file — an already-deleted unit, so a second, idempotent
-delete still works) or itself under a declared prefix. A vendor unit like
+`enable`/`disable`/`start`/`stop`/`restart` elevate only when the unit is not
+**masked** (`LoadState`, read alongside `FragmentPath` in the same call —
+masking is someone's decision, never overridden here) and its **own
+`FragmentPath`** is either under a declared prefix, or empty AND the verb is
+`stop`/`disable` — the only two `unit-lifecycle.ts` `deleteUnit` ever sends
+against a unit whose file it may just have removed, so a second, idempotent
+delete pass still works. `enable`/`start`/`restart` with an empty
+`FragmentPath` are refused, closing a kernel-generated pseudo-unit
+(`init.scope`, a `session-N.scope`) as a target. A vendor unit like
 `pveproxy.service`, whose `FragmentPath` is `/usr/lib/systemd/system/…`, is
 refused before sudo ever runs: this runner cannot touch what it did not
 declare. `--user`, `--global`, `-H`, `-M` and `--root` are refused outright,
-anywhere in the argv.
+anywhere in the argv. `directory-lifecycle.ts`'s own `chown` argv is bare
+(`0`, `:0`, `0:0`); `canonicalize()` rewrites it to the `+`-forced form above
+before the allowlist ever sees it, so the unprivileged caller never has to
+know that syntax exists.
 
 ## What stays as the operator
 
@@ -106,47 +123,41 @@ A root-owned symlink **above** the prefix (Debian's merged-`/usr`, `/lib` ->
 ## Refused before sudo is asked
 
 Same spirit as [launchd-sudo.md](./launchd-sudo.md)'s list: any argv whose
-program is `sudo`; `install` from a source it did not stage, or to a target
-that is not the temp it derived; `mv` whose source is not that same temp, or
-whose destination is not under a declared prefix; `rm -r`; any of the
-directory programs with an extra operand, a relative path, `..`, a
+program is `sudo`; `install` with `-o`/`-g` at all (refused outright — see
+above); `install` from a source it did not stage, or to a target that is not
+the temp it derived; `chown` on the temp with a bare (non-`+`-forced) id, a
+name, or a path that is not that exact temp; `mv` whose source is not that
+same temp, or whose destination is not under a declared prefix; `rm -r`; any
+of the directory programs with an extra operand, a relative path, `..`, a
 prefix-sibling (`/usr/local/bin-x` is not under `/usr/local/bin`), or a
-`chown` by name instead of a numeric id; `systemctl mask`/`--user`; a
-root-owned file that would be group- or world-writable, setuid or setgid; a
-file the operator could not read back (both `Systemd.Unit` and `Remote.File`
-read every write back to compare digests).
+`chown` by name, a bare digit, or any non-root id; `systemctl mask`/`--user`;
+a masked unit, any verb; `enable`/`start`/`restart` on a unit with no unit
+file; a root-owned file that would be group- or world-writable, setuid or
+setgid; a file the operator could not read back (both `Systemd.Unit` and
+`Remote.File` read every write back to compare digests).
 
-🔴 **A directory this runner elevates is always root-owned and never
-setuid/setgid or group/other-writable — unconditionally, no exceptions**
-(`sudo-allowlist-dir.ts`). MEASURED (adversarial review, 2026-09-23, against
-this runner's first shipped version): `mkdir -m 0777` and
-`chown <non-root uid>` both passed the allowlist untouched, so a stack could
-declare `HostDirectory({ path: '/etc/systemd/system/x.service.d', mode:
-0o777 })`, drop an `ExecStart=` override into it, and this runner's own next
-`daemon-reload` + `restart` would run it as root — a privilege escalation
-reachable through the allowlist itself, not a guard bypass. A directory's
-OWNER always has write access through the owner bits alone, so no mode
-restriction can make a non-root-owned directory safe here; `chown` is
-therefore refused to anything but `0`/`:0`/`0:0` outright. **This also
-tightened the shared `modeProblem` check** (`../launchd/sudo-guard.ts`, used
-by both platforms): it exempted a file merely because its `uid` was
-non-root, missing that `{uid: 501, gid: 0, mode: 0o2775}` — setgid to root's
-own group — reaches the same escalation through the group instead. Both are
-fixed and covered by tests (`sudo-allowlist.test.ts`,
-`../launchd/sudo-modes.test.ts`).
-
-⚠️ **Known, deferred, lower severity**: a unit whose `FragmentPath` reads
-empty elevates `enable`/`disable`/`start`/`stop`/`restart` regardless of its
-type, so a malformed or malicious _declaration_ naming a kernel-generated
-pseudo-unit (`init.scope`, a `session-N.scope`) would reach `systemctl stop`
-as root — a host DoS, not a privilege gain, and it requires control over the
-stack's own declarations (already a trusted position) to trigger. Narrowing
-the exemption to `.service`/`.timer` would break the legitimate case it
-exists for: `Systemd.Unit` may declare any systemd type, and a unit still
-loaded in memory after its file vanished out-of-band reports an empty
-`FragmentPath` regardless of type. Left open pending a design for
-distinguishing "empty because ours was just removed" from "empty because
-this was never a file-backed unit."
+🔴 **Adversarial review, 2026-09-23, two rounds — everything found is fixed
+and tested.** Round 1: a directory this runner elevates was checked for
+SHAPE only, never mode or owner. `mkdir -m 0777` and `chown <non-root uid>`
+both passed untouched, so a stack could declare `HostDirectory({ path:
+'/etc/systemd/system/x.service.d', mode: 0o777 })`, drop an `ExecStart=`
+override into it, and this runner's own next `daemon-reload` + `restart`
+would run it as root. Fixed: a directory this runner elevates is now always
+root-owned and never setuid/setgid or group/other-writable, unconditionally
+— a directory's OWNER always has write access through the owner bits alone,
+so no mode restriction alone could make a non-root-owned directory safe
+here. The same round tightened the shared `modeProblem` check
+(`../launchd/sudo-guard.ts`, used by both platforms): it exempted a file
+merely because its `uid` was non-root, missing that `{uid: 501, gid: 0,
+mode: 0o2775}` — setgid to root's own group — reaches the same escalation
+through the group instead. Round 2 found the round-1 `modeProblem` fix was
+itself incomplete (an OMITTED `gid`, not just an explicit `0`, defaults to
+root's own group under `install` — see the section above), the masked-unit
+and FragmentPath-scope gaps documented above, `install`'s own numeric-id
+ambiguity (also above), and a swallowed cleanup-`rm` failure (now included
+in the thrown error, with the leftover path named). All covered by tests:
+`sudo-allowlist.test.ts`, `sudo-lifecycle.test.ts`, `sudo-runner.test.ts`,
+`../launchd/sudo-modes.test.ts`.
 
 Every refusal throws `SudoRefusedError`: nothing ran as root. A privileged
 command that ran and failed throws a plain `Error` with its exit code.

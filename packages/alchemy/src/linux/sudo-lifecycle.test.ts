@@ -87,6 +87,41 @@ describe('Systemd.Unit through sshSudoRunner', () => {
     );
     expect(privileged()).toEqual([]);
   });
+
+  // 🔴 Adversarial review, round 2: a masked vendor unit also reads FragmentPath empty, which
+  //   used to fall into the "no file, elevate anyway" exemption regardless of verb.
+  test('a masked unit is refused, even one this runner’s own prefix could otherwise reach', async () => {
+    const { fake, privileged, runner } = fakeSudoHost();
+    fake.placeUnit('/etc/systemd/system/pveproxy.service', '[Service]\nExecStart=/x\n', {
+      active: false,
+      enabled: false,
+      masked: true,
+    });
+    for (const verb of ['enable', 'start', 'stop', 'disable', 'restart']) {
+      await expect(runner.exec(['systemctl', verb, '--', 'pveproxy.service'])).rejects.toThrow(
+        'is masked',
+      );
+    }
+    expect(privileged()).toEqual([]);
+  });
+
+  // 🔴 Adversarial review, round 2: the empty-FragmentPath exemption used to admit every write
+  //   verb, not just the two `deleteUnit` actually needs — so a kernel-generated pseudo-unit like
+  //   `init.scope` (empty FragmentPath, never file-backed) could still elevate enable/start/restart.
+  test('a unit with no file at all elevates stop/disable but refuses enable/start/restart', async () => {
+    const { privileged, runner } = fakeSudoHost();
+    for (const verb of ['enable', 'start', 'restart']) {
+      await expect(runner.exec(['systemctl', verb, '--', 'init.scope'])).rejects.toThrow(
+        'is not stop/disable',
+      );
+    }
+    expect(privileged()).toEqual([]);
+    // stop/disable of a genuinely unknown unit still REACHES systemctl as root (which itself
+    // then judges it, exit 0 or not) — this runner's job is only to decide whether to ASK as
+    // root, not to pre-judge every unit name that might exist.
+    await runner.exec(['systemctl', 'stop', '--', 'init.scope']);
+    expect(privileged().some((c) => c[0] === '/usr/bin/systemctl' && c[1] === 'stop')).toBe(true);
+  });
 });
 
 const SCRIPT: RemoteFileProps = {
