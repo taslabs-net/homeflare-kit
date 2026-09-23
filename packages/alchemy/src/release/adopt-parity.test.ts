@@ -80,9 +80,27 @@ describe('a file already at the path, with no state', () => {
     await h.stack.deploy(h.wired('vmalert'));
     h.events.length = 0;
     const planned = await h.stack.deploy(h.wired('vmalert-rules', 0o750, 'vmalert'));
-    // ⚠️ Not --adopt: measured, that claims the file and the old name's delete then removes it.
     expect(planned).toEqual({ dir: 'update', 'vmalert-rules': 'update' });
     expect(h.events).toEqual([`chmod 750 ${DIR}`]);
     expect(h.fake.files.get(PATH)?.bytes).toEqual(BINARY.vmalert);
+  });
+
+  test('the same rename under --adopt: the new name takes the file, the old name leaves it', async () => {
+    const h = harness(false);
+    await h.stack.deploy(h.wired('vmalert'));
+    h.events.length = 0;
+    const planned = await h.stack.deploy(h.wired('vmalert-rules', 0o750), { adopt: true });
+    expect(planned).toEqual({ dir: 'update', vmalert: 'delete', 'vmalert-rules': 'create' });
+    // 🔴 Before 2026-09-22 (release gate): the old name's orphan delete ran `remove ${PATH}` after
+    //   the new name had claimed it, and the deploy succeeded with the binary gone.
+    expect(h.events).toEqual([`chmod 750 ${DIR}`]);
+    expect(h.fake.files.get(PATH)?.bytes).toEqual(BINARY.vmalert);
+    // The new name owns it now: the next deploy of the same declaration changes nothing.
+    h.events.length = 0;
+    expect(await h.stack.deploy(h.wired('vmalert-rules', 0o750))).toEqual({
+      dir: 'noop',
+      'vmalert-rules': 'noop',
+    });
+    expect(h.events).toEqual([]);
   });
 });

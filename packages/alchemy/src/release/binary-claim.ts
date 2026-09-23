@@ -26,10 +26,12 @@
  *   Output now resumes only with `--adopt` — as the same install with every prop resolved already
  *   did (its recovery read is `Unowned`), and as ownership.md says a create or replace interrupted
  *   while a prop was an Output does. A retained old version is not re-claimed by a rollback either.
- *   ⚠️ `--adopt` IS NOT THE REMEDY FOR A RENAME. 🔴 MEASURED 2026-09-22: that same rename under
- *   `--adopt` claims the file, and the old name's delete still removes it — the deploy succeeds
- *   with the binary gone. `.pipe(renamedFrom('old-id'))` migrates the row and keeps it
- *   (adopt-parity.test.ts). Nothing here can see another row's claim; the refusal says so.
+ *   ★ `renamedFrom()` IS THE REMEDY FOR A RENAME: `.pipe(renamedFrom('old-id'))` migrates the row
+ *   and keeps the file (adopt-parity.test.ts). 🔴 MEASURED 2026-09-22: the same rename under
+ *   `--adopt` claimed the file, the old name's delete then removed it, and the deploy succeeded
+ *   with the binary gone. binary.ts's delete now leaves a path another declaration installed in
+ *   the same deploy, so that is kept too — as an adoption, not as the old row. ⚠️ That guard sees
+ *   only this deploy's claims, by spelling; nothing here sees another row's claim in state.
  * ★ HOW DIFF TELLS A TAKEOVER FROM ITS OWN ROW. Every row this resource commits records the digest
  *   reconcile READ BACK, which it checked equal to the pin — so `output.sha256 === olds.sha256` for
  *   every row of its own, and an update never changes the digest (a new digest is a new path, a
@@ -73,6 +75,6 @@ export const claimProblem = async (
     'Identical is not ours: once claimed, a later delete removes it from whoever put it there. ' +
     'Deploy with --adopt to take it over (a create, or an interrupted install of this one), or ' +
     'remove it. If another declaration in this stack owned it under another name, declare the ' +
-    'rename with renamedFrom() instead: under --adopt, the delete of that name would remove it'
+    'rename with renamedFrom() instead'
   );
 };

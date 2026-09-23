@@ -150,12 +150,28 @@ export const makeReleaseBinaryProvider = (internals: ReleaseBinaryInternals = {}
             });
           }),
 
-        // ★ A deleted resource gives its claim back, so a provider that outlives one deploy
-        //   never refuses the next resource declared at that path.
-        delete: ({ fqn, output }) =>
+        /**
+         * ⛔ NEVER REMOVE A FILE ANOTHER DECLARATION INSTALLED IN THIS DEPLOY. Alchemy runs every
+         *   delete (Apply.ts collectGarbage, Phase 2) only after every reconcile has succeeded, so a
+         *   claim by another name means the file is that resource's now, verified as its pin.
+         *   🔴 MEASURED 2026-09-22 (adopt-parity.test.ts): a rename under --adopt — the new name
+         *   claimed the file, the old name's orphan delete removed it, and the deploy succeeded
+         *   with the binary gone. ★ Left in place rather than removed: a stray file is a tidy-up, a
+         *   missing binary is an outage. ⚠️ Keyed by spelling, like the claims themselves.
+         * ★ A deleted resource gives its claim back, so a provider that outlives one deploy never
+         *   refuses the next resource declared at that path.
+         */
+        delete: ({ fqn, output, session }) =>
           lift(async () => {
+            const holder = claims.get(output.path);
+            if (holder !== undefined && holder !== fqn) {
+              await Effect.runPromise(
+                session.note(`${output.path} was installed by ${holder} in this deploy; kept`),
+              );
+              return;
+            }
             await deleteBinary(runner, output);
-            if (claims.get(output.path) === fqn) claims.delete(output.path);
+            if (holder === fqn) claims.delete(output.path);
           }),
       });
     }),
