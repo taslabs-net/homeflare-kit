@@ -15,9 +15,9 @@
  *     4. Alchemy 78's cloudflare-runtime imported `mime` without declaring it.
  *        A clean consumer install threw `Cannot find package 'mime'`. 79
  *        declares it; the peer stays so a 78-era install line still works.
- *   `/cloudflare` also imports `@distilled.cloud/cloudflare` (MeshNode). It is alchemy's own
- *   dependency, so a hoisting installer hides a missing peer and a strict one (pnpm) does
- *   not; the install below names it, as the README does.
+ *   `/cloudflare` imports `@distilled.cloud/cloudflare` (R2BucketLock and MeshNode both, since
+ *   2026-09-23). It is alchemy's own dependency, so a hoisting installer hides a missing peer
+ *   and a strict one (pnpm) does not; the install below names it, as the README does.
  *   ⛔ None of them failed at INSTALL. All three threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
@@ -79,7 +79,6 @@ try {
       'alchemy@2.0.0-beta.79',
       'effect@4.0.0-rc.115',
       '@effect/platform-node@4.0.0-rc.115',
-      'cloudflare@4.5.0',
       'mime@4.1.0',
       '@distilled.cloud/cloudflare@1.0.0-rc.12',
       '@effect/sql-pg@4.0.0-rc.115',
