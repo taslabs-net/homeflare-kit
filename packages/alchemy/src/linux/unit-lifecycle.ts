@@ -27,6 +27,7 @@ import {
   UNIT_WRITE,
   configDigest,
   digestOf,
+  isUnitRunning,
   unitPathFor,
   unitText,
 } from './unit-form.ts';
@@ -75,10 +76,16 @@ export const diffUnit = async (
   const live = await readUnit(runner, news);
   if (live === undefined || live.unitSha256 !== desired) return update();
   if (live.enabled !== (news.enabled !== false)) return update();
-  if (live.active !== (news.started !== false)) return update();
   // ⚠️ systemd's own word for "the file on disk is newer than what I loaded" — a write that landed
-  //   without its reload. It is drift that neither digest can see.
+  //   without its reload. It is drift that neither digest can see. ★ Also the freshest read of
+  //   ActiveState/SubState — not `live.active`, which is a raw "active or activating" reading with
+  //   no SubState in it. Whether the current state counts as drift against `started` is the
+  //   isUnitRunning policy (unit-form.ts), shared with settle so the two can never disagree.
   const status = await showUnit(runner, news.name);
+  const wantStarted = news.started !== false;
+  if (isUnitRunning(status.activeState, status.subState, wantStarted) !== wantStarted) {
+    return update();
+  }
   return status.needDaemonReload ? update() : { action: 'noop' };
 };
 
