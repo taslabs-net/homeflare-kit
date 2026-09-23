@@ -14,16 +14,17 @@ import { Resource, type ResourceClass } from 'alchemy/Resource';
  *   every gate completely green. The operator's rule (2026-09-15) is to cover such a gap with a
  *   custom resource over the vendor's SDK, which is what this is.
  *
- * ⛔ THE SDK ALREADY HAD IT, AND THAT IS WORTH SAYING BECAUSE IT DECIDED THE SHAPE. Measured
- *   2026-09-15 in `cloudflare@4.5.0`, `resources/r2/buckets/locks.d.ts`:
- *
- *       update(bucketName: string, params: LockUpdateParams, options?): APIPromise<…>
- *       get(bucketName: string, params: LockGetParams, options?): APIPromise<LockGetResponse>
- *
- *   over `PUT`/`GET /accounts/{account_id}/r2/buckets/{bucket_name}/lock` with the jurisdiction
- *   carried as the `cf-r2-jurisdiction` header (`locks.mjs:17` and `:41`). So there is no raw
- *   `client.put` fallback here and no path string this package invented — the fallback the rule
- *   allows was not needed.
+ * ★ OVER `@distilled.cloud/cloudflare/r2`, THE SAME SDK `Cloudflare.MeshNode` USES
+ *   (mesh-node-api.ts), NOT THE `cloudflare` NPM SDK THIS RESOURCE USED TO CALL. Measured
+ *   2026-09-23 in distilled `1.0.0-rc.12` (the version alchemy@2.0.0-beta.79 pins),
+ *   `packages/cloudflare/src/services/r2.ts`: `getBucketLock` / `putBucketLock` cover the same
+ *   `GET`/`PUT /accounts/{account_id}/r2/buckets/{bucket_name}/lock` route the old SDK's
+ *   `r2.buckets.locks.get`/`.update` did — same `rules[]` body, the `cf-r2-jurisdiction` header
+ *   spelled as the `jurisdiction` field — but typed as `NoSuchBucket | InvalidRoute |
+ *   CloudflareRateLimited | CloudflareError` instead of an opaque HTTP status, so the "bucket
+ *   does not exist yet" case below is `catchTag('NoSuchBucket', …)`, never a status check. This
+ *   is also the swap that lets `client.ts` (the hand-rolled `cloudflare@4.5.0` wrapper) go away:
+ *   nothing else in the kit imported it.
  *
  * ⚠️ THE RULE SET IS A REPLACE, NOT A MERGE. `PUT` takes the WHOLE list, exactly like R2's
  *   lifecycle rules — which is the trap a consuming stack records for
@@ -31,10 +32,12 @@ import { Resource, type ResourceClass } from 'alchemy/Resource';
  *   drop them, so `read` fetches them first and `reconcile` refuses to write when they already
  *   match.
  */
-import type Cloudflare from 'cloudflare';
-import { NotFoundError } from 'cloudflare';
+import type { CloudflareOpContext } from '@distilled.cloud/cloudflare/r2';
+import { Credentials } from '@distilled.cloud/cloudflare/Credentials';
+import * as r2 from '@distilled.cloud/cloudflare/r2';
+import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
-import { CloudflareApi } from './client.ts';
+import * as HttpClient from 'effect/unstable/http/HttpClient';
 import {
   type Jurisdiction,
   type R2LockRule,
@@ -95,10 +98,12 @@ export const R2BucketLock: ResourceClass<R2BucketLock> = Resource<R2BucketLock>(
  *   exist yet: `404 {"success":false,"errors":[{"code":10006,"message":"The specified bucket does
  *   not exist."}]}` — raised from `read`, during PLANNING, before anything is created. Alchemy
  *   calls `read` for a resource with no prior state, so on every first deploy the lock is asked
- *   about a bucket the same plan is about to create. Letting that throw makes the resource
- *   impossible to plan; swallowing it with `catchAll` would also hide a 403 from a mis-scoped
- *   token, which is the failure this estate spends the most time on. So: 404 → absent, everything
- *   else propagates.
+ *   about a bucket the same plan is about to create. Code 10006 is exactly distilled's
+ *   `NoSuchBucket` tag (r2.ts's error matcher, `[{ code: 10006 }]`), so `catchTag` on it is the
+ *   same case the status check used to cover — but by the vendor's own error identity, not by
+ *   reading a number off the response. Letting it propagate would make the resource impossible to
+ *   plan; swallowing every failure would also hide a 403 from a mis-scoped token, which is the
+ *   failure this estate spends the most time on. So: `NoSuchBucket` → absent, everything else dies.
  *
  * ⛔ AN EMPTY LIVE RULE SET IS "NO LOCK", NOT "A LOCK WITH NOTHING IN IT", so it reads as absent
  *   and the resource CREATES. The API answers `{}` for a bucket that has never been locked and
@@ -110,26 +115,17 @@ export const R2BucketLock: ResourceClass<R2BucketLock> = Resource<R2BucketLock>(
  *   all, because `reconcile` below returns before writing.
  */
 export const readLock = (
-  client: Cloudflare,
   props: { accountId: string; bucketName: string; jurisdiction?: Jurisdiction },
   written: boolean,
-): Effect.Effect<R2BucketLockAttributes | undefined> =>
+): Effect.Effect<R2BucketLockAttributes | undefined, never, CloudflareOpContext> =>
   Effect.gen(function* () {
     const jurisdiction = jurisdictionOf(props);
-    const live = yield* Effect.tryPromise({
-      try: () =>
-        client.r2.buckets.locks.get(props.bucketName, {
-          account_id: props.accountId,
-          jurisdiction,
-        }),
-      catch: (cause) => cause,
-    }).pipe(
-      Effect.catchIf(
-        (cause) => cause instanceof NotFoundError,
-        () => Effect.succeed(undefined),
-      ),
-      Effect.orDie,
-    );
+    const live = yield* r2
+      .getBucketLock({ accountId: props.accountId, bucketName: props.bucketName, jurisdiction })
+      .pipe(
+        Effect.catchTag('NoSuchBucket', () => Effect.succeed(undefined)),
+        Effect.orDie,
+      );
     if (live === undefined) return undefined;
     const rules = (live.rules ?? []) as readonly R2LockRule[];
     if (rules.length === 0) return undefined;
@@ -146,22 +142,25 @@ export const readLock = (
  *   rule set; re-sending an identical one on every deploy is a write against the only thing
  *   standing between this repository and a delete, for no change. `output` is what the last deploy
  *   persisted (or what `read` just adopted), so the comparison costs nothing either.
+ * ⛔ `NoSuchBucket` IS NOT CAUGHT HERE. Unlike `read`, a `reconcile` that hits it means the bucket
+ *   this declaration names is genuinely gone — that is a real failure to surface, not a case to
+ *   paper over, so it dies like every other tagged error `putBucketLock` can raise.
  */
 export const reconcileLock = (
-  client: Cloudflare,
   news: R2BucketLockProps,
   output: R2BucketLockAttributes | undefined,
-): Effect.Effect<R2BucketLockAttributes> =>
+): Effect.Effect<R2BucketLockAttributes, never, CloudflareOpContext> =>
   Effect.gen(function* () {
     const jurisdiction = jurisdictionOf(news);
     if (output !== undefined && rulesEqual(output.rules, news.rules)) return output;
-    yield* Effect.promise(() =>
-      client.r2.buckets.locks.update(news.bucketName, {
-        account_id: news.accountId,
+    yield* r2
+      .putBucketLock({
+        accountId: news.accountId,
+        bucketName: news.bucketName,
         jurisdiction,
         ...toBody(news.rules),
-      }),
-    );
+      })
+      .pipe(Effect.orDie);
     return { bucketName: news.bucketName, jurisdiction, rules: news.rules };
   });
 
@@ -173,25 +172,34 @@ export const reconcileLock = (
  *   no ordinary deploy should ever reach it.
  */
 export const deleteLock = (
-  client: Cloudflare,
   output: R2BucketLockAttributes,
   accountId: string,
-): Effect.Effect<void> =>
+): Effect.Effect<void, never, CloudflareOpContext> =>
   Effect.gen(function* () {
-    yield* Effect.promise(() =>
-      client.r2.buckets.locks.update(output.bucketName, {
-        account_id: accountId,
+    yield* r2
+      .putBucketLock({
+        accountId,
+        bucketName: output.bucketName,
         jurisdiction: output.jurisdiction,
         rules: [],
-      }),
-    );
+      })
+      .pipe(Effect.orDie);
   });
 
 export const R2BucketLockProvider = () =>
   Provider.effect(
     R2BucketLock,
     Effect.gen(function* () {
-      const client = yield* CloudflareApi;
+      // ★ CAPTURED AT BUILD, LIKE `MeshNodeProvider`. `Credentials` and `HttpClient.HttpClient`
+      //   are the whole of distilled's `CloudflareOpContext` (r2.ts re-exports the type); pinning
+      //   them here rather than reading ambient context inside each handler keeps this provider
+      //   correct whether or not the stack also merges `Cloudflare.providers()`.
+      const services = Context.make(Credentials, yield* Credentials).pipe(
+        Context.add(HttpClient.HttpClient, yield* HttpClient.HttpClient),
+      );
+      const run = <A, E>(effect: Effect.Effect<A, E, CloudflareOpContext>) =>
+        Effect.provideContext(effect, services);
+
       return R2BucketLock.Provider.of({
         /**
          * ⛔ EMPTY, AND ALCHEMY'S OWN CONTRACT ASKS FOR EXACTLY THAT. `ProviderService.list`:
@@ -211,10 +219,10 @@ export const R2BucketLockProvider = () =>
         read: Effect.fn(function* ({ olds, output }) {
           const props = olds ?? undefined;
           if (props === undefined) return undefined;
-          return yield* readLock(client, props, output !== undefined);
+          return yield* run(readLock(props, output !== undefined));
         }),
-        reconcile: Effect.fn(({ news, output }) => reconcileLock(client, news, output)),
-        delete: Effect.fn(({ olds, output }) => deleteLock(client, output, olds.accountId)),
+        reconcile: Effect.fn(({ news, output }) => run(reconcileLock(news, output))),
+        delete: Effect.fn(({ olds, output }) => run(deleteLock(output, olds.accountId))),
       });
     }),
   );
