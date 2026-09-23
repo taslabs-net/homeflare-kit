@@ -54,7 +54,10 @@ export {
 // of this package typechecking under `verbatimModuleSyntax`, not by this
 // package's own `tsc -b` — see `docs/distilled-interim.md`'s "prove it in
 // both places" step for why that gap exists at all.
-import type { BadRequest, DefaultErrors as CoreDefaultErrors } from "@distilled.cloud/core/errors";
+import type {
+  BadRequest,
+  DefaultErrors as CoreDefaultErrors,
+} from "@distilled.cloud/core/errors";
 
 import * as Schema from "effect/Schema";
 import * as Category from "@distilled.cloud/core/category";

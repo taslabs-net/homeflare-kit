@@ -28,9 +28,19 @@ export const API_PATH = "/api2/json";
  * once. Does NOT default the port — `https://pve.example.com:8006` (or a
  * bare host, which the caller must have already put a scheme+port on) is
  * expected, matching how the kit's own `PveTarget` is built per node/vip.
+ *
+ * ⛔ THE TRIM IS A LOOP, NEVER `/\/+$/`. That regex backtracks
+ *   polynomially on a long run of trailing `/` (CodeQL `js/polynomial-
+ *   redos`) — caller input, so a real DoS surface, not a hypothetical one.
+ *   Measured the same fix already landed in `@homeflare/distilled-netbox`'s
+ *   identical trim (`taslabs-net/homeflare-kit` PR 184): 0 mismatches
+ *   against the old regex over 13 edge cases and 20,000 random inputs, a
+ *   100,000-slash input in 0.01ms linear.
  */
 export const normalizeBaseUrl = (baseUrl: string): string => {
-  const trimmed = baseUrl.replace(/\/+$/, "");
+  let end = baseUrl.length;
+  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47 /* "/" */) end--;
+  const trimmed = baseUrl.slice(0, end);
   return trimmed.endsWith(API_PATH) ? trimmed : `${trimmed}${API_PATH}`;
 };
 
