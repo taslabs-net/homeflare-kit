@@ -15,6 +15,21 @@ export type UnitState = {
   active: boolean;
   enabled: boolean;
   masked?: boolean;
+  /**
+   * Force `ActiveState` to a value `start`/`stop`/`restart` below never produce, for tests: a
+   * timer-driven oneshot mid-run (`activating`, `active` left `false`) or a crashed unit (`failed`).
+   * ⚠️ REASONED NOT MEASURED — a synthetic override to exercise unit-form.ts's `isUnitRunning`
+   *   exactly, not a systemd state-machine model; see fake-linux-host.ts's `placeUnit`.
+   */
+  activeState?: 'activating' | 'failed';
+  /**
+   * Force `SubState` independent of the default derived from `activeState` — `'start'` is already
+   * the default for `activeState: 'activating'` and is accepted here only so a test can say so
+   * explicitly. Systemd's crash-restart backoff (`auto-restart` / `auto-restart-queued`, both still
+   * `ActiveState=activating` — systemd's `service.c` `state_translation_table`) needs
+   * `activeState: 'activating'` ABOVE plus one of these, to tell it apart from a genuine start.
+   */
+  subState?: 'start' | 'auto-restart' | 'auto-restart-queued';
 };
 
 export type FakeSystemdDeps = {
@@ -45,12 +60,24 @@ export const fakeSystemd = (deps: FakeSystemdDeps) => {
       if (deps.failShow) return fail(1, 'Failed to connect to bus: No such file');
       const known = state !== undefined || onDisk !== undefined;
       const loaded = state?.loadedSha !== undefined;
+      // ★ `activeState`/`subState` (above) override the plain active/inactive read for a state
+      //   start/stop/restart never produce on their own — see `UnitState.activeState`.
+      const activeState = state?.activeState ?? (state?.active === true ? 'active' : 'inactive');
+      const subState =
+        state?.subState ??
+        (activeState === 'activating'
+          ? 'start'
+          : activeState === 'failed'
+            ? 'failed'
+            : activeState === 'active'
+              ? 'running'
+              : 'dead');
       return ok(
         [
           `Id=${name}`,
           `LoadState=${state?.masked === true ? 'masked' : known && loaded ? 'loaded' : 'not-found'}`,
-          `ActiveState=${state?.active === true ? 'active' : 'inactive'}`,
-          `SubState=${state?.active === true ? 'running' : 'dead'}`,
+          `ActiveState=${activeState}`,
+          `SubState=${subState}`,
           `UnitFileState=${state?.masked === true ? 'masked' : onDisk === undefined ? '' : state?.enabled === true ? 'enabled' : 'disabled'}`,
           `FragmentPath=${onDisk === undefined ? '' : deps.pathOf(name)}`,
           `NeedDaemonReload=${onDisk !== undefined && state?.loadedSha !== deps.digest(onDisk) && loaded ? 'yes' : 'no'}`,
@@ -92,10 +119,17 @@ export const fakeSystemd = (deps: FakeSystemdDeps) => {
     }
     if (verb === 'start' || verb === 'restart') {
       current.active = true;
+      // ★ A real start/restart leaves whatever synthetic `activating`/`auto-restart` snapshot a
+      //   test placed and lands the unit in an ordinary `active` — the override does not survive
+      //   an actual systemctl action, any more than it would on a real host.
+      delete current.activeState;
+      delete current.subState;
       return ok();
     }
     if (verb === 'stop') {
       current.active = false;
+      delete current.activeState;
+      delete current.subState;
       return ok();
     }
     return fail(64, `fake systemctl: unsupported ${args.join(' ')}`);
