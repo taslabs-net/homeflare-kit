@@ -10,7 +10,7 @@
 import { resolveParameters } from './parameters.ts';
 import type { TsField } from './tsexpr.ts';
 import { declaration } from './tsexpr.ts';
-import { type VendorNode, paramType, returnType } from './tsmap.ts';
+import { type VendorNode, isOptional, paramType, returnType } from './tsmap.ts';
 import { segmentsOf, typeName } from './tsname.ts';
 
 interface RawNode {
@@ -105,7 +105,7 @@ export const blockFor = (endpoint: Endpoint): Block => {
       const property = properties[name] as VendorNode;
       return {
         name,
-        optional: property.optional === 1 || property.optional === true,
+        optional: isOptional(property),
         type: paramType(property),
       };
     });
