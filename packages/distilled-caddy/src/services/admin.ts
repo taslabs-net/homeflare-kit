@@ -349,17 +349,30 @@ export const AdminConfigOrigins = /*@__PURE__*/ S.Array(
   S.String,
 ) as any as S.Schema<AdminConfigOrigins>;
 
+/** Module names registered under Caddy namespace "caddy.config_loaders" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type CaddyConfigLoadersModuleName = "http";
+export const CaddyConfigLoadersModuleName = S.String;
+
+/** One module value in Caddy namespace "caddy.config_loaders" — "module" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type CaddyConfigLoadersModuleValue = {
+  module: CaddyConfigLoadersModuleName;
+} & Record<string, unknown>;
+export const CaddyConfigLoadersModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
+  S.Unknown,
+) as any as S.Schema<CaddyConfigLoadersModuleValue>;
+
 /** Options pertaining to configuration management. ConfigSettings configures the management of configuration. */
 export interface ConfigSettings {
   /** Whether to keep a copy of the active config on disk. Default is true. Note that "pulled" dynamic configs (using the neighboring "load" module) are not persisted; only configs that are pushed to Caddy get persisted. */
   persist?: boolean;
-  /** Loads a configuration to use. This is helpful if your configs are managed elsewhere, and you want Caddy to pull its config dynamically when it starts. The pulled config completely replaces the current one, just like any other config load. It is an error if a pulled config is configured to pull another config. EXPERIMENTAL: Subject to change. Module — the name is one of com.caddy.admin#CaddyConfigLoadersModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  load?: unknown;
+  /** Loads a configuration to use. This is helpful if your configs are managed elsewhere, and you want Caddy to pull its config dynamically when it starts. The pulled config completely replaces the current one, just like any other config load. It is an error if a pulled config is configured to pull another config. EXPERIMENTAL: Subject to change. */
+  load?: CaddyConfigLoadersModuleValue;
 }
 export const ConfigSettings = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     persist: S.optional(S.Boolean),
-    load: S.optional(S.Unknown),
+    load: S.optional(CaddyConfigLoadersModuleValue),
   }),
 ).annotate({ identifier: "ConfigSettings" }) as any as S.Schema<ConfigSettings>;
 
@@ -369,10 +382,24 @@ export const IdentityConfigIdentifiers = /*@__PURE__*/ S.Array(
   S.String,
 ) as any as S.Schema<IdentityConfigIdentifiers>;
 
-/** Issuers that can provide this admin endpoint its identity certificate(s). Default: ACME issuers configured for ZeroSSL and Let's Encrypt. Be sure to change this if you require credentials for private identifiers. */
-export type IdentityConfigIssuers = Array<unknown>;
-export const IdentityConfigIssuers = /*@__PURE__*/ S.Array(
+/** Module names registered under Caddy namespace "tls.issuance" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type TlsIssuanceModuleName = "acme" | "internal" | "zerossl";
+export const TlsIssuanceModuleName = S.String;
+
+/** One module value in Caddy namespace "tls.issuance" — "module" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type TlsIssuanceModuleValue = { module: TlsIssuanceModuleName } & Record<
+  string,
+  unknown
+>;
+export const TlsIssuanceModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
   S.Unknown,
+) as any as S.Schema<TlsIssuanceModuleValue>;
+
+/** Issuers that can provide this admin endpoint its identity certificate(s). Default: ACME issuers configured for ZeroSSL and Let's Encrypt. Be sure to change this if you require credentials for private identifiers. */
+export type IdentityConfigIssuers = Array<TlsIssuanceModuleValue>;
+export const IdentityConfigIssuers = /*@__PURE__*/ S.Array(
+  TlsIssuanceModuleValue,
 ) as any as S.Schema<IdentityConfigIssuers>;
 
 /** Options that establish this server's identity. Identity refers to credentials which can be used to uniquely identify and authenticate this server instance. This is required if remote administration is enabled (but does not require remote administration to be enabled). Default: no identity management. IdentityConfig configures management of this server's identity. An identity consists of credentials that uniquely verify this instance; for example, TLS certificates (public + private key pairs). */
@@ -492,16 +519,52 @@ export const AdminConfig = /*@__PURE__*/ S.suspend(() =>
   }),
 ).annotate({ identifier: "AdminConfig" }) as any as S.Schema<AdminConfig>;
 
+/** Module names registered under Caddy namespace "caddy.logging.writers" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type CaddyLoggingWritersModuleName =
+  | "discard"
+  | "file"
+  | "net"
+  | "stderr"
+  | "stdout";
+export const CaddyLoggingWritersModuleName = S.String;
+
+/** One module value in Caddy namespace "caddy.logging.writers" — "output" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type CaddyLoggingWritersModuleValue = {
+  output: CaddyLoggingWritersModuleName;
+} & Record<string, unknown>;
+export const CaddyLoggingWritersModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
+  S.Unknown,
+) as any as S.Schema<CaddyLoggingWritersModuleValue>;
+
 /** Sink is the destination for all unstructured logs emitted from Go's standard library logger. These logs are common in dependencies that are not designed specifically for use in Caddy. Because it is global and unstructured, the sink lacks most advanced features and customizations. StandardLibLog configures the default Go standard library global logger in the log package. This is necessary because module dependencies which are not built specifically for Caddy will use the standard logger. This is also known as the "sink" logger. */
 export interface StandardLibLog {
-  /** The module that writes out log entries for the sink. Module — the name is one of com.caddy.admin#CaddyLoggingWritersModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  writer?: unknown;
+  /** The module that writes out log entries for the sink. */
+  writer?: CaddyLoggingWritersModuleValue;
 }
 export const StandardLibLog = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    writer: S.optional(S.Unknown),
+    writer: S.optional(CaddyLoggingWritersModuleValue),
   }),
 ).annotate({ identifier: "StandardLibLog" }) as any as S.Schema<StandardLibLog>;
+
+/** Module names registered under Caddy namespace "caddy.logging.encoders" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type CaddyLoggingEncodersModuleName =
+  | "append"
+  | "console"
+  | "filter"
+  | "journald"
+  | "json";
+export const CaddyLoggingEncodersModuleName = S.String;
+
+/** One module value in Caddy namespace "caddy.logging.encoders" — "format" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type CaddyLoggingEncodersModuleValue = {
+  format: CaddyLoggingEncodersModuleName;
+} & Record<string, unknown>;
+export const CaddyLoggingEncodersModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
+  S.Unknown,
+) as any as S.Schema<CaddyLoggingEncodersModuleValue>;
 
 /** Sampling configures log entry sampling. If enabled, only some log entries will be emitted. This is useful for improving performance on extremely high-pressure servers. LogSampling configures log entry sampling. */
 export interface LogSampling {
@@ -534,10 +597,10 @@ export const CustomLogExclude = /*@__PURE__*/ S.Array(
 
 /** Logs are your logs, keyed by an arbitrary name of your choosing. The default log can be customized by defining a log called "default". You can further define other logs and filter what kinds of entries they accept. CustomLog represents a custom logger configuration. By default, a log will emit all log entries. Some entries will be skipped if sampling is enabled. Further, the Include and Exclude parameters define which loggers (by name) are allowed or rejected from emitting in this log. If both Include and Exclude are populated, their values must be mutually exclusive, and longer namespaces have priority. If neither are populated, all logs are emitted. */
 export interface CustomLog {
-  /** The writer defines where log entries are emitted. Module — the name is one of com.caddy.admin#CaddyLoggingWritersModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  writer?: unknown;
-  /** The encoder is how the log entries are formatted or encoded. Module — the name is one of com.caddy.admin#CaddyLoggingEncodersModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  encoder?: unknown;
+  /** The writer defines where log entries are emitted. */
+  writer?: CaddyLoggingWritersModuleValue;
+  /** The encoder is how the log entries are formatted or encoded. */
+  encoder?: CaddyLoggingEncodersModuleValue;
   /** Level is the minimum level to emit, and is inclusive. Possible levels: DEBUG, INFO, WARN, ERROR, PANIC, and FATAL */
   level?: string;
   /** Sampling configures log entry sampling. If enabled, only some log entries will be emitted. This is useful for improving performance on extremely high-pressure servers. LogSampling configures log entry sampling. */
@@ -549,8 +612,8 @@ export interface CustomLog {
 }
 export const CustomLog = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    writer: S.optional(S.Unknown),
-    encoder: S.optional(S.Unknown),
+    writer: S.optional(CaddyLoggingWritersModuleValue),
+    encoder: S.optional(CaddyLoggingEncodersModuleValue),
     level: S.optional(S.String),
     sampling: S.optional(LogSampling),
     include: S.optional(CustomLogInclude),
@@ -579,28 +642,123 @@ export const Logging = /*@__PURE__*/ S.suspend(() =>
   }),
 ).annotate({ identifier: "Logging" }) as any as S.Schema<Logging>;
 
+/** Module names registered under Caddy namespace "caddy.storage" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type CaddyStorageModuleName = "file_system";
+export const CaddyStorageModuleName = S.String;
+
+/** One module value in Caddy namespace "caddy.storage" — "module" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type CaddyStorageModuleValue = {
+  module: CaddyStorageModuleName;
+} & Record<string, unknown>;
+export const CaddyStorageModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
+  S.Unknown,
+) as any as S.Schema<CaddyStorageModuleValue>;
+
 /** Socket addresses to which to bind listeners. Accepts [network addresses](/docs/conventions#network-addresses) that may include port ranges. Listener addresses must be unique; they cannot be repeated across all defined servers. */
 export type ServerListen = Array<string>;
 export const ServerListen = /*@__PURE__*/ S.Array(
   S.String,
 ) as any as S.Schema<ServerListen>;
 
-/** A list of listener wrapper modules, which can modify the behavior of the base listener. They are applied in the given order. */
-export type ServerListener_wrappers = Array<unknown>;
-export const ServerListener_wrappers = /*@__PURE__*/ S.Array(
+/** Module names registered under Caddy namespace "caddy.listeners" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type CaddyListenersModuleName =
+  | "http_redirect"
+  | "layer4"
+  | "proxy_protocol"
+  | "tls";
+export const CaddyListenersModuleName = S.String;
+
+/** One module value in Caddy namespace "caddy.listeners" — "wrapper" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type CaddyListenersModuleValue = {
+  wrapper: CaddyListenersModuleName;
+} & Record<string, unknown>;
+export const CaddyListenersModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
   S.Unknown,
+) as any as S.Schema<CaddyListenersModuleValue>;
+
+/** A list of listener wrapper modules, which can modify the behavior of the base listener. They are applied in the given order. */
+export type ServerListener_wrappers = Array<CaddyListenersModuleValue>;
+export const ServerListener_wrappers = /*@__PURE__*/ S.Array(
+  CaddyListenersModuleValue,
 ) as any as S.Schema<ServerListener_wrappers>;
 
-/** The matcher sets which will be used to qualify this route for a request (essentially the "if" statement of this route). Each matcher set is OR'ed, but matchers within a set are AND'ed together. ModuleMap is a map that can contain multiple modules, where the map key is the module's name. (The namespace is usually read from an associated field's struct tag.) Because the module's name is given as the key in a module map, the name does not have to be given in the json.RawMessage. */
-export type RouteMatch = Array<unknown>;
-export const RouteMatch = /*@__PURE__*/ S.Array(
+/** Module names registered under Caddy namespace "http.matchers" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type HttpMatchersModuleName =
+  | "client_ip"
+  | "expression"
+  | "file"
+  | "header"
+  | "header_regexp"
+  | "host"
+  | "method"
+  | "not"
+  | "path"
+  | "path_regexp"
+  | "protocol"
+  | "query"
+  | "remote_ip"
+  | "tls"
+  | "vars"
+  | "vars_regexp";
+export const HttpMatchersModuleName = S.String;
+
+/** A set of Caddy namespace "http.matchers" modules keyed by module name — each present key is one of com.caddy.admin#HttpMatchersModuleName's members on this pinned binary. A name outside com.caddy.admin#HttpMatchersModuleName is also legal Caddy config — the module registry can grow past this snapshot — but is not a member of this closed type; building one needs a cast or a plain object. See docs/provenance.md. Each module's own fields are not modeled — see docs/provenance.md. */
+export type HttpMatchersModuleMap = Partial<
+  Record<HttpMatchersModuleName, unknown>
+>;
+export const HttpMatchersModuleMap = /*@__PURE__*/ S.Record(
+  S.String,
   S.Unknown,
+) as any as S.Schema<HttpMatchersModuleMap>;
+
+/** The matcher sets which will be used to qualify this route for a request (essentially the "if" statement of this route). Each matcher set is OR'ed, but matchers within a set are AND'ed together. ModuleMap is a map that can contain multiple modules, where the map key is the module's name. (The namespace is usually read from an associated field's struct tag.) Because the module's name is given as the key in a module map, the name does not have to be given in the json.RawMessage. */
+export type RouteMatch = Array<HttpMatchersModuleMap>;
+export const RouteMatch = /*@__PURE__*/ S.Array(
+  HttpMatchersModuleMap,
 ) as any as S.Schema<RouteMatch>;
 
-/** The list of handlers for this route. Upon matching a request, they are chained together in a middleware fashion: requests flow from the first handler to the last (top of the list to the bottom), with the possibility that any handler could stop the chain and/or return an error. Responses flow back through the chain (bottom of the list to the top) as they are written out to the client. Not all handlers call the next handler in the chain. For example, the reverse_proxy handler always sends a request upstream or returns an error. Thus, configuring handlers after reverse_proxy in the same route is illogical, since they would never be executed. You will want to put handlers which originate the response at the very end of your route(s). The documentation for a module should state whether it invokes the next handler, but sometimes it is common sense. Some handlers manipulate the response. Remember that requests flow down the list, and responses flow up the list. For example, if you wanted to use both `templates` and `encode` handlers, you would need to put `templates` after `encode` in your route, because responses flow up. Thus, `templates` will be able to parse and execute the plain-text response as a template, and then return it up to the `encode` handler which will then compress it into a binary format. If `templates` came before `encode`, then `encode` would write a compressed, binary-encoded response to `templates` which would not be able to parse the response properly. The correct order, then, is this: [ {"handler": "encode"}, {"handler": "templates"}, {"handler": "file_server"} ] The request flows ⬇️ DOWN (`encode` -> `templates` -> `file_server`). 1. First, `encode` will choose how to `encode` the response and wrap the response. 2. Then, `templates` will wrap the response with a buffer. 3. Finally, `file_server` will originate the content from a file. The response flows ⬆️ UP (`file_server` -> `templates` -> `encode`): 1. First, `file_server` will write the file to the response. 2. That write will be buffered and then executed by `templates`. 3. Lastly, the write from `templates` will flow into `encode` which will compress the stream. If you think of routes in this way, it will be easy and even fun to solve the puzzle of writing correct routes. */
-export type RouteHandle = Array<unknown>;
-export const RouteHandle = /*@__PURE__*/ S.Array(
+/** Module names registered under Caddy namespace "http.handlers" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type HttpHandlersModuleName =
+  | "acme_server"
+  | "authentication"
+  | "authenticator"
+  | "copy_response"
+  | "copy_response_headers"
+  | "encode"
+  | "error"
+  | "file_server"
+  | "headers"
+  | "intercept"
+  | "invoke"
+  | "log_append"
+  | "map"
+  | "metrics"
+  | "push"
+  | "request_body"
+  | "reverse_proxy"
+  | "rewrite"
+  | "static_response"
+  | "subroute"
+  | "templates"
+  | "tracing"
+  | "vars";
+export const HttpHandlersModuleName = S.String;
+
+/** One module value in Caddy namespace "http.handlers" — "handler" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type HttpHandlersModuleValue = {
+  handler: HttpHandlersModuleName;
+} & Record<string, unknown>;
+export const HttpHandlersModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
   S.Unknown,
+) as any as S.Schema<HttpHandlersModuleValue>;
+
+/** The list of handlers for this route. Upon matching a request, they are chained together in a middleware fashion: requests flow from the first handler to the last (top of the list to the bottom), with the possibility that any handler could stop the chain and/or return an error. Responses flow back through the chain (bottom of the list to the top) as they are written out to the client. Not all handlers call the next handler in the chain. For example, the reverse_proxy handler always sends a request upstream or returns an error. Thus, configuring handlers after reverse_proxy in the same route is illogical, since they would never be executed. You will want to put handlers which originate the response at the very end of your route(s). The documentation for a module should state whether it invokes the next handler, but sometimes it is common sense. Some handlers manipulate the response. Remember that requests flow down the list, and responses flow up the list. For example, if you wanted to use both `templates` and `encode` handlers, you would need to put `templates` after `encode` in your route, because responses flow up. Thus, `templates` will be able to parse and execute the plain-text response as a template, and then return it up to the `encode` handler which will then compress it into a binary format. If `templates` came before `encode`, then `encode` would write a compressed, binary-encoded response to `templates` which would not be able to parse the response properly. The correct order, then, is this: [ {"handler": "encode"}, {"handler": "templates"}, {"handler": "file_server"} ] The request flows ⬇️ DOWN (`encode` -> `templates` -> `file_server`). 1. First, `encode` will choose how to `encode` the response and wrap the response. 2. Then, `templates` will wrap the response with a buffer. 3. Finally, `file_server` will originate the content from a file. The response flows ⬆️ UP (`file_server` -> `templates` -> `encode`): 1. First, `file_server` will write the file to the response. 2. That write will be buffered and then executed by `templates`. 3. Lastly, the write from `templates` will flow into `encode` which will compress the stream. If you think of routes in this way, it will be easy and even fun to solve the puzzle of writing correct routes. */
+export type RouteHandle = Array<HttpHandlersModuleValue>;
+export const RouteHandle = /*@__PURE__*/ S.Array(
+  HttpHandlersModuleValue,
 ) as any as S.Schema<RouteHandle>;
 
 /** Routes describes how this server will handle requests. Routes are executed sequentially. First a route's matchers are evaluated, then its grouping. If it matches and has not been mutually-excluded by its grouping, then its handlers are executed sequentially. The sequence of invoked handlers comprises a compiled middleware chain that flows from each matching route and its handlers to the next. By default, all unrouted requests receive a 200 OK response to indicate the server is working. Route consists of a set of rules for matching HTTP requests, a list of handlers to execute, and optional flow control parameters which customize the handling of HTTP requests in a highly flexible and performant manner. */
@@ -654,6 +812,24 @@ export const ServerNamed_routes = /*@__PURE__*/ S.Record(
   S.String,
   Route,
 ) as any as S.Schema<ServerNamed_routes>;
+
+/** Module names registered under Caddy namespace "tls.handshake_match" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type TlsHandshakeMatchModuleName =
+  | "alpn"
+  | "local_ip"
+  | "remote_ip"
+  | "sni"
+  | "sni_regexp";
+export const TlsHandshakeMatchModuleName = S.String;
+
+/** A set of Caddy namespace "tls.handshake_match" modules keyed by module name — each present key is one of com.caddy.admin#TlsHandshakeMatchModuleName's members on this pinned binary. A name outside com.caddy.admin#TlsHandshakeMatchModuleName is also legal Caddy config — the module registry can grow past this snapshot — but is not a member of this closed type; building one needs a cast or a plain object. See docs/provenance.md. Each module's own fields are not modeled — see docs/provenance.md. */
+export type TlsHandshakeMatchModuleMap = Partial<
+  Record<TlsHandshakeMatchModuleName, unknown>
+>;
+export const TlsHandshakeMatchModuleMap = /*@__PURE__*/ S.Record(
+  S.String,
+  S.Unknown,
+) as any as S.Schema<TlsHandshakeMatchModuleMap>;
 
 /** The certificate must have one of these serial numbers. bigInt is a big.Int type that interops with JSON encodings as a string. */
 export interface bigInt {}
@@ -731,6 +907,27 @@ export const ConnectionPolicyAlpn = /*@__PURE__*/ S.Array(
   S.String,
 ) as any as S.Schema<ConnectionPolicyAlpn>;
 
+/** Module names registered under Caddy namespace "tls.ca_pool.source" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type TlsCaPoolSourceModuleName =
+  | "combined"
+  | "file"
+  | "http"
+  | "inline"
+  | "pki_intermediate"
+  | "pki_root"
+  | "storage"
+  | "system";
+export const TlsCaPoolSourceModuleName = S.String;
+
+/** One module value in Caddy namespace "tls.ca_pool.source" — "provider" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type TlsCaPoolSourceModuleValue = {
+  provider: TlsCaPoolSourceModuleName;
+} & Record<string, unknown>;
+export const TlsCaPoolSourceModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
+  S.Unknown,
+) as any as S.Schema<TlsCaPoolSourceModuleValue>;
+
 /** Deprecated: Use the `ca` field with the `tls.ca_pool.source.inline` module instead. A list of base64 DER-encoded CA certificates against which to validate client certificates. Client certs which are not signed by any of these CAs will be rejected. */
 export type ClientAuthenticationTrusted_ca_certs = Array<string>;
 export const ClientAuthenticationTrusted_ca_certs = /*@__PURE__*/ S.Array(
@@ -750,16 +947,30 @@ export const ClientAuthenticationTrusted_leaf_certs = /*@__PURE__*/ S.Array(
   S.String,
 ) as any as S.Schema<ClientAuthenticationTrusted_leaf_certs>;
 
-/** Client certificate verification modules. These can perform custom client authentication checks, such as ensuring the certificate is not revoked. */
-export type ClientAuthenticationVerifiers = Array<unknown>;
-export const ClientAuthenticationVerifiers = /*@__PURE__*/ S.Array(
+/** Module names registered under Caddy namespace "tls.client_auth.verifier" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type TlsClientAuthVerifierModuleName = "leaf";
+export const TlsClientAuthVerifierModuleName = S.String;
+
+/** One module value in Caddy namespace "tls.client_auth.verifier" — "verifier" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type TlsClientAuthVerifierModuleValue = {
+  verifier: TlsClientAuthVerifierModuleName;
+} & Record<string, unknown>;
+export const TlsClientAuthVerifierModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
   S.Unknown,
+) as any as S.Schema<TlsClientAuthVerifierModuleValue>;
+
+/** Client certificate verification modules. These can perform custom client authentication checks, such as ensuring the certificate is not revoked. */
+export type ClientAuthenticationVerifiers =
+  Array<TlsClientAuthVerifierModuleValue>;
+export const ClientAuthenticationVerifiers = /*@__PURE__*/ S.Array(
+  TlsClientAuthVerifierModuleValue,
 ) as any as S.Schema<ClientAuthenticationVerifiers>;
 
 /** Enables and configures TLS client authentication. ClientAuthentication configures TLS client auth. */
 export interface ClientAuthentication {
-  /** Certificate authority module which provides the certificate pool of trusted certificates Module — the name is one of com.caddy.admin#TlsCaPoolSourceModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  ca?: unknown;
+  /** Certificate authority module which provides the certificate pool of trusted certificates */
+  ca?: TlsCaPoolSourceModuleValue;
   /** Deprecated: Use the `ca` field with the `tls.ca_pool.source.inline` module instead. A list of base64 DER-encoded CA certificates against which to validate client certificates. Client certs which are not signed by any of these CAs will be rejected. */
   trusted_ca_certs?: ClientAuthenticationTrusted_ca_certs;
   /** Deprecated: Use the `ca` field with the `tls.ca_pool.source.file` module instead. TrustedCACertPEMFiles is a list of PEM file names from which to load certificates of trusted CAs. Client certificates which are not signed by any of these CA certificates will be rejected. */
@@ -773,7 +984,7 @@ export interface ClientAuthentication {
 }
 export const ClientAuthentication = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    ca: S.optional(S.Unknown),
+    ca: S.optional(TlsCaPoolSourceModuleValue),
     trusted_ca_certs: S.optional(ClientAuthenticationTrusted_ca_certs),
     trusted_ca_certs_pem_files: S.optional(
       ClientAuthenticationTrusted_ca_certs_pem_files,
@@ -786,10 +997,24 @@ export const ClientAuthentication = /*@__PURE__*/ S.suspend(() =>
   identifier: "ClientAuthentication",
 }) as any as S.Schema<ClientAuthentication>;
 
+/** Module names registered under Caddy namespace "tls.context" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type TlsContextModuleName = "none_on_this_binary";
+export const TlsContextModuleName = S.String;
+
+/** One module value in Caddy namespace "tls.context" — "module" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type TlsContextModuleValue = { module: TlsContextModuleName } & Record<
+  string,
+  unknown
+>;
+export const TlsContextModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
+  S.Unknown,
+) as any as S.Schema<TlsContextModuleValue>;
+
 /** How to handle TLS connections. At least one policy is required to enable HTTPS on this server if automatic HTTPS is disabled or does not apply. ConnectionPolicy specifies the logic for handling a TLS handshake. An empty policy is valid; safe and sensible defaults will be used. */
 export interface ConnectionPolicy {
-  /** How to match this policy with a TLS ClientHello. If this policy is the first to match, it will be used. ModuleMap is a map that can contain multiple modules, where the map key is the module's name. (The namespace is usually read from an associated field's struct tag.) Because the module's name is given as the key in a module map, the name does not have to be given in the json.RawMessage. Module map — the name is one of com.caddy.admin#TlsHandshakeMatchModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  match?: unknown;
+  /** How to match this policy with a TLS ClientHello. If this policy is the first to match, it will be used. ModuleMap is a map that can contain multiple modules, where the map key is the module's name. (The namespace is usually read from an associated field's struct tag.) Because the module's name is given as the key in a module map, the name does not have to be given in the json.RawMessage. */
+  match?: TlsHandshakeMatchModuleMap;
   /** How to choose a certificate if more than one matched the given ServerName (SNI) value. CustomCertSelectionPolicy represents a policy for selecting the certificate used to complete a handshake when there may be multiple options. All fields specified must match the candidate certificate for it to be chosen. This was needed to solve https://github.com/caddyserver/caddy/issues/2588. */
   certificate_selection?: CustomCertSelectionPolicy;
   /** The list of cipher suites to support. Caddy's defaults are modern and secure. */
@@ -812,12 +1037,12 @@ export interface ConnectionPolicy {
   fallback_sni?: string;
   /** Also known as "SSLKEYLOGFILE", TLS secrets will be written to this file in NSS key log format which can then be parsed by Wireshark and other tools. This is INSECURE as it allows other programs or tools to decrypt TLS connections. However, this capability can be useful for debugging and troubleshooting. **ENABLING THIS LOG COMPROMISES SECURITY!** This feature is EXPERIMENTAL and subject to change or removal. */
   insecure_secrets_log?: string;
-  /** A module that can manipulate the context passed into CertMagic's certificate management functions during TLS handshakes. EXPERIMENTAL - subject to change or removal. Module — the name is one of com.caddy.admin#TlsContextModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  handshake_context?: unknown;
+  /** A module that can manipulate the context passed into CertMagic's certificate management functions during TLS handshakes. EXPERIMENTAL - subject to change or removal. */
+  handshake_context?: TlsContextModuleValue;
 }
 export const ConnectionPolicy = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    match: S.optional(S.Unknown),
+    match: S.optional(TlsHandshakeMatchModuleMap),
     certificate_selection: S.optional(CustomCertSelectionPolicy),
     cipher_suites: S.optional(ConnectionPolicyCipher_suites),
     curves: S.optional(ConnectionPolicyCurves),
@@ -829,7 +1054,7 @@ export const ConnectionPolicy = /*@__PURE__*/ S.suspend(() =>
     default_sni: S.optional(S.String),
     fallback_sni: S.optional(S.String),
     insecure_secrets_log: S.optional(S.String),
-    handshake_context: S.optional(S.Unknown),
+    handshake_context: S.optional(TlsContextModuleValue),
   }),
 ).annotate({
   identifier: "ConnectionPolicy",
@@ -883,6 +1108,19 @@ export const AutoHTTPSConfig = /*@__PURE__*/ S.suspend(() =>
 ).annotate({
   identifier: "AutoHTTPSConfig",
 }) as any as S.Schema<AutoHTTPSConfig>;
+
+/** Module names registered under Caddy namespace "http.ip_sources" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type HttpIpSourcesModuleName = "static";
+export const HttpIpSourcesModuleName = S.String;
+
+/** One module value in Caddy namespace "http.ip_sources" — "source" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type HttpIpSourcesModuleValue = {
+  source: HttpIpSourcesModuleName;
+} & Record<string, unknown>;
+export const HttpIpSourcesModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
+  S.Unknown,
+) as any as S.Schema<HttpIpSourcesModuleValue>;
 
 /** The headers from which the client IP address could be read from. These will be considered in order, with the first good value being used as the client IP. By default, only `X-Forwarded-For` is considered. This depends on `trusted_proxies` being configured and the request being validated as coming from a trusted proxy, otherwise the client IP will be set to the direct remote IP address. */
 export type ServerClient_ip_headers = Array<string>;
@@ -998,8 +1236,8 @@ export interface Server {
   automatic_https?: AutoHTTPSConfig;
   /** If true, will require that a request's Host header match the value of the ServerName sent by the client's TLS ClientHello; often a necessary safeguard when using TLS client authentication. */
   strict_sni_host?: boolean;
-  /** A module which provides a source of IP ranges, from which requests should be trusted. By default, no proxies are trusted. On its own, this configuration will not do anything, but it can be used as a default set of ranges for handlers or matchers in routes to pick up, instead of needing to configure each of them. See the `reverse_proxy` handler for example, which uses this to trust sensitive incoming `X-Forwarded-*` headers. Module — the name is one of com.caddy.admin#HttpIpSourcesModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  trusted_proxies?: unknown;
+  /** A module which provides a source of IP ranges, from which requests should be trusted. By default, no proxies are trusted. On its own, this configuration will not do anything, but it can be used as a default set of ranges for handlers or matchers in routes to pick up, instead of needing to configure each of them. See the `reverse_proxy` handler for example, which uses this to trust sensitive incoming `X-Forwarded-*` headers. */
+  trusted_proxies?: HttpIpSourcesModuleValue;
   /** The headers from which the client IP address could be read from. These will be considered in order, with the first good value being used as the client IP. By default, only `X-Forwarded-For` is considered. This depends on `trusted_proxies` being configured and the request being validated as coming from a trusted proxy, otherwise the client IP will be set to the direct remote IP address. */
   client_ip_headers?: ServerClient_ip_headers;
   /** If greater than zero, enables strict ClientIPHeaders (default X-Forwarded-For) parsing. If enabled, the ClientIPHeaders will be parsed from right to left, and the first value that is both valid and doesn't match the trusted proxy list will be used as client IP. If zero, the ClientIPHeaders will be parsed from left to right, and the first value that is a valid IP address will be used as client IP. This depends on `trusted_proxies` being configured. This option is disabled by default. */
@@ -1030,7 +1268,7 @@ export const Server = /*@__PURE__*/ S.suspend(() =>
     tls_connection_policies: S.optional(ServerTls_connection_policies),
     automatic_https: S.optional(AutoHTTPSConfig),
     strict_sni_host: S.optional(S.Boolean),
-    trusted_proxies: S.optional(S.Unknown),
+    trusted_proxies: S.optional(HttpIpSourcesModuleValue),
     client_ip_headers: S.optional(ServerClient_ip_headers),
     trusted_proxies_strict: S.optional(S.Number),
     logs: S.optional(ServerLogConfig),
@@ -1073,6 +1311,24 @@ export const App = /*@__PURE__*/ S.suspend(() =>
   }),
 ).annotate({ identifier: "App" }) as any as S.Schema<App>;
 
+/** Module names registered under Caddy namespace "tls.certificates" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type TlsCertificatesModuleName =
+  | "automate"
+  | "load_files"
+  | "load_folders"
+  | "load_pem"
+  | "load_storage";
+export const TlsCertificatesModuleName = S.String;
+
+/** A set of Caddy namespace "tls.certificates" modules keyed by module name — each present key is one of com.caddy.admin#TlsCertificatesModuleName's members on this pinned binary. A name outside com.caddy.admin#TlsCertificatesModuleName is also legal Caddy config — the module registry can grow past this snapshot — but is not a member of this closed type; building one needs a cast or a plain object. See docs/provenance.md. Each module's own fields are not modeled — see docs/provenance.md. */
+export type TlsCertificatesModuleMap = Partial<
+  Record<TlsCertificatesModuleName, unknown>
+>;
+export const TlsCertificatesModuleMap = /*@__PURE__*/ S.Record(
+  S.String,
+  S.Unknown,
+) as any as S.Schema<TlsCertificatesModuleMap>;
+
 /** Which subjects (hostnames or IP addresses) this policy applies to. This list is a filter, not a command. In other words, it is used only to filter whether this policy should apply to a subject that needs a certificate; it does NOT command the TLS app to manage a certificate for that subject. To have Caddy automate a certificate or specific subjects, use the "automate" certificate loader module of the TLS app. */
 export type AutomationPolicySubjects = Array<string>;
 export const AutomationPolicySubjects = /*@__PURE__*/ S.Array(
@@ -1080,15 +1336,29 @@ export const AutomationPolicySubjects = /*@__PURE__*/ S.Array(
 ) as any as S.Schema<AutomationPolicySubjects>;
 
 /** The modules that may issue certificates. Default: internal if all subjects do not qualify for public certificates; otherwise acme and zerossl. */
-export type AutomationPolicyIssuers = Array<unknown>;
+export type AutomationPolicyIssuers = Array<TlsIssuanceModuleValue>;
 export const AutomationPolicyIssuers = /*@__PURE__*/ S.Array(
-  S.Unknown,
+  TlsIssuanceModuleValue,
 ) as any as S.Schema<AutomationPolicyIssuers>;
 
-/** Modules that can get a custom certificate to use for any given TLS handshake at handshake-time. Custom certificates can be useful if another entity is managing certificates and Caddy need only get it and serve it. Specifying a Manager enables on-demand TLS, i.e. it has the side-effect of setting the on_demand parameter to `true`. TODO: This is an EXPERIMENTAL feature. Subject to change or removal. */
-export type AutomationPolicyGet_certificate = Array<unknown>;
-export const AutomationPolicyGet_certificate = /*@__PURE__*/ S.Array(
+/** Module names registered under Caddy namespace "tls.get_certificate" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type TlsGetCertificateModuleName = "http" | "tailscale";
+export const TlsGetCertificateModuleName = S.String;
+
+/** One module value in Caddy namespace "tls.get_certificate" — "via" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type TlsGetCertificateModuleValue = {
+  via: TlsGetCertificateModuleName;
+} & Record<string, unknown>;
+export const TlsGetCertificateModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
   S.Unknown,
+) as any as S.Schema<TlsGetCertificateModuleValue>;
+
+/** Modules that can get a custom certificate to use for any given TLS handshake at handshake-time. Custom certificates can be useful if another entity is managing certificates and Caddy need only get it and serve it. Specifying a Manager enables on-demand TLS, i.e. it has the side-effect of setting the on_demand parameter to `true`. TODO: This is an EXPERIMENTAL feature. Subject to change or removal. */
+export type AutomationPolicyGet_certificate =
+  Array<TlsGetCertificateModuleValue>;
+export const AutomationPolicyGet_certificate = /*@__PURE__*/ S.Array(
+  TlsGetCertificateModuleValue,
 ) as any as S.Schema<AutomationPolicyGet_certificate>;
 
 /** Overrides the URLs of OCSP responders embedded in certificates. Each key is a OCSP server URL to override, and its value is the replacement. An empty value will disable querying of that server. EXPERIMENTAL. Subject to change. */
@@ -1114,8 +1384,8 @@ export interface AutomationPolicy {
   renewal_window_ratio?: unknown;
   /** The type of key to generate for certificates. Supported values: `ed25519`, `p256`, `p384`, `rsa2048`, `rsa4096`. */
   key_type?: string;
-  /** Optionally configure a separate storage module associated with this manager, instead of using Caddy's global/default-configured storage. Module — the name is one of com.caddy.admin#CaddyStorageModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  storage?: unknown;
+  /** Optionally configure a separate storage module associated with this manager, instead of using Caddy's global/default-configured storage. */
+  storage?: CaddyStorageModuleValue;
   /** If true, certificates will be managed "on demand"; that is, during TLS handshakes or when needed, as opposed to at startup or config load. This enables On-Demand TLS for this policy. */
   on_demand?: boolean;
   /** If true, private keys already existing in storage will be reused. Otherwise, a new key will be created for every new certificate to mitigate pinning and reduce the scope of key compromise. TEMPORARY: Key pinning is against industry best practices. This property will likely be removed in the future. Do not rely on it forever; watch the release notes. */
@@ -1133,7 +1403,7 @@ export const AutomationPolicy = /*@__PURE__*/ S.suspend(() =>
     must_staple: S.optional(S.Boolean),
     renewal_window_ratio: S.optional(S.Unknown),
     key_type: S.optional(S.String),
-    storage: S.optional(S.Unknown),
+    storage: S.optional(CaddyStorageModuleValue),
     on_demand: S.optional(S.Boolean),
     reuse_private_keys: S.optional(S.Boolean),
     disable_ocsp_stapling: S.optional(S.Boolean),
@@ -1149,17 +1419,30 @@ export const AutomationConfigPolicies = /*@__PURE__*/ S.Array(
   AutomationPolicy,
 ) as any as S.Schema<AutomationConfigPolicies>;
 
+/** Module names registered under Caddy namespace "tls.permission" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type TlsPermissionModuleName = "http";
+export const TlsPermissionModuleName = S.String;
+
+/** One module value in Caddy namespace "tls.permission" — "module" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type TlsPermissionModuleValue = {
+  module: TlsPermissionModuleName;
+} & Record<string, unknown>;
+export const TlsPermissionModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
+  S.Unknown,
+) as any as S.Schema<TlsPermissionModuleValue>;
+
 /** On-Demand TLS defers certificate operations to the moment they are needed, e.g. during a TLS handshake. Useful when you don't know all the hostnames at config-time, or when you are not in control of the domain names you are managing certificates for. In 2015, Caddy became the first web server to implement this experimental technology. Note that this field does not enable on-demand TLS; it only configures it for when it is used. To enable it, create an automation policy with `on_demand`. OnDemandConfig configures on-demand TLS, for obtaining needed certificates at handshake-time. Because this feature can easily be abused, Caddy must ask permission to your application whether a particular domain is allowed to have a certificate issued for it. */
 export interface OnDemandConfig {
   /** Deprecated. WILL BE REMOVED SOON. Use 'permission' instead with the `http` module. */
   ask?: string;
-  /** REQUIRED. A module that will determine whether a certificate is allowed to be loaded from storage or obtained from an issuer on demand. Module — the name is one of com.caddy.admin#TlsPermissionModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  permission?: unknown;
+  /** REQUIRED. A module that will determine whether a certificate is allowed to be loaded from storage or obtained from an issuer on demand. */
+  permission?: TlsPermissionModuleValue;
 }
 export const OnDemandConfig = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     ask: S.optional(S.String),
-    permission: S.optional(S.Unknown),
+    permission: S.optional(TlsPermissionModuleValue),
   }),
 ).annotate({ identifier: "OnDemandConfig" }) as any as S.Schema<OnDemandConfig>;
 
@@ -1188,10 +1471,24 @@ export const AutomationConfig = /*@__PURE__*/ S.suspend(() =>
   identifier: "AutomationConfig",
 }) as any as S.Schema<AutomationConfig>;
 
+/** Module names registered under Caddy namespace "tls.stek" on the PINNED BINARY (2.11.4 — config-docs/manifest.json's binary_pin). Not exhaustive: Caddy's module registry can carry more at a different build's compile time; a name outside this list is not a validation error here, only unmodeled — see docs/provenance.md. */
+export type TlsStekModuleName = "distributed" | "standard";
+export const TlsStekModuleName = S.String;
+
+/** One module value in Caddy namespace "tls.stek" — "provider" selects which module; its OTHER, module-specific fields are not modeled (the structure API gives names, never a module's own field schema) and stay open — see docs/provenance.md. */
+export type TlsStekModuleValue = { provider: TlsStekModuleName } & Record<
+  string,
+  unknown
+>;
+export const TlsStekModuleValue = /*@__PURE__*/ S.Record(
+  S.String,
+  S.Unknown,
+) as any as S.Schema<TlsStekModuleValue>;
+
 /** Configures session ticket ephemeral keys (STEKs). SessionTicketService configures and manages TLS session tickets. */
 export interface SessionTicketService {
-  /** KeySource is the method by which Caddy produces or obtains TLS session ticket keys (STEKs). By default, Caddy generates them internally using a secure pseudorandom source. Module — the name is one of com.caddy.admin#TlsStekModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  key_source?: unknown;
+  /** KeySource is the method by which Caddy produces or obtains TLS session ticket keys (STEKs). By default, Caddy generates them internally using a secure pseudorandom source. */
+  key_source?: TlsStekModuleValue;
   /** How often Caddy rotates STEKs. Default: 12h. Duration can be an integer or a string. An integer is interpreted as nanoseconds. If a string, it is a Go time.Duration value such as `300ms`, `1.5h`, or `2h45m`; valid units are `ns`, `us`/`µs`, `ms`, `s`, `m`, `h`, and `d`. A Go time.Duration: an integer (nanoseconds) OR a duration string like "10s". Document — Smithy has no int-or-string scalar. */
   rotation_interval?: unknown;
   /** The maximum number of keys to keep in rotation. Default: 4. */
@@ -1203,7 +1500,7 @@ export interface SessionTicketService {
 }
 export const SessionTicketService = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    key_source: S.optional(S.Unknown),
+    key_source: S.optional(TlsStekModuleValue),
     rotation_interval: S.optional(S.Unknown),
     max_keys: S.optional(S.Number),
     disable_rotation: S.optional(S.Boolean),
@@ -1228,8 +1525,8 @@ export const CertCacheOptions = /*@__PURE__*/ S.suspend(() =>
 
 /** TLS provides TLS facilities including certificate loading and management, client auth, and more. */
 export interface TLS {
-  /** Certificates to load into memory for quick recall during TLS handshakes. Each key is the name of a certificate loader module. The "automate" certificate loader module can be used to specify a list of subjects that need certificates to be managed automatically. The first matching automation policy will be applied to manage the certificate(s). All loaded certificates get pooled into the same cache and may be used to complete TLS handshakes for the relevant server names (SNI). Certificates loaded manually (anything other than "automate") are not automatically managed and will have to be refreshed manually before they expire. ModuleMap is a map that can contain multiple modules, where the map key is the module's name. (The namespace is usually read from an associated field's struct tag.) Because the module's name is given as the key in a module map, the name does not have to be given in the json.RawMessage. Module map — the name is one of com.caddy.admin#TlsCertificatesModuleName's members on this pinned binary, or a name outside this snapshot (module registry can grow); its own fields are not modeled (see docs/provenance.md). */
-  certificates?: unknown;
+  /** Certificates to load into memory for quick recall during TLS handshakes. Each key is the name of a certificate loader module. The "automate" certificate loader module can be used to specify a list of subjects that need certificates to be managed automatically. The first matching automation policy will be applied to manage the certificate(s). All loaded certificates get pooled into the same cache and may be used to complete TLS handshakes for the relevant server names (SNI). Certificates loaded manually (anything other than "automate") are not automatically managed and will have to be refreshed manually before they expire. ModuleMap is a map that can contain multiple modules, where the map key is the module's name. (The namespace is usually read from an associated field's struct tag.) Because the module's name is given as the key in a module map, the name does not have to be given in the json.RawMessage. */
+  certificates?: TlsCertificatesModuleMap;
   /** Configures certificate automation. AutomationConfig governs the automated management of TLS certificates. */
   automation?: AutomationConfig;
   /** Configures session ticket ephemeral keys (STEKs). SessionTicketService configures and manages TLS session tickets. */
@@ -1245,7 +1542,7 @@ export interface TLS {
 }
 export const TLS = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    certificates: S.optional(S.Unknown),
+    certificates: S.optional(TlsCertificatesModuleMap),
     automation: S.optional(AutomationConfig),
     session_tickets: S.optional(SessionTicketService),
     cache: S.optional(CertCacheOptions),
@@ -1287,8 +1584,8 @@ export interface Config {
   admin?: AdminConfig;
   /** Logging facilitates logging within Caddy. The default log is called "default" and you can customize it. You can also define additional logs. By default, all logs at INFO level and higher are written to standard error ("stderr" writer) in a human-readable format ("console" encoder if stdout is an interactive terminal, "json" encoder otherwise). All defined logs accept all log entries by default, but you can filter by level and module/logger names. A logger's name is the same as the module's name, but a module may append to logger names for more specificity. For example, you can filter logs emitted only by HTTP handlers using the name "http.handlers", because all HTTP handler module names have that prefix. Caddy logs (except the sink) are zero-allocation, so they are very high-performing in terms of memory and CPU time. Enabling sampling can further increase throughput on extremely high-load servers. */
   logging?: Logging;
-  /** Module — the name is one of com.caddy.admin#CaddyStorageModuleName's members on this pinned binary (only `file_system` on the mini's build); its own fields are not modeled. Storage backends beyond this binary's build (e.g. `tls.certificates.load_storage` pointing elsewhere) cannot be expressed here — see docs/provenance.md. */
-  storage?: unknown;
+  /** StorageRaw is a storage module that defines how/where Caddy stores assets (such as TLS certificates). The default storage module is `caddy.storage.file_system` (the local file system), and the default path [depends on the OS and environment](/docs/conventions#data-directory). */
+  storage?: CaddyStorageModuleValue;
   /** AppsRaw are the apps that Caddy will load and run. The app module name is the key, and the app's config is the associated value. ModuleMap is a map that can contain multiple modules, where the map key is the module's name. (The namespace is usually read from an associated field's struct tag.) Because the module's name is given as the key in a module map, the name does not have to be given in the json.RawMessage. */
   apps?: Apps;
 }
@@ -1296,7 +1593,7 @@ export const Config = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     admin: S.optional(AdminConfig),
     logging: S.optional(Logging),
-    storage: S.optional(S.Unknown),
+    storage: S.optional(CaddyStorageModuleValue),
     apps: S.optional(Apps),
   }),
 ).annotate({ identifier: "Config" }) as any as S.Schema<Config>;
