@@ -1,5 +1,14 @@
 # @homeflare/alchemy
 
+## 0.27.1
+
+### Patch Changes
+
+- [#177](https://github.com/taslabs-net/homeflare-kit/pull/177) [`615d7f0`](https://github.com/taslabs-net/homeflare-kit/commit/615d7f0f081828a64f2c334ce423324f10e13921) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `launchd-ports.md` and `port-claims.ts`'s header comment no longer cite the
+  house monorepo's path and a pinned commit as the source of the port-collision
+  rule; both now state it as the kit's own rule, matching the estate's existing
+  port-collision strictness on its own terms. No behavior change.
+
 ## 0.27.0
 
 ### Minor Changes
