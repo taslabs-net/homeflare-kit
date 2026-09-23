@@ -129,8 +129,7 @@ forgotten `if (!ok)` cannot become an open door.
 
 Non-Worker behind a proxy? `accessForwardAuth({ teamDomain, audience })` from
 `@homeflare/cloudflare/access-auth` answers Caddy `forward_auth` — 204 + `X-Access-Email`/
-`X-Access-Sub`, else 401/403, fails closed, never logs a token; `@homeflare/alchemy/caddy`
-renders the Caddyfile. ⛔ Loopback-bind verifier AND upstream, or the check is decorative.
+`X-Access-Sub`, else 401/403, fails closed, never logs a token; `@homeflare/alchemy/caddy` renders the Caddyfile. ⛔ Loopback-bind verifier AND upstream, or the check is decorative.
 
 ⚠️ JWKS fetches go through a circuit breaker (`breakered`, `BREAKER_COOLDOWN_MS`),
 installed at jose's own `customFetch` seam. Measured on jose 6.2.12: five verifications
