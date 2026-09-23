@@ -1,10 +1,16 @@
 /**
- * Walks a payload for secret-shaped content: every string VALUE, every object KEY, and
- * the full serialized json (so a secret split across two fields — one holding a prefix,
- * another a suffix — is still caught, since it is still adjacent once the payload is
- * serialized whole). Compiles the gitleaks-derived rules lazily, once, on first use —
- * and if even ONE rule fails to compile at runtime, the WHOLE gate fails closed for
- * every subsequent call, not just the one rule.
+ * Walks a payload for secret-shaped content: every string VALUE, every object KEY, the
+ * full serialized json (catches a keyword-in-one-field / secret-in-another split, where
+ * JSON.stringify's own `,"key":` punctuation between them happens to be the connector
+ * character a gitleaks rule like netlify-access-token looks for), and every leaf string
+ * VALUE re-joined with no separator at all (catches a secret whose two halves land in
+ * adjacent array items or sibling fields with NO such lucky connector between them —
+ * JSON.stringify's `","`/`,"key":` punctuation would otherwise break the contiguous
+ * character run every gitleaks regex and the entropy extractor require; see Decision 22
+ * and gate-secrets.test.ts's "split across adjacent array items or sibling fields").
+ * Compiles the gitleaks-derived rules lazily, once, on first use — and if even ONE rule
+ * fails to compile at runtime, the WHOLE gate fails closed for every subsequent call,
+ * not just the one rule.
  *
  * ⛔ NEVER RETURNS MATCHED TEXT. A `ScanHit` carries a field path and a rule id at
  *   most — never the string that tripped it. A refusal that echoed the secret it caught
@@ -145,8 +151,27 @@ function scanValue(
   return undefined;
 }
 
-/** Scans `state` and `questions`, then the whole `{state, questions}` payload
- *  serialized as one string — catching a secret split across two adjacent fields.
+/** Collects every leaf STRING value (never a key) in the same order `scanValue` visits
+ *  them — array index order, object insertion order — so they can be re-joined with NO
+ *  separator and rescanned as one string. Keys are deliberately excluded: splicing a key
+ *  name back in would itself break the very contiguity this is trying to restore. */
+function collectLeafStrings(value: unknown, out: string[]): void {
+  if (typeof value === 'string') {
+    out.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) collectLeafStrings(v, out);
+    return;
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const v of Object.values(value as Record<string, unknown>)) collectLeafStrings(v, out);
+  }
+}
+
+/** Scans `state` and `questions`, then every leaf string value re-joined with no
+ *  separator (adjacent-split secrets), then the whole `{state, questions}` payload
+ *  serialized as one string (keyword/secret splits that ride JSON's own punctuation).
  *  Short-circuits on the first hit: a gate refuses the whole call on any one finding,
  *  so nothing is gained by collecting more. */
 export function scanPayload(
@@ -157,9 +182,14 @@ export function scanPayload(
   const rules = compiledRules();
   if (rules === 'unavailable') return { reason: 'rule-unavailable', path: '$' };
 
+  const leaves: string[] = [];
+  collectLeafStrings(state, leaves);
+  collectLeafStrings(questions, leaves);
+
   return (
     scanValue('$.state', state, rules, options) ??
     scanValue('$.questions', questions, rules, options) ??
+    scanString('$~joined-leaves', leaves.join(''), rules, options) ??
     scanString('$', JSON.stringify({ state, questions }), rules, options)
   );
 }

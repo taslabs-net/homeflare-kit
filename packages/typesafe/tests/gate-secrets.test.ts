@@ -152,6 +152,65 @@ describe('gate-secrets: caps, types and object keys', () => {
   });
 });
 
+describe('gate-secrets: split across adjacent array items or sibling fields', () => {
+  // Decision 22: "a secret-shape refusal refuses the whole call ... never redacts and
+  // sends." JSON.stringify's own punctuation (`","` between array items, `,"key":`
+  // between sibling fields) breaks the contiguous character run every gitleaks regex
+  // and the entropy extractor require — so the existing whole-serialized-json scan
+  // (scan.ts) does not reconnect a secret split this way, even though it is still one
+  // contiguous secret to any code that later joins the caller's own fields back
+  // together. These three cases are exactly the PR's own attack list (a token split
+  // across two array items), plus the same shape across two sibling `string` fields.
+  test('an AWS-shaped key split across two array items still refuses', () => {
+    const spec: JudgmentSpec = { items: { type: 'string[]', maxItems: 10, maxLength: 8000 } };
+    const whole = fx.awsAccessKey('split-array1');
+    const result = gate(spec, {
+      state: { items: [whole.slice(0, 10), whole.slice(10)] },
+      questions: {},
+    });
+    if (result.kind !== 'no-judgment') throw new Error(`expected a refusal, got ${result.kind}`);
+    expect(result.reason).toBe('gitleaks-rule');
+    expect(result.rule).toBe('aws-access-token');
+    expect(result.path).toBe('$~joined-leaves');
+    assertNoFragmentLeaked(JSON.stringify(result), whole);
+  });
+
+  test('an AWS-shaped key split across two sibling top-level fields still refuses', () => {
+    const spec: JudgmentSpec = {
+      a: { type: 'string', maxLength: 8000 },
+      b: { type: 'string', maxLength: 8000 },
+    };
+    const whole = fx.awsAccessKey('split-sibling1');
+    const result = gate(spec, {
+      state: { a: whole.slice(0, 10), b: whole.slice(10) },
+      questions: {},
+    });
+    if (result.kind !== 'no-judgment') throw new Error(`expected a refusal, got ${result.kind}`);
+    expect(result.reason).toBe('gitleaks-rule');
+    expect(result.rule).toBe('aws-access-token');
+    expect(result.path).toBe('$~joined-leaves');
+    assertNoFragmentLeaked(JSON.stringify(result), whole);
+  });
+
+  test('a 40-char token split into two halves, each below the per-leaf detection floor alone, still refuses', () => {
+    const spec: JudgmentSpec = { items: { type: 'string[]', maxItems: 10, maxLength: 8000 } };
+    const whole = fx.fortyHexRun('split-entropy1'); // 40 hex chars; each 20-char half is
+    // below both DEFAULT_MIN_BASE64_RUN_LENGTH's entropy ceiling for a hex-only
+    // charset (max ~4.0 bits/char < the 4.5 base64 limit) and DEFAULT_MIN_HEX_RUN_LENGTH
+    // (32) — neither half trips the per-leaf scan on its own; only re-joined are the
+    // full 40 hex chars there to match (bare-hex is itself part of sourcegraph-access-
+    // token's shape, or, for a fixture that misses every prefix rule, high-entropy).
+    const result = gate(spec, {
+      state: { items: [whole.slice(0, 20), whole.slice(20)] },
+      questions: {},
+    });
+    if (result.kind !== 'no-judgment') throw new Error(`expected a refusal, got ${result.kind}`);
+    expect(['gitleaks-rule', 'high-entropy']).toContain(result.reason);
+    expect(result.path).toBe('$~joined-leaves');
+    assertNoFragmentLeaked(JSON.stringify(result), whole);
+  });
+});
+
 describe('gate-secrets: evasion attempts still refuse', () => {
   test('a zero-width space inside the secret refuses on the format-character check', () => {
     const secret = fx.githubPat('evade1');
