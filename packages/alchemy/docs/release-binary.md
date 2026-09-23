@@ -165,8 +165,9 @@ data after the end, a truncated archive; the declared member missing; the
 member's SHA-256 not its pin. Every one of these ends `Nothing was written.`
 
 After the write: a file that does not read back as declared (a create is
-removed). Errors are typed (`BinaryRefused`, `DownloadFailed`,
+removed). Errors are tagged (`BinaryRefused`, `DownloadFailed`,
 `ChecksumMismatch`, `ArchiveRefused`) and carry the house refusal sentence.
+⚠️ Tagged, not typed: no caller can `catchTag` one yet (`error-channel.test.ts`).
 
 Data sets and adding a vendor: [release-binary-catalogs.md](./release-binary-catalogs.md).
 Measurements and limits: [release-binary-measured.md](./release-binary-measured.md).

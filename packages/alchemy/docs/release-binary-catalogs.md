@@ -87,6 +87,11 @@ alertmanager, blackbox_exporter, node_exporter and postgres_exporter
 `darwin_arm64` to `darwin_all`), pyroscope, vector, and `bao` (OpenBao, with
 GPG and Sigstore to check).
 
+⚠️ REASONED NOT MEASURED: the Prometheus-family archives wrap their files in a
+directory, and `tar.ts` refuses a directory entry (and any PAX header) for the
+whole archive. Walking those down includes a reader change, not only a data
+set ([release-binary-upstream.md](./release-binary-upstream.md), gap 11).
+
 ## What this resource is not for
 
 - **A whole tree.** Grafana needs its homepath and plugins, and an interpreter
