@@ -54,8 +54,16 @@
  *
  * ⚠️ PRIVILEGES, FROM THE SCHEMA. Read and diff need `Sys.Audit` on `/` — both GETs check it.
  *   Reconcile needs `Sys.Modify` on `/` for the POST. `Datastore.Allocate` on `/storage` is NOT
- *   needed, because `add_storage` is not offered — see the ⛔ on `ZfsPoolProps`. `delete` needs
- *   nothing at all, since it calls nothing.
+ *   needed, because `add_storage` is not offered — see the ⛔ on `ZfsPoolProps`.
+ *   ★ CORRECTED 2026-09-23, ALONGSIDE THE HEADER ABOVE: `delete` needs `Sys.Modify` on `/` too,
+ *   for the DELETE it now sends under `.pipe(RemovalPolicy.destroy())` — the whole `disks/zfs`
+ *   family checks it, not only the POST. MEASURED the same day as the rest of this paragraph:
+ *   `ceph-osd.ts`'s own privilege comparison names `disks/zfs` as one of the sibling families
+ *   whose write verbs DO carry a `Sys.Modify` check, unlike `ceph/osd`'s create and delete, which
+ *   carry no permissions block at all and 403 for any identity but `root@pam`. This line
+ *   previously said delete "needs nothing at all, since it calls nothing", which repeated the same
+ *   mistake the header above corrects: `delete` calls the DELETE endpoint, so it needs whatever
+ *   that endpoint checks.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
