@@ -102,12 +102,23 @@ describe('exec routing', () => {
   test('mkdir/chown under a prefix run as root with absolute argv', async () => {
     const { fake, privileged, runner } = fakeSudoHost();
     await runner.exec(['mkdir', '-m', '750', '--', '/usr/local/bin/sub']);
-    await runner.exec(['chown', '900:60', '--', '/usr/local/bin/sub']);
+    await runner.exec(['chown', '0:0', '--', '/usr/local/bin/sub']);
     expect(privileged()).toEqual([
       [MKDIR, '-m', '750', '--', '/usr/local/bin/sub'],
-      [CHOWN, '900:60', '--', '/usr/local/bin/sub'],
+      [CHOWN, '0:0', '--', '/usr/local/bin/sub'],
     ]);
-    expect(fake.modes.get('/usr/local/bin/sub')).toEqual({ gid: 60, mode: 0o750, uid: 900 });
+    expect(fake.modes.get('/usr/local/bin/sub')).toEqual({ gid: 0, mode: 0o750, uid: 0 });
+  });
+
+  test('mkdir/chmod/chown with a dangerous mode or a non-root owner are refused before sudo', async () => {
+    const { privileged, runner } = fakeSudoHost();
+    await expect(
+      runner.exec(['mkdir', '-m', '777', '--', '/usr/local/bin/world']),
+    ).rejects.toBeInstanceOf(SudoRefusedError);
+    await expect(
+      runner.exec(['chown', '900:60', '--', '/usr/local/bin/sub']),
+    ).rejects.toBeInstanceOf(SudoRefusedError);
+    expect(privileged()).toEqual([]);
   });
 
   test('rmdir under a prefix runs as root', async () => {

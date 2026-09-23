@@ -78,7 +78,7 @@ export const assertGuardedChain = async (
   const above = aboveDirs(prefix);
   const between = betweenDirs(prefix, path);
   const chain = [...above, prefix, ...between];
-  const listed = await readListing(base, 'ls', path, chain);
+  const listed = await readListing(base, '/usr/bin/ls', path, chain);
   for (const dir of above) {
     const entry = listed.get(dir);
     // ★ A root-owned symlink ABOVE the prefix is the system's own and is followed, as every path

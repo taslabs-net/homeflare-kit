@@ -103,9 +103,20 @@ export const fakeSudoHost = (
   const base: HostRunner = {
     ...fake.runner,
     exec: async (argv) => {
-      if (argv[0] === 'ls' && argv[1] === '-ldn') return handleLs(argv.slice(3));
-      if (argv[0] === 'mktemp' && argv[1] === '-d') return handleMktemp();
-      if (argv[0] === 'rm') return handleRm(argv);
+      // ★ Read-only, operator-level calls now go by absolute path too (cosmetic hardening from
+      //   the 2026-09-23 adversarial review — see the sources' own headers); fakeLinuxHost's own
+      //   dispatcher only recognises the bare names it was built against, so both spellings are
+      //   handled here and `systemctl`'s absolute form is translated back to bare before it is
+      //   handed off, rather than teaching the shared fixture a second spelling.
+      if (argv[0] === 'ls' || argv[0] === '/usr/bin/ls') {
+        if (argv[1] === '-ldn') return handleLs(argv.slice(3));
+      }
+      if ((argv[0] === 'mktemp' || argv[0] === '/usr/bin/mktemp') && argv[1] === '-d') {
+        return handleMktemp();
+      }
+      if (argv[0] === 'rm' || argv[0] === '/usr/bin/rm') return handleRm(argv);
+      if (argv[0] === '/usr/bin/systemctl')
+        return fake.runner.exec(['systemctl', ...argv.slice(1)]);
       if (argv[0] !== SUDO) return fake.runner.exec(argv);
       sudoCalls.push([...argv]);
       if (logs[logs.length - 1] !== `homeflare/linux sudo -n ${JSON.stringify(argv.slice(3))}`) {

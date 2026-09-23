@@ -57,9 +57,9 @@ Each is `/usr/bin/sudo -n -- <argv>`, every program by absolute path.
 | a file under a prefix — stage→temp   | `/usr/bin/install -m <0644> [-o <uid>] [-g <gid>] -T -- <staged> <temp>`         |
 | a file under a prefix — temp→dest    | `/usr/bin/mv -f -T -- <temp> <dest>`                                             |
 | a file under a prefix is removed     | `/usr/bin/rm -f -- <path>`                                                       |
-| a directory under a prefix is made   | `/usr/bin/mkdir -m <octal> -- <path>`                                            |
-| its mode is fixed                    | `/usr/bin/chmod <octal> -- <path>`                                               |
-| its owner is fixed                   | `/usr/bin/chown <owner> -- <path>`, `<owner>` numeric `uid`, `:gid` or `uid:gid` |
+| a directory under a prefix is made   | `/usr/bin/mkdir -m <octal> -- <path>` — never setuid/setgid or group/other-write |
+| its mode is fixed                    | `/usr/bin/chmod <octal> -- <path>` — same restriction                            |
+| its owner is fixed                   | `/usr/bin/chown <owner> -- <path>` — **root only**: `0`, `:0` or `0:0`           |
 | it is removed                        | `/usr/bin/rmdir -- <path>`                                                       |
 | after any unit-file write/removal    | `/usr/bin/systemctl daemon-reload`                                               |
 | a unit is enabled/disabled/started/… | `/usr/bin/systemctl <verb> -- <unit>`                                            |
@@ -115,6 +115,38 @@ prefix-sibling (`/usr/local/bin-x` is not under `/usr/local/bin`), or a
 root-owned file that would be group- or world-writable, setuid or setgid; a
 file the operator could not read back (both `Systemd.Unit` and `Remote.File`
 read every write back to compare digests).
+
+🔴 **A directory this runner elevates is always root-owned and never
+setuid/setgid or group/other-writable — unconditionally, no exceptions**
+(`sudo-allowlist-dir.ts`). MEASURED (adversarial review, 2026-09-23, against
+this runner's first shipped version): `mkdir -m 0777` and
+`chown <non-root uid>` both passed the allowlist untouched, so a stack could
+declare `HostDirectory({ path: '/etc/systemd/system/x.service.d', mode:
+0o777 })`, drop an `ExecStart=` override into it, and this runner's own next
+`daemon-reload` + `restart` would run it as root — a privilege escalation
+reachable through the allowlist itself, not a guard bypass. A directory's
+OWNER always has write access through the owner bits alone, so no mode
+restriction can make a non-root-owned directory safe here; `chown` is
+therefore refused to anything but `0`/`:0`/`0:0` outright. **This also
+tightened the shared `modeProblem` check** (`../launchd/sudo-guard.ts`, used
+by both platforms): it exempted a file merely because its `uid` was
+non-root, missing that `{uid: 501, gid: 0, mode: 0o2775}` — setgid to root's
+own group — reaches the same escalation through the group instead. Both are
+fixed and covered by tests (`sudo-allowlist.test.ts`,
+`../launchd/sudo-modes.test.ts`).
+
+⚠️ **Known, deferred, lower severity**: a unit whose `FragmentPath` reads
+empty elevates `enable`/`disable`/`start`/`stop`/`restart` regardless of its
+type, so a malformed or malicious _declaration_ naming a kernel-generated
+pseudo-unit (`init.scope`, a `session-N.scope`) would reach `systemctl stop`
+as root — a host DoS, not a privilege gain, and it requires control over the
+stack's own declarations (already a trusted position) to trigger. Narrowing
+the exemption to `.service`/`.timer` would break the legitimate case it
+exists for: `Systemd.Unit` may declare any systemd type, and a unit still
+loaded in memory after its file vanished out-of-band reports an empty
+`FragmentPath` regardless of type. Left open pending a design for
+distinguishing "empty because ours was just removed" from "empty because
+this was never a file-backed unit."
 
 Every refusal throws `SudoRefusedError`: nothing ran as root. A privileged
 command that ran and failed throws a plain `Error` with its exit code.

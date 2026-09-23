@@ -43,6 +43,7 @@ export const DIRECTORY_PROGRAMS: ReadonlySet<string> = new Set([
   'chown',
   'rmdir',
 ]);
+const DIRECTORY_PROGRAMS_ABS: ReadonlySet<string> = new Set([MKDIR, CHMOD, CHOWN, RMDIR]);
 const ABS_OF: Readonly<Record<string, string>> = {
   chmod: CHMOD,
   chown: CHOWN,
@@ -206,7 +207,9 @@ export const routeExec = (argv: readonly string[], prefixes: readonly string[]):
       ? { as: 'root' }
       : { as: 'operator' };
   }
-  if (DIRECTORY_PROGRAMS.has(program ?? '')) {
+  // ★ Both spellings route the same way — a caller that happened to pass the absolute program
+  //   (nothing in this repo does today) must not silently fall through to the operator branch.
+  if (DIRECTORY_PROGRAMS.has(program ?? '') || DIRECTORY_PROGRAMS_ABS.has(program ?? '')) {
     const path = args[args.length - 1];
     return path !== undefined && prefixOf(path, prefixes) !== undefined
       ? { as: 'root' }

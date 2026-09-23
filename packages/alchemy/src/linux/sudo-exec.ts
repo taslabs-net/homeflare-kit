@@ -26,7 +26,7 @@ const DIR_EXPECT: Readonly<Record<string, ChainExpect>> = {
 
 const fragmentPathOf = async (base: HostRunner, unit: string): Promise<string> => {
   const result = await base.exec([
-    'systemctl',
+    SYSTEMCTL_ABS,
     'show',
     '--no-pager',
     '-p',

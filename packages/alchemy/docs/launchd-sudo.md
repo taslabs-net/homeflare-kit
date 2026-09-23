@@ -79,9 +79,12 @@ sudo.
   refuse. Measured 2026-09-21: `/Library/LaunchDaemons`, `/private/etc`, `/opt` and `/usr/local`,
   and everything above them, carry none.
 - **A root-owned file that would be group- or world-writable, setuid or setgid** (`mode & 0o6022`;
-  an omitted owner is root). ⛔ Anyone in that class could rewrite a file root installed (a
-  daemon's config, a script it runs), and a setuid root file runs as root for whoever executes it.
-  A file handed to another user (`owner`) is theirs to change, so its mode is theirs too.
+  root-owned means an omitted owner, uid `0`, **or gid `0`** — either alone keeps every check
+  active). ⛔ Anyone in that class could rewrite a file root installed (a daemon's config, a script
+  it runs), and a setuid root file runs as root for whoever executes it. 🔴 MEASURED (adversarial
+  review, 2026-09-23): checking only `uid` let `{uid: 501, gid: 0, mode: 0o2775}` — setgid to
+  root's own group, group-writable, merely OWNED by uid 501 — through untouched. A file handed to
+  another owner is theirs to change only when its GROUP is genuinely theirs too.
 - A path outside every prefix that needs root: another user as the owner, say.
 - A symlink or missing directory between the prefix and the file, or anything but a regular file
   at the path. ⚠️ `install src <directory>` copies _into_ the directory, and a symlink to one does

@@ -91,11 +91,11 @@ describe('mv and rm shapes', () => {
 describe('directory shapes', () => {
   test.each([
     [[MKDIR, '-m', '750', '--', '/etc/systemd/system/sub']],
-    [[MKDIR, '-m', '4750', '--', '/etc/systemd/system/sub']],
+    [[MKDIR, '-m', '700', '--', '/etc/systemd/system/sub']],
     [[CHMOD, '750', '--', '/usr/local/bin/sub']],
-    [[CHOWN, '900', '--', '/usr/local/bin/sub']],
-    [[CHOWN, ':60', '--', '/usr/local/bin/sub']],
-    [[CHOWN, '900:60', '--', '/usr/local/bin/sub']],
+    [[CHOWN, '0', '--', '/usr/local/bin/sub']],
+    [[CHOWN, ':0', '--', '/usr/local/bin/sub']],
+    [[CHOWN, '0:0', '--', '/usr/local/bin/sub']],
     [[RMDIR, '--', '/etc/systemd/system/sub']],
   ])('allows %j', (argv) => {
     expect(allowed(argv)).toBeUndefined();
@@ -108,6 +108,18 @@ describe('directory shapes', () => {
     ['chown by name', [CHOWN, 'root', '--', '/usr/local/bin/sub']],
     ['chmod without --', [CHMOD, '750', '/usr/local/bin/sub']],
     ['rmdir of two paths', [RMDIR, '--', '/usr/local/bin/sub', '/etc/systemd/system/sub']],
+    // 🔴 The three shapes the adversarial review found reachable, 2026-09-23 — see
+    //   sudo-allowlist-dir.ts's header. Each must now be refused, not merely shaped correctly.
+    ['mkdir with setuid (4750)', [MKDIR, '-m', '4750', '--', '/etc/systemd/system/sub']],
+    ['mkdir world-writable (0777)', [MKDIR, '-m', '777', '--', '/etc/systemd/system/sub']],
+    [
+      'mkdir setgid + group-writable (2775)',
+      [MKDIR, '-m', '2775', '--', '/etc/systemd/system/sub'],
+    ],
+    ['chmod group-writable (0775)', [CHMOD, '775', '--', '/usr/local/bin/sub']],
+    ['chown to a non-root uid', [CHOWN, '900', '--', '/usr/local/bin/sub']],
+    ['chown to a non-root gid only', [CHOWN, ':60', '--', '/usr/local/bin/sub']],
+    ['chown to a non-root uid and gid', [CHOWN, '900:60', '--', '/usr/local/bin/sub']],
   ])('refuses %s', (_name, argv) => {
     expect(allowed(argv)).toBeString();
   });
@@ -153,6 +165,11 @@ describe('routeExec', () => {
   test('directory programs go to root only under a declared prefix', () => {
     expect(route(['mkdir', '-m', '750', '--', '/usr/local/bin/sub'])).toEqual({ as: 'root' });
     expect(route(['mkdir', '-m', '750', '--', '/opt/elsewhere'])).toEqual({ as: 'operator' });
+  });
+
+  test('the absolute program spelling routes the same as the bare one', () => {
+    expect(route([MKDIR, '-m', '750', '--', '/usr/local/bin/sub'])).toEqual({ as: 'root' });
+    expect(route([CHOWN, '0', '--', '/usr/local/bin/sub'])).toEqual({ as: 'root' });
   });
 
   test('a sudo argv is refused outright, bare or absolute', () => {

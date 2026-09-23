@@ -35,6 +35,24 @@ describe('modeProblem', () => {
     ['2755 root is setgid', { mode: 0o2755, uid: 0 }, 'setuid/setgid'],
     ['6777 root is both', { mode: 0o6777 }, 'setuid/setgid and writable by group or other'],
     ['0664 handed to another user is theirs to change', { mode: 0o664, uid: OPERATOR }, undefined],
+    // 🔴 Adversarial review, 2026-09-23: the non-root-uid exemption alone let a setgid-root file
+    //   through untouched as long as its OWNER was merely non-zero — the group is root's just as
+    //   much as the owner being uid 0 would be. gid 0 must keep every check active on its own.
+    [
+      'setgid to root’s own group, handed to another OWNER, is still root’s file to protect',
+      { gid: 0, mode: 0o2775, uid: OPERATOR },
+      'setuid/setgid',
+    ],
+    [
+      'group-writable with root’s own group, handed to another owner',
+      { gid: 0, mode: 0o664, uid: OPERATOR },
+      'writable by group or other',
+    ],
+    [
+      'handed to another owner AND another group is genuinely theirs, setgid included',
+      { gid: 80, mode: 0o2775, uid: OPERATOR },
+      undefined,
+    ],
   ] as const)('%s', (_name, options, found) => {
     const problem = modeProblem(options);
     if (found === undefined) expect(problem).toBeUndefined();

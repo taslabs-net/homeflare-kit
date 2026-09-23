@@ -133,9 +133,19 @@ export const assertPlainPath = async (
  *   it runs as root (or its group) for whoever executes it. install(1) would apply either, as root.
  * ★ Root-owned is an omitted owner (the runner installs as root under a prefix) or uid 0. A file
  *   handed to another user is that user's to change; the sticky bit changes nothing on a file.
+ * 🔴 MEASURED (adversarial review, 2026-09-23, against this file's shipped version): "handed to
+ *   another user" checked only `uid`, never `gid`. `{ uid: 501, gid: 0, mode: 0o2775 }` — a setgid
+ *   file owned by an unprivileged uid but GROUPED to root — passed untouched, because a non-zero
+ *   uid alone skipped every check below. Setgid with `gid: 0` runs as root's own group for whoever
+ *   executes it, and its non-root OWNER can freely rewrite its content: a privilege escalation this
+ *   check exists to prevent, reachable exactly the way it always was, just through the group
+ *   instead of the owner. So "root-owned" now means uid root-or-omitted, OR gid root's own (`0`):
+ *   either alone is enough to keep every check active. Only a file with a genuinely non-root owner
+ *   AND a genuinely non-root group is someone else's alone to make setuid/setgid or writable.
  */
 export const modeProblem = (options: WriteOptions): string | undefined => {
-  if (options.uid !== undefined && options.uid !== 0) return undefined;
+  const rootAdjacent = options.uid === undefined || options.uid === 0 || options.gid === 0;
+  if (!rootAdjacent) return undefined;
   const found: string[] = [];
   if ((options.mode & 0o6000) !== 0) found.push('setuid/setgid');
   if ((options.mode & 0o022) !== 0) found.push('writable by group or other');

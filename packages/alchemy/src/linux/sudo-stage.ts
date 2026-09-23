@@ -22,7 +22,7 @@ const refuse = (message: string): Error => new Error(`sshSudoRunner stage: ${mes
 export const stageRemote =
   (base: HostRunner) =>
   async (bytes: Uint8Array): Promise<Staged> => {
-    const made = await base.exec(['mktemp', '-d']);
+    const made = await base.exec(['/usr/bin/mktemp', '-d']);
     if (made.exitCode !== 0)
       throw refuse(`mktemp -d -> ${String(made.exitCode)}: ${made.stderr.trim()}`);
     const dir = made.stdout.trim();
@@ -30,7 +30,7 @@ export const stageRemote =
       throw refuse(`mktemp -d printed ${JSON.stringify(made.stdout)}, not an absolute path`);
     }
     const dispose = async () => {
-      const removed = await base.exec(['rm', '-rf', '--', dir]);
+      const removed = await base.exec(['/usr/bin/rm', '-rf', '--', dir]);
       // ⚠️ Best-effort: a leaked 0700 temp dir the operator owns is a nuisance, never a secret
       //   exposure, so disposal failing never masks the write's own success or failure.
       if (removed.exitCode !== 0) {
