@@ -39,6 +39,7 @@ describe('upstream', () => {
     //   wrong scheme is indistinguishable from a wrong credential in the response.
     let seen = '';
     const server = Bun.serve({
+      hostname: '127.0.0.1',
       port: 0,
       fetch(request) {
         seen = request.headers.get('authorization') ?? '';
@@ -49,7 +50,7 @@ describe('upstream', () => {
     await upstream({
       system: 'probe',
       urlVar: 'PROBE_URL',
-      defaultUrl: `http://localhost:${server.port}`,
+      defaultUrl: `http://127.0.0.1:${server.port}`,
       tokenVar: 'PROBE_TOKEN',
       authHeader: (t) => ({ authorization: `Token ${t}` }),
       env: { PROBE_TOKEN: 'secret' },
@@ -65,6 +66,7 @@ describe('upstream', () => {
     // ⛔ An unauthenticated request is often answered with a 302 to a login page.
     //   Following it returns HTML with status 200 — a broken API, not "not authenticated".
     const server = Bun.serve({
+      hostname: '127.0.0.1',
       port: 0,
       fetch() {
         return new Response(null, { status: 302, headers: { location: '/login' } });
@@ -74,7 +76,7 @@ describe('upstream', () => {
     const call = upstream({
       system: 'probe',
       urlVar: 'PROBE_URL',
-      defaultUrl: `http://localhost:${server.port}`,
+      defaultUrl: `http://127.0.0.1:${server.port}`,
       env: {},
     }).get('/thing');
 
@@ -86,6 +88,7 @@ describe('upstream', () => {
   test('applies pathPrefix so callers write the documented path', async () => {
     let path = '';
     const server = Bun.serve({
+      hostname: '127.0.0.1',
       port: 0,
       fetch(request) {
         path = new URL(request.url).pathname;
@@ -96,7 +99,7 @@ describe('upstream', () => {
     await upstream({
       system: 'probe',
       urlVar: 'PROBE_URL',
-      defaultUrl: `http://localhost:${server.port}`,
+      defaultUrl: `http://127.0.0.1:${server.port}`,
       pathPrefix: '/api',
       env: {},
     })

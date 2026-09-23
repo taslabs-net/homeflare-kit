@@ -12,7 +12,11 @@ import { PveError, pveWith } from './client.ts';
 import type { PveCredential, PveTarget } from './credentials.ts';
 import { orderedMembers, resetLastGoodForTest } from './members.ts';
 
-type ServeOptions = { fetch(request: Request): Response | Promise<Response>; port: number };
+type ServeOptions = {
+  fetch(request: Request): Response | Promise<Response>;
+  hostname: string;
+  port: number;
+};
 const { Bun } = globalThis as unknown as {
   Bun: { serve(options: ServeOptions): { port: number; stop(closeActive: boolean): void } };
 };
@@ -84,6 +88,8 @@ const counting = (data: unknown) => {
       hits += 1;
       return Response.json({ data });
     },
+    // ⚠️ Loopback, not the wildcard default — see fake-pve-lxc.ts for the measured race.
+    hostname: '127.0.0.1',
     port: 0,
   });
   return { hits: () => hits, port: server.port, stop: () => server.stop(true) };
@@ -106,7 +112,11 @@ describe('cluster member failover', () => {
 
   it('does not fail over on HTTP 500 from the first member', async () => {
     resetLastGoodForTest();
-    const bad = Bun.serve({ fetch: () => new Response('fail', { status: 500 }), port: 0 });
+    const bad = Bun.serve({
+      fetch: () => new Response('fail', { status: 500 }),
+      hostname: '127.0.0.1',
+      port: 0,
+    });
     const good = counting([]);
     try {
       const error = await run(pveWith(target([A, B]), CRED, 'GET', 'pools').pipe(Effect.flip), {
@@ -144,7 +154,11 @@ describe('cluster member failover', () => {
 
   it('does not re-send a write after a transport timeout', async () => {
     resetLastGoodForTest();
-    const hang = Bun.serve({ fetch: () => new Promise<Response>(() => {}), port: 0 });
+    const hang = Bun.serve({
+      fetch: () => new Promise<Response>(() => {}),
+      hostname: '127.0.0.1',
+      port: 0,
+    });
     const backup = counting('UPID:1');
     try {
       await run(
