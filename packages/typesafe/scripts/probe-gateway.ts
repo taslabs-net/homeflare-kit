@@ -18,7 +18,12 @@
  *   route. Re-run only when that doc is stale, disputed, or missing the specific fact
  *   you need; a duplicate run spends a live BYOK-billed call for no new information.
  *
- * Usage: `bun run scripts/probe-gateway.ts --env-file /opt/homeflare/env/ai-gateway.env`
+ * ⛔ NO ESTATE IDENTIFIERS HARDCODED HERE EITHER (public package): like the account id
+ *   above, the gateway id is never a literal in this file — it comes from
+ *   `--gateway-id`, passed by the caller, the same way `--env-file` supplies the
+ *   credential path.
+ *
+ * Usage: `bun run scripts/probe-gateway.ts --env-file /opt/homeflare/env/ai-gateway.env --gateway-id <id>`
  */
 import { readFile } from 'node:fs/promises';
 
@@ -125,7 +130,10 @@ async function runOne(
 async function main(): Promise<void> {
   const envFileIdx = process.argv.indexOf('--env-file');
   const envFile = envFileIdx >= 0 ? process.argv[envFileIdx + 1] : undefined;
-  if (!envFile) throw new Error('usage: probe-gateway.ts --env-file <path>');
+  const gatewayIdIdx = process.argv.indexOf('--gateway-id');
+  const gatewayId = gatewayIdIdx >= 0 ? process.argv[gatewayIdIdx + 1] : undefined;
+  if (!envFile || !gatewayId)
+    throw new Error('usage: probe-gateway.ts --env-file <path> --gateway-id <id>');
 
   const creds = await readEnvFile(envFile);
   const shape = describeUrlShape(creds.url);
@@ -138,7 +146,6 @@ async function main(): Promise<void> {
         'pass it from the coordinator instead',
     );
   }
-  const gatewayId = 'homeflare-ai-gateway';
 
   for (const call of CALLS) {
     await runOne(creds, accountId, gatewayId, call);

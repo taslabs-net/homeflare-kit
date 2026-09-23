@@ -4,8 +4,10 @@
  * implementation for transport configuration or tests" per the SDK's own types
  * (measured 2026-09-23 in node_modules/@typesafe-ai/sdk@0.6.0/dist/index.d.mts) —
  * instead of building a direct `api.typesafe.ai` client with a raw key. The estate
- * holds TypeSafe's key only as BYOK in `homeflare-ai-gateway`; this is the seam that
- * lets an official client reach it without becoming a second client.
+ * holds TypeSafe's key only as BYOK in its AI Gateway (id passed at call time — see
+ * `TypeSafeGatewayOptions.gatewayId` below; this public package names no estate
+ * identifier); this is the seam that lets an official client reach it without
+ * becoming a second client.
  *
  * ⛔ STILL NOT A REPLACEMENT CLIENT. `systemOne()`, retries, parsing and error classes
  *   all stay the official SDK's (see ../src/index.ts); this only swaps where the bytes
@@ -37,8 +39,10 @@ export type TypeSafeGatewayOptions = Omit<TypeSafeClientConfig, 'apiKey' | 'base
   /** Token scoped to Workers AI Read + AI Gateway Run. Held only in this closure —
    *  never becomes the SDK's `apiKey`, which its debug logger partially prints. */
   readonly token: string;
-  /** The gateway's id, e.g. `homeflare-ai-gateway`. Without it Cloudflare routes
-   *  through the account's default gateway, which holds no BYOK key. */
+  /** The gateway's id (e.g. `example-gateway` in this package's own fixtures —
+   *  never an estate value here; this package is published publicly). Without it
+   *  Cloudflare routes through the account's default gateway, which holds no BYOK
+   *  key. */
   readonly gatewayId: string;
   /** Cloudflare model-catalog id. Default: `typesafe/jev`. */
   readonly catalogModel?: string;
