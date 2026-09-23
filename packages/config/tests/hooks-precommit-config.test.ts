@@ -128,4 +128,23 @@ describe('BUG 2 — oxfmt config discovery', () => {
     expect(result.output).toContain('.oxfmtrc.cjs');
     expect(result.output).toContain('keep exactly one');
   });
+
+  // 🔴 FOUND IN REVIEW: the ambiguous check ran unconditionally, before `staged()`, so it
+  //   blocked a commit that would never have touched oxfmt at all — exactly what BUG 1's
+  //   fix exists to prevent. It must be gated on oxfmt ever actually needing to run.
+  test('an unrelated commit is not blocked by an ambiguous config it would never reach', async () => {
+    const repo = await repoWithoutDefaultConfig();
+    await repo.write('.oxfmtrc.mjs', 'export default { singleQuote: true };\n');
+    await repo.write('.oxfmtrc.cjs', 'module.exports = { singleQuote: false };\n');
+    // Not `.ts`/`.md`/etc — staged() never classifies this as formattable, so oxfmt/oxlint
+    // (and the config that governs them) are never consulted for this commit.
+    await repo.write('notes.txt', 'unrelated change\n');
+    await repo.git('add', 'notes.txt');
+
+    const result = await repo.hook('pre-commit', { env: ENV });
+
+    expect(result.code).toBe(0);
+    expect(result.output).toContain('nothing staged to format');
+    expect(result.output).not.toContain('oxfmt configs found');
+  });
 });

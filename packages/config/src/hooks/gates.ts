@@ -57,6 +57,17 @@ export async function preCommit(root: string): Promise<void> {
   await scanStagedSecrets();
   if (!installed(root, 'pre-commit')) return;
 
+  const { formattable, code, partial } = await staged();
+
+  // ⚠️ BEFORE RESOLVING A CONFIG: if oxfmt would never run (nothing formattable staged, not
+  //   even a partially-staged one to `--check`), a config problem — even an unresolved
+  //   ambiguous one — must not block the commit. That is the exact shape of BUG 1: don't
+  //   fail on "there is nothing to do here".
+  if (formattable.length === 0 && partial.length === 0) {
+    ok('pre-commit: nothing staged to format');
+    return;
+  }
+
   const config = await resolveOxfmtConfig(root);
   if (config.kind === 'ambiguous') {
     fail(
@@ -79,7 +90,6 @@ export async function preCommit(root: string): Promise<void> {
     '--no-error-on-unmatched-pattern',
   ];
   const oxlint = [...tool(root, 'oxlint'), '--no-error-on-unmatched-pattern'];
-  const { formattable, code, partial } = await staged();
 
   // ⛔ Checked, never rewritten — see staged.ts for why `git add` here would be theft.
   if (partial.length > 0) {
