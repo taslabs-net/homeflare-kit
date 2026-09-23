@@ -115,6 +115,19 @@
         "effect": "4.0.0-rc.115",
       },
     },
+    "packages/distilled-proxmox-backup": {
+      "name": "@homeflare/distilled-proxmox-backup",
+      "version": "0.1.0",
+      "dependencies": {
+        "@distilled.cloud/core": "1.0.0-rc.12",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
+    },
     "packages/distilled-unifi-network": {
       "name": "@homeflare/distilled-unifi-network",
       "version": "0.1.0",
@@ -430,6 +443,8 @@
     "@homeflare/distilled-paperless-ngx": ["@homeflare/distilled-paperless-ngx@workspace:packages/distilled-paperless-ngx"],
 
     "@homeflare/distilled-proxmox": ["@homeflare/distilled-proxmox@workspace:packages/distilled-proxmox"],
+
+    "@homeflare/distilled-proxmox-backup": ["@homeflare/distilled-proxmox-backup@workspace:packages/distilled-proxmox-backup"],
 
     "@homeflare/distilled-unifi-network": ["@homeflare/distilled-unifi-network@workspace:packages/distilled-unifi-network"],
 
