@@ -13,3 +13,27 @@
 # alongside a new gitleaks failure on this file, re-run `gitleaks dir
 # packages/typesafe/src/gate/generated/` and update the line number below.
 packages/typesafe/src/gate/generated/gitleaks-rules-emitted.ts:aws-amazon-bedrock-api-key-short-lived:40
+
+# packages/distilled-litellm/src/services/*.ts is copied verbatim from the
+# distilled clone (see README.md, docs/distilled-interim.md) — every JSDoc
+# comment on a generated operation is the vendor's OWN OpenAPI `description`
+# text, byte-for-byte, including LiteLLM's own curl examples in their public
+# docs. Every fingerprint below is one of those examples, not a secret:
+# `sk-1234` and `your_api_key_here` are LiteLLM's own universal placeholder
+# keys (used throughout litellm.ai's own docs, e.g.
+# https://docs.litellm.ai/docs/proxy/virtual_keys), `sk-Fn8Ej39NxjAXrvpUGKghGw`
+# is a fixed illustrative example reused verbatim across two /key/info
+# operations' descriptions in the vendor's OpenAPI document, and the Slack
+# webhook is `nothooks.slack.com/services/T00000000/B00000000/XXXX…` — a
+# deliberately non-resolving placeholder domain with all-zero/X path
+# segments. Regenerating this package (copy `src/` from the distilled
+# clone again) can shift these line numbers or surface new ones from a
+# vendor doc update; re-run `gitleaks protect --staged --redact --no-banner`
+# and update the fingerprints below rather than reaching for --no-verify.
+packages/distilled-litellm/src/services/config_yaml.ts:slack-webhook-url:703
+packages/distilled-litellm/src/services/key_management.ts:generic-api-key:4030
+packages/distilled-litellm/src/services/key_management.ts:generic-api-key:4130
+packages/distilled-litellm/src/services/key_management.ts:curl-auth-header:3982
+packages/distilled-litellm/src/services/team_management.ts:curl-auth-header:3672
+packages/distilled-litellm/src/services/team_management.ts:curl-auth-header:3689
+packages/distilled-litellm/src/services/model_management.ts:curl-auth-header:4018
