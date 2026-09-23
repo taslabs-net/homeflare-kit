@@ -62,3 +62,19 @@ export const NO_WHOLESALE_400: CloudflareErrorEnvelope = errorEnvelope(
   'no applicable credentials for this request',
 );
 export const AUTH_401: CloudflareErrorEnvelope = errorEnvelope(10000, 'authentication error');
+
+/** A well-formed 200 that answered with a different version than was pinned — the case
+ *  gateway-model.ts's mismatch guard exists for (Decision 23, 2026-09-23). */
+export const MISMATCHED_MODEL_ENVELOPE: CloudflareSuccessEnvelope = {
+  success: true,
+  result: {
+    result: {
+      model: 'jev-9.9.9',
+      answers: { billing: { type: 'noul', noul: 0.5 } },
+      usage: { input_tokens: 10, output_tokens: 0 },
+    },
+    gatewayMetadata: { keySource: 'BYOK' },
+  },
+  errors: [],
+  messages: [],
+};

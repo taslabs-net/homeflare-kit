@@ -17,13 +17,23 @@
  *     not change with what was asked for. Cited rather than re-measured here — see
  *     gateway.ts's file header for why a second live call was skipped.
  *
- * ⛔ PINNING IS THEREFORE UNAVAILABLE ON THIS ROUTE. `model` is read off the SDK's
- *   request only to be dropped: never forwarded into `input` (the schema would refuse
- *   it) and never used to refuse the call (every `systemOne()` request carries a
- *   `model`, defaulted to `jev-latest` by the SDK itself — refusing on its presence
- *   would refuse every call). The version that actually answered comes back from
- *   Cloudflare in the response body and is also carried on a response header.
+ * ⛔ PINNING CANNOT BE FORWARDED ON THIS ROUTE, BUT IS ENFORCED AFTER THE FACT.
+ *   `model` is read off the SDK's request but never forwarded into `input` — the
+ *   catalog schema would refuse an extra property. Cloudflare answers with whatever
+ *   version it picks regardless of what was asked for. Decision 23 (Tim, 2026-09-23):
+ *   when the requested `model` names an explicit version (see ./gateway-model.ts) and
+ *   the answer differs, `mapResponse` below refuses the call instead of silently
+ *   returning the wrong version's answer. That refusal is enforcement after Cloudflare
+ *   has already run the model and billed for it — this route has no way to refuse
+ *   *before* the call, only after — so it is not free, only safer than answering wrong.
+ *   An alias (`jev-latest`/`jev-preview`, including every `systemOne()` call that
+ *   passes no `model` at all — the SDK defaults it to `jev-latest`) is never refused.
  */
+import {
+  GATEWAY_MODEL_HEADER,
+  isExplicitModelVersion,
+  modelMismatchRefusal,
+} from './gateway-model.ts';
 
 /** Non-secret placeholders. The real token lives only in the adapter's closure. */
 export const GATEWAY_SENTINEL_BASE_URL = 'https://typesafe-gateway.invalid';
@@ -40,10 +50,17 @@ export interface GatewayRouteOptions {
   readonly token: string;
   readonly gatewayId: string;
   readonly catalogModel: string;
+  /** Sent as `cf-aig-collect-log`. Falsy (including omitted) sends `'false'` — the
+   *  default; gateway.ts always passes it explicitly, but a direct `mapRequest` caller
+   *  (as in this file's own tests) need not. */
+  readonly collectLog?: boolean;
 }
 
 export interface GatewayRequestMapped {
   readonly request: { readonly url: string; readonly init: RequestInit };
+  /** The `model` the caller asked for — always present; the SDK defaults it. Threaded
+   *  through to `mapResponse` so it can compare against what actually answered. */
+  readonly requestedModel: string;
 }
 export interface GatewayRequestRefused {
   readonly refusal: Response;
@@ -93,14 +110,22 @@ export function mapRequest(
       return { refusal: refuse(400, `unsupported request property: ${key}`) };
     }
   }
-  // `model` (always present — the SDK defaults it to `jev-latest`) is intentionally
-  // left out of `input`: see the file header on why pinning cannot be forwarded.
+  if (typeof parsed.model !== 'string') {
+    // Defensive only: every `systemOne()` call sets `model` (defaulted by the SDK to
+    // `jev-latest`), so this never fires against the real client — it guards a caller
+    // that builds the request body some other way.
+    return { refusal: refuse(400, 'request body missing model') };
+  }
+  const requestedModel = parsed.model;
+  // Never forwarded into `input`: see the file header on why pinning cannot be
+  // forwarded, and on how a mismatch is still enforced afterwards, in mapResponse.
   const body = {
     model: route.catalogModel,
     input: { state: parsed.state, questions: parsed.questions },
   };
 
   return {
+    requestedModel,
     request: {
       url: `https://api.cloudflare.com/client/v4/accounts/${route.accountId}/ai/run`,
       init: {
@@ -110,6 +135,7 @@ export function mapRequest(
           Authorization: `Bearer ${route.token}`,
           'cf-aig-gateway-id': route.gatewayId,
           'cf-aig-no-wholesale': 'true',
+          'cf-aig-collect-log': route.collectLog ? 'true' : 'false',
           'content-type': 'application/json',
           accept: 'application/json',
         },
@@ -155,8 +181,12 @@ function pickRetryHeaders(headers: Headers): Record<string, string> {
   return out;
 }
 
-/** Map Cloudflare's response envelope onto what the SDK's `parseBody` expects. */
-export async function mapResponse(cfResponse: Response): Promise<Response> {
+/**
+ * Map Cloudflare's response envelope onto what the SDK's `parseBody` expects.
+ * `requestedModel` is `mapRequest`'s own return value for this same call — see
+ * ./gateway-model.ts for the mismatch check this performs on a 200.
+ */
+export async function mapResponse(cfResponse: Response, requestedModel: string): Promise<Response> {
   const text = await cfResponse.text();
   let envelope: CloudflareEnvelope | undefined;
   try {
@@ -169,8 +199,18 @@ export async function mapResponse(cfResponse: Response): Promise<Response> {
     const inner = envelope?.result?.result;
     if (isSystemOneResult(inner)) {
       const keySource = envelope?.result?.gatewayMetadata?.keySource;
+      const keySourceHeader = typeof keySource === 'string' ? keySource : '';
+      if (isExplicitModelVersion(requestedModel) && requestedModel !== inner.model) {
+        // Enforcement after the fact — see the file header. Cloudflare has already run
+        // and billed this call; refusing here only stops the wrong answer from being
+        // used, not the spend.
+        return modelMismatchRefusal(requestedModel, inner.model, {
+          [GATEWAY_KEY_SOURCE_HEADER]: keySourceHeader,
+        });
+      }
       return jsonResponse(200, inner, {
-        [GATEWAY_KEY_SOURCE_HEADER]: typeof keySource === 'string' ? keySource : '',
+        [GATEWAY_KEY_SOURCE_HEADER]: keySourceHeader,
+        [GATEWAY_MODEL_HEADER]: inner.model,
       });
     }
     // ⚠️ NOT 502 and NOT a throw: both land in the SDK's retry set (APIConnectionError,
