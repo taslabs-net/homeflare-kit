@@ -88,6 +88,8 @@ const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
   'distilled-unifi-network': ['effect'],
   // Fifth interim-package copy, same reasoning again.
   'distilled-proxmox-backup': ['effect'],
+  // Sixth interim-package copy, same reasoning again.
+  'distilled-opnsense': ['effect'],
 };
 
 async function manifest(name: string): Promise<Manifest> {
