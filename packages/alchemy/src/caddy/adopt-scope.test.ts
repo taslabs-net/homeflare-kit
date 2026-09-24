@@ -58,7 +58,7 @@ const applyFirstDeploy = (scope: Scope, flag: boolean) => {
       session: undefined as never,
     });
   }).pipe(
-    Effect.provide(CaddyConfigProvider().pipe(Layer.provide(caddyAdminLayer(made.admin)))),
+    Effect.provide(CaddyConfigProvider().pipe(Layer.provideMerge(caddyAdminLayer(made.admin)))),
     Effect.provideService(AdoptPolicy, flag),
     Effect.provideService(Stack, spec as never),
   );

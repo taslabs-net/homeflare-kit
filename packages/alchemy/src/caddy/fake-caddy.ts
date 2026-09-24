@@ -17,7 +17,9 @@
  * ★ `listenPort` is the port Caddy BELIEVES it listens on — its Host check uses it — while the
  *   fake really listens on an ephemeral one: a Caddy on its default :2019 behind a forward.
  */
-import type { CaddyAdmin } from './admin.ts';
+import * as Effect from 'effect/Effect';
+import type * as Caddy from '@distilled.cloud/caddy';
+import { type CaddyAdminService, type CaddyTransport, caddyAdminLayer } from './admin.ts';
 import { localCaddyAdmin } from './local-admin.ts';
 
 export type Seen = {
@@ -128,6 +130,10 @@ export const fakeCaddy = (
     }
     if (url.pathname !== '/load') return json(404, { error: 'not found' });
     const prefix = adapted.warnings.length > 0 ? JSON.stringify(adapted.warnings) : '';
+    // ⚠️ TEST-ONLY SCENARIO, no Caddy source it reproduces: a `/load` that answers 200 with no
+    //   applied change at all (not even the embedded-error 200 the ⛔ above describes) — what
+    //   config-lifecycle.ts's read-back-and-insist check exists to catch, per its own doc.
+    if (body.includes('SWALLOW_LOAD')) return new Response('', { status: 200 });
     if (body.includes('PROVISION_ERROR')) {
       const error = JSON.stringify({
         error: 'loading config: provision http: listen tcp :443: address already in use',
@@ -168,7 +174,9 @@ export const fakeCaddy = (
  *   A Caddy reached on any other port needs `admin <address>` declared, or the first load would
  *   move it (admin-guard.ts).
  */
-export const fakeDefaultCaddy = (running?: unknown): { admin: CaddyAdmin; caddy: FakeCaddy } => {
+export const fakeDefaultCaddy = (
+  running?: unknown,
+): { admin: CaddyTransport; caddy: FakeCaddy } => {
   const caddy = fakeCaddy({ listenPort: 2019, ...(running === undefined ? {} : { running }) });
   const admin = localCaddyAdmin({
     address: caddy.address,
@@ -177,3 +185,13 @@ export const fakeDefaultCaddy = (running?: unknown): { admin: CaddyAdmin; caddy:
   });
   return { admin, caddy };
 };
+
+/**
+ * Runs an Effect that needs `CaddyAdminService` and `@distilled.cloud/caddy`'s own `Credentials`/
+ * `HttpClient` against one transport — the one line every test in this directory used to spend on
+ * `Effect.provide(caddyAdminLayer(admin))` before this helper existed.
+ */
+export const runCaddy = <A, E>(
+  effect: Effect.Effect<A, E, CaddyAdminService | Caddy.CaddyOpContext>,
+  admin: CaddyTransport,
+): Promise<A> => Effect.runPromise(effect.pipe(Effect.provide(caddyAdminLayer(admin))));

@@ -7,7 +7,8 @@ import * as Output from 'alchemy/Output';
 import { Stack } from 'alchemy/Stack';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { caddyAdminLayer } from './admin.ts';
+import type * as Caddy from '@distilled.cloud/caddy';
+import { type CaddyAdminService, caddyAdminLayer } from './admin.ts';
 import { CaddyConfig, CaddyConfigProvider } from './config.ts';
 import { type FakeCaddy, fakeCaddy } from './fake-caddy.ts';
 import * as barrel from './index.ts';
@@ -30,7 +31,9 @@ const handler = <F>(name: string, fn: F | undefined): F => {
 };
 
 const withProvider = <A>(
-  use: (p: Effect.Success<typeof CaddyConfig.Provider>) => Effect.Effect<A, unknown>,
+  use: (
+    p: Effect.Success<typeof CaddyConfig.Provider>,
+  ) => Effect.Effect<A, unknown, CaddyAdminService | Caddy.CaddyOpContext>,
   address?: string,
 ) => {
   // ★ A Caddy on its default :2019 behind a forward, as in config-lifecycle.test.ts.
@@ -46,7 +49,7 @@ const withProvider = <A>(
   return Effect.runPromise(
     Effect.gen(function* () {
       return yield* use(yield* CaddyConfig.Provider);
-    }).pipe(Effect.provide(CaddyConfigProvider().pipe(Layer.provide(caddyAdminLayer(admin))))),
+    }).pipe(Effect.provide(CaddyConfigProvider().pipe(Layer.provideMerge(caddyAdminLayer(admin))))),
   );
 };
 
@@ -159,7 +162,11 @@ describe('a Caddy that is down', () => {
         }),
       closedPort(),
     );
-    await expect(applying).rejects.toThrow(/Caddy admin POST \/adapt at http:\/\/127\.0\.0\.1/);
+    // ★ Reconcile never catches `isUnreachable` (config.ts): the raw, still-typed
+    //   `HttpClientError` propagates as-is, its own `.message` naming the operation and URL.
+    await expect(applying).rejects.toThrow(
+      /Transport error \(POST http:\/\/127\.0\.0\.1.*\/adapt\)/,
+    );
   });
 
   test('a bad Caddyfile still fails the plan when Caddy IS up (only unreachability is forgiven)', async () => {
@@ -214,11 +221,9 @@ describe('caddyWithFile', () => {
 describe('the barrel', () => {
   test('exports the public API and not the internals', () => {
     expect(Object.keys(barrel).sort()).toEqual([
-      'CaddyAdminError',
       'CaddyAdminService',
       'CaddyConfig',
       'CaddyConfigProvider',
-      'CaddyUnreachableError',
       'DEFAULT_ADMIN_ADDRESS',
       // Caddyfile TEXT for an Access-protected route, not a resource — see
       // access-forward-auth.ts. It pairs with @homeflare/cloudflare/access-auth.
@@ -226,6 +231,9 @@ describe('the barrel', () => {
       'caddyAdminLayer',
       'caddyProviders',
       'caddyWithFile',
+      // The type guard config.ts's plan-time escape hatch narrows unreachable failures with —
+      // exported so a consumer's own transport (an SSH forward, a remote runner) can reuse it.
+      'isUnreachable',
       'localCaddyAdmin',
       'verifierProblems',
     ]);

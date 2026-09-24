@@ -19,14 +19,9 @@ export {
   verifierProblems,
   type AccessForwardAuthProps,
 } from './access-forward-auth.ts';
-export type {
-  CaddyAdmin,
-  CaddyAdminListener,
-  CaddyAdminRequest,
-  CaddyAdminResponse,
-} from './admin.ts';
-export { CaddyAdminService, CaddyUnreachableError, caddyAdminLayer } from './admin.ts';
-export { CaddyAdminError } from './admin-calls.ts';
+export type { CaddyAdminListener, CaddyTarget, CaddyTransport } from './admin.ts';
+export { CaddyAdminService, caddyAdminLayer } from './admin.ts';
+export { isUnreachable } from './caddy-http-client.ts';
 export type { CaddyConfigAttributes, CaddyConfigProps } from './config.ts';
 export { CaddyConfig, CaddyConfigProvider } from './config.ts';
 export type { LocalCaddyAdminOptions } from './local-admin.ts';

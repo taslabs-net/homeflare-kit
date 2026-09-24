@@ -24,7 +24,8 @@ import * as Layer from "effect/Layer";
 import type * as AST from "effect/SchemaAST";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type * as HttpClientError from "effect/unstable/http/HttpClientError";
-import type * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+// Value import, not `type`: TEXT_OPERATIONS below calls `HttpClientRequest.bodyText`.
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import * as API from "@distilled.cloud/core/api";
 import { buildRequest, mapKeys } from "@distilled.cloud/core/protocol-http";
@@ -80,12 +81,36 @@ const errorMessage = (body: unknown): string | undefined => {
 const fail = (e: unknown): Effect.Effect<never> =>
   Effect.fail(e) as Effect.Effect<never>;
 
+/**
+ * `AdaptConfig`/`LoadConfig` alone: their `config` member is Caddyfile TEXT under
+ * whatever `contentType` names (docs, "This endpoint supports different config
+ * formats using config adapters") — a shape `T.HttpBody()` has no static
+ * `bodyMediaType` for, because Caddy picks the media type at CALL time from this
+ * same request's own `Content-Type` header, not at codegen time. `buildRequest`'s
+ * generic cascade (protocol-http.ts) has no branch for that, so a `config: string`
+ * falls to its JSON-body default: `HttpClientRequest.bodyJsonUnsafe` both
+ * `JSON.stringify`s the Caddyfile text (turning `file_server` into the 13-byte
+ * quoted-and-escaped string `"file_server"`, which no adapter can parse) AND
+ * overwrites the `Content-Type` header the request already carries with
+ * `application/json` (`HttpBody.jsonUnsafe`'s own default, `HttpClientRequest`
+ * .setBody -> `updateHeaders`). MEASURED 2026-09-23 against a bare `node:http`
+ * echo server: `adaptConfig({ config: "file_server\n", contentType:
+ * "text/caddyfile" })` sent `Content-Type: application/json` and body
+ * `"file_server\n"` (JSON-quoted), not the raw bytes under `text/caddyfile`.
+ * A `config` that is an OBJECT (every `/config/*` mutation — createConfig,
+ * setConfig, …) is unaffected: those really are JSON bodies, and
+ * `bodyJsonUnsafe` is correct for them.
+ */
+const TEXT_OPERATIONS = new Set(["AdaptConfig", "LoadConfig"]);
+
 const encode = ({
   input,
   inputAst,
+  config,
 }: {
   readonly input: unknown;
   readonly inputAst: AST.AST;
+  readonly config: API.ProtocolOperationConfig;
 }) =>
   Effect.gen(function* () {
     // Two yields, not one: `Credentials`'s service type IS an effect
@@ -99,7 +124,7 @@ const encode = ({
     // `buildRequest` reads the operation's `Http()` trait off `inputAst`
     // itself (method + URI template) — nothing route-specific to add here,
     // since Caddy's admin API is a single endpoint.
-    return buildRequest({
+    const request = buildRequest({
       input: unwrapRedactedDeep(input),
       inputAst,
       baseUrl: apiBaseUrl,
@@ -111,6 +136,32 @@ const encode = ({
       // skips the Host check entirely on unix listeners.
       headers: { Host: host, Origin: `http://${host}` },
     });
+    const typed = input as {
+      readonly config?: unknown;
+      readonly contentType?: unknown;
+    } | null;
+    if (
+      config.operationName !== undefined &&
+      TEXT_OPERATIONS.has(config.operationName) &&
+      typeof typed?.config === "string"
+    ) {
+      // ⚠️ READ `contentType` FROM `input`, NOT FROM `request.headers`. By the
+      // time `buildRequest` returns, its OWN cascade already ran (there is no
+      // seam inside it to skip that) and already overwrote the header via the
+      // JSON-body branch this rebuilds — so the request's header is always
+      // `application/json` here, whatever the caller asked for. Caddy treats
+      // a missing header the same way (docs, POST /load: "omit, or
+      // application/json, for Caddy's native JSON"), so that is also this
+      // branch's own default when the caller left it unset.
+      const contentType =
+        typeof typed.contentType === "string"
+          ? typed.contentType
+          : "application/json";
+      return request.pipe(
+        HttpClientRequest.bodyText(typed.config, contentType),
+      );
+    }
+    return request;
   });
 
 const decode = ({
