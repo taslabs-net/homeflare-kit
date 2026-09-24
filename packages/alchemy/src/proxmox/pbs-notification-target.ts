@@ -24,7 +24,7 @@
  *   the consequence. Read `origin` before declaring a name you did not create.
  *
  * ★ WHAT THIS NEEDS (generated/pbs.ts source): Sys.Audit on /system/notifications to read,
- *   Sys.Modify there to write. A datastore-scoped credential reads every target as absent.
+ *   Sys.Modify there to write. A datastore-scoped credential cannot read targets; its typed refusal now fails the plan.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
