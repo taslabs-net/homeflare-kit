@@ -23,7 +23,11 @@
  *   - `ClusterNodeUnreachable` is added via an ACTUAL RFC-6902 patch —
  *     `patches/nodes/task-polling.json` — to the four `/nodes/{node}/
  *     tasks/…` operations the vendor schema itself marks `proxyto: "node"`
- *     (this package's own `src/task.ts` polls one of them). It is NOT
+ *     (a caller polling `GetNodeTaskStatus` — this package's own generated
+ *     operation — can hit any of the four; task polling itself is
+ *     provider-side, not this package's, per P13/Q3 of the 2026-09-24
+ *     walk-down: no distilled precedent for a package-level poll helper).
+ *     It is NOT
  *     global: most PVE calls are answered by the node you connected to
  *     directly and never proxy at all, so declaring a 595 possible on
  *     every operation would be a claim the schema does not support for
@@ -118,10 +122,13 @@ export class ProxmoxParseError extends Schema.TaggedError<ProxmoxParseError>()(
 ).pipe(Category.withParseError) {}
 
 /**
- * A polled task ended with an `exitstatus` other than exactly `"OK"` — see
- * `src/task.ts`. `exitstatus` carries PVE's own failure text verbatim
- * (e.g. `"job errors"`, `"OK (warnings)"` — the latter is why the compare
- * is exact-equality against `"OK"`, never a prefix/substring check).
+ * A polled task ended with an `exitstatus` other than exactly `"OK"`.
+ * `exitstatus` carries PVE's own failure text verbatim (e.g. `"job
+ * errors"`, `"OK (warnings)"` — the latter is why a caller's compare must
+ * be exact-equality against `"OK"`, never a prefix/substring check).
+ * Exported for a provider-side poll to construct: this package no longer
+ * ships its own `awaitTask` helper (removed 2026-09-24 — polling belongs
+ * in the provider, P13; no distilled precedent for a package-level poll).
  */
 export class ProxmoxTaskFailed extends Schema.TaggedError<ProxmoxTaskFailed>()(
   "ProxmoxTaskFailed",

@@ -1451,14 +1451,9 @@ export interface DeleteConfigAccessAdRequest {
 export const DeleteConfigAccessAdRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     realm: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/config/access/ad/{realm}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/config/access/ad/{realm}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteConfigAccessAdRequest",
@@ -1479,14 +1474,9 @@ export interface DeleteConfigAccessLdapRequest {
 export const DeleteConfigAccessLdapRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     realm: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/config/access/ldap/{realm}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/config/access/ldap/{realm}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteConfigAccessLdapRequest",
@@ -1507,13 +1497,12 @@ export interface DeleteConfigAccessOpenidRequest {
 export const DeleteConfigAccessOpenidRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     realm: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/config/access/openid/{realm}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -1535,14 +1524,9 @@ export interface DeleteConfigAcmeAccountRequest {
 export const DeleteConfigAcmeAccountRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     name: S.String.pipe(T.Label()),
-    force: S.optional(S.String),
+    force: S.optional(S.String.pipe(T.Query())),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/config/acme/account/{name}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/config/acme/account/{name}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteConfigAcmeAccountRequest",
@@ -1607,16 +1591,11 @@ export interface DeleteConfigDatastoreRequest {
 export const DeleteConfigDatastoreRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     name: S.String.pipe(T.Label()),
-    destroy_data: S.optional(S.String.pipe(T.Body("destroy-data"))),
-    digest: S.optional(S.String),
-    keep_job_configs: S.optional(S.String.pipe(T.Body("keep-job-configs"))),
+    destroy_data: S.optional(S.String.pipe(T.Query("destroy-data"))),
+    digest: S.optional(S.String.pipe(T.Query())),
+    keep_job_configs: S.optional(S.String.pipe(T.Query("keep-job-configs"))),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/config/datastore/{name}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/config/datastore/{name}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteConfigDatastoreRequest",
@@ -1655,13 +1634,12 @@ export interface DeleteConfigEncryptionKeyRequest {
 export const DeleteConfigEncryptionKeyRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     id: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/config/encryption-keys/{id}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -1704,13 +1682,12 @@ export const DeleteConfigMetricsInfluxdbHttpRequest = /*@__PURE__*/ S.suspend(
   () =>
     S.Struct({
       name: S.String.pipe(T.Label()),
-      digest: S.optional(S.String),
+      digest: S.optional(S.String.pipe(T.Query())),
     }).pipe(
       T.Http({
         method: "DELETE",
         uri: "/config/metrics/influxdb-http/{name}",
         code: 200,
-        contentType: "form-urlencoded",
       }),
     ),
 ).annotate({
@@ -1733,13 +1710,12 @@ export const DeleteConfigMetricsInfluxdbUdpRequest = /*@__PURE__*/ S.suspend(
   () =>
     S.Struct({
       name: S.String.pipe(T.Label()),
-      digest: S.optional(S.String),
+      digest: S.optional(S.String.pipe(T.Query())),
     }).pipe(
       T.Http({
         method: "DELETE",
         uri: "/config/metrics/influxdb-udp/{name}",
         code: 200,
-        contentType: "form-urlencoded",
       }),
     ),
 ).annotate({
@@ -1882,15 +1858,8 @@ export interface DeleteConfigPruneRequest {
 export const DeleteConfigPruneRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     id: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
-  }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/config/prune/{id}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
-  ),
+    digest: S.optional(S.String.pipe(T.Query())),
+  }).pipe(T.Http({ method: "DELETE", uri: "/config/prune/{id}", code: 200 })),
 ).annotate({
   identifier: "DeleteConfigPruneRequest",
 }) as any as S.Schema<DeleteConfigPruneRequest>;
@@ -1910,14 +1879,9 @@ export interface DeleteConfigRemoteRequest {
 export const DeleteConfigRemoteRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     name: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/config/remote/{name}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/config/remote/{name}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteConfigRemoteRequest",
@@ -1938,15 +1902,8 @@ export interface DeleteConfigS3Request {
 export const DeleteConfigS3Request = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     id: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
-  }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/config/s3/{id}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
-  ),
+    digest: S.optional(S.String.pipe(T.Query())),
+  }).pipe(T.Http({ method: "DELETE", uri: "/config/s3/{id}", code: 200 })),
 ).annotate({
   identifier: "DeleteConfigS3Request",
 }) as any as S.Schema<DeleteConfigS3Request>;
@@ -1966,15 +1923,8 @@ export interface DeleteConfigSyncRequest {
 export const DeleteConfigSyncRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     id: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
-  }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/config/sync/{id}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
-  ),
+    digest: S.optional(S.String.pipe(T.Query())),
+  }).pipe(T.Http({ method: "DELETE", uri: "/config/sync/{id}", code: 200 })),
 ).annotate({
   identifier: "DeleteConfigSyncRequest",
 }) as any as S.Schema<DeleteConfigSyncRequest>;
@@ -1994,13 +1944,12 @@ export interface DeleteConfigTapeBackupJobRequest {
 export const DeleteConfigTapeBackupJobRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     id: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/config/tape-backup-job/{id}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -2023,13 +1972,12 @@ export const DeleteConfigTapeEncryptionKeyRequest = /*@__PURE__*/ S.suspend(
   () =>
     S.Struct({
       fingerprint: S.String.pipe(T.Label()),
-      digest: S.optional(S.String),
+      digest: S.optional(S.String.pipe(T.Query())),
     }).pipe(
       T.Http({
         method: "DELETE",
         uri: "/config/tape-encryption-keys/{fingerprint}",
         code: 200,
-        contentType: "form-urlencoded",
       }),
     ),
 ).annotate({
@@ -2051,13 +1999,12 @@ export interface DeleteConfigTrafficControlRequest {
 export const DeleteConfigTrafficControlRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     name: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/config/traffic-control/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -2079,15 +2026,8 @@ export interface DeleteConfigVerifyRequest {
 export const DeleteConfigVerifyRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     id: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
-  }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/config/verify/{id}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
-  ),
+    digest: S.optional(S.String.pipe(T.Query())),
+  }).pipe(T.Http({ method: "DELETE", uri: "/config/verify/{id}", code: 200 })),
 ).annotate({
   identifier: "DeleteConfigVerifyRequest",
 }) as any as S.Schema<DeleteConfigVerifyRequest>;

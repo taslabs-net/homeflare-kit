@@ -61,15 +61,8 @@ export interface DeletePoolsRequest {
 }
 export const DeletePoolsRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    poolid: S.String,
-  }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/pools",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
-  ),
+    poolid: S.String.pipe(T.Query()),
+  }).pipe(T.Http({ method: "DELETE", uri: "/pools", code: 200 })),
 ).annotate({
   identifier: "DeletePoolsRequest",
 }) as any as S.Schema<DeletePoolsRequest>;

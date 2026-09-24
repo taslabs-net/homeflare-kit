@@ -2586,13 +2586,12 @@ export interface DeleteClusterFirewallAliasRequest {
 export const DeleteClusterFirewallAliasRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     name: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/cluster/firewall/aliases/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -2640,13 +2639,12 @@ export const DeleteClusterFirewallGroup2Request = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     group: S.String.pipe(T.Label()),
     pos: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/cluster/firewall/groups/{group}/{pos}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -2668,13 +2666,12 @@ export interface DeleteClusterFirewallIpsetRequest {
 export const DeleteClusterFirewallIpsetRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     name: S.String.pipe(T.Label()),
-    force: S.optional(S.String),
+    force: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/cluster/firewall/ipset/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -2698,13 +2695,12 @@ export const DeleteClusterFirewallIpset2Request = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     name: S.String.pipe(T.Label()),
     cidr: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/cluster/firewall/ipset/{name}/{cidr}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -2726,13 +2722,12 @@ export interface DeleteClusterFirewallRuleRequest {
 export const DeleteClusterFirewallRuleRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     pos: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/cluster/firewall/rules/{pos}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -2774,14 +2769,9 @@ export interface DeleteClusterHaResourceRequest {
 export const DeleteClusterHaResourceRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     sid: S.String.pipe(T.Label()),
-    purge: S.optional(S.String),
+    purge: S.optional(S.String.pipe(T.Query())),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/cluster/ha/resources/{sid}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/cluster/ha/resources/{sid}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteClusterHaResourceRequest",
@@ -3078,15 +3068,10 @@ export interface DeleteClusterReplicationRequest {
 export const DeleteClusterReplicationRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     id: S.String.pipe(T.Label()),
-    force: S.optional(S.String),
-    keep: S.optional(S.String),
+    force: S.optional(S.String.pipe(T.Query())),
+    keep: S.optional(S.String.pipe(T.Query())),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/cluster/replication/{id}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/cluster/replication/{id}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteClusterReplicationRequest",
@@ -3107,13 +3092,12 @@ export interface DeleteClusterSdnControllerRequest {
 export const DeleteClusterSdnControllerRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     controller: S.String.pipe(T.Label()),
-    lock_token: S.optional(S.String.pipe(T.Body("lock-token"))),
+    lock_token: S.optional(S.String.pipe(T.Query("lock-token"))),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/cluster/sdn/controllers/{controller}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -3135,14 +3119,9 @@ export interface DeleteClusterSdnDnsRequest {
 export const DeleteClusterSdnDnsRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     dns: S.String.pipe(T.Label()),
-    lock_token: S.optional(S.String.pipe(T.Body("lock-token"))),
+    lock_token: S.optional(S.String.pipe(T.Query("lock-token"))),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/cluster/sdn/dns/{dns}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/cluster/sdn/dns/{dns}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteClusterSdnDnsRequest",
@@ -3213,14 +3192,9 @@ export interface DeleteClusterSdnIpamRequest {
 export const DeleteClusterSdnIpamRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     ipam: S.String.pipe(T.Label()),
-    lock_token: S.optional(S.String.pipe(T.Body("lock-token"))),
+    lock_token: S.optional(S.String.pipe(T.Query("lock-token"))),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/cluster/sdn/ipams/{ipam}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/cluster/sdn/ipams/{ipam}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteClusterSdnIpamRequest",
@@ -3241,16 +3215,9 @@ export interface DeleteClusterSdnLockRequest {
 }
 export const DeleteClusterSdnLockRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    force: S.optional(S.String),
-    lock_token: S.optional(S.String.pipe(T.Body("lock-token"))),
-  }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/cluster/sdn/lock",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
-  ),
+    force: S.optional(S.String.pipe(T.Query())),
+    lock_token: S.optional(S.String.pipe(T.Query("lock-token"))),
+  }).pipe(T.Http({ method: "DELETE", uri: "/cluster/sdn/lock", code: 200 })),
 ).annotate({
   identifier: "DeleteClusterSdnLockRequest",
 }) as any as S.Schema<DeleteClusterSdnLockRequest>;
@@ -3270,13 +3237,12 @@ export interface DeleteClusterSdnPrefixListRequest {
 export const DeleteClusterSdnPrefixListRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     id: S.String.pipe(T.Label()),
-    lock_token: S.optional(S.String.pipe(T.Body("lock-token"))),
+    lock_token: S.optional(S.String.pipe(T.Query("lock-token"))),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/cluster/sdn/prefix-lists/{id}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -3301,13 +3267,12 @@ export const DeleteClusterSdnPrefixListEntryRequest = /*@__PURE__*/ S.suspend(
     S.Struct({
       id: S.String.pipe(T.Label()),
       url_seq: S.String.pipe(T.Label()),
-      lock_token: S.optional(S.String.pipe(T.Body("lock-token"))),
+      lock_token: S.optional(S.String.pipe(T.Query("lock-token"))),
     }).pipe(
       T.Http({
         method: "DELETE",
         uri: "/cluster/sdn/prefix-lists/{id}/entries/{url_seq}",
         code: 200,
-        contentType: "form-urlencoded",
       }),
     ),
 ).annotate({
@@ -3332,13 +3297,12 @@ export const DeleteClusterSdnRouteMapEntryEntryRequest =
     S.Struct({
       route_map_id: S.String.pipe(T.Label()),
       order: S.String.pipe(T.Label()),
-      lock_token: S.optional(S.String.pipe(T.Body("lock-token"))),
+      lock_token: S.optional(S.String.pipe(T.Query("lock-token"))),
     }).pipe(
       T.Http({
         method: "DELETE",
         uri: "/cluster/sdn/route-maps/entries/{route-map-id}/entry/{order}",
         code: 200,
-        contentType: "form-urlencoded",
       }),
     ),
   ).annotate({
@@ -3359,14 +3323,9 @@ export interface DeleteClusterSdnVnetRequest {
 export const DeleteClusterSdnVnetRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     vnet: S.String.pipe(T.Label()),
-    lock_token: S.optional(S.String.pipe(T.Body("lock-token"))),
+    lock_token: S.optional(S.String.pipe(T.Query("lock-token"))),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/cluster/sdn/vnets/{vnet}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/cluster/sdn/vnets/{vnet}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteClusterSdnVnetRequest",
@@ -3390,13 +3349,12 @@ export const DeleteClusterSdnVnetFirewallRuleRequest = /*@__PURE__*/ S.suspend(
     S.Struct({
       vnet: S.String.pipe(T.Label()),
       pos: S.String.pipe(T.Label()),
-      digest: S.optional(S.String),
+      digest: S.optional(S.String.pipe(T.Query())),
     }).pipe(
       T.Http({
         method: "DELETE",
         uri: "/cluster/sdn/vnets/{vnet}/firewall/rules/{pos}",
         code: 200,
-        contentType: "form-urlencoded",
       }),
     ),
 ).annotate({
@@ -3422,15 +3380,14 @@ export interface DeleteClusterSdnVnetIpsRequest {
 export const DeleteClusterSdnVnetIpsRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     vnet: S.String.pipe(T.Label()),
-    ip: S.String,
-    mac: S.optional(S.String),
-    zone: S.String,
+    ip: S.String.pipe(T.Query()),
+    mac: S.optional(S.String.pipe(T.Query())),
+    zone: S.String.pipe(T.Query()),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/cluster/sdn/vnets/{vnet}/ips",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -3454,13 +3411,12 @@ export const DeleteClusterSdnVnetSubnetRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     vnet: S.String.pipe(T.Label()),
     subnet: S.String.pipe(T.Label()),
-    lock_token: S.optional(S.String.pipe(T.Body("lock-token"))),
+    lock_token: S.optional(S.String.pipe(T.Query("lock-token"))),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/cluster/sdn/vnets/{vnet}/subnets/{subnet}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -3482,14 +3438,9 @@ export interface DeleteClusterSdnZoneRequest {
 export const DeleteClusterSdnZoneRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     zone: S.String.pipe(T.Label()),
-    lock_token: S.optional(S.String.pipe(T.Body("lock-token"))),
+    lock_token: S.optional(S.String.pipe(T.Query("lock-token"))),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/cluster/sdn/zones/{zone}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/cluster/sdn/zones/{zone}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteClusterSdnZoneRequest",
