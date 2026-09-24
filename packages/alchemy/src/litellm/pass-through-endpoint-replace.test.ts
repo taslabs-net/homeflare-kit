@@ -15,11 +15,11 @@
  *   caught this: it calls `h.reconcile` directly with the SAME instanceId and the OLD output, a
  *   call shape the real engine never produces for a `replace`.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import * as RemovalPolicy from 'alchemy/RemovalPolicy';
 import * as Effect from 'effect/Effect';
+import { FAKE_BASE, type FakeLitellm, startFakeLitellm } from './fake-litellm.ts';
 import { type FakeStack, fakeStack, writesOf } from './fake-stack.ts';
-import { type FakeLitellm, startFakeLitellm } from './fake-litellm.ts';
 import { LiteLLMPassThroughEndpoint } from './pass-through-endpoint.ts';
 import type { PassThroughEndpointProps } from './pass-through-form.ts';
 
@@ -29,9 +29,8 @@ let fake: FakeLitellm;
 let stack: FakeStack;
 beforeEach(() => {
   fake = startFakeLitellm({ masterKey: MASTER_KEY });
-  stack = fakeStack({ apiKey: MASTER_KEY, baseUrl: fake.url });
+  stack = fakeStack({ apiKey: MASTER_KEY, baseUrl: FAKE_BASE }, fake.fetch);
 });
-afterEach(() => fake.stop());
 
 /** ★ `RemovalPolicy.destroy()`, deliberately: under the (non-default) `retain`, `deleteFirst`'s own
  *   old-generation delete is skipped by the engine (Apply.ts's `deleteOldGenerations`), so a path

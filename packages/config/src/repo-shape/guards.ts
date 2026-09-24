@@ -37,6 +37,17 @@ export function requireIsoDate(value: string): string {
 }
 
 /**
+ * A retired file names the `@homeflare/config` release that stopped rendering it, so
+ * anyone reading `retired.ts` can find the changeset that made the call.
+ */
+export function requireSemver(value: string): string {
+  if (!/^\d+\.\d+\.\d+$/.test(value)) {
+    throw new Error(`repo-shape: retiredIn must be a released x.y.z, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+/**
  * ⛔ A MAJOR, NOT A RANGE, AND NOT A FLOAT. `actions/setup-node` takes `node-version: 24`
  *   and resolves the newest 24.x; a fractional or negative value renders YAML the action
  *   accepts and then fails to resolve, mid-job, on the runner.

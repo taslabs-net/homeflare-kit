@@ -113,9 +113,11 @@ being silently dropped by the wholesale `rules` PUT.
   see `undeclaredLiveRuleRefusal`'s own comment for the concrete scenario (forgetting
   `deletion: true` would otherwise silently drop branch-deletion protection) that made
   this the general case rather than a special one.
-- **Adding a required check that has never reported success** on the default branch's
-  current tip (checks + statuses): refused before any write. Documented limitation: this
-  checks the current tip only, not full history (repository-ruleset-octokit.ts).
+- **Adding a required check that has never reported success**: refused before any write.
+  Checked at the default branch's current tip, then (K2) up to `RECENT_MERGED_PR_LIMIT`
+  recent merged PR heads — bounded, not full history (repository-ruleset-octokit.ts). The
+  fallback exists because the rendered CI runs on `pull_request` only, so `ci`/`secret
+scan`/`CodeQL` never report on the tip itself.
 - **A readback mismatch**: after any write, an INDEPENDENT `GET` — never the write's own
   response — is compared against what was sent for the approval count, merge methods and
   the extension flag. A mismatch fails the plan.
@@ -144,5 +146,9 @@ caller, the same as upstream `GitHub.Ruleset`.
   what a create sends, zero writes on a noop or a refusal, exactly one update on real
   drift, and the readback check.
 - `repository-ruleset-wire.test.ts` — the H15 measurement against a real Octokit instance.
+- `repository-ruleset-octokit.test.ts` — the K2 measurement, same real-Octokit-with-fetch-
+  shim pattern as the wire test: a context reporting only on a recent merged PR head is
+  accepted, one reporting nowhere (tip or any recent merged head) is still refused, and
+  one reporting only past `RECENT_MERGED_PR_LIMIT` stays refused too (the bound is real).
 - `repository-ruleset-coverage.test.ts` — the rule-type coverage change detector (the
   completeness guarantee itself is enforced by `tsc`, not this file — see its header).

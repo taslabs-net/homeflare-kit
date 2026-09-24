@@ -182,8 +182,9 @@ export const newlyRequiredContexts = (
     .filter((c) => !liveContexts.has(c));
 };
 
-/** Fails on the first newly-required context that has never reported success on the default
- * branch — checked once here (reconcile's observe step) and again by the standalone checker. */
+/** Fails on the first newly-required context that has never reported success anywhere this
+ * family looks (the default branch's tip, then recent merged PR heads — K2) — checked once here
+ * (reconcile's observe step) and again by the standalone checker. */
 export const refuseUnreportedContexts = <R = never>(
   octokit: RulesetOctokit<R>,
   owner: string,

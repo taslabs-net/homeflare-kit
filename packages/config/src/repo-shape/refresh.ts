@@ -12,9 +12,17 @@
  * ⚠️ IT NEVER WRITES AN EXCEPTED FILE. Refreshing a file the repository declared it owns
  *   would overwrite the deviation the reason was written for — the one destructive thing
  *   this could do, and the one it must not.
+ *
+ * ⚠️ IT DELETES A RETIRED FILE ONLY WHEN IT CAN PROVE IT RENDERED IT. `RETIRED_FILES`
+ *   (`retired.ts`) names every path this package used to render; `wasRenderedByUs` is the
+ *   proof — the file still carries the generated-file header. A retired path present
+ *   without that header is left alone and reported as refused, on the same reasoning as
+ *   never overwriting an excepted file: this writer only ever removes what it is sure is
+ *   its own.
  */
 import { REFRESH_COMMAND, driftInRepoShape, exceptionSummary } from './drift.ts';
 import { renderRepoShape } from './render.ts';
+import { RETIRED_FILES, wasRenderedByUs } from './retired.ts';
 import { type RepoShape, isExcepted } from './shape.ts';
 import type { RenderedPath } from './shape.ts';
 
@@ -25,9 +33,13 @@ export interface RefreshResult {
   readonly unchanged: readonly string[];
   /** Paths skipped because the shape declares an exception for them. */
   readonly skipped: readonly string[];
+  /** Retired paths deleted because they still carried the generated-file header. */
+  readonly removed: readonly string[];
+  /** Retired paths left alone because they did not — provably hand-written, not ours. */
+  readonly refused: readonly string[];
 }
 
-/** Write a repository's rendered files into `projectDir`. */
+/** Write a repository's rendered files into `projectDir`, and clear its rendered fossils. */
 export async function refreshRepoShape(
   projectDir: string,
   shape: RepoShape,
@@ -52,7 +64,36 @@ export async function refreshRepoShape(
     written.push(path);
   }
 
-  return { skipped, unchanged, written };
+  const { refused, removed } = await clearRetiredFiles(projectDir);
+
+  return { refused, removed, skipped, unchanged, written };
+}
+
+/**
+ * Delete every retired path this package can prove it rendered; leave every other one, and
+ * say so. A path absent from `projectDir` is neither removed nor refused — there is
+ * nothing there to have an opinion about.
+ */
+async function clearRetiredFiles(
+  projectDir: string,
+): Promise<{ removed: string[]; refused: string[] }> {
+  const removed: string[] = [];
+  const refused: string[] = [];
+
+  for (const retiredFile of RETIRED_FILES) {
+    const target = `${projectDir}/${retiredFile.path}`;
+    const file = Bun.file(target);
+    if (!(await file.exists())) continue;
+
+    if (wasRenderedByUs(await file.text())) {
+      await file.delete();
+      removed.push(retiredFile.path);
+    } else {
+      refused.push(retiredFile.path);
+    }
+  }
+
+  return { refused, removed };
 }
 
 /**
@@ -108,6 +149,18 @@ export async function repoShapeCli(
     ...result.written.map((path) => `wrote    ${path}`),
     ...result.unchanged.map((path) => `ok       ${path}`),
     ...result.skipped.map((path) => `excepted ${path}`),
+    ...result.removed.map((path) => `removed  ${path} (retired; carried our header)`),
   ]);
+  // ★ ON ITS OWN LINE, TO STDERR: a refused retired file is the one outcome here that
+  //   still needs a person. `--check` (above) keeps failing on it — it reports any retired
+  //   path that is present, proof or not — so this is not the only place it is said, but
+  //   it is the only place that says WHY refresh did not just fix it.
+  await say(
+    Bun.stderr,
+    result.refused.map(
+      (path) =>
+        `refused  ${path} — present but not provably ours; not deleted. See docs/repo-shape-retired.md.`,
+    ),
+  );
   return 0;
 }
