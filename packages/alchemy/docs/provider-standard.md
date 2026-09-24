@@ -4,10 +4,8 @@ Status: in force. Verified 2026-09-24 against `alchemy@2.0.0-beta.79` (tag
 `v2.0.0-beta.79`, commit `473c3959`) and the distilled commit that tag pins (`c2a78002`).
 Decision 49 ("upstream wins", 2026-09-24): where upstream has a rule or clear convention, the
 house follows it exactly, neither looser nor stricter; a house rule only fills a gap upstream
-is silent on. The 2026-09-24 sweep found one rule stricter than upstream — S20 — reworded
-below. Every other rule cited on this page and in the `alchemy-provider-standard` skill was
-re-checked against the rulebook this sweep built and matches (a) or fills a genuine gap (c);
-the classification table is in the PR body that carried this change.
+is silent on. This update corrects S20 and clarifies S21 against the pinned source; it
+does not claim a new audit of every rule or family.
 
 This page is the kit-side statement of the house standard for a custom Alchemy provider.
 The full rule set is the `alchemy-provider-standard` skill in the estate's workflow plugin.
@@ -70,22 +68,25 @@ already ships is a finding, even when it works.
   CPU-only Node call (`node:crypto` `createHash`, `Buffer`) goes inside `Effect.sync`, which
   is upstream's own example. When a promise cannot be avoided, use `Effect.tryPromise`,
   never `Effect.promise`.
-- **No defects (S20).** Lifecycle operations contain no `Effect.orDie` — that is upstream's
-  own wording, literally: "Do not use `Effect.orDie` in the lifecycle operations since this
-  will crash the whole IaC engine" (`AGENTS.md@tag#628-630`). A refusal is a typed error.
-  `Effect.die` is not separately forbidden; the house no longer reads it as the same defect
-  (reverted 2026-09-24, decision 49 "upstream wins" — S20 was stricter than upstream on this
-  point, and the rule is to match upstream exactly, never looser or stricter). The one place
-  upstream's own engine tolerates a defect at all is the **recovery read** it issues for an
-  interrupted create: that call alone is wrapped in `Effect.catchDefect`, degrading any
-  defect there to "nothing recovered" rather than crashing the plan (`Plan.ts@tag#1447`,
-  `Apply.ts@tag#2218`). Every other invocation of `read`, `diff`, `reconcile`, `delete` and
-  `list` has no such wrapper (`Plan.ts@tag#1303-1315`: the engine calls `read` with no catch),
-  so a defect anywhere else still crashes the plan. A house `die` kept in a read-path defect
-  cites this exact narrow exception, per site, in `upstream-conformance.md`.
-- **Typed errors (S21, S22).** Handle errors with `Effect.catchTag` over the SDK's union.
-  Where the kit generates its own client from a vendor schema, the status-to-tag mapping
-  lives in that client, once, and never in a resource.
+- **Lifecycle errors (S20).** Upstream's rule is: "Do not use `Effect.orDie` in the
+  lifecycle operations since this will crash the whole IaC engine."
+  Cite: `AGENTS.md@v2.0.0-beta.79#L630`. It names `Effect.orDie` in lifecycle operations;
+  S20 adds no separate ban on `Effect.die` or on code outside those operations.
+  `Effect.die` still creates a defect. The engine's narrow recovery exception is the
+  best-effort read for an interrupted create: `Effect.catchDefect` degrades a crashed
+  recovery read to nothing recovered (`packages/alchemy/src/Plan.ts@tag#L1447`,
+  `packages/alchemy/src/Apply.ts@tag#L2218`). Ordinary lifecycle calls have no such
+  recovery wrapper (`Plan.ts@tag#L1303-L1315`); this is not a general safe-defect path.
+  Expected refusals stay typed errors.
+- **Typed errors (S21, S22).** Handle errors with `Effect.catchTag` over the SDK's union;
+  other typed SDK errors can propagate unchanged, as upstream's R2 `BucketSippy` does.
+  The resource-specific-tag patch rule applies to errors **outside** that typed union
+  (`AGENTS.md@tag#L733-L738`). Where a package's protocol includes status classes in
+  its union (argocd, hetzner, fly-io and neon at distilled `c2a78002`), catch those tags
+  directly: upstream `Hetzner/Certificate.ts@tag#L251,L288-L291` catches `NotFound`
+  for absent reads and successful deletes. No replacement tag is needed for an already
+  typed `NotFound`. Where the kit generates its own client from a vendor schema, the
+  status-to-tag mapping lives in that client, once, and never in a resource.
 - **Credentials (S24).** Credentials come from an `alchemy/Auth` provider and a lazy
   Credentials service. Short-lived credentials are minted per call, never reused, and never
   taken as props.

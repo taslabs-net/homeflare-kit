@@ -40,16 +40,15 @@ which skips generated code — `noCheck: true`), `pnpm format`,
 anywhere; no forks, no PRs, no issues or comments on `alchemy-run/distilled`
 from this route.**
 
-⚠️ **A vendor with no machine-readable spec at all still gets a `SPEC_REPOS`
-entry** (`stacks/distilled-submodules/SpecRepos.ts`) — with `blocked` and a
-reason, not a mirror with nothing to fetch. Upstream's own precedent is Slack
-(`blocked: "docs.slack.dev method JSON twins are committed in-repo"`,
-`SpecRepos.ts:31-35,114`). Caddy follows it (Q7, decision 49, 2026-09-24):
-its admin API has no OpenAPI/Smithy/GraphQL/discovery document anywhere
-(confirmed against `caddyserver/caddy`'s Go source and `caddyserver/website`
-— see the caddy worktree's `packages/caddy/docs/provenance.md`), so its
-model is hand-authored instead, and `specs:check` still passes (81 mirrors
-coherent) with the `blocked` entry in place.
+⚠️ **A vendor with no machine-readable spec still gets a `SPEC_REPOS` entry**
+(`stacks/distilled-submodules/SpecRepos.ts`) with `blocked` and a reason. Upstream's
+Slack entry is the precedent. A blocked entry still declares the mirror repository,
+but skips fetch scaffolding; it does not pretend there is a spec to fetch.
+Caddy follows it (Q7, decision 49, 2026-09-24): the local `homeflare/caddy` worktree's
+`packages/caddy/docs/provenance.md` records the admin-API spec search against Caddy
+2.11.4's Go source and website. Its admin-operation model is hand-authored, and its
+`SpecRepos.ts` entry records that reason. The separately discovered config-tree
+metadata is not an admin-operation specification.
 
 ### 2. Copy into a kit workspace package
 
