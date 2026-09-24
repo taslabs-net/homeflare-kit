@@ -29,15 +29,31 @@ Two environment variables, read **at call time**, never props — the SDK's own
 
 ⛔ **Neither has a default**, and neither is ever logged, committed or persisted in state.
 
-⛔ **The Console ID never appears in code, tests, fixtures, commits or a PR.** A cloud connector's
-base URL has the shape `https://api.ui.com/v1/connector/consoles/<consoleId>/proxy/network/integration`
-— `<consoleId>` is an account identifier. Treat any UniFi base URL as sensitive; this package's
-tests use only the RFC 2606 placeholder `https://unifi.example.com`.
+⛔ **No console identifier, endpoint host or other live value ever appears in code, tests,
+fixtures, commits or a PR.** The base URL shape depends on how the console is reached: a cloud
+connector's is `https://api.ui.com/v1/connector/consoles/<consoleId>/proxy/network/integration`
+(`<consoleId>` is an account identifier); a local console is reached directly,
+`<endpoint>/proxy/network/integration`, where `<endpoint>` is a hostname behind a TLS certificate
+the caller trusts. Treat any UniFi base URL as sensitive; this package's tests use only the RFC
+2606 placeholder `https://unifi.example.com`.
 
-⚠️ **Auth is unverified against a live console.** The OpenAPI document declares no
+The estate's own credential lives in OpenBao at `kv/infra/unifi/api` — fields `api_key`,
+`connector_id`, `console`, `endpoint`, `site`, `transport` (`transport=local`: this console is
+reached directly, not through the cloud connector). A separate `kv/infra/unifi/site-manager`
+token is the _cloud_ Site Manager API credential, a different door (below) this family never
+reads.
+
+✅ **Auth was measured live, read-only, on 2026-09-24.** The OpenAPI document declares no
 `securitySchemes` at all — `X-API-KEY` comes from Ubiquiti's own Integration API guide, not the
-machine-readable spec (`@distilled.cloud/unifi-network/src/credentials.ts`'s own header). Nothing
-in this PR changes that SDK layer or exercises it live.
+machine-readable spec (`@distilled.cloud/unifi-network/src/credentials.ts`'s own header) — but a
+hand-run, read-only probe confirmed it works against the estate's local console: `X-API-KEY`
+returns HTTP 200 on both `GET /v1/info` (key: `applicationVersion`) and `GET /v1/sites` (keys:
+`count`, `data`, `limit`, `offset`, `totalCount`). The _same_ key against the `api.ui.com` cloud
+connector returns 401 — the wrong door for a key minted on a local console, not evidence the
+cloud shape rejects `X-API-KEY` outright; `kv/infra/unifi/site-manager` is the separate cloud
+credential, untouched by this family. Only reads were probed, by hand, outside this package's own
+test suite — nothing in this PR's code exercises the vendor API live, and a write path would still
+need its own verification.
 
 ## Adopt is the default posture, and it never writes
 

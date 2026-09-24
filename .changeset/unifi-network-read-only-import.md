@@ -28,3 +28,16 @@ a device statistic or a hotspot voucher) and a simple, non-discriminated wire sh
 (list-only, no `getSite`) and `Unifi.FirewallPolicy` (several converter-flattened
 discriminator variants, and an ordering endpoint that replaces the whole rule list) are
 deliberately out of scope for this PR — see `docs/unifi.md`.
+
+`Unifi.Network`'s `matches` now normalizes the three fields the vendor document never says are
+ordered — `dhcpGuarding.trustedDhcpServerIpAddresses`, `ipv6Configuration.additionalHostIpSubnets`,
+`ipv6Configuration.dnsServerIpAddressesOverride` — before comparing, the same `sortedSet`
+(dedupe + sort) fix `Unifi.FirewallZone` already applied to `networkIds`: alchemy's `deepEqual`
+sorts object keys but not array elements, so an unchanged network whose console answered the same
+set in a different order would otherwise plan a spurious `update` that the read-only reconcile
+then refuses.
+
+Auth was measured live, read-only, on 2026-09-24: `X-API-KEY` against the estate's local console
+returns HTTP 200 on `GET /v1/info` and `GET /v1/sites`; the same key against the `api.ui.com`
+cloud connector returns 401 (the wrong door, not a broken header) — see `docs/unifi.md`'s
+"Credentials" section. This PR's own code still never calls the vendor API live.

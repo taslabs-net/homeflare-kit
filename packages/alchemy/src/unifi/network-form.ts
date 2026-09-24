@@ -14,9 +14,62 @@
  *   discriminator this field varies over was flattened at generation time, not decoded per
  *   variant. Comparing it as an opaque JSON value (below) is honest about that; guessing a
  *   narrower shape here would silently stop matching the day a new variant's key order differs.
+ *   ⚠️ It may ALSO hide an unordered array the way `dhcpGuarding` and `ipv6Configuration` do
+ *   below — this family just can't know, because the shape is never decoded. If a future variant
+ *   plans spurious `update`s, suspect this field first and widen it into a typed, order-normalized
+ *   shape rather than adding another opaque comparison.
+ *
+ * ⛔ THREE FIELDS ARE SETS, NOT SEQUENCES: `dhcpGuarding.trustedDhcpServerIpAddresses`,
+ *   `ipv6Configuration.additionalHostIpSubnets`, and `ipv6Configuration.dnsServerIpAddressesOverride`.
+ *   The vendor document gives no indication any of the three is ordered — same reasoning
+ *   `firewall-zone-form.ts` gives for `networkIds`, and `proxmox/user-wire.ts`'s `groupSet` gives
+ *   for PVE's `groups` — but `matches` compares via alchemy's `deepEqual`, which sorts object KEYS
+ *   but NOT ARRAY ELEMENTS (`node_modules/alchemy/lib/Diff.js`). Left alone, a console that
+ *   returns the same set in a different order between calls plans a spurious `update`, and the
+ *   read-only reconcile then refuses every deploy. `sortedSet` (dedupe + sort) neutralizes that
+ *   before any of the three is attributed, declared, or compared. Every OTHER array field in this
+ *   family (there are none today besides these three) would stay declaration-order as written.
  */
 import { deepEqual } from 'alchemy/Diff';
 import type * as networks from '@distilled.cloud/unifi-network/networks';
+
+const sortedSet = (values: readonly string[]): string[] => [...new Set(values)].sort();
+
+// ⚠️ `value == null` (NOT `=== undefined`) ON PURPOSE, IN BOTH NORMALIZERS BELOW. The SDK types
+//   `dhcpGuarding`/`ipv6Configuration` `T | undefined`, but `matches`'s own header says UniFi's
+//   JSON answers `null` for an unset optional field — a reality `deepEqual`'s `stripNullish`
+//   already treats as equivalent to `undefined` (`value == null` in alchemy's `Diff.js`), which
+//   this family's props/attributes types don't model at the TS level. Destructuring a `null` with
+//   `=== undefined`'s false branch (`{ ...value, field: value.field }`) would throw
+//   `TypeError: Cannot read properties of null` the first time a console omits either field —
+//   `== null` catches both and returns the value through untouched, matching what the rest of
+//   this file already does for every other optional field.
+const normalizeDhcpGuarding = (
+  value: networks.NetworkDHCPGuarding | undefined,
+): networks.NetworkDHCPGuarding | undefined =>
+  value == null
+    ? value
+    : { ...value, trustedDhcpServerIpAddresses: sortedSet(value.trustedDhcpServerIpAddresses) };
+
+// ⚠️ `exactOptionalPropertyTypes` (see the props header) means these two subfields must be
+//   OMITTED, not set to an explicit `undefined`, when the live/declared value has no override —
+//   `NetworkIPv6Configuration` types them `field?: T`, not `field?: T | undefined`. Conditional
+//   spread (rather than `field: value.field === undefined ? undefined : sortedSet(...)`) is what
+//   keeps an absent key absent.
+const normalizeIpv6Configuration = (
+  value: networks.NetworkIPv6Configuration | undefined,
+): networks.NetworkIPv6Configuration | undefined =>
+  value == null
+    ? value
+    : {
+        ...value,
+        ...(value.additionalHostIpSubnets !== undefined
+          ? { additionalHostIpSubnets: sortedSet(value.additionalHostIpSubnets) }
+          : {}),
+        ...(value.dnsServerIpAddressesOverride !== undefined
+          ? { dnsServerIpAddressesOverride: sortedSet(value.dnsServerIpAddressesOverride) }
+          : {}),
+      };
 
 /**
  * ⚠️ EVERY OPTIONAL FIELD SPELLS OUT `| undefined` ON PURPOSE. `tsconfig.json` sets
@@ -77,11 +130,11 @@ export const attributesOf = (
   enabled: live.enabled,
   management: live.management,
   vlanId: live.vlanId,
-  dhcpGuarding: live.dhcpGuarding,
+  dhcpGuarding: normalizeDhcpGuarding(live.dhcpGuarding),
   cellularBackupEnabled: live.cellularBackupEnabled,
   internetAccessEnabled: live.internetAccessEnabled,
   ipv4Configuration: live.ipv4Configuration,
-  ipv6Configuration: live.ipv6Configuration,
+  ipv6Configuration: normalizeIpv6Configuration(live.ipv6Configuration),
   isolationEnabled: live.isolationEnabled,
   mdnsForwardingEnabled: live.mdnsForwardingEnabled,
   zoneId: live.zoneId,
@@ -101,7 +154,13 @@ export const matches = (attributes: NetworkAttributes, props: NetworkProps): boo
   attributes.enabled === props.enabled &&
   attributes.management === props.management &&
   attributes.vlanId === props.vlanId &&
-  deepEqual(attributes.dhcpGuarding, props.dhcpGuarding, { stripNullish: true }) &&
+  deepEqual(
+    normalizeDhcpGuarding(attributes.dhcpGuarding),
+    normalizeDhcpGuarding(props.dhcpGuarding),
+    {
+      stripNullish: true,
+    },
+  ) &&
   deepEqual(attributes.cellularBackupEnabled, props.cellularBackupEnabled, {
     stripNullish: true,
   }) &&
@@ -109,7 +168,11 @@ export const matches = (attributes: NetworkAttributes, props: NetworkProps): boo
     stripNullish: true,
   }) &&
   deepEqual(attributes.ipv4Configuration, props.ipv4Configuration, { stripNullish: true }) &&
-  deepEqual(attributes.ipv6Configuration, props.ipv6Configuration, { stripNullish: true }) &&
+  deepEqual(
+    normalizeIpv6Configuration(attributes.ipv6Configuration),
+    normalizeIpv6Configuration(props.ipv6Configuration),
+    { stripNullish: true },
+  ) &&
   deepEqual(attributes.isolationEnabled, props.isolationEnabled, { stripNullish: true }) &&
   deepEqual(attributes.mdnsForwardingEnabled, props.mdnsForwardingEnabled, {
     stripNullish: true,
@@ -132,11 +195,11 @@ export const declareNetwork = (live: networks.NetworkDetails, siteId: string): N
   enabled: live.enabled,
   management: live.management,
   vlanId: live.vlanId,
-  dhcpGuarding: live.dhcpGuarding,
+  dhcpGuarding: normalizeDhcpGuarding(live.dhcpGuarding),
   cellularBackupEnabled: live.cellularBackupEnabled,
   internetAccessEnabled: live.internetAccessEnabled,
   ipv4Configuration: live.ipv4Configuration,
-  ipv6Configuration: live.ipv6Configuration,
+  ipv6Configuration: normalizeIpv6Configuration(live.ipv6Configuration),
   isolationEnabled: live.isolationEnabled,
   mdnsForwardingEnabled: live.mdnsForwardingEnabled,
   zoneId: live.zoneId,
