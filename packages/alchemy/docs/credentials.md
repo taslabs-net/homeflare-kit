@@ -37,3 +37,11 @@ resolves credentials through the SDK's own `CredentialsFromEnv`, reading `PAPERL
 NetBox) is built by the package's protocol layer. Baked directly into each of the four
 `xxxProvider()`s (`paperlessProviders()` no longer takes a credentials-layer override — see the
 migration's changeset), the same way the Forgejo and NetBox subpaths above do.
+
+The LiteLLM subpath (2026-09-24, moved onto `@distilled.cloud/litellm` — see
+[distilled-interim.md](./distilled-interim.md)) resolves credentials the same way, through the
+SDK's own `CredentialsFromEnv` layer, which reads `LITELLM_PROXY_URL` / `LITELLM_PROXY_API_KEY` —
+the same two variable names the retired hand-rolled `credentials.ts` read (LiteLLM's own `litellm`
+CLI client's variable names, not a house choice), still resolved on the calling fiber per request,
+never captured at module scope. `Authorization: Bearer <value>` is built by the package's protocol
+layer, not by this package. ⛔ The key is never a prop, for the same reason as above.
