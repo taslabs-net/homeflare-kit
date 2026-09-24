@@ -40,7 +40,11 @@ export const extractMembers = async (
   //   a peak RSS of 1116 MB for vmalert alone under bun 1.4.0. `pull` hands over the next slice only
   //   when the stream asks, so backpressure bounds what is inflated ahead of the tar reader.
   let offset = 0;
-  const source = new ReadableStream<Uint8Array>({
+  // ★ The writable side of DecompressionStream accepts BufferSource (ArrayBuffer or a
+  //   view). pipeThrough is invariant there, so a Uint8Array source is rejected even
+  //   though every slice enqueued is one. Measured as TS2345 under TypeScript 7. No
+  //   zlib package: Bun and Node both ship this stream.
+  const source = new ReadableStream<ArrayBufferView | ArrayBuffer>({
     pull(controller) {
       if (offset >= gzipped.length) {
         controller.close();

@@ -3,9 +3,11 @@
  *
  * ⚠️ NOTHING IS ADOPTED WITHOUT `--adopt`: a directory already at the path reads as `Unowned`, and
  *   where the plan never asked, reconcile honours the same flag (docs/ownership.md).
- * ★ IT IS NOT LINUX-ONLY. `mkdir`, `chmod`, `chown` and `rmdir` are the same argv on macOS, so this
- *   resource works through any HostRunner; it lives in the linux subpath because the gap it closes
- *   was found there (a first deploy into a new tree, which every file resource refuses to create).
+ * ★ IT IS NOT LINUX-ONLY. It lives in the linux subpath because the gap it closes was found
+ *   there (a first deploy into a new tree, which every file resource refuses to create).
+ * ⚠️ mkdir AND rmdir TAKE `--` ON macOS. chmod AND chown DO NOT: measured 2026-09-24,
+ *   `/bin/chmod` and `/usr/sbin/chown` treat `--` as a filename and exit 1. The lifecycle
+ *   omits that token for those two on Darwin.
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
