@@ -6,7 +6,7 @@
  * ★ THE POINT OF THIS FILE IS THE TAGGED-ERROR PATHS, per the transport swap onto
  *   `@distilled.cloud/cloudflare/r2`: `NoSuchBucket` is matched by Cloudflare's own error code
  *   (10006), never by HTTP status, and only `readLock`/`deleteLock` treat it as "nothing to do" —
- *   `reconcileLock` still fails on it, but as a typed `R2BucketLockRefusal`, not the `Effect.orDie`
+ *   `reconcileLock` still fails on it, but as a typed SDK error, not the `Effect.orDie`
  *   defect this family used to raise (WI-7, decision 49 "upstream wins", 2026-09-24).
  */
 import * as Retry from '@distilled.cloud/cloudflare/Retry';
@@ -24,7 +24,6 @@ import {
 } from './fake-r2-lock.ts';
 import type { R2LockRule } from './lock-rules.ts';
 import { type R2BucketLockProps, deleteLock, readLock, reconcileLock } from './r2-bucket-lock.ts';
-import type { R2BucketLockRefusal } from './r2-bucket-lock-errors.ts';
 
 const run = <A, E>(fake: FakeR2Lock, effect: Effect.Effect<A, E, CloudflareOpContext>) =>
   Effect.runPromise(effect.pipe(Effect.provide(fakeR2LockLayer(fake))));
@@ -35,10 +34,8 @@ const run = <A, E>(fake: FakeR2Lock, effect: Effect.Effect<A, E, CloudflareOpCon
  * backoff (`applyRetry`'s `makeDefault` in `@distilled.cloud/core/api.ts`) — the house's own
  * speed doctrine (S26, `testing-speed-doctrine`) never lets a test wait on a real retry schedule.
  */
-const refused = <A>(
-  fake: FakeR2Lock,
-  effect: Effect.Effect<A, R2BucketLockRefusal, CloudflareOpContext>,
-) => Effect.runPromise(Effect.flip(effect).pipe(Retry.none, Effect.provide(fakeR2LockLayer(fake))));
+const refused = <A, E>(fake: FakeR2Lock, effect: Effect.Effect<A, E, CloudflareOpContext>) =>
+  Effect.runPromise(Effect.flip(effect).pipe(Retry.none, Effect.provide(fakeR2LockLayer(fake))));
 
 const rule: R2LockRule = {
   id: 'keep-30d',
@@ -92,12 +89,10 @@ describe('readLock', () => {
   test('a different tagged error at 404 is NOT swallowed as NoSuchBucket', async () => {
     // ⛔ code 7003 is `InvalidRoute`, not `NoSuchBucket` — even at the same 404 status a plain
     //   status check would have treated as "no bucket". `catchTag('NoSuchBucket', …)` leaves it
-    //   alone, and it now surfaces as a typed `R2BucketLockRefusal`, never an `Effect.orDie` defect.
+    //   alone, and it now surfaces as a typed SDK error, never an `Effect.orDie` defect.
     const fake = fakeR2Lock({ onRoute: () => fakeFailure(404, 7003, 'Invalid route') });
     const refusal = await refused(fake, readLock(props(), false));
-    expect(refusal._tag).toBe('R2BucketLockRefusal');
-    expect(refusal.operation).toBe('read');
-    expect((refusal.cause as { _tag?: string })._tag).toBe('InvalidRoute');
+    expect(refusal._tag).toBe('InvalidRoute');
   });
 
   test('a rate-limited read surfaces as a typed refusal, not a crash', async () => {
@@ -105,8 +100,7 @@ describe('readLock', () => {
     //   "Throttling"), one of the `CloudflareOpError` members this resource does not special-case.
     const fake = fakeR2Lock({ onRoute: () => fakeFailure(429, 0, 'rate limited') });
     const refusal = await refused(fake, readLock(props(), false));
-    expect(refusal._tag).toBe('R2BucketLockRefusal');
-    expect((refusal.cause as { _tag?: string })._tag).toBe('TooManyRequests');
+    expect(refusal._tag).toBe('TooManyRequests');
   });
 });
 
@@ -130,9 +124,7 @@ describe('reconcileLock', () => {
   test('NoSuchBucket is NOT caught here: a genuinely missing bucket is a typed refusal', async () => {
     const fake = fakeR2Lock();
     const refusal = await refused(fake, reconcileLock(props(), undefined));
-    expect(refusal._tag).toBe('R2BucketLockRefusal');
-    expect(refusal.operation).toBe('reconcile');
-    expect((refusal.cause as { _tag?: string })._tag).toBe('NoSuchBucket');
+    expect(refusal._tag).toBe('NoSuchBucket');
   });
 });
 
@@ -158,6 +150,18 @@ describe('deleteLock', () => {
     expect(writes(fake)).toEqual(['PUT']);
   });
 
+  test('delete does not swallow InvalidRoute at 404', async () => {
+    const fake = fakeR2Lock({ onRoute: () => fakeFailure(404, 7003, 'Invalid route') });
+    const refusal = await refused(
+      fake,
+      deleteLock(
+        { bucketName: 'my-backups', jurisdiction: 'default', rules: [rule] },
+        FAKE_ACCOUNT,
+      ),
+    );
+    expect(refusal._tag).toBe('InvalidRoute');
+  });
+
   test('a rate-limited delete surfaces as a typed refusal, not a crash', async () => {
     const setup = fakeR2Lock({ existingBuckets: ['my-backups'] });
     const output = await run(setup, reconcileLock(props(), undefined));
@@ -166,8 +170,6 @@ describe('deleteLock', () => {
       onRoute: () => fakeFailure(429, 0, 'rate limited'),
     });
     const refusal = await refused(limited, deleteLock(output, FAKE_ACCOUNT));
-    expect(refusal._tag).toBe('R2BucketLockRefusal');
-    expect(refusal.operation).toBe('delete');
-    expect((refusal.cause as { _tag?: string })._tag).toBe('TooManyRequests');
+    expect(refusal._tag).toBe('TooManyRequests');
   });
 });

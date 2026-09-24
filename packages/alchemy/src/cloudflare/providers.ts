@@ -21,8 +21,7 @@ import * as Cloudflare from 'alchemy/Cloudflare';
 import * as Provider from 'alchemy/Provider';
 import * as Layer from 'effect/Layer';
 import { MeshNode, MeshNodeProvider } from './mesh-node.ts';
-import { R2BucketLockProvider } from './r2-bucket-lock-provider.ts';
-import { R2BucketLock } from './r2-bucket-lock.ts';
+import { R2BucketLock, R2BucketLockProvider } from './r2-bucket-lock.ts';
 
 export class Providers extends Provider.ProviderCollection<Providers>()('HomeflareCloudflare') {}
 
