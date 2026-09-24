@@ -235,4 +235,11 @@ jobs:
           SOURCE: homeflare-kit@${{ github.sha }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          gh workflow run kit-bump.yml -R taslabs-net/homeflare-bumper -f packages="$PACKAGES" -f source="$SOURCE"
+          # ⚠️ --ref IS REQUIRED, NOT COSMETIC. Without it, gh asks GraphQL for the repo's
+          #   default branch (repository.defaultBranchRef) — a read this App token does not
+          #   have (only actions:write, metadata:read) — and the dispatch fails: "Resource
+          #   not accessible by integration". Measured 2026-09-23, run 35952899162.
+          #   Assumes homeflare-bumper's default branch is `main` (true as of 2026-09-23,
+          #   verified via `gh api repos/taslabs-net/homeflare-bumper`) — update this ref if
+          #   that repo's default branch ever changes.
+          gh workflow run kit-bump.yml -R taslabs-net/homeflare-bumper --ref main -f packages="$PACKAGES" -f source="$SOURCE"
