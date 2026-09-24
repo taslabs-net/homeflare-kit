@@ -52,7 +52,7 @@ are historical inventories, not a current census or permission to skip migration
 
 Complete vendor coverage additionally requires a census of families not yet modeled
 as resources. The 23 migrated families above are a transport milestone, not that
-larger completion claim. No upstream repository was modified or published to.
+larger completion claim. No upstream push or pull request was made.
 
 Existing NodeNetwork and ZfsPool adoption/reconcile reads still contain broad failure
 folds. Their strict diff reads do not remove that separate conformance gap. CephFs
