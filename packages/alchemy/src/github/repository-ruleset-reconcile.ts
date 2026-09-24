@@ -21,6 +21,11 @@ import {
   undeclaredLiveRuleRefusal,
 } from './repository-ruleset-guards.ts';
 import {
+  bypassNarrowingRefusal,
+  isNarrowingAcknowledged,
+  ruleNarrowingRefusal,
+} from './repository-ruleset-narrowing-guards.ts';
+import {
   type RulesetOctokit,
   type RulesetRecord,
   probeByName,
@@ -104,6 +109,8 @@ export const reconcileRuleset = <R = never>(input: {
       observed = yield* probeByName(octokit, { owner, repo, name: news.name, target });
     }
 
+    const acknowledged = isNarrowingAcknowledged(news);
+
     const bypassRefusal =
       news.bypassActors === undefined
         ? undefined
@@ -116,6 +123,19 @@ export const reconcileRuleset = <R = never>(input: {
           });
     if (bypassRefusal !== undefined) return yield* Effect.fail(bypassRefusal);
 
+    const bypassNarrowRefusal =
+      news.bypassActors === undefined
+        ? undefined
+        : bypassNarrowingRefusal({
+            owner,
+            repository: repo,
+            name: news.name,
+            declared: news.bypassActors,
+            live: observed,
+            acknowledged,
+          });
+    if (bypassNarrowRefusal !== undefined) return yield* Effect.fail(bypassNarrowRefusal);
+
     const ruleRefusal = undeclaredLiveRuleRefusal({
       owner,
       repository: repo,
@@ -124,6 +144,16 @@ export const reconcileRuleset = <R = never>(input: {
       declaredTypes: declaredRuleTypes(news.rules),
     });
     if (ruleRefusal !== undefined) return yield* Effect.fail(ruleRefusal);
+
+    const ruleNarrowRefusal = ruleNarrowingRefusal({
+      owner,
+      repository: repo,
+      name: news.name,
+      declared: news.rules,
+      live: observed,
+      acknowledged,
+    });
+    if (ruleNarrowRefusal !== undefined) return yield* Effect.fail(ruleNarrowRefusal);
 
     const checksRefusal = requiredChecksOmissionRefusal({
       owner,

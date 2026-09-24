@@ -42,7 +42,7 @@
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
-import type { GitHubCredentials, RulesetProps } from 'alchemy/GitHub';
+import type { GitHubCredentials } from 'alchemy/GitHub';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import {
@@ -52,46 +52,16 @@ import {
 import { RulesetConstraintRefused } from './repository-ruleset-errors.ts';
 import { makeRulesetOctokit } from './repository-ruleset-octokit.ts';
 import { type RulesetRecord, probeByName } from './repository-ruleset-probe.ts';
+import type { RepositoryRulesetProps } from './repository-ruleset-props.ts';
 import { reconcileRuleset } from './repository-ruleset-reconcile.ts';
 
-type UpstreamRules = NonNullable<RulesetProps['rules']>;
-
-export interface RepositoryRulesetReviewerRule {
-  readonly filePatterns: readonly string[];
-  readonly minimumApprovals: number;
-  readonly reviewer: { readonly actorId: number; readonly actorType: 'Team' };
-}
-
-export interface RepositoryRulesetPullRequestRule extends NonNullable<
-  UpstreamRules['pullRequest']
-> {
-  /** @default every method GitHub allows — the house baseline always pins `['squash']`. */
-  readonly allowedMergeMethods?: readonly ('merge' | 'squash' | 'rebase')[];
-  readonly requiredReviewers?: readonly RepositoryRulesetReviewerRule[];
-  /** `require_extra_approval_for_unattributed_changes` — see H15 above. Only `false` is
-   * modeled: sending `true` has no house use, and GitHub already defaults absent to `true`. */
-  readonly extraApprovalForUnattributedChanges?: false;
-}
-
-export interface RepositoryRulesetStatusChecksRule extends NonNullable<
-  UpstreamRules['requiredStatusChecks']
-> {
-  readonly doNotEnforceOnCreate?: boolean;
-}
-
-export interface RepositoryRulesetRules extends Omit<
-  UpstreamRules,
-  'pullRequest' | 'requiredStatusChecks'
-> {
-  readonly pullRequest?: RepositoryRulesetPullRequestRule;
-  /** `undefined`: no opinion (refused if the live ruleset already has one — see
-   * repository-ruleset-guards.ts). `false`: declare its ABSENCE — removes a live one. */
-  readonly requiredStatusChecks?: RepositoryRulesetStatusChecksRule | false;
-}
-
-export interface RepositoryRulesetProps extends Omit<RulesetProps, 'rules'> {
-  readonly rules?: RepositoryRulesetRules;
-}
+export type {
+  RepositoryRulesetProps,
+  RepositoryRulesetPullRequestRule,
+  RepositoryRulesetReviewerRule,
+  RepositoryRulesetRules,
+  RepositoryRulesetStatusChecksRule,
+} from './repository-ruleset-props.ts';
 
 export interface RepositoryRulesetAttributes {
   readonly rulesetId: number;
@@ -124,7 +94,11 @@ export const attrsOf = (r: RulesetRecord): RepositoryRulesetAttributes => ({
 /** Plan-time-only refusals — no live data needed, so these run before any read (schema-codegen's
  * rule: check the form before the "no previous state" branch, never after it). */
 function constraintRefusal(props: RepositoryRulesetProps): RulesetConstraintRefused | undefined {
-  const approvals = props.rules?.pullRequest?.requiredApprovingReviewCount;
+  // `=== false` narrows `pullRequest` out of the `| false` half added for exact-adopt
+  // pass-through (see `RepositoryRulesetRules` above) — a declared absence has no fields to
+  // constrain.
+  const pr = props.rules?.pullRequest === false ? undefined : props.rules?.pullRequest;
+  const approvals = pr?.requiredApprovingReviewCount;
   if (approvals !== undefined) {
     const reason = approvalCountRefusal(approvals);
     if (reason !== undefined) {
@@ -134,7 +108,7 @@ function constraintRefusal(props: RepositoryRulesetProps): RulesetConstraintRefu
       });
     }
   }
-  const methods = props.rules?.pullRequest?.allowedMergeMethods;
+  const methods = pr?.allowedMergeMethods;
   if (methods !== undefined) {
     const reason = allowedMergeMethodsRefusal(methods);
     if (reason !== undefined) {
@@ -144,6 +118,17 @@ function constraintRefusal(props: RepositoryRulesetProps): RulesetConstraintRefu
       });
     }
   }
+  // ⚠️ NO SEPARATE PLAN-TIME CHECK FOR A BLANK `acknowledgeNarrowing.reason` HERE. A blank
+  //   reason is already indistinguishable from "not acknowledged at all" —
+  //   `isNarrowingAcknowledged` (repository-ruleset-narrowing-guards.ts) requires a non-empty,
+  //   trimmed `reason`, and every narrowing guard reads that, not presence alone. Adding a
+  //   SECOND check here would refuse with `RulesetConstraintRefused` instead of the more
+  //   specific `BypassActorNarrowed`/`RuleNarrowed` the caller actually needs to act on — and,
+  //   unlike those two (exercised directly through `reconcileRuleset`, injected-octokit fakes
+  //   included), this function is wired only through the real `RepositoryRuleset.Provider`
+  //   (`makeRulesetOctokit` needs live `GitHubCredentials`), which this family's own test
+  //   helpers do not exercise (see `repository-ruleset-test-helpers.ts`'s stub
+  //   `constraintRefusal`) — a check that lives only here would ship untested.
   return undefined;
 }
 
