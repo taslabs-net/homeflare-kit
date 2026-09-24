@@ -26,7 +26,8 @@ already ships is a finding, even when it works.
    with its typed error unions and Credentials layer. A second SDK or a hand-rolled client
    is a finding. On 2026-09-22 npm had distilled packages for Forgejo, GitHub, Kubernetes
    and Docker, among others, and none for Proxmox, OpenBao, Caddy, Talos, NetBox or UniFi
-   (S23).
+   (S23). A missing package is not a licence to invent one — see
+   [talos-argocd-dogfood.md](./talos-argocd-dogfood.md).
 3. **Does Alchemy ship the helper?** Hashing (`alchemy/Util/sha256`), polling
    (`alchemy/Util/poll`), atomic writes (`alchemy/Util/AtomicFile`), equality
    (`deepEqual` in `alchemy/Diff`), names (`alchemy/PhysicalName`), tags (`alchemy/Tags`),
