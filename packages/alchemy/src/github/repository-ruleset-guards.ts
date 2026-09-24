@@ -14,7 +14,10 @@ import {
 } from './repository-ruleset-errors.ts';
 import type { RulesetOctokit, RulesetRecord } from './repository-ruleset-probe.ts';
 
-const bypassKey = (a: { actor_type: unknown; actor_id: unknown; bypass_mode?: unknown }) =>
+/** Exported: repository-ruleset-narrowing-guards.ts reuses the identical key so a widened and a
+ * narrowed actor are never computed by two independently-drifting definitions of "the same
+ * actor". */
+export const bypassKey = (a: { actor_type: unknown; actor_id: unknown; bypass_mode?: unknown }) =>
   `${String(a.actor_type)}:${String(a.actor_id ?? '')}:${String(a.bypass_mode ?? 'always')}`;
 
 /**
@@ -56,7 +59,10 @@ export function bypassWideningRefusal(input: {
   });
 }
 
-const liveRuleTypes = (live: RulesetRecord | undefined): Set<string> =>
+/** Exported for the same reason as `bypassKey` — repository-ruleset-narrowing-guards.ts's
+ * `ruleNarrowingRefusal` needs the identical live-type set `undeclaredLiveRuleRefusal` computes,
+ * not a second reading of `live.rules` that could disagree with this one. */
+export const liveRuleTypes = (live: RulesetRecord | undefined): Set<string> =>
   new Set((live?.rules ?? []).map((r) => String(r.type)));
 
 /**

@@ -21,6 +21,12 @@ import {
   undeclaredLiveRuleRefusal,
 } from './repository-ruleset-guards.ts';
 import {
+  bypassNarrowingRefusal,
+  isBypassNarrowingAcknowledged,
+  isRuleNarrowingAcknowledged,
+  ruleNarrowingRefusal,
+} from './repository-ruleset-narrowing-guards.ts';
+import {
   type RulesetOctokit,
   type RulesetRecord,
   probeByName,
@@ -104,6 +110,12 @@ export const reconcileRuleset = <R = never>(input: {
       observed = yield* probeByName(octokit, { owner, repo, name: news.name, target });
     }
 
+    // Deliberately TWO separate reads, not one shared flag — each guard below is authorized
+    // only by the acknowledgement scoped to what it checks (see the file header on
+    // repository-ruleset-narrowing-guards.ts for the 2026-09-23 finding this fixes).
+    const bypassAcknowledged = isBypassNarrowingAcknowledged(news);
+    const ruleAcknowledged = isRuleNarrowingAcknowledged(news);
+
     const bypassRefusal =
       news.bypassActors === undefined
         ? undefined
@@ -116,6 +128,19 @@ export const reconcileRuleset = <R = never>(input: {
           });
     if (bypassRefusal !== undefined) return yield* Effect.fail(bypassRefusal);
 
+    const bypassNarrowRefusal =
+      news.bypassActors === undefined
+        ? undefined
+        : bypassNarrowingRefusal({
+            owner,
+            repository: repo,
+            name: news.name,
+            declared: news.bypassActors,
+            live: observed,
+            acknowledged: bypassAcknowledged,
+          });
+    if (bypassNarrowRefusal !== undefined) return yield* Effect.fail(bypassNarrowRefusal);
+
     const ruleRefusal = undeclaredLiveRuleRefusal({
       owner,
       repository: repo,
@@ -124,6 +149,16 @@ export const reconcileRuleset = <R = never>(input: {
       declaredTypes: declaredRuleTypes(news.rules),
     });
     if (ruleRefusal !== undefined) return yield* Effect.fail(ruleRefusal);
+
+    const ruleNarrowRefusal = ruleNarrowingRefusal({
+      owner,
+      repository: repo,
+      name: news.name,
+      declared: news.rules,
+      live: observed,
+      acknowledged: ruleAcknowledged,
+    });
+    if (ruleNarrowRefusal !== undefined) return yield* Effect.fail(ruleNarrowRefusal);
 
     const checksRefusal = requiredChecksOmissionRefusal({
       owner,

@@ -1,8 +1,12 @@
 /**
  * (ii) The write-recording fake, refusals: duplicate names, bypass widening, an undeclared live
  * rule, required checks omitted, and a never-reported context each make ZERO writes; and a
- * readback mismatch fails even though the write itself "succeeded" (S10). The happy paths
- * (create, noop, update) are repository-ruleset-write.test.ts.
+ * readback mismatch fails even though the write itself "succeeded" (S10). Bypass/rule narrowing
+ * without the matching `acknowledge{Bypass,Rule}Narrowing` are their own file,
+ * repository-ruleset-narrowing.test.ts (split out purely for the 250-line cap). The happy paths
+ * (create, noop, update) are repository-ruleset-write.test.ts; exact-adopt pass-through's own
+ * dedicated fixtures (all 5 live non-empty-bypass shapes) are
+ * repository-ruleset-exact-adopt.test.ts.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
@@ -92,30 +96,6 @@ describe('refusals make zero writes', () => {
     });
     const error = await fails(reconcileWithOctokit(fake, declaration, { rulesetId: 1 }));
     expect(tagOf(error)).toBe('UndeclaredLiveRule');
-  });
-
-  test('the SAME live ruleset with deletion explicitly declared false is a deliberate removal, not refused', async () => {
-    const live = {
-      id: 1,
-      name: 'main',
-      enforcement: 'active',
-      bypass_actors: [],
-      conditions: {},
-      rules: [
-        { type: 'deletion' },
-        { type: 'pull_request', parameters: { required_approving_review_count: 0 } },
-      ],
-    };
-    const fake = makeRecordingFake({ widgets: live });
-    fake.reportedContexts.add('ci');
-    const declaration = props({
-      rules: { deletion: false, pullRequest: BASE_PULL_REQUEST },
-    });
-    await reconcileAgainst(fake, declaration, { rulesetId: 1 }).pipe(Effect.runPromise);
-    expect(fake.writes).toHaveLength(1);
-    expect(fake.writes[0]?.op).toBe('update');
-    const sentTypes = fake.writes[0]?.body?.rules?.map((r) => r.type);
-    expect(sentTypes).not.toContain('deletion');
   });
 
   test('required checks omitted while the live ruleset has them', async () => {

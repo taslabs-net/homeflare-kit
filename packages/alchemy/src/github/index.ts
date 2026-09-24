@@ -44,11 +44,13 @@ export {
 } from './repository-ruleset.ts';
 export { RULE_TYPE_COVERAGE, type RepositoryRuleType } from './repository-ruleset-constraints.ts';
 export {
+  BypassActorNarrowed,
   BypassActorWidened,
   DuplicateRuleset,
   NeverReportedContext,
   ReadbackMismatch,
   RequiredChecksOmitted,
+  RuleNarrowed,
   RulesetConstraintRefused,
   UndeclaredLiveRule,
   type RepositoryRulesetError,
