@@ -32,6 +32,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { packForPublish } from '../../../scripts/pack.ts';
+import { swapUnpublishedSiblings } from '../../../scripts/unpublished-siblings.ts';
 
 const pkgRoot = new URL('../', import.meta.url).pathname;
 
@@ -65,6 +66,17 @@ const scratch = await mkdtemp(join(tmpdir(), 'hf-alchemy-smoke-'));
 try {
   console.log('packing…');
   const tarball = await packForPublish(pkgRoot, scratch);
+  // ⚠️ A Version Packages PR bumps an interim SDK and alchemy's alias onto it together, so the
+  //   new version is not on npm until this release publishes it (scripts/unpublished-siblings.ts).
+  for (const s of await swapUnpublishedSiblings(
+    tarball,
+    scratch,
+    new URL('../../../', import.meta.url).pathname,
+  )) {
+    console.log(
+      `⚠️ ${s.target}@${s.version} is not on npm yet; the smoke install uses its packed tarball`,
+    );
+  }
 
   // ⛔ The overrides are part of the contract, so the smoke test writes them exactly as
   //   the README does. If the README and this file ever disagree, one of them is wrong.
