@@ -28,9 +28,9 @@
  *
  * ★ MIGRATED OFF `client.ts`'s generic `pve()` ONTO `@distilled.cloud/proxmox`'s typed
  *   `nodes.listNodeCephFs`/`updateNodeCephFs` for the READ and the CREATE (2026-09-24, decision
- *   43's walk-down, 2c — ceph-fs-distilled.ts). `destroyFs` STAYS on `client.ts`, unmigrated:
- *   the SDK originally put `remove-pools`/`remove-storages` in a DELETE body, which PVE ignores.
- *   SDK PR #265 fixes that protocol gap; migrating `destroyFs` remains a separate change.
+ *   43's walk-down, 2c — ceph-fs-distilled.ts). DELETE originally stayed on `client.ts`:
+ *   the SDK put its flags in a body that PVE discards (ceph-fs-wire.ts's history).
+ *   SDK 0.3.0 fixes the query binding; delete now uses it and catches only CephFsNotFound.
  *   The typed-read follow-up removes the catch-all fold from `readFs`: a failed index must
  *   fail read/diff/reconcile/delete, not report a missing filesystem or a successful destroy.
  *
@@ -67,8 +67,8 @@ import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { createFs, readFs } from './ceph-fs-distilled.ts';
-import { CEPH_FS_CREATE, createForm, destroyFs, notCreated, notDestroyed } from './ceph-fs-wire.ts';
+import { createFs, destroyFs, readFs } from './ceph-fs-distilled.ts';
+import { CEPH_FS_CREATE, createForm, notCreated, notDestroyed } from './ceph-fs-wire.ts';
 import { guardWrite } from './distilled-guard.ts';
 import { type PveRequirements, type WithTarget } from './resource.ts';
 
@@ -222,8 +222,8 @@ export const ProxmoxCephFsProvider = () =>
          * ⛔ THE READ-BACK IS WHAT TURNS "the task said OK" INTO "it is actually gone": `destroyfs`
          *   refuses while a non-disabled `cephfs` storage still references the filesystem, and that
          *   refusal must fail the destroy rather than letting Alchemy drop the state entry for a
-         *   live object. `destroyFs` itself stays on `client.ts` — ceph-fs-wire.ts's own header has
-         *   the measured, protocol-level reason.
+         *   live object. `destroyFs` now uses the SDK query binding — ceph-fs-wire.ts preserves
+         *   the measured DELETE query-binding history.
          */
         delete: Effect.fn(function* ({ olds }) {
           /**

@@ -37,7 +37,13 @@ CephFS index cannot produce a successful delete. Existing adoption fixtures prov
 matching objects remain no-ops. Credential-denied warnings are still not live no-op
 evidence; use the consumer's authorized read lane and `hf-adopt-verify --all`.
 
-This is a scoped follow-up to the transport migration. CephFS delete still uses the old
-client despite the SDK's now-fixed DELETE query encoding; bounded task polling and
-other pre-existing provider refusals retain their own policies. No live writes are part
+This is a scoped follow-up to the transport migration. CephFS delete now uses SDK 0.3.0's fixed
+DELETE query binding and folds only CephFsNotFound. Its existing destructive flags,
+bounded task polling and final index read remain in place. Other provider families
+retain their own policies. No live writes are part
 of this validation. Released-consumer plans remain a separate gate from these fixtures.
+
+`ceph-fs-destroy-sdk.test.ts` verifies that remove-pools/remove-storages are query
+parameters with an empty DELETE body, omitted flags retain the safe defaults, an
+already-missing filesystem succeeds, and unrelated 401/403/500 responses fail.
+The engine destroy fixture still proves the complete read/delete/poll/read-back flow.

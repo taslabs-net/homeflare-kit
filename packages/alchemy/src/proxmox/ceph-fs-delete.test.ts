@@ -1,11 +1,8 @@
 /**
- * `Proxmox.CephFs`'s destroy path — the one place in this migration that composes a distilled
- * call (`readFs`, before and after) with a hand-client one (`destroyFs`, unmigrated — ceph-fs-
- * wire.ts's header has the measured protocol reason) inside a single handler. Flagged by
- * adversarial review as untested anywhere in the repo before this file: `readFs` alone is proven
- * by ceph-fs-write.test.ts and ceph-adopt.test.ts, `destroyFs` alone is unchanged from main, but
- * the two composed together — on a destructive, hard-to-reverse `RemovalPolicy.destroy()` — had
- * no coverage of the seam itself.
+ * The CephFS destroy lifecycle through the real SDK protocol and Alchemy engine.
+ * The original transport walk left DELETE on the hand client; SDK 0.3.0's query
+ * binding now permits the whole sequence to move. These tests keep the destructive
+ * read/delete/poll/read-back boundary covered without touching a real filesystem.
  */
 import { describe, expect, test } from 'bun:test';
 import * as RemovalPolicy from 'alchemy/RemovalPolicy';
@@ -27,7 +24,7 @@ const declared = () => ProxmoxCephFs(NAME, { name: NAME, node: NODE, target: FAK
 describe('destroying a CephFS', () => {
   test(
     'RemovalPolicy.destroy() then undeclaring: readFs (distilled) finds it, destroyFs ' +
-      '(client.ts) removes it, and the distilled read-back confirms it is gone',
+      '(distilled) removes it, and the distilled read-back confirms it is gone',
     async () => {
       let destroyed = false;
       const fake = fakePve((call: PveCall) => {
