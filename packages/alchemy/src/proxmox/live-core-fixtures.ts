@@ -2,7 +2,7 @@
 import type * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
-import { type Body, type FakeEngine, engineOver } from '../verify/fake-engine.ts';
+import { type FakeEngine, engineOver } from '../verify/fake-engine.ts';
 import { ProxmoxBackupJob, ProxmoxBackupJobProvider } from './backup-job.ts';
 import { deleteBackupJob, readBackupJob } from './backup-job-distilled.ts';
 import { FAKE_TARGET, type FakePve } from './fake-pve.ts';
@@ -29,7 +29,7 @@ export const metricProps = {
 export interface CoreCase {
   name: string;
   path: string;
-  declare: () => Body;
+  declare: () => Effect.Effect<unknown, never, unknown>;
   engine: (fake: FakePve) => FakeEngine;
   read: () => Effect.Effect<unknown, unknown, HttpClient.HttpClient>;
   remove: () => Effect.Effect<unknown, unknown, HttpClient.HttpClient>;

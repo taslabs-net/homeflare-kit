@@ -36,7 +36,7 @@ export const readBackupJob = (props: BackupJobProps) =>
     // Legacy PVE emits these two properties as strings; current PVE expands objects.
     // Validate the generated response's remaining fields without narrowing that compatibility.
     Effect.flatMap((live) =>
-      Schema.decodeUnknownEffect(cluster.GetClusterBackupResponse)({
+      Schema.decodeUnknownEffect(Schema.toType(cluster.GetClusterBackupResponse))({
         ...live,
         prune_backups: undefined,
         fleecing: undefined,

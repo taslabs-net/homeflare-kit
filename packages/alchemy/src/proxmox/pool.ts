@@ -86,7 +86,7 @@ const { guardCreate, guardUpdate } = specGuards(spec);
 export const readPool = (props: PoolProps) =>
   runPve(props.target, 'read', false, pools.getPool({ poolid: props.poolid })).pipe(
     Effect.flatMap((live) =>
-      Schema.decodeUnknownEffect(pools.GetPoolResponse)(live).pipe(
+      Schema.decodeUnknownEffect(Schema.toType(pools.GetPoolResponse))(live).pipe(
         Effect.mapError(
           () =>
             new ProxmoxParseError({
