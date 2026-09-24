@@ -47,8 +47,8 @@
  *   this credential already has it rather than discovering it the next time something is scoped.
  *
  * ★ MIGRATED OFF `client.ts` (2026-09-24, decision 43, 2c) — ceph-daemon-wire.ts has the rename
- *   and why no protocol gap blocks any of the three kinds; `readDaemon` there keeps this family's
- *   pre-migration single-fold shape (ceph-pool-wire.ts explains why that is not left unfixed).
+ *   and why no protocol gap blocks any of the three kinds. The follow-up removes the preserved
+ *   catch-all read fold: only a successful index without this daemon proves absence.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
@@ -74,12 +74,11 @@ export interface CephDaemonProps extends WithTarget {
   /**
    * The node the daemon RUNS on. Identity — a daemon cannot be moved, only destroyed and rebuilt.
    * ⚠️ It is also the node whose API is asked, and the read is only as available as that node: a
-   *   node that is down — or has no Ceph installed, or answers 403 — reads as nothing at all,
-   *   because `pveOperations.read` folds EVERY failure into "absent" (a 404 is a legitimate answer
-   *   there and it cannot tell the two apart). Its daemons then plan as `update`, and reconcile
-   *   POSTs a create for a mon that already exists. PVE refuses that with "monitor already
-   *   exists", and the read-back refuses again — so it fails loudly rather than damaging anything,
-   *   but the message will point at the daemon rather than at the node that would not answer.
+   *   failed index now propagates its error. Before the typed-read follow-up, a down node,
+   *   missing Ceph installation or 403 was folded to "absent"; its daemons planned `update`
+   *   and reconcile POSTed a create for a mon that already existed. PVE refused with "monitor
+   *   already exists", then read-back failed again, obscuring the original node read error.
+   *   That incident is why collection failure can never prove a daemon is missing.
    */
   node: string;
   /**

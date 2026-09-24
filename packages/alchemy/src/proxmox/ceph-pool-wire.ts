@@ -7,22 +7,13 @@
  *   PVE form, unaware distilled exists: this file is the ONLY place that translates one into a
  *   typed distilled request.
  *
- * ⛔ ONE READ FUNCTION, NOT THE readXOrFail/foldingX PAIR user.ts/group.ts/storage.ts/zfs-pool.ts/
- *   node-network-wire.ts CARRY. THIS IS A DELIBERATE, MEASURED DIFFERENCE, NOT AN OVERSIGHT. Those
- *   families were BUILT with (or later given, after the NodeNetwork adversarial review) the
- *   dual-path pattern because their `diff`/`read` hooks needed to tell "genuinely absent" apart
- *   from "a transient failure" at specific call sites. CephPool's PRE-MIGRATION behaviour never
- *   had that distinction: `resource.ts`'s generic `pveOperations.read` — what `ops.read`/`ops.diff`
- *   called before this PR — folds EVERY failure into `undefined` unconditionally
- *   (`Effect.orElseSucceed(() => undefined)`, no `output`-branching, checked directly against
- *   `resource.ts` 2026-09-24). This migration's own rule is that every existing refusal and guard
- *   survives byte-for-byte — not that it gets upgraded on the way past. `readPoolStatus` below
- *   reproduces that exact single-fold shape; it does not add the newer pattern.
- * ⚠️ WORTH A LATER, SEPARATELY-SCOPED DECISION: this means CephPool (like CephDaemon) still folds
- *   a refused OpenBao mint into "absent" too, same as every other pre-`unreadable-read.ts` family
- *   — the cries-wolf class `Proxmox.NodeNetwork`/`Proxmox.ZfsPool`/`Proxmox.Storage` were fixed
- *   against. Noted here rather than fixed here, since fixing it is a behaviour change this PR's
- *   own rules do not ask for.
+ * ⛔ ONLY TYPED ABSENCE MAY REACH A CREATE. The transport migration deliberately preserved
+ *   `pveOperations.read`'s catch-all `Effect.orElseSucceed(() => undefined)` to avoid changing
+ *   behavior during the swap. That also hid refused credentials and transient failures, risking
+ *   a false update/create. SDK PR #265 added the measured `CephPoolNotFound` tag; the follow-up
+ *   now catches only it. One reader serves read/diff/reconcile/settle, so all propagate other
+ *   failures. `confirmAbsent` still checks the index before create: a missing status alone must
+ *   never override a pool that the index lists (the PG-merge incident, ceph-pool-settle.ts).
  */
 import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
@@ -72,9 +63,9 @@ const attributesOf = (live: unknown, props: CephPoolProps): CephPoolAttributes |
 };
 
 /**
- * The live pool, or `undefined` — folds every failure, exactly as `ops.read` did. Used by `read`,
- * `diff` (via `ceph-pool.ts`'s own hand-written `reconcile`, which predates the factory) and
- * `settle` (ceph-pool-settle.ts) alike, matching the ONE-function shape this family had before.
+ * The live pool, or `undefined` only for the SDK's measured `CephPoolNotFound`. The initial
+ * transport swap preserved `ops.read`'s catch-all fold; the 2026-09-24 follow-up removes that ambiguity.
+ * Read, reconcile and settle now propagate every other failure instead of assuming absence.
  *
  * ⛔ `verbose=1` IS WHAT MAKES `applications` VISIBLE AT ALL — ceph-pool.ts's own header has the
  *   measured reason and the cost (two extra, unguarded mon commands PVE runs to answer it).
@@ -87,7 +78,7 @@ export const readPoolStatus = (props: CephPoolProps) =>
     nodes.getNodeCephPoolStatus({ name: props.name, node: props.node, verbose: '1' }),
   ).pipe(
     Effect.map((live) => attributesOf(live, props)),
-    Effect.orElseSucceed(() => undefined),
+    Effect.catchTag('CephPoolNotFound', () => Effect.succeed(undefined)),
   );
 
 /** The two endpoints, as the keys `guardWrite` (distilled-guard.ts) checks both forms against. */

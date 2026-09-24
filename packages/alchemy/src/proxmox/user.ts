@@ -34,11 +34,11 @@
  *     · `Sys.Audit` (or `User.Modify`) for the read, which the `read` role's auditor already has.
  *
  * ⚠️ A MISSING USER IS A 500, NOT A 404 — MEASURED against the live cluster, "no such user
- *   ('x@pve')". distilled turns that into an `InternalServerError`, with no distinct "not found"
- *   tag to catch. `user-wire.ts`'s `readUser` (used by `read`/`reconcile`, where the create
- *   workflow needs "absent" from exactly this failure) still folds it; `readUserOrFail` (used by
- *   `diff` below) does not — see that function's own header for why folding it there was the
- *   cries-wolf bug all over again, just for a genuine PVE quirk instead of a permission denial.
+ *   ('x@pve')". The first SDK migration exposed it as `InternalServerError`, so its create
+ *   workflow needed a catch-all fold. SDK PR #265 now recognizes `UserNotFound`; `readUser`
+ *   catches only that tag, letting other cold-read/reconcile failures propagate. The strict
+ *   `readUserOrFail` path for confirmed rows remains unchanged: its original transient-failure
+ *   fix stopped the cries-wolf update with nothing compared (user-wire.ts).
  *
  * ⚠️ THE WIRE URL FOR THIS FAMILY CHANGED, THOUGH NOTHING A CALLER SEES DID. MEASURED
  *   (user.test.ts): distilled's `{userid}` label substitution percent-encodes it —
