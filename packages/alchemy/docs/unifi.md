@@ -91,3 +91,39 @@ trigger but a future write path must respect — whole-object `PUT`, ordering en
 replace the whole list, `removeDevice` unadopting and factory-resetting hardware — are recorded
 in the distilled package's own `README.md` and in the estate's `docs/unifi-api-notes.md`
 (outside this repo).
+
+## Spec-version check against the live-measured console (2026-09-24)
+
+`homeflare-network`'s `src/unifi/imported.ts` was generated 2026-09-24 against a live console
+self-reporting **10.6.97** (`GET /v1/info`, recorded in that file's own header) — two minor
+versions past this SDK's 10.4.57 pin. Checked whether any of the 11 imported networks or 14
+imported firewall zones could decode differently on a newer controller than this SDK's
+10.4.57-pinned types expect: diffed a 10.6.97 copy of Ubiquiti's OpenAPI document (a third-party
+mirror, used only as a diffing aid — never as this SDK's spec of record; see the distilled
+package's own `docs/spec-version-provenance.md`) against the pinned 10.4.57 document. Zero
+operations added or removed anywhere in the API; every Networks- and FirewallZones-tagged
+component schema is byte-identical between the two versions; and — since a named schema diff
+alone would miss an inline, untagged parameter changing shape — every full raw operation object
+(parameters, request body, responses, `$ref`s included) for every `Networks`-tagged operation and
+every `*FirewallZone*` operation is _also_ identical, byte for byte, not just its named schemas.
+The only real content difference in the whole document is in the `Switching` tag (new LAG/switch-
+stack schemas, matching Ubiquiti's own 10.6 release notes) — a tag this package does not use.
+
+**Answer: none of the imported rows would change shape against 10.6.97.** This does not
+generalize past 10.6.97, and it says nothing about any tag besides Networks/FirewallZones —
+re-check before importing or declaring against `Clients`, `WiFi Broadcasts`, `ACL Rules`, or any
+other tag.
+
+## 2026-09-24 doctrine walkdown
+
+Read directly against `origin/main`'s `src/unifi/{resource,network,network-form,firewall-zone,
+firewall-zone-form,policy}.ts`: `fetchLive` in `network.ts`/`firewall-zone.ts` folds only
+`catchTag('NotFound', …)`, never a blanket catch. `destroy` always refuses via the typed
+`UnifiWriteRefused` regardless of live state — correct here, not a departure from delete's usual
+idempotency rule: this family will never issue a real DELETE by policy, so idempotency of a
+delete it cannot perform is moot. No `Effect.orDie`/`Effect.die` anywhere in the family.
+`sortedSet` normalizes every measured unordered array (`dhcpGuarding.trustedDhcpServerIpAddresses`,
+`ipv6Configuration`'s two override lists, `firewall-zone-form.ts`'s `networkIds`) before it is
+attributed, declared or compared. Both declaration renderers and both `matches` use
+`value == null` / `deepEqual(..., { stripNullish: true })` consistently, per `network-form.ts`'s
+own header. No departure found — nothing in this family needed changing.
