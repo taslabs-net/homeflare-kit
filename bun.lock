@@ -18,12 +18,13 @@
     },
     "packages/alchemy": {
       "name": "@homeflare/alchemy",
-      "version": "0.28.0",
+      "version": "0.31.1",
       "bin": {
         "hf-adopt-verify": "./dist/verify/cli.js",
       },
       "dependencies": {
-        "@distilled.cloud/caddy": "npm:@homeflare/distilled-caddy@0.2.1",
+        "@distilled.cloud/caddy": "npm:@homeflare/distilled-caddy@0.2.2",
+        "@distilled.cloud/grafana": "npm:@homeflare/distilled-grafana@0.1.0",
         "@distilled.cloud/litellm": "npm:@homeflare/distilled-litellm@0.2.0",
         "@distilled.cloud/netbox": "npm:@homeflare/distilled-netbox@0.3.0",
         "@distilled.cloud/paperless-ngx": "npm:@homeflare/distilled-paperless-ngx@0.3.0",
@@ -35,7 +36,6 @@
         "@distilled.cloud/discord": "1.0.0-rc.12",
         "@distilled.cloud/forgejo": "1.0.0-rc.12",
         "@distilled.cloud/google-workspace": "1.0.0-rc.12",
-        "@distilled.cloud/grafana": "1.0.0-rc.12",
         "@effect/platform-bun": "4.0.0-rc.115",
         "@effect/platform-node": "4.0.0-rc.115",
         "@effect/sql-pg": "4.0.0-rc.115",
@@ -49,7 +49,6 @@
         "@distilled.cloud/discord": "1.0.0-rc.12",
         "@distilled.cloud/forgejo": "1.0.0-rc.12",
         "@distilled.cloud/google-workspace": "1.0.0-rc.12",
-        "@distilled.cloud/grafana": "1.0.0-rc.12",
         "@effect/platform-node": "4.0.0-rc.115",
         "@effect/sql-pg": "4.0.0-rc.115",
         "alchemy": "2.0.0-beta.79",
@@ -84,11 +83,24 @@
     },
     "packages/config": {
       "name": "@homeflare/config",
-      "version": "0.12.0",
+      "version": "0.12.1",
     },
     "packages/distilled-caddy": {
       "name": "@homeflare/distilled-caddy",
-      "version": "0.2.1",
+      "version": "0.2.2",
+      "dependencies": {
+        "@distilled.cloud/core": "1.0.0-rc.12",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
+    },
+    "packages/distilled-grafana": {
+      "name": "@homeflare/distilled-grafana",
+      "version": "0.1.0",
       "dependencies": {
         "@distilled.cloud/core": "1.0.0-rc.12",
       },
@@ -439,7 +451,7 @@
 
     "@distilled.cloud/google-workspace": ["@distilled.cloud/google-workspace@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-xvuqFcIIpCpj6LOKcaiuuY6Bg4M+tBoqwZApHmnTad2KHCY3jXliOPt65kDdyBlICxnoePiZKQUOnafrwzvZUQ=="],
 
-    "@distilled.cloud/grafana": ["@distilled.cloud/grafana@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-/K9hDz+Ri779NAQ3yLQQjJOXccSJ5SUWy8eKrPC4yEQVeBXgKBO+UTrsoiKrl7ldj8ynIaMCf7kWVtm0MclsTQ=="],
+    "@distilled.cloud/grafana": ["@homeflare/distilled-grafana@workspace:packages/distilled-grafana"],
 
     "@distilled.cloud/hetzner": ["@distilled.cloud/hetzner@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-G6QzOXTNply63I90IjOtNofs0nHkEd1we/fgXiOjobLZt4+sKjjNBVTAHYHGMDeidbtxw270oF9JakgT11Pzww=="],
 
@@ -502,6 +514,8 @@
     "@homeflare/config": ["@homeflare/config@workspace:packages/config"],
 
     "@homeflare/distilled-caddy": ["@homeflare/distilled-caddy@workspace:packages/distilled-caddy"],
+
+    "@homeflare/distilled-grafana": ["@homeflare/distilled-grafana@workspace:packages/distilled-grafana"],
 
     "@homeflare/distilled-litellm": ["@homeflare/distilled-litellm@workspace:packages/distilled-litellm"],
 

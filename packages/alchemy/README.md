@@ -7,7 +7,6 @@ bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
         @effect/platform-node@4.0.0-rc.115 mime@4.1.0 \
         @distilled.cloud/cloudflare@1.0.0-rc.12 @distilled.cloud/forgejo@1.0.0-rc.12 \
         @distilled.cloud/discord@1.0.0-rc.12 @distilled.cloud/google-workspace@1.0.0-rc.12 \
-        @distilled.cloud/grafana@1.0.0-rc.12 \
         @effect/sql-pg@4.0.0-rc.115
 ```
 
@@ -283,9 +282,11 @@ schema carries a `password` field, and Alchemy persists props unencrypted. Crede
 
 `Grafana.Datasource` declares one data source, keyed by `uid`, generated from
 `@distilled.cloud/grafana`'s own typed `addDataSource`/`getDataSourceByUID`/
-`updateDataSourceByUID`/`deleteDataSourceByUID` operations. ⛔ The SDK at `1.0.0-rc.12` has no
-folder, dashboard, alert-rule or contact-point CRUD — only `Datasource` ships, and the gap is
-recorded rather than worked around: [docs/grafana.md](./docs/grafana.md).
+`updateDataSourceByUID`/`deleteDataSourceByUID` operations. The SDK's earlier folder/dashboard/
+alerting-provisioning gap is fixed (`@distilled.cloud/grafana`, aliased onto
+`@homeflare/distilled-grafana` — see [docs/distilled-interim.md](./docs/distilled-interim.md)); only
+`Datasource` ships as a house resource so far, the rest is follow-up work:
+[docs/grafana.md](./docs/grafana.md).
 
 ## GitHub — `@homeflare/alchemy/github`
 
