@@ -824,6 +824,1798 @@ export const GetRequest = /*@__PURE__*/ S.suspend(() =>
   ),
 ).annotate({ identifier: "GetRequest" }) as any as S.Schema<GetRequest>;
 
+export interface OptionEntry {
+  value: string;
+  selected: number;
+}
+export const OptionEntry = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    value: S.String,
+    selected: S.Number,
+  }),
+).annotate({ identifier: "OptionEntry" }) as any as S.Schema<OptionEntry>;
+
+export type ModelBestpathMap = { [key: string]: OptionEntry | undefined };
+export const ModelBestpathMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelBestpathMap>;
+
+export type ModelNeighborReadItemRemoteAsModeMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemRemoteAsModeMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelNeighborReadItemRemoteAsModeMap>;
+
+export type ModelNeighborReadItemUpdatesourceMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemUpdatesourceMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelNeighborReadItemUpdatesourceMap>;
+
+export type ModelNeighborReadItemLinklocalinterfaceMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemLinklocalinterfaceMap =
+  /*@__PURE__*/ S.Record(
+    S.String,
+    OptionEntry,
+  ) as any as S.Schema<ModelNeighborReadItemLinklocalinterfaceMap>;
+
+export type ModelNeighborReadItemRemoveprivateasMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemRemoveprivateasMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelNeighborReadItemRemoveprivateasMap>;
+
+export type ModelNeighborReadItemAllowasInMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemAllowasInMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelNeighborReadItemAllowasInMap>;
+
+export type ModelNeighborReadItemAttributeunchangedMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemAttributeunchangedMap =
+  /*@__PURE__*/ S.Record(
+    S.String,
+    OptionEntry,
+  ) as any as S.Schema<ModelNeighborReadItemAttributeunchangedMap>;
+
+export type ModelNeighborReadItemCapabilitiesMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemCapabilitiesMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelNeighborReadItemCapabilitiesMap>;
+
+export type ModelNeighborReadItemLinkedPrefixlistInMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemLinkedPrefixlistInMap =
+  /*@__PURE__*/ S.Record(
+    S.String,
+    OptionEntry,
+  ) as any as S.Schema<ModelNeighborReadItemLinkedPrefixlistInMap>;
+
+export type ModelNeighborReadItemLinkedPrefixlistOutMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemLinkedPrefixlistOutMap =
+  /*@__PURE__*/ S.Record(
+    S.String,
+    OptionEntry,
+  ) as any as S.Schema<ModelNeighborReadItemLinkedPrefixlistOutMap>;
+
+export type ModelNeighborReadItemLinkedRoutemapInMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemLinkedRoutemapInMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelNeighborReadItemLinkedRoutemapInMap>;
+
+export type ModelNeighborReadItemLinkedRoutemapOutMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemLinkedRoutemapOutMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelNeighborReadItemLinkedRoutemapOutMap>;
+
+export type ModelNeighborReadItemPeergroupMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelNeighborReadItemPeergroupMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelNeighborReadItemPeergroupMap>;
+
+export interface ModelNeighborReadItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  description?: string;
+  /** OPNsense FieldType: NetworkField */
+  address: string;
+  /** OPNsense FieldType: OptionField */
+  remote_as_mode?: ModelNeighborReadItemRemoteAsModeMap;
+  /** OPNsense FieldType: IntegerField; range 1..4294967295 (as text) */
+  remoteas?: string;
+  /** OPNsense FieldType: IntegerField; range 1..4294967295 (as text) */
+  localas?: string;
+  /** OPNsense FieldType: TextField */
+  password?: string;
+  /** OPNsense FieldType: IntegerField; range 0..65535 (as text) */
+  weight?: string;
+  /** OPNsense FieldType: NetworkField */
+  localip?: string;
+  /** OPNsense FieldType: InterfaceField */
+  updatesource?: ModelNeighborReadItemUpdatesourceMap;
+  /** OPNsense FieldType: InterfaceField */
+  linklocalinterface?: ModelNeighborReadItemLinklocalinterfaceMap;
+  /** OPNsense FieldType: BooleanField */
+  nexthopself?: string;
+  /** OPNsense FieldType: BooleanField */
+  nexthopselfall?: string;
+  /** OPNsense FieldType: BooleanField */
+  multihop?: string;
+  /** OPNsense FieldType: BooleanField */
+  multiprotocol?: string;
+  /** OPNsense FieldType: BooleanField */
+  rrclient?: string;
+  /** OPNsense FieldType: BooleanField */
+  soft_reconfiguration_inbound?: string;
+  /** OPNsense FieldType: BooleanField */
+  bfd?: string;
+  /** OPNsense FieldType: BooleanField */
+  bfd_strict?: string;
+  /** OPNsense FieldType: IntegerField; range 1..1000 (as text) */
+  keepalive?: string;
+  /** OPNsense FieldType: IntegerField; range 3..3000 (as text) */
+  holddown?: string;
+  /** OPNsense FieldType: IntegerField; range 1..65000 (as text) */
+  connecttimer?: string;
+  /** OPNsense FieldType: BooleanField */
+  defaultoriginate?: string;
+  /** OPNsense FieldType: BooleanField */
+  asoverride?: string;
+  /** OPNsense FieldType: OptionField */
+  removeprivateas?: ModelNeighborReadItemRemoveprivateasMap;
+  /** OPNsense FieldType: OptionField */
+  allowas_in?: ModelNeighborReadItemAllowasInMap;
+  /** OPNsense FieldType: BooleanField */
+  disable_connected_check?: string;
+  /** OPNsense FieldType: OptionField */
+  attributeunchanged?: ModelNeighborReadItemAttributeunchangedMap;
+  /** OPNsense FieldType: OptionField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  capabilities?: ModelNeighborReadItemCapabilitiesMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedPrefixlistIn?: ModelNeighborReadItemLinkedPrefixlistInMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedPrefixlistOut?: ModelNeighborReadItemLinkedPrefixlistOutMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedRoutemapIn?: ModelNeighborReadItemLinkedRoutemapInMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedRoutemapOut?: ModelNeighborReadItemLinkedRoutemapOutMap;
+  /** OPNsense FieldType: ModelRelationField */
+  peergroup?: ModelNeighborReadItemPeergroupMap;
+}
+export const ModelNeighborReadItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    address: S.String,
+    remote_as_mode: S.optional(ModelNeighborReadItemRemoteAsModeMap),
+    remoteas: S.optional(S.String),
+    localas: S.optional(S.String),
+    password: S.optional(S.String),
+    weight: S.optional(S.String),
+    localip: S.optional(S.String),
+    updatesource: S.optional(ModelNeighborReadItemUpdatesourceMap),
+    linklocalinterface: S.optional(ModelNeighborReadItemLinklocalinterfaceMap),
+    nexthopself: S.optional(S.String),
+    nexthopselfall: S.optional(S.String),
+    multihop: S.optional(S.String),
+    multiprotocol: S.optional(S.String),
+    rrclient: S.optional(S.String),
+    soft_reconfiguration_inbound: S.optional(S.String),
+    bfd: S.optional(S.String),
+    bfd_strict: S.optional(S.String),
+    keepalive: S.optional(S.String),
+    holddown: S.optional(S.String),
+    connecttimer: S.optional(S.String),
+    defaultoriginate: S.optional(S.String),
+    asoverride: S.optional(S.String),
+    removeprivateas: S.optional(ModelNeighborReadItemRemoveprivateasMap),
+    allowas_in: S.optional(ModelNeighborReadItemAllowasInMap),
+    disable_connected_check: S.optional(S.String),
+    attributeunchanged: S.optional(ModelNeighborReadItemAttributeunchangedMap),
+    capabilities: S.optional(ModelNeighborReadItemCapabilitiesMap),
+    linkedPrefixlistIn: S.optional(ModelNeighborReadItemLinkedPrefixlistInMap),
+    linkedPrefixlistOut: S.optional(
+      ModelNeighborReadItemLinkedPrefixlistOutMap,
+    ),
+    linkedRoutemapIn: S.optional(ModelNeighborReadItemLinkedRoutemapInMap),
+    linkedRoutemapOut: S.optional(ModelNeighborReadItemLinkedRoutemapOutMap),
+    peergroup: S.optional(ModelNeighborReadItemPeergroupMap),
+  }),
+).annotate({
+  identifier: "ModelNeighborReadItem",
+}) as any as S.Schema<ModelNeighborReadItem>;
+
+export type ModelNeighborReadItemMap = {
+  [key: string]: ModelNeighborReadItem | undefined;
+};
+export const ModelNeighborReadItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  ModelNeighborReadItem,
+) as any as S.Schema<ModelNeighborReadItemMap>;
+
+export interface ModelNeighborsRead {
+  neighbor?: ModelNeighborReadItemMap;
+}
+export const ModelNeighborsRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    neighbor: S.optional(ModelNeighborReadItemMap),
+  }),
+).annotate({
+  identifier: "ModelNeighborsRead",
+}) as any as S.Schema<ModelNeighborsRead>;
+
+export type ModelAspathReadItemActionMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelAspathReadItemActionMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelAspathReadItemActionMap>;
+
+export interface ModelAspathReadItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  description?: string;
+  /** OPNsense FieldType: IntegerField; range 0..4294967295 (as text) */
+  number: string;
+  /** OPNsense FieldType: OptionField */
+  action: ModelAspathReadItemActionMap;
+  /** OPNsense FieldType: TextField */
+  as: string;
+}
+export const ModelAspathReadItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    number: S.String,
+    action: ModelAspathReadItemActionMap,
+    as: S.String,
+  }),
+).annotate({
+  identifier: "ModelAspathReadItem",
+}) as any as S.Schema<ModelAspathReadItem>;
+
+export type ModelAspathReadItemMap = {
+  [key: string]: ModelAspathReadItem | undefined;
+};
+export const ModelAspathReadItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  ModelAspathReadItem,
+) as any as S.Schema<ModelAspathReadItemMap>;
+
+export interface ModelAspathsRead {
+  aspath?: ModelAspathReadItemMap;
+}
+export const ModelAspathsRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    aspath: S.optional(ModelAspathReadItemMap),
+  }),
+).annotate({
+  identifier: "ModelAspathsRead",
+}) as any as S.Schema<ModelAspathsRead>;
+
+export type ModelPrefixlistReadItemVersionMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelPrefixlistReadItemVersionMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelPrefixlistReadItemVersionMap>;
+
+export type ModelPrefixlistReadItemActionMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelPrefixlistReadItemActionMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelPrefixlistReadItemActionMap>;
+
+export interface ModelPrefixlistReadItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  description?: string;
+  /** OPNsense FieldType: TextField; pattern /^[a-zA-Z0-9._-]{1,64}$/ */
+  name: string;
+  /** OPNsense FieldType: OptionField */
+  version: ModelPrefixlistReadItemVersionMap;
+  /** OPNsense FieldType: IntegerField; range 1..4294967294 (as text) */
+  seqnumber: string;
+  /** OPNsense FieldType: OptionField */
+  action: ModelPrefixlistReadItemActionMap;
+  /** OPNsense FieldType: TextField */
+  network: string;
+}
+export const ModelPrefixlistReadItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    name: S.String,
+    version: ModelPrefixlistReadItemVersionMap,
+    seqnumber: S.String,
+    action: ModelPrefixlistReadItemActionMap,
+    network: S.String,
+  }),
+).annotate({
+  identifier: "ModelPrefixlistReadItem",
+}) as any as S.Schema<ModelPrefixlistReadItem>;
+
+export type ModelPrefixlistReadItemMap = {
+  [key: string]: ModelPrefixlistReadItem | undefined;
+};
+export const ModelPrefixlistReadItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  ModelPrefixlistReadItem,
+) as any as S.Schema<ModelPrefixlistReadItemMap>;
+
+export interface ModelPrefixlistsRead {
+  prefixlist?: ModelPrefixlistReadItemMap;
+}
+export const ModelPrefixlistsRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    prefixlist: S.optional(ModelPrefixlistReadItemMap),
+  }),
+).annotate({
+  identifier: "ModelPrefixlistsRead",
+}) as any as S.Schema<ModelPrefixlistsRead>;
+
+export type ModelCommunitylistReadItemActionMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelCommunitylistReadItemActionMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelCommunitylistReadItemActionMap>;
+
+export interface ModelCommunitylistReadItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  description?: string;
+  /** OPNsense FieldType: IntegerField; range 1..500 (as text) */
+  number: string;
+  /** OPNsense FieldType: IntegerField; range 10..99 (as text) */
+  seqnumber: string;
+  /** OPNsense FieldType: OptionField */
+  action: ModelCommunitylistReadItemActionMap;
+  /** OPNsense FieldType: TextField */
+  community: string;
+}
+export const ModelCommunitylistReadItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    number: S.String,
+    seqnumber: S.String,
+    action: ModelCommunitylistReadItemActionMap,
+    community: S.String,
+  }),
+).annotate({
+  identifier: "ModelCommunitylistReadItem",
+}) as any as S.Schema<ModelCommunitylistReadItem>;
+
+export type ModelCommunitylistReadItemMap = {
+  [key: string]: ModelCommunitylistReadItem | undefined;
+};
+export const ModelCommunitylistReadItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  ModelCommunitylistReadItem,
+) as any as S.Schema<ModelCommunitylistReadItemMap>;
+
+export interface ModelCommunitylistsRead {
+  communitylist?: ModelCommunitylistReadItemMap;
+}
+export const ModelCommunitylistsRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    communitylist: S.optional(ModelCommunitylistReadItemMap),
+  }),
+).annotate({
+  identifier: "ModelCommunitylistsRead",
+}) as any as S.Schema<ModelCommunitylistsRead>;
+
+export type ModelRoutemapReadItemActionMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRoutemapReadItemActionMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelRoutemapReadItemActionMap>;
+
+export type ModelRoutemapReadItemMatchMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRoutemapReadItemMatchMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelRoutemapReadItemMatchMap>;
+
+export type ModelRoutemapReadItemMatch2Map = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRoutemapReadItemMatch2Map = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelRoutemapReadItemMatch2Map>;
+
+export type ModelRoutemapReadItemMatch3Map = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRoutemapReadItemMatch3Map = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelRoutemapReadItemMatch3Map>;
+
+export interface ModelRoutemapReadItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  description?: string;
+  /** OPNsense FieldType: TextField; pattern /^[a-zA-Z0-9._-]{1,64}$/ */
+  name: string;
+  /** OPNsense FieldType: OptionField */
+  action: ModelRoutemapReadItemActionMap;
+  /** OPNsense FieldType: IntegerField; range 1..65535 (as text) */
+  id: string;
+  /** OPNsense FieldType: ModelRelationField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  match?: ModelRoutemapReadItemMatchMap;
+  /** OPNsense FieldType: ModelRelationField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  match2?: ModelRoutemapReadItemMatch2Map;
+  /** OPNsense FieldType: ModelRelationField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  match3?: ModelRoutemapReadItemMatch3Map;
+  /** OPNsense FieldType: TextField */
+  set?: string;
+}
+export const ModelRoutemapReadItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    name: S.String,
+    action: ModelRoutemapReadItemActionMap,
+    id: S.String,
+    match: S.optional(ModelRoutemapReadItemMatchMap),
+    match2: S.optional(ModelRoutemapReadItemMatch2Map),
+    match3: S.optional(ModelRoutemapReadItemMatch3Map),
+    set: S.optional(S.String),
+  }),
+).annotate({
+  identifier: "ModelRoutemapReadItem",
+}) as any as S.Schema<ModelRoutemapReadItem>;
+
+export type ModelRoutemapReadItemMap = {
+  [key: string]: ModelRoutemapReadItem | undefined;
+};
+export const ModelRoutemapReadItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  ModelRoutemapReadItem,
+) as any as S.Schema<ModelRoutemapReadItemMap>;
+
+export interface ModelRoutemapsRead {
+  routemap?: ModelRoutemapReadItemMap;
+}
+export const ModelRoutemapsRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    routemap: S.optional(ModelRoutemapReadItemMap),
+  }),
+).annotate({
+  identifier: "ModelRoutemapsRead",
+}) as any as S.Schema<ModelRoutemapsRead>;
+
+export type ModelPeergroupReadItemRemoteAsModeMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelPeergroupReadItemRemoteAsModeMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelPeergroupReadItemRemoteAsModeMap>;
+
+export type ModelPeergroupReadItemFamilyMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelPeergroupReadItemFamilyMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelPeergroupReadItemFamilyMap>;
+
+export type ModelPeergroupReadItemListenrangesMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelPeergroupReadItemListenrangesMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelPeergroupReadItemListenrangesMap>;
+
+export type ModelPeergroupReadItemUpdatesourceMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelPeergroupReadItemUpdatesourceMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelPeergroupReadItemUpdatesourceMap>;
+
+export type ModelPeergroupReadItemLinkedPrefixlistInMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelPeergroupReadItemLinkedPrefixlistInMap =
+  /*@__PURE__*/ S.Record(
+    S.String,
+    OptionEntry,
+  ) as any as S.Schema<ModelPeergroupReadItemLinkedPrefixlistInMap>;
+
+export type ModelPeergroupReadItemLinkedPrefixlistOutMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelPeergroupReadItemLinkedPrefixlistOutMap =
+  /*@__PURE__*/ S.Record(
+    S.String,
+    OptionEntry,
+  ) as any as S.Schema<ModelPeergroupReadItemLinkedPrefixlistOutMap>;
+
+export type ModelPeergroupReadItemLinkedRoutemapInMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelPeergroupReadItemLinkedRoutemapInMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelPeergroupReadItemLinkedRoutemapInMap>;
+
+export type ModelPeergroupReadItemLinkedRoutemapOutMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelPeergroupReadItemLinkedRoutemapOutMap =
+  /*@__PURE__*/ S.Record(
+    S.String,
+    OptionEntry,
+  ) as any as S.Schema<ModelPeergroupReadItemLinkedRoutemapOutMap>;
+
+export interface ModelPeergroupReadItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  name: string;
+  /** OPNsense FieldType: OptionField */
+  remote_as_mode?: ModelPeergroupReadItemRemoteAsModeMap;
+  /** OPNsense FieldType: IntegerField; range 1..4294967295 (as text) */
+  remoteas?: string;
+  /** OPNsense FieldType: OptionField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  family: ModelPeergroupReadItemFamilyMap;
+  /** OPNsense FieldType: NetworkField */
+  listenranges?: ModelPeergroupReadItemListenrangesMap;
+  /** OPNsense FieldType: InterfaceField */
+  updatesource?: ModelPeergroupReadItemUpdatesourceMap;
+  /** OPNsense FieldType: BooleanField */
+  nexthopself?: string;
+  /** OPNsense FieldType: BooleanField */
+  defaultoriginate?: string;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedPrefixlistIn?: ModelPeergroupReadItemLinkedPrefixlistInMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedPrefixlistOut?: ModelPeergroupReadItemLinkedPrefixlistOutMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedRoutemapIn?: ModelPeergroupReadItemLinkedRoutemapInMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedRoutemapOut?: ModelPeergroupReadItemLinkedRoutemapOutMap;
+}
+export const ModelPeergroupReadItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    name: S.String,
+    remote_as_mode: S.optional(ModelPeergroupReadItemRemoteAsModeMap),
+    remoteas: S.optional(S.String),
+    family: ModelPeergroupReadItemFamilyMap,
+    listenranges: S.optional(ModelPeergroupReadItemListenrangesMap),
+    updatesource: S.optional(ModelPeergroupReadItemUpdatesourceMap),
+    nexthopself: S.optional(S.String),
+    defaultoriginate: S.optional(S.String),
+    linkedPrefixlistIn: S.optional(ModelPeergroupReadItemLinkedPrefixlistInMap),
+    linkedPrefixlistOut: S.optional(
+      ModelPeergroupReadItemLinkedPrefixlistOutMap,
+    ),
+    linkedRoutemapIn: S.optional(ModelPeergroupReadItemLinkedRoutemapInMap),
+    linkedRoutemapOut: S.optional(ModelPeergroupReadItemLinkedRoutemapOutMap),
+  }),
+).annotate({
+  identifier: "ModelPeergroupReadItem",
+}) as any as S.Schema<ModelPeergroupReadItem>;
+
+export type ModelPeergroupReadItemMap = {
+  [key: string]: ModelPeergroupReadItem | undefined;
+};
+export const ModelPeergroupReadItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  ModelPeergroupReadItem,
+) as any as S.Schema<ModelPeergroupReadItemMap>;
+
+export interface ModelPeergroupsRead {
+  peergroup?: ModelPeergroupReadItemMap;
+}
+export const ModelPeergroupsRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    peergroup: S.optional(ModelPeergroupReadItemMap),
+  }),
+).annotate({
+  identifier: "ModelPeergroupsRead",
+}) as any as S.Schema<ModelPeergroupsRead>;
+
+export type ModelRedistributionReadItemRedistributeMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRedistributionReadItemRedistributeMap =
+  /*@__PURE__*/ S.Record(
+    S.String,
+    OptionEntry,
+  ) as any as S.Schema<ModelRedistributionReadItemRedistributeMap>;
+
+export type ModelRedistributionReadItemLinkedRoutemapMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRedistributionReadItemLinkedRoutemapMap =
+  /*@__PURE__*/ S.Record(
+    S.String,
+    OptionEntry,
+  ) as any as S.Schema<ModelRedistributionReadItemLinkedRoutemapMap>;
+
+export interface ModelRedistributionReadItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: DescriptionField */
+  description?: string;
+  /** OPNsense FieldType: OptionField */
+  redistribute: ModelRedistributionReadItemRedistributeMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedRoutemap?: ModelRedistributionReadItemLinkedRoutemapMap;
+}
+export const ModelRedistributionReadItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    redistribute: ModelRedistributionReadItemRedistributeMap,
+    linkedRoutemap: S.optional(ModelRedistributionReadItemLinkedRoutemapMap),
+  }),
+).annotate({
+  identifier: "ModelRedistributionReadItem",
+}) as any as S.Schema<ModelRedistributionReadItem>;
+
+export type ModelRedistributionReadItemMap = {
+  [key: string]: ModelRedistributionReadItem | undefined;
+};
+export const ModelRedistributionReadItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  ModelRedistributionReadItem,
+) as any as S.Schema<ModelRedistributionReadItemMap>;
+
+export interface ModelRedistributionsRead {
+  redistribution?: ModelRedistributionReadItemMap;
+}
+export const ModelRedistributionsRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    redistribution: S.optional(ModelRedistributionReadItemMap),
+  }),
+).annotate({
+  identifier: "ModelRedistributionsRead",
+}) as any as S.Schema<ModelRedistributionsRead>;
+
+export interface ModelRead {
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: IntegerField; range 1..4294967295 (as text) */
+  asnumber: string;
+  /** OPNsense FieldType: IntegerField; range 1..255 (as text) */
+  distance?: string;
+  /** OPNsense FieldType: TextField; pattern /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/ */
+  routerid?: string;
+  /** OPNsense FieldType: BooleanField */
+  graceful: string;
+  /** OPNsense FieldType: BooleanField */
+  networkimportcheck: string;
+  /** OPNsense FieldType: BooleanField */
+  enforce_first_as: string;
+  /** OPNsense FieldType: BooleanField */
+  logneighborchanges: string;
+  /** OPNsense FieldType: CSVListField */
+  networks?: string;
+  /** OPNsense FieldType: OptionField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  bestpath?: ModelBestpathMap;
+  /** OPNsense FieldType: IntegerField; range 1..128 (as text) */
+  maximumpaths?: string;
+  /** OPNsense FieldType: IntegerField; range 1..128 (as text) */
+  maximumpathsibgp?: string;
+  neighbors?: ModelNeighborsRead;
+  aspaths?: ModelAspathsRead;
+  prefixlists?: ModelPrefixlistsRead;
+  communitylists?: ModelCommunitylistsRead;
+  routemaps?: ModelRoutemapsRead;
+  peergroups?: ModelPeergroupsRead;
+  redistributions?: ModelRedistributionsRead;
+}
+export const ModelRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    enabled: S.String,
+    asnumber: S.String,
+    distance: S.optional(S.String),
+    routerid: S.optional(S.String),
+    graceful: S.String,
+    networkimportcheck: S.String,
+    enforce_first_as: S.String,
+    logneighborchanges: S.String,
+    networks: S.optional(S.String),
+    bestpath: S.optional(ModelBestpathMap),
+    maximumpaths: S.optional(S.String),
+    maximumpathsibgp: S.optional(S.String),
+    neighbors: S.optional(ModelNeighborsRead),
+    aspaths: S.optional(ModelAspathsRead),
+    prefixlists: S.optional(ModelPrefixlistsRead),
+    communitylists: S.optional(ModelCommunitylistsRead),
+    routemaps: S.optional(ModelRoutemapsRead),
+    peergroups: S.optional(ModelPeergroupsRead),
+    redistributions: S.optional(ModelRedistributionsRead),
+  }),
+).annotate({ identifier: "ModelRead" }) as any as S.Schema<ModelRead>;
+
+export interface GetResponse {
+  bgp?: ModelRead;
+}
+export const GetResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    bgp: S.optional(ModelRead),
+  }),
+).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
+
+export interface GetAspathRequest {
+  uuid: string;
+}
+export const GetAspathRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.String.pipe(T.Label()),
+  }).pipe(
+    T.Http({
+      method: "GET",
+      uri: "/api/quagga/bgp/getAspath/{uuid}",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "GetAspathRequest",
+}) as any as S.Schema<GetAspathRequest>;
+
+export type GetAspathItemActionMap = { [key: string]: OptionEntry | undefined };
+export const GetAspathItemActionMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetAspathItemActionMap>;
+
+export interface GetAspathItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  description?: string;
+  /** OPNsense FieldType: IntegerField; range 0..4294967295 (as text) */
+  number: string;
+  /** OPNsense FieldType: OptionField */
+  action: GetAspathItemActionMap;
+  /** OPNsense FieldType: TextField */
+  as: string;
+}
+export const GetAspathItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    number: S.String,
+    action: GetAspathItemActionMap,
+    as: S.String,
+  }),
+).annotate({ identifier: "GetAspathItem" }) as any as S.Schema<GetAspathItem>;
+
+export interface GetAspathResponse {
+  aspath?: GetAspathItem;
+}
+export const GetAspathResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    aspath: S.optional(GetAspathItem),
+  }),
+).annotate({
+  identifier: "GetAspathResponse",
+}) as any as S.Schema<GetAspathResponse>;
+
+export interface GetCommunitylistRequest {
+  uuid: string;
+}
+export const GetCommunitylistRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.String.pipe(T.Label()),
+  }).pipe(
+    T.Http({
+      method: "GET",
+      uri: "/api/quagga/bgp/getCommunitylist/{uuid}",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "GetCommunitylistRequest",
+}) as any as S.Schema<GetCommunitylistRequest>;
+
+export type GetCommunitylistItemActionMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetCommunitylistItemActionMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetCommunitylistItemActionMap>;
+
+export interface GetCommunitylistItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  description?: string;
+  /** OPNsense FieldType: IntegerField; range 1..500 (as text) */
+  number: string;
+  /** OPNsense FieldType: IntegerField; range 10..99 (as text) */
+  seqnumber: string;
+  /** OPNsense FieldType: OptionField */
+  action: GetCommunitylistItemActionMap;
+  /** OPNsense FieldType: TextField */
+  community: string;
+}
+export const GetCommunitylistItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    number: S.String,
+    seqnumber: S.String,
+    action: GetCommunitylistItemActionMap,
+    community: S.String,
+  }),
+).annotate({
+  identifier: "GetCommunitylistItem",
+}) as any as S.Schema<GetCommunitylistItem>;
+
+export interface GetCommunitylistResponse {
+  communitylist?: GetCommunitylistItem;
+}
+export const GetCommunitylistResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    communitylist: S.optional(GetCommunitylistItem),
+  }),
+).annotate({
+  identifier: "GetCommunitylistResponse",
+}) as any as S.Schema<GetCommunitylistResponse>;
+
+export interface GetNeighborRequest {
+  uuid: string;
+}
+export const GetNeighborRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.String.pipe(T.Label()),
+  }).pipe(
+    T.Http({
+      method: "GET",
+      uri: "/api/quagga/bgp/getNeighbor/{uuid}",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "GetNeighborRequest",
+}) as any as S.Schema<GetNeighborRequest>;
+
+export type GetNeighborItemRemoteAsModeMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemRemoteAsModeMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemRemoteAsModeMap>;
+
+export type GetNeighborItemUpdatesourceMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemUpdatesourceMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemUpdatesourceMap>;
+
+export type GetNeighborItemLinklocalinterfaceMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemLinklocalinterfaceMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemLinklocalinterfaceMap>;
+
+export type GetNeighborItemRemoveprivateasMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemRemoveprivateasMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemRemoveprivateasMap>;
+
+export type GetNeighborItemAllowasInMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemAllowasInMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemAllowasInMap>;
+
+export type GetNeighborItemAttributeunchangedMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemAttributeunchangedMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemAttributeunchangedMap>;
+
+export type GetNeighborItemCapabilitiesMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemCapabilitiesMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemCapabilitiesMap>;
+
+export type GetNeighborItemLinkedPrefixlistInMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemLinkedPrefixlistInMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemLinkedPrefixlistInMap>;
+
+export type GetNeighborItemLinkedPrefixlistOutMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemLinkedPrefixlistOutMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemLinkedPrefixlistOutMap>;
+
+export type GetNeighborItemLinkedRoutemapInMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemLinkedRoutemapInMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemLinkedRoutemapInMap>;
+
+export type GetNeighborItemLinkedRoutemapOutMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemLinkedRoutemapOutMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemLinkedRoutemapOutMap>;
+
+export type GetNeighborItemPeergroupMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetNeighborItemPeergroupMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetNeighborItemPeergroupMap>;
+
+export interface GetNeighborItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  description?: string;
+  /** OPNsense FieldType: NetworkField */
+  address: string;
+  /** OPNsense FieldType: OptionField */
+  remote_as_mode?: GetNeighborItemRemoteAsModeMap;
+  /** OPNsense FieldType: IntegerField; range 1..4294967295 (as text) */
+  remoteas?: string;
+  /** OPNsense FieldType: IntegerField; range 1..4294967295 (as text) */
+  localas?: string;
+  /** OPNsense FieldType: TextField */
+  password?: string;
+  /** OPNsense FieldType: IntegerField; range 0..65535 (as text) */
+  weight?: string;
+  /** OPNsense FieldType: NetworkField */
+  localip?: string;
+  /** OPNsense FieldType: InterfaceField */
+  updatesource?: GetNeighborItemUpdatesourceMap;
+  /** OPNsense FieldType: InterfaceField */
+  linklocalinterface?: GetNeighborItemLinklocalinterfaceMap;
+  /** OPNsense FieldType: BooleanField */
+  nexthopself?: string;
+  /** OPNsense FieldType: BooleanField */
+  nexthopselfall?: string;
+  /** OPNsense FieldType: BooleanField */
+  multihop?: string;
+  /** OPNsense FieldType: BooleanField */
+  multiprotocol?: string;
+  /** OPNsense FieldType: BooleanField */
+  rrclient?: string;
+  /** OPNsense FieldType: BooleanField */
+  soft_reconfiguration_inbound?: string;
+  /** OPNsense FieldType: BooleanField */
+  bfd?: string;
+  /** OPNsense FieldType: BooleanField */
+  bfd_strict?: string;
+  /** OPNsense FieldType: IntegerField; range 1..1000 (as text) */
+  keepalive?: string;
+  /** OPNsense FieldType: IntegerField; range 3..3000 (as text) */
+  holddown?: string;
+  /** OPNsense FieldType: IntegerField; range 1..65000 (as text) */
+  connecttimer?: string;
+  /** OPNsense FieldType: BooleanField */
+  defaultoriginate?: string;
+  /** OPNsense FieldType: BooleanField */
+  asoverride?: string;
+  /** OPNsense FieldType: OptionField */
+  removeprivateas?: GetNeighborItemRemoveprivateasMap;
+  /** OPNsense FieldType: OptionField */
+  allowas_in?: GetNeighborItemAllowasInMap;
+  /** OPNsense FieldType: BooleanField */
+  disable_connected_check?: string;
+  /** OPNsense FieldType: OptionField */
+  attributeunchanged?: GetNeighborItemAttributeunchangedMap;
+  /** OPNsense FieldType: OptionField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  capabilities?: GetNeighborItemCapabilitiesMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedPrefixlistIn?: GetNeighborItemLinkedPrefixlistInMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedPrefixlistOut?: GetNeighborItemLinkedPrefixlistOutMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedRoutemapIn?: GetNeighborItemLinkedRoutemapInMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedRoutemapOut?: GetNeighborItemLinkedRoutemapOutMap;
+  /** OPNsense FieldType: ModelRelationField */
+  peergroup?: GetNeighborItemPeergroupMap;
+}
+export const GetNeighborItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    address: S.String,
+    remote_as_mode: S.optional(GetNeighborItemRemoteAsModeMap),
+    remoteas: S.optional(S.String),
+    localas: S.optional(S.String),
+    password: S.optional(S.String),
+    weight: S.optional(S.String),
+    localip: S.optional(S.String),
+    updatesource: S.optional(GetNeighborItemUpdatesourceMap),
+    linklocalinterface: S.optional(GetNeighborItemLinklocalinterfaceMap),
+    nexthopself: S.optional(S.String),
+    nexthopselfall: S.optional(S.String),
+    multihop: S.optional(S.String),
+    multiprotocol: S.optional(S.String),
+    rrclient: S.optional(S.String),
+    soft_reconfiguration_inbound: S.optional(S.String),
+    bfd: S.optional(S.String),
+    bfd_strict: S.optional(S.String),
+    keepalive: S.optional(S.String),
+    holddown: S.optional(S.String),
+    connecttimer: S.optional(S.String),
+    defaultoriginate: S.optional(S.String),
+    asoverride: S.optional(S.String),
+    removeprivateas: S.optional(GetNeighborItemRemoveprivateasMap),
+    allowas_in: S.optional(GetNeighborItemAllowasInMap),
+    disable_connected_check: S.optional(S.String),
+    attributeunchanged: S.optional(GetNeighborItemAttributeunchangedMap),
+    capabilities: S.optional(GetNeighborItemCapabilitiesMap),
+    linkedPrefixlistIn: S.optional(GetNeighborItemLinkedPrefixlistInMap),
+    linkedPrefixlistOut: S.optional(GetNeighborItemLinkedPrefixlistOutMap),
+    linkedRoutemapIn: S.optional(GetNeighborItemLinkedRoutemapInMap),
+    linkedRoutemapOut: S.optional(GetNeighborItemLinkedRoutemapOutMap),
+    peergroup: S.optional(GetNeighborItemPeergroupMap),
+  }),
+).annotate({
+  identifier: "GetNeighborItem",
+}) as any as S.Schema<GetNeighborItem>;
+
+export interface GetNeighborResponse {
+  neighbor?: GetNeighborItem;
+}
+export const GetNeighborResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    neighbor: S.optional(GetNeighborItem),
+  }),
+).annotate({
+  identifier: "GetNeighborResponse",
+}) as any as S.Schema<GetNeighborResponse>;
+
+export interface GetPeergroupRequest {
+  uuid: string;
+}
+export const GetPeergroupRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.String.pipe(T.Label()),
+  }).pipe(
+    T.Http({
+      method: "GET",
+      uri: "/api/quagga/bgp/getPeergroup/{uuid}",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "GetPeergroupRequest",
+}) as any as S.Schema<GetPeergroupRequest>;
+
+export type GetPeergroupItemRemoteAsModeMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetPeergroupItemRemoteAsModeMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetPeergroupItemRemoteAsModeMap>;
+
+export type GetPeergroupItemFamilyMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetPeergroupItemFamilyMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetPeergroupItemFamilyMap>;
+
+export type GetPeergroupItemListenrangesMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetPeergroupItemListenrangesMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetPeergroupItemListenrangesMap>;
+
+export type GetPeergroupItemUpdatesourceMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetPeergroupItemUpdatesourceMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetPeergroupItemUpdatesourceMap>;
+
+export type GetPeergroupItemLinkedPrefixlistInMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetPeergroupItemLinkedPrefixlistInMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetPeergroupItemLinkedPrefixlistInMap>;
+
+export type GetPeergroupItemLinkedPrefixlistOutMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetPeergroupItemLinkedPrefixlistOutMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetPeergroupItemLinkedPrefixlistOutMap>;
+
+export type GetPeergroupItemLinkedRoutemapInMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetPeergroupItemLinkedRoutemapInMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetPeergroupItemLinkedRoutemapInMap>;
+
+export type GetPeergroupItemLinkedRoutemapOutMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetPeergroupItemLinkedRoutemapOutMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetPeergroupItemLinkedRoutemapOutMap>;
+
+export interface GetPeergroupItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  name: string;
+  /** OPNsense FieldType: OptionField */
+  remote_as_mode?: GetPeergroupItemRemoteAsModeMap;
+  /** OPNsense FieldType: IntegerField; range 1..4294967295 (as text) */
+  remoteas?: string;
+  /** OPNsense FieldType: OptionField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  family: GetPeergroupItemFamilyMap;
+  /** OPNsense FieldType: NetworkField */
+  listenranges?: GetPeergroupItemListenrangesMap;
+  /** OPNsense FieldType: InterfaceField */
+  updatesource?: GetPeergroupItemUpdatesourceMap;
+  /** OPNsense FieldType: BooleanField */
+  nexthopself?: string;
+  /** OPNsense FieldType: BooleanField */
+  defaultoriginate?: string;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedPrefixlistIn?: GetPeergroupItemLinkedPrefixlistInMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedPrefixlistOut?: GetPeergroupItemLinkedPrefixlistOutMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedRoutemapIn?: GetPeergroupItemLinkedRoutemapInMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedRoutemapOut?: GetPeergroupItemLinkedRoutemapOutMap;
+}
+export const GetPeergroupItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    name: S.String,
+    remote_as_mode: S.optional(GetPeergroupItemRemoteAsModeMap),
+    remoteas: S.optional(S.String),
+    family: GetPeergroupItemFamilyMap,
+    listenranges: S.optional(GetPeergroupItemListenrangesMap),
+    updatesource: S.optional(GetPeergroupItemUpdatesourceMap),
+    nexthopself: S.optional(S.String),
+    defaultoriginate: S.optional(S.String),
+    linkedPrefixlistIn: S.optional(GetPeergroupItemLinkedPrefixlistInMap),
+    linkedPrefixlistOut: S.optional(GetPeergroupItemLinkedPrefixlistOutMap),
+    linkedRoutemapIn: S.optional(GetPeergroupItemLinkedRoutemapInMap),
+    linkedRoutemapOut: S.optional(GetPeergroupItemLinkedRoutemapOutMap),
+  }),
+).annotate({
+  identifier: "GetPeergroupItem",
+}) as any as S.Schema<GetPeergroupItem>;
+
+export interface GetPeergroupResponse {
+  peergroup?: GetPeergroupItem;
+}
+export const GetPeergroupResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    peergroup: S.optional(GetPeergroupItem),
+  }),
+).annotate({
+  identifier: "GetPeergroupResponse",
+}) as any as S.Schema<GetPeergroupResponse>;
+
+export interface GetPrefixlistRequest {
+  uuid: string;
+}
+export const GetPrefixlistRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.String.pipe(T.Label()),
+  }).pipe(
+    T.Http({
+      method: "GET",
+      uri: "/api/quagga/bgp/getPrefixlist/{uuid}",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "GetPrefixlistRequest",
+}) as any as S.Schema<GetPrefixlistRequest>;
+
+export type GetPrefixlistItemVersionMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetPrefixlistItemVersionMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetPrefixlistItemVersionMap>;
+
+export type GetPrefixlistItemActionMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetPrefixlistItemActionMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetPrefixlistItemActionMap>;
+
+export interface GetPrefixlistItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  description?: string;
+  /** OPNsense FieldType: TextField; pattern /^[a-zA-Z0-9._-]{1,64}$/ */
+  name: string;
+  /** OPNsense FieldType: OptionField */
+  version: GetPrefixlistItemVersionMap;
+  /** OPNsense FieldType: IntegerField; range 1..4294967294 (as text) */
+  seqnumber: string;
+  /** OPNsense FieldType: OptionField */
+  action: GetPrefixlistItemActionMap;
+  /** OPNsense FieldType: TextField */
+  network: string;
+}
+export const GetPrefixlistItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    name: S.String,
+    version: GetPrefixlistItemVersionMap,
+    seqnumber: S.String,
+    action: GetPrefixlistItemActionMap,
+    network: S.String,
+  }),
+).annotate({
+  identifier: "GetPrefixlistItem",
+}) as any as S.Schema<GetPrefixlistItem>;
+
+export interface GetPrefixlistResponse {
+  prefixlist?: GetPrefixlistItem;
+}
+export const GetPrefixlistResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    prefixlist: S.optional(GetPrefixlistItem),
+  }),
+).annotate({
+  identifier: "GetPrefixlistResponse",
+}) as any as S.Schema<GetPrefixlistResponse>;
+
+export interface GetRedistributionRequest {
+  uuid: string;
+}
+export const GetRedistributionRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.String.pipe(T.Label()),
+  }).pipe(
+    T.Http({
+      method: "GET",
+      uri: "/api/quagga/bgp/getRedistribution/{uuid}",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "GetRedistributionRequest",
+}) as any as S.Schema<GetRedistributionRequest>;
+
+export type GetRedistributionItemRedistributeMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetRedistributionItemRedistributeMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetRedistributionItemRedistributeMap>;
+
+export type GetRedistributionItemLinkedRoutemapMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetRedistributionItemLinkedRoutemapMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetRedistributionItemLinkedRoutemapMap>;
+
+export interface GetRedistributionItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: DescriptionField */
+  description?: string;
+  /** OPNsense FieldType: OptionField */
+  redistribute: GetRedistributionItemRedistributeMap;
+  /** OPNsense FieldType: ModelRelationField */
+  linkedRoutemap?: GetRedistributionItemLinkedRoutemapMap;
+}
+export const GetRedistributionItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    redistribute: GetRedistributionItemRedistributeMap,
+    linkedRoutemap: S.optional(GetRedistributionItemLinkedRoutemapMap),
+  }),
+).annotate({
+  identifier: "GetRedistributionItem",
+}) as any as S.Schema<GetRedistributionItem>;
+
+export interface GetRedistributionResponse {
+  redistribution?: GetRedistributionItem;
+}
+export const GetRedistributionResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    redistribution: S.optional(GetRedistributionItem),
+  }),
+).annotate({
+  identifier: "GetRedistributionResponse",
+}) as any as S.Schema<GetRedistributionResponse>;
+
+export interface GetRoutemapRequest {
+  uuid: string;
+}
+export const GetRoutemapRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.String.pipe(T.Label()),
+  }).pipe(
+    T.Http({
+      method: "GET",
+      uri: "/api/quagga/bgp/getRoutemap/{uuid}",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "GetRoutemapRequest",
+}) as any as S.Schema<GetRoutemapRequest>;
+
+export type GetRoutemapItemActionMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetRoutemapItemActionMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetRoutemapItemActionMap>;
+
+export type GetRoutemapItemMatchMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetRoutemapItemMatchMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetRoutemapItemMatchMap>;
+
+export type GetRoutemapItemMatch2Map = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetRoutemapItemMatch2Map = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetRoutemapItemMatch2Map>;
+
+export type GetRoutemapItemMatch3Map = {
+  [key: string]: OptionEntry | undefined;
+};
+export const GetRoutemapItemMatch3Map = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetRoutemapItemMatch3Map>;
+
+export interface GetRoutemapItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: TextField */
+  description?: string;
+  /** OPNsense FieldType: TextField; pattern /^[a-zA-Z0-9._-]{1,64}$/ */
+  name: string;
+  /** OPNsense FieldType: OptionField */
+  action: GetRoutemapItemActionMap;
+  /** OPNsense FieldType: IntegerField; range 1..65535 (as text) */
+  id: string;
+  /** OPNsense FieldType: ModelRelationField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  match?: GetRoutemapItemMatchMap;
+  /** OPNsense FieldType: ModelRelationField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  match2?: GetRoutemapItemMatch2Map;
+  /** OPNsense FieldType: ModelRelationField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  match3?: GetRoutemapItemMatch3Map;
+  /** OPNsense FieldType: TextField */
+  set?: string;
+}
+export const GetRoutemapItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    description: S.optional(S.String),
+    name: S.String,
+    action: GetRoutemapItemActionMap,
+    id: S.String,
+    match: S.optional(GetRoutemapItemMatchMap),
+    match2: S.optional(GetRoutemapItemMatch2Map),
+    match3: S.optional(GetRoutemapItemMatch3Map),
+    set: S.optional(S.String),
+  }),
+).annotate({
+  identifier: "GetRoutemapItem",
+}) as any as S.Schema<GetRoutemapItem>;
+
+export interface GetRoutemapResponse {
+  routemap?: GetRoutemapItem;
+}
+export const GetRoutemapResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    routemap: S.optional(GetRoutemapItem),
+  }),
+).annotate({
+  identifier: "GetRoutemapResponse",
+}) as any as S.Schema<GetRoutemapResponse>;
+
+export interface SearchAspathRequest {}
+export const SearchAspathRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({}).pipe(
+    T.Http({ method: "POST", uri: "/api/quagga/bgp/searchAspath", code: 200 }),
+  ),
+).annotate({
+  identifier: "SearchAspathRequest",
+}) as any as S.Schema<SearchAspathRequest>;
+
+export type AspathList = Array<AspathItem>;
+export const AspathList = /*@__PURE__*/ S.Array(
+  AspathItem,
+) as any as S.Schema<AspathList>;
+
+export interface SearchAspathResponse {
+  /** Total matching items before pagination. */
+  total?: number;
+  rowCount?: number;
+  /** Current page number. */
+  current?: number;
+  rows?: AspathList;
+}
+export const SearchAspathResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    total: S.optional(S.Number),
+    rowCount: S.optional(S.Number),
+    current: S.optional(S.Number),
+    rows: S.optional(AspathList),
+  }),
+).annotate({
+  identifier: "SearchAspathResponse",
+}) as any as S.Schema<SearchAspathResponse>;
+
+export interface SearchCommunitylistRequest {}
+export const SearchCommunitylistRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({}).pipe(
+    T.Http({
+      method: "POST",
+      uri: "/api/quagga/bgp/searchCommunitylist",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "SearchCommunitylistRequest",
+}) as any as S.Schema<SearchCommunitylistRequest>;
+
+export type CommunitylistList = Array<CommunitylistItem>;
+export const CommunitylistList = /*@__PURE__*/ S.Array(
+  CommunitylistItem,
+) as any as S.Schema<CommunitylistList>;
+
+export interface SearchCommunitylistResponse {
+  /** Total matching items before pagination. */
+  total?: number;
+  rowCount?: number;
+  /** Current page number. */
+  current?: number;
+  rows?: CommunitylistList;
+}
+export const SearchCommunitylistResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    total: S.optional(S.Number),
+    rowCount: S.optional(S.Number),
+    current: S.optional(S.Number),
+    rows: S.optional(CommunitylistList),
+  }),
+).annotate({
+  identifier: "SearchCommunitylistResponse",
+}) as any as S.Schema<SearchCommunitylistResponse>;
+
+export interface SearchNeighborRequest {}
+export const SearchNeighborRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({}).pipe(
+    T.Http({
+      method: "POST",
+      uri: "/api/quagga/bgp/searchNeighbor",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "SearchNeighborRequest",
+}) as any as S.Schema<SearchNeighborRequest>;
+
+export type NeighborList = Array<NeighborItem>;
+export const NeighborList = /*@__PURE__*/ S.Array(
+  NeighborItem,
+) as any as S.Schema<NeighborList>;
+
+export interface SearchNeighborResponse {
+  /** Total matching items before pagination. */
+  total?: number;
+  rowCount?: number;
+  /** Current page number. */
+  current?: number;
+  rows?: NeighborList;
+}
+export const SearchNeighborResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    total: S.optional(S.Number),
+    rowCount: S.optional(S.Number),
+    current: S.optional(S.Number),
+    rows: S.optional(NeighborList),
+  }),
+).annotate({
+  identifier: "SearchNeighborResponse",
+}) as any as S.Schema<SearchNeighborResponse>;
+
+export interface SearchPeergroupRequest {}
+export const SearchPeergroupRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({}).pipe(
+    T.Http({
+      method: "POST",
+      uri: "/api/quagga/bgp/searchPeergroup",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "SearchPeergroupRequest",
+}) as any as S.Schema<SearchPeergroupRequest>;
+
+export type PeergroupList = Array<PeergroupItem>;
+export const PeergroupList = /*@__PURE__*/ S.Array(
+  PeergroupItem,
+) as any as S.Schema<PeergroupList>;
+
+export interface SearchPeergroupResponse {
+  /** Total matching items before pagination. */
+  total?: number;
+  rowCount?: number;
+  /** Current page number. */
+  current?: number;
+  rows?: PeergroupList;
+}
+export const SearchPeergroupResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    total: S.optional(S.Number),
+    rowCount: S.optional(S.Number),
+    current: S.optional(S.Number),
+    rows: S.optional(PeergroupList),
+  }),
+).annotate({
+  identifier: "SearchPeergroupResponse",
+}) as any as S.Schema<SearchPeergroupResponse>;
+
+export interface SearchPrefixlistRequest {}
+export const SearchPrefixlistRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({}).pipe(
+    T.Http({
+      method: "POST",
+      uri: "/api/quagga/bgp/searchPrefixlist",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "SearchPrefixlistRequest",
+}) as any as S.Schema<SearchPrefixlistRequest>;
+
+export type PrefixlistList = Array<PrefixlistItem>;
+export const PrefixlistList = /*@__PURE__*/ S.Array(
+  PrefixlistItem,
+) as any as S.Schema<PrefixlistList>;
+
+export interface SearchPrefixlistResponse {
+  /** Total matching items before pagination. */
+  total?: number;
+  rowCount?: number;
+  /** Current page number. */
+  current?: number;
+  rows?: PrefixlistList;
+}
+export const SearchPrefixlistResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    total: S.optional(S.Number),
+    rowCount: S.optional(S.Number),
+    current: S.optional(S.Number),
+    rows: S.optional(PrefixlistList),
+  }),
+).annotate({
+  identifier: "SearchPrefixlistResponse",
+}) as any as S.Schema<SearchPrefixlistResponse>;
+
+export interface SearchRedistributionRequest {}
+export const SearchRedistributionRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({}).pipe(
+    T.Http({
+      method: "POST",
+      uri: "/api/quagga/bgp/searchRedistribution",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "SearchRedistributionRequest",
+}) as any as S.Schema<SearchRedistributionRequest>;
+
+export type RedistributionList = Array<RedistributionItem>;
+export const RedistributionList = /*@__PURE__*/ S.Array(
+  RedistributionItem,
+) as any as S.Schema<RedistributionList>;
+
+export interface SearchRedistributionResponse {
+  /** Total matching items before pagination. */
+  total?: number;
+  rowCount?: number;
+  /** Current page number. */
+  current?: number;
+  rows?: RedistributionList;
+}
+export const SearchRedistributionResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    total: S.optional(S.Number),
+    rowCount: S.optional(S.Number),
+    current: S.optional(S.Number),
+    rows: S.optional(RedistributionList),
+  }),
+).annotate({
+  identifier: "SearchRedistributionResponse",
+}) as any as S.Schema<SearchRedistributionResponse>;
+
+export interface SearchRoutemapRequest {}
+export const SearchRoutemapRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({}).pipe(
+    T.Http({
+      method: "POST",
+      uri: "/api/quagga/bgp/searchRoutemap",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "SearchRoutemapRequest",
+}) as any as S.Schema<SearchRoutemapRequest>;
+
+export type RoutemapList = Array<RoutemapItem>;
+export const RoutemapList = /*@__PURE__*/ S.Array(
+  RoutemapItem,
+) as any as S.Schema<RoutemapList>;
+
+export interface SearchRoutemapResponse {
+  /** Total matching items before pagination. */
+  total?: number;
+  rowCount?: number;
+  /** Current page number. */
+  current?: number;
+  rows?: RoutemapList;
+}
+export const SearchRoutemapResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    total: S.optional(S.Number),
+    rowCount: S.optional(S.Number),
+    current: S.optional(S.Number),
+    rows: S.optional(RoutemapList),
+  }),
+).annotate({
+  identifier: "SearchRoutemapResponse",
+}) as any as S.Schema<SearchRoutemapResponse>;
+
 export type ModelBestpath =
   | "as_path_confed"
   | "as_path_multipath_relax"
@@ -1398,418 +3190,6 @@ export const Model = /*@__PURE__*/ S.suspend(() =>
     redistributions: S.optional(ModelRedistributions),
   }),
 ).annotate({ identifier: "Model" }) as any as S.Schema<Model>;
-
-export interface GetResponse {
-  bgp?: Model;
-}
-export const GetResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    bgp: S.optional(Model),
-  }),
-).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
-
-export interface GetAspathRequest {}
-export const GetAspathRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({ method: "GET", uri: "/api/quagga/bgp/getAspath", code: 200 }),
-  ),
-).annotate({
-  identifier: "GetAspathRequest",
-}) as any as S.Schema<GetAspathRequest>;
-
-export interface GetAspathResponse {
-  aspath?: AspathItem;
-}
-export const GetAspathResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    aspath: S.optional(AspathItem),
-  }),
-).annotate({
-  identifier: "GetAspathResponse",
-}) as any as S.Schema<GetAspathResponse>;
-
-export interface GetCommunitylistRequest {}
-export const GetCommunitylistRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({
-      method: "GET",
-      uri: "/api/quagga/bgp/getCommunitylist",
-      code: 200,
-    }),
-  ),
-).annotate({
-  identifier: "GetCommunitylistRequest",
-}) as any as S.Schema<GetCommunitylistRequest>;
-
-export interface GetCommunitylistResponse {
-  communitylist?: CommunitylistItem;
-}
-export const GetCommunitylistResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    communitylist: S.optional(CommunitylistItem),
-  }),
-).annotate({
-  identifier: "GetCommunitylistResponse",
-}) as any as S.Schema<GetCommunitylistResponse>;
-
-export interface GetNeighborRequest {}
-export const GetNeighborRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({ method: "GET", uri: "/api/quagga/bgp/getNeighbor", code: 200 }),
-  ),
-).annotate({
-  identifier: "GetNeighborRequest",
-}) as any as S.Schema<GetNeighborRequest>;
-
-export interface GetNeighborResponse {
-  neighbor?: NeighborItem;
-}
-export const GetNeighborResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    neighbor: S.optional(NeighborItem),
-  }),
-).annotate({
-  identifier: "GetNeighborResponse",
-}) as any as S.Schema<GetNeighborResponse>;
-
-export interface GetPeergroupRequest {}
-export const GetPeergroupRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({ method: "GET", uri: "/api/quagga/bgp/getPeergroup", code: 200 }),
-  ),
-).annotate({
-  identifier: "GetPeergroupRequest",
-}) as any as S.Schema<GetPeergroupRequest>;
-
-export interface GetPeergroupResponse {
-  peergroup?: PeergroupItem;
-}
-export const GetPeergroupResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    peergroup: S.optional(PeergroupItem),
-  }),
-).annotate({
-  identifier: "GetPeergroupResponse",
-}) as any as S.Schema<GetPeergroupResponse>;
-
-export interface GetPrefixlistRequest {}
-export const GetPrefixlistRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({ method: "GET", uri: "/api/quagga/bgp/getPrefixlist", code: 200 }),
-  ),
-).annotate({
-  identifier: "GetPrefixlistRequest",
-}) as any as S.Schema<GetPrefixlistRequest>;
-
-export interface GetPrefixlistResponse {
-  prefixlist?: PrefixlistItem;
-}
-export const GetPrefixlistResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    prefixlist: S.optional(PrefixlistItem),
-  }),
-).annotate({
-  identifier: "GetPrefixlistResponse",
-}) as any as S.Schema<GetPrefixlistResponse>;
-
-export interface GetRedistributionRequest {}
-export const GetRedistributionRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({
-      method: "GET",
-      uri: "/api/quagga/bgp/getRedistribution",
-      code: 200,
-    }),
-  ),
-).annotate({
-  identifier: "GetRedistributionRequest",
-}) as any as S.Schema<GetRedistributionRequest>;
-
-export interface GetRedistributionResponse {
-  redistribution?: RedistributionItem;
-}
-export const GetRedistributionResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    redistribution: S.optional(RedistributionItem),
-  }),
-).annotate({
-  identifier: "GetRedistributionResponse",
-}) as any as S.Schema<GetRedistributionResponse>;
-
-export interface GetRoutemapRequest {}
-export const GetRoutemapRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({ method: "GET", uri: "/api/quagga/bgp/getRoutemap", code: 200 }),
-  ),
-).annotate({
-  identifier: "GetRoutemapRequest",
-}) as any as S.Schema<GetRoutemapRequest>;
-
-export interface GetRoutemapResponse {
-  routemap?: RoutemapItem;
-}
-export const GetRoutemapResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    routemap: S.optional(RoutemapItem),
-  }),
-).annotate({
-  identifier: "GetRoutemapResponse",
-}) as any as S.Schema<GetRoutemapResponse>;
-
-export interface SearchAspathRequest {}
-export const SearchAspathRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({ method: "POST", uri: "/api/quagga/bgp/searchAspath", code: 200 }),
-  ),
-).annotate({
-  identifier: "SearchAspathRequest",
-}) as any as S.Schema<SearchAspathRequest>;
-
-export type AspathList = Array<AspathItem>;
-export const AspathList = /*@__PURE__*/ S.Array(
-  AspathItem,
-) as any as S.Schema<AspathList>;
-
-export interface SearchAspathResponse {
-  /** Total matching items before pagination. */
-  total?: number;
-  rowCount?: number;
-  /** Current page number. */
-  current?: number;
-  rows?: AspathList;
-}
-export const SearchAspathResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    total: S.optional(S.Number),
-    rowCount: S.optional(S.Number),
-    current: S.optional(S.Number),
-    rows: S.optional(AspathList),
-  }),
-).annotate({
-  identifier: "SearchAspathResponse",
-}) as any as S.Schema<SearchAspathResponse>;
-
-export interface SearchCommunitylistRequest {}
-export const SearchCommunitylistRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({
-      method: "POST",
-      uri: "/api/quagga/bgp/searchCommunitylist",
-      code: 200,
-    }),
-  ),
-).annotate({
-  identifier: "SearchCommunitylistRequest",
-}) as any as S.Schema<SearchCommunitylistRequest>;
-
-export type CommunitylistList = Array<CommunitylistItem>;
-export const CommunitylistList = /*@__PURE__*/ S.Array(
-  CommunitylistItem,
-) as any as S.Schema<CommunitylistList>;
-
-export interface SearchCommunitylistResponse {
-  /** Total matching items before pagination. */
-  total?: number;
-  rowCount?: number;
-  /** Current page number. */
-  current?: number;
-  rows?: CommunitylistList;
-}
-export const SearchCommunitylistResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    total: S.optional(S.Number),
-    rowCount: S.optional(S.Number),
-    current: S.optional(S.Number),
-    rows: S.optional(CommunitylistList),
-  }),
-).annotate({
-  identifier: "SearchCommunitylistResponse",
-}) as any as S.Schema<SearchCommunitylistResponse>;
-
-export interface SearchNeighborRequest {}
-export const SearchNeighborRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({
-      method: "POST",
-      uri: "/api/quagga/bgp/searchNeighbor",
-      code: 200,
-    }),
-  ),
-).annotate({
-  identifier: "SearchNeighborRequest",
-}) as any as S.Schema<SearchNeighborRequest>;
-
-export type NeighborList = Array<NeighborItem>;
-export const NeighborList = /*@__PURE__*/ S.Array(
-  NeighborItem,
-) as any as S.Schema<NeighborList>;
-
-export interface SearchNeighborResponse {
-  /** Total matching items before pagination. */
-  total?: number;
-  rowCount?: number;
-  /** Current page number. */
-  current?: number;
-  rows?: NeighborList;
-}
-export const SearchNeighborResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    total: S.optional(S.Number),
-    rowCount: S.optional(S.Number),
-    current: S.optional(S.Number),
-    rows: S.optional(NeighborList),
-  }),
-).annotate({
-  identifier: "SearchNeighborResponse",
-}) as any as S.Schema<SearchNeighborResponse>;
-
-export interface SearchPeergroupRequest {}
-export const SearchPeergroupRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({
-      method: "POST",
-      uri: "/api/quagga/bgp/searchPeergroup",
-      code: 200,
-    }),
-  ),
-).annotate({
-  identifier: "SearchPeergroupRequest",
-}) as any as S.Schema<SearchPeergroupRequest>;
-
-export type PeergroupList = Array<PeergroupItem>;
-export const PeergroupList = /*@__PURE__*/ S.Array(
-  PeergroupItem,
-) as any as S.Schema<PeergroupList>;
-
-export interface SearchPeergroupResponse {
-  /** Total matching items before pagination. */
-  total?: number;
-  rowCount?: number;
-  /** Current page number. */
-  current?: number;
-  rows?: PeergroupList;
-}
-export const SearchPeergroupResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    total: S.optional(S.Number),
-    rowCount: S.optional(S.Number),
-    current: S.optional(S.Number),
-    rows: S.optional(PeergroupList),
-  }),
-).annotate({
-  identifier: "SearchPeergroupResponse",
-}) as any as S.Schema<SearchPeergroupResponse>;
-
-export interface SearchPrefixlistRequest {}
-export const SearchPrefixlistRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({
-      method: "POST",
-      uri: "/api/quagga/bgp/searchPrefixlist",
-      code: 200,
-    }),
-  ),
-).annotate({
-  identifier: "SearchPrefixlistRequest",
-}) as any as S.Schema<SearchPrefixlistRequest>;
-
-export type PrefixlistList = Array<PrefixlistItem>;
-export const PrefixlistList = /*@__PURE__*/ S.Array(
-  PrefixlistItem,
-) as any as S.Schema<PrefixlistList>;
-
-export interface SearchPrefixlistResponse {
-  /** Total matching items before pagination. */
-  total?: number;
-  rowCount?: number;
-  /** Current page number. */
-  current?: number;
-  rows?: PrefixlistList;
-}
-export const SearchPrefixlistResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    total: S.optional(S.Number),
-    rowCount: S.optional(S.Number),
-    current: S.optional(S.Number),
-    rows: S.optional(PrefixlistList),
-  }),
-).annotate({
-  identifier: "SearchPrefixlistResponse",
-}) as any as S.Schema<SearchPrefixlistResponse>;
-
-export interface SearchRedistributionRequest {}
-export const SearchRedistributionRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({
-      method: "POST",
-      uri: "/api/quagga/bgp/searchRedistribution",
-      code: 200,
-    }),
-  ),
-).annotate({
-  identifier: "SearchRedistributionRequest",
-}) as any as S.Schema<SearchRedistributionRequest>;
-
-export type RedistributionList = Array<RedistributionItem>;
-export const RedistributionList = /*@__PURE__*/ S.Array(
-  RedistributionItem,
-) as any as S.Schema<RedistributionList>;
-
-export interface SearchRedistributionResponse {
-  /** Total matching items before pagination. */
-  total?: number;
-  rowCount?: number;
-  /** Current page number. */
-  current?: number;
-  rows?: RedistributionList;
-}
-export const SearchRedistributionResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    total: S.optional(S.Number),
-    rowCount: S.optional(S.Number),
-    current: S.optional(S.Number),
-    rows: S.optional(RedistributionList),
-  }),
-).annotate({
-  identifier: "SearchRedistributionResponse",
-}) as any as S.Schema<SearchRedistributionResponse>;
-
-export interface SearchRoutemapRequest {}
-export const SearchRoutemapRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({
-      method: "POST",
-      uri: "/api/quagga/bgp/searchRoutemap",
-      code: 200,
-    }),
-  ),
-).annotate({
-  identifier: "SearchRoutemapRequest",
-}) as any as S.Schema<SearchRoutemapRequest>;
-
-export type RoutemapList = Array<RoutemapItem>;
-export const RoutemapList = /*@__PURE__*/ S.Array(
-  RoutemapItem,
-) as any as S.Schema<RoutemapList>;
-
-export interface SearchRoutemapResponse {
-  /** Total matching items before pagination. */
-  total?: number;
-  rowCount?: number;
-  /** Current page number. */
-  current?: number;
-  rows?: RoutemapList;
-}
-export const SearchRoutemapResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    total: S.optional(S.Number),
-    rowCount: S.optional(S.Number),
-    current: S.optional(S.Number),
-    rows: S.optional(RoutemapList),
-  }),
-).annotate({
-  identifier: "SearchRoutemapResponse",
-}) as any as S.Schema<SearchRoutemapResponse>;
 
 export interface SetRequest {
   bgp?: Model;

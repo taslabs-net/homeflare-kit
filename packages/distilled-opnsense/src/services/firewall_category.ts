@@ -102,52 +102,65 @@ export const GetRequest = /*@__PURE__*/ S.suspend(() =>
   ),
 ).annotate({ identifier: "GetRequest" }) as any as S.Schema<GetRequest>;
 
-export type ModelCategoryItem = CategoryItem;
-export const ModelCategoryItem = CategoryItem;
+export type ModelCategoryReadItem = CategoryItem;
+export const ModelCategoryReadItem = CategoryItem;
 
-export type ModelCategoryItemMap = { [key: string]: CategoryItem | undefined };
-export const ModelCategoryItemMap = /*@__PURE__*/ S.Record(
+export type ModelCategoryReadItemMap = {
+  [key: string]: CategoryItem | undefined;
+};
+export const ModelCategoryReadItemMap = /*@__PURE__*/ S.Record(
   S.String,
   CategoryItem,
-) as any as S.Schema<ModelCategoryItemMap>;
+) as any as S.Schema<ModelCategoryReadItemMap>;
 
-export interface ModelCategories {
-  category?: ModelCategoryItemMap;
+export interface ModelCategoriesRead {
+  category?: ModelCategoryReadItemMap;
 }
-export const ModelCategories = /*@__PURE__*/ S.suspend(() =>
+export const ModelCategoriesRead = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    category: S.optional(ModelCategoryItemMap),
+    category: S.optional(ModelCategoryReadItemMap),
   }),
 ).annotate({
-  identifier: "ModelCategories",
-}) as any as S.Schema<ModelCategories>;
+  identifier: "ModelCategoriesRead",
+}) as any as S.Schema<ModelCategoriesRead>;
 
-export interface Model {
-  categories?: ModelCategories;
+export interface ModelRead {
+  categories?: ModelCategoriesRead;
 }
-export const Model = /*@__PURE__*/ S.suspend(() =>
+export const ModelRead = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    categories: S.optional(ModelCategories),
+    categories: S.optional(ModelCategoriesRead),
   }),
-).annotate({ identifier: "Model" }) as any as S.Schema<Model>;
+).annotate({ identifier: "ModelRead" }) as any as S.Schema<ModelRead>;
 
 export interface GetResponse {
-  category?: Model;
+  category?: ModelRead;
 }
 export const GetResponse = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    category: S.optional(Model),
+    category: S.optional(ModelRead),
   }),
 ).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
 
-export interface GetCategoryRequest {}
+export interface GetCategoryRequest {
+  uuid: string;
+}
 export const GetCategoryRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({ method: "GET", uri: "/api/firewall/category/getItem", code: 200 }),
+  S.Struct({
+    uuid: S.String.pipe(T.Label()),
+  }).pipe(
+    T.Http({
+      method: "GET",
+      uri: "/api/firewall/category/getItem/{uuid}",
+      code: 200,
+    }),
   ),
 ).annotate({
   identifier: "GetCategoryRequest",
 }) as any as S.Schema<GetCategoryRequest>;
+
+export type GetCategoryItem = CategoryItem;
+export const GetCategoryItem = CategoryItem;
 
 export interface GetCategoryResponse {
   category?: CategoryItem;
@@ -196,6 +209,35 @@ export const SearchCategoryResponse = /*@__PURE__*/ S.suspend(() =>
 ).annotate({
   identifier: "SearchCategoryResponse",
 }) as any as S.Schema<SearchCategoryResponse>;
+
+export type ModelCategoryItem = CategoryItem;
+export const ModelCategoryItem = CategoryItem;
+
+export type ModelCategoryItemMap = { [key: string]: CategoryItem | undefined };
+export const ModelCategoryItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  CategoryItem,
+) as any as S.Schema<ModelCategoryItemMap>;
+
+export interface ModelCategories {
+  category?: ModelCategoryItemMap;
+}
+export const ModelCategories = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    category: S.optional(ModelCategoryItemMap),
+  }),
+).annotate({
+  identifier: "ModelCategories",
+}) as any as S.Schema<ModelCategories>;
+
+export interface Model {
+  categories?: ModelCategories;
+}
+export const Model = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    categories: S.optional(ModelCategories),
+  }),
+).annotate({ identifier: "Model" }) as any as S.Schema<Model>;
 
 export interface SetRequest {
   category?: Model;

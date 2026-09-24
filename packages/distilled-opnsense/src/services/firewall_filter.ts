@@ -384,6 +384,172 @@ export const GetRequest = /*@__PURE__*/ S.suspend(() =>
   ),
 ).annotate({ identifier: "GetRequest" }) as any as S.Schema<GetRequest>;
 
+export interface OptionEntry {
+  value: string;
+  selected: number;
+}
+export const OptionEntry = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    value: S.String,
+    selected: S.Number,
+  }),
+).annotate({ identifier: "OptionEntry" }) as any as S.Schema<OptionEntry>;
+
+export type ModelRuleReadItemInterfaceMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRuleReadItemInterfaceMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelRuleReadItemInterfaceMap>;
+
+export type ModelRuleReadItemTypeMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRuleReadItemTypeMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelRuleReadItemTypeMap>;
+
+export type ModelRuleReadItemSourceNetMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRuleReadItemSourceNetMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelRuleReadItemSourceNetMap>;
+
+export type ModelRuleReadItemDestinationNetMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRuleReadItemDestinationNetMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelRuleReadItemDestinationNetMap>;
+
+export type ModelRuleReadItemNatreflectionMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRuleReadItemNatreflectionMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelRuleReadItemNatreflectionMap>;
+
+export type ModelRuleReadItemCategoriesMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelRuleReadItemCategoriesMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelRuleReadItemCategoriesMap>;
+
+export interface ModelRuleReadItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: BooleanField */
+  log: string;
+  /** OPNsense FieldType: .\FilterSequenceField; range 1..999999 (as text) */
+  sequence: string;
+  /** OPNsense FieldType: TextField */
+  sort_order?: string;
+  /** OPNsense FieldType: TextField */
+  prio_group?: string;
+  /** OPNsense FieldType: InterfaceField */
+  interface: ModelRuleReadItemInterfaceMap;
+  /** OPNsense FieldType: OptionField */
+  type: ModelRuleReadItemTypeMap;
+  /** OPNsense FieldType: NetworkAliasField */
+  source_net: ModelRuleReadItemSourceNetMap;
+  /** OPNsense FieldType: BooleanField */
+  source_not: string;
+  /** OPNsense FieldType: NetworkAliasField */
+  destination_net: ModelRuleReadItemDestinationNetMap;
+  /** OPNsense FieldType: BooleanField */
+  destination_not: string;
+  /** OPNsense FieldType: NetworkField */
+  external: string;
+  /** OPNsense FieldType: OptionField */
+  natreflection?: ModelRuleReadItemNatreflectionMap;
+  /** OPNsense FieldType: ModelRelationField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  categories?: ModelRuleReadItemCategoriesMap;
+  /** OPNsense FieldType: DescriptionField */
+  description?: string;
+}
+export const ModelRuleReadItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    log: S.String,
+    sequence: S.String,
+    sort_order: S.optional(S.String),
+    prio_group: S.optional(S.String),
+    interface: ModelRuleReadItemInterfaceMap,
+    type: ModelRuleReadItemTypeMap,
+    source_net: ModelRuleReadItemSourceNetMap,
+    source_not: S.String,
+    destination_net: ModelRuleReadItemDestinationNetMap,
+    destination_not: S.String,
+    external: S.String,
+    natreflection: S.optional(ModelRuleReadItemNatreflectionMap),
+    categories: S.optional(ModelRuleReadItemCategoriesMap),
+    description: S.optional(S.String),
+  }),
+).annotate({
+  identifier: "ModelRuleReadItem",
+}) as any as S.Schema<ModelRuleReadItem>;
+
+export type ModelRuleReadItemMap = {
+  [key: string]: ModelRuleReadItem | undefined;
+};
+export const ModelRuleReadItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  ModelRuleReadItem,
+) as any as S.Schema<ModelRuleReadItemMap>;
+
+export interface ModelRulesRead {
+  rule?: ModelRuleReadItemMap;
+}
+export const ModelRulesRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    rule: S.optional(ModelRuleReadItemMap),
+  }),
+).annotate({ identifier: "ModelRulesRead" }) as any as S.Schema<ModelRulesRead>;
+
+export type ModelSnatrulesRead = ModelRulesRead;
+export const ModelSnatrulesRead = ModelRulesRead;
+
+export type ModelNptRead = ModelRulesRead;
+export const ModelNptRead = ModelRulesRead;
+
+export type ModelOnetooneRead = ModelRulesRead;
+export const ModelOnetooneRead = ModelRulesRead;
+
+export interface ModelRead {
+  rules?: ModelRulesRead;
+  snatrules?: ModelRulesRead;
+  npt?: ModelRulesRead;
+  onetoone?: ModelRulesRead;
+}
+export const ModelRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    rules: S.optional(ModelRulesRead),
+    snatrules: S.optional(ModelRulesRead),
+    npt: S.optional(ModelRulesRead),
+    onetoone: S.optional(ModelRulesRead),
+  }),
+).annotate({ identifier: "ModelRead" }) as any as S.Schema<ModelRead>;
+
+export interface GetResponse {
+  filter?: ModelRead;
+}
+export const GetResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    filter: S.optional(ModelRead),
+  }),
+).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
+
 export type ModelRuleItemType = "binat" | "nat";
 export const ModelRuleItemType = S.String;
 
@@ -483,15 +649,6 @@ export const Model = /*@__PURE__*/ S.suspend(() =>
     onetoone: S.optional(ModelRules),
   }),
 ).annotate({ identifier: "Model" }) as any as S.Schema<Model>;
-
-export interface GetResponse {
-  filter?: Model;
-}
-export const GetResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    filter: S.optional(Model),
-  }),
-).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
 
 export interface SetRequest {
   filter?: Model;

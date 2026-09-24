@@ -1,15 +1,22 @@
 /**
- * Consumer smoke test: pack, install, and build a real request for one
- * operation — no live OPNsense call (this package has never been pointed
- * at a real box; see ../README.md), but a real `HttpClientRequest` the
- * SDK's protocol layer produced from the generated operation, credentials
- * and traits, exactly as it would for a genuine call.
+ * Consumer smoke test: pack, install, and build real requests — no live
+ * OPNsense call (this package has never been pointed at a real box; see
+ * ../README.md), but real `HttpClientRequest`s the SDK's protocol layer
+ * produced from the generated operations, credentials and traits, exactly
+ * as it would for a genuine call.
  *
  * `quagga_general.get` (`GET /api/quagga/general/get`) is the simplest
  * operation in the package — no path/query parameters, whole-model shape —
- * so this exercises Basic-auth header construction (see ../src/protocol.ts)
+ * so it exercises Basic-auth header construction (see ../src/protocol.ts)
  * without also depending on OPNsense's three-shape 200-with-failure decode
- * branches a more typical write operation would exercise.
+ * branches a more typical write operation would exercise. Its canned
+ * response also includes `profile` (an `OptionField`) to prove OPNSENSE-2
+ * decodes as the real option-map shape, not a string.
+ *
+ * `firewall_category.getCategory({uuid})` proves OPNSENSE-1: the built
+ * URL must carry the uuid path segment
+ * (`getItemAction($uuid = null)` — see ../docs vs. the distilled clone's
+ * `docs/bugs-and-notes.md`).
  */
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -67,10 +74,22 @@ const fakeClient = HttpClient.make((request) => {
     url: request.url,
     headers: Object.fromEntries(Object.entries(request.headers)),
   };
+  // \`profile\` is an OptionField: a real OPNsense response sends the
+  // option-map shape here (OPNSENSE-2), never a plain string.
+  const body =
+    request.url.includes('/quagga/general/get')
+      ? {
+          general: {
+            enabled: '1',
+            manual_config: '0',
+            profile: { traditional: { value: 'Traditional', selected: 1 }, datacenter: { value: 'Datacenter', selected: 0 } },
+          },
+        }
+      : { category: { uuid: 'abc-123-uuid', name: 'smoke-category' } };
   return Effect.succeed(
     HttpClientResponse.fromWeb(
       request,
-      new Response(JSON.stringify({ general: { enabled: '1', manual_config: '0' } }), {
+      new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -108,8 +127,38 @@ if (captured.headers['authorization'] !== expectedAuth) {
 if ((result as { general?: { enabled?: string } }).general?.enabled !== '1') {
   throw new Error(\`response did not decode: \${JSON.stringify(result)}\`);
 }
+// OPNSENSE-2: \`profile\` must decode as the option-map shape, not a string —
+// this is the exact class of crash ("value.trim is not a function") the
+// live homeflare-network import hit before the fix.
+const profile = (result as { general?: { profile?: unknown } }).general?.profile;
+if (
+  typeof profile !== 'object' ||
+  profile === null ||
+  (profile as Record<string, { selected?: number }>).traditional?.selected !== 1
+) {
+  throw new Error(\`profile did not decode as an option map: \${JSON.stringify(profile)}\`);
+}
 
 console.log('request built:', captured.method, captured.url);
+
+// OPNSENSE-1: getCategory({uuid}) must put uuid in the URL path, not drop it.
+const catProgram = Opnsense.Services.firewall_category.getCategory({ uuid: 'abc-123-uuid' }).pipe(
+  Effect.provide(Layer.succeed(HttpClient.HttpClient, fakeClient)),
+  Effect.provide(
+    Opnsense.credentials({
+      apiKey: 'smoke-key',
+      apiSecret: 'smoke-secret',
+      baseUrl: 'https://opnsense.example.test',
+    }),
+  ),
+);
+await Effect.runPromise(catProgram as Effect.Effect<unknown, unknown, never>);
+const expectedCatUrl = 'https://opnsense.example.test/api/firewall/category/getItem/abc-123-uuid';
+if (captured.url !== expectedCatUrl) {
+  throw new Error(\`expected \${expectedCatUrl}, got: \${captured.url}\`);
+}
+console.log('request built:', captured.method, captured.url);
+
 console.log('consumer ok');
 `,
   );

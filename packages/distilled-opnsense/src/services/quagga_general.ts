@@ -18,6 +18,78 @@ export const GetRequest = /*@__PURE__*/ S.suspend(() =>
   ),
 ).annotate({ identifier: "GetRequest" }) as any as S.Schema<GetRequest>;
 
+export interface OptionEntry {
+  value: string;
+  selected: number;
+}
+export const OptionEntry = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    value: S.String,
+    selected: S.Number,
+  }),
+).annotate({ identifier: "OptionEntry" }) as any as S.Schema<OptionEntry>;
+
+export type ModelDaemonsMap = { [key: string]: OptionEntry | undefined };
+export const ModelDaemonsMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelDaemonsMap>;
+
+export type ModelProfileMap = { [key: string]: OptionEntry | undefined };
+export const ModelProfileMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelProfileMap>;
+
+export type ModelSysloglevelMap = { [key: string]: OptionEntry | undefined };
+export const ModelSysloglevelMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelSysloglevelMap>;
+
+export interface ModelRead {
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: .\EnableDaemonField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  daemons?: ModelDaemonsMap;
+  /** OPNsense FieldType: BooleanField */
+  manual_config: string;
+  /** OPNsense FieldType: OptionField */
+  profile: ModelProfileMap;
+  /** OPNsense FieldType: BooleanField */
+  enablecarp: string;
+  /** OPNsense FieldType: BooleanField */
+  enablesyslog: string;
+  /** OPNsense FieldType: BooleanField */
+  enablesnmp: string;
+  /** OPNsense FieldType: OptionField */
+  sysloglevel: ModelSysloglevelMap;
+  /** OPNsense FieldType: BooleanField */
+  fwrules: string;
+}
+export const ModelRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    enabled: S.String,
+    daemons: S.optional(ModelDaemonsMap),
+    manual_config: S.String,
+    profile: ModelProfileMap,
+    enablecarp: S.String,
+    enablesyslog: S.String,
+    enablesnmp: S.String,
+    sysloglevel: ModelSysloglevelMap,
+    fwrules: S.String,
+  }),
+).annotate({ identifier: "ModelRead" }) as any as S.Schema<ModelRead>;
+
+export interface GetResponse {
+  general?: ModelRead;
+}
+export const GetResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    general: S.optional(ModelRead),
+  }),
+).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
+
 export type ModelDaemons = "bfd" | "bgp" | "ospf" | "ospf6" | "rip" | "static";
 export const ModelDaemons = S.String;
 
@@ -68,15 +140,6 @@ export const Model = /*@__PURE__*/ S.suspend(() =>
     fwrules: S.String,
   }),
 ).annotate({ identifier: "Model" }) as any as S.Schema<Model>;
-
-export interface GetResponse {
-  general?: Model;
-}
-export const GetResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    general: S.optional(Model),
-  }),
-).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
 
 export interface SetRequest {
   general?: Model;
