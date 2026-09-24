@@ -107,7 +107,15 @@ export interface ProxmoxRole extends Resource<
 
 export const ProxmoxRole = Resource<ProxmoxRole>('Proxmox.Role');
 
-/** ★ Default `read` role — see the header's ⚠️ on the list read's privilege requirement. */
+/**
+ * ★ Default `read` role — see the header's ⚠️ on the list read's privilege requirement.
+ * ⛔ NO `orElseSucceed` — found 2026-09-24, the same bug class as the credential denial fix. A
+ *   role's absence is ALWAYS a SUCCESSFUL read (the list comes back and the role is not in it —
+ *   `access.listAccessRoles` never 404s/500s per-role the way `getAccessUser`/`getAccessGroup`
+ *   do, MEASURED), so this family never needed a folding/non-folding split the way user.ts and
+ *   group.ts do: any THROWN failure here is genuinely unexpected and must propagate and fail the
+ *   whole plan loudly, in `diff`, `read` and `reconcile` alike — never fold to "absent → update".
+ */
 const readRole = (props: RoleProps) =>
   readOrUnreadable(runPve(props.target, 'read', false, access.listAccessRoles({}))).pipe(
     Effect.map((rows) => {
@@ -115,7 +123,6 @@ const readRole = (props: RoleProps) =>
       const row = find(rows, props.roleid);
       return row === undefined ? undefined : attributesOf(row, props);
     }),
-    Effect.orElseSucceed(() => undefined),
   );
 
 /** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */

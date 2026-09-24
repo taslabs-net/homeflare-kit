@@ -141,12 +141,22 @@ export const ProxmoxApiToken = Resource<ProxmoxApiToken>('Proxmox.ApiToken', {
   defaultRemovalPolicy: 'retain',
 });
 
-/** ⛔ `readRole: 'provision'` — see the header's ⚠️ on privileges. */
-const readToken = (props: ApiTokenProps) =>
-  readOrUnreadable(runPve(props.target, 'provision', false, access.getAccessUserToken(props))).pipe(
-    Effect.map((live) => (live === UNREADABLE ? UNREADABLE : attributesOf(live, props))),
-    Effect.orElseSucceed(() => undefined),
-  );
+/**
+ * ⛔ `readRole: 'provision'` — see the header's ⚠️ on privileges.
+ * ⛔ `{ userid, tokenid }`, NEVER THE WHOLE `props` — group.ts's readGroup has the full measured
+ *   mechanism (kit 0.31.1's regression): an extra key beyond the schema's own path labels gets
+ *   encoded onto this GET as a body, which a stricter fetch client refuses outright.
+ * ⛔ NO `orElseSucceed` — a MISSING token's absence signal is a SUCCESSFUL read with `expire`/
+ *   `privsep` both absent (`attributesOf`/api-token-form.ts, MEASURED pre-migration), unlike
+ *   user.ts/group.ts's missing-object 500 — so this family never needed their folding split. A
+ *   THROWN failure here is genuinely unexpected and must propagate and fail the plan loudly.
+ */
+const readToken = (props: ApiTokenProps) => {
+  const label = { tokenid: props.tokenid, userid: props.userid };
+  return readOrUnreadable(
+    runPve(props.target, 'provision', false, access.getAccessUserToken(label)),
+  ).pipe(Effect.map((live) => (live === UNREADABLE ? UNREADABLE : attributesOf(live, props))));
+};
 
 /** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
 const dropUnreadable = (live: ApiTokenAttributes | Unreadable | undefined) =>
@@ -193,12 +203,10 @@ export const ProxmoxApiTokenProvider = () =>
         }),
         reconcile: Effect.fn(function* ({ news }) {
           // ⚠️ `dropUnreadable`: reconcile only runs once `provision` already minted for the
-          //   read that fed `diff`'s `update` verdict, so `UNREADABLE` here is a narrow race —
-          //   but UNLIKE group/role/user, the message below assumes genuine absence and would
-          //   misname a transient credential refusal as "this resource does not create tokens".
-          //   Rare (the SAME role must mint twice, once for diff/once for reconcile, and only the
-          //   second is denied) and not silently wrong — the operator still sees a die() and goes
-          //   looking — but named here rather than left for the next reader to assume away.
+          //   read that fed `diff`'s `update` verdict, so `UNREADABLE` here is a narrow race, not
+          //   the routine case `diff` handles. Any OTHER read failure now propagates on its own
+          //   (readToken no longer folds it), so the die() message below is reached only on a
+          //   genuinely absent token, never on a transient failure wearing that message.
           const before = dropUnreadable(yield* readToken(news));
           if (before === undefined) {
             return yield* Effect.die(

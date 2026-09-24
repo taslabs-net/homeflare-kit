@@ -125,11 +125,24 @@ export type Body = Effect.Effect<unknown, unknown, unknown>;
 type Compiled = { readonly name: string; readonly stage: string; readonly services: never };
 type PlanView = { readonly resources: Readonly<Record<string, { readonly action: string }>> };
 
+/** One row of `Alchemy.Drift.detect`'s dry-run report — the fields `drift` below asserts on. */
+export type DriftRow = { readonly action: string };
+
 export interface FakeEngine {
   /** Plan and apply `body`, as `alchemy deploy --adopt` would; resolves to the planned actions. */
   readonly deploy: (body: Body) => Promise<Record<string, string>>;
   /** Verify `body` against what the earlier deploys recorded. */
   readonly verify: (body: Body, options?: VerifyOptions) => Promise<AdoptReport>;
+  /**
+   * `alchemy drift`'s own dry-run (`Alchemy.Drift.detect`) over whatever `deploy` already
+   * persisted — `body` is used only to resolve the stack's name/stage/providers, exactly as
+   * `verify` does; drift itself reads the state store, not `body`'s declarations. ⚠️ A DIFFERENT
+   * ENGINE PATH FROM `verify`'s `--all` READ, proxmox/read-failure-propagation.test.ts's own ⛔:
+   * `Drift.ts` calls a provider's `read` with `output` set to the PERSISTED attributes, and folds
+   * a `read` that resolves `undefined` into `{action: 'missing'}` with no error — silent, unlike
+   * `verify.ts`'s `readWithState`, which already wraps that same call in `Effect.catchCause`.
+   */
+  readonly drift: (body: Body) => Promise<Record<string, DriftRow>>;
   /**
    * Every state row the store holds, as JSON — what a Postgres store would persist. ★ For tests
    * that must prove a value NEVER reaches state (proxmox/pbs-notification-target-state.test.ts).
@@ -152,6 +165,10 @@ export const engineOver = <ROut, E, RIn>(layer: Layer.Layer<ROut, E, RIn>): Fake
   ) => Effect.Effect<Compiled, unknown, never>;
   const plan = Alchemy.Plan.make as unknown as (c: Compiled) => Effect.Effect<PlanView, unknown>;
   const apply = Alchemy.apply as unknown as (planned: PlanView) => Effect.Effect<unknown, unknown>;
+  const detectDrift = Alchemy.Drift.detect as unknown as (stack: {
+    name: string;
+    stage: string;
+  }) => Effect.Effect<{ resources: Record<string, DriftRow> }, unknown>;
 
   const run = <A>(body: Body, next: (compiled: Compiled) => Effect.Effect<A, unknown, unknown>) =>
     Effect.runPromise(
@@ -181,6 +198,12 @@ export const engineOver = <ROut, E, RIn>(layer: Layer.Layer<ROut, E, RIn>): Fake
     verify: (body, options) =>
       run(body, (compiled) =>
         verifySession({ context: compiled.services, stack: compiled as never }, options),
+      ),
+    drift: (body) =>
+      run(body, (compiled) =>
+        detectDrift({ name: compiled.name, stage: compiled.stage }).pipe(
+          Effect.map((detected) => detected.resources),
+        ),
       ),
   };
 };

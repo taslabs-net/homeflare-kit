@@ -1,10 +1,13 @@
 /**
- * `Proxmox.User`'s wire shape: PVE's create/update forms and how a live item becomes
- * attributes. Split out of user.ts (2026-09-24, the distilled migration) to keep that file
- * under the 250-line cap — the api-token.ts/api-token-form.ts seam.
+ * `Proxmox.User`'s wire shape: PVE's create/update forms, how a live item becomes attributes,
+ * and the read itself. Split out of user.ts (2026-09-24, the distilled migration) to keep that
+ * file under the 250-line cap — the api-token.ts/api-token-form.ts seam.
  */
-import type * as access from '@distilled.cloud/proxmox/access';
+import * as access from '@distilled.cloud/proxmox/access';
+import * as Effect from 'effect/Effect';
+import { runPve } from './distilled-pve.ts';
 import type { UserAttributes, UserProps } from './user.ts';
+import { UNREADABLE, type Unreadable, readOrUnreadable } from './unreadable-read.ts';
 import { bool, text } from './values.ts';
 
 export const USER_CREATE = 'pve:POST /access/users';
@@ -77,10 +80,7 @@ export const updateForm = (props: UserProps): access.PutAccessUserRequest => ({
   userid: props.userid,
 });
 
-export const attributesOf = (
-  live: access.GetAccessUserResponse,
-  props: UserProps,
-): UserAttributes => ({
+const attributesOf = (live: access.GetAccessUserResponse, props: UserProps): UserAttributes => ({
   comment: text(live.comment),
   email: text(live.email),
   /**
@@ -110,3 +110,39 @@ export const matches = (attributes: UserAttributes, props: UserProps) =>
   attributes.firstname === (props.firstname ?? '') &&
   attributes.lastname === (props.lastname ?? '') &&
   attributes.groups.join(',') === groupSet(props.groups).join(',');
+
+/**
+ * ★ Default `read` role for this family — only the write side needs `provision`.
+ * ⛔ `{ userid: props.userid }`, NEVER THE WHOLE `props` — MEASURED 2026-09-24, the regression in
+ *   kit 0.31.1. `GetAccessUserRequest`'s schema declares only `userid` (a path label); any OTHER
+ *   key on the object passed to `access.getAccessUser` — `target`, `comment`, every field this
+ *   family's own props carry — is treated by distilled's `buildRequest` as an "unknown key" and
+ *   JSON-encoded onto the request as a BODY, on every one of these bodyless GETs. A stricter
+ *   fetch client than a bare `bun run` of this file refuses a GET carrying any body at all
+ *   (`TypeError [ERR_INVALID_ARG_VALUE]: fetch() request with GET/HEAD method cannot have body`),
+ *   which `runPveWith` retries across every member and exhausts identically —
+ *   `PveClusterExhausted`, then silently folded to "absent" by the old `orElseSucceed`, forcing a
+ *   false `update` on every account.
+ */
+export const readUserOrFail = (props: UserProps) =>
+  readOrUnreadable(
+    runPve(props.target, 'read', false, access.getAccessUser({ userid: props.userid })),
+  ).pipe(Effect.map((live) => (live === UNREADABLE ? UNREADABLE : attributesOf(live, props))));
+
+/**
+ * ⛔ FOLDS A GENUINE READ FAILURE TO `undefined` TOO, AND ONLY `read`/`reconcile` MAY USE IT. A
+ *   missing user is a thrown 500 (user.ts's own header), so `reconcile`'s create branch NEEDS
+ *   "absent" from a failure to ever run — without this fold, a brand-new account could never be
+ *   created. Safe here because a wrongful fold costs at most a redundant `createAccessUser` POST,
+ *   which PVE refuses loudly rather than silently corrupting anything.
+ * ⛔ `user.ts`'s `diff` does **NOT** use this — the SAME bug class as the credential denial fix:
+ *   folding a TRANSIENT failure into "absent" at PLAN TIME is what forced a false `update` with
+ *   nothing compared. `diff` calls `readUserOrFail` directly, so a genuine failure there
+ *   propagates and fails the whole plan loudly instead.
+ */
+export const readUser = (props: UserProps) =>
+  readUserOrFail(props).pipe(Effect.orElseSucceed(() => undefined));
+
+/** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
+export const dropUnreadable = (live: UserAttributes | Unreadable | undefined) =>
+  live === UNREADABLE ? undefined : live;
