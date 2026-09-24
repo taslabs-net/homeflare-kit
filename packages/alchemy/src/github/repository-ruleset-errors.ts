@@ -43,11 +43,12 @@ export class BypassActorWidened extends Data.TaggedError('BypassActorWidened')<{
   }
 }
 
-/** A declared `bypassActors` drops an actor the live ruleset has, with no `acknowledgeNarrowing`
- * on the declaration. Unlike widening, narrowing is not always wrong — an exact-adopt
- * declaration that matches live exactly narrows nothing — so this is refused only when live
- * genuinely has more than the declaration keeps, and it is escapable (`BypassActorWidened` is
- * not): see `bypassNarrowingRefusal` in repository-ruleset-narrowing-guards.ts. */
+/** A declared `bypassActors` drops an actor the live ruleset has, with no
+ * `acknowledgeBypassNarrowing` on the declaration. Unlike widening, narrowing is not always
+ * wrong — an exact-adopt declaration that matches live exactly narrows nothing — so this is
+ * refused only when live genuinely has more than the declaration keeps, and it is escapable
+ * (`BypassActorWidened` is not): see `bypassNarrowingRefusal` in
+ * repository-ruleset-narrowing-guards.ts. */
 export class BypassActorNarrowed extends Data.TaggedError('BypassActorNarrowed')<{
   readonly owner: string;
   readonly repository: string;
@@ -58,14 +59,14 @@ export class BypassActorNarrowed extends Data.TaggedError('BypassActorNarrowed')
     return (
       `GitHub.RepositoryRuleset "${this.name}" on ${this.owner}/${this.repository}: the ` +
       `declaration drops a bypass actor the live ruleset has (${this.narrowed.join(', ')}), and ` +
-      'the declaration carries no `acknowledgeNarrowing`. Add one with a reason once the removal ' +
-      'is deliberate, or restore the actor to match live.'
+      'the declaration carries no `acknowledgeBypassNarrowing`. Add one with a reason once the ' +
+      'removal is deliberate, or restore the actor to match live.'
     );
   }
 }
 
 /** A rule type the declaration explicitly marks absent (`false`) while the live ruleset still
- * has it, with no `acknowledgeNarrowing` on the declaration — see `ruleNarrowingRefusal` in
+ * has it, with no `acknowledgeRuleNarrowing` on the declaration — see `ruleNarrowingRefusal` in
  * repository-ruleset-narrowing-guards.ts. Distinct from `UndeclaredLiveRule`: that one fires on
  * SILENCE (the declaration says nothing); this one fires on an EXPLICIT, but unacknowledged,
  * removal. */
@@ -78,8 +79,9 @@ export class RuleNarrowed extends Data.TaggedError('RuleNarrowed')<{
   override get message(): string {
     return (
       `GitHub.RepositoryRuleset "${this.name}" on ${this.owner}/${this.repository}: the ` +
-      `declaration drops a live "${this.ruleType}" rule, and carries no \`acknowledgeNarrowing\`. ` +
-      'Add one with a reason once the removal is deliberate, or declare the rule to match live.'
+      `declaration drops a live "${this.ruleType}" rule, and carries no ` +
+      '`acknowledgeRuleNarrowing`. Add one with a reason once the removal is deliberate, or ' +
+      'declare the rule to match live.'
     );
   }
 }

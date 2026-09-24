@@ -22,7 +22,8 @@ import {
 } from './repository-ruleset-guards.ts';
 import {
   bypassNarrowingRefusal,
-  isNarrowingAcknowledged,
+  isBypassNarrowingAcknowledged,
+  isRuleNarrowingAcknowledged,
   ruleNarrowingRefusal,
 } from './repository-ruleset-narrowing-guards.ts';
 import {
@@ -109,7 +110,11 @@ export const reconcileRuleset = <R = never>(input: {
       observed = yield* probeByName(octokit, { owner, repo, name: news.name, target });
     }
 
-    const acknowledged = isNarrowingAcknowledged(news);
+    // Deliberately TWO separate reads, not one shared flag — each guard below is authorized
+    // only by the acknowledgement scoped to what it checks (see the file header on
+    // repository-ruleset-narrowing-guards.ts for the 2026-09-23 finding this fixes).
+    const bypassAcknowledged = isBypassNarrowingAcknowledged(news);
+    const ruleAcknowledged = isRuleNarrowingAcknowledged(news);
 
     const bypassRefusal =
       news.bypassActors === undefined
@@ -132,7 +137,7 @@ export const reconcileRuleset = <R = never>(input: {
             name: news.name,
             declared: news.bypassActors,
             live: observed,
-            acknowledged,
+            acknowledged: bypassAcknowledged,
           });
     if (bypassNarrowRefusal !== undefined) return yield* Effect.fail(bypassNarrowRefusal);
 
@@ -151,7 +156,7 @@ export const reconcileRuleset = <R = never>(input: {
       name: news.name,
       declared: news.rules,
       live: observed,
-      acknowledged,
+      acknowledged: ruleAcknowledged,
     });
     if (ruleNarrowRefusal !== undefined) return yield* Effect.fail(ruleNarrowRefusal);
 

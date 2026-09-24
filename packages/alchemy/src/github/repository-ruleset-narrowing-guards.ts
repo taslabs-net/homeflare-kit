@@ -16,20 +16,34 @@
  *   that shape — it is matching live exactly, and `reconcileRuleset`'s own noop check (comparing
  *   canonicalized wire forms) makes zero writes for it, same as any other exact match. What
  *   these guards refuse is a LATER declaration that removes something the CURRENT live state
- *   still has, without saying why. `acknowledgeNarrowing` is the "why": a reasoned, deliberate
- *   sign-off, not a rubber stamp — see its doc comment on `RepositoryRulesetProps`
- *   (repository-ruleset-props.ts).
+ *   still has, without saying why. `acknowledgeBypassNarrowing`/`acknowledgeRuleNarrowing` are
+ *   the "why": a reasoned, deliberate sign-off, not a rubber stamp — see their doc comments on
+ *   `RepositoryRulesetProps` (repository-ruleset-props.ts).
+ *
+ * ⛔ THE TWO ACKNOWLEDGEMENTS ARE DELIBERATELY SEPARATE PROPS, NOT ONE SHARED FLAG (2026-09-23
+ *   review finding). A single `acknowledgeNarrowing` computed once and handed to both guards let
+ *   a reason written for one kind of narrowing silently also excuse the other — a declaration
+ *   dropping BOTH a live rule and a live bypass actor at once needed only one acknowledgement,
+ *   however narrowly worded, to pass both checks. Each guard below now reads its OWN prop.
  */
 import { bypassKey, liveRuleTypes } from './repository-ruleset-guards.ts';
 import { BypassActorNarrowed, RuleNarrowed } from './repository-ruleset-errors.ts';
 import type { RepositoryRulesetProps, RepositoryRulesetRules } from './repository-ruleset-props.ts';
 import type { RulesetRecord } from './repository-ruleset-probe.ts';
 
-/** `true` only for a non-empty, non-whitespace `reason` — a bare `{}` or a blank string is not
- * an acknowledgement (repository-ruleset.ts's `constraintRefusal` refuses the latter at plan
- * time; this is the read the write-time guards below share). */
-export const isNarrowingAcknowledged = (props: RepositoryRulesetProps): boolean =>
-  props.acknowledgeNarrowing !== undefined && props.acknowledgeNarrowing.reason.trim().length > 0;
+/** `true` only for a non-empty, non-whitespace `reason` on `acknowledgeBypassNarrowing` — a bare
+ * `{}` or a blank string is not an acknowledgement (repository-ruleset.ts's `constraintRefusal`
+ * refuses the latter at plan time; this is the read `bypassNarrowingRefusal` shares). Deliberately
+ * ignorant of `acknowledgeRuleNarrowing` — see the file header. */
+export const isBypassNarrowingAcknowledged = (props: RepositoryRulesetProps): boolean =>
+  props.acknowledgeBypassNarrowing !== undefined &&
+  props.acknowledgeBypassNarrowing.reason.trim().length > 0;
+
+/** The `rules`-side counterpart to `isBypassNarrowingAcknowledged`, reading only
+ * `acknowledgeRuleNarrowing` — see the file header. */
+export const isRuleNarrowingAcknowledged = (props: RepositoryRulesetProps): boolean =>
+  props.acknowledgeRuleNarrowing !== undefined &&
+  props.acknowledgeRuleNarrowing.reason.trim().length > 0;
 
 /**
  * A live bypass actor the declaration drops, unacknowledged. `undefined` `declared` never

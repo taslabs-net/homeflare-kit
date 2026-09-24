@@ -10,10 +10,14 @@ prop shape, it was that nothing stopped a declaration from silently narrowing wh
 
 Two new guards close that: `bypassNarrowingRefusal` refuses a declared `bypassActors` that drops
 a live actor, and `ruleNarrowingRefusal` refuses a declared `false` (any modeled rule) that drops
-a rule the live ruleset still has — both unless the declaration also carries a new prop,
-`acknowledgeNarrowing: { reason: string }`, a reasoned, explicit sign-off. Widening bypass stays
-refused unconditionally, as before — this only ever loosens the NARROWING side, and only with a
-recorded reason.
+a rule the live ruleset still has — both unless the declaration also carries the matching new
+prop, `acknowledgeBypassNarrowing: { reason: string }` or `acknowledgeRuleNarrowing: { reason:
+string }`, a reasoned, explicit sign-off. The two acknowledgements are deliberately separate
+props, not one shared flag: an adversarial review found that a single shared
+`acknowledgeNarrowing` let a reason worded for one kind of drop silently also excuse the other
+kind in the same declaration, so each guard now reads only the prop scoped to what it checks.
+Widening bypass stays refused unconditionally, as before — this only ever loosens the NARROWING
+side, and only with a recorded, correctly-scoped reason.
 
 Prompted by a red-team finding against a design for declaring ~88 `taslabs-net` repos' GitHub
 settings in Alchemy: 5 live repos (`taslabs-net`, `aop`, `magictransit`, `loggarr`,

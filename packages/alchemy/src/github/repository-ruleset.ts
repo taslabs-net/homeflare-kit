@@ -118,10 +118,11 @@ function constraintRefusal(props: RepositoryRulesetProps): RulesetConstraintRefu
       });
     }
   }
-  // ⚠️ NO SEPARATE PLAN-TIME CHECK FOR A BLANK `acknowledgeNarrowing.reason` HERE. A blank
-  //   reason is already indistinguishable from "not acknowledged at all" —
-  //   `isNarrowingAcknowledged` (repository-ruleset-narrowing-guards.ts) requires a non-empty,
-  //   trimmed `reason`, and every narrowing guard reads that, not presence alone. Adding a
+  // ⚠️ NO SEPARATE PLAN-TIME CHECK FOR A BLANK `acknowledge{Bypass,Rule}Narrowing.reason` HERE.
+  //   A blank reason is already indistinguishable from "not acknowledged at all" —
+  //   `isBypassNarrowingAcknowledged`/`isRuleNarrowingAcknowledged`
+  //   (repository-ruleset-narrowing-guards.ts) each require a non-empty, trimmed `reason` on
+  //   their OWN prop, and the matching narrowing guard reads that, not presence alone. Adding a
   //   SECOND check here would refuse with `RulesetConstraintRefused` instead of the more
   //   specific `BypassActorNarrowed`/`RuleNarrowed` the caller actually needs to act on — and,
   //   unlike those two (exercised directly through `reconcileRuleset`, injected-octokit fakes
