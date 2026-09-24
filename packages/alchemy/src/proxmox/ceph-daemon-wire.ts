@@ -4,11 +4,9 @@
  * `{node,id}` / `{node,name}`) — the SAME reason `DAEMON_ENDPOINTS` (ceph-daemon-form.ts) is a
  * per-kind table rather than one templated string.
  *
- * ⛔ ONE READ FUNCTION, NOT THE readXOrFail/foldingX PAIR — the same deliberate, measured
- *   departure ceph-pool-wire.ts and ceph-fs-distilled.ts explain in full: this family's
- *   pre-migration `pveOperations.read` (resource.ts) already folded every failure unconditionally,
- *   with no `output`-branching, so `readDaemon` below reproduces that exact single-fold shape
- *   rather than gaining the newer dual-path pattern along the way.
+ * ⛔ ABSENCE IS A SUCCESSFUL INDEX WITH NO MATCHING ROW. The original transport swap
+ *   preserved `pveOperations.read`'s catch-all fold; the 2026-09-24 follow-up removes it. A failed
+ *   mon/mgr/mds list proves nothing about whether a daemon exists, so its SDK error propagates.
  *
  * ⚠️ `mon_address` IS THE ONE RENAME THIS FAMILY NEEDS — distilled's generator maps the wire name
  *   `mon-address` to `mon_address` on `UpdateNodeCephMonRequest` (`T.Body("mon-address")`,
@@ -48,11 +46,10 @@ const listRows = (props: CephDaemonProps) => {
   }
 };
 
-/** ⛔ FOLDS EVERY FAILURE TO `undefined` — see this file's own header for why. */
+/** A missing row is absent; a failed index read keeps its typed SDK error. */
 export const readDaemon = (props: CephDaemonProps) =>
   listRows(props).pipe(
     Effect.map((rows) => daemonAttributes(rows as unknown as Record<string, unknown>, props)),
-    Effect.orElseSucceed(() => undefined),
   );
 
 /** POST — distilled's generator misnames it "update" (checked against `T.Http`); it is a create. */

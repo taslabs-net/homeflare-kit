@@ -12,10 +12,9 @@
  *   here, `pve()` there — but the POLICY is identical on purpose: same cadence
  *   (`POLL_SECONDS`/`POLL_ATTEMPTS`, imported, not retyped), same "an unreadable status is not
  *   settled yet, not a failure" tolerance. That tolerance is why this calls the RAW distilled
- *   operation directly rather than `@distilled.cloud/proxmox`'s own `Task.awaitTask` — CHECKED
- *   against its source (`task.ts`): it propagates a poll failure as a genuine typed
- *   `GetNodeTaskStatusError` instead of treating it as "not yet", which would turn a missing
- *   `Sys.Audit` grant or a node mid-restart into a failed create instead of a patient one.
+ *   operation directly. The former SDK `Task.awaitTask` propagated poll failures; SDK PR #265
+ *   removed that helper because polling policy belongs in the provider. This bounded wait
+ *   still tolerates a missing `Sys.Audit` grant or a node mid-restart until its deadline.
  */
 import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
@@ -26,15 +25,14 @@ import { runPve } from './distilled-pve.ts';
 /**
  * The index, read via distilled — the same shape `readRow` (ceph-fs-wire.ts) already narrows.
  *
- * ⛔ FOLDS EVERY FAILURE TO `undefined`, matching the pre-migration `pveOperations.read` this
- *   family used (`resource.ts`, `Effect.orElseSucceed`) — the same single-fold shape
- *   ceph-pool-wire.ts's `readPoolStatus` preserves and explains: this migration's own rule is
- *   behaviour surviving byte-for-byte, not the newer dual-path pattern gaining a new family.
+ * ⛔ ABSENCE IS A SUCCESSFUL INDEX WITH NO MATCHING FILESYSTEM. The transport swap
+ *   initially preserved the generic factory's catch-all fold. The 2026-09-24 follow-up removes it:
+ *   a failed list is not proof that a filesystem is missing. Task polling below retains its
+ *   separate bounded wait policy; it does not decide whether a resource exists.
  */
 export const readFs = (props: CephFsProps) =>
   runPve(props.target, 'read', false, nodes.listNodeCephFs({ node: props.node })).pipe(
     Effect.map((rows) => readRow(rows as unknown as Record<string, unknown>, props)),
-    Effect.orElseSucceed(() => undefined),
   );
 
 /** `updateNodeCephFs`'s own request shape — `createForm`, translated. No field is renamed. */

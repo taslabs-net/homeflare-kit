@@ -29,11 +29,10 @@
  * ★ MIGRATED OFF `client.ts`'s generic `pve()` ONTO `@distilled.cloud/proxmox`'s typed
  *   `nodes.listNodeCephFs`/`updateNodeCephFs` for the READ and the CREATE (2026-09-24, decision
  *   43's walk-down, 2c — ceph-fs-distilled.ts). `destroyFs` STAYS on `client.ts`, unmigrated:
- *   distilled types the delete's `remove-pools`/`remove-storages` flags as a request BODY, and
- *   this file's own next ⛔ (unchanged from before this migration) is the measured reason PVE
- *   would silently ignore both on a DELETE sent that way — ceph-fs-wire.ts's header has the fuller
- *   evidence. `readFs`/`diff`/`reconcile` keep the SAME single-fold, present-is-settled shape this
- *   family always had; see ceph-pool-wire.ts's own header for why that is not a bug left unfixed.
+ *   the SDK originally put `remove-pools`/`remove-storages` in a DELETE body, which PVE ignores.
+ *   SDK PR #265 fixes that protocol gap; migrating `destroyFs` remains a separate change.
+ *   The typed-read follow-up removes the catch-all fold from `readFs`: a failed index must
+ *   fail read/diff/reconcile/delete, not report a missing filesystem or a successful destroy.
  *
  * ⛔ CREATING A CephFS CREATES TWO CEPH POOLS, AND A `Proxmox.CephPool` MUST NOT ALSO DECLARE THEM.
  *   `createfs` builds `<name>_data` and `<name>_metadata` itself and refuses outright if either
@@ -231,11 +230,10 @@ export const ProxmoxCephFsProvider = () =>
            * ⚠️ A FILESYSTEM SOMEBODY ALREADY REMOVED BY HAND IS NOT AN ERROR. `destroyfs` dies
            *   synchronously with "no such cephfs", which would fail every destroy of a stack whose
            *   filesystem was cleaned up outside Alchemy and leave the state entry unremovable
-           *   without editing the store. ⚠️ THE COST IS STATED PLAINLY: `readFs` folds a FAILED
-           *   read into "absent" (the storage.ts trap), so a read this credential cannot perform
-           *   turns this into a destroy that reports success having done nothing. That is not a
-           *   new hazard — a broken read defeats the read-back below in exactly the same way — but
-           *   it is the reason a 403 on this family must be fixed rather than lived with.
+           *   without editing the store. The original catch-all read fold could also report
+           *   success after a 403 without deleting anything, and could defeat read-back after a
+           *   write. `readFs` now propagates those failures: only a successful index with no
+           *   matching row may short-circuit this delete or confirm the filesystem is gone.
            */
           if ((yield* readFs(olds)) === undefined) return;
           yield* destroyFs(olds);

@@ -17,18 +17,19 @@ import type { PveRequirements } from './resource.ts';
  *   separable at all. `ops.read` — now `readPoolStatus` (ceph-pool-wire.ts) — is a module-level
  *   binding in ceph-pool.ts; importing it back would be a runtime cycle, and duplicating it would
  *   be two definitions of one path. Passing it is the pattern zfs-pool-write.ts already uses.
+ *   The error parameter preserves the reader's typed failures through settle; it is not `never`.
  */
-export type PoolRead = (
+export type PoolRead<E> = (
   props: CephPoolProps,
-) => Effect.Effect<CephPoolAttributes | undefined, never, PveRequirements>;
+) => Effect.Effect<CephPoolAttributes | undefined, E, PveRequirements>;
 
 /**
- * ⛔ THE GUARD ON THE CREATE. `read` folds a 403, a timeout and a node that is down into the same
- *   `undefined` as a pool that is genuinely missing — so "absent" is not evidence. This asks a
- *   second, different question: does the cluster LIST this pool? A failure is left to propagate
- *   rather than folded, so "I could not ask" fails the deploy instead of creating over live data.
- *   An empty list is trusted: the collection 403s when the role is too narrow rather than
- *   filtering, so `[]` really does mean a cluster with no pools.
+ * ⛔ THE GUARD ON THE CREATE. The original read folded 403s/timeouts into absence, so this
+ *   independent index check prevented creating over a live pool. The typed reader now
+ *   propagates those failures, but a `CephPoolNotFound` must still not override a listed pool:
+ *   the measured PG-merge risk warrants keeping both observations. Failed index reads also
+ *   propagate. An empty list is trusted: the collection refuses a narrow role with 403 rather
+ *   than filtering, so `[]` really does mean a cluster with no pools.
  *
  * ⚠️ `describe` IS STILL A PLAIN STRING (ceph-pool.ts builds it from `object`/`collection` in
  *   ceph-pool-form.ts) — this function no longer takes a `collection` PATH, since
@@ -61,9 +62,9 @@ export const confirmAbsent = (props: CephPoolProps, describe: string) =>
  * ⚠️ SHORT POLLS, LOW CAP: 2s apart, 30 tries, about a minute. A pool create takes seconds; one
  *   still unsettled after a minute is a fault to surface, not a wait to lengthen.
  */
-export const settle = (
+export const settle = <E>(
   props: CephPoolProps,
-  read: PoolRead,
+  read: PoolRead<E>,
   done: (live: CephPoolAttributes | undefined) => boolean,
 ) =>
   Effect.gen(function* () {

@@ -6,12 +6,10 @@
  * ★ THE ABSENCE SIGNAL IS THE MEASURED ONE. `GET .../pool/{name}/status` on a name with no pool
  *   answers HTTP 500 (live TB4 `n2`, 2026-09-24, read-role, read-only probe:
  *   `{"data":null,"message":"error with 'osd pool get': mon_cmd failed - unrecognized pool
- *   '<name>'\n"}`) — a generic failure, not a parsed field like `Proxmox.NodeNetwork`'s 400. That
- *   is why `readPoolStatus` (ceph-pool-wire.ts) folds every failure the same way `ops.read` always
- *   did, and why `confirmAbsent` (ceph-pool-settle.ts) asks a SECOND, different question — does
- *   the index list this name — before a create is allowed to run. `fakePve` (fake-pve.ts) cannot
- *   answer anything but HTTP 200, so this file builds its own stub the way
- *   zfs-pool-read-failure.test.ts does, to answer the measured 500 directly.
+ *   '<name>'\n"}`) — SDK PR #265 now recognizes it as `CephPoolNotFound`. Only that tag folds
+ *   to absence; unrelated 500s propagate. `confirmAbsent` (ceph-pool-settle.ts) still asks a
+ *   SECOND, different question — does the index list this name — before create may run.
+ *   `fakePve` only answers HTTP 200, so this file stubs the measured 500 directly.
  */
 import { describe, expect, test } from 'bun:test';
 import * as RemovalPolicy from 'alchemy/RemovalPolicy';
@@ -28,10 +26,13 @@ const INDEX = `nodes/${NODE}/ceph/pool`;
 const OBJECT = `${INDEX}/${NAME}`;
 const STATUS = `${OBJECT}/status`;
 
-/** A generic 500 — the measured absence shape, indistinguishable from any other server error. */
+/** The measured missing-pool 500, classified by the SDK as `CephPoolNotFound`. */
 const absent = () =>
   Response.json(
-    { data: null, message: `error with 'osd pool get': mon_cmd failed - unrecognized pool` },
+    {
+      data: null,
+      message: `error with 'osd pool get': mon_cmd failed - unrecognized pool '${NAME}'\n`,
+    },
     { status: 500 },
   );
 

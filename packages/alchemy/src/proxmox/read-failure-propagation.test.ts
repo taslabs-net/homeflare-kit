@@ -8,9 +8,9 @@
  *     field, never the whole declared props object — the root cause: distilled's `buildRequest`
  *     treats every OTHER key as an "unknown key" and attaches it as a JSON body to what must stay
  *     a bodyless GET, which a stricter fetch client refuses outright.
- *  2. `diff` must never fold a genuine (non-credential-denial) read failure into "absent" — only
- *     `read`/`reconcile` may, where a wrongful fold costs at most a redundant, loudly-refused
- *     create, never a silent wrong write.
+ *  2. `diff` must never fold a genuine (non-credential-denial) read failure into "absent".
+ *     The later typed-absence follow-up extends that protection to cold `read`/`reconcile`:
+ *     only the SDK's resource-specific missing-object tags may trigger a create.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Layer from 'effect/Layer';
@@ -116,8 +116,8 @@ describe('a transient read failure fails the plan loudly, never a silent false u
   });
 
   // ★ A brand-new declaration's own create-from-a-500 path is already covered end to end by
-  //   user.test.ts's `missingAs500` fixture — `readUser`/`readGroup` (used by `reconcile`) kept
-  //   their fold on purpose, exactly so that path stays unaffected by this fix.
+  //   user.test.ts's `missingAs500` fixture. The typed-absence follow-up keeps that path by
+  //   catching `UserNotFound`, while unrelated 500s now propagate on cold reads too.
 });
 
 describe('the same fix, one command over: alchemy drift never reports a transient failure as missing', () => {
