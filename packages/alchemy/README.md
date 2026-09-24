@@ -208,6 +208,10 @@ with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:20
 - ⛔ **Delete never unloads or stops Caddy.** Order of file and load: [docs/caddy.md](./docs/caddy.md).
 - ★ **Managed Caddies run `--resume` with their own `XDG_CONFIG_HOME`**, so a restart runs the last
   config Caddy accepted — and after one, SIGUSR1 has no file to reload. Why, and the rest: same doc.
+- **`formatCaddyfile(text)`** runs the local `caddy fmt -` binary (no admin API does this); plan and
+  deploy both call out Caddy's own "not formatted" warning as its own clear line. Formatting should
+  never change the adapted JSON (reasoned from the grammar, not measured in this package — see the
+  doc). Details: [docs/caddy-fmt.md](./docs/caddy-fmt.md).
 
 ## PostgreSQL — `@homeflare/alchemy/postgres`
 

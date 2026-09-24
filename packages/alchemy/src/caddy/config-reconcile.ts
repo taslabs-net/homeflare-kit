@@ -14,6 +14,7 @@ import { messageOf, refuse, short, wrapOperation } from './config-errors.ts';
 import type { CaddyConfigAttributes, CaddyConfigProps } from './config-form.ts';
 import { claimable, desiredConfig, readLive } from './config-lifecycle.ts';
 import { configDigest } from './digest.ts';
+import { formattingFixLine, splitFormattingWarning } from './format-warnings.ts';
 
 /**
  * ★ NEVER `replace`. Nothing in the props names a different object: a new Caddyfile is a reload of
@@ -27,6 +28,11 @@ export const diffConfig = (
   Effect.gen(function* () {
     const { endpoint } = yield* CaddyAdminService;
     const want = yield* desiredConfig(news);
+    // ★ SURFACED AT PLAN TIME, NOT JUST DEPLOY TIME. `want.warnings` otherwise goes nowhere here —
+    //   only the formatting warning gets its own clear line; the rest keep logging at reconcile
+    //   (config.ts), same as before this change.
+    const { formatting } = splitFormattingWarning(want.warnings);
+    if (formatting.length > 0) yield* Effect.logWarning(formattingFixLine(endpoint));
     const live = yield* readLive();
     const converged =
       want.digest === live.configSha256 &&
