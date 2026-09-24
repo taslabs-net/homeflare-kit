@@ -191,4 +191,35 @@ describe('runPveWith: cluster member failover over the distilled protocol', () =
     assert.match(error.message, new RegExp(A));
     assert.match(error.message, new RegExp(B));
   });
+
+  /**
+   * ⛔ UNLIKE THE 'transport timeout' TEST ABOVE, NO OUTER `Effect.timeout` HERE. That test's outer
+   *   50ms wrapper wins the race regardless of whether `runPveWith` bounds an attempt itself — it
+   *   would still pass with no internal bound at all. These inject the bound INTO `runPveWith`
+   *   (never done in production, which always uses the real `MEMBER_TIMEOUT`), so a regression
+   *   hangs node:test's own per-test timeout instead of quietly passing. See members-timeout.test.ts
+   *   for the members.ts-level twin.
+   */
+  it('a hung read fails over to the next member, within the injected bound alone', async () => {
+    resetLastGoodForTest();
+    const hang = Bun.serve({
+      fetch: () => new Promise<Response>(() => {}),
+      hostname: '127.0.0.1',
+      port: 0,
+    });
+    const good = counting([{ path: '/', roleid: 'PVEAuditor', type: 'user', ugid: 'a@pve' }]);
+    try {
+      const started = Date.now();
+      const rows = await run(runPveWith(target([A, B]), CRED, false, readAcl, '100 millis'), {
+        [A]: hang.port,
+        [B]: good.port,
+      });
+      assert.equal(rows.length, 1);
+      assert.equal(good.hits(), 1);
+      assert.ok(Date.now() - started < 5000);
+    } finally {
+      hang.stop(true);
+      good.stop();
+    }
+  });
 });
