@@ -45,3 +45,14 @@ the same two variable names the retired hand-rolled `credentials.ts` read (LiteL
 CLI client's variable names, not a house choice), still resolved on the calling fiber per request,
 never captured at module scope. `Authorization: Bearer <value>` is built by the package's protocol
 layer, not by this package. ⛔ The key is never a prop, for the same reason as above.
+
+The Google Workspace subpath (new 2026-09-24, on `@distilled.cloud/google-workspace`) resolves
+credentials through the SDK's own `CredentialsFromEnv`, which reads `GOOGLE_ACCESS_TOKEN` — but
+unlike NetBox/Forgejo/Paperless/LiteLLM's API-token schemes, this variable holds an OAuth2 bearer
+access token the SDK does not know how to mint: no ADC, no service-account signing, no refresh
+flow. A Bun wrapper (H8's shape, unwritten by this package) performs the domain-wide-delegation
+JWT exchange against a service-account key in OpenBao and exports the short-lived result into
+this one variable. `Authorization: Bearer <value>` is still built by the package's protocol layer.
+`GoogleWorkspaceKeyRef`/`describeKeyRef` (this subpath's own `credentials.ts`) are a typed,
+key-free REFERENCE to where that service-account key lives, for a stack file to keep alongside its
+declarations — full setup: [google-workspace.md](./google-workspace.md).

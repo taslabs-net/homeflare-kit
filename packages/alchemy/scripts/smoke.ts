@@ -132,6 +132,7 @@ import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, r
 import { ReleaseBinary, VICTORIA_RELEASES, catalogBinary, identifyBinary, releaseProviders, releaseUrl } from '@homeflare/alchemy/release';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 import { isLiteLLMPassThroughEndpoint, litellmProviders } from '@homeflare/alchemy/litellm';
+import { GOOGLE_ACCESS_TOKEN_ENV, GoogleWorkspaceGroup, describeKeyRef, googleWorkspaceProviders } from '@homeflare/alchemy/google-workspace';
 import { GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders } from '@homeflare/alchemy/grafana';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 
@@ -146,6 +147,7 @@ for (const [name, value] of Object.entries({
   HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, ReleaseBinary, releaseProviders,
   parseVerifyArgs, verifySession, verifyStack,
   litellmProviders,
+  GoogleWorkspaceGroup, describeKeyRef, googleWorkspaceProviders, GOOGLE_ACCESS_TOKEN_ENV,
   GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
@@ -241,6 +243,24 @@ try {
   scoped = true;
 }
 if (!scoped) throw new Error('repoPolicy from dist allowed an exclude that matches no ref');
+
+// ★ Google Workspace's key-ref formatter through the PUBLISHED file, pure and network-free: it
+//   proves both the happy path and the refusal that keeps a key out of the census/docs text.
+const keyRefLine = describeKeyRef({
+  delegatedAdmin: 'admin@schenanigans.com',
+  openBaoPath: 'kv/google-workspace/service-accounts/directory-admin',
+  scopes: ['https://www.googleapis.com/auth/admin.directory.group'],
+});
+if (!keyRefLine.includes('admin@schenanigans.com') || !GOOGLE_ACCESS_TOKEN_ENV.includes('GOOGLE')) {
+  throw new Error('describeKeyRef from dist did not format the reference');
+}
+let keyShaped = false;
+try {
+  describeKeyRef({ delegatedAdmin: 'x', openBaoPath: '-----BEGIN PRIVATE KEY-----', scopes: [] });
+} catch {
+  keyShaped = true;
+}
+if (!keyShaped) throw new Error('describeKeyRef from dist accepted key-shaped input');
 
 // ★ THE NETBOX TABLE THROUGH THE PUBLISHED FILE. The constraint data is a GENERATED module the
 //   bundler inlines, so a build that tree-shook it away — or an export map that resolved the
