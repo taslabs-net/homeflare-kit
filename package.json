@@ -16,7 +16,7 @@
   "type": "module",
   "scripts": {
     "build": "bun run build:interim-packages && bun run --filter '*' build",
-    "build:interim-packages": "cd packages/distilled-netbox && bun run build && cd ../distilled-proxmox && bun run build",
+    "build:interim-packages": "bun run scripts/build-interim-packages.ts",
     "api:coverage": "bun run scripts/api-coverage.ts",
     "clean": "bun run --filter '*' clean",
     "lint": "oxfmt --check . && oxlint --deny-warnings .",
