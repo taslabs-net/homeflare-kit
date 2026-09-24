@@ -267,6 +267,14 @@ export const help =
   });
 ```
 
+## Grafana — `@homeflare/alchemy/grafana`
+
+`Grafana.Datasource` declares one data source, keyed by `uid`, generated from
+`@distilled.cloud/grafana`'s own typed `addDataSource`/`getDataSourceByUID`/
+`updateDataSourceByUID`/`deleteDataSourceByUID` operations. ⛔ The SDK at `1.0.0-rc.12` has no
+folder, dashboard, alert-rule or contact-point CRUD — only `Datasource` ships, and the gap is
+recorded rather than worked around: [docs/grafana.md](./docs/grafana.md).
+
 ## GitHub — `@homeflare/alchemy/github`
 
 `declareRepoPolicy` declares one repository's merge policy and its default-branch ruleset in a
