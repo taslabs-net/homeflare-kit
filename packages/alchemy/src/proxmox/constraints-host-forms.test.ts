@@ -13,7 +13,7 @@ import { constraintsFor, formViolations } from './constraint-guard.ts';
 import type { PbsTarget, PveTarget } from './credentials.ts';
 import { createBody as ifaceCreateForm } from './node-network-form.ts';
 import { resolveGroups, targetForm } from './pbs-notification-target-form.ts';
-import { createForm as zfsCreateForm } from './zfs-pool-write.ts';
+import { createForm as zfsCreateForm } from './zfs-pool-form.ts';
 
 const TARGET: PveTarget = { members: ['pve.test:8006'], mount: 'pve-test', scheme: 'pve' };
 const PBS: PbsTarget = { api: 'https://pbs.test:8007/api2/json', mount: 'pbs-test', scheme: 'pbs' };
