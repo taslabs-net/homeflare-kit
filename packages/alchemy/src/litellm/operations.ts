@@ -58,10 +58,14 @@ const semaphoreFor = (baseUrl: string): Effect.Effect<Semaphore.Semaphore> =>
 /**
  * Serialises a write against this call's own base URL — see the file header.
  *
- * Resolving `Credentials` can itself fail typed (`ConfigError` — S20/S24, credentials.ts), so
- * the return type carries that alongside the wrapped operation's own error `E`; every call
- * site's declared error type already includes `ConfigError` as a member of the SDK's shared
- * `LitellmOpError` (protocol.ts), so this widening is a no-op for callers.
+ * ⚠️ `Credentials` itself ends in `Effect.orDie` on a missing/misspelled env var (Q6, decision
+ *   49 "upstream wins", 2026-09-24, matching distilled's own convention — 73 of 80 packages'
+ *   `credentials.ts` do the same at `homeflare/base`), so resolving it here can no longer fail
+ *   typed. The `| ConfigError` this function still adds to its return type stays only because
+ *   `@distilled.cloud/litellm`'s own `LitellmOpError` (protocol.ts) unconditionally declares
+ *   `ConfigError` as a member of every generated operation's error union regardless of
+ *   `Credentials`'s own type — so `E` (the wrapped operation's error) already contains it, and
+ *   this widening is a genuine no-op for callers, not dead type-state left over from the revert.
  */
 const mutate = <A, E>(
   io: Effect.Effect<A, E, LitellmOpContext>,
