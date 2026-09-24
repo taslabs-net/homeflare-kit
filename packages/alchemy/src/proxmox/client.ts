@@ -15,14 +15,9 @@
 import * as Effect from 'effect/Effect';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
-import {
-  type ApiTarget,
-  type PveCredential,
-  type PveRole,
-  type PveTarget,
-  authorization,
-} from './credentials.ts';
+import type { ApiTarget, PveCredential, PveRole, PveTarget } from './credentials.ts';
 import { leased } from './lease-cache.ts';
+import { authorization } from './mint.ts';
 import { executeOnCluster } from './members.ts';
 
 export class PveError extends Error {

@@ -58,6 +58,7 @@ import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { credentials as distilledPveCredentials } from '@distilled.cloud/proxmox/Credentials';
 import type { ProxmoxOpContext } from '@distilled.cloud/proxmox/Protocol';
 import * as ProxmoxRetry from '@distilled.cloud/proxmox/Retry';
+import type { PveCredentialDenied } from './credential-errors.ts';
 import type { PveCredential, PveRole, PveTarget } from './credentials.ts';
 import { leased } from './lease-cache.ts';
 import {
@@ -131,16 +132,26 @@ export const runPveWith = <A, E>(
  * resource file calls.
  *
  * ⚠️ `| Error` IN THE RETURN TYPE IS `leased()`'s OWN FAILURE, NOT A NEW ONE THIS FILE ADDS.
- *   `credentials.ts`'s `mint` fails with a plain `Error` (an OpenBao refusal — sealed, denied, no
- *   such role) and was never typed more narrowly there; `pve()` carried the same untyped
- *   possibility before this file existed, just without a signature that said so.
+ *   `mint.ts`'s `mint` fails with a plain `Error` for most refusals (sealed, no such role) and
+ *   was never typed more narrowly there; `pve()` carried the same untyped possibility before
+ *   this file existed, just without a signature that said so.
+ *
+ * ★ `| PveCredentialDenied` IS SPELLED OUT HERE, NOT LEFT TO COLLAPSE INTO `Error`. It IS an
+ *   `Error` subtype (Data.TaggedError), so leaving it out of this union would still typecheck —
+ *   but `Effect.catchTag('PveCredentialDenied', …)` downstream (unreadable-read.ts) needs the
+ *   tag to be STATICALLY visible in the error channel to compile at all, not merely true at
+ *   runtime. Naming it here is what lets a migrated family's `readOrUnreadable` catch it.
  */
 export const runPve = <A, E>(
   target: PveTarget,
   role: PveRole,
   isWrite: boolean,
   op: Effect.Effect<A, E, ProxmoxOpContext>,
-): Effect.Effect<A, E | Cause.TimeoutError | PveClusterExhausted | Error, HttpClient.HttpClient> =>
+): Effect.Effect<
+  A,
+  E | Cause.TimeoutError | PveClusterExhausted | PveCredentialDenied | Error,
+  HttpClient.HttpClient
+> =>
   Effect.gen(function* () {
     const credential = yield* leased(target, role);
     return yield* runPveWith(target, credential, isWrite, op);

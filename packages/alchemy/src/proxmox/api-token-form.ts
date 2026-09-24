@@ -15,13 +15,16 @@ import type { ApiTokenAttributes, ApiTokenProps } from './api-token.ts';
  *   `update_token_info`, read over SSH on node-b on 2026-09-13. The two disagree in exactly the place
  *   that costs a forever-diff: the schema gives `expire` the default "same as user", and the code
  *   never implements it. api-token.ts records what that means.
+ *
+ * ★ MIGRATED OFF THE GENERATED `generated/pve.ts` PARAM TYPES ONTO `@distilled.cloud/proxmox`'s
+ *   typed `access.PutAccessUserTokenRequest`/`access.GetAccessUserTokenResponse` (2026-09-24) —
+ *   the same three fields, still form-urlencoded strings on the wire; distilled's generator
+ *   reads the identical vendor schema `generated/pve.ts` came from.
  */
-import type {
-  AccessUsersUseridTokenTokenidPostParams,
-  AccessUsersUseridTokenTokenidPutParams,
-} from './generated/pve.ts';
-import type { PveSpec } from './resource.ts';
+import type * as access from '@distilled.cloud/proxmox/access';
 import { bool, int, text } from './values.ts';
+
+export const API_TOKEN_UPDATE = 'pve:PUT /access/users/{userid}/token/{tokenid}';
 
 /**
  * `<userid>!<tokenid>` — the name the rest of PVE calls this object by.
@@ -38,12 +41,8 @@ import { bool, int, text } from './values.ts';
 export const fullTokenid = (props: ApiTokenProps) => `${props.userid}!${props.tokenid}`;
 
 /**
- * Everything a token has, in the form PVE wants. Create and update send exactly this.
- *
- * ⛔ `userid` AND `tokenid` ARE NOT IN IT, and that is not an omission. Both are path segments of
- *   `access/users/{userid}/token/{tokenid}` — which is the path the POST goes to as well as the
- *   PUT — so a second copy in the body can only ever disagree with the path it was sent to.
- *   metric-server.ts omits its `id` for the same reason and says so there.
+ * Everything a token has, in the form PVE wants. Update sends exactly this (this family never
+ * creates — see api-token.ts's header).
  *
  * ⚠️ EVERY FIELD IS SENT ON EVERY WRITE, THE EMPTY COMMENT INCLUDED, BECAUSE A PUT MERGES.
  *   MEASURED in `update_token_info`: `$token->{comment} = $param->{comment} if defined(...)`
@@ -54,91 +53,49 @@ export const fullTokenid = (props: ApiTokenProps) => `${props.userid}!${props.to
  *     literally `my $deletable = { comment => 1 };`, and anything else answers
  *     "unknown option '<k>'" — so `expire` and `privsep` have no clear path at all, which is the
  *     other half of why both are required props rather than optional ones.
- *
- * ⚠️ `flag()` FROM values.ts IS DELIBERATELY NOT USED FOR `privsep`. Its entire job is turning an
- *   UNDECLARED boolean into `undefined` so the field is omitted from the form; `privsep` is a
- *   required prop precisely so that it is never undeclared, so there is nothing for it to do and
- *   its `string | undefined` return would have to be asserted away to fit `Record<string,string>`.
- *   An assertion here would be a claim about the prop that the type already makes properly.
- *
- * ★ TYPED AGAINST THE GENERATED PUT AND POST PARAMS, NOT `Record<string, string>`, since
- *   2026-09-23 — the `notification-matcher-form.ts` pattern: `Pick` rather than the whole type,
- *   because neither `AccessUsersUseridTokenTokenidPutParams` nor …`PostParams` (generated/pve.ts)
- *   carries `userid`/`tokenid` (they are path segments — see the ⛔ above) and Put alone also
- *   carries `delete`/`regenerate`, which this family never sends. A schema drift on any of the
- *   three fields this function DOES send fails `tsc` here rather than surfacing as a 400 on a live
- *   cluster; api-token.test.ts pins the assignment both ways (Put and Post) without a cast.
- *   `expire` is written as a template literal, not `String(...)`, because the generated type is
- *   `` `${number}` ``, not `string` — `String(n)` widens to plain `string` and would not typecheck.
  */
-export const shape = (
-  props: ApiTokenProps,
-): Pick<AccessUsersUseridTokenTokenidPutParams, 'comment' | 'expire' | 'privsep'> &
-  Pick<AccessUsersUseridTokenTokenidPostParams, 'comment' | 'expire' | 'privsep'> => ({
+export const shape = (props: ApiTokenProps): access.PutAccessUserTokenRequest => ({
   comment: props.comment ?? '',
-  expire: `${props.expire}`,
+  expire: String(props.expire),
   privsep: props.privsep ? '1' : '0',
+  tokenid: props.tokenid,
+  userid: props.userid,
 });
 
-export const apiTokenSpec: PveSpec<ApiTokenProps, ApiTokenAttributes> = {
-  // ⛔ THE ITEM READ NEEDS `User.Modify`, WHICH THE AUDITOR-SHAPED READ LEASE DOES NOT HAVE. The
-  //   measurement and the consequence are in the header's last ⚠️; the mechanism — a silent
-  //   "absent" rather than a 403 — is the ⛔ on `readRole` in resource.ts.
-  readRole: 'provision',
-  /**
-   * ★ NOTHING PVE REPORTS HERE IS UNWRITABLE, WHICH IS UNUSUAL IN THIS PACKAGE AND IS WHY
-   *   `matches` can compare everything it reads. The GET returns exactly `comment`, `expire` and
-   *   `privsep`; PUT accepts exactly those three. There is no autoscaled field, no server-assigned
-   *   id, no set whose order PVE reshuffles — the three killers the neighbouring files carry
-   *   ⚠️s about do not arise. The two identity fields and `fullTokenid` come from props and are
-   *   true by construction, so comparing them would be theatre.
-   * ⚠️ `undefined` WHEN NEITHER FLAG IS THERE, BECAUSE BOTH ARE ALWAYS THERE. `user.cfg`
-   *   materialises `expire` and `privsep` for every token it stores, so an answer carrying neither
-   *   is not a token — and without this guard `bool`/`int` would invent one out of their fallbacks
-   *   and the read-back guard in `reconcile` could never fire.
-   */
-  attributes: (live, props) => {
-    const expire = live['expire'];
-    const privsep = live['privsep'];
-    if (expire === undefined && privsep === undefined) return undefined;
-    return {
-      comment: text(live['comment']),
-      expire: int(expire, 0),
-      fullTokenid: fullTokenid(props),
-      /** ⚠️ FALLBACK `true`, MATCHING PVE'S API DEFAULT — unreachable given the guard above, but
-       *   wrong in the safe direction if a future release stops emitting the field. */
-      privsep: bool(privsep, true),
-      tokenid: props.tokenid,
-      userid: props.userid,
-    };
-  },
-  /**
-   * ⛔ THE SAME STRING AS `path`, AND NOT A TYPO. A token is POSTed to its OWN url, not to the
-   *   collection: MEASURED, `/access/users/{userid}/token` carries a GET and nothing else, while
-   *   POST lives on `{tokenid}`. metric-server.ts has the identical shape for the identical
-   *   reason and records the experiment there.
-   */
-  collection: (props) => `access/users/${props.userid}/token/${props.tokenid}`,
-  createForm: shape,
-  /** The vendor rules both forms are checked against at plan time — resource-spec.ts. */
-  endpoint: {
-    create: 'pve:POST /access/users/{userid}/token/{tokenid}',
-    update: 'pve:PUT /access/users/{userid}/token/{tokenid}',
-  },
-  /**
-   * ⚠️ EXACTLY THE THREE FIELDS A PUT CAN PUT BACK, WHICH IS ALSO EXACTLY WHAT THE GET REPORTS.
-   *   MEASURED, by replaying these two functions over the live GET bodies of all four token
-   *   shapes this cluster has: `metrics@pve!exporter` (no comment), `iac@pve!apply` and
-   *   `app@pve!app` (commented), and a live OpenBao lease under `hf-read@pve` (a real
-   *   non-zero `expire`, offered as both `1789327175` and `"1789327175"` since `int` must not care
-   *   which). All four answer noop; flipping `privsep` answers update; an empty body answers
-   *   absent. ⚠️ THAT IS THE COMPARISON, NOT THE ENGINE — no `alchemy plan` was run against this
-   *   family, and nothing here was written to the cluster.
-   */
-  matches: (attributes, props) =>
-    attributes.comment === (props.comment ?? '') &&
-    attributes.expire === props.expire &&
-    attributes.privsep === props.privsep,
-  path: (props) => `access/users/${props.userid}/token/${props.tokenid}`,
-  updateForm: shape,
+/**
+ * ★ NOTHING PVE REPORTS HERE IS UNWRITABLE, WHICH IS UNUSUAL IN THIS PACKAGE. The GET returns
+ *   exactly `comment`, `expire` and `privsep`; PUT accepts exactly those three.
+ * ⛔ `undefined` WHEN NEITHER FLAG IS THERE, BECAUSE BOTH ARE ALWAYS THERE FOR A REAL TOKEN.
+ *   `user.cfg` materialises `expire` and `privsep` for every token it stores, so an answer
+ *   carrying neither is not a token — the same "distilled unwraps a missing object's `{"data":
+ *   null}` to `{}`" trap group.ts's header measures, checked here the way this guard already was
+ *   before the distilled migration (api-token.ts's ⛔ on the create refusal cites the same
+ *   MEASURED schema). Without this guard `bool`/`int` would invent one out of their fallbacks and
+ *   the read-back guard in `reconcile` could never fire.
+ */
+export const attributesOf = (
+  live: access.GetAccessUserTokenResponse,
+  props: ApiTokenProps,
+): ApiTokenAttributes | undefined => {
+  if (live.expire === undefined && live.privsep === undefined) return undefined;
+  return {
+    comment: text(live.comment),
+    expire: int(live.expire, 0),
+    fullTokenid: fullTokenid(props),
+    /** ⚠️ FALLBACK `true`, MATCHING PVE'S API DEFAULT — unreachable given the guard above, but
+     *   wrong in the safe direction if a future release stops emitting the field. */
+    privsep: bool(live.privsep, true),
+    tokenid: props.tokenid,
+    userid: props.userid,
+  };
 };
+
+/**
+ * ⚠️ EXACTLY THE THREE FIELDS A PUT CAN PUT BACK, WHICH IS ALSO EXACTLY WHAT THE GET REPORTS.
+ *   MEASURED (pre-migration, replaying against four live token shapes — see the old PR): all
+ *   answer noop; flipping `privsep` answers update; an empty body answers absent.
+ */
+export const matches = (attributes: ApiTokenAttributes, props: ApiTokenProps) =>
+  attributes.comment === (props.comment ?? '') &&
+  attributes.expire === props.expire &&
+  attributes.privsep === props.privsep;

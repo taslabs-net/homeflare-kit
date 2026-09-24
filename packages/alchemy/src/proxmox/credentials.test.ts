@@ -12,7 +12,8 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import * as Effect from 'effect/Effect';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import { type BaoEnvironment, type PveTarget, mint } from './credentials.ts';
+import type { BaoEnvironment, PveTarget } from './credentials.ts';
+import { mint } from './mint.ts';
 
 /**
  * ⚠️ THIS PACKAGE'S tsconfig CARRIES NO BUN TYPES, and its package.json is out of bounds for this
@@ -100,8 +101,8 @@ describe('mint', () => {
     });
   });
 
-  it('fails 403, 404 and 503 with OpenBao errors, never the token', async () => {
-    for (const status of [403, 404, 503]) {
+  it('fails 404 and 503 with OpenBao errors, never the token', async () => {
+    for (const status of [404, 503]) {
       await withFake(
         { json: { errors: [`status ${String(status)}`] }, status },
         async (address) => {
@@ -115,6 +116,31 @@ describe('mint', () => {
         },
       );
     }
+  });
+
+  // ★ 403 IS THE ONE STATUS WITH ITS OWN TAG (credential-errors.ts) — a family's
+  //   `readOrUnreadable` (unreadable-read.ts) `catchTag`s exactly this, never 404/503 above.
+  it('fails 403 as the typed PveCredentialDenied, never the token', async () => {
+    await withFake({ json: { errors: ['status 403'] }, status: 403 }, async (address) => {
+      const error = await refused({ BAO_ADDR: address, BAO_TOKEN: TOKEN });
+      assert.ok(error instanceof Error);
+      assert.equal((error as { _tag?: string })._tag, 'PveCredentialDenied');
+      assert.match(error.message, /-> 403: status 403\. This identity's AppRole has no grant/);
+      assert.ok(!error.message.includes(TOKEN));
+    });
+  });
+
+  // ⛔ FOUND ON ADVERSARIAL REVIEW 2026-09-24: status alone is not enough. A WAF or a proxy in
+  //   front of OpenBao can answer 403 without OpenBao ever seeing the request — folding THAT into
+  //   `PveCredentialDenied` would hide a real outage behind the same "noop, nothing to worry
+  //   about" reading the cries-wolf fix exists to stop, only for a different cause.
+  it('a 403 with no OpenBao error body stays the untyped refusal, not PveCredentialDenied', async () => {
+    await withFake({ json: { message: 'Forbidden' }, status: 403 }, async (address) => {
+      const error = await refused({ BAO_ADDR: address, BAO_TOKEN: TOKEN });
+      assert.ok(error instanceof Error);
+      assert.equal((error as { _tag?: string })._tag, undefined);
+      assert.match(error.message, /-> 403: not an OpenBao error body/);
+    });
   });
 
   it('refuses a 200 with no token_id, without quoting the secret', async () => {

@@ -52,7 +52,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { guardNetworkApply } from './apply-endpoints.ts';
 import { pveWith } from './client.ts';
-import { mint } from './credentials.ts';
+import { mint } from './mint.ts';
 import { awaitTask, degradedReason, pendingCount } from './network-apply-read.ts';
 import type { PveRequirements } from './resource.ts';
 import type { WithTarget } from './resource.ts';

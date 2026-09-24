@@ -47,9 +47,15 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as access from '@distilled.cloud/proxmox/access';
 import * as Effect from 'effect/Effect';
-import { guardForm } from './constraint-guard.ts';
+import { attributesOf, bind, guardWrite, identity, matches, tuple } from './acl-wire.ts';
 import type { PveRequirements, WithTarget } from './resource-spec.ts';
 import { runPve } from './distilled-pve.ts';
+import {
+  UNREADABLE,
+  type Unreadable,
+  readOrUnreadable,
+  unreadableWarning,
+} from './unreadable-read.ts';
 
 /** PVE's three kinds of subject. The read answers this word; the write wants its plural. */
 export type AclSubjectType = 'user' | 'group' | 'token';
@@ -91,90 +97,22 @@ export interface ProxmoxAcl extends Resource<
 
 export const ProxmoxAcl = Resource<ProxmoxAcl>('Proxmox.Acl');
 
-/** ⚠️ PVE normalises ACL paths (collapses repeated slashes, strips the trailing one, adds a leading one). */
-const normalize = (raw: string) => `/${raw.split('/').filter(Boolean).join('/')}`;
-
-/** The write names the subject with a plural key that differs per kind; the read answers singular. */
-const SUBJECT_FIELD = { group: 'groups', token: 'tokens', user: 'users' } as const;
-
-/** The vendor endpoint every write and every constraint check runs against. */
-const ENDPOINT = 'pve:PUT /access/acl';
-
-/** The tuple PVE keys a grant by, as PUT's fields. */
-const tuple = (props: AclProps): access.PutAccessAclRequest => ({
-  path: normalize(props.path),
-  roles: props.roleid,
-  [SUBJECT_FIELD[props.type]]: props.ugid,
-});
-
-/** Create and update are one call: the tuple plus the single mutable field. */
-const bind = (props: AclProps): access.PutAccessAclRequest => ({
-  ...tuple(props),
-  propagate: props.propagate === false ? '0' : '1',
-});
-
-/** `guardForm` wants a plain string-valued form; distilled's request type carries `?` instead. */
-const asForm = (body: access.PutAccessAclRequest): Record<string, string> =>
-  Object.fromEntries(Object.entries(body).filter((e): e is [string, string] => e[1] !== undefined));
-
-/**
- * ⚠️ ALWAYS PRESENCE-CHECKED. `bind`'s output IS the create form (there is no separate,
- *   narrower update form for this family — see the header), so the vendor's required-parameter
- *   check is never wrong to run; the two separate create/update passes the generic factory ran
- *   elsewhere collapse to one call here without losing coverage.
- */
-const guardWrite = (props: AclProps) => guardForm(ENDPOINT, asForm(bind(props)), true);
-
-/** What a change of this string means: not an edit, a different grant. */
-const identity = (grant: Pick<AclAttributes, 'path' | 'roleid' | 'type' | 'ugid'>) =>
-  [normalize(grant.path), grant.type, grant.ugid, grant.roleid].join(' ');
-
-const find = (rows: readonly access.ListAccessAclResponseBodyItem[], props: AclProps) =>
-  rows.find(
-    (row) =>
-      row.path === normalize(props.path) &&
-      row.type === props.type &&
-      row.ugid === props.ugid &&
-      row.roleid === props.roleid,
-  );
-
-/**
- * ⚠️ PVE answers `propagate` as 1/0 rather than true/false, and OMITS it when it carries the API
- *   default, which is ON. distilled's generated schema types it `unknown` for the same reason.
- */
-const propagates = (row: access.ListAccessAclResponseBodyItem) => {
-  const value = row.propagate;
-  return value === undefined || value === 1 || value === true || value === '1';
-};
-
-const attributesOf = (
-  rows: readonly access.ListAccessAclResponseBodyItem[],
-  props: AclProps,
-): AclAttributes => {
-  const row = find(rows, props);
-  return {
-    bound: row !== undefined,
-    path: normalize(props.path),
-    propagate: row !== undefined && propagates(row),
-    roleid: props.roleid,
-    type: props.type,
-    ugid: props.ugid,
-  };
-};
-
-const matches = (attributes: AclAttributes, props: AclProps) =>
-  attributes.bound && attributes.propagate === (props.propagate !== false);
-
 /**
  * ⛔ `readRole: 'provision'`, WITHOUT WHICH EVERY GRANT READS BACK AS ABSENT — see the header's
- *   ⛔ on filtering. `read`/`orElseSucceed` folds ANY failure (network, a genuine permission
- *   error) into "unknown"; a 200 with an empty or non-matching list is a real answer, not folded.
+ *   ⛔ on filtering. `orElseSucceed` still folds every OTHER failure into `undefined`.
+ * ★ `readOrUnreadable` (unreadable-read.ts) runs first: a REFUSED mint of `provision` — the
+ *   "cries wolf" bug — comes back `UNREADABLE` instead of the same `undefined` a genuine
+ *   absence produces, so `diff` below can tell them apart.
  */
 const readAttributes = (props: AclProps) =>
-  runPve(props.target, 'provision', false, access.listAccessAcl({})).pipe(
-    Effect.map((rows) => attributesOf(rows, props)),
+  readOrUnreadable(runPve(props.target, 'provision', false, access.listAccessAcl({}))).pipe(
+    Effect.map((rows) => (rows === UNREADABLE ? UNREADABLE : attributesOf(rows, props))),
     Effect.orElseSucceed(() => undefined),
   );
+
+/** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
+const dropUnreadable = (live: AclAttributes | Unreadable | undefined) =>
+  live === UNREADABLE ? undefined : live;
 
 export const ProxmoxAclProvider = () =>
   Provider.effect(
@@ -184,7 +122,7 @@ export const ProxmoxAclProvider = () =>
         /** ⛔ EMPTY LIKE EVERY OTHER PVE RESOURCE. Adopting every grant a human ever clicked is not adoption. */
         list: () => Effect.succeed([]),
         read: Effect.fn(function* ({ olds }) {
-          return yield* readAttributes(olds);
+          return dropUnreadable(yield* readAttributes(olds));
         }),
         /**
          * ⛔ AN IDENTITY CHANGE IS A REPLACE. Editing `roleid` (or the subject, or the path) would
@@ -201,6 +139,12 @@ export const ProxmoxAclProvider = () =>
           yield* guardWrite(news);
           if (output === undefined) return undefined;
           const live = yield* readAttributes(news);
+          // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and
+          //   force `update` on a grant that was plainly there — see unreadable-read.ts.
+          if (live === UNREADABLE) {
+            yield* unreadableWarning('Proxmox.Acl', identity(news));
+            return { action: 'noop' } as const;
+          }
           return live !== undefined && matches(live, news)
             ? ({ action: 'noop' } as const)
             : ({ action: 'update' } as const);
@@ -212,12 +156,15 @@ export const ProxmoxAclProvider = () =>
          *   the gap.
          */
         reconcile: Effect.fn(function* ({ news }) {
-          const before = yield* readAttributes(news);
+          // ⚠️ `dropUnreadable`: reconcile only runs once `provision` already minted for the
+          //   write below, so `UNREADABLE` here is a near-impossible race, not the routine case
+          //   `diff` handles — treating it as "not yet bound" costs at most one redundant PUT.
+          const before = dropUnreadable(yield* readAttributes(news));
           yield* guardWrite(news);
           if (before === undefined || !matches(before, news)) {
             yield* runPve(news.target, 'provision', true, access.putAccessAcl(bind(news)));
           }
-          const after = yield* readAttributes(news);
+          const after = dropUnreadable(yield* readAttributes(news));
           if (after === undefined || !after.bound) {
             return yield* Effect.die(
               new Error(

@@ -37,7 +37,12 @@ const bootstrapped = async (): Promise<CliState> => {
 
 const engineOn = (state: CliState) => {
   const live = apiView(state);
-  const fake = fakePve((call) => (call.method === 'GET' ? live[call.path] : 'UPID:fake'));
+  // ⚠️ `decodeURIComponent` — user.ts's own ⚠️: distilled percent-encodes a `{userid}` label
+  //   substitution (`hf-provision@pve` -> `hf-provision%40pve`), where `apiView`'s keys stay
+  //   literal (it also serves the raw shell-CLI fake, which never sees a URL at all).
+  const fake = fakePve((call) =>
+    call.method === 'GET' ? live[decodeURIComponent(call.path)] : 'UPID:fake',
+  );
   const providers = Layer.mergeAll(
     ProxmoxAclProvider(),
     ProxmoxGroupProvider(),

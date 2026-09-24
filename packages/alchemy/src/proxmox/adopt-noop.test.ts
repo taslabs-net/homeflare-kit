@@ -16,9 +16,11 @@ import { engineOver } from '../verify/fake-engine.ts';
 import { ProxmoxAcl, ProxmoxAclProvider } from './acl.ts';
 import type { PbsTarget } from './credentials.ts';
 import { FAKE_TARGET, fakePve, withoutBao } from './fake-pve.ts';
+import { ProxmoxGroup, ProxmoxGroupProvider } from './group.ts';
 import { PbsDatastore, PbsDatastoreProvider } from './pbs-datastore.ts';
 import { ProxmoxPool, ProxmoxPoolProvider } from './pool.ts';
 import { ProxmoxSdnApply, ProxmoxSdnApplyProvider } from './sdn-apply.ts';
+import { ProxmoxUser, ProxmoxUserProvider } from './user.ts';
 
 const PBS: PbsTarget = { api: 'https://pbs.test:8007/api2/json', mount: 'pbs-test', scheme: 'pbs' };
 
@@ -53,6 +55,22 @@ const cases: readonly Case[] = [
     },
     name: 'Proxmox.Acl (wraps the factory reconcile)',
     provider: ProxmoxAclProvider as never,
+  },
+  {
+    declare: () =>
+      ProxmoxGroup('mint', { comment: 'fence', groupid: 'hf-mint', target: FAKE_TARGET }) as never,
+    live: { 'access/groups/hf-mint': { comment: 'fence', members: [] } },
+    name: 'Proxmox.Group (its own reconcile, since the distilled migration)',
+    provider: ProxmoxGroupProvider as never,
+  },
+  {
+    // ⚠️ KEY IS PERCENT-ENCODED — user.ts's own ⚠️: distilled's `{userid}` substitution encodes
+    //   the `@`, and `clusterWith` below does no decoding of `call.path`.
+    declare: () =>
+      ProxmoxUser('iac', { comment: 'x', target: FAKE_TARGET, userid: 'iac@pve' }) as never,
+    live: { 'access/users/iac%40pve': { comment: 'x', enable: 1, expire: 0 } },
+    name: 'Proxmox.User (its own reconcile, since the distilled migration)',
+    provider: ProxmoxUserProvider as never,
   },
   {
     declare: () =>

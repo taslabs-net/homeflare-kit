@@ -17,10 +17,6 @@ import { engineOver } from '../verify/fake-engine.ts';
 import { type ApiTokenProps, ProxmoxApiToken, ProxmoxApiTokenProvider } from './api-token.ts';
 import { shape } from './api-token-form.ts';
 import { FAKE_TARGET, type PveCall, fakePve, withoutBao } from './fake-pve.ts';
-import type {
-  AccessUsersUseridTokenTokenidPostParams,
-  AccessUsersUseridTokenTokenidPutParams,
-} from './generated/pve.ts';
 
 type Live = { comment?: string; expire: number | string; privsep: number };
 
@@ -32,12 +28,19 @@ const tokens = new Map<string, Live>([
   ['access/users/svc@pve/token/lease2', { comment: 'lease', expire: '1789327175', privsep: 0 }],
 ]);
 
+/**
+ * ⚠️ `decodeURIComponent` — user.ts's own ⚠️, and it applies here too: distilled's `{userid}`/
+ *   `{tokenid}` label substitution percent-encodes `iac@pve` to `iac%40pve`, where `client.ts`'s
+ *   plain string concatenation never did. `tokens`'s keys stay literal (`@`); only the lookup
+ *   decodes, so this map does not have to be rewritten for a wire-level detail.
+ */
 const cluster = () =>
   fakePve((call: PveCall) => {
-    if (call.method === 'GET') return tokens.get(call.path);
+    const key = decodeURIComponent(call.path);
+    if (call.method === 'GET') return tokens.get(key);
     if (call.method === 'PUT') {
-      const live = tokens.get(call.path);
-      if (live !== undefined) tokens.set(call.path, { ...live, ...call.form });
+      const live = tokens.get(key);
+      if (live !== undefined) tokens.set(key, { ...live, ...call.form });
       return call.form;
     }
     return undefined;
@@ -125,14 +128,27 @@ describe('adopting a metadata-only ApiToken declaration', () => {
       expect(await engine.deploy(flipped())).toEqual({ 'iac-pve-apply': 'adopted' });
     });
     const put = fake.calls.find((call) => call.method === 'PUT');
-    expect(fake.writes()).toEqual(['PUT access/users/iac@pve/token/apply']);
+    // ⚠️ PERCENT-ENCODED — see the ⚠️ on `cluster` above.
+    expect(fake.writes()).toEqual(['PUT access/users/iac%40pve/token/apply']);
+    // ⛔ `userid`/`tokenid` DO NOT LEAK INTO THE WIRE FORM, even though `shape()` (below) must
+    //   include them for distilled's `putAccessUserToken` call — they are `T.Label()` fields,
+    //   pulled into the URL by the protocol layer and never sent in the body. MEASURED here.
     expect(put?.pairs.map(([name]) => name)).toEqual(['comment', 'expire', 'privsep']);
   });
 
-  test('the form keys typecheck against both generated PVE params, with no cast', () => {
+  // ★ THE OLD PROOF ("typechecks against the generated PVE params, no cast") is now `shape()`'s
+  //   own return type (`access.PutAccessUserTokenRequest`), checked at compile time by every
+  //   caller. This pins the one thing that is not: `userid`/`tokenid` ARE in the object `shape`
+  //   builds (distilled needs them to fill the URL), even though the wire test above proves
+  //   they never reach the actual PUT body.
+  test('shape() carries userid/tokenid for distilled, alongside the three mutable fields', () => {
     const props = propsFor('iac@pve', 'apply', { comment: 'automation' });
-    const post: AccessUsersUseridTokenTokenidPostParams = shape(props);
-    const put: AccessUsersUseridTokenTokenidPutParams = shape(props);
-    expect(post).toEqual(put);
+    expect(shape(props)).toEqual({
+      comment: 'automation',
+      expire: '0',
+      privsep: '0',
+      tokenid: 'apply',
+      userid: 'iac@pve',
+    });
   });
 });

@@ -22,8 +22,9 @@
  *                                     "users":"hf-provision@pve,hf-read@pve"}, …]
  *     GET /access/groups/hf-mint -> {"comment":"…","members":["hf-provision@pve","hf-read@pve"]}
  *   The index says `users` and hands back a COMMA STRING; the item says `members` and hands back an
- *   ARRAY. A reader that looked for `users` on the item path would find nothing, report an empty
- *   group, and quietly show a delete as harmless.
+ *   ARRAY. distilled's generator reflects the SAME split (`GetAccessGroupResponse.members: string[]`
+ *   vs `ListAccessGroupsResponseBodyItem.users?: string`), so reading the item is what keeps this
+ *   file on the array shape it already normalises.
  *
  * ⛔ AND THE ITEM'S ORDER IS NOT STABLE BETWEEN TWO CONSECUTIVE CALLS. MEASURED, seconds apart, on
  *   the same endpoint:
@@ -38,37 +39,56 @@
  *   exactly `comment` and `members`, so the id comes from props — the same arrangement, and the
  *   same reason, as `user.ts`.
  *
- * ★ PRIVILEGES: NOTHING HAD TO BE WIDENED, WHICH MAKES THIS THE FIRST FAMILY HERE THAT COST
- *   NOTHING. Measured with `pveum user permissions`, 2026-09-13:
+ * ★ PRIVILEGES: NOTHING HAD TO BE WIDENED. Measured with `pveum user permissions`, 2026-09-13:
  *     · item GET checks `['perm','/access/groups',['Sys.Audit','Group.Allocate'], any => 1]`, and
- *       `hf-read@pve` already holds `Sys.Audit` there (propagated from `/` by `PVEAuditor`).
- *       So `readRole` is left at the default `read` — unlike storage/sdn-zone/sdn-vnet, whose ITEM
- *       reads PVE gates on an allocate privilege. See the ⛔ on `readRole` in `resource.ts`.
+ *       `hf-read@pve` already holds `Sys.Audit` there. So `readAttributes` below reads with the
+ *       default `read` role — unlike acl.ts, user.ts and api-token.ts, whose item/list reads PVE
+ *       gates on an allocate privilege the 3600s read lease does not hold.
  *     · POST, PUT and DELETE each check `Group.Allocate` on `/access/groups`, and
  *       `hf-provision@pve` holds it via the provision role (`PROVISION_PRIVILEGES`).
  *
  * ⛔ `retain` BY DEFAULT, BECAUSE DELETING A GROUP DESTROYS TWO THINGS THIS FILE CANNOT PUT BACK.
  *   Measured in `PVE::AccessControl` on the node:
- *     · The member list IS the group. `user.cfg` stores it on the GROUP line (`group:<id>:<users>:
- *       <comment>:`) and DERIVES each user's `groups` map from it at parse time. Deleting the group
- *       deletes the list, and this resource has no `members` prop to restore it from.
+ *     · The member list IS the group. `user.cfg` stores it on the GROUP line and DERIVES each
+ *       user's `groups` map from it at parse time. Deleting the group deletes the list, and this
+ *       resource has no `members` prop to restore it from.
  *     · `delete_group_acl` then walks the whole ACL tree and drops every grant where the group is
  *       the SUBJECT. On this cluster that is `admins -> Administrator on /` and
  *       `automation -> PVEAuditor on /`: whole populations of access, gone in one call, with no
  *       confirmation and nothing in the plan to suggest it.
- *   `delete` is FULLY IMPLEMENTED — `DELETE /access/groups/{groupid}` exists, unlike the ACL
- *   family's — so `.pipe(RemovalPolicy.destroy())` really removes the group. See the ★ in
- *   `resource.ts` for why the policy is a guard rather than a stubbed-out operation.
+ *   `delete` is FULLY IMPLEMENTED — `DELETE /access/groups/{groupid}` exists — so
+ *   `.pipe(RemovalPolicy.destroy())` really removes the group.
  *
- * ⛔ NO SECRET REACHES STATE. A group holds a comment and a list of userids; there is no password,
- *   no token and no key anywhere on these endpoints. `user.ts`'s ⛔ about unencrypted state applies
- *   to this package, and this family simply has nothing to trip it.
+ * ★ MIGRATED OFF `client.ts`'s generic `pve()`/`pveHandlers` ONTO `@distilled.cloud/proxmox`'s
+ *   typed `access.getAccessGroup`/`createAccessGroup`/`putAccessGroup`/`deleteAccessGroup`
+ *   (2026-09-24, decision 43's proxmox walk-down, access sub-area, second resource after Acl).
+ *   `distilled-pve.ts`'s `runPve` replaces `pve()` as in acl.ts; the CRIES-WOLF FIX
+ *   (unreadable-read.ts) is wired the same way: a refused `provision` mint on the WRITE-side
+ *   guard, or a refused `read` mint on the plain read, reports `noop` with a warning rather than
+ *   forcing `update` with nothing compared.
  */
 import { Resource } from 'alchemy';
+import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
+import * as access from '@distilled.cloud/proxmox/access';
 import * as Effect from 'effect/Effect';
-import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
-import { csv, text } from './values.ts';
+import { guardWrite } from './distilled-guard.ts';
+import {
+  GROUP_CREATE,
+  GROUP_UPDATE,
+  attributesOf,
+  createForm,
+  matches,
+  updateForm,
+} from './group-wire.ts';
+import type { PveRequirements, WithTarget } from './resource-spec.ts';
+import { runPve } from './distilled-pve.ts';
+import {
+  UNREADABLE,
+  type Unreadable,
+  readOrUnreadable,
+  unreadableWarning,
+} from './unreadable-read.ts';
 
 export interface GroupProps extends WithTarget {
   /**
@@ -108,94 +128,104 @@ export const ProxmoxGroup = Resource<ProxmoxGroup>('Proxmox.Group', {
 });
 
 /**
- * The comment PVE will actually END UP HOLDING for a given declaration.
- *
- * ⛔ PVE CANNOT STORE THE COMMENT `'0'`, AND A PROVIDER THAT DOES NOT MODEL THAT DIFFS FOREVER.
- *   Three places in the shipped Perl test the comment for TRUTH rather than for definedness, and
- *   in Perl the one-character string `'0'` is false:
- *     `create_group`:      `$group->{comment} = $param->{comment} if $param->{comment};`
- *     `write_user_config`: `my $comment = $d->{comment} ? encode_text($d->{comment}) : '';`
- *     the config parser:   `$cfg->{groups}->{$g}->{comment} = decode_text($comment) if $comment;`
- *   So a declared `comment: '0'` is accepted by the API, dropped on the way to `user.cfg`, and read
- *   back as absent. Left alone, `matches` would be false on every plan and every deploy would
- *   rewrite the same value into the same hole. Normalising BOTH the comparison and the form is how
- *   `values.ts` already treats `''` as the absence of a boolean rather than as `false`.
- *   ⚠️ MEASURED IN THE SOURCE ON node-b, NOT ON THE WIRE — writing `'0'` to the cluster to watch it
- *     vanish would have been a write, and this agent had read access only.
- *   ⚠️ `pool.ts` HAS THE SAME LATENT HOLE — `pool:$pool:$comment:…` is written by that same
- *     truthiness test and is not guarded. Not fixed from here; flagged so it is fixed on purpose.
- *
- * ⚠️ EVERY OTHER COMMENT ROUND-TRIPS EXACTLY, colons and newlines included: `write_user_config`
- *   runs it through `encode_text` and the parser through `decode_text`, so the field separator in
- *   `user.cfg` cannot be smuggled in.
+ * ★ Default `read` role — nothing widened for this family, see the header's privileges note.
+ * ⛔ `live.members === undefined` MEANS ABSENT, NOT AN EMPTY GROUP. `@distilled.cloud/core`'s
+ *   REST protocol unwraps PVE's `{"data": null}` (a genuinely missing object — MEASURED in
+ *   `protocol.ts`: "a Unit-output endpoint... `data` is null/absent") to `{}` BEFORE the
+ *   schema-driven decode, not to a decode failure. `members` is the one REQUIRED field on this
+ *   response, so its absence is the only signal that the group was never there — the same trap
+ *   api-token-form.ts's `attributes` guards with its own required-field check.
  */
-const storedComment = (comment: string | undefined) => {
-  const value = comment ?? '';
-  return value === '0' ? '' : value;
-};
+const readGroup = (props: GroupProps) =>
+  readOrUnreadable(runPve(props.target, 'read', false, access.getAccessGroup(props))).pipe(
+    Effect.map((live) =>
+      live === UNREADABLE
+        ? UNREADABLE
+        : live.members === undefined
+          ? undefined
+          : attributesOf(live, props),
+    ),
+    Effect.orElseSucceed(() => undefined),
+  );
 
-/**
- * The item read's `members` array, sorted into something two plans can agree on.
- *
- * ⚠️ `csv` IS REUSED RATHER THAN RE-IMPLEMENTED, AND ITS OWN ⚠️ IS EXACTLY THIS CASE: a list PVE
- *   does not promise to give back in the order it was handed. Going out through the joined form
- *   and back is the price of that reuse, and cheaper than a fourth hand-rolled sorter.
- * ⚠️ THE ARRAY ONLY — THE COMMA STRING IS NOT ACCEPTED HERE, ON PURPOSE. That spelling belongs to
- *   the INDEX (`users`), which this provider never reads, so a branch for it would be a guess at a
- *   shape that cannot arrive. `user.ts` refuses the same guess for `tokens` and for the same
- *   reason: a wrong guess on a reported-only field surfaces in a plan as a phantom membership.
- * ⚠️ NO DEDUPLICATION, UNLIKE `user.ts`'s `groupSet`. These names are Perl HASH KEYS —
- *   `[keys %{ $data->{users} }]` — so a duplicate is not representable. `user.groups` needs the
- *   dedupe because its value also arrives from a hand-written prop; this one never does.
- */
-const memberList = (live: unknown): string[] => {
-  const joined = csv((Array.isArray(live) ? live : []).map((member: unknown) => text(member)));
-  return joined === '' ? [] : joined.split(',');
-};
+/** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
+const dropUnreadable = (live: GroupAttributes | Unreadable | undefined) =>
+  live === UNREADABLE ? undefined : live;
 
-const handlers = pveHandlers<GroupProps, GroupAttributes>({
-  attributes: (live, props) => ({
-    /**
-     * ⚠️ ABSENT IS EMPTY, NOT MISSING. `read_group` sets `comment` only `if defined(…)`, so a group
-     *   without one answers `{"members":[…]}` and nothing else. THAT ONE IS READ OFF THE HANDLER'S
-     *   SOURCE, not off the wire — every group on this cluster happens to carry a comment, so the
-     *   commentless shape was not there to measure. The empty-MEMBERS shape WAS measured —
-     *   `automation` answers `{"comment":"…","members":[]}`. `''` is what an undeclared
-     *   `comment` prop normalises to, so the two sides meet either way.
-     */
-    comment: text(live['comment']),
-    /** ⚠️ FROM PROPS: the item read's schema is `additionalProperties: 0` over comment/members. */
-    groupid: props.groupid,
-    members: memberList(live['members']),
-  }),
-  collection: () => 'access/groups',
-  createForm: (props) => ({ comment: storedComment(props.comment), groupid: props.groupid }),
-  /**
-   * ⚠️ `members` IS NOT COMPARED, AND NOTHING ELSE IS LEFT TO COMPARE. `comment` is the only field
-   *   a PUT here accepts, so it is the only field whose drift this provider can repair — the rule
-   *   `resource.ts` states once in the ⛔ on adoption: a field deliberately out of `matches` is a
-   *   field this resource does not manage.
-   */
-  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
-  endpoint: { create: 'pve:POST /access/groups', update: 'pve:PUT /access/groups/{groupid}' },
-  matches: (attributes, props) => attributes.comment === storedComment(props.comment),
-  path: (props) => `access/groups/${props.groupid}`,
-  /**
-   * ⚠️ ALWAYS SENT, EVEN EMPTY — that is how a comment is CLEARED. `update_group` assigns
-   *   `if defined($param->{comment})`, so an omitted field leaves the old text in place and a
-   *   declaration that dropped its comment would report an update the update could not settle. The
-   *   empty string then falls out of `user.cfg` on the truthiness test above and reads back as
-   *   `''`, which is what the props side normalises to. The loop closes.
-   */
-  updateForm: (props) => ({ comment: storedComment(props.comment) }),
-});
-
-/**
- * ⛔ THE EMPTY `list` IS INHERITED FROM `pveHandlers` AND IT MATTERS HERE. `GET /access/groups`
- *   answers with every group on the cluster — on this one that is `admins`, which grants
- *   `Administrator` on `/` to every human who logs in. Handing it to Alchemy would invite adoption,
- *   and therefore one day a delete that takes the whole admin group's access with it. Adoption
- *   stays an explicit act, here as everywhere else in this package.
- */
 export const ProxmoxGroupProvider = () =>
-  Provider.effect(ProxmoxGroup, Effect.succeed(ProxmoxGroup.Provider.of(handlers)));
+  Provider.effect(
+    ProxmoxGroup,
+    Effect.succeed(
+      ProxmoxGroup.Provider.of({
+        /**
+         * ⛔ THE EMPTY `list` MATTERS HERE. `GET /access/groups` answers every group on the
+         *   cluster, `admins` (grants `Administrator` on `/`) included. Adoption stays explicit.
+         */
+        list: () => Effect.succeed([]),
+        read: Effect.fn(function* ({ olds }) {
+          return dropUnreadable(yield* readGroup(olds));
+        }),
+        diff: Effect.fn(function* ({ news, output }) {
+          if (!isResolved(news)) return undefined;
+          yield* guardWrite(GROUP_CREATE, createForm(news), output === undefined);
+          yield* guardWrite(GROUP_UPDATE, updateForm(news), false);
+          if (output === undefined) return undefined;
+          const live = yield* readGroup(news);
+          // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and force
+          //   `update` on a group that was plainly there — see unreadable-read.ts.
+          if (live === UNREADABLE) {
+            yield* unreadableWarning('Proxmox.Group', news.groupid);
+            return { action: 'noop' } as const;
+          }
+          if (live === undefined) {
+            // Drift: state says this group exists, the cluster disagrees. reconcile recreates it.
+            yield* guardWrite(GROUP_CREATE, createForm(news), true);
+            return { action: 'update' } as const;
+          }
+          return matches(live, news)
+            ? ({ action: 'noop' } as const)
+            : ({ action: 'update' } as const);
+        }),
+        reconcile: Effect.fn(function* ({ news }) {
+          // ⚠️ `dropUnreadable`: reconcile only runs once `provision` already minted for the
+          //   write below (same lease-cache key), so `UNREADABLE` here is a narrow race, not the
+          //   routine case `diff` handles. ⛔ UNLIKE acl.ts's PUT-only bind, a group's create is
+          //   NOT idempotent the same way: if this narrow race DOES land as `undefined` while the
+          //   group is genuinely already there, PVE answers "group already exists" rather than
+          //   silently converging — a loud failure, not a silent duplicate.
+          const before = dropUnreadable(yield* readGroup(news));
+          yield* guardWrite(GROUP_CREATE, createForm(news), before === undefined);
+          yield* guardWrite(GROUP_UPDATE, updateForm(news), false);
+          if (before === undefined) {
+            yield* runPve(
+              news.target,
+              'provision',
+              true,
+              access.createAccessGroup(createForm(news)),
+            );
+          } else if (!matches(before, news)) {
+            yield* runPve(news.target, 'provision', true, access.putAccessGroup(updateForm(news)));
+          }
+          const after = dropUnreadable(yield* readGroup(news));
+          if (after === undefined) {
+            return yield* Effect.die(
+              new Error(
+                `access/groups/${news.groupid}: the write returned no error but the group is ` +
+                  'still absent. PVE wraps every answer in {"data":...} and can report success ' +
+                  'on a call that did nothing -- read back rather than trusting the status code.',
+              ),
+            );
+          }
+          return after;
+        }),
+        delete: Effect.fn(function* ({ olds }) {
+          yield* runPve(
+            olds.target,
+            'provision',
+            true,
+            access.deleteAccessGroup({ groupid: olds.groupid }),
+          );
+        }),
+      }),
+    ),
+  );

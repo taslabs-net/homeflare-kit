@@ -23,15 +23,20 @@ export const PVE_CLUSTER_OWNERSHIP: readonly Ownership[] = [
     ],
   },
   {
-    // ⚠️ POST lands on the object itself, not on a collection above it. PVE takes the token id
-    //   from the path on create, which is why `collection` and `path` are the same string.
+    // ⛔ NO POST CLAIM, DELIBERATELY — decision 9 (2026-09-23): this family is metadata-only.
+    //   `reconcile` (api-token.ts) refuses by name before any create, on every path, because PVE
+    //   returns the token secret ONLY in the create response and it cannot be stored. The POST
+    //   endpoint is real (the vendor schema has it) so `refuted` does not fit either — that
+    //   mechanism is for endpoints the VENDOR does not implement, and the test would fail the
+    //   moment this one exists, which it always has. This row spells `writes` out instead of
+    //   calling `crud()` for exactly the reason that helper's own comment names ApiToken by name.
     resource: 'Proxmox.ApiToken',
     system: 'pve',
     file: `${P}/api-token.ts`,
-    writes: crud(
-      '/access/users/{userid}/token/{tokenid}',
-      '/access/users/{userid}/token/{tokenid}',
-    ),
+    writes: [
+      { method: 'PUT', path: '/access/users/{userid}/token/{tokenid}' },
+      { method: 'DELETE', path: '/access/users/{userid}/token/{tokenid}' },
+    ],
   },
   {
     resource: 'Proxmox.Group',
