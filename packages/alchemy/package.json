@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/alchemy",
-  "version": "0.31.1",
+  "version": "0.31.2",
   "description": "Custom Alchemy providers for Cloudflare, Proxmox, OpenBao, Forgejo, Talos, launchd and Caddy, and a verifier that proves adoptions are no-ops.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/alchemy#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
@@ -117,7 +117,7 @@
   },
   "dependencies": {
     "@distilled.cloud/caddy": "npm:@homeflare/distilled-caddy@0.2.2",
-    "@distilled.cloud/grafana": "npm:@homeflare/distilled-grafana@0.1.0",
+    "@distilled.cloud/grafana": "npm:@homeflare/distilled-grafana@0.2.0",
     "@distilled.cloud/litellm": "npm:@homeflare/distilled-litellm@0.2.0",
     "@distilled.cloud/netbox": "npm:@homeflare/distilled-netbox@0.3.0",
     "@distilled.cloud/paperless-ngx": "npm:@homeflare/distilled-paperless-ngx@0.3.0",
