@@ -69,17 +69,62 @@ then tidiness.
    (S42). This is listed in [the Bun line](#the-bun-line). The exported `Bun.*` paths crash
    under Node, which is the runtime this package promises its consumers. The `node:*` paths
    load on Node but break the Effect-only rule.
-5. **`launchd`, `linux` and `caddy` have promise-based seams (H3).** `HostRunner` and
-   `CaddyAdmin` are plain `async` interfaces, with `node:child_process`, `node:fs/promises`
-   and `node:http` behind them, and failures are untyped `Error` (S19, S21). The stated
-   reason is that a consumer implements plain async functions. Upstream meets the same need
-   by letting a caller provide `FileSystem`, `ChildProcessSpawner` or `CommandExecutor`
-   layers, and `alchemy/Util/AtomicFile.writeFileAtomic` covers the temp-and-rename write.
+5. **`launchd` and `linux` still have promise-based seams (H3).** `HostRunner` is a plain
+   `async` interface, with `node:child_process` and `node:fs/promises` behind it, and
+   failures are untyped `Error` (S19, S21). The stated reason is that a consumer implements
+   plain async functions. Upstream meets the same need by letting a caller provide
+   `FileSystem`, `ChildProcessSpawner` or `CommandExecutor` layers, and
+   `alchemy/Util/AtomicFile.writeFileAtomic` covers the temp-and-rename write.
    ⚠️ Only in part. `local-runner.ts` creates its temp file with `O_EXCL`, mode 0600 and
    `chown` before `chmod`, and it refuses a planted symlink. `writeFileAtomic` writes with
    default flags and mode, `chmod`s afterwards, and never `chown`s.
    **Decision:** maintainer. These families are also host-specific, so "house-only" is a
    valid answer.
+
+   ✅ **S23 fixed 2026-09-24** (branch `claude2/distilled-caddy-migrate`): `caddy/*` no
+   longer has a promise-based seam at all. `Caddy.Config` now calls
+   `@distilled.cloud/caddy`'s typed `admin` operations (`adaptConfig`, `loadConfig`,
+   `getConfig`), `catchTag`-able via `Caddy.CaddyOpError`, with `isUnreachable`
+   (caddy-http-client.ts) replacing the old `CaddyUnreachableError` class as a type guard
+   over the SDK's own `HttpClientError`. The old `CaddyAdmin`/`CaddyAdminRequest`/
+   `CaddyAdminResponse`/`CaddyAdminError` interfaces and `admin-calls.ts`'s hand-rolled
+   `POST /adapt`/`POST /load`/`GET /config/` calls are gone. `local-admin.ts`'s measured
+   unix-socket-plus-loopback transport (Host/Origin headers, ECONNREFUSED/ENOENT-only
+   retry) survives as caddy-http-client.ts, now built as an Effect `HttpClient.HttpClient`
+   the SDK's own protocol runs over, instead of a raw `node:http` promise interface — still
+   `node:http`, not `FetchHttpClient`, because only `node:http` dials a unix socket on both
+   Bun and Node (`FetchHttpClient`'s `unix` option is Bun-only). The `LoadRefused` 200-trap
+   (a refused `/load` that still answers 200) is now first-class in the SDK's own
+   `protocol.ts`, not re-detected in this package. A genuine SDK gap this migration found
+   and patched in the distilled clone (never in this resource): `AdaptConfig`/`LoadConfig`'s
+   `config` field is Caddyfile TEXT under a caller-chosen `Content-Type`, which
+   `buildRequest`'s generic `HttpBody()` cascade has no seam for (no static `bodyMediaType`
+   for a dynamically-typed body) — it fell to the JSON-body default, which both
+   `JSON.stringify`d the Caddyfile text and overwrote the caller's `Content-Type` with
+   `application/json`. Fixed in `protocol.ts`'s `encode`, shipped as
+   `@homeflare/distilled-caddy@0.2.1` (a patch changeset). A second, unrelated finding: the
+   SDK's own default `Caddy.Retry` policy treats ANY `HttpClientError` with a
+   `TransportError` reason as retryable — including an ECONNRESET well after a `POST /load`
+   was accepted — which would have re-sent an already-accepted load past the point
+   admin-calls.ts's original module doc says never to. `local-admin.ts` now disables it
+   (`Layer.succeed(Caddy.Retry.Retry, { while: () => false })`), leaving
+   caddy-http-client.ts's own narrower retry (ECONNREFUSED/ENOENT only) as the one retry
+   policy in play. State did not move: props and attributes stay byte-identical, proven by
+   the family's existing tests (updated only where the typed-error message text itself
+   changed) plus fake-caddy.ts, a real HTTP server, so every test already drives the real
+   distilled wire protocol.
+   ⛔ **Alchemy trap found along the way, house-wide, not caddy-specific:** a
+   `Provider.effect(...)` layer built with `SomeLayer.pipe(Layer.provide(depsLayer))` seals
+   `depsLayer`'s services away from the provider's OWN `read`/`diff`/`reconcile` handlers
+   when THEY run later — `Layer.provide` satisfies the provider's construction-time
+   requirement and then hides it, so a handler that itself does `yield* SomeService` (as
+   `Provider.effect`'s own `ReadReq`/`DiffReq`/`ReconcileReq` type parameters invite)
+   dies with "Service not found" the moment the engine calls it, not when the layer is
+   built. `Layer.provideMerge` is the fix — it feeds the dependency's output into the
+   provider's requirement AND keeps that output live in the result. `providers.ts`'s
+   `caddyProviders()` and this family's tests were the ones actually broken by it, but any
+   family whose provider handlers read a service from context has the same exposure.
+
 6. **`openbao/*` has no upstream equivalent, and it conforms on the contract** (Effect
    `HttpClient`, strict `Unowned`, retain). It diverges in three ways:
    - 30 `Effect.die` sites in non-test source, several of them on `diff` and
@@ -247,7 +292,7 @@ among them `Fly/Secret.ts` and `Railway/Variable.ts`. They were listed under a b
 | `launchd/sudo-stage.ts`                                    | `node:fs/promises`, `node:os`, `node:path`   | —   | `FileSystem`, `Path`                         |
 | `launchd/job-form.ts`                                      | `node:crypto` (`createHash`)                 | —   | allowed in `Effect.sync`                     |
 | `linux/ssh-runner.ts`                                      | `node:child_process`, `node:crypto`          | yes | H3 above                                     |
-| `caddy/local-admin.ts`                                     | `node:http` (unix socket)                    | yes | H3 above                                     |
+| `caddy/caddy-http-client.ts`                               | `node:http`, `node:stream` (unix socket)     | yes | inherent — an Effect `HttpClient`, not H3 ⚠️ |
 | `proxmox/write-only.ts`, `pbs-notification-target-wire.ts` | `node:crypto`, `node:buffer`                 | —   | allowed in `Effect.sync` ⚠️                  |
 | `proxmox/provision-cli-fake.ts`                            | `Bun.spawn`, `node:fs`                       | —   | test-only; move out of `src/`                |
 
@@ -260,6 +305,15 @@ The ⚠️ rows:
 - `proxmox/write-only.ts`: a salted scrypt seal with `timingSafeEqual`. No Alchemy helper
   replaces it. A plain `sha256` would make a write-only secret cheap to brute-force from
   state, and it would change the persisted seal format.
+- `caddy/caddy-http-client.ts`: unlike `launchd/local-runner.ts` and `linux/ssh-runner.ts`
+  (H3, plain `async` interfaces), this is already the Effect `HttpClient.HttpClient` the
+  distilled SDK's own protocol runs on — `node:http` here is the same kind of unavoidable,
+  bottom-of-the-stack platform adapter `@effect/platform-node`'s own `NodeHttpClient.ts` is,
+  extended with `socketPath` dialing (that module has none) because a unix socket is the
+  measured transport a local Caddy needs and neither `FetchHttpClient` (Bun-only `unix`
+  option) nor stock `NodeHttpClient` (URL-only) speaks one on both Bun and Node. There is no
+  more-portable replacement to point to; the file already conforms to S19 (no async/await,
+  no raw `Promise` — `Effect.callback`/`Effect.tryPromise` throughout).
 
 Test runners: 51 files import `node:test`/`node:assert` (openbao 42, proxmox 7, forgejo 1,
 talos 1), and 126 import `bun:test`. S43 says `bun:test`.

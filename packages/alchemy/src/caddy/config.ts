@@ -1,6 +1,6 @@
 /**
  * `Caddy.Config` — a running Caddy's whole config, declared as Caddyfile text and applied through
- * Caddy's own admin API (decision 23).
+ * Caddy's own admin API (decision 23), via `@distilled.cloud/caddy`'s typed `admin` operations.
  *
  * - create / update — `POST /adapt` (validate), `POST /load` with `text/caddyfile` (a graceful
  *   reload; Caddy keeps the old config if it refuses the new one, and the error names why), then
@@ -20,18 +20,21 @@
  *   the deploy runs with `--adopt`. A Caddy serving nothing reads as absent: a create. Where the
  *   engine skips that probe, reconcile refuses the same takeover (config-lifecycle.ts).
  * ⛔ `caddyfile` IS NEVER A SECRET — see config-form.ts; refused before anything is sent.
- * ⚠️ WHICH CADDY is the transport's (providers.ts), not a prop: one CaddyAdmin per stack.
+ * ⚠️ WHICH CADDY is the transport's (providers.ts): `CaddyAdminService` plus the `Credentials`/
+ *   `HttpClient` layers `caddyAdminLayer` merges — one per stack, not a prop.
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { lift, resolvedString } from '../launchd/host-effect.ts';
+import { resolvedString } from '../launchd/host-effect.ts';
 import { adoptEnabled } from '../ownership/adopt.ts';
-import { CaddyAdminService, CaddyUnreachableError } from './admin.ts';
+import { CaddyAdminService } from './admin.ts';
+import { isUnreachable } from './caddy-http-client.ts';
 import type { CaddyConfigAttributes, CaddyConfigProps } from './config-form.ts';
-import { diffConfig, probeLive, readLive, reconcileConfig } from './config-lifecycle.ts';
+import { probeLive, readLive } from './config-lifecycle.ts';
+import { diffConfig, reconcileConfig } from './config-reconcile.ts';
 
 export type { CaddyConfigAttributes, CaddyConfigProps } from './config-form.ts';
 
@@ -45,9 +48,6 @@ export const CaddyConfig = Resource<CaddyConfig>('Caddy.Config', {
   defaultRemovalPolicy: 'retain',
 });
 
-const unreachable = (error: Error): error is CaddyUnreachableError =>
-  error instanceof CaddyUnreachableError;
-
 /**
  * ⚠️ A STOPPED CADDY MUST NOT FAIL THE PLAN THAT BRINGS IT BACK. Its launchd job usually sits in the
  *   same stack; if every plan died on `ECONNREFUSED`, the fix to that job could never be deployed.
@@ -56,10 +56,11 @@ const unreachable = (error: Error): error is CaddyUnreachableError =>
  */
 const planWithoutCaddy =
   <A>(admin: { endpoint: string }, fallback: A) =>
-  (error: Error) =>
+  (error: unknown) =>
     Effect.as(
       Effect.logWarning(
-        `Caddy.Config: no Caddy at ${admin.endpoint} (${error.message}); planning without it — ` +
+        `Caddy.Config: no Caddy at ${admin.endpoint} ` +
+          `(${error instanceof Error ? error.message : String(error)}); planning without it — ` +
           'the Caddyfile is validated when the deploy reaches Caddy',
       ),
       fallback,
@@ -72,23 +73,20 @@ export const CaddyConfigProvider = () =>
       const admin = yield* CaddyAdminService;
       /** The probe, branded for the engine: plain when ours, `Unowned` otherwise. */
       const probe = (caddyfile: string | undefined, sourceFile: string | undefined) =>
-        Effect.flatMap(
-          lift(() => probeLive(admin, caddyfile, sourceFile)),
-          (found) => {
-            if (found === undefined) return Effect.succeed(undefined);
-            if (found.ours) return Effect.succeed(found.attributes);
-            const unowned = Unowned(found.attributes);
-            return found.unchecked === undefined
-              ? Effect.succeed(unowned)
-              : Effect.as(
-                  Effect.logWarning(
-                    `Caddy.Config at ${admin.endpoint}: the running config could not be compared ` +
-                      `with the declared Caddyfile (${found.unchecked}), so it is not treated as ours`,
-                  ),
-                  unowned,
-                );
-          },
-        );
+        Effect.flatMap(probeLive(caddyfile, sourceFile), (found) => {
+          if (found === undefined) return Effect.succeed(undefined);
+          if (found.ours) return Effect.succeed(found.attributes);
+          const unowned = Unowned(found.attributes);
+          return found.unchecked === undefined
+            ? Effect.succeed(unowned)
+            : Effect.as(
+                Effect.logWarning(
+                  `Caddy.Config at ${admin.endpoint}: the running config could not be compared ` +
+                    `with the declared Caddyfile (${found.unchecked}), so it is not treated as ours`,
+                ),
+                unowned,
+              );
+        });
       return CaddyConfig.Provider.of({
         /** ⛔ A Caddy has one config; there is nothing to enumerate, and nothing for nuke to delete. */
         list: () => Effect.succeed([]),
@@ -100,21 +98,20 @@ export const CaddyConfigProvider = () =>
          * loopback), but WHOSE CONFIG it runs is not: a person, another tool or another stack.
          */
         read: ({ olds, output }) =>
-          (output === undefined
-            ? probe(resolvedString(olds, 'caddyfile'), resolvedString(olds, 'sourceFile'))
-            : lift(() => readLive(admin, resolvedString(olds, 'sourceFile')))
-          ).pipe(
+          Effect.gen(function* () {
+            return output === undefined
+              ? yield* probe(resolvedString(olds, 'caddyfile'), resolvedString(olds, 'sourceFile'))
+              : yield* readLive(resolvedString(olds, 'sourceFile'));
+          }).pipe(
             // ★ Nothing to adopt from a Caddy that is down: plan a create, which is the same load.
-            Effect.catchIf(unreachable, planWithoutCaddy(admin, undefined)),
+            Effect.catchIf(isUnreachable, planWithoutCaddy(admin, undefined)),
           ),
 
         diff: ({ news, output }) => {
           if (output === undefined) return Effect.succeed(undefined);
           const update = planWithoutCaddy(admin, { action: 'update' as const });
           if (isResolved(news)) {
-            return lift(() => diffConfig(admin, news, output)).pipe(
-              Effect.catchIf(unreachable, update),
-            );
+            return diffConfig(news, output).pipe(Effect.catchIf(isUnreachable, update));
           }
           /**
            * ⚠️ `sourceFile` is an Output while its HostFile changes in the same deploy
@@ -124,10 +121,9 @@ export const CaddyConfigProvider = () =>
            */
           const caddyfile = resolvedString(news, 'caddyfile');
           if (caddyfile === undefined) return Effect.succeed(undefined);
-          return lift(async () => {
-            await diffConfig(admin, { caddyfile }, output);
-            return { action: 'update' as const };
-          }).pipe(Effect.catchIf(unreachable, update));
+          return Effect.as(diffConfig({ caddyfile }, output), { action: 'update' as const }).pipe(
+            Effect.catchIf(isUnreachable, update),
+          );
         },
 
         reconcile: ({ fqn, news, output }) =>
@@ -139,9 +135,7 @@ export const CaddyConfigProvider = () =>
             const sameCaddy = output !== undefined && output.endpoint === admin.endpoint;
             const takeOver = sameCaddy || (yield* adoptEnabled(fqn));
             const stored = output === undefined ? {} : { stored: output.configSha256 };
-            const applied = yield* lift(() =>
-              reconcileConfig(admin, news, { takeOver, ...stored }),
-            );
+            const applied = yield* reconcileConfig(news, { takeOver, ...stored });
             for (const warning of applied.warnings) {
               yield* Effect.logWarning(`Caddy.Config at ${admin.endpoint}: ${warning}`);
             }

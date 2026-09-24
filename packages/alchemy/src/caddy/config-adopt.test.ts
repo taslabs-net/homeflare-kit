@@ -3,23 +3,25 @@
  * probe (`read` with no output) and the apply of a create the engine never probed must agree on
  * what is claimable: the declared config itself, or a Caddy serving nothing. Anything else is
  * `Unowned` at plan time and refused at apply, unless the deploy runs with `--adopt` — and state
- * lends authority only over the Caddy it was applied to.
+ * lends authority only over the Caddy it was applied to. Both drive the LIFECYCLE functions
+ * directly; config-adopt-provider.test.ts drives the same scenarios through the real
+ * `CaddyConfig.Provider` (its `Unowned` branding, its `--adopt` resolution).
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { AdoptPolicy, Unowned } from 'alchemy/AdoptPolicy';
-import { AlchemyContext } from 'alchemy/AlchemyContext';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { type CaddyAdmin, CaddyUnreachableError, caddyAdminLayer } from './admin.ts';
-import { CaddyConfig, CaddyConfigProvider } from './config.ts';
-import { probeLive, reconcileConfig } from './config-lifecycle.ts';
+import * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as HttpClientError from 'effect/unstable/http/HttpClientError';
+import type { CaddyTransport } from './admin.ts';
+import { isUnreachable } from './caddy-http-client.ts';
+import { probeLive } from './config-lifecycle.ts';
+import { reconcileConfig } from './config-reconcile.ts';
 import { configDigest } from './digest.ts';
-import { type FakeCaddy, fakeDefaultCaddy } from './fake-caddy.ts';
+import { type FakeCaddy, fakeDefaultCaddy, runCaddy } from './fake-caddy.ts';
 
 const SITE = 'app.example.com reverse_proxy 127.0.0.1:8080';
 /** A config someone else loaded: it serves a site, and it is not what the stack declares. */
 const FOREIGN = { apps: { http: { servers: { legacy: { listen: [':80'] } } } } };
-const ids = { fqn: 'stack/caddy', id: 'caddy', instanceId: 'i-1' };
 
 let fake: FakeCaddy | undefined;
 afterEach(() => {
@@ -42,10 +44,37 @@ const runningDeclared = () => {
 
 const loads = (caddy: FakeCaddy) => caddy.seen.filter((call) => call.path === '/load');
 
+/**
+ * The same transport, except `/adapt` fails as though nothing were listening — for "Caddy
+ * vanishing mid-probe": `probeLive` calls `GET /config/` first and `POST /adapt` second, so
+ * stopping the fake server between them can't be timed from outside one Effect. Wrapping the
+ * transport's `HttpClient.HttpClient` at exactly one path is the deterministic equivalent.
+ */
+const goneOnAdapt = (admin: CaddyTransport): CaddyTransport => ({
+  ...admin,
+  layer: Layer.effect(
+    HttpClient.HttpClient,
+    Effect.map(HttpClient.HttpClient, (real) =>
+      HttpClient.make((request, url, signal, fiber) =>
+        url.pathname === '/adapt'
+          ? Effect.fail(
+              new HttpClientError.HttpClientError({
+                reason: new HttpClientError.TransportError({
+                  cause: Object.assign(new Error('gone'), { code: 'ECONNREFUSED' }),
+                  request,
+                }),
+              }),
+            )
+          : real.execute(request),
+      ),
+    ),
+  ).pipe(Layer.provideMerge(admin.layer)),
+});
+
 describe('the probe: read with no state', () => {
   test('a Caddy already running the declared config is ours — adopting it changes nothing', async () => {
     const { admin, caddy } = runningDeclared();
-    const probe = await probeLive(admin, SITE);
+    const probe = await runCaddy(probeLive(SITE), admin);
     expect(probe).toMatchObject({ attributes: { configSha256: configDigest(caddy.adapt(SITE)) } });
     expect(probe?.ours).toBe(true);
     expect(loads(caddy)).toHaveLength(0);
@@ -53,7 +82,7 @@ describe('the probe: read with no state', () => {
 
   test('a Caddy running any other config is not ours', async () => {
     const { admin } = setup(FOREIGN);
-    const probe = await probeLive(admin, SITE, '/usr/local/etc/Caddyfile');
+    const probe = await runCaddy(probeLive(SITE, '/usr/local/etc/Caddyfile'), admin);
     expect(probe?.ours).toBe(false);
     expect(probe?.unchecked).toBeUndefined();
     expect(probe?.attributes).toEqual({
@@ -68,7 +97,7 @@ describe('the probe: read with no state', () => {
     ['only an admin block', { admin: { listen: 'localhost:2019' } }],
   ])('a Caddy serving nothing (%s) reads as absent: a create', async (_, running) => {
     const { admin } = setup(running);
-    expect(await probeLive(admin, SITE)).toBeUndefined();
+    expect(await runCaddy(probeLive(SITE), admin)).toBeUndefined();
   });
 
   test.each([
@@ -78,21 +107,18 @@ describe('the probe: read with no state', () => {
     // ⛔ The engine replays this read with an interrupted create's props: a throw here would fail
     //   every later plan, the one carrying the fix included.
     const { admin } = setup(FOREIGN);
-    const probe = await probeLive(admin, text);
+    const probe = await runCaddy(probeLive(text), admin);
     expect(probe?.ours).toBe(false);
     expect(probe?.unchecked).toMatch(reason);
   });
 
   test('Caddy vanishing mid-probe stays "no Caddy", never "not ours"', async () => {
     const { admin } = setup(FOREIGN);
-    const flaky: CaddyAdmin = {
-      ...admin,
-      request: (call) =>
-        call.path === '/adapt'
-          ? Promise.reject(new CaddyUnreachableError('gone'))
-          : admin.request(call),
-    };
-    await expect(probeLive(flaky, SITE)).rejects.toThrow('gone');
+    const failure = runCaddy(probeLive(SITE), goneOnAdapt(admin));
+    // ★ Still the raw, narrowable HttpClientError (config.ts's own catch is what turns THIS into
+    //   "no Caddy" at plan time) — never swallowed into `{ ours: false, unchecked }`.
+    await expect(failure).rejects.toBeInstanceOf(HttpClientError.HttpClientError);
+    await expect(failure.catch((error: unknown) => isUnreachable(error))).resolves.toBe(true);
   });
 });
 
@@ -100,23 +126,29 @@ describe('the probe: read with no state', () => {
 describe('the apply without authority over the running config', () => {
   test('without authority, a config the stack cannot claim is refused before any load', async () => {
     const { admin, caddy } = setup(FOREIGN);
-    await expect(reconcileConfig(admin, { caddyfile: SITE }, { takeOver: false })).rejects.toThrow(
-      /which this stack did not load.*Deploy with --adopt/,
-    );
+    await expect(
+      runCaddy(reconcileConfig({ caddyfile: SITE }, { takeOver: false }), admin),
+    ).rejects.toThrow(/which this stack did not load.*Deploy with --adopt/);
     expect(loads(caddy)).toHaveLength(0);
     expect(caddy.running).toEqual(FOREIGN);
   });
 
   test('the declared config already running is taken as it is — no load', async () => {
     const { admin, caddy } = runningDeclared();
-    const applied = await reconcileConfig(admin, { caddyfile: SITE }, { takeOver: false });
+    const applied = await runCaddy(
+      reconcileConfig({ caddyfile: SITE }, { takeOver: false }),
+      admin,
+    );
     expect(applied.loaded).toBe(false);
     expect(loads(caddy)).toHaveLength(0);
   });
 
   test('a Caddy serving nothing is loaded — there is nothing to take over', async () => {
     const { admin, caddy } = setup();
-    const applied = await reconcileConfig(admin, { caddyfile: SITE }, { takeOver: false });
+    const applied = await runCaddy(
+      reconcileConfig({ caddyfile: SITE }, { takeOver: false }),
+      admin,
+    );
     expect(applied.loaded).toBe(true);
     expect(configDigest(caddy.running)).toBe(configDigest(caddy.adapt(SITE)));
   });
@@ -124,112 +156,14 @@ describe('the apply without authority over the running config', () => {
   test('the config the state last stored is known — the same Caddy at a new endpoint', async () => {
     const { admin } = setup(FOREIGN);
     const authority = { stored: configDigest(FOREIGN), takeOver: false };
-    expect((await reconcileConfig(admin, { caddyfile: SITE }, authority)).loaded).toBe(true);
+    const applied = await runCaddy(reconcileConfig({ caddyfile: SITE }, authority), admin);
+    expect(applied.loaded).toBe(true);
   });
 
   test('with authority, the foreign config is replaced', async () => {
     const { admin, caddy } = setup(FOREIGN);
-    const applied = await reconcileConfig(admin, { caddyfile: SITE }, { takeOver: true });
+    const applied = await runCaddy(reconcileConfig({ caddyfile: SITE }, { takeOver: true }), admin);
     expect(applied.loaded).toBe(true);
     expect(configDigest(caddy.running)).toBe(configDigest(caddy.adapt(SITE)));
-  });
-});
-
-type Deploy = { readonly adopt?: boolean; readonly contextAdopt?: boolean };
-
-/** The provider over `admin`, run under the services a deploy provides (the CLI's `--adopt`). */
-const withProvider = <A>(
-  admin: CaddyAdmin,
-  deploy: Deploy,
-  use: (p: Effect.Success<typeof CaddyConfig.Provider>) => Effect.Effect<A, unknown>,
-) => {
-  let program = Effect.gen(function* () {
-    return yield* use(yield* CaddyConfig.Provider);
-  }).pipe(Effect.provide(CaddyConfigProvider().pipe(Layer.provide(caddyAdminLayer(admin)))));
-  if (deploy.adopt !== undefined) {
-    program = program.pipe(Effect.provideService(AdoptPolicy, deploy.adopt));
-  }
-  if (deploy.contextAdopt !== undefined) {
-    const context = { adopt: deploy.contextAdopt, dev: false, dotAlchemy: '.alchemy' };
-    program = program.pipe(Effect.provideService(AlchemyContext, context));
-  }
-  return Effect.runPromise(program);
-};
-
-const read = (admin: CaddyAdmin, caddyfile: unknown, output?: object) =>
-  withProvider(admin, {}, (provider) => {
-    if (provider.read === undefined) throw new Error('provider has no read handler');
-    return provider.read({ ...ids, olds: { caddyfile } as never, output: output as never });
-  });
-
-/** Apply, then check that exactly the expected loads reached Caddy — or none, and why. */
-const expectApply = async (applying: Promise<unknown>, caddy: FakeCaddy, loaded: boolean) => {
-  if (loaded) await applying;
-  else await expect(applying).rejects.toThrow(/Deploy with --adopt/);
-  expect(loads(caddy)).toHaveLength(loaded ? 1 : 0);
-};
-
-const reconcile = (admin: CaddyAdmin, deploy: Deploy, output?: object) =>
-  withProvider(admin, deploy, (provider) =>
-    provider.reconcile({
-      ...ids,
-      bindings: [] as never,
-      news: { caddyfile: SITE },
-      olds: undefined,
-      output: output as never,
-      session: undefined as never,
-    }),
-  );
-
-describe('CaddyConfigProvider', () => {
-  test('read: Unowned with no state, plain with state, plain when it is the declared config', async () => {
-    const { admin, caddy } = setup(FOREIGN);
-    const probe = await read(admin, SITE);
-    expect(Unowned.is(probe)).toBe(true);
-    expect(probe).toMatchObject({ configSha256: configDigest(FOREIGN) });
-    const owned = await read(admin, SITE, { configSha256: 'stored', endpoint: caddy.address });
-    expect(owned).toBeDefined();
-    expect(Unowned.is(owned)).toBe(false);
-    caddy.running = caddy.adapt(SITE);
-    const same = await read(admin, SITE);
-    expect(same).toBeDefined();
-    expect(Unowned.is(same)).toBe(false);
-  });
-
-  test('read with no state: nothing served is a create; an unreadable declaration is Unowned', async () => {
-    expect(await read(setup().admin, SITE)).toBeUndefined();
-    fake?.stop();
-    const { admin } = setup(FOREIGN);
-    expect(Unowned.is(await read(admin, 'SYNTAX_ERROR'))).toBe(true);
-    expect(Unowned.is(await read(admin, {}))).toBe(true);
-  });
-
-  test.each([
-    ['no adopt setting at all', {}, false],
-    ['AdoptPolicy off', { adopt: false }, false],
-    ['--adopt (AdoptPolicy)', { adopt: true }, true],
-    ['--adopt reaching only AlchemyContext', { contextAdopt: true }, true],
-    ['AdoptPolicy off over AlchemyContext on', { adopt: false, contextAdopt: true }, false],
-  ] as const)('reconcile with no state, %s', async (_, deploy, loaded) => {
-    const { admin, caddy } = setup(FOREIGN);
-    await expectApply(reconcile(admin, deploy), caddy, loaded);
-  });
-
-  test('reconcile with state for this Caddy loads over anything, without --adopt', async () => {
-    // ★ An update correcting drift (a hand edit since the stored digest), or an adopted create.
-    const { admin, caddy } = setup(FOREIGN);
-    const output = { configSha256: 'before-a-hand-edit', endpoint: caddy.address };
-    await expectApply(reconcile(admin, {}, output), caddy, true);
-  });
-
-  test.each([
-    ['a config it never stored, without --adopt', 'stored-elsewhere', {}, false],
-    ['a config it never stored, with --adopt', 'stored-elsewhere', { adopt: true }, true],
-    ['the config it last stored (the same Caddy, renamed)', configDigest(FOREIGN), {}, true],
-  ] as const)('reconcile with state from another endpoint: %s', async (_, sha, deploy, loaded) => {
-    // ⛔ State vouches for the Caddy it was applied to — not for whatever the transport now reaches.
-    const { admin, caddy } = setup(FOREIGN);
-    const output = { configSha256: sha, endpoint: 'unix:///run/elsewhere.sock' };
-    await expectApply(reconcile(admin, deploy, output), caddy, loaded);
   });
 });

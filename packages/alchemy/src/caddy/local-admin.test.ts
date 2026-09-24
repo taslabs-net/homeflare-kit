@@ -7,9 +7,10 @@ import { rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CaddyUnreachableError } from './admin.ts';
-import { readRunningConfig } from './admin-calls.ts';
-import { type FakeCaddy, fakeCaddy } from './fake-caddy.ts';
+import * as HttpClientError from 'effect/unstable/http/HttpClientError';
+import { loadCaddyfile, readRunningConfig } from './admin-calls.ts';
+import { isUnreachable } from './caddy-http-client.ts';
+import { type FakeCaddy, fakeCaddy, runCaddy } from './fake-caddy.ts';
 import { DEFAULT_ADMIN_ADDRESS, localCaddyAdmin, parseAdminAddress } from './local-admin.ts';
 
 let fake: FakeCaddy | undefined;
@@ -83,7 +84,7 @@ describe('requests', () => {
   test('over TCP: Host and Origin as the Caddy CLI sends them, so the checks pass', async () => {
     fake = fakeCaddy();
     const admin = localCaddyAdmin({ address: fake.address, retries: 0 });
-    expect(await readRunningConfig(admin)).toBeNull();
+    expect(await runCaddy(readRunningConfig(), admin)).toBeNull();
     const host = `127.0.0.1:${String(fake.port)}`;
     expect(fake.seen[0]?.headers.get('host')).toBe(host);
     expect(fake.seen[0]?.headers.get('origin')).toBe(`http://${host}`);
@@ -92,29 +93,42 @@ describe('requests', () => {
   test('a narrowed `origins` needs hostHeader — without it Caddy answers 403', async () => {
     fake = fakeCaddy({ origins: ['caddy-admin.example:2019'] });
     const plain = localCaddyAdmin({ address: fake.address, retries: 0 });
-    await expect(readRunningConfig(plain)).rejects.toThrow(/403: host not allowed/);
+    await expect(runCaddy(readRunningConfig(), plain)).rejects.toThrow(/host not allowed/);
     const named = localCaddyAdmin({
       address: fake.address,
       hostHeader: 'caddy-admin.example:2019',
       retries: 0,
     });
-    expect(await readRunningConfig(named)).toBeNull();
+    expect(await runCaddy(readRunningConfig(), named)).toBeNull();
   });
 
-  test('a caller cannot override the Host and Origin the checks depend on', async () => {
+  test("an operation's own headers never override the Host and Origin the checks depend on", async () => {
+    // ⚠️ There is no raw `.request()` anymore for a caller to hand Host/Origin to — every header
+    //   an operation sends of its own (loadConfig's Content-Type, Cache-Control, …) is set by
+    //   distilled's `buildRequest` from the SCHEMA, never by a caller, and Host/Origin are set by
+    //   `CaddyProtocol.encode` from `Credentials` alone, unconditionally, after that — so the same
+    //   invariant now holds by construction rather than by a check in this transport.
     fake = fakeCaddy();
     const admin = localCaddyAdmin({ address: fake.address, retries: 0 });
-    const headers = { Host: 'evil.example:2019', Origin: 'http://evil.example:2019' };
-    expect((await admin.request({ headers, method: 'GET', path: '/config/' })).status).toBe(200);
-    expect(fake.seen[0]?.headers.get('host')).toBe(`127.0.0.1:${String(fake.port)}`);
+    await runCaddy(loadCaddyfile('respond ok'), admin);
+    const host = `127.0.0.1:${String(fake.port)}`;
+    const load = fake.seen.find((call) => call.path === '/load');
+    expect(load?.headers.get('host')).toBe(host);
+    expect(load?.headers.get('origin')).toBe(`http://${host}`);
   });
 
-  test('over a unix socket, with no Origin', async () => {
+  test('over a unix socket', async () => {
     const path = socketPath('req');
     fake = fakeCaddy({ running: { apps: {} }, unix: path });
     const admin = localCaddyAdmin({ address: fake.address, retries: 0 });
-    expect(await readRunningConfig(admin)).toEqual({ apps: {} });
-    expect(fake.seen[0]?.headers.has('origin')).toBe(false);
+    expect(await runCaddy(readRunningConfig(), admin)).toEqual({ apps: {} });
+    // ⚠️ MEASURED 2026-09-23: `@distilled.cloud/caddy`'s `CaddyProtocol.encode` sends Host AND
+    //   Origin on every call, unconditionally — unlike the old hand-rolled transport, which sent
+    //   no Origin over a unix socket (Caddy's own CLI doesn't either). Caddy skips the Host check
+    //   entirely on unix listeners either way (admin.go allowedOrigins), so this changes nothing
+    //   the default (no `enforce_origin`) fake or a real unix-socket Caddy checks.
+    expect(fake.seen[0]?.headers.get('host')).toBe('127.0.0.1');
+    expect(fake.seen[0]?.headers.get('origin')).toBe('http://127.0.0.1');
     rmSync(path, { force: true });
   });
 
@@ -124,7 +138,7 @@ describe('requests', () => {
     const late = setTimeout(() => {
       fake = fakeCaddy({ unix: path });
     }, 60);
-    expect(await readRunningConfig(admin)).toBeNull();
+    expect(await runCaddy(readRunningConfig(), admin)).toBeNull();
     clearTimeout(late);
     rmSync(path, { force: true });
   });
@@ -143,18 +157,18 @@ describe('requests', () => {
       retries: 3,
       retryDelayMs: 1,
     });
-    const failure = admin.request({ body: 'x', method: 'POST', path: '/load' });
-    await expect(failure).rejects.toThrow(/Caddy admin POST \/load/);
-    await expect(failure).rejects.not.toBeInstanceOf(CaddyUnreachableError);
+    const failure = runCaddy(loadCaddyfile('respond ok'), admin);
+    await expect(failure).rejects.toBeInstanceOf(HttpClientError.HttpClientError);
+    await expect(failure.catch((error: unknown) => isUnreachable(error))).resolves.toBe(false);
     expect(accepted).toBe(1);
     server.close();
   });
 
-  test('gives up after the retries with CaddyUnreachableError, naming the address', async () => {
+  test('gives up after the retries, still narrowable as unreachable, naming the address', async () => {
     const path = socketPath('never');
     const admin = localCaddyAdmin({ address: `unix://${path}`, retries: 1, retryDelayMs: 1 });
-    const failure = readRunningConfig(admin);
-    await expect(failure).rejects.toBeInstanceOf(CaddyUnreachableError);
-    await expect(failure).rejects.toThrow(/Caddy admin GET \/config\/ at unix:\/\//);
+    const failure = runCaddy(readRunningConfig(), admin);
+    await expect(failure).rejects.toBeInstanceOf(HttpClientError.HttpClientError);
+    await expect(failure.catch((error: unknown) => isUnreachable(error))).resolves.toBe(true);
   });
 });

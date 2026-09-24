@@ -3,7 +3,8 @@
 Declare a running Caddy's config as Caddyfile text and apply it through Caddy's own admin API:
 `POST /load` to apply (a graceful reload), `GET /config/` to detect drift. `caddyWithFile()` also
 writes the same Caddyfile to the file Caddy starts from, with launchd's `HostFile`, so a restart
-keeps it. Every admin call goes through one injectable `CaddyAdmin` transport.
+keeps it. Every admin call goes through `@distilled.cloud/caddy`'s typed operations, over one
+injectable `CaddyTransport` (`Credentials` + `HttpClient.HttpClient`).
 
 ```ts
 import * as Effect from 'effect/Effect';
@@ -193,7 +194,7 @@ it by hand at its admin API.
 - ⚠️ **Bootstrap race.** Where Caddy is not running yet, the config can reach the admin API before
   its launchd job has Caddy listening. The transport retries a refused connection (`retries`,
   `retryDelayMs`; default 2 × 500 ms) — raise them, or rerun the deploy.
-- ⚠️ One `CaddyAdmin` per stack: the transport picks the Caddy, not a prop. Pointing it at another
+- ⚠️ One `CaddyTransport` per stack: the transport picks the Caddy, not a prop. Pointing it at another
   Caddy plans an update; the old one keeps what it had. ⛔ State vouches only for the Caddy it was
   applied to, so the apply loads there only if it serves nothing, runs the declared config or the
   one last stored — anything else needs `--adopt`.

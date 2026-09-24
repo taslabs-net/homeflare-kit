@@ -23,7 +23,7 @@
         "hf-adopt-verify": "./dist/verify/cli.js",
       },
       "dependencies": {
-        "@distilled.cloud/caddy": "npm:@homeflare/distilled-caddy@0.2.0",
+        "@distilled.cloud/caddy": "npm:@homeflare/distilled-caddy@0.2.1",
         "@distilled.cloud/litellm": "npm:@homeflare/distilled-litellm@0.2.0",
         "@distilled.cloud/netbox": "npm:@homeflare/distilled-netbox@0.3.0",
         "@distilled.cloud/paperless-ngx": "npm:@homeflare/distilled-paperless-ngx@0.3.0",
@@ -82,7 +82,7 @@
     },
     "packages/distilled-caddy": {
       "name": "@homeflare/distilled-caddy",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
         "@distilled.cloud/core": "1.0.0-rc.12",
       },

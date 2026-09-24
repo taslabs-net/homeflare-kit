@@ -13,7 +13,7 @@ The overview is [caddy.md](./caddy.md).
 - **`admin { origins … }`** narrowed, or **an SSH-forwarded port** (Caddy checks the Host against
   ITS port): pass `hostHeader: 'localhost:2019'`.
 - **Another host's Caddy** (SSH later): forward its socket or port to loopback here and point a
-  `localCaddyAdmin()` at it, or implement `CaddyAdmin` over your own route. Never expose :2019.
+  `localCaddyAdmin()` at it, or implement `CaddyTransport` over your own route. Never expose :2019.
 - **A Caddyfile cannot strand the provider.** Before loading, the adapted `admin` block is refused
   if it turns the API off, listens off loopback or somewhere the transport does not reach (another
   port, socket or loopback address: `[::1]` is not `127.0.0.1`, and `localhost` binds IPv4), allows
