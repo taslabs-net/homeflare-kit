@@ -118,7 +118,14 @@ export const spec: ArgocdSpec<
   RepositoryError
 > = {
   attributes: (live) => attributesOf(live),
-  destroy: (props) => argocd.deleteRepositoryServiceRepository({ repo: props.repo }),
+  // ★ Catches the DELETE call's own NotFound too, not just the pre-check `fetchLive` fold above
+  //   — closes the TOCTOU race between that read and this call (the object could be removed by
+  //   something else in between). Matches upstream's own pattern: Hetzner/Certificate.ts's
+  //   `deleteById` (`.pipe(Effect.catchTag('NotFound', () => Effect.void))`).
+  destroy: (props) =>
+    argocd
+      .deleteRepositoryServiceRepository({ repo: props.repo })
+      .pipe(Effect.catchTag('NotFound', () => Effect.void)),
   identityOfAttributes: (attrs) => attrs.repo,
   identityOfProps: (props) => props.repo,
   fetchLive: (props) =>

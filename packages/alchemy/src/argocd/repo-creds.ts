@@ -78,7 +78,12 @@ export const spec: ArgocdSpec<
   RepoCredsError
 > = {
   attributes: (live) => attributesOf(live),
-  destroy: (props) => argocd.deleteRepoCredsServiceRepositoryCredentials({ url: props.url }),
+  // ★ Catches the DELETE call's own NotFound too — closes the TOCTOU race between the pre-check
+  //   `fetchLive` above and this call. Matches upstream's Hetzner/Certificate.ts `deleteById`.
+  destroy: (props) =>
+    argocd
+      .deleteRepoCredsServiceRepositoryCredentials({ url: props.url })
+      .pipe(Effect.catchTag('NotFound', () => Effect.void)),
   identityOfAttributes: (attrs) => attrs.url,
   identityOfProps: (props) => props.url,
   fetchLive: (props) =>

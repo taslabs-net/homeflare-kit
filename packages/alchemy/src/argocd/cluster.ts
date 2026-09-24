@@ -171,7 +171,12 @@ export const spec: ArgocdSpec<
   ClusterError
 > = {
   attributes: (live) => attributesOf(live),
-  destroy: (props) => argocd.deleteClusterService({ id_value: props.server }),
+  // ★ Catches the DELETE call's own NotFound too — closes the TOCTOU race between the pre-check
+  //   `fetchLive` above and this call. Matches upstream's Hetzner/Certificate.ts `deleteById`.
+  destroy: (props) =>
+    argocd
+      .deleteClusterService({ id_value: props.server })
+      .pipe(Effect.catchTag('NotFound', () => Effect.void)),
   identityOfAttributes: (attrs) => attrs.server,
   identityOfProps: (props) => props.server,
   fetchLive: (props) =>

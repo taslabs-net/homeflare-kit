@@ -74,6 +74,21 @@ describe('Argocd.Repository destroy — idempotent (S11)', () => {
     );
     expect(fake.seen.filter((call) => call.method === 'DELETE')).toHaveLength(1);
   });
+
+  test('the DELETE call itself returning 404 (a race with an external removal) still succeeds', async () => {
+    // ⚠️ Different from the "already-absent" case above: fetchLive's pre-check finds the object
+    //   live, but something else deletes it before this call's own DELETE lands — matching
+    //   upstream's Hetzner/Certificate.ts `deleteById` pattern (catchTag on the delete itself).
+    const fake = fakeArgocd((method) =>
+      method === 'GET' ? liveRepo() : fakeFailure(404, 'repository not found'),
+    );
+    await Effect.runPromise(
+      argocdOperations(spec)
+        .destroy({ repo: REPO })
+        .pipe(Effect.provide(fakeArgocdLayer(fake.fetch))),
+    );
+    expect(fake.seen.filter((call) => call.method === 'DELETE')).toHaveLength(1);
+  });
 });
 
 describe('Argocd.Repository spec.upsert — write-only credentials', () => {

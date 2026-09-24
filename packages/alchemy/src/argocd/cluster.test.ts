@@ -59,6 +59,20 @@ describe('Argocd.Cluster destroy — idempotent (S11)', () => {
     );
     expect(fake.seen.every((call) => call.method !== 'DELETE')).toBe(true);
   });
+
+  test('the DELETE call itself returning 404 (a race with an external removal) still succeeds', async () => {
+    // ⚠️ fetchLive's pre-check finds the cluster live, but something else deregisters it before
+    //   this call's own DELETE lands — matching upstream's Hetzner/Certificate.ts `deleteById`.
+    const fake = fakeArgocd((method) =>
+      method === 'GET' ? liveCluster() : fakeFailure(404, 'cluster not found'),
+    );
+    await Effect.runPromise(
+      argocdOperations(spec)
+        .destroy({ server: SERVER })
+        .pipe(Effect.provide(fakeArgocdLayer(fake.fetch))),
+    );
+    expect(fake.seen.filter((call) => call.method === 'DELETE')).toHaveLength(1);
+  });
 });
 
 describe('Argocd.Cluster spec.upsert — write-only bearer token', () => {

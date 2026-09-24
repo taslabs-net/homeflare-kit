@@ -67,6 +67,20 @@ describe('Argocd.RepoCreds destroy — idempotent (S11)', () => {
     );
     expect(fake.seen.every((call) => call.method !== 'DELETE')).toBe(true);
   });
+
+  test('the DELETE call itself returning 404 (a race with an external removal) still succeeds', async () => {
+    // ⚠️ fetchLive's pre-check list finds the template, but something else removes it before
+    //   this call's own DELETE lands — matching upstream's Hetzner/Certificate.ts `deleteById`.
+    const fake = fakeArgocd((method) =>
+      method === 'GET' ? listWith({ type: 'git', url: URL_PREFIX }) : fakeFailure(404, 'not found'),
+    );
+    await Effect.runPromise(
+      argocdOperations(spec)
+        .destroy({ url: URL_PREFIX })
+        .pipe(Effect.provide(fakeArgocdLayer(fake.fetch))),
+    );
+    expect(fake.seen.filter((call) => call.method === 'DELETE')).toHaveLength(1);
+  });
 });
 
 describe('Argocd.RepoCreds spec.upsert — write-only credentials', () => {
