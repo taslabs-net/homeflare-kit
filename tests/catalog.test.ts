@@ -54,6 +54,9 @@ const PACKAGES: readonly string[] = await Array.fromAsync(
  *   `forgejo` rcs would each drag in a different `core` too. Unlike `cloudflare`, it is not
  *   alchemy's own dependency (alchemy bundles no Forgejo SDK), so there is no cross-check
  *   against `node_modules/alchemy/package.json` for it.
+ * - `@distilled.cloud/argocd` (2026-09-24) is the same case as `forgejo` — a real, published
+ *   `@distilled.cloud/*` peer (measured: `npm view @distilled.cloud/argocd`), pinned exactly for
+ *   the same lockstep-`core` reason, not alchemy's own dependency either.
  * - `@effect/sql-pg` is the same Effect-rc case as `effect` itself: alchemy's own peer is
  *   `>=4.0.0-rc.115`, and the estate runs one aligned rc across the whole workspace (S37).
  *
@@ -73,6 +76,7 @@ const PACKAGES: readonly string[] = await Array.fromAsync(
  */
 const EXPLICIT_EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
   alchemy: [
+    '@distilled.cloud/argocd',
     '@distilled.cloud/cloudflare',
     '@distilled.cloud/discord',
     '@distilled.cloud/forgejo',
