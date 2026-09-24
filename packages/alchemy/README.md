@@ -267,6 +267,14 @@ export const help =
   });
 ```
 
+## Google Workspace — `@homeflare/alchemy/google-workspace`
+
+`Group`, `GroupMember`, `DomainAlias` and `OrgUnit` over the Admin SDK Directory API, generated
+from `@distilled.cloud/google-workspace@1.0.0-rc.12`. ⛔ No `User` resource — Google's own `User`
+schema carries a `password` field, and Alchemy persists props unencrypted. Credential setup
+(domain-wide delegation, the least scopes each resource needs, where the key lives in OpenBao):
+[docs/google-workspace.md](./docs/google-workspace.md).
+
 ## Grafana — `@homeflare/alchemy/grafana`
 
 `Grafana.Datasource` declares one data source, keyed by `uid`, generated from
