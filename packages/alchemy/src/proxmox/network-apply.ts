@@ -44,6 +44,8 @@
  *   task it starts so it can poll it without `Sys.Audit`. ⛔ `Sys.Modify` ON A NODE IS NOT A SMALL
  *   GRANT — it also carries that node's DNS, hosts file, time and service configuration. Granting
  *   it cluster-wide to run this resource widens the provisioning role well beyond networking.
+ *
+ * ⛔ STAYS ON `client.ts` (2026-09-24) — network-apply-read.ts's header has the two MEASURED reasons.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
