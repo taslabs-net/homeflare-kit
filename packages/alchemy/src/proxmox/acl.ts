@@ -6,35 +6,50 @@
  *   {path, user|group|token, role} exists. That is what makes those four families worth declaring,
  *   and why the grants that let OpenBao mint a PVE token today are only clicks somebody made once.
  *
- * ⛔ THE ONE FAMILY THAT DOES NOT FIT `pveOperations` AS WRITTEN, AND THE MISFIT IS MEASURED. The
+ * ⛔ THE ONE FAMILY THAT DOES NOT FIT A GENERIC PATH+FORM SHAPE, AND THE MISFIT IS MEASURED. The
  *   cluster's own schema — `/pve-docs/api-viewer/apidoc.js`, read unauthenticated 2026-09-13 —
  *   lists exactly TWO methods on `/access/acl`: GET and PUT. There is no DELETE (it answers
- *   "Method 'DELETE /access/acl' not implemented") and, less famously, NO POST either. So create
- *   and update are the SAME call, `PUT /access/acl`, and removal is that PUT with `delete=1` —
- *   which is why `delete` below does not use `ops.destroy`.
- *   ⚠️ THE REAL FIX BELONGS IN `resource.ts`: give `PveSpec` a `deleteForm` and the method to go
- *     with it, and this override disappears. Until then it is local and loud — do not "restore
- *     symmetry" by pointing `delete` at `ops.destroy`, which reports every removal as a 501 while
- *     the grant stays exactly where it was.
+ *   "Method 'DELETE /access/acl' not implemented") and, less famously, NO POST either — which is
+ *   why `@distilled.cloud/proxmox`'s generator, reading the same schema, emits `listAccessAcl` and
+ *   `putAccessAcl` and NOTHING ELSE for this path. So create and update are the SAME call, `PUT
+ *   /access/acl`, and removal is that PUT with `delete=1` — there is no `destroyAccessAcl` to call.
  *
  * ⛔ A SINGLE GRANT HAS NO URL OF ITS OWN. `GET /access/acl` answers ONE FLAT LIST for the whole
- *   cluster, so identity is the tuple (path, type, ugid, roleid), matched client-side in
- *   `attributes` below. Two resources declaring the SAME tuple are the SAME grant — Alchemy sees
- *   two resource ids, not one collision — and deleting either takes the access away from both,
- *   the same hazard as two guests declaring one vmid.
+ *   cluster, so identity is the tuple (path, type, ugid, roleid), matched client-side in `find`
+ *   below. Two resources declaring the SAME tuple are the SAME grant — Alchemy sees two resource
+ *   ids, not one collision — and deleting either takes the access away from both, the same hazard
+ *   as two guests declaring one vmid.
  *
  * ⛔ AND THAT LIST IS FILTERED BY WHO IS ASKING. The schema's own words for GET: "The returned list
  *   is restricted to objects where you have rights to modify permissions." A credential that can
  *   read the cluster but not modify permissions is answered `[]` — not a 403, not an error — so
  *   the mount's `read` role needs permission-modify rights on the declared path exactly as
- *   `provision` does. Work reported on a grant that is plainly there means that role is too narrow.
+ *   `provision` does (below, `listAcl` reads with the `provision` role for this reason). Work
+ *   reported on a grant that is plainly there means that role is too narrow.
+ *
+ * ★ MIGRATED OFF `client.ts`'s generic `pve()` ONTO `@distilled.cloud/proxmox`'s typed
+ *   `access.listAccessAcl`/`access.putAccessAcl` (2026-09-23, decision 43's proxmox walk-down,
+ *   the sub-area's first resource — ACL was already the misfit `pveOperations` could not cover
+ *   cleanly, which is exactly why it goes first). `distilled-pve.ts`'s `runPve` replaces `pve()`:
+ *   same lease reuse (lease-cache.ts), same cluster-member failover (members.ts), now handing the
+ *   request itself to the SDK instead of a hand-assembled `HttpClientRequest`.
+ *   ⛔ ONE DEAD BRANCH REMOVED, NOT PRESERVED: the old code's generic factory POSTed on a "live
+ *     undefined" read, which its own header called unreachable on a healthy cluster and
+ *     documented as MISLEADING — PVE has no POST here, so that 501 said nothing about the real
+ *     failure. `@distilled.cloud/proxmox` has no `createAccessAcl` at all (the vendor schema has
+ *     no POST to generate one from), so there is nothing to call that way. `reconcile` below
+ *     always PUTs instead — the only write PVE actually implements for this path — so a read that
+ *     genuinely failed now surfaces its REAL cause (a typed error, or `PveClusterExhausted`)
+ *     rather than a confusing 501 from a verb that was never there.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
+import * as access from '@distilled.cloud/proxmox/access';
 import * as Effect from 'effect/Effect';
-import { pve } from './client.ts';
-import { type PveRequirements, type WithTarget, pveOperations } from './resource.ts';
+import { guardForm } from './constraint-guard.ts';
+import type { PveRequirements, WithTarget } from './resource-spec.ts';
+import { runPve } from './distilled-pve.ts';
 
 /** PVE's three kinds of subject. The read answers this word; the write wants its plural. */
 export type AclSubjectType = 'user' | 'group' | 'token';
@@ -42,8 +57,8 @@ export type AclSubjectType = 'user' | 'group' | 'token';
 export interface AclProps extends WithTarget {
   /**
    * The PVE object path the grant is ON — `/`, `/pool/lab`, `/vms/101`, `/storage/local-zfs`.
-   * ⚠️ NOT THE API PATH: `spec.path` below is the endpoint (`access/acl`). PVE's API overloads the
-   *   word, so this file does too rather than renaming a field the cluster calls `path`.
+   * ⚠️ NOT THE API PATH — the endpoint is fixed (`access/acl`). PVE's API overloads the word,
+   *   so this file does too rather than renaming a field the cluster calls `path`.
    */
   path: string;
   /** Which kind of subject `ugid` names. Identity: changing it is a different grant. */
@@ -62,13 +77,7 @@ export interface AclAttributes {
   ugid: string;
   roleid: string;
   propagate: boolean;
-  /**
-   * ⛔ PRESENCE AS AN ATTRIBUTE, AND IT IS WHAT MAKES THE FACTORY WORK HERE. `attributes` never
-   *   returns undefined: if it did, `reconcile` would take the create branch and POST to
-   *   `access/acl`, which PVE does not implement. Present-but-unbound sends every write down the
-   *   PUT branch instead, the only branch PVE has. The cost: the factory's read-back guard cannot
-   *   fire, so `reconcile` below re-checks this field itself and dies with the same honesty.
-   */
+  /** Presence, so a PUT-only family can tell "matches" from "does not exist yet" — see below. */
   bound: boolean;
 }
 
@@ -82,163 +91,134 @@ export interface ProxmoxAcl extends Resource<
 
 export const ProxmoxAcl = Resource<ProxmoxAcl>('Proxmox.Acl');
 
-/**
- * ⚠️ PVE NORMALISES ACL PATHS AND RETURNS THE NORMALISED FORM, a forever-update trap when only one
- *   side of the comparison is normalised. `PVE::AccessControl::normalize_path` collapses repeated
- *   slashes and strips the trailing one, so a declared `/pool/lab/` reads back as `/pool/lab`
- *   and a naive match never fires again. It also refuses a path with no leading slash, so one is
- *   added here rather than letting `pool/lab` 400.
- */
+/** ⚠️ PVE normalises ACL paths (collapses repeated slashes, strips the trailing one, adds a leading one). */
 const normalize = (raw: string) => `/${raw.split('/').filter(Boolean).join('/')}`;
 
-/**
- * ⚠️ THE WRITE NAMES THE SUBJECT WITH A PLURAL KEY THAT DIFFERS PER KIND — `users`, `groups`,
- *   `tokens` — while the READ answers a singular `type`/`ugid` pair. The PUT declares
- *   `additionalProperties: 0`, so `user=` fails with a 400 rather than being ignored. The bad case
- *   is the WRONG plural: a valid parameter naming a subject kind you did not mean.
- */
+/** The write names the subject with a plural key that differs per kind; the read answers singular. */
 const SUBJECT_FIELD = { group: 'groups', token: 'tokens', user: 'users' } as const;
 
-/** The tuple PVE keys a grant by, as the form it takes. Every write to this family starts here. */
-const tuple = (props: AclProps): Record<string, string> => ({
+/** The vendor endpoint every write and every constraint check runs against. */
+const ENDPOINT = 'pve:PUT /access/acl';
+
+/** The tuple PVE keys a grant by, as PUT's fields. */
+const tuple = (props: AclProps): access.PutAccessAclRequest => ({
   path: normalize(props.path),
   roles: props.roleid,
   [SUBJECT_FIELD[props.type]]: props.ugid,
 });
 
 /** Create and update are one call: the tuple plus the single mutable field. */
-const bind = (props: AclProps): Record<string, string> => ({
-  propagate: props.propagate === false ? '0' : '1',
+const bind = (props: AclProps): access.PutAccessAclRequest => ({
   ...tuple(props),
+  propagate: props.propagate === false ? '0' : '1',
 });
 
-/** What a change of this string means: not an edit, a different grant. Used by `diff` below. */
+/** `guardForm` wants a plain string-valued form; distilled's request type carries `?` instead. */
+const asForm = (body: access.PutAccessAclRequest): Record<string, string> =>
+  Object.fromEntries(Object.entries(body).filter((e): e is [string, string] => e[1] !== undefined));
+
+/**
+ * ⚠️ ALWAYS PRESENCE-CHECKED. `bind`'s output IS the create form (there is no separate,
+ *   narrower update form for this family — see the header), so the vendor's required-parameter
+ *   check is never wrong to run; the two separate create/update passes the generic factory ran
+ *   elsewhere collapse to one call here without losing coverage.
+ */
+const guardWrite = (props: AclProps) => guardForm(ENDPOINT, asForm(bind(props)), true);
+
+/** What a change of this string means: not an edit, a different grant. */
 const identity = (grant: Pick<AclAttributes, 'path' | 'roleid' | 'type' | 'ugid'>) =>
   [normalize(grant.path), grant.type, grant.ugid, grant.roleid].join(' ');
 
-/**
- * ⚠️ `GET /access/acl` ANSWERS AN ARRAY, while the factory hands `attributes` the
- *   `Record<string, unknown>` every other PVE read is shaped like. Rows are narrowed, not trusted,
- *   and an empty result is not evidence of an empty cluster — see the last ⛔ in the header.
- */
-const find = (live: unknown, props: AclProps) =>
-  (Array.isArray(live) ? live : [])
-    .filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null)
-    .find(
-      (row) =>
-        row['path'] === normalize(props.path) &&
-        row['type'] === props.type &&
-        row['ugid'] === props.ugid &&
-        row['roleid'] === props.roleid,
-    );
+const find = (rows: readonly access.ListAccessAclResponseBodyItem[], props: AclProps) =>
+  rows.find(
+    (row) =>
+      row.path === normalize(props.path) &&
+      row.type === props.type &&
+      row.ugid === props.ugid &&
+      row.roleid === props.roleid,
+  );
 
 /**
- * ⚠️ PVE ANSWERS `propagate` AS 1/0 RATHER THAN true/false, AND OMITS IT WHEN IT CARRIES THE API
- *   DEFAULT, WHICH IS ON. Reading an absent field as `false` would report drift on every plan,
- *   forever, for every grant this provider did not create itself.
+ * ⚠️ PVE answers `propagate` as 1/0 rather than true/false, and OMITS it when it carries the API
+ *   default, which is ON. distilled's generated schema types it `unknown` for the same reason.
  */
-const propagates = (row: Record<string, unknown>) => {
-  const value = row['propagate'];
+const propagates = (row: access.ListAccessAclResponseBodyItem) => {
+  const value = row.propagate;
   return value === undefined || value === 1 || value === true || value === '1';
 };
 
-const ops = pveOperations<AclProps, AclAttributes>({
-  attributes: (live, props) => {
-    const row = find(live, props);
-    return {
-      // ⚠️ `propagate` reads false when nothing is bound, because there is no grant to inherit.
-      //   `bound` is the field that carries presence; this one means something only once it is set.
-      bound: row !== undefined,
-      path: normalize(props.path),
-      propagate: row !== undefined && propagates(row),
-      roleid: props.roleid,
-      type: props.type,
-      ugid: props.ugid,
-    };
-  },
-  /**
-   * ⛔ THE CREATE PATH IS UNREACHABLE ON A HEALTHY CLUSTER, AND ITS ERROR WILL MISLEAD YOU. The
-   *   factory POSTs `collection` only when the read came back undefined, and `attributes` never
-   *   does — so a POST means the GET itself failed (an expired 300s lease, a node down), not that
-   *   the grant is missing. PVE answers "Method 'POST /access/acl' not implemented": read that 501
-   *   as "the read failed" and go and look at the credential, not at the ACL.
-   */
-  /**
-   * ⛔ `provision`, AND WITHOUT IT EVERY GRANT READS BACK AS ABSENT. `GET /access/acl` is
-   *   FILTERED, NOT GATED — the schema's own words are "The returned list is restricted to objects
-   *   where you have rights to modify permissions". A credential without Permissions.Modify gets
-   *   HTTP 200 and an EMPTY ARRAY, never a 403, so there is no error for `read` to fold; it simply
-   *   sees nothing.
-   *   ⛔ THE READ LEASE IS EXACTLY SUCH A CREDENTIAL. `hf-read@pve` is PVEAuditor on `/`, whose
-   *     privilege set is Datastore.Audit, Mapping.Audit, Pool.Audit, SDN.Audit, Sys.Audit,
-   *     VM.Audit, VM.GuestAgent.Audit — MEASURED in the 2026-09-13 cluster read. No
-   *     Permissions.Modify. So on the default lease all fourteen live grants read back unbound,
-   *     `matches` is false for every one, the plan reports fourteen updates for grants that
-   *     plainly exist, and the deploy PUTs each one before acl.ts's own read-back guard dies.
-   *   ★ THIS IS THE SAME CLASS AS storage.ts, sdn-zone.ts, sdn-vnet.ts AND api-token.ts, and it is
-   *     the worst instance of it: those three are gated and answer 403, which is at least an
-   *     error. A filtered endpoint answers success with less data, which is indistinguishable from
-   *     the object not being there.
-   */
-  readRole: 'provision',
-  collection: () => 'access/acl',
-  createForm: bind,
-  /**
-   * ⚠️ ONLY `propagate` IS COMPARED, AND ONLY ONCE THE GRANT IS THERE. path/type/ugid/roleid are
-   *   the FILTER that produced these attributes, not a reading of the cluster: comparing them with
-   *   the props they came from is true by construction. An identity change is a DIFFERENT grant,
-   *   which `diff` in the provider handles.
-   */
-  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
-  endpoint: { create: 'pve:PUT /access/acl', update: 'pve:PUT /access/acl' },
-  matches: (attributes, props) =>
-    attributes.bound && attributes.propagate === (props.propagate !== false),
-  path: () => 'access/acl',
-  updateForm: bind,
-});
+const attributesOf = (
+  rows: readonly access.ListAccessAclResponseBodyItem[],
+  props: AclProps,
+): AclAttributes => {
+  const row = find(rows, props);
+  return {
+    bound: row !== undefined,
+    path: normalize(props.path),
+    propagate: row !== undefined && propagates(row),
+    roleid: props.roleid,
+    type: props.type,
+    ugid: props.ugid,
+  };
+};
+
+const matches = (attributes: AclAttributes, props: AclProps) =>
+  attributes.bound && attributes.propagate === (props.propagate !== false);
+
+/**
+ * ⛔ `readRole: 'provision'`, WITHOUT WHICH EVERY GRANT READS BACK AS ABSENT — see the header's
+ *   ⛔ on filtering. `read`/`orElseSucceed` folds ANY failure (network, a genuine permission
+ *   error) into "unknown"; a 200 with an empty or non-matching list is a real answer, not folded.
+ */
+const readAttributes = (props: AclProps) =>
+  runPve(props.target, 'provision', false, access.listAccessAcl({})).pipe(
+    Effect.map((rows) => attributesOf(rows, props)),
+    Effect.orElseSucceed(() => undefined),
+  );
 
 export const ProxmoxAclProvider = () =>
   Provider.effect(
     ProxmoxAcl,
     Effect.succeed(
       ProxmoxAcl.Provider.of({
-        /**
-         * ⛔ EMPTY LIKE EVERY OTHER RESOURCE HERE, AND MOST OF ALL THIS ONE. `GET /access/acl`
-         *   hands back every grant a human ever clicked; adopting them would let a later plan
-         *   DELETE somebody's access as tidy-up. Adoption is an explicit act.
-         */
+        /** ⛔ EMPTY LIKE EVERY OTHER PVE RESOURCE. Adopting every grant a human ever clicked is not adoption. */
         list: () => Effect.succeed([]),
         read: Effect.fn(function* ({ olds }) {
-          return yield* ops.read(olds);
+          return yield* readAttributes(olds);
         }),
         /**
-         * ⛔ AN IDENTITY CHANGE IS A REPLACE, AND THE FACTORY CANNOT SAY SO ALONE — it answers
-         *   `replace` only for objects with no update path, and this one has PUT. Left to delegate,
-         *   editing `roleid` (or the subject, or the path) would PUT the NEW grant and LEAVE THE
-         *   OLD ONE BOUND: access nobody declared, held indefinitely, invisible in the plan because
-         *   the provider believes it converged. Replace makes Alchemy call `delete` with the OLD
-         *   props, which is the only thing that removes it.
-         *   ⚠️ CREATE-FIRST, DELIBERATELY (Alchemy's default; `deleteFirst: true` would invert it).
-         *     Delete-first could remove the very grant the provision credential mints against and
-         *     leave nothing able to put it back. The cost is that a NARROWING change leaves the
-         *     wider grant bound until Phase 2 collects the old generation.
+         * ⛔ AN IDENTITY CHANGE IS A REPLACE. Editing `roleid` (or the subject, or the path) would
+         *   PUT the NEW grant and LEAVE THE OLD ONE BOUND; replace makes Alchemy `delete` the old
+         *   props first, the only thing that removes it. Create-first (Alchemy's default) is
+         *   deliberate: delete-first could remove the very grant the provision credential mints
+         *   against.
          */
         diff: Effect.fn(function* ({ news, output }) {
           if (output !== undefined && isResolved(news) && identity(news) !== identity(output)) {
             return { action: 'replace' } as const;
           }
-          return yield* ops.diff(news, output);
+          if (!isResolved(news)) return undefined;
+          yield* guardWrite(news);
+          if (output === undefined) return undefined;
+          const live = yield* readAttributes(news);
+          return live !== undefined && matches(live, news)
+            ? ({ action: 'noop' } as const)
+            : ({ action: 'update' } as const);
         }),
         /**
-         * ⚠️ THE READ-BACK GUARD, RESTORED FOR A FAMILY WHOSE "ABSENT" IS NOT `undefined`.
-         *   `ops.reconcile` refuses when the object is still missing after a write, but missing
-         *   here is `bound: false`, which that check cannot see. PVE answers 200 with
-         *   `{"data":null}` on calls that did nothing: without this, a PUT that silently no-oped
-         *   is recorded as a landed grant and the next plan reads noop over the gap.
+         * ⚠️ THE READ-BACK GUARD, FOR A FAMILY WHOSE "ABSENT" IS `bound: false`, NOT `undefined`.
+         *   PVE answers 200 with `{"data":null}` on calls that did nothing: without this, a PUT
+         *   that silently no-oped is recorded as a landed grant and the next plan reads noop over
+         *   the gap.
          */
         reconcile: Effect.fn(function* ({ news }) {
-          const after = yield* ops.reconcile(news);
-          if (!after.bound) {
+          const before = yield* readAttributes(news);
+          yield* guardWrite(news);
+          if (before === undefined || !matches(before, news)) {
+            yield* runPve(news.target, 'provision', true, access.putAccessAcl(bind(news)));
+          }
+          const after = yield* readAttributes(news);
+          if (after === undefined || !after.bound) {
             return yield* Effect.die(
               new Error(
                 `access/acl: the write returned no error but ${identity(news)} is still not ` +
@@ -251,18 +231,16 @@ export const ProxmoxAclProvider = () =>
           return after;
         }),
         /**
-         * ⛔ NOT `ops.destroy`, AND NOT AN OVERSIGHT. `DELETE /access/acl` is not implemented, so a
-         *   factory delete would fail every destroy — while looking like a permissions problem —
-         *   and leave the grant bound. Removal is the create call with `delete=1` and the identity
-         *   tuple, no `propagate`, because removal is keyed on the tuple and nothing else.
-         *
-         * ⚠️ IDEMPOTENT, AND SHARED: removing a grant that is already gone is a no-op, but the
-         *   tuple is cluster-global — re-read the second ⛔ in the header before assuming this
-         *   only takes away what this stack declared.
+         * ⛔ NOT A DESTROY CALL — THERE IS NONE. `DELETE /access/acl` is not implemented; removal
+         *   is the same PUT with `delete=1` and the identity tuple, no `propagate`, because
+         *   removal is keyed on the tuple and nothing else.
+         * ⚠️ IDEMPOTENT, AND CLUSTER-WIDE: removing a grant that is already gone is a no-op, but
+         *   the tuple is shared — re-read the header's second ⛔ before assuming this only takes
+         *   away what this stack declared.
          */
         delete: Effect.fn(function* ({ olds }) {
-          const removal = { delete: '1', ...tuple(olds) };
-          yield* pve(olds.target, 'provision', 'PUT', 'access/acl', removal);
+          const removal: access.PutAccessAclRequest = { ...tuple(olds), delete: '1' };
+          yield* runPve(olds.target, 'provision', true, access.putAccessAcl(removal));
         }),
       }),
     ),
