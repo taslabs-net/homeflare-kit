@@ -12,6 +12,11 @@
 
 A target that no matcher names receives nothing. Declare both.
 
+PBS lifecycle calls use `@distilled.cloud/proxmox-backup` (vendor schema PBS 4.2.6-1).
+The runner reuses short-lived OpenBao leases and bounds each request to 20 seconds, with SDK
+retries disabled. A typed `NotFound` alone means absence or an already completed delete.
+Other read failures stop the plan, so a denied read cannot silently plan a create.
+
 ## Paging on a failed verify, sync, prune or garbage collection
 
 ```ts
@@ -157,7 +162,8 @@ built-in reverts it to the shipped rule**, and the server reports success. The a
 | PBS    | `Sys.Audit` on `/system/notifications`                          | `Sys.Modify` on `/system/notifications`      |
 | PVE    | `Mapping.Audit` or `Mapping.Modify` on `/mapping/notifications` | `Mapping.Modify` on `/mapping/notifications` |
 
-⚠️ A missing read privilege looks like "absent". The plan says `create` and the server answers
-that the object already exists. Grant the read before changing anything else. On PVE,
+⚠️ The old shared client hid missing read privileges as "absent", planning a `create` that the
+server rejected as already existing. PBS now preserves the SDK refusal and fails the plan.
+Grant the required read privilege before changing infrastructure. On PVE,
 `Mapping.Use` is not enough: it opens the matcher list, not the per-matcher read this package
 makes (`get_matcher` in pve-manager's `Notifications.pm`).

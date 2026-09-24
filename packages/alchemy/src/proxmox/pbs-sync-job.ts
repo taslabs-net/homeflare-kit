@@ -35,8 +35,8 @@
  *     `/api2/json/config/sync` is not even evidence that the endpoint exists. THE FIRST PLAN
  *     AGAINST A LIVE PBS IS THE MEASUREMENT. Read it; do not deploy it unseen.
  *   ⚠️ AN ERROR BODY IS NOT WRAPPED: the 401 body is the bare text `authentication failed`, not
- *     JSON. `pve()` checks `response.ok` before it parses, so a `pbs()` copied from it is safe —
- *     provided the check stays in that order.
+ *     JSON. The original `pve()` checked status before decoding success data. The distilled PBS
+ *     protocol preserves this distinction and classifies error text through SDK patches.
  *
  * ⚠️ `Proxmox.BackupJob` AND `Pbs.SyncJob` ARE NOT THE SAME FAMILY AND THE NAMES NEARLY COLLIDE.
  *   The first is a PVE vzdump schedule; this is a Proxmox Backup SERVER sync job, on a different
@@ -55,7 +55,9 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { handlers } from './pbs-sync-job-form.ts';
+import { handlers } from './pbs-sync-job-lifecycle.ts';
+import type { SyncJobAttributes } from './pbs-sync-job-attributes.ts';
+export type { SyncJobAttributes } from './pbs-sync-job-attributes.ts';
 import type { PveRequirements } from './resource.ts';
 import type { WithPbsTarget } from './resource.ts';
 
@@ -158,10 +160,10 @@ export interface SyncJobProps extends WithPbsTarget {
   'transfer-last'?: number;
   /**
    * ⛔ NOT DECLARABLE, AND A COMPILE ERROR RATHER THAN A PROP THAT HALF WORKS — the storage.ts
-   *   `password` idiom, for two independent reasons, either of which alone would be enough.
+   *   `password` idiom. Two barriers originally applied; the second remains unresolved.
    *   1. THE WIRE FORM IS AN ARRAY. PBS takes `group-filter` as a repeated parameter
-   *      (`group-filter=type:ct&group-filter=regex:^web`), and `pve()`'s form is
-   *      `Record<string, string>` — one value per key — so a list cannot be expressed at all.
+   *      (`group-filter=type:ct&group-filter=regex:^web`). The old single-value form could not
+   *      express it; the distilled PBS protocol now supports repeated keys.
    *   2. NARROWING A FILTER MAY BE A DELETE. Whether `remove-vanished` skips the groups a filter
    *      excludes is NOT something I could measure without a credential. If it does not, then
    *      editing this field on a job with `remove-vanished` set removes every local group the new
@@ -169,8 +171,8 @@ export interface SyncJobProps extends WithPbsTarget {
    *      half-working prop.
    *   ★ IT IS STILL REPORTED in the attributes, so a plan shows the filters a hand-made job carries
    *     and this resource never strips them: undeclared is unmanaged, and PBS's update assigns only
-   *     what it was sent. To make it declarable, fix both halves — a form type that can repeat a
-   *     key, and a MEASURED answer to (2) — in that order.
+   *     what it was sent. Making it declarable still needs a MEASURED answer to (2), even though
+   *     the SDK now supplies the necessary repeated-key transport.
    */
   'group-filter'?: never;
   /**
@@ -194,39 +196,6 @@ export interface SyncJobProps extends WithPbsTarget {
    *   on a datastore whose verify job is parked means "sync only what was checked once, long ago".
    */
   'verified-only'?: boolean;
-}
-
-export interface SyncJobAttributes {
-  /** From the props — it is the path this object was read by. */
-  id: string;
-  store: string;
-  /** `''` is the root namespace, which is also how PBS spells it. */
-  ns: string;
-  /** `''` means a LOCAL sync — datastore to datastore on this PBS. */
-  remote: string;
-  'remote-store': string;
-  'remote-ns': string;
-  /** `''` means the job runs only when somebody starts it. */
-  schedule: string;
-  comment: string;
-  'remove-vanished': boolean;
-  /** ⚠️ Absent on the wire means `false`, PBS's own default. */
-  'verified-only': boolean;
-  /** `''` means no owner in the config, i.e. `root@pam` at runtime. An identifier, never a secret. */
-  owner: string;
-  /** Bytes per second, or `UNSET` (-1). See `bytes()`. */
-  'rate-in': number;
-  /** `UNSET` (-1) means unset, which means full recursion. `0` is a real value meaning none. */
-  'max-depth': number;
-  /** `UNSET` (-1) means all snapshots. */
-  'transfer-last': number;
-  /**
-   * ⚠️ REPORTED, NEVER SENT, NEVER COMPARED — the live filter list joined for display only. See the
-   *   ⛔ on the prop for why it is not declarable.
-   */
-  'group-filter': string;
-  /** `pull` or `push`. Reported, never compared — create-only here. */
-  'sync-direction': string;
 }
 
 export interface PbsSyncJob extends Resource<

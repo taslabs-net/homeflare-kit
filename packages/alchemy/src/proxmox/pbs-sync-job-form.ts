@@ -7,17 +7,18 @@ import type { SyncJobAttributes, SyncJobProps } from './pbs-sync-job.ts';
  *   with the wire instead of staying with the props. The `import type` back is a cycle on paper
  *   only — erased before anything runs, so the runtime arrow points one way, resource to wire.
  *
- * ★ IT USES THE SHARED PVE CLIENT, NOT A PBS ONE. An earlier draft of this file was written
+ * ★ HISTORICALLY IT USED THE SHARED PVE CLIENT, NOT A PBS ONE. An earlier draft of this file was written
  *   against a `./pbs-client.ts` that never existed, and spelled out what it would have to export.
  *   That module is not needed: PBS speaks the same `/api2/json` paths and the same `{"data": …}`
  *   envelope, its OpenBao mount vends the same `{token_id, secret}`, and the only difference is
  *   the authorization header — so `PveTarget` carries a `scheme` and `authorization()` spells
- *   `PBSAPIToken=<id>:<secret>` for `'pbs'`. `pveHandlers` and `pveOperations` work unchanged.
+ *   `PBSAPIToken=<id>:<secret>` for `'pbs'`. The SDK now owns that header; the pure spec below
+ *   preserves the existing field and retention semantics.
  *   The one PBS-specific thing that survived is the FORM TYPE: PBS decodes a multi-valued field
- *   from repeated keys, and `PveForm` in client.ts admits a list for exactly that reason.
+ *   from repeated keys, and the distilled PBS protocol must preserve that encoding.
 
  */
-import { pveHandlers } from './resource.ts';
+import type { PveSpec } from './resource-spec.ts';
 import { bool, int, text } from './values.ts';
 
 /**
@@ -150,7 +151,7 @@ export const createBody = (props: SyncJobProps): Record<string, string> => ({
  */
 export const updateBody = (props: SyncJobProps): Record<string, string> => shape(props);
 
-export const handlers = pveHandlers<SyncJobProps, SyncJobAttributes>({
+export const spec: PveSpec<SyncJobProps, SyncJobAttributes> = {
   /**
    * ⛔ NO "IS IT REALLY THERE" GUARD, for backup-job.ts's reason: absence is the API declining to
    *   answer, which the factory's `read` already handles, not a key missing from an answer that did
@@ -233,4 +234,4 @@ export const handlers = pveHandlers<SyncJobProps, SyncJobAttributes>({
   /** ⚠️ A Proxmox safe id has no `/` or `:` in it, so there is nothing here to encode. */
   path: (props) => `config/sync/${props.id}`,
   updateForm: updateBody,
-});
+};

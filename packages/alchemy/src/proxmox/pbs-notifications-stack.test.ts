@@ -92,3 +92,28 @@ test('a new type under the same name replaces delete-first — names are unique 
     'POST config/notifications/endpoints/sendmail',
   ]);
 });
+
+test('renaming a matcher replaces it instead of leaving the old route behind', async () => {
+  const fake = fakeNotify();
+  const declare = (name: string) =>
+    PbsNotificationMatcher('route', {
+      name,
+      target: PBS,
+      targets: ['mail-to-root'],
+    });
+  await withoutBao(async () => {
+    const engine = engineOver(
+      PbsNotificationMatcherProvider().pipe(Layer.provideMerge(fake.layer)),
+    );
+    await engine.deploy(declare('route-old'));
+    await engine.deploy(declare('route-new'));
+    expect((await engine.verify(declare('route-new'), { all: true })).rows[0]?.diff).toBe('noop');
+  });
+  expect(fake.objects.has('config/notifications/matchers/route-old')).toBe(false);
+  expect(fake.objects.has('config/notifications/matchers/route-new')).toBe(true);
+  expect(fake.writes()).toEqual([
+    'POST config/notifications/matchers',
+    'POST config/notifications/matchers',
+    'DELETE config/notifications/matchers/route-old',
+  ]);
+});

@@ -83,7 +83,10 @@ export const fakeNotify = (
     const { deletes, fields } = body(call);
     if (call.method === 'GET') {
       const object = objects.get(path);
-      return object === undefined ? undefined : withSecretsBlanked(path, object, secrets);
+      // SDK reads require the resource shape: data:null is malformed, not evidence of absence.
+      return object === undefined
+        ? Response.json({ message: 'not found' }, { status: 404 })
+        : withSecretsBlanked(path, object, secrets);
     }
     if (call.method === 'DELETE') {
       objects.delete(path);

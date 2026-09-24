@@ -14,7 +14,13 @@
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Effect from 'effect/Effect';
-import { pve } from './client.ts';
+import {
+  createTarget,
+  deleteTarget,
+  readTarget as readLive,
+  updateTarget,
+  validateTargetWrite,
+} from './pbs-notification-target-distilled.ts';
 import { guardForm } from './constraint-guard.ts';
 import { pbsTargetEndpoint } from './pbs-notification-target-endpoint.ts';
 import type {
@@ -31,23 +37,12 @@ import {
   sealedState,
   targetForm,
 } from './pbs-notification-target-form.ts';
-import { targetAttributes } from './pbs-notification-target-wire.ts';
 import { seal } from '../secrets/write-only.ts';
 
 type Props = PbsNotificationTargetProps;
 type Attributes = PbsNotificationTargetAttributes;
 
 const path = (props: Props) => `config/notifications/endpoints/${props.type}/${props.name}`;
-
-/**
- * ⚠️ A 404 and `{"data": null}` are answers here — and so, resource.ts's ⛔, is a 403. `pve()`
- *   returns `null` for the second, not `undefined`, so the test is `== null`.
- */
-const readLive = (props: Props) =>
-  pve<Record<string, unknown>>(props.target, 'read', 'GET', path(props)).pipe(
-    Effect.map((data) => (data == null ? undefined : targetAttributes(data, props))),
-    Effect.orElseSucceed(() => undefined),
-  );
 
 const refuse = (props: Props) => {
   const reasons = refusals(props);
@@ -124,10 +119,25 @@ export const handlers = {
   }) =>
     Effect.gen(function* () {
       if (output === undefined || !isResolved(news)) return undefined;
+      yield* refuse(news);
       if (olds !== undefined && (olds.type !== news.type || olds.name !== news.name)) {
+        // ⛔ Preflight the destination before delete-first can remove a working target. A rename
+        // may adopt an existing endpoint; its write-only values have no seal from this resource.
+        const destination = yield* readLive(news);
+        const groups = resolveGroups(news);
+        const carry =
+          destination === undefined
+            ? { header: true, sealed: true }
+            : toCarry(destination, news, groups, '');
+        if (carry !== undefined) {
+          yield* requireValues(news, groups, carry);
+          const mode = destination === undefined ? 'create' : 'update';
+          const form = targetForm(news, groups, carry, mode);
+          yield* guardForm(pbsTargetEndpoint(news)[mode], form, destination === undefined);
+          yield* validateTargetWrite(news, form, mode);
+        }
         return { action: 'replace', deleteFirst: olds.name === news.name } as const;
       }
-      yield* refuse(news);
       const live = yield* readLive(news);
       if (live === undefined) return { action: 'update' } as const;
       return toCarry(live, news, resolveGroups(news), output.sealed) === undefined
@@ -143,7 +153,6 @@ export const handlers = {
       if (live === undefined) {
         const carry = { header: true, sealed: true } as const;
         yield* requireValues(news, groups, carry);
-        const collection = `config/notifications/endpoints/${news.type}`;
         const form = targetForm(news, groups, carry, 'create');
         /**
          * ⛔ WITH PRESENCE, BECAUSE THIS BRANCH IS UNCONDITIONALLY THE CREATE. PBS marks `name` on
@@ -153,7 +162,7 @@ export const handlers = {
          *   parameter NAME into its message (constraints.ts), so a refusal never quotes one.
          */
         yield* guardForm(pbsTargetEndpoint(news).create, form, true);
-        yield* pve(news.target, 'provision', 'POST', collection, form);
+        yield* createTarget(news, form);
         sealed = seal(groups.sealed.values);
       } else {
         const carry = toCarry(live, news, groups, sealed);
@@ -162,7 +171,7 @@ export const handlers = {
           const form = targetForm(news, groups, carry, 'update');
           /** ⚠️ NO PRESENCE: an update form is partial by design — it carries what `toCarry` said. */
           yield* guardForm(pbsTargetEndpoint(news).update, form, false);
-          yield* pve(news.target, 'provision', 'PUT', path(news), form);
+          yield* updateTarget(news, form);
           if (carry.sealed) sealed = seal(groups.sealed.values);
         }
       }
@@ -175,5 +184,5 @@ export const handlers = {
       }
       return { ...after, sealed } satisfies Attributes;
     }),
-  delete: ({ olds }: { olds: Props }) => pve(olds.target, 'provision', 'DELETE', path(olds)),
+  delete: ({ olds }: { olds: Props }) => deleteTarget(olds),
 };

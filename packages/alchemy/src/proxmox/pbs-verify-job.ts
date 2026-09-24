@@ -9,22 +9,22 @@
  *   green `Proxmox.BackupJob` makes it worse rather than better, because a vzdump job that says
  *   "OK" every night is exactly the evidence people stop at.
  *
- * ⛔ THIS FILE CANNOT AUTHENTICATE UNTIL TWO THINGS OUTSIDE IT CHANGE, AND IT IS SHIPPED SAYING SO
- *   RATHER THAN SHIPPED LOOKING FINISHED. Both are recorded on `PbsTarget` below:
+ * ⚠️ HISTORICAL BOOTSTRAP BLOCKER, 2026-09-13: TWO THINGS OUTSIDE THIS FILE WERE MISSING
+ *   before PBS could authenticate. Both are now resolved by the PBS lane and SDK:
  *     1. `credentials.ts` has no PBS mint. MEASURED 2026-09-13 from this Mac: the agent's
  *        approle is refused `sys/mounts`, `kv/infra/proxmox` and `proxmox-pbs/creds/read` alike —
  *        403 permission denied on all three — so there is no mount to name and none is invented.
  *     2. `client.ts`'s `authorization()` builds a PVE header, and PBS will not accept it. See the
  *        ⛔ on `PbsTarget`.
- *   Until both land, every call 401s, `pveOperations.read` folds that into "absent", and the plan
- *   reports `create` for a job that is plainly there. The deploy then FAILS at the POST rather
+ *   Before both landed, every call 401'd, `pveOperations.read` folded that into "absent", and the plan
+ *   reported `create` for a job that was plainly there. The deploy then FAILED at the POST rather
  *   than clobbering anything — an unauthenticated POST 401s, and an authenticated one is refused
  *   because PBS will not take a duplicate section id — so the cost is a LYING PLAN and a broken
  *   run, not a lost job. That is still reason enough not to wire it into a stack yet: a plan
  *   nobody can trust is its own outage.
  *
- * ⚠️ THE SHAPES BELOW ARE READ FROM PUBLISHED SOURCE, NOT MEASURED ON THIS ESTATE. Everything is
- *   taken from `pbs-api-types/src/jobs.rs`, `src/api2/config/verify.rs`, `src/server/verify_job.rs`
+ * ⚠️ THE ORIGINAL SHAPES WERE READ FROM PUBLISHED SOURCE, NOT MEASURED ON THIS ESTATE. Everything is
+ *   originally taken from `pbs-api-types/src/jobs.rs`, `src/api2/config/verify.rs`, `src/server/verify_job.rs`
  *   and `src/backup/verify.rs` at HEAD of the Proxmox git mirrors on 2026-09-13. What WAS measured
  *   here: `pbs.example.com:8007` and `pbs.mgmt.example.com:8007` both answer HTTP 401 under
  *   STRICT TLS (curl `ssl_verify_result=0`), so no `-k` is needed and `client.ts`'s plain `fetch`
@@ -34,10 +34,9 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
+import { handlers } from './pbs-verify-job-lifecycle.ts';
 import type { PbsTarget } from './credentials.ts';
-import { rechecks, shape } from './pbs-verify-job-form.ts';
-import { type PveRequirements, pveHandlers } from './resource.ts';
-import { bool, int, text } from './values.ts';
+import type { PveRequirements } from './resource-spec.ts';
 
 export interface PbsVerifyJobProps {
   /** ⛔ A PBS host, never a PVE cluster. See `PbsTarget`. */
@@ -141,78 +140,7 @@ export interface PbsVerifyJob extends Resource<
 export const PbsVerifyJob = Resource<PbsVerifyJob>('Pbs.VerifyJob');
 
 /**
- * ⚠️ EVERY FIELD IS READ THROUGH `values.ts` THOUGH PBS RETURNS REAL JSON TYPES. Unlike PVE's
- *   SectionConfig round-trip, `GET /config/verify/{id}` serialises a Rust struct, so
- *   `ignore-verified` arrives as a JSON boolean and `max-depth` as a JSON number. `bool` and `int`
- *   accept both spellings, and using them costs nothing while covering the version that does not.
- * ⚠️ `digest` IS NOT AN ATTRIBUTE AND CANNOT BECOME ONE BY ACCIDENT. PBS puts it on the rpcenv, and
- *   the JSON formatter adds rpcenv attributes as SIBLINGS of `data` — `{"data":{…},"digest":"…"}` —
- *   so `client.ts`, which returns `body.data`, never sees it. That is lucky rather than designed:
- *   the digest covers verification.cfg as a FILE, so keeping it would churn this resource's state
- *   whenever an unrelated verify job was edited.
- */
-const handlers = pveHandlers<PbsVerifyJobProps, PbsVerifyJobAttributes>({
-  attributes: (live, props) => {
-    const ignoreVerified = bool(live['ignore-verified'], true);
-    const outdatedAfter = int(live['outdated-after'], -1);
-    return {
-      comment: text(live['comment'], ''),
-      id: props.id,
-      'ignore-verified': ignoreVerified,
-      'max-depth': int(live['max-depth'], -1),
-      ns: text(live['ns'], ''),
-      'outdated-after': outdatedAfter,
-      rechecks: rechecks(ignoreVerified, outdatedAfter),
-      schedule: text(live['schedule'], ''),
-      store: text(live['store'], props.store),
-    };
-  },
-  /**
-   * 🔴 THIS WAS `config/verification` AND PBS ANSWERS 404 FOR IT. MEASURED on the live 4.2 server:
-   *   `GET /api2/json/config/verification` -> 404 "Path not found"; `GET /api2/json/config/verify`
-   *   -> 200 with both jobs. The struct is `VerificationJobConfig` and the CLI subcommand is
-   *   `verify-job`, so the long spelling reads right and is simply not the route.
-   *   ⛔ THE FAILURE MODE IS THE ONE THIS PACKAGE KEEPS FINDING: `read` folds every failure into
-   *   `undefined`, so a 404 from a WRONG PATH is indistinguishable from an object that is not
-   *   there. The first plan against the live estate said `create` for two verification jobs that
-   *   have existed for weeks — and a create would then have POSTed to a 404 as well, so it fails
-   *   loudly rather than duplicating anything. Nothing caught it earlier because no verification
-   *   job had ever been declared; registering the provider exercises no path at all.
-   */
-  collection: () => 'config/verify',
-  /** ⛔ `id` IS SENT. PBS refuses a duplicate id, and that refusal is this family's safety net. */
-  createForm: (props) => ({ ...shape(props), id: props.id }),
-  /**
-   * ⚠️ AN UNDECLARED FIELD IS NEITHER SENT NOR COMPARED — the `Proxmox.BackupJob` trade, for the
-   *   same reason and with one extra: this form carries NO `delete` list, so there is nothing it
-   *   could clear even if it wanted to. See the ⛔ on `withClears` in pbs-verify-job-form.ts.
-   * ⚠️ `store` IS COMPARED AND IS MUTABLE, which is unusual and worth reading twice. PBS's update
-   *   handler assigns it and re-checks privileges on both the old and the new path, so changing
-   *   `store` MOVES the job — and the datastore it left is then verified by nothing. That is a
-   *   one-word edit with the same effect as deleting the job, and it plans as a quiet `update`.
-   * ⚠️ `rechecks` IS ABSENT HERE ON PURPOSE. It is a rendering of the two fields on the lines
-   *   above; comparing it too would report the same drift twice.
-   */
-  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
-  endpoint: { create: 'pbs:POST /config/verify', update: 'pbs:PUT /config/verify/{id}' },
-  matches: (attributes, props) =>
-    attributes.store === props.store &&
-    // ⚠️ `null` IS COMPARED AGAINST `''`, NOT SKIPPED. A parked job is a declaration like any
-    //   other, so declaring `null` against a job that HAS a schedule must plan an update — the
-    //   form then omits `schedule`, which is a set-only form, so see the ⛔ on clearing below.
-    attributes.schedule === (props.schedule ?? '') &&
-    attributes['ignore-verified'] === (props['ignore-verified'] !== false) &&
-    (props['outdated-after'] === undefined ||
-      attributes['outdated-after'] === props['outdated-after']) &&
-    (props['max-depth'] === undefined || attributes['max-depth'] === props['max-depth']) &&
-    (props.ns === undefined || attributes.ns === props.ns) &&
-    (props.comment === undefined || attributes.comment === props.comment),
-  path: (props) => `config/verify/${props.id}`,
-  updateForm: shape,
-});
-
-/**
- * ⛔ `list` IS EMPTY, INHERITED FROM `pveHandlers`, AND THE REASON IS SHARPER HERE THAN ELSEWHERE.
+ * ⛔ `list` STAYS EXPLICITLY EMPTY, AND THE REASON IS SHARPER HERE THAN ELSEWHERE.
  *   `GET /config/verify` returns every verification job the caller can see, including the
  *   ones the PBS installer and a human made. Adopting those would put Alchemy one dropped line
  *   away from DELETING a datastore's only verification schedule — and deleting it destroys nothing
@@ -220,10 +148,10 @@ const handlers = pveHandlers<PbsVerifyJobProps, PbsVerifyJobAttributes>({
  *   to say when the rot started. Adoption stays explicit: declare the existing id.
  *
  * ⚠️ NO `digest` IS SENT ON UPDATE OR DELETE, SO THIS IS LAST-WRITER-WINS. PBS accepts an optional
- *   `digest` on both and would refuse a write made against a stale read. Sending one would need a
- *   read-then-write window this provider does not have — `pveOperations` reads and writes in two
- *   separate calls with two separate mints — so a concurrent edit from the PBS UI is overwritten
- *   rather than refused. Same behaviour as every PVE family here; stated because PBS offers better.
+ *   `digest` on both and would refuse a write made against a stale read. This migration preserves
+ *   the existing forms, which omit it; the SDK runner reuses leased credentials but does not add
+ *   an optimistic-lock check. A concurrent edit from the PBS UI may therefore be overwritten
+ *   rather than refused. PBS offers that stronger guarantee as a separate provider change.
  */
 export const PbsVerifyJobProvider = () =>
   Provider.effect(PbsVerifyJob, Effect.succeed(PbsVerifyJob.Provider.of(handlers)));
