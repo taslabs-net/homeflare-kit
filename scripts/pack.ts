@@ -61,12 +61,7 @@ export async function packForPublish(dir: string, destination: string): Promise<
     const packed = out.trim().split('\n').at(-1) ?? '';
     if (!packed.endsWith('.tgz')) throw new Error(`no tarball from ${dir}: ${out}`);
 
-    await editPackedManifest(packed, (manifest) => {
-      // ⛔ Only these two come out. Everything else — above all the dependency versions bun
-      //   just resolved from the lockfile — is left exactly as packed.
-      delete manifest['scripts'];
-      delete manifest['devDependencies'];
-    });
+    await stripScriptsInTarball(packed);
 
     const name = packed.split('/').pop() ?? 'package.tgz';
     const tarball = `${root}/${name.replace(/\.tgz$/, '')}-${Bun.randomUUIDv7()}.tgz`;
@@ -76,6 +71,16 @@ export async function packForPublish(dir: string, destination: string): Promise<
   } finally {
     await Bun.spawn(['rm', '-rf', staging]).exited;
   }
+}
+
+/** Strip dev-only fields from the manifest INSIDE a packed tarball. */
+async function stripScriptsInTarball(tarball: string): Promise<void> {
+  await editPackedManifest(tarball, (packed) => {
+    // ⛔ Only these two come out. Everything else — above all the dependency versions bun
+    //   just resolved from the lockfile — is left exactly as packed.
+    delete packed['scripts'];
+    delete packed['devDependencies'];
+  });
 }
 
 /**
