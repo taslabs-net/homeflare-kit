@@ -130,6 +130,7 @@ import { ReleaseBinary, VICTORIA_RELEASES, catalogBinary, identifyBinary, releas
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 import { isLiteLLMPassThroughEndpoint, litellmProviders } from '@homeflare/alchemy/litellm';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
+import { DiscordApplicationCommand, DiscordGuildApplicationCommand, isDiscordApplicationCommand, isDiscordGuildApplicationCommand, providers as discordProviders } from '@homeflare/alchemy/discord';
 
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
@@ -142,8 +143,25 @@ for (const [name, value] of Object.entries({
   HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, ReleaseBinary, releaseProviders,
   parseVerifyArgs, verifySession, verifyStack,
   litellmProviders,
+  DiscordApplicationCommand, DiscordGuildApplicationCommand, discordProviders,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
+}
+
+// ★ THE DISCORD GUARDS THROUGH THE PUBLISHED FILE: pure Type-field checks, no Discord API
+//   reached — an export map that resolved /discord to a file missing either guard would pass
+//   the import above and refuse nothing here.
+if (!isDiscordApplicationCommand({ Type: 'Discord.ApplicationCommand' }) || isDiscordApplicationCommand({})) {
+  throw new Error('isDiscordApplicationCommand from dist lost its resource type guard');
+}
+if (
+  !isDiscordGuildApplicationCommand({ Type: 'Discord.GuildApplicationCommand' }) ||
+  isDiscordGuildApplicationCommand({})
+) {
+  throw new Error('isDiscordGuildApplicationCommand from dist lost its resource type guard');
+}
+if (typeof discordProviders !== 'function') {
+  throw new Error('discord providers() from dist is not callable');
 }
 
 // ★ Render once through the PUBLISHED file, so a launchd subpath that imports but cannot run
@@ -282,7 +300,7 @@ if (nameByteRefusal('a'.repeat(64))?.byteLength !== 64 || nameByteRefusal('a'.re
   throw new Error('postgres subpath from dist lost the NAMEDATALEN byte-length refusal');
 }
 
-console.log('all fifteen subpaths import and resolve');
+console.log('all sixteen subpaths import and resolve');
 `,
   );
 
