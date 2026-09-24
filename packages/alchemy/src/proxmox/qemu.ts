@@ -1,9 +1,9 @@
 /**
  * `Proxmox.Vm` — a QEMU virtual machine, declared.
  *
- * ⚠️ THE SAME FOUR OPERATIONS AS AN LXC OVER A DIFFERENT PATH, which is the point of the factory:
- *   `nodes/{node}/qemu` to create, `nodes/{node}/qemu/{vmid}/config` to read and update. A VM and a
- *   container differ in what they carry, not in how they are reconciled.
+ * ⚠️ CREATE is `POST /nodes/{node}/qemu`. GET and PUT stay on `.../qemu/{vmid}/config`.
+ *   ⛔ DELETE is `DELETE /nodes/{node}/qemu/{vmid}` (`destroy_vm` in qemu-server Qemu.pm). The
+ *   config route is not a destroy. A missing config file is `QemuConfigNotFound` only.
  *
  * ⛔ `vmid` IS CLUSTER-WIDE AND SHARED WITH CONTAINERS. A VM and an LXC cannot hold the same id, so
  *   these two resources compete for one number space. Declaring both with vmid 101 is not a
@@ -17,8 +17,8 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
-import { num } from './values.ts';
+import { qemuHandlers } from './qemu-lifecycle.ts';
+import type { PveRequirements, WithTarget } from './resource.ts';
 
 export interface VmProps extends WithTarget {
   node: string;
@@ -54,44 +54,11 @@ export interface ProxmoxVm extends Resource<
 
 export const ProxmoxVm = Resource<ProxmoxVm>('Proxmox.Vm');
 
-/** ★ Exported so the constraint proof can run the REAL create form, not a retyped copy of it. */
-export const createForm = (props: VmProps) => ({ ...shape(props), vmid: String(props.vmid) });
+export { createForm } from './qemu-form.ts';
 
-const shape = (props: VmProps) => ({
-  cores: String(props.cores ?? 1),
-  memory: String(props.memory ?? 512),
-  name: props.name ?? `vm${String(props.vmid)}`,
-  onboot: props.onboot === true ? '1' : '0',
-  sockets: String(props.sockets ?? 1),
-  ...(props.net0 === undefined ? {} : { net0: props.net0 }),
-});
-
-const handlers = pveHandlers<VmProps, VmAttributes>({
-  attributes: (live, props) => ({
-    cores: num(live['cores'], 1),
-    memory: num(live['memory'], 512),
-    name: typeof live['name'] === 'string' ? live['name'] : '',
-    node: props.node,
-    onboot: live['onboot'] === 1 || live['onboot'] === true,
-    sockets: num(live['sockets'], 1),
-    vmid: props.vmid,
-  }),
-  collection: (props) => `nodes/${props.node}/qemu`,
-  createForm,
-  /** The vendor rules both forms are checked against at plan time — resource-spec.ts. */
-  endpoint: {
-    create: 'pve:POST /nodes/{node}/qemu',
-    update: 'pve:PUT /nodes/{node}/qemu/{vmid}/config',
-  },
-  matches: (attributes, props) =>
-    attributes.name === (props.name ?? `vm${String(props.vmid)}`) &&
-    attributes.memory === (props.memory ?? 512) &&
-    attributes.cores === (props.cores ?? 1) &&
-    attributes.sockets === (props.sockets ?? 1) &&
-    attributes.onboot === (props.onboot === true),
-  path: (props) => `nodes/${props.node}/qemu/${String(props.vmid)}/config`,
-  updateForm: shape,
-});
-
+/**
+ * ⛔ Destroy uses deleteNodeQemu (`DELETE /nodes/{node}/qemu/{vmid}`), not the config path.
+ *   The old factory sent both reads and deletes to `.../config`.
+ */
 export const ProxmoxVmProvider = () =>
-  Provider.effect(ProxmoxVm, Effect.succeed(ProxmoxVm.Provider.of(handlers)));
+  Provider.effect(ProxmoxVm, Effect.succeed(ProxmoxVm.Provider.of(qemuHandlers)));
