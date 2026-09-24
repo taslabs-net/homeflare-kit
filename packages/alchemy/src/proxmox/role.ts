@@ -2,54 +2,74 @@
  * `Proxmox.Role` — a PVE role: one name, one set of privileges. The object every other resource
  * in this package stands on, because a role is what the provision credential actually holds.
  *
- * ★ THIS IS WHERE pool.ts's ⚠️ STOPS BEING A MEMORY. That file records, in prose, that the
- *   provision role lacked `Pool.Allocate`, that reconcile answered "Permission check failed", and
- *   that a human widened the role over SSH with `pveum role modify`. Prose cannot be planned
- *   against: it goes stale the first time somebody edits the role in the UI and tells nobody.
- *   Declared here, the same fact is a diff — the privileges the role is SUPPOSED to hold are read
- *   off the cluster on every plan, and a hand edit shows up as `1 to update` rather than as a 403
- *   six weeks later in the middle of something else.
- *
- * ⛔ THE INDEX AND THE ITEM DISAGREE ABOUT WHAT `privs` IS, AND MISSING THAT COSTS A DIFF THAT
- *   NEVER CONVERGES. `GET /access/roles` (the index) reports each role's privileges as a COMMA
- *   STRING. `GET /access/roles/{roleid}` — the path this resource reads — returns a privilege MAP
- *   instead, `{"VM.Allocate":1,"Sys.Audit":1,…}`, and its key order is a Perl hash's order, so it
- *   is not stable between two calls to the same endpoint. Compare the raw string, or the raw
- *   object, or the keys in the order they arrived, and every plan reports an update forever.
- *   `canonical` below is the whole answer: both sides become a sorted, de-duplicated set before
- *   anything is compared, and `attributes` STORES the sorted form so Alchemy's state does not
- *   churn either.
+ * ★ THIS IS WHERE pool.ts's ⚠️ STOPS BEING A MEMORY. Declared here, a hand edit shows up as
+ *   `1 to update` rather than as a 403 six weeks later in the middle of something else.
  *
  * ⚠️ A DECLARATION REPLACES THE PRIVILEGE SET; IT DOES NOT ADD TO IT. `PUT /access/roles/{roleid}`
- *   accepts an `append` flag and this resource deliberately never sends it — with append a role
- *   could only ever grow, so `matches` would report an update forever whenever props were a subset
- *   of live, which is the same perpetual diff by a different road. The consequence is the one that
- *   bites: anything a human added by hand is REVOKED on the next deploy unless it is in `privs`.
- *   Copy the live set out of `pveum role list` before declaring a role that already exists; do not
- *   type it from memory.
+ *   accepts an `append` flag and this resource deliberately never sends it (role-wire.ts) — with
+ *   append a role could only ever grow, the same perpetual diff by a different road. The
+ *   consequence: anything a human added by hand is REVOKED on the next deploy unless it is in
+ *   `privs`. Copy the live set out of `pveum role list` before declaring a role that already
+ *   exists; do not type it from memory.
  *
  * ⛔ A ROLE CAN LOCK ITS OWN PROVIDER OUT, AND NOTHING IN THIS PACKAGE CAN UNDO IT. Reconcile runs
  *   as the provision credential, and that credential holds a role. Declare THAT role without the
  *   privileges the provider needs — `Sys.Modify` on `/access` above all — and the write succeeds,
  *   after which every later plan reads 403 and the repair has to happen out of band as `root@pam`
- *   over SSH. It is a one-way door, which is why the privileges a reconcile needs are written
- *   down at the bottom of this comment rather than left to be rediscovered from an error message.
+ *   over SSH.
  *
  * ⚠️ PVE REFUSES TO EDIT ITS OWN BUILT-IN ROLES (`Administrator`, `NoAccess`, the `PVE*` set), and
- *   the item endpoint gives no sign of which those are — only the index carries the `special`
- *   flag. A declaration aimed at a built-in role therefore READS BACK CLEANLY and fails at write
- *   time, which reads like a broken provider rather than like a refusal. Declare roles you own.
+ *   the LIST read (below) DOES carry the `special` flag that marks them, unlike the item endpoint
+ *   this file used before the distilled migration — `role-wire.ts`'s `attributesOf` does not use
+ *   it, but a caller reading `list`'s own answer could. A declaration aimed at a built-in role
+ *   still reads back cleanly and fails at write time. Declare roles you own.
  *
  * ★ PRIVILEGES A RECONCILE NEEDS: `Sys.Audit` on `/access` to read and diff, `Sys.Modify` on
- *   `/access` to create, update or delete. Not `Permissions.Modify` — binding a role to a user is
- *   `/access/acl`, a different object, and nothing here writes it. An auditor-shaped credential
- *   can already PLAN this resource and cannot DEPLOY it, which is the honest failure: the plan is
- *   true and the deploy says exactly which privilege is missing.
+ *   `/access` to create, update or delete. Not `Permissions.Modify` — that is a different object.
+ *
+ * ★ READ VIA THE LIST, NOT THE ITEM — A DELIBERATE CHANGE FROM THE PRE-MIGRATION CODE, AND THE
+ *   REASON IS THE ITEM'S OWN GENERATED SCHEMA. `access.getAccessRole`'s response
+ *   (`GetAccessRoleResponse`) enumerates a FIXED list of ~47 known privilege field names
+ *   (`Sys_Modify`, `VM_Allocate`, …), each its own optional property — MEASURED in
+ *   `@distilled.cloud/proxmox`'s generated `access.ts`. A privilege this package's generator did
+ *   not know about would silently not appear as a field at all, and this file's old `privs: []`
+ *   reconstruction would drop it from state without a diff ever seeing the loss. The LIST read
+ *   (`access.listAccessRoles`) answers `privs` as the SAME plain comma string PVE's item read
+ *   also disagreed with the index about pre-migration — a shape with no fixed enumeration to fall
+ *   behind. `find` below (role-wire.ts) does the item-read's old job client-side.
+ * ⚠️ REASONED, NOT MEASURED, THAT THE LIST READ NEEDS NO MORE THAN `read`'s AUDITOR SHAPE. The
+ *   item read's own privilege check (`Sys.Audit` on `/access`) was measured; the list's was not
+ *   separately checked, but PVE's own convention is that an index read is never MORE restrictive
+ *   than its item. `readRole` stays at the default `read` on that basis, same as before.
+ *
+ * ★ MIGRATED OFF `client.ts`'s generic `pve()`/`pveHandlers` ONTO `@distilled.cloud/proxmox`'s
+ *   typed `access.listAccessRoles`/`createAccessRole`/`putAccessRole`/`deleteAccessRole`
+ *   (2026-09-24, decision 43's proxmox walk-down). `distilled-pve.ts`'s `runPve` replaces
+ *   `pve()`; the cries-wolf fix is wired the same way as acl.ts, group.ts and user.ts.
  */
 import { Resource } from 'alchemy';
+import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
+import * as access from '@distilled.cloud/proxmox/access';
 import * as Effect from 'effect/Effect';
-import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
+import { guardWrite } from './distilled-guard.ts';
+import {
+  ROLE_CREATE,
+  ROLE_UPDATE,
+  attributesOf,
+  createForm,
+  find,
+  matches,
+  updateForm,
+} from './role-wire.ts';
+import type { PveRequirements, WithTarget } from './resource-spec.ts';
+import { runPve } from './distilled-pve.ts';
+import {
+  UNREADABLE,
+  type Unreadable,
+  readOrUnreadable,
+  unreadableWarning,
+} from './unreadable-read.ts';
 
 export interface RoleProps extends WithTarget {
   /**
@@ -62,13 +82,11 @@ export interface RoleProps extends WithTarget {
   roleid: string;
   /**
    * The COMPLETE privilege set, e.g. `['VM.Allocate', 'VM.Audit', 'Sys.Audit']`. Order and
-   * duplicates do not matter — see the ⛔ in the header — but completeness does: this list is the
+   * duplicates do not matter — see the header — but completeness does: this list is the
    * role, not an addition to it.
    *
    * ⚠️ DECLARE AT LEAST ONE. A role with no privileges grants nothing and reads back as an empty
-   *   document, which is the one shape the factory cannot tell apart from an object that is not
-   *   there — reconcile would then refuse with its "the write returned no error but the object is
-   *   still absent" message, which is true of the read and misleading about the cause.
+   *   document, which reconcile cannot tell apart from an object that is not there.
    */
   privs: string[];
 }
@@ -89,75 +107,98 @@ export interface ProxmoxRole extends Resource<
 
 export const ProxmoxRole = Resource<ProxmoxRole>('Proxmox.Role');
 
-/**
- * The only shape two privilege sets may be compared in: sorted, de-duplicated, blanks dropped.
- *
- * ⚠️ THE TRIM AND THE EMPTY FILTER ARE NOT DECORATION. `'A,B,'.split(',')` yields a trailing `''`,
- *   and a hand-written list is quite likely to carry a stray space after a comma. Either one turns
- *   into a phantom member that no live answer can contain, so `matches` would be false on every
- *   plan and the deploy would rewrite the role to exactly what it already was.
- */
-const canonical = (privs: readonly string[]): string[] =>
-  [...new Set(privs.map((priv) => priv.trim()).filter((priv) => priv.length > 0))].sort();
+/** ★ Default `read` role — see the header's ⚠️ on the list read's privilege requirement. */
+const readRole = (props: RoleProps) =>
+  readOrUnreadable(runPve(props.target, 'read', false, access.listAccessRoles({}))).pipe(
+    Effect.map((rows) => {
+      if (rows === UNREADABLE) return UNREADABLE;
+      const row = find(rows, props.roleid);
+      return row === undefined ? undefined : attributesOf(row, props);
+    }),
+    Effect.orElseSucceed(() => undefined),
+  );
 
-/**
- * The privileges in a live answer, from EITHER shape PVE uses for them.
- *
- * ⚠️ THE MAP BRANCH IS THE ONE THAT RUNS HERE — the item endpoint answers `{"VM.Allocate":1,…}`,
- *   so the privilege names are the KEYS and the `1`s carry no information. The string branch
- *   exists because the index answers `{"privs":"VM.Allocate,Sys.Audit",…}` for that same role, and
- *   a reader that assumed the map shape for an index entry would compare the words `privs`,
- *   `roleid` and `special` against real privileges and report drift forever.
- *
- * ⚠️ A KEY WITH NO DOT IS NOT A PRIVILEGE. Every PVE privilege is `Category.Name` — VM.Allocate,
- *   Sys.Modify, Datastore.AllocateSpace, Pool.Audit — while the metadata PVE mixes into role
- *   answers (`special`, marking a built-in) is a bare word. Filtering on the dot keeps a flag from
- *   being diffed as though somebody had granted it.
- */
-const livePrivs = (live: Record<string, unknown>): string[] => {
-  const listed = live['privs'];
-  if (typeof listed === 'string') return canonical(listed.split(','));
-  return canonical(Object.keys(live).filter((key) => key.includes('.')));
-};
+/** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
+const dropUnreadable = (live: RoleAttributes | Unreadable | undefined) =>
+  live === UNREADABLE ? undefined : live;
 
-const handlers = pveHandlers<RoleProps, RoleAttributes>({
-  attributes: (live, props) => ({ privs: livePrivs(live), roleid: props.roleid }),
-  collection: () => 'access/roles',
-  /** ⚠️ PVE wants ONE comma string here, not a repeated field — `privs=A,B,C`. */
-  createForm: (props) => ({ privs: canonical(props.privs).join(','), roleid: props.roleid }),
-  /**
-   * ⛔ NORMALISED ON BOTH SIDES, even though `attributes` already arrives sorted. This is a
-   *   predicate, not a fast path: the cost of trusting one side's order is not a slow plan, it is
-   *   a plan that reports an update every single time and a deploy that writes the same role back
-   *   forever. Cheap insurance against the exact trap named in the header.
-   */
-  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
-  endpoint: { create: 'pve:POST /access/roles', update: 'pve:PUT /access/roles/{roleid}' },
-  matches: (attributes, props) =>
-    canonical(attributes.privs).join(',') === canonical(props.privs).join(','),
-  path: (props) => `access/roles/${props.roleid}`,
-  /**
-   * ⚠️ NO `append` FIELD, DELIBERATELY. Sending `append=1` would make every update additive, so a
-   *   privilege could be granted from here but never taken away — and a role that cannot narrow
-   *   is not a declaration. See the ⚠️ in the header for what that means for hand edits.
-   */
-  updateForm: (props) => ({ privs: canonical(props.privs).join(',') }),
-});
-
-/**
-* ⛔ AN EMPTY LIST, AND NOWHERE DOES IT MATTER MORE. `GET /access/roles` returns every
-*   role on the cluster, PVE's own built-ins included. Returning them would invite Alchemy
-*   to adopt `Administrator` — and therefore one day to narrow or delete it. Adoption is
-*   an explicit act, here as everywhere else in this package.
- 
- *
-* ⛔ DO NOT CARRY THE FACTORY'S REASSURANCE OVER TO THIS ONE. `destroy` there notes that
-*   PVE refuses to delete things still in use — a pool holding guests, a storage with
-*   volumes — and a role is NOT protected that way. Whoever is bound to the role loses
-*   those privileges the moment it goes, and the credential this provider runs with is
-*   bound through exactly such a binding. Checking who holds a role before removing it is
-*   an operator's job, and it is not done here on their behalf while they read a diff.
- 
- */
 export const ProxmoxRoleProvider = () =>
-  Provider.effect(ProxmoxRole, Effect.succeed(ProxmoxRole.Provider.of(handlers)));
+  Provider.effect(
+    ProxmoxRole,
+    Effect.succeed(
+      ProxmoxRole.Provider.of({
+        /**
+         * ⛔ AN EMPTY LIST, AND NOWHERE DOES IT MATTER MORE. `GET /access/roles` returns every
+         *   role on the cluster, PVE's own built-ins included. Adoption is an explicit act.
+         */
+        list: () => Effect.succeed([]),
+        read: Effect.fn(function* ({ olds }) {
+          return dropUnreadable(yield* readRole(olds));
+        }),
+        diff: Effect.fn(function* ({ news, output }) {
+          if (!isResolved(news)) return undefined;
+          yield* guardWrite(ROLE_CREATE, createForm(news), output === undefined);
+          yield* guardWrite(ROLE_UPDATE, updateForm(news), false);
+          if (output === undefined) return undefined;
+          const live = yield* readRole(news);
+          // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and force
+          //   `update` on a role that was plainly there — see unreadable-read.ts.
+          if (live === UNREADABLE) {
+            yield* unreadableWarning('Proxmox.Role', news.roleid);
+            return { action: 'noop' } as const;
+          }
+          if (live === undefined) {
+            yield* guardWrite(ROLE_CREATE, createForm(news), true);
+            return { action: 'update' } as const;
+          }
+          return matches(live, news)
+            ? ({ action: 'noop' } as const)
+            : ({ action: 'update' } as const);
+        }),
+        reconcile: Effect.fn(function* ({ news }) {
+          // ⚠️ `dropUnreadable`: reconcile only runs once `provision` already minted for the
+          //   write below, so `UNREADABLE` here is a narrow race, not the routine case `diff`
+          //   handles — and a wrongful create in that race fails loudly ("already exists")
+          //   rather than silently duplicating, group.ts's reconcile has the same note.
+          const before = dropUnreadable(yield* readRole(news));
+          yield* guardWrite(ROLE_CREATE, createForm(news), before === undefined);
+          yield* guardWrite(ROLE_UPDATE, updateForm(news), false);
+          if (before === undefined) {
+            yield* runPve(
+              news.target,
+              'provision',
+              true,
+              access.createAccessRole(createForm(news)),
+            );
+          } else if (!matches(before, news)) {
+            yield* runPve(news.target, 'provision', true, access.putAccessRole(updateForm(news)));
+          }
+          const after = dropUnreadable(yield* readRole(news));
+          if (after === undefined) {
+            return yield* Effect.die(
+              new Error(
+                `access/roles/${news.roleid}: the write returned no error but the role is ` +
+                  'still absent. PVE wraps every answer in {"data":...} and can report success ' +
+                  'on a call that did nothing -- read back rather than trusting the status code.',
+              ),
+            );
+          }
+          return after;
+        }),
+        /**
+         * ⛔ DO NOT CARRY resource.ts's DESTROY REASSURANCE OVER TO THIS ONE. PVE does not refuse
+         *   to delete a role still in use — whoever is bound to it loses those privileges the
+         *   moment it goes, and the credential THIS PROVIDER runs with is bound through exactly
+         *   such a binding. Checking who holds a role before removing it is an operator's job.
+         */
+        delete: Effect.fn(function* ({ olds }) {
+          yield* runPve(
+            olds.target,
+            'provision',
+            true,
+            access.deleteAccessRole({ roleid: olds.roleid }),
+          );
+        }),
+      }),
+    ),
+  );

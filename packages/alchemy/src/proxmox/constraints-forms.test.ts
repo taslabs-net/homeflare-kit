@@ -16,7 +16,6 @@
  *   there).
  */
 import { describe, expect, test } from 'bun:test';
-import { shape as apiTokenForm } from './api-token-form.ts';
 import { NETWORK_APPLY_ENDPOINT, SDN_APPLY_ENDPOINT } from './apply-endpoints.ts';
 import { constraintsFor, formViolations } from './constraint-guard.ts';
 import type { PveTarget } from './credentials.ts';
@@ -30,32 +29,13 @@ const TARGET: PveTarget = { members: ['pve.test:8006'], mount: 'pve-test', schem
 const onCreate = (key: string, form: Record<string, string | readonly string[]>) =>
   formViolations(key, form, true);
 
-describe('Proxmox.ApiToken plans clean against POST /access/users/{userid}/token/{tokenid}', () => {
-  /** ⚠️ `expire: 0` is "never", and PVE's `minimum: 0` accepts it — the bound the table carries. */
-  test('the estate-shaped token declaration has no violations', () => {
-    expect(
-      onCreate(
-        'pve:POST /access/users/{userid}/token/{tokenid}',
-        apiTokenForm({
-          comment: 'Declared by Alchemy',
-          expire: 0,
-          privsep: false,
-          target: TARGET,
-          tokenid: 'apply',
-          userid: 'iac@pve',
-        }),
-      ),
-    ).toEqual([]);
-  });
-
-  /** ⛔ `{userid}` AND `{tokenid}` ARE PATH SEGMENTS. A table that kept them would refuse every
-   *   create for a "missing" parameter that was never missing (codegen/emit.ts). */
-  test('neither path parameter is in the table', () => {
-    const table = constraintsFor('pve:POST /access/users/{userid}/token/{tokenid}');
-    expect(table['userid']).toBeUndefined();
-    expect(table['tokenid']).toBeUndefined();
-  });
-});
+// ⛔ Proxmox.ApiToken's own create-endpoint check was REMOVED HERE 2026-09-24, not merely
+//   updated: the distilled migration (api-token.ts) confirmed the create path was already
+//   unreachable (reconcile refuses before any POST — see that file's header) and stopped
+//   guarding a create form at all, so `'pve:POST /access/users/{userid}/token/{tokenid}'` is no
+//   longer named anywhere in this package's source. `codegen/constraints.ts` (its own `keysFromSource`)
+//   dropped the table for it on the next regeneration — there is nothing left here to test
+//   against, and keeping this block would fail with "no vendor constraint table" forever.
 
 describe('Proxmox.MetricServer plans clean against POST /cluster/metrics/server/{id}', () => {
   /**

@@ -47,7 +47,8 @@ import * as Cache from 'effect/Cache';
 import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
-import { type ApiTarget, type PveCredential, type PveRole, mint } from './credentials.ts';
+import { type ApiTarget, type PveCredential, type PveRole } from './credentials.ts';
+import { mint } from './mint.ts';
 
 /**
  * Re-mint once a lease is inside this much of its end, in seconds.

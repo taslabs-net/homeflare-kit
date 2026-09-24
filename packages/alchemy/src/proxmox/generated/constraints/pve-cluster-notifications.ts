@@ -6,7 +6,7 @@
  *   sha256 9def8f13611184ee, read on a PVE cluster node from
  *   /usr/share/pve-docs/api-viewer/apidoc.js
  *
- * 59 of this product's 258 POST/PUT endpoints are tabled across all areas: the ones
+ * 58 of this product's 258 POST/PUT endpoints are tabled across all areas: the ones
  * this package writes to, named in its own source. Every other vendor write endpoint is UNTABLED
  * and therefore unchecked at plan time.
  *

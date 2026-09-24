@@ -91,11 +91,14 @@ describe('every family that writes to Proxmox is wired to the vendor tables', ()
     expect(Object.keys(PROXMOX_CONSTRAINTS).filter((key) => !claimed.has(key))).toEqual([]);
   });
 
-  test('the tabled surface is 75 endpoints across both products', () => {
+  // ⛔ 74, NOT 75 — 2026-09-24: Proxmox.ApiToken's create was never reachable (reconcile refuses
+  //   it, see api-token.ts's header), and the distilled migration stopped naming its POST
+  //   endpoint at all rather than keeping a dead literal around. One fewer pve: key; pbs unchanged.
+  test('the tabled surface is 74 endpoints across both products', () => {
     const keys = Object.keys(PROXMOX_CONSTRAINTS);
-    expect(keys.length).toBe(75);
+    expect(keys.length).toBe(74);
     expect(keys.filter((key) => key.startsWith('pbs:')).length).toBe(16);
-    expect(keys.filter((key) => key.startsWith('pve:')).length).toBe(59);
+    expect(keys.filter((key) => key.startsWith('pve:')).length).toBe(58);
   });
 });
 

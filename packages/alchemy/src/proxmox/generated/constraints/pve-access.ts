@@ -6,7 +6,7 @@
  *   sha256 9def8f13611184ee, read on a PVE cluster node from
  *   /usr/share/pve-docs/api-viewer/apidoc.js
  *
- * 59 of this product's 258 POST/PUT endpoints are tabled across all areas: the ones
+ * 58 of this product's 258 POST/PUT endpoints are tabled across all areas: the ones
  * this package writes to, named in its own source. Every other vendor write endpoint is UNTABLED
  * and therefore unchecked at plan time.
  *
@@ -38,9 +38,6 @@ export const PVE_ACCESS_CONSTRAINTS: Readonly<Record<string, EndpointConstraints
     "lastname": {"maxLength":1024,"type":"string"},
     "password": {"maxLength":64,"minLength":8,"type":"string"},
     "userid": {"format":"pve-userid","maxLength":64,"required":true,"type":"string"},
-  },
-  "pve:POST /access/users/{userid}/token/{tokenid}": {
-    "expire": {"default":"same as user","minimum":0,"type":"integer"},
   },
   "pve:PUT /access/acl": {
     "groups": {"format":"pve-groupid-list","type":"string"},

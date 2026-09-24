@@ -61,6 +61,17 @@ const text = (key: string, value: string) => (value === '' ? {} : { [key]: value
 /** Every item GET the scripts and the providers make, keyed `access/…` without a leading slash. */
 export const apiView = (state: CliState): Record<string, unknown> => {
   const view: Record<string, unknown> = { 'access/acl': state.acl };
+  /**
+   * ★ THE LIST SHAPE, ADDED FOR role.ts's DISTILLED MIGRATION (2026-09-24). `Proxmox.Role` now
+   *   reads `GET /access/roles` (role.ts's header: the item endpoint's generated schema has a
+   *   fixed privilege enumeration this fixture must not rely on). The fake CLI's own `pvesh get
+   *   /access/roles/{id}` calls (provision-bootstrap.ts's script) still use the ITEM entries
+   *   below, so both stay populated from the same `state.roles`.
+   */
+  view['access/roles'] = Object.entries(state.roles).map(([roleid, privs]) => ({
+    privs: privs.join(','),
+    roleid,
+  }));
   for (const [id, privs] of Object.entries(state.roles)) {
     view[`access/roles/${id}`] = Object.fromEntries(privs.map((priv) => [priv, 1]));
   }

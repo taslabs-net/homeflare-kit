@@ -2,17 +2,15 @@
  * `Proxmox.ApiToken` — a PVE API token: the thing a service actually authenticates as.
  *
  * ⛔ THE SECRET EXISTS FOR ONE HTTP RESPONSE AND THEN NOWHERE. MEASURED from the cluster's own
- *   schema (`/usr/share/pve-docs/api-viewer/apidoc.js` on node-b, 2026-09-13): POST returns
- *   `["full-tokenid","info","value"]`; PUT returns `["comment","expire","full-tokenid","privsep",
- *   "value"]` with `value` present ONLY when `regenerate` was set; GET returns
- *   `["comment","expire","privsep"]` and never the secret. A live token agrees —
- *   `GET /access/users/metrics@pve/token/exporter` answers `{"expire":0,"privsep":0}`. PVE says
- *   it plainly on the POST: the value "needs to be stored as it cannot be retrieved afterwards".
+ *   schema: POST returns `["full-tokenid","info","value"]`; PUT returns `["comment","expire",
+ *   "full-tokenid","privsep","value"]` with `value` present ONLY when `regenerate` was set; GET
+ *   returns `["comment","expire","privsep"]` and never the secret. PVE says it plainly on the
+ *   POST: the value "needs to be stored as it cannot be retrieved afterwards".
  *
  * ⛔ SO A TOKEN THIS RESOURCE CREATES IS UNUSABLE, AND SAYING SO IS THE POINT OF THIS BLOCK. The
  *   secret may not become an attribute: Alchemy persists attributes UNENCRYPTED, and this estate's
- *   state store is a Postgres dumped nightly (the ⛔ in credentials.ts). So `reconcile` drops the
- *   value on the floor, and what lands is a live credential in `/etc/pve/user.cfg` whose secret
+ *   state store is a Postgres dumped nightly (the ⛔ in credentials.ts). So `reconcile` refuses
+ *   before any POST, and what would land is a live credential in `/etc/pve/user.cfg` whose secret
  *   nobody holds. No `regenerate` rescues it, because a regenerated value is discarded the same
  *   way. The only escape is an operator who captured the value out of band — which this provider
  *   gives them no way to do.
@@ -20,50 +18,49 @@
  *     whole of a token's policy, and declaring them is real work: it is how `expire` stops being
  *     whatever somebody typed in 2024. Mint NEW tokens where the secret can be caught — OpenBao's
  *     `proxmox-c1` mount, or a human at `pveum user token add`.
- *   ⛔ ★ CORRECTED 2026-09-23 — THIS PARAGRAPH PREVIOUSLY SAID "THE CREATE PATH IS LEFT REACHABLE
- *     RATHER THAN STUBBED… the honest arrangement is a create that works". THAT CONTRADICTED THE
- *     `reconcile` BELOW, WHICH REFUSES: `handlers.reconcile` calls `Effect.die` by name when `read`
- *     answers absent, before any POST — metadata-only per decision 9 (2026-09-23), exported on the
- *     barrel as an adopt-and-manage-only Resource. A create that silently did nothing WOULD be the
- *     lie resource.ts's ★ describes for a stubbed delete; refusing loudly, by name, with the two
- *     ways to get a usable token, is the honest arrangement instead — see the ★ further down and
- *     api-token-adopt.test.ts's absent-token row, which pins the refusal and zero writes.
  *
  * ⛔ THERE IS NO `regenerate` PROP, AND IT IS NOT AN OVERSIGHT. PVE's own description: "All users
  *   of the previous secret will lose access after this operation." A prop for it would revoke a
  *   live credential during a deploy whose plan said `update`, and hand back a replacement this
- *   provider is obliged to throw away — breakage with no recovery. Rotation belongs to the mount
- *   that owns the lease, or to a human who is watching.
+ *   provider is obliged to throw away — breakage with no recovery.
  *
  * ⚠️ THERE IS A SECOND WRITER TO THESE OBJECTS AND IT IS THE ONE THIS PROVIDER RUNS ON. OpenBao's
- *   `proxmox-c1` engine mints PVE tokens under `hf-read@pve` and `hf-provision@pve` — read from
- *   `<estate>/platform/secrets/vault/plugin-proxmox/proxmox/`: `privsep=0` (client.go), `expire` set
- *   to the lease deadline, and an id the plugin CHOOSES,
- *   `hf-<role>-<actor>-<entity6>-<stamp>-<nonce>` (tokenname.go). Revocation and WAL rollback look
- *   up that one exact id (wal.go); neither sweeps a prefix. So the two systems cannot collide on
- *   one object by accident — but they share the USER: `hf-read@pve` held three live leases when
- *   this was written, and `Proxmox.User` deleting that account takes every one of them with it.
- *   ⛔ DO NOT DECLARE A TOKEN UNDER A MINT USER. `expire` is what makes that dangerous rather than
- *     untidy: point this resource at a lease token with the wrong expire and a 300-second
- *     credential becomes a permanent one — and on `hf-provision@pve` that credential carries
- *     `Permissions.Modify` at `/`. docs/privileges.md records what those 27 privileges buy.
+ *   `proxmox-c1` engine mints PVE tokens under `hf-read@pve` and `hf-provision@pve` with an id it
+ *   CHOOSES (`hf-<role>-<actor>-<entity6>-<stamp>-<nonce>`), so the two systems cannot collide on
+ *   one object by accident — but they share the USER, and `Proxmox.User` deleting that account
+ *   takes every one of its tokens with it. ⛔ DO NOT DECLARE A TOKEN UNDER A MINT USER: `expire`
+ *   is what makes that dangerous — a 300-second lease token becomes a permanent one.
  *
  * ⚠️ PRIVILEGES, AND THE READ LANE CANNOT DO IT. MEASURED: all four methods on this path check
  *   `['or', ['userid-param','self'], ['userid-group', ['User.Modify']]]` — with no `Sys.Audit`
- *   alternative, unlike `GET /access/users/{userid}`, which has one. And
- *   `pvesh get /access/permissions --userid hf-read@pve --path /access/groups` answers the seven
- *   PVEAuditor audit privileges and no `User.Modify`, while `hf-provision@pve` has it. So the
- *   3600s read lease reaches at most its OWN account's tokens and is refused for every other
- *   userid — which `read` in resource.ts folds into "absent", so the plan says create and the POST
- *   then fails with "Token already exists". Hence `readRole: 'provision'` below, for the same
- *   reason storage.ts, sdn-zone.ts and sdn-vnet.ts set it, at the same cost: every plan mints a
- *   300s non-renewable provision lease just to read.
+ *   alternative — so the 3600s read lease reaches at most its OWN account's tokens and is refused
+ *   for every other userid. `readRole: 'provision'` below, for the same reason storage.ts,
+ *   sdn-zone.ts and sdn-vnet.ts set it, at the same cost: every plan mints a 300s non-renewable
+ *   provision lease just to read.
+ *
+ * ★ MIGRATED OFF `client.ts`'s generic `pve()`/`pveHandlers`/`pveOperations` ONTO
+ *   `@distilled.cloud/proxmox`'s typed `access.getAccessUserToken`/`putAccessUserToken`/
+ *   `deleteAccessUserToken` (2026-09-24, decision 43's proxmox walk-down, the last access-family
+ *   resource). There is no `createAccessUserToken` call anywhere in this file — the create branch
+ *   was already provably unreachable before the migration (`reconcile` dies on an absent read
+ *   before any create path runs), so nothing calls distilled's POST-shaped `updateAccessUserToken`
+ *   operation either; see api-token-form.ts for why the generator gave it that name.
  */
 import { Resource } from 'alchemy';
+import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
+import * as access from '@distilled.cloud/proxmox/access';
 import * as Effect from 'effect/Effect';
-import { apiTokenSpec } from './api-token-form.ts';
-import { type PveRequirements, type WithTarget, pveHandlers, pveOperations } from './resource.ts';
+import { API_TOKEN_UPDATE, attributesOf, matches, shape } from './api-token-form.ts';
+import { guardWrite } from './distilled-guard.ts';
+import type { PveRequirements, WithTarget } from './resource-spec.ts';
+import { runPve } from './distilled-pve.ts';
+import {
+  UNREADABLE,
+  type Unreadable,
+  readOrUnreadable,
+  unreadableWarning,
+} from './unreadable-read.ts';
 
 export interface ApiTokenProps extends WithTarget {
   /**
@@ -78,57 +75,36 @@ export interface ApiTokenProps extends WithTarget {
   /**
    * The token's own name, unique within the account. Identity.
    *
-   * ⚠️ PVE HAS NO RENAME, AND HERE THAT COSTS MORE THAN IT DOES FOR A USER. Editing this prop (or
-   *   `userid`) points `path` at a DIFFERENT token, which reads as absent and is then created —
-   *   leaving the old token LIVE, with its secret still working, invisible to the plan, while the
-   *   new one is the unusable kind described at the top. Rename by declaring a delete and a
-   *   create, the way user.ts says for an account.
-   *   ⛔ `diff` IS NOT OVERRIDDEN TO SAY `replace` THE WAY acl.ts DOES, AND THE DIFFERENCE IS THE
-   *     OBJECT. There, replace removes a grant that can be rebuilt from its own tuple; here it
-   *     would DELETE a live token — destroying an irrecoverable secret, and everything using it —
-   *     to tidy up a name. Leaving the old token standing is the lesser harm, and saying so here
-   *     is what keeps it from looking like an omission.
-   * ⚠️ PATTERN `[A-Za-z][A-Za-z0-9.\-_]+`: a letter first, two characters minimum. The schema
-   *   declares no maxLength; the OpenBao plugin assumes a conservative 64 rather than finding the
-   *   real limit in production, and so should anything else.
+   * ⚠️ PVE HAS NO RENAME. Editing this prop (or `userid`) points `path` at a DIFFERENT token,
+   *   which reads as absent and is then created — leaving the old token LIVE, invisible to the
+   *   plan, while the new one is the unusable kind described at the top. Rename by declaring a
+   *   delete and a create.
+   *   ⛔ `diff` IS NOT OVERRIDDEN TO SAY `replace` THE WAY acl.ts DOES: there, replace removes a
+   *     grant that can be rebuilt from its own tuple; here it would DELETE a live token —
+   *     destroying an irrecoverable secret — to tidy up a name. Leaving the old token standing is
+   *     the lesser harm.
+   * ⚠️ PATTERN `[A-Za-z][A-Za-z0-9.\-_]+`: a letter first, two characters minimum.
    */
   tokenid: string;
-  /**
-   * Free text in `pveum user token list` and the UI. Empty is how it is cleared — see `shape`.
-   * ⚠️ ANY CHARACTER IS SAFE HERE, MEASURED, and it was worth checking: `user.cfg` is a
-   *   colon-delimited line, so a comment holding a colon or a newline is the obvious place for a
-   *   round-trip to lose a character and diff forever. PVE escapes it — `encode_text` turns
-   *   `a:b\nc%d` into `a%3Ab%0Ac%25d` and `decode_text` gives it back byte for byte.
-   */
+  /** Free text in `pveum user token list` and the UI. Empty is how it is cleared — see `shape`. */
   comment?: string;
   /**
    * Seconds since the epoch, or 0 for "never expires".
    *
    * ⛔ REQUIRED, AND THE SCHEMA WILL TELL YOU IT NEED NOT BE. It declares the default "same as
    *   user", and the code never implements it: `generate_token` writes `expire` only when the
-   *   parameter is defined, `user.cfg` stores a token as `token:<id>:<expire>:<privsep>:<comment>:`
-   *   with no absent state, and the parser does `$expire = 0 if !$expire` (AccessControl.pm:1624).
-   *   MEASURED end to end: every token on this cluster that was created without an expire reads
-   *   back `"expire":0`. So "same as user" is documentation of an intention, not behaviour.
-   * ⛔ WHICH IS WHY IT IS NOT OPTIONAL-DEFAULTING-TO-0. That spelling reads identically and is far
-   *   worse: an omitted `expire` would then quietly WRITE 0 over a live deadline, turning an
-   *   expiring credential into a permanent one, and the plan would call it an update. Requiring
-   *   the field makes "this token never expires" a sentence somebody had to type.
+   *   parameter is defined, and the parser does `$expire = 0 if !$expire`. Required, so "this
+   *   token never expires" is a sentence somebody had to type, rather than an omission that would
+   *   quietly WRITE 0 over a live deadline.
    */
   expire: number;
   /**
    * True keeps the token's privileges separate from its owner's — it gets NOTHING until an ACL
    *   names `fullTokenid`. False gives it the owner's privileges entire.
    *
-   * ⛔ REQUIRED FOR THE SAME REASON AS `expire`, AND THE BLAST RADIUS IS LARGER. PVE's API default
-   *   is 1, every token on this cluster is 0 (measured), and `user.cfg` materialises it either way
-   *   — `$privsep = $privsep ? 1 : 0` (AccessControl.pm:1622), so there is no unset state to
-   *   preserve. Were this optional, adopting a live token without mentioning `privsep` would plan
-   *   an update to 1 and STRIP a working credential of every privilege it has, silently: PVE
-   *   returns 401/403 to the service, nothing errors here, and `iac@pve!apply` simply stops
-   *   working. Required, so adopting a token is a sentence that states what it is.
-   * ⚠️ AND `false` IS NOT A SHRUG. It is a token with its owner's whole privilege set; under a
-   *   provisioning account that is the account's full authority with a separate secret.
+   * ⛔ REQUIRED FOR THE SAME REASON AS `expire`, AND THE BLAST RADIUS IS LARGER. Were this
+   *   optional, adopting a live token without mentioning `privsep` would plan an update to 1 and
+   *   STRIP a working credential of every privilege it has, silently.
    */
   privsep: boolean;
 }
@@ -143,9 +119,7 @@ export interface ApiTokenAttributes {
   privsep: boolean;
   /**
    * ⛔ THERE IS NO `value` FIELD HERE AND THERE NEVER MAY BE. Adding one would write a working PVE
-   *   credential, in clear, into the state Postgres and into every nightly dump of it — the exact
-   *   leak metric-server.ts types its `token` as `never` to prevent. The read cannot supply one
-   *   anyway; only create and regenerate can, and both of those responses are dropped.
+   *   credential, in clear, into the state Postgres and into every nightly dump of it.
    */
 }
 
@@ -159,69 +133,109 @@ export interface ProxmoxApiToken extends Resource<
 
 /**
  * ★ `retain` BY DEFAULT, AND THIS IS THE PLAINEST CASE FOR IT IN THE PACKAGE. A token's contents
- *   are one irreplaceable secret: delete it and the value is gone, a replacement is a DIFFERENT
- *   value, and every holder loses access the instant `cfs_write_file` returns — with no error
- *   raised anywhere near them. The live cluster's tokens are `metrics@pve!exporter` (the PVE
- *   exporter feeding VictoriaMetrics), `agent@pve!executor`, `iac@pve!apply`, `iac@pve!ro`,
- *   `app@pve!app` and `mint@pve!engine` — the last being the parent credential the
- *   OpenBao mount itself authenticates with, so orphaning that one would stop every plan in this
- *   package, this resource included. `delete` is FULLY IMPLEMENTED (DELETE is a real method on
- *   this path, measured) and runs the moment a caller opts in with `.pipe(RemovalPolicy.destroy())`.
- *   See the ★ in resource.ts, which explains the convention once.
+ *   are one irreplaceable secret: delete it and the value is gone, and every holder loses access
+ *   the instant `cfs_write_file` returns — with no error raised anywhere near them. `delete` is
+ *   FULLY IMPLEMENTED and runs the moment a caller opts in with `.pipe(RemovalPolicy.destroy())`.
  */
 export const ProxmoxApiToken = Resource<ProxmoxApiToken>('Proxmox.ApiToken', {
   defaultRemovalPolicy: 'retain',
 });
 
-const ops = pveOperations(apiTokenSpec);
+/** ⛔ `readRole: 'provision'` — see the header's ⚠️ on privileges. */
+const readToken = (props: ApiTokenProps) =>
+  readOrUnreadable(runPve(props.target, 'provision', false, access.getAccessUserToken(props))).pipe(
+    Effect.map((live) => (live === UNREADABLE ? UNREADABLE : attributesOf(live, props))),
+    Effect.orElseSucceed(() => undefined),
+  );
+
+/** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
+const dropUnreadable = (live: ApiTokenAttributes | Unreadable | undefined) =>
+  live === UNREADABLE ? undefined : live;
 
 /**
- * ⛔ THIS FAMILY ADOPTS AND MANAGES TOKENS; IT REFUSES TO MINT ONE, AND THAT IS A DECISION RATHER
- *   THAN A GAP. The secret exists ONLY in the create response — MEASURED from the schema: `POST`
- *   returns `["full-tokenid","info","value"]`, where `value` is "API token value used for
- *   authentication", while `GET` returns `["comment","expire","privsep"]` and never the secret.
- *   It may not become an attribute, because Alchemy writes attributes to its state store
- *   UNENCRYPTED into a Postgres that is dumped nightly.
- *
- *   So a token created here would be A LIVE CREDENTIAL ON THE CLUSTER THAT NOBODY HOLDS: valid,
- *   privileged, unusable, and indistinguishable from one somebody meant to keep. Regenerating does
- *   not rescue it — a `regenerate` PUT returns the new value down the same discarded path. So
- *   `reconcile` refuses by name and says what to do instead.
- *
- * ★ EVERYTHING ELSE STILL WORKS, AND IT IS THE HALF WORTH HAVING. Adopting an existing token and
- *   converging its `comment`, `expire` and `privsep` are real operations: C1 carries SEVEN tokens
- *   with `expire=0` and `privsep=0` made by clicks nobody recorded. Declaring those freezes the
- *   set, and an eighth appearing shows up as drift.
- *
- * ⚠️ IF DECLARATIVE MINTING IS EVER WANTED, the missing piece is a secret SINK — write the value
- *   straight into an OpenBao kv path and return only its address. That is a different resource
- *   with a different contract; it must not be bolted onto this one.
- */
-const handlers = {
-  ...pveHandlers(apiTokenSpec),
-  reconcile: Effect.fn(function* ({ news }: { news: ApiTokenProps }) {
-    const live = yield* ops.read(news);
-    if (live === undefined) {
-      return yield* Effect.die(
-        new Error(
-          `${news.userid}!${news.tokenid}: this resource does not create API tokens. PVE returns ` +
-            'the secret only in the create response and it cannot be stored, so a token made here ' +
-            'would be a live credential nobody holds. Create it with `pveum user token add` and ' +
-            'capture the value, or mint a short-lived one from the OpenBao proxmox mount ' +
-            '(`bao read proxmox-c1/creds/<role>`) -- then declare it here to manage it.',
-        ),
-      );
-    }
-    return yield* ops.reconcile(news);
-  }),
-};
-
-/**
- * ⛔ `list` IS EMPTY, AND FOR THIS FAMILY THAT MATTERS MORE THAN THE GENERIC ARGUMENT IN
- *   resource.ts. A token index handed to Alchemy would offer up `mint@pve!engine` and every
- *   live OpenBao lease for adoption — and adoption is what makes a later plan willing to delete.
- *   The mount's leases in particular appear and vanish on their own; anything that adopted one
- *   would report drift against a credential that was never its to hold.
+ * ⛔ THIS FAMILY ADOPTS AND MANAGES TOKENS; IT REFUSES TO MINT ONE — see the header. `reconcile`
+ *   refuses by name before any write when the read finds nothing, so the create path this
+ *   family's spec would otherwise need never runs, and no `createAccessUserToken`-shaped call
+ *   exists in this file at all.
  */
 export const ProxmoxApiTokenProvider = () =>
-  Provider.effect(ProxmoxApiToken, Effect.succeed(ProxmoxApiToken.Provider.of(handlers)));
+  Provider.effect(
+    ProxmoxApiToken,
+    Effect.succeed(
+      ProxmoxApiToken.Provider.of({
+        /**
+         * ⛔ `list` IS EMPTY, AND FOR THIS FAMILY THAT MATTERS MORE THAN THE GENERIC ARGUMENT.
+         *   A token index handed to Alchemy would offer up `mint@pve!engine` and every live
+         *   OpenBao lease for adoption — and adoption is what makes a later plan willing to delete.
+         */
+        list: () => Effect.succeed([]),
+        read: Effect.fn(function* ({ olds }) {
+          return dropUnreadable(yield* readToken(olds));
+        }),
+        diff: Effect.fn(function* ({ news, output }) {
+          if (!isResolved(news)) return undefined;
+          yield* guardWrite(API_TOKEN_UPDATE, shape(news), false);
+          if (output === undefined) return undefined;
+          const live = yield* readToken(news);
+          // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and force
+          //   `update` on a token that was plainly there — see unreadable-read.ts.
+          if (live === UNREADABLE) {
+            yield* unreadableWarning('Proxmox.ApiToken', `${news.userid}!${news.tokenid}`);
+            return { action: 'noop' } as const;
+          }
+          // ⚠️ NO GUARDED-CREATE BRANCH HERE, UNLIKE EVERY OTHER FAMILY IN THIS SUB-AREA. There
+          //   is nothing to guard a create form for — `reconcile` refuses instead, and `diff`
+          //   answering `update` for an absent token is what routes a real deploy into that
+          //   refusal rather than silently reporting `noop` over a token that never landed.
+          return live !== undefined && matches(live, news)
+            ? ({ action: 'noop' } as const)
+            : ({ action: 'update' } as const);
+        }),
+        reconcile: Effect.fn(function* ({ news }) {
+          // ⚠️ `dropUnreadable`: reconcile only runs once `provision` already minted for the
+          //   read that fed `diff`'s `update` verdict, so `UNREADABLE` here is a narrow race —
+          //   but UNLIKE group/role/user, the message below assumes genuine absence and would
+          //   misname a transient credential refusal as "this resource does not create tokens".
+          //   Rare (the SAME role must mint twice, once for diff/once for reconcile, and only the
+          //   second is denied) and not silently wrong — the operator still sees a die() and goes
+          //   looking — but named here rather than left for the next reader to assume away.
+          const before = dropUnreadable(yield* readToken(news));
+          if (before === undefined) {
+            return yield* Effect.die(
+              new Error(
+                `${news.userid}!${news.tokenid}: this resource does not create API tokens. PVE ` +
+                  'returns the secret only in the create response and it cannot be stored, so a ' +
+                  'token made here would be a live credential nobody holds. Create it with ' +
+                  '`pveum user token add` and capture the value, or mint a short-lived one from ' +
+                  'the OpenBao proxmox mount (`bao read proxmox-c1/creds/<role>`) -- then declare ' +
+                  'it here to manage it.',
+              ),
+            );
+          }
+          yield* guardWrite(API_TOKEN_UPDATE, shape(news), false);
+          if (!matches(before, news)) {
+            yield* runPve(news.target, 'provision', true, access.putAccessUserToken(shape(news)));
+          }
+          const after = dropUnreadable(yield* readToken(news));
+          if (after === undefined) {
+            return yield* Effect.die(
+              new Error(
+                `${news.userid}!${news.tokenid}: the write returned no error but the token is ` +
+                  'still absent. PVE wraps every answer in {"data":...} and can report success ' +
+                  'on a call that did nothing -- read back rather than trusting the status code.',
+              ),
+            );
+          }
+          return after;
+        }),
+        delete: Effect.fn(function* ({ olds }) {
+          yield* runPve(
+            olds.target,
+            'provision',
+            true,
+            access.deleteAccessUserToken({ tokenid: olds.tokenid, userid: olds.userid }),
+          );
+        }),
+      }),
+    ),
+  );
