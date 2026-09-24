@@ -85,7 +85,14 @@ export const commandMatches = (
     attributes.description === fixed.description &&
     attributes.nsfw === fixed.nsfw &&
     attributes.type === fixed.type &&
-    deepEqual(attributes.options, props.options ?? []) &&
+    // ⛔ GATED LIKE EVERY OTHER OPTIONAL FIELD BELOW — an undeclared `options` means "not mine",
+    //   in both directions (this file's own header rule). An earlier version of this line
+    //   compared unconditionally against `props.options ?? []`: a declaration with no `options`
+    //   at all would then see live options as drift, `commandBody` (which already omits
+    //   `options` when undeclared) would upsert without it, and Discord's real full-replace
+    //   create would silently wipe a live command's arguments on the first non-dry-run deploy.
+    //   Caught in review before merge, not measured live.
+    (props.options === undefined || deepEqual(attributes.options, props.options)) &&
     (props.defaultMemberPermissions === undefined ||
       attributes.defaultMemberPermissions === props.defaultMemberPermissions) &&
     (props.dmPermission === undefined || attributes.dmPermission === props.dmPermission) &&

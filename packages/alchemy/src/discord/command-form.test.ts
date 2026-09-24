@@ -99,6 +99,20 @@ describe('commandMatches', () => {
     expect(commandMatches(live, { name: 'ping' })).toBe(true);
   });
 
+  /**
+   * 🔴 THE CASE THAT SHIPPED WRONG ONCE (caught in review, before merge — not measured live).
+   *   `options` must be gated exactly like every other optional field above: a declaration with
+   *   no `options` at all reports no drift against a live command that has some, because
+   *   `commandBody` already omits `options` when undeclared — comparing unconditionally would
+   *   report drift no write could ever fix (an infinite "update"), and worse, the first real
+   *   (non-dry-run) deploy would send a body with no `options` key, and Discord's real
+   *   full-replace create would wipe the live command's arguments.
+   */
+  test('undeclared options against a live command that HAS options is not drift', () => {
+    const live = attrsOf({ options: [{ name: 'loud', type: 5 }] });
+    expect(commandMatches(live, { name: 'ping' })).toBe(true);
+  });
+
   test('a declared optional field that disagrees with live is drift', () => {
     const live = attrsOf({ defaultMemberPermissions: '8' });
     expect(commandMatches(live, { defaultMemberPermissions: '16', name: 'ping' })).toBe(false);
