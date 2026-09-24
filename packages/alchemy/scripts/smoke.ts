@@ -29,8 +29,10 @@
  *   `dependencies`-not-peer way, aliased onto `@homeflare/distilled-litellm`.
  *   `/grafana` (2026-09-24, new family, not a migration) imports `@distilled.cloud/grafana`
  *   the same way `/forgejo` does: a plain peer, published upstream, named below and in the
- *   README exactly as PR 222 declared it.
- *   ⛔ None of them failed at INSTALL. All five threw at import, which is why a test that
+ *   README exactly as PR 222 declared it. `/discord` and `/google-workspace` (2026-09-24, new
+ *   families, not migrations) import `@distilled.cloud/discord` and
+ *   `@distilled.cloud/google-workspace` the same plain-peer way.
+ *   ⛔ None of them failed at INSTALL. All seven threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -135,6 +137,7 @@ import { isLiteLLMPassThroughEndpoint, litellmProviders } from '@homeflare/alche
 import { GOOGLE_ACCESS_TOKEN_ENV, GoogleWorkspaceGroup, describeKeyRef, googleWorkspaceProviders } from '@homeflare/alchemy/google-workspace';
 import { GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders } from '@homeflare/alchemy/grafana';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
+import { DiscordApplicationCommand, DiscordGuildApplicationCommand, isDiscordApplicationCommand, isDiscordGuildApplicationCommand, providers as discordProviders } from '@homeflare/alchemy/discord';
 
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
@@ -149,8 +152,25 @@ for (const [name, value] of Object.entries({
   litellmProviders,
   GoogleWorkspaceGroup, describeKeyRef, googleWorkspaceProviders, GOOGLE_ACCESS_TOKEN_ENV,
   GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders,
+  DiscordApplicationCommand, DiscordGuildApplicationCommand, discordProviders,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
+}
+
+// ★ THE DISCORD GUARDS THROUGH THE PUBLISHED FILE: pure Type-field checks, no Discord API
+//   reached — an export map that resolved /discord to a file missing either guard would pass
+//   the import above and refuse nothing here.
+if (!isDiscordApplicationCommand({ Type: 'Discord.ApplicationCommand' }) || isDiscordApplicationCommand({})) {
+  throw new Error('isDiscordApplicationCommand from dist lost its resource type guard');
+}
+if (
+  !isDiscordGuildApplicationCommand({ Type: 'Discord.GuildApplicationCommand' }) ||
+  isDiscordGuildApplicationCommand({})
+) {
+  throw new Error('isDiscordGuildApplicationCommand from dist lost its resource type guard');
+}
+if (typeof discordProviders !== 'function') {
+  throw new Error('discord providers() from dist is not callable');
 }
 
 // ★ Render once through the PUBLISHED file, so a launchd subpath that imports but cannot run
@@ -318,7 +338,7 @@ if (nameByteRefusal('a'.repeat(64))?.byteLength !== 64 || nameByteRefusal('a'.re
   throw new Error('postgres subpath from dist lost the NAMEDATALEN byte-length refusal');
 }
 
-console.log('all sixteen subpaths import and resolve');
+console.log('all eighteen subpaths import and resolve');
 `,
   );
 

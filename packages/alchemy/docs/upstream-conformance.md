@@ -224,8 +224,24 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
     the house's glyph rationale into `//` comments.
 13. **Tests never use `alchemy/Test/Bun`.** Every lifecycle is proven against loopback
     fakes (S28, H12). Live suites need a place to run, and that is a maintainer decision.
+14. **`discord/*` is new (2026-09-24, task-authorized, kit PR TBD) and built directly on
+    `@distilled.cloud/discord` — no hand-rolled `client.ts` ever existed to retire.**
+    `Discord.ApplicationCommand` and `Discord.GuildApplicationCommand` call the SDK's
+    typed operations, `catchTag`'d through the shared `DiscordOpError` union (S21), with no
+    status sniffing anywhere in `resource.ts`. It follows upstream's `Snippet.ts` reference
+    exactly for a marker-less API (S7, S8): a cold `read` returns `Unowned(attrs)`, and both
+    convenience constructors pipe `adopt(true)` (H5) — a stricter posture than `netbox/*`'s
+    documented H1 gap, not a repeat of it. Rate-limit handling is the SDK's own default
+    `Retry` policy (bounded: `Schedule.recurs(8)`, S26) — this family adds nothing on top.
+    Full detail, the live Halibut census and its ownership-handover sequence, and every SDK
+    gap: [`discord.md`](./discord.md). ⛔ **Diverges on S24/S25 the same way every distilled
+    family in this ledger does:** credentials are read at call time through the SDK's own
+    `CredentialsFromEnv`, not a house `alchemy/Auth` provider — unchanged from `netbox/*`
+    and `litellm/*`'s entries above. **Gap, not yet fixed:** no vendor constraint table
+    (unlike NetBox/Paperless); `options` passed through opaquely rather than modeled from
+    the schema (`docs/discord.md#sdk-gaps`).
 
-14. **`grafana/*` (added 2026-09-24) ships only `Datasource` — a real SDK gap, not scope-trimming.**
+15. **`grafana/*` (added 2026-09-24) ships only `Datasource` — a real SDK gap, not scope-trimming.**
     Measured against the published `@distilled.cloud/grafana@1.0.0-rc.12` tarball's
     `lib/services/grafana.d.ts` (4,938 lines): the package has no create/read/update/delete
     operations for folders (only `updateFolderPermissions` exists), plain dashboards (only

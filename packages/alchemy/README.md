@@ -249,6 +249,28 @@ endpoint lives in ONE `general_settings` field (a whole-list read-modify-write),
 declared in `config.yaml` is refused rather than silently overridden, and a literal secret in a
 forwarded header is refused at plan: [docs/litellm.md](./docs/litellm.md).
 
+## Discord — `@homeflare/alchemy/discord`
+
+`Discord.ApplicationCommand` (global) and `Discord.GuildApplicationCommand` (guild-scoped)
+declare a slash/user/message command, generated from Discord API v10 via
+`@distilled.cloud/discord`. `reconcile` is one upsert call — Discord's own create endpoint
+overwrites a command with the same name. ⛔ `read` answers `Unowned` on every match (never a
+silent adopt — `adopt(true)` is on by default on both constructors), and declaring
+`Discord.GuildApplicationCommand` against a guild `hf-discord-halibut.service` still
+self-registers into fights the bot, not replaces it: [docs/discord.md](./docs/discord.md).
+
+```ts
+import { applicationCommand, guildApplicationCommand, providers } from '@homeflare/alchemy/discord';
+
+export const help =
+  yield *
+  applicationCommand('help', {
+    applicationId: '123456789012345678',
+    name: 'help',
+    description: 'Show available commands',
+  });
+```
+
 ## Google Workspace — `@homeflare/alchemy/google-workspace`
 
 `Group`, `GroupMember`, `DomainAlias` and `OrgUnit` over the Admin SDK Directory API, generated
