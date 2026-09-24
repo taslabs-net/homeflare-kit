@@ -73,6 +73,7 @@ const PACKAGES: readonly string[] = await Array.fromAsync(
  */
 const EXPLICIT_EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
   alchemy: [
+    '@distilled.cloud/argocd',
     '@distilled.cloud/cloudflare',
     '@distilled.cloud/discord',
     '@distilled.cloud/forgejo',

@@ -114,17 +114,18 @@ The files currently on the wrong side of the line are listed in
 - **And in its changeset.** A provider change names the vendor version it was walked
   against. A pin move names every link, old and new.
 
-| family              | vendor version walked against          | recorded in                       |
-| ------------------- | -------------------------------------- | --------------------------------- |
-| `proxmox` (PVE)     | pve-manager 9.2.11                     | `codegen/manifest.json` + headers |
-| `proxmox` (PBS)     | proxmox-backup-server 4.2.6-1          | `codegen/manifest.json` + headers |
-| `netbox`            | NetBox 4.7.0 OpenAPI                   | `codegen/manifest.json` + headers |
-| `cloudflare`        | distilled 1.0.0-rc.12 (API v4)         | `package.json` pins only          |
-| `openbao`           | OpenBao 2.6.2                          | source comments only ⚠️           |
-| `caddy`             | Caddy 2.11.4                           | source comments only ⚠️           |
-| `forgejo`           | Forgejo 16.0.3                         | source comments only ⚠️           |
-| `talos`             | Talos v1.13 docs (never measured live) | source comments only ⚠️           |
-| `launchd` / `linux` | macOS 27 / systemd 257 / Podman 5.4.2  | source comments only ⚠️           |
+| family              | vendor version walked against             | recorded in                       |
+| ------------------- | ----------------------------------------- | --------------------------------- |
+| `proxmox` (PVE)     | pve-manager 9.2.11                        | `codegen/manifest.json` + headers |
+| `proxmox` (PBS)     | proxmox-backup-server 4.2.6-1             | `codegen/manifest.json` + headers |
+| `netbox`            | NetBox 4.7.0 OpenAPI                      | `codegen/manifest.json` + headers |
+| `cloudflare`        | distilled 1.0.0-rc.12 (API v4)            | `package.json` pins only          |
+| `openbao`           | OpenBao 2.6.2                             | source comments only ⚠️           |
+| `caddy`             | Caddy 2.11.4                              | source comments only ⚠️           |
+| `forgejo`           | Forgejo 16.0.3                            | source comments only ⚠️           |
+| `argocd`            | distilled 1.0.0-rc.12 (not measured live) | `package.json` pins only          |
+| `talos`             | Talos v1.13 docs (never measured live)    | source comments only ⚠️           |
+| `launchd` / `linux` | macOS 27 / systemd 257 / Podman 5.4.2     | source comments only ⚠️           |
 
 ⚠️ These rows record a version only in prose, so no test catches a drift. `schemas/manifest.json`
 also repeats the PVE, PBS and UniFi entries, which means there are two manifests for one

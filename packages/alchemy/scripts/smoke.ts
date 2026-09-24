@@ -35,6 +35,7 @@
  *   resolved automatically from the packed tarball and named in neither place below. `/discord`
  *   and `/google-workspace` (2026-09-24, new families, not migrations) import
  *   `@distilled.cloud/discord` and `@distilled.cloud/google-workspace` the same plain-peer way.
+ *   `/argocd` (2026-09-24, new family) imports `@distilled.cloud/argocd` the same plain-peer way.
  *   ⛔ None of them failed at INSTALL. All seven threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
@@ -111,6 +112,7 @@ try {
       'mime@4.1.0',
       '@distilled.cloud/cloudflare@1.0.0-rc.12',
       '@distilled.cloud/forgejo@1.0.0-rc.12',
+      '@distilled.cloud/argocd@1.0.0-rc.12',
       '@distilled.cloud/discord@1.0.0-rc.12',
       '@distilled.cloud/google-workspace@1.0.0-rc.12',
       '@effect/sql-pg@4.0.0-rc.115',
@@ -137,6 +139,7 @@ import { ReleaseBinary, VICTORIA_RELEASES, catalogBinary, identifyBinary, releas
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 import { isLiteLLMPassThroughEndpoint, litellmProviders } from '@homeflare/alchemy/litellm';
 import { GOOGLE_ACCESS_TOKEN_ENV, GoogleWorkspaceGroup, describeKeyRef, googleWorkspaceProviders } from '@homeflare/alchemy/google-workspace';
+import { ArgoCDApplication, ArgoCDSecretRefUnsetError, argocdProviders, isArgoCDApplication } from '@homeflare/alchemy/argocd';
 import { GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders } from '@homeflare/alchemy/grafana';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 import { DiscordApplicationCommand, DiscordGuildApplicationCommand, isDiscordApplicationCommand, isDiscordGuildApplicationCommand, providers as discordProviders } from '@homeflare/alchemy/discord';
@@ -154,6 +157,7 @@ for (const [name, value] of Object.entries({
   litellmProviders,
   GoogleWorkspaceGroup, describeKeyRef, googleWorkspaceProviders, GOOGLE_ACCESS_TOKEN_ENV,
   GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders,
+  ArgoCDApplication, ArgoCDSecretRefUnsetError, argocdProviders, isArgoCDApplication,
   DiscordApplicationCommand, DiscordGuildApplicationCommand, discordProviders,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
@@ -331,6 +335,20 @@ if (new GrafanaSecretRefUnsetError({ message: 'smoke' }).message !== 'smoke') {
 if (typeof grafanaProviders !== 'function') {
   throw new Error('grafanaProviders from dist is not callable');
 }
+// ★ THE ARGOCD SUBPATH THROUGH THE PUBLISHED FILE. Pure checks only — no Argo CD
+//   instance is reached: the resource type guard, the typed secret-ref refusal, and that
+//   the provider factory (built on @distilled.cloud/argocd's typed operations, per-instance
+//   credentials composed with Layer.provide) is still callable from dist.
+if (!isArgoCDApplication({ Type: 'ArgoCD.Application' }) || isArgoCDApplication({})) {
+  throw new Error('isArgoCDApplication from dist lost its resource type guard');
+}
+if (ArgoCDApplication === undefined) throw new Error('ArgoCD.Application from dist is undefined');
+if (new ArgoCDSecretRefUnsetError({ message: 'smoke' }).message !== 'smoke') {
+  throw new Error('ArgoCDSecretRefUnsetError from dist did not construct');
+}
+if (typeof argocdProviders !== 'function') {
+  throw new Error('argocdProviders from dist is not callable');
+}
 // ★ THE POSTGRES SUBPATH THROUGH THE PUBLISHED FILE: a pure name-length refusal and the
 //   identifier quoter, so an export map pointing at a missing file fails here, not in a stack.
 if (!isPostgresDatabase(PostgresDatabase) || quoteIdent('a"b') !== '"a""b"') {
@@ -340,7 +358,7 @@ if (nameByteRefusal('a'.repeat(64))?.byteLength !== 64 || nameByteRefusal('a'.re
   throw new Error('postgres subpath from dist lost the NAMEDATALEN byte-length refusal');
 }
 
-console.log('all eighteen subpaths import and resolve');
+console.log('all nineteen subpaths import and resolve');
 `,
   );
 

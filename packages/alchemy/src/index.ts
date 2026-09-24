@@ -5,6 +5,7 @@
  *   client; a root barrel would pull Proxmox into a stack that only wanted Forgejo.
  *
  *     import { R2BucketLock } from '@homeflare/alchemy/cloudflare';
+ *     import { application } from '@homeflare/alchemy/argocd';
  *     import { BranchProtection } from '@homeflare/alchemy/forgejo';
  *     import { declareRepoPolicy } from '@homeflare/alchemy/github';
  *     import { BaoMount } from '@homeflare/alchemy/openbao';

@@ -55,6 +55,15 @@ layer. On CT100, `hf-discord-halibut.service` holds its own bot token at
 never a prop, for the same reason as above. See [discord.md](./discord.md) for the live census
 this credential would let a deploy act against.
 
+The Argo CD subpath (new 2026-09-24, on `@distilled.cloud/argocd@1.0.0-rc.12`)
+resolves credentials through a per-instance `ArgoCDTarget` (`baseUrl` +
+`tokenEnv` NAME), the same shape Grafana uses — Distilled's own
+`CredentialsFromEnv` (`ARGOCD_TOKEN` / `ARGOCD_SERVER`) is re-exported but
+defaults the server to `https://localhost:8080`. `Authorization: Bearer
+<value>` is built by the package's protocol layer. Repository passwords use
+`passwordEnv` (an env var NAME), never a prop. ⛔ The token is never a prop,
+for the same reason as above. See [argocd.md](./argocd.md).
+
 The Google Workspace subpath (new 2026-09-24, on `@distilled.cloud/google-workspace`) resolves
 credentials through the SDK's own `CredentialsFromEnv`, which reads `GOOGLE_ACCESS_TOKEN` — but
 unlike NetBox/Forgejo/Paperless/LiteLLM's API-token schemes, this variable holds an OAuth2 bearer

@@ -6,7 +6,8 @@ Custom [Alchemy](https://alchemy.run) providers for gaps the vendor SDK leaves.
 bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
         @effect/platform-node@4.0.0-rc.115 mime@4.1.0 \
         @distilled.cloud/cloudflare@1.0.0-rc.12 @distilled.cloud/forgejo@1.0.0-rc.12 \
-        @distilled.cloud/discord@1.0.0-rc.12 @distilled.cloud/google-workspace@1.0.0-rc.12 \
+        @distilled.cloud/argocd@1.0.0-rc.12 @distilled.cloud/discord@1.0.0-rc.12 \
+        @distilled.cloud/google-workspace@1.0.0-rc.12 \
         @effect/sql-pg@4.0.0-rc.115
 ```
 
@@ -284,6 +285,15 @@ from `@distilled.cloud/google-workspace@1.0.0-rc.12`. ⛔ No `User` resource —
 schema carries a `password` field, and Alchemy persists props unencrypted. Credential setup
 (domain-wide delegation, the least scopes each resource needs, where the key lives in OpenBao):
 [docs/google-workspace.md](./docs/google-workspace.md).
+
+## Argo CD — `@homeflare/alchemy/argocd`
+
+`ArgoCD.Application`, `AppProject`, `Repository` and `ApplicationSet` over
+`@distilled.cloud/argocd@1.0.0-rc.12`. Credentials are a server URL plus a token
+env var NAME; repo passwords use `passwordEnv`. ⛔ Flux is out of scope — Argo
+owns cluster GitOps. Placeholder Talos dogfood sketch:
+[docs/talos-argocd-dogfood.md](./docs/talos-argocd-dogfood.md). Family note:
+[docs/argocd.md](./docs/argocd.md).
 
 ## Grafana — `@homeflare/alchemy/grafana`
 

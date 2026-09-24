@@ -8,6 +8,7 @@ The install line for `@homeflare/alchemy`, and why every peer on it and every en
 bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
         @effect/platform-node@4.0.0-rc.115 mime@4.1.0 \
         @distilled.cloud/cloudflare@1.0.0-rc.12 @distilled.cloud/forgejo@1.0.0-rc.12 \
+        @distilled.cloud/argocd@1.0.0-rc.12 \
         @effect/sql-pg@4.0.0-rc.115
 ```
 
@@ -53,6 +54,14 @@ whole install, not one per subpath — `peers.test.ts`'s "no peer is marked opti
 enforces it. `@effect/sql-pg` is optional on `alchemy`'s own manifest (its module graph
 does not reach `SQL/Postgres` unless a stack imports it); here it stays a plain peer like
 every other one.
+
+⚠️ **`@distilled.cloud/argocd` (added 2026-09-24, `/argocd`) is required for the same
+reason `@distilled.cloud/forgejo` is: a plain peer of this package, pinned to
+`1.0.0-rc.12`. Unlike Forgejo, this family is credential-parameterized per
+instance (`argocdCredentials` / `argocdProviders` take an `ArgoCDTarget`) —
+Distilled's `CredentialsFromEnv` defaults the server to `localhost:8080`, which
+is the wrong origin for a Talos cluster. The peer itself does not change for
+that: it is still one package, one pin.
 
 ⚠️ **`@distilled.cloud/grafana` (added 2026-09-24, kit PR 222, ahead of `/grafana`) is
 required for the same reason `@distilled.cloud/forgejo` is: a plain dependency of this

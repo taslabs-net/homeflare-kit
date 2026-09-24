@@ -326,6 +326,14 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
   API-token env vars are not. SDK gaps (the `unstable/` service tree, no per-operation error
   beyond the shared 4xx set, no group-alias update) and the full credential/scope setup:
   [google-workspace.md](./google-workspace.md).
+- **`argocd/*`** (new 2026-09-24, `Application`, `AppProject`, `Repository`,
+  `ApplicationSet`) is built directly on `@distilled.cloud/argocd@1.0.0-rc.12` — no
+  hand-rolled client, every call `catchTag`s Distilled's `ArgocdOpError` (S21/S23).
+  Cold `read` answers `Unowned` (H1); convenience constructors pipe `adopt(true)` (H5);
+  every resource defaults `retain` (H4). Credentials are a per-instance target (URL +
+  token env NAME), not Distilled's localhost-default `CredentialsFromEnv` — same S24
+  divergence as `grafana/*`. Walked against the published tarball, not a live cluster.
+  Gaps (RepoCreds, non-git ApplicationSet generators, Cluster): [argocd.md](./argocd.md).
 
 ## The Bun line
 
