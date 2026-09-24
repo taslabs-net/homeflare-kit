@@ -26,9 +26,21 @@ import { ConfigError } from "@distilled.cloud/core/errors";
  */
 export const API_PATH = "/v1";
 
+/**
+ * Drop trailing slashes; the address carries no other structure to fix up.
+ * A loop, not `/\/+$/`: that regex backtracks polynomially on a long run of
+ * `/` (CodeQL js/polynomial-redos, alert 15 on kit PR 263) — the same fix
+ * as distilled-netbox's and distilled-unifi-network's `normalizeBaseUrl`.
+ */
+const trimTrailingSlashes = (addr: string): string => {
+  let end = addr.length;
+  while (end > 0 && addr.charCodeAt(end - 1) === 47) end--;
+  return addr.slice(0, end);
+};
+
 /** Normalize an address (or an already-complete `/v1` root) into the API base URL. */
 export const normalizeBaseUrl = (addr: string): string => {
-  const trimmed = addr.replace(/\/+$/, "");
+  const trimmed = trimTrailingSlashes(addr);
   return trimmed.endsWith(API_PATH) ? trimmed : `${trimmed}${API_PATH}`;
 };
 
