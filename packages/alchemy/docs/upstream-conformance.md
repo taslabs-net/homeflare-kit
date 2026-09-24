@@ -1,10 +1,11 @@
 # Upstream conformance, family by family
 
-Status: open ledger. Verified 2026-09-22 by reading `origin/main` `925454b` against
+Status: open ledger. Original audit: 2026-09-22, reading `origin/main` `925454b` against
 [provider-standard.md](./provider-standard.md) (`alchemy@2.0.0-beta.79`). Nothing in any
 family was changed by this audit. Each row names the rule it breaks and the upstream
 replacement or fix. A row is crossed off in the PR that fixes it, with that PR's evidence.
-A decision marked **maintainer** is not an agent's to make.
+A decision marked **maintainer** is not an agent's to make. S20/S21 and decision-49
+corrections below were checked on 2026-09-24; this is not a fresh audit of every row.
 
 ## Ranked findings
 
@@ -22,7 +23,7 @@ then tidiness.
    `reconcileLock`/`deleteLock` (S19): distilled's operations are already Effects, so there
    is nothing left to promise-wrap.
 
-   **S20 and idempotent delete correction:** [kit PR #266](https://github.com/taslabs-net/homeflare-kit/pull/266)
+   ✅ **S20 and idempotent delete fixed 2026-09-24:** [kit PR #266](https://github.com/taslabs-net/homeflare-kit/pull/266)
    removes lifecycle `Effect.orDie`, propagates distilled's typed SDK tags unchanged, and
    folds `NoSuchBucket` to success on delete. This follows beta.79's `R2/BucketSippy.ts`;
    no blanket refusal remap is needed. The existing read already folds that tag to absence.
@@ -148,6 +149,8 @@ then tidiness.
    a distilled package.
 
 ## Remaining family findings
+
+The remaining sequence is split into smaller documents to keep each below 200 lines.
 
 [Findings 7–14](./upstream-conformance-families.md) cover Proxmox, Talos, NetBox,
 LiteLLM, list/JSDoc/test conventions and Discord. [Finding 15: Grafana](./upstream-conformance-grafana.md)
