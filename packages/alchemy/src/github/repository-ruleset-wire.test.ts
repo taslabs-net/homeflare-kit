@@ -32,35 +32,46 @@ function makeCapturingFetch(captured: CapturedRequest[]): typeof fetch {
 }
 
 describe('does Octokit forward an untyped extra body field to the wire?', () => {
-  test('require_extra_approval_for_unattributed_changes survives createRepoRuleset', async () => {
-    const captured: CapturedRequest[] = [];
-    const octokit = new Octokit({
-      auth: 'fake-token-not-a-real-credential',
-      request: { fetch: makeCapturingFetch(captured) },
-    });
+  // K1 (2026-09-23): both values are modeled now, not only `false` — 8 live rulesets (aop,
+  // cloudflareforms, doesthishelp-workeropen, homeflare-anyauth, homeflare-desktop, loggarr,
+  // magictransit, proxmox-tb4; re-read live 2026-09-23) carry `true`, so this measurement needs
+  // both, not just the one value this resource used to be able to send.
+  test.each([false, true])(
+    'require_extra_approval_for_unattributed_changes: %p survives createRepoRuleset',
+    async (value) => {
+      const captured: CapturedRequest[] = [];
+      const octokit = new Octokit({
+        auth: 'fake-token-not-a-real-credential',
+        request: { fetch: makeCapturingFetch(captured) },
+      });
 
-    const body = desiredWireRuleset({
-      owner: 'taslabs-net',
-      repository: 'widgets',
-      name: 'main',
-      rules: {
-        pullRequest: {
-          requiredApprovingReviewCount: 0,
-          allowedMergeMethods: ['squash'],
-          extraApprovalForUnattributedChanges: false,
+      const body = desiredWireRuleset({
+        owner: 'taslabs-net',
+        repository: 'widgets',
+        name: 'main',
+        rules: {
+          pullRequest: {
+            requiredApprovingReviewCount: 0,
+            allowedMergeMethods: ['squash'],
+            extraApprovalForUnattributedChanges: value,
+          },
         },
-      },
-    });
+      });
 
-    await octokit.rest.repos.createRepoRuleset({ owner: 'taslabs-net', repo: 'widgets', ...body });
+      await octokit.rest.repos.createRepoRuleset({
+        owner: 'taslabs-net',
+        repo: 'widgets',
+        ...body,
+      });
 
-    expect(captured).toHaveLength(1);
-    const sent = captured[0]?.body as {
-      rules?: { type: string; parameters?: Record<string, unknown> }[];
-    };
-    const pr = sent?.rules?.find((r) => r.type === 'pull_request');
-    // MEASURED: this is what actually crossed the wire, not what Octokit's types say is legal.
-    expect(pr?.parameters?.require_extra_approval_for_unattributed_changes).toBe(false);
-    expect(pr?.parameters?.allowed_merge_methods).toEqual(['squash']);
-  });
+      expect(captured).toHaveLength(1);
+      const sent = captured[0]?.body as {
+        rules?: { type: string; parameters?: Record<string, unknown> }[];
+      };
+      const pr = sent?.rules?.find((r) => r.type === 'pull_request');
+      // MEASURED: this is what actually crossed the wire, not what Octokit's types say is legal.
+      expect(pr?.parameters?.require_extra_approval_for_unattributed_changes).toBe(value);
+      expect(pr?.parameters?.allowed_merge_methods).toEqual(['squash']);
+    },
+  );
 });

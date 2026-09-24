@@ -55,12 +55,12 @@ exported credential service.
 
 ## What it models beyond upstream `RulesetProps`
 
-| field                                             | upstream `Ruleset` | this resource      |
-| ------------------------------------------------- | ------------------ | ------------------ |
-| `pullRequest.allowedMergeMethods`                 | no                 | yes                |
-| `pullRequest.requiredReviewers`                   | no                 | yes                |
-| `pullRequest.extraApprovalForUnattributedChanges` | no                 | `false` only (H15) |
-| `requiredStatusChecks.doNotEnforceOnCreate`       | no                 | yes                |
+| field                                             | upstream `Ruleset` | this resource            |
+| ------------------------------------------------- | ------------------ | ------------------------ |
+| `pullRequest.allowedMergeMethods`                 | no                 | yes                      |
+| `pullRequest.requiredReviewers`                   | no                 | yes                      |
+| `pullRequest.extraApprovalForUnattributedChanges` | no                 | `true`/`false` (K1, H15) |
+| `requiredStatusChecks.doNotEnforceOnCreate`       | no                 | yes                      |
 
 `RULE_TYPE_COVERAGE` in `repository-ruleset-constraints.ts` classifies every rule type
 Octokit's own installed types know (21 of them — see the file for the 27.0.0-vs-29.0.1
