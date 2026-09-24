@@ -270,6 +270,24 @@ export const help =
   });
 ```
 
+## UniFi Network — `@homeflare/alchemy/unifi`
+
+`Unifi.Network` and `Unifi.FirewallZone`, generated from Ubiquiti's own UniFi Network
+Integration API 10.4.57 via `@distilled.cloud/unifi-network`. ⛔ **READ-ONLY, by Tim's rule
+(2026-09-24):** `reconcile`/`delete` both fail with a typed `UnifiWriteRefused` naming the
+policy — this family never calls a write operation, only `getNetworkDetails`/`getFirewallZone`
+and their list counterparts. ⛔ `read` answers `Unowned` on every match (never a silent adopt —
+`adopt(true)` is on by default via the `network`/`firewallZone` constructors), and a UniFi
+**Console ID** (part of a cloud-connector base URL) is never logged, committed or written to
+state: [docs/unifi.md](./docs/unifi.md).
+
+```ts
+import { declareNetwork, network, providers } from '@homeflare/alchemy/unifi';
+
+// A later import script writes rows like this one from a live read:
+export const lan = network('lan', declareNetwork(liveNetworkDetails, 'site-id'));
+```
+
 ## Google Workspace — `@homeflare/alchemy/google-workspace`
 
 `Group`, `GroupMember`, `DomainAlias` and `OrgUnit` over the Admin SDK Directory API, generated

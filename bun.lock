@@ -30,6 +30,7 @@
         "@distilled.cloud/paperless-ngx": "npm:@homeflare/distilled-paperless-ngx@0.3.0",
         "@distilled.cloud/proxmox": "npm:@homeflare/distilled-proxmox@0.2.0",
         "@distilled.cloud/proxmox-backup": "npm:@homeflare/distilled-proxmox-backup@0.2.0",
+        "@distilled.cloud/unifi-network": "npm:@homeflare/distilled-unifi-network@0.2.0",
       },
       "devDependencies": {
         "@distilled.cloud/cloudflare": "1.0.0-rc.12",
@@ -474,6 +475,8 @@
     "@distilled.cloud/railway": ["@distilled.cloud/railway@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-KOXSpl7r9qTiOYabJ6wUmM418exzv6YE5BVztaqKSGMuNGP/lAqhZm709/p97Zg6vHpxhJLIgmCq00z7hRM3sQ=="],
 
     "@distilled.cloud/stripe": ["@distilled.cloud/stripe@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-4OuZF362yU66G1jDFDgRFFv8ZNRPZ6lw8Wrd5R/isRNHpGgvggLNlKg1QXWEQaTcRzn3RBXczqQCVwQV9IRZDQ=="],
+
+    "@distilled.cloud/unifi-network": ["@homeflare/distilled-unifi-network@workspace:packages/distilled-unifi-network"],
 
     "@effect/platform-bun": ["@effect/platform-bun@4.0.0-rc.115", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.115" }, "peerDependencies": { "effect": "^4.0.0-rc.115" } }, "sha512-ilTFcs66ghInP8WHCJYa4bx/yzohYM9dRR//qjmVBBpSKu1hrCTiRWpEcc1N6zrnOEPk2kyVaKg5ykSMgiBMqQ=="],
 
