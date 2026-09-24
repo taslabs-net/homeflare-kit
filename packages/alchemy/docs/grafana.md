@@ -8,32 +8,61 @@ publicly at `tesla.homeflare.dev/dash/`.
 
 ## The SDK gap — why only `Datasource` ships
 
+✅ **SDK-level gap fixed 2026-09-24** (`@distilled.cloud/grafana`, aliased onto
+`@homeflare/distilled-grafana` — 0.1.0 pre-release, 0.2.0 once its `minor` changeset publishes it;
+see [docs/distilled-interim.md](./distilled-interim.md)).
+The gap below is otherwise unchanged and left as evidence of what was measured and why; only its
+status line moved. **Still true today:** only `Grafana.Datasource` ships as a house _resource_ —
+`Grafana.Folder`, `Grafana.Dashboard`, `Grafana.AlertRule` and friends are follow-up work on top of
+the now-available SDK operations, not part of this fix.
+
 Measured 2026-09-24 against the published `@distilled.cloud/grafana@1.0.0-rc.12` tarball (its
-`lib/services/grafana.d.ts`, 4,938 lines): the package has **no create/read/update/delete
-operations for folders, dashboards, alert rules or contact points**. It covers datasources in
+`lib/services/grafana.d.ts`, 4,938 lines): the package had **no create/read/update/delete
+operations for folders, dashboards, alert rules or contact points**. It covered datasources in
 full (`addDataSource`, `getDataSourceByUID`, `updateDataSourceByUID`, `deleteDataSourceByUID`,
 `getDataSources`), plus org/user/team/role/report/annotation/library-element/public-dashboard/
 snapshot management — but:
 
-- **Folders:** only `updateFolderPermissions` exists. No `createFolder`, `getFolder` or
-  `deleteFolder` — Grafana's `/api/folders` and `/api/folders/{uid}` routes are entirely absent.
-- **Dashboards:** only snapshot and public-dashboard routes exist (`createDashboardSnapshot`,
+- **Folders:** only `updateFolderPermissions` existed. No `createFolder`, `getFolder` or
+  `deleteFolder` — Grafana's `/api/folders` and `/api/folders/{uid}` routes were entirely absent.
+- **Dashboards:** only snapshot and public-dashboard routes existed (`createDashboardSnapshot`,
   `getPublicDashboard`, …). No `POST /api/dashboards/db`, no `GET /api/dashboards/uid/{uid}`, no
-  `DELETE /api/dashboards/uid/{uid}` — the plain dashboard CRUD route family is absent.
+  `DELETE /api/dashboards/uid/{uid}` — the plain dashboard CRUD route family was absent.
 - **Alert rules:** only `routeGetAlertRuleExport`/`routeGetAlertRuleGroupExport`/
-  `routeGetAlertRulesExport` exist — export (read-only) endpoints under `/api/v1/provisioning/`.
+  `routeGetAlertRulesExport` existed — export (read-only) endpoints under `/api/v1/provisioning/`.
   No create/update/delete for `/api/v1/provisioning/alert-rules{,/{uid}}`.
-- **Contact points:** only `routeGetContactpointsExport` exists, same story — no
+- **Contact points:** only `routeGetContactpointsExport` existed, same story — no
   `/api/v1/provisioning/contact-points{,/{uid}}` CRUD.
 
-This is recorded in [`docs/upstream-conformance.md`](./upstream-conformance.md) rather than worked
-around. Per S23, the fix is a distilled PR (regenerate against a spec that includes these routes,
-or patch them in per S22), not a hand-rolled `HttpClient` client in this package for the missing
-pieces alone — that would put half a family through the SDK and half through a second, parallel
-client, exactly what S23 exists to prevent.
+**Root cause, measured (not the spec lacking the paths):** Grafana's own OpenAPI document has
+every one of the routes above — the converter dropped them. `skipDeprecated: true` (the distilled
+converter's v0 default) skips any operation the spec marks `deprecated: true`, and Grafana marks
+its entire classic folder/dashboard/alerting-provisioning WRITE surface deprecated, each
+operation's `description` pointing at a `/apis/<group>.grafana.app/v1/...` Kubernetes-apiserver
+route that is a separate API server with its own OpenAPI document — absent from this spec
+entirely, and not what this family's `Grafana.Datasource` (or any planned `Grafana.Folder`/
+`Grafana.Dashboard`/etc.) targets. The fix patches `deprecated` back to `false` on exactly the 32
+operations this gap named (leaving the other 32 deprecated operations — playlists, org/user
+preferences, datasources-by-name, licensing, reports, dashboard stars/tags/versions — excluded, as
+before): see the distilled clone's `packages/grafana/scripts/convert.ts` header and
+`patches/*.patch.json` for the exact list and reasoning, and
+`packages/distilled-grafana/README.md` in this kit for the copied result. `Grafana.Datasource`'s
+own operations (`addDataSource`/`getDataSourceByUID`/`updateDataSourceByUID`/
+`deleteDataSourceByUID`) were never deprecated and are untouched — same props, same attributes,
+same generated code, confirmed by diffing the distilled clone's regenerated output against its
+prior commit operation-by-operation.
 
-`teslamate-grafana` itself is consistent with this gap being real, not merely unexploited: its one
-datasource is API-manageable and already exists; its dashboards ship baked into the
+This was recorded in [`docs/upstream-conformance.md`](./upstream-conformance.md) rather than worked
+around. Per S23, the fix is a distilled PR (regenerate against a spec that includes these routes,
+or patch them in per S22) — not a hand-rolled `HttpClient` client in this package for the missing
+pieces alone, which would put half a family through the SDK and half through a second, parallel
+client, exactly what S23 exists to prevent. It shipped as a kit interim package
+(`@homeflare/distilled-grafana`), the same S22 route `@homeflare/distilled-netbox` established,
+because `alchemy-run/distilled` is upstream and this house never pushes to it (decision 42) — see
+docs/distilled-interim.md.
+
+`teslamate-grafana` itself is consistent with this gap having been real, not merely unexploited:
+its one datasource is API-manageable and already exists; its dashboards ship baked into the
 `teslamate/grafana` image and are provisioned by the container, not by any API call; it has no
 folders, alert rules or contact points configured at all (measured over ssh, read-only, 2026-09-24).
 
@@ -96,7 +125,8 @@ export class TeslaMateDatasource extends GrafanaDatasource('teslamate-datasource
 
 ## Not covered
 
-- **Folders, dashboards, alert rules, contact points.** Blocked on the SDK gap above — a
-  maintainer decision on whether to patch distilled or wait for upstream to add the routes.
+- **Folders, dashboards, alert rules, contact points, notification policies, mute timings.** The
+  SDK-level blocker is fixed (above); no house `Resource` calls these operations yet — follow-up
+  work, not blocked on anything.
 - **`read` never answers `Unowned`** — the same open gap forgejo's and netbox's own families
   still carry (see upstream-conformance.md); a maintainer decision on the ownership-check shape.

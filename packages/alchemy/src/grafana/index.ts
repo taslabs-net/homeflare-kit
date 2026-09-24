@@ -5,11 +5,12 @@
  *   the symbols a real stack consumes; the rest of the files (resource.ts's engine, fake-grafana.ts)
  *   are internals a provider needs but a consumer should not depend on.
  *
- * ⛔ ONLY `Grafana.Datasource` SHIPS HERE. `@distilled.cloud/grafana@1.0.0-rc.12` has no folder,
- *   dashboard, alert-rule or contact-point CRUD operations — see docs/grafana.md and
- *   docs/upstream-conformance.md for the measured gap. Adding those resources now would mean
- *   hand-rolling an `HttpClient` client for them, which S23 forbids for a vendor distilled
- *   already covers in part; the right fix is upstream, in distilled, not a house workaround here.
+ * ⛔ ONLY `Grafana.Datasource` SHIPS HERE. `@distilled.cloud/grafana` (aliased onto
+ *   `@homeflare/distilled-grafana` — see docs/distilled-interim.md) now HAS folder, dashboard and
+ *   alerting-provisioning CRUD operations — the SDK-level gap docs/grafana.md and
+ *   docs/upstream-conformance.md recorded is fixed. Building `Grafana.Folder`, `Grafana.Dashboard`,
+ *   `Grafana.AlertRule` etc. on top of them is follow-up work this PR deliberately does not do —
+ *   see docs/grafana.md for what changed and what is still open.
  */
 export {
   type DatasourceAttributes,
