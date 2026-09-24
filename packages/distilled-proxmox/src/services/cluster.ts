@@ -21,6 +21,18 @@ export class BackupJobNotFound
     [{ status: 400, message: { matches: "^No such job '[^']+'$" } }],
   ) {}
 
+/** Installed pve-firewall 6.0.5 PVE/API2/Firewall/Aliases.pm:209-210,252, read-only 2026-09-24; SHA256 aa4d71ea897515ca71caa8e04abd142aedf8077058649f793605f014be84db0e. GET and PUT raise HTTP400 Parameter verification failed with the sole field errors.name = no such alias. DELETE is intrinsically idempotent and has no missing-alias exception. Other validation failures remain ParameterVerificationFailed. */
+export class FirewallAliasNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<FirewallAliasNotFound>()(
+      "FirewallAliasNotFound",
+      {
+        message: S.String,
+      },
+    ).pipe(C.withBadRequestError),
+    [{ status: 400, message: { matches: "^no such alias$" } }],
+  ) {}
+
 /** The metrics server does not exist. pve-manager 9.2.11, f6997e698c7933ea8e62319e2bf1bf7262daa56a, PVE/API2/Cluster/MetricServer.pm:136 throws status server entry '<id>' does not exist on GET, and line 228 throws no such server '<id>' on PUT. Both are wire 500. DELETE dereferences the plugin config without an explicit absence check and is not declared to return this tag. */
 export class MetricServerNotFound
   extends /*@__PURE__*/ T.applyErrorMatchers(
@@ -38,6 +50,25 @@ export class MetricServerNotFound
         },
       },
       { status: 500, message: { matches: "^no such server '[^']+'\\n?$" } },
+    ],
+  ) {}
+
+/** pve-manager 9.2.11 f6997e698c7933ea8e62319e2bf1bf7262daa56a PVE/API2/ReplicationConfig.pm:110,227,311. GET raises no such replication job; PUT and non-force DELETE raise no such job. Exact structured job IDs only. DELETE normally marks remove_job=full for background cleanup; an absent job is already removed. */
+export class ReplicationJobNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<ReplicationJobNotFound>()(
+      "ReplicationJobNotFound",
+      {
+        message: S.String,
+      },
+    ).pipe(C.withBadRequestError),
+    [
+      {
+        status: 500,
+        message: {
+          matches: "^no such (replication )?job '[0-9]+-[0-9]+'\\n?$",
+        },
+      },
     ],
   ) {}
 
@@ -15530,7 +15561,9 @@ export const deleteClusterQemuCustomCpuModel: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type DeleteClusterReplicationError = ProxmoxOpError;
+export type DeleteClusterReplicationError =
+  | ReplicationJobNotFound
+  | ProxmoxOpError;
 /** Mark replication job for removal. (root-privileged endpoint) */
 export const deleteClusterReplication: API.OperationMethod<
   DeleteClusterReplicationRequest,
@@ -15540,7 +15573,7 @@ export const deleteClusterReplication: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: DeleteClusterReplicationRequest,
   output: DeleteClusterReplicationResponse,
-  errors: [],
+  errors: [ReplicationJobNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
@@ -15952,7 +15985,9 @@ export const getClusterConfigTotem: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type GetClusterFirewallAliasError = ProxmoxOpError;
+export type GetClusterFirewallAliasError =
+  | FirewallAliasNotFound
+  | ProxmoxOpError;
 /** Read alias. */
 export const getClusterFirewallAlias: API.OperationMethod<
   GetClusterFirewallAliasRequest,
@@ -15962,7 +15997,7 @@ export const getClusterFirewallAlias: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: GetClusterFirewallAliasRequest,
   output: GetClusterFirewallAliasResponse,
-  errors: [],
+  errors: [FirewallAliasNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
@@ -16329,7 +16364,9 @@ export const getClusterQemuCustomCpuModel: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type GetClusterReplicationError = ProxmoxOpError;
+export type GetClusterReplicationError =
+  | ReplicationJobNotFound
+  | ProxmoxOpError;
 /** Read replication job configuration. */
 export const getClusterReplication: API.OperationMethod<
   GetClusterReplicationRequest,
@@ -16339,7 +16376,7 @@ export const getClusterReplication: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: GetClusterReplicationRequest,
   output: GetClusterReplicationResponse,
-  errors: [],
+  errors: [ReplicationJobNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
@@ -17844,7 +17881,9 @@ export const putClusterCephHealthMute: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type PutClusterFirewallAliasError = ProxmoxOpError;
+export type PutClusterFirewallAliasError =
+  | FirewallAliasNotFound
+  | ProxmoxOpError;
 /** Update IP or Network alias. (root-privileged endpoint) */
 export const putClusterFirewallAlias: API.OperationMethod<
   PutClusterFirewallAliasRequest,
@@ -17854,7 +17893,7 @@ export const putClusterFirewallAlias: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: PutClusterFirewallAliasRequest,
   output: PutClusterFirewallAliasResponse,
-  errors: [],
+  errors: [FirewallAliasNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
@@ -18146,7 +18185,9 @@ export const putClusterQemuCustomCpuModel: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type PutClusterReplicationError = ProxmoxOpError;
+export type PutClusterReplicationError =
+  | ReplicationJobNotFound
+  | ProxmoxOpError;
 /** Update replication job configuration. (root-privileged endpoint) */
 export const putClusterReplication: API.OperationMethod<
   PutClusterReplicationRequest,
@@ -18156,7 +18197,7 @@ export const putClusterReplication: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: PutClusterReplicationRequest,
   output: PutClusterReplicationResponse,
-  errors: [],
+  errors: [ReplicationJobNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));

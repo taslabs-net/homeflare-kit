@@ -113,8 +113,8 @@ export type ProxmoxOpContext = Credentials | HttpClient.HttpClient;
 const errorEnvelope = (body: unknown): RestErrorEnvelope | undefined => {
   if (body === null || typeof body !== "object") return undefined;
   const b = body as Record<string, unknown>;
-  // PVE missing backup/interface exceptions carry the useful message in one
-  // field (Backup.pm:406,458; Network.pm:852, pve-manager 9.2.11). Expose
+  // PVE missing backup/interface/alias exceptions carry the useful message in one
+  // field (Backup.pm:406,458; Network.pm:852; Firewall/Aliases.pm:203). Expose
   // ONLY those exact sole-field details to the operation's typed matcher.
   // Multiple errors, other fields, and unrelated validation stay unchanged.
   const errors = b.errors;
@@ -132,6 +132,9 @@ const errorEnvelope = (body: unknown): RestErrorEnvelope | undefined => {
       /^No such job '[^']+'$/.test(errors.id)
     )
       return { message: errors.id };
+    if ("name" in errors && errors.name === "no such alias") {
+      return { message: errors.name };
+    }
     if ("iface" in errors && errors.iface === "interface does not exist") {
       return { message: errors.iface };
     }
