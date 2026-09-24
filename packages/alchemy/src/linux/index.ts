@@ -1,13 +1,13 @@
 /**
  * Linux host providers for Alchemy — a host's directories, its files (whole, or one managed block
- * inside somebody else's file) and its systemd units, over the SAME HostRunner seam the launchd
- * subpath drives a Mac through.
+ * inside somebody else's file), its systemd units and its Podman Quadlet containers, over the SAME
+ * HostRunner seam the launchd subpath drives a Mac through.
  *
  * ⛔ THIS BARREL IS THE PUBLIC API, AND IT IS DELIBERATELY SMALLER THAN THE DIRECTORY. The lifecycle
  *   files, the systemctl parsers and the fake host are internals; an `export *` would publish them
  *   as API and make the next refactor a breaking change.
  * ⛔ A DEPLOY NEVER MASS-RESTARTS: a unit is restarted only when its own file changed, or a digest
- *   the declaration listed changed. See docs/linux-host.md.
+ *   the declaration listed changed. See docs/linux-host.md and docs/quadlet-container.md.
  * ★ THE SEAM IS SHARED, NOT COPIED. `HostRunner` is re-exported here so a Linux stack never has to
  *   import from the launchd subpath to type its own runner.
  */
@@ -32,3 +32,11 @@ export { HostRunnerService, canActAsRoot, hostRunnerLayer } from '../launchd/run
 export type { SystemdUnitAttributes, SystemdUnitProps, UnitSection } from './unit-form.ts';
 export { DEFAULT_UNIT_DIRECTORY, renderUnit } from './unit-form.ts';
 export { SystemdTimer, SystemdTimerProvider, SystemdUnit, SystemdUnitProvider } from './unit.ts';
+export type {
+  ContainerSection,
+  PodmanContainerAttributes,
+  PodmanContainerProps,
+  PodmanUnitLine,
+} from './container.ts';
+export { QUADLET_DEFAULT_DIRECTORY, QUADLET_SEARCH_DIRECTORIES } from './container-form.ts';
+export { PodmanContainer, PodmanContainerProvider } from './container.ts';

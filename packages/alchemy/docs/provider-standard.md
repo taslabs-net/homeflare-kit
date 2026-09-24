@@ -124,7 +124,7 @@ The files currently on the wrong side of the line are listed in
 | `caddy`             | Caddy 2.11.4                           | source comments only ⚠️           |
 | `forgejo`           | Forgejo 16.0.3                         | source comments only ⚠️           |
 | `talos`             | Talos v1.13 docs (never measured live) | source comments only ⚠️           |
-| `launchd` / `linux` | macOS 27 / systemd 257                 | source comments only ⚠️           |
+| `launchd` / `linux` | macOS 27 / systemd 257 / Podman 5.4.2  | source comments only ⚠️           |
 
 ⚠️ These rows record a version only in prose, so no test catches a drift. `schemas/manifest.json`
 also repeats the PVE, PBS and UniFi entries, which means there are two manifests for one
