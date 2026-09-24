@@ -33,7 +33,7 @@ export interface Config {
 
 export class Credentials extends Context.Service<
   Credentials,
-  Effect.Effect<Config, ConfigError>
+  Effect.Effect<Config>
 >()("LitellmCredentials") {}
 
 const normalizeBaseUrl = (baseUrl: string): string => {
@@ -58,14 +58,6 @@ const envConfig = EffectConfig.all({
 export const CredentialsFromEnv = Layer.succeed(
   Credentials,
   envConfig.pipe(
-    // Typed failure (S20/S24), not `Effect.orDie` — `LitellmOpError` already
-    // declares `ConfigError` (protocol.ts), and `makeRestProtocol`'s `encode`
-    // step (`core/src/protocol-rest.ts`) `yield*`s this effect on the calling
-    // fiber and lets a real failure flow into the operation's own error
-    // channel; dying here only defeats that path; it does not avoid it. A
-    // missing/misspelled `LITELLM_PROXY_URL`/`LITELLM_PROXY_API_KEY` is a
-    // refusal a caller (`alchemy plan`/`deploy`) can catch and report, not an
-    // engine-crashing defect.
     Effect.mapError(
       () =>
         new ConfigError({
@@ -77,6 +69,7 @@ export const CredentialsFromEnv = Layer.succeed(
       apiKey: Redacted.make(apiKey),
       apiBaseUrl: normalizeBaseUrl(baseUrl),
     })),
+    Effect.orDie,
   ),
 );
 
