@@ -50,6 +50,23 @@ export class ClusterNodeUnreachable
     [{ status: 595 }],
   ) {}
 
+/** The requested container config is absent on this node. VM IDs are cluster-wide: callers must still check whether another node or QEMU guest holds the ID before creating. This GET requires VM.Audit on /vms/{vmid}; retain its credential for any permission-filtered cluster index read. */
+export class LxcConfigNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<LxcConfigNotFound>()("LxcConfigNotFound", {
+      message: S.String,
+    }).pipe(C.withBadRequestError),
+    [
+      {
+        status: 500,
+        message: {
+          matches:
+            "^Configuration file 'nodes/[^/']+/lxc/[0-9]+\\.conf' does not exist\\n?$",
+        },
+      },
+    ],
+  ) {}
+
 /** pve-manager 9.2.11, f6997e698c7933ea8e62319e2bf1bf7262daa56a, PVE/API2/Network.pm:817-858. The detail GET raises HTTP 400 with exactly errors.iface = interface does not exist. The same read-only response was measured by homeflare-kit on 2026-09-24. Only the exact sole-field detail is normalized for operation matching; all other validation errors remain ParameterVerificationFailed. Attached only to GET. */
 export class NetworkInterfaceNotFound
   extends /*@__PURE__*/ T.applyErrorMatchers(
@@ -22100,7 +22117,7 @@ export const getNodeLxc: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type GetNodeLxcConfigError = ProxmoxOpError;
+export type GetNodeLxcConfigError = LxcConfigNotFound | ProxmoxOpError;
 /** Get container configuration. */
 export const getNodeLxcConfig: API.OperationMethod<
   GetNodeLxcConfigRequest,
@@ -22110,7 +22127,7 @@ export const getNodeLxcConfig: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: GetNodeLxcConfigRequest,
   output: GetNodeLxcConfigResponse,
-  errors: [],
+  errors: [LxcConfigNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));

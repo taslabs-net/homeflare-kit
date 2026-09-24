@@ -48,6 +48,11 @@ unchanged. Protocol fixtures exercise both the accepted and rejected shapes.
 `PoolNotFound` keeps a non-retryable client-error category despite PVE's wire
 status 500; the patch matcher records the actual status independently.
 
+Container config GET also exposes `LxcConfigNotFound`, backed by installed
+pve-container 6.1.13 and libpve-guest-common-perl 6.0.5 source. This proves only the
+node-local config is missing: providers must still check the cluster-wide vmid
+with the same credential before considering creation.
+
 ```ts
 import * as Proxmox from '@distilled.cloud/proxmox'; // aliased onto this package — see docs/distilled-interim.md
 import * as Effect from 'effect/Effect';
