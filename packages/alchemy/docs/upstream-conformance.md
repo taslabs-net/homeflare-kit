@@ -163,6 +163,19 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
 
 ## Conforms
 
+- **`paperless/*` (`Tag`, `DocumentType`, `StoragePath`, `CustomField`)** — ✅ **S23 fixed
+  2026-09-24** (branch `claude2/distilled-paperless-family`, decision 43, mirroring the
+  netbox/forgejo migrations above). Every call now goes through `@distilled.cloud/paperless-ngx`'s
+  typed operations, `catchTag('NotFound', …)` replaced the status-carrying `PaperlessError`
+  union, and `client.ts`/`errors.ts`/`credentials.ts` are deleted. The shared
+  `matching.ts`/`matching-locate.ts` engine (locate-by-name before state, by `output.id` after —
+  PR 163) is unchanged in shape. Not published upstream yet, aliased onto
+  `@homeflare/distilled-paperless-ngx@0.3.0` — [distilled-interim.md](./distilled-interim.md).
+  State did not move: props/attributes stay byte-identical, proven by `tag.test.ts` and the full
+  PR 163 regression suite (`tag-identity.test.ts`) against a fake exercising the real distilled
+  protocol. ⛔ **Still diverges on credentials (S24):** `PAPERLESS_URL`/`PAPERLESS_TOKEN` are read
+  at call time, now through the SDK's `CredentialsFromEnv` — same divergence, unchanged by the
+  transport swap.
 - **`github/RepositoryRuleset`** (added 2026-09-23) closes the hazard the row above names:
   probes by name (`read`/`reconcile` both), answers `Unowned` on a cold name match (H1),
   normalizes before comparing so a matching live ruleset is a true noop, and refuses

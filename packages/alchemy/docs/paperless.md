@@ -4,6 +4,18 @@ Four resources — `Paperless.Tag`, `Paperless.DocumentType`, `Paperless.Storage
 `Paperless.CustomField` — the taxonomy Paperless-ngx writes through Django's internal models,
 create-or-update and never deleted by default. Workflows and mail accounts are a later slice.
 
+## Moved onto `@distilled.cloud/paperless-ngx` (2026-09-24)
+
+🔴 Every wire call in this family now goes through `@distilled.cloud/paperless-ngx`'s typed
+operations (`tags.createTag`, `documentTypes.listDocumentTypes`, …) with
+`Effect.catchTag('NotFound', …)` at each resource file's own `getById`, the same route
+`forgejo/*` and `netbox/*` took — see [distilled-interim.md](./distilled-interim.md) and this
+migration's changeset for the full story. `client.ts`, `errors.ts` and `credentials.ts` are gone.
+The rest of this document — locate-by-name-then-id (PR 163), `owner: null` on create, the
+create-only `dataType`, `retain` by default — is the family's OWN behaviour, unchanged by the
+transport swap and proved unchanged by `tag.test.ts`/`tag-identity.test.ts` against a fake that
+speaks the real distilled protocol.
+
 ## Credentials
 
 Two environment variables, read **at call time**, never props:
