@@ -11,12 +11,13 @@
  *   `defaultRemovalPolicy: 'retain'`, so removing a declaration does NOT reach `destroyOsd` — a
  *   caller opts in with `.pipe(RemovalPolicy.destroy())`.
  */
+import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
 import { readOsd } from './ceph-osd-tree.ts';
 import type { CephOsdProps } from './ceph-osd.ts';
-import { pve } from './client.ts';
 import { guardForm } from './constraint-guard.ts';
 import type { EndpointKey } from './constraints.ts';
+import { runPve } from './distilled-pve.ts';
 
 /**
  * The vendor rules the create form is checked against at plan time.
@@ -59,7 +60,16 @@ export const createOsd = Effect.fn(function* (news: CephOsdProps) {
   // ⛔ BEFORE THE POST, BECAUSE THE POST ZAPS A BLOCK DEVICE. A vendor rule broken here is worth
   //   refusing at plan rather than discovering from a 400 after `ceph-volume` has run.
   yield* guardForm(OSD_CREATE_ENDPOINT, form, true);
-  yield* pve(news.target, 'provision', 'POST', `nodes/${news.node}/ceph/osd`, form);
+  yield* runPve(
+    news.target,
+    'provision',
+    true,
+    nodes.createNodeCephOsd({
+      dev: news.dev,
+      node: news.node,
+      ...(news.device_class === undefined ? {} : { crush_device_class: news.device_class }),
+    }),
+  );
   const created = yield* readOsd(news);
   if (created === undefined) {
     return yield* Effect.die(
@@ -91,12 +101,29 @@ export const createOsd = Effect.fn(function* (news: CephOsdProps) {
  *
  * ⚠️ `cleanup` DEFAULTS TO FALSE, so the logical volumes survive and the disk can be re-added
  *   without a rebuild. Ceph still starts backfilling the missing copies the moment the OSD goes.
+ *
+ * ⚠️ `cleanup` RIDES A DELETE BODY, ON `client.ts` AND ON DISTILLED ALIKE — PRE-EXISTING, NOT
+ *   INTRODUCED HERE. `client.ts`'s own `buildRequest` (client.ts) puts `form` in the body for
+ *   every method, DELETE included, and CHECKED against distilled's generated
+ *   `DeleteNodeCephOsdRequest`: `cleanup` carries no `T.Query()` annotation either, so it also
+ *   defaults to a body field. ceph-fs-wire.ts's own ⛔ (measured from PVE's `AnyEvent.pm`) is that
+ *   PVE's server never reads a body on DELETE — so `cleanup=1` was ALREADY silently ignored by
+ *   the live cluster before this migration, on the unmigrated code too. Migrating carries the
+ *   SAME behaviour forward exactly, byte-for-byte, rather than introducing a new gap; unlike
+ *   `Proxmox.CephFs`'s delete, this is not a reason to keep the call on the hand client. It has
+ *   zero practical effect today regardless, since the whole DELETE 403s for this package's
+ *   credential either way (the root-only ⛔ at the top of ceph-osd.ts) — flagged separately as a
+ *   pre-existing, out-of-scope bug worth its own fix (move `cleanup` into the query string, the
+ *   way `destroyPath` in ceph-fs-wire.ts already does).
  */
 export const destroyOsd = (olds: CephOsdProps) =>
-  pve(
+  runPve(
     olds.target,
     'provision',
-    'DELETE',
-    `nodes/${olds.node}/ceph/osd/${String(olds.osdid)}`,
-    olds.cleanup === true ? { cleanup: '1' } : {},
+    true,
+    nodes.deleteNodeCephOsd({
+      node: olds.node,
+      osdid: String(olds.osdid),
+      ...(olds.cleanup === true ? { cleanup: '1' } : {}),
+    }),
   );
