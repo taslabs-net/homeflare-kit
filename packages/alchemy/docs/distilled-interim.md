@@ -34,9 +34,22 @@ changes and nothing else does.
 Follow `.agents/skills/distilled-sdk/SKILL.md` in the local distilled clone —
 Steps 1–8 (never Step 9, which pushes). One worktree per vendor, branch
 `homeflare/<vendor>`, off `homeflare/base`. Spec sourcing, `patches/`,
-`convert.ts`/`generate.ts`, typecheck, `pnpm format`, `pnpm specs:check`.
-Commit in the local clone only — ⛔ **never push it anywhere; no forks, no
-PRs, no issues or comments on `alchemy-run/distilled` from this route.**
+`convert.ts`/`generate.ts`, `pnpm typecheck:ci` (never plain `typecheck`,
+which skips generated code — `noCheck: true`), `pnpm format`,
+`pnpm specs:check`. Commit in the local clone only — ⛔ **never push it
+anywhere; no forks, no PRs, no issues or comments on `alchemy-run/distilled`
+from this route.**
+
+⚠️ **A vendor with no machine-readable spec at all still gets a `SPEC_REPOS`
+entry** (`stacks/distilled-submodules/SpecRepos.ts`) — with `blocked` and a
+reason, not a mirror with nothing to fetch. Upstream's own precedent is Slack
+(`blocked: "docs.slack.dev method JSON twins are committed in-repo"`,
+`SpecRepos.ts:31-35,114`). Caddy follows it (Q7, decision 49, 2026-09-24):
+its admin API has no OpenAPI/Smithy/GraphQL/discovery document anywhere
+(confirmed against `caddyserver/caddy`'s Go source and `caddyserver/website`
+— see the caddy worktree's `packages/caddy/docs/provenance.md`), so its
+model is hand-authored instead, and `specs:check` still passes (81 mirrors
+coherent) with the `blocked` entry in place.
 
 ### 2. Copy into a kit workspace package
 

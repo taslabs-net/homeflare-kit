@@ -1,7 +1,13 @@
 # The provider standard
 
-Status: in force. Verified 2026-09-22 against `alchemy@2.0.0-beta.79` (tag
+Status: in force. Verified 2026-09-24 against `alchemy@2.0.0-beta.79` (tag
 `v2.0.0-beta.79`, commit `473c3959`) and the distilled commit that tag pins (`c2a78002`).
+Decision 49 ("upstream wins", 2026-09-24): where upstream has a rule or clear convention, the
+house follows it exactly, neither looser nor stricter; a house rule only fills a gap upstream
+is silent on. The 2026-09-24 sweep found one rule stricter than upstream — S20 — reworded
+below. Every other rule cited on this page and in the `alchemy-provider-standard` skill was
+re-checked against the rulebook this sweep built and matches (a) or fills a genuine gap (c);
+the classification table is in the PR body that carried this change.
 
 This page is the kit-side statement of the house standard for a custom Alchemy provider.
 The full rule set is the `alchemy-provider-standard` skill in the estate's workflow plugin.
@@ -64,8 +70,19 @@ already ships is a finding, even when it works.
   CPU-only Node call (`node:crypto` `createHash`, `Buffer`) goes inside `Effect.sync`, which
   is upstream's own example. When a promise cannot be avoided, use `Effect.tryPromise`,
   never `Effect.promise`.
-- **No defects (S20).** Lifecycle operations contain no `Effect.orDie` and no
-  `Effect.die`. A refusal is a typed error.
+- **No defects (S20).** Lifecycle operations contain no `Effect.orDie` — that is upstream's
+  own wording, literally: "Do not use `Effect.orDie` in the lifecycle operations since this
+  will crash the whole IaC engine" (`AGENTS.md@tag#628-630`). A refusal is a typed error.
+  `Effect.die` is not separately forbidden; the house no longer reads it as the same defect
+  (reverted 2026-09-24, decision 49 "upstream wins" — S20 was stricter than upstream on this
+  point, and the rule is to match upstream exactly, never looser or stricter). The one place
+  upstream's own engine tolerates a defect at all is the **recovery read** it issues for an
+  interrupted create: that call alone is wrapped in `Effect.catchDefect`, degrading any
+  defect there to "nothing recovered" rather than crashing the plan (`Plan.ts@tag#1447`,
+  `Apply.ts@tag#2218`). Every other invocation of `read`, `diff`, `reconcile`, `delete` and
+  `list` has no such wrapper (`Plan.ts@tag#1303-1315`: the engine calls `read` with no catch),
+  so a defect anywhere else still crashes the plan. A house `die` kept in a read-path defect
+  cites this exact narrow exception, per site, in `upstream-conformance.md`.
 - **Typed errors (S21, S22).** Handle errors with `Effect.catchTag` over the SDK's union.
   Where the kit generates its own client from a vendor schema, the status-to-tag mapping
   lives in that client, once, and never in a resource.

@@ -260,6 +260,22 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
     releases it), aliased onto `@distilled.cloud/grafana` the same S22 route
     `@homeflare/distilled-netbox` established. `Grafana.Datasource`'s props/attributes/generated code
     are unchanged (diffed operation-by-operation against the prior commit).
+    - ⚠️ **Knowing departure from upstream (Q8, decision 49 "upstream wins", 2026-09-24, WI-13):**
+      upstream's own rule for a deprecated vendor API is to document it *out of scope*, not
+      implement it — "Deprecated APIs (superseded by Rulesets etc.) … are documented as out of
+      scope in `INDEX.md` rather than implemented" (A `AGENTS.md:155`). The 32 un-deprecated
+      operations above do the opposite: they are un-deprecated and implemented. The reason is that
+      there is no in-scope replacement to point at instead — Grafana's spec marks these
+      `deprecated: true` in favor of a Kubernetes-style aggregated apiserver under
+      `/apis/{folder,dashboard,...}.grafana.app/v1…`, and that route family is **absent from the
+      pinned spec entirely**: MEASURED 2026-09-24 in the grafana worktree
+      (`packages/grafana/specs/spec-mirror-grafana/specs/openapi3.json`), 0 of 207 paths start
+      with `/apis` — the un-deprecation patches' own descriptions already say the same thing
+      (`packages/grafana/patches/001-undeprecate-folders.patch.json`: "That newer route … [is] not
+      present in this spec at all"). Following upstream's rule literally here would mean shipping
+      no `Grafana.Folder`/`Dashboard`/alerting-provisioning family at all, on an API the kit
+      already needs. The departure is scoped to exactly these 32 operations; the other 32 stay
+      excluded, deprecated, out of scope, matching upstream on that half.
 
     ✅ **`Grafana.Folder`/`Grafana.Dashboard` shipped** (PR 245, on top of the same
     `@distilled.cloud/grafana` operations S22 unblocked) — the uid-required doctrine, the
