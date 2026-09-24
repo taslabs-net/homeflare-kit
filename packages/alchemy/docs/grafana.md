@@ -122,15 +122,19 @@ export class TeslaMateDatasource extends GrafanaDatasource('teslamate-datasource
 // …then provide `grafanaProviders({ baseUrl, tokenEnv })` alongside the stack's other providers.
 ```
 
+## Family status
+
+Every alerting-provisioning object this family set out to cover now ships:
+
+- **`Grafana.Folder` and `Grafana.Dashboard`** — see
+  [grafana-folder-dashboard.md](./grafana-folder-dashboard.md).
+- **`Grafana.ContactPoint`, `Grafana.MuteTiming` and `Grafana.MessageTemplate`** — see
+  [grafana-alerting.md](./grafana-alerting.md).
+- **`Grafana.AlertRuleGroup`** — see [grafana-alerting-rules.md](./grafana-alerting-rules.md).
+- **`Grafana.NotificationPolicy`** — the singleton policy tree, last on purpose (it references the
+  others by name) — see [grafana-notification-policy.md](./grafana-notification-policy.md).
+
 ## Not covered
 
-- **`Grafana.Folder` and `Grafana.Dashboard` ship** — see
-  [grafana-folder-dashboard.md](./grafana-folder-dashboard.md), not repeated here.
-- **`Grafana.ContactPoint`, `Grafana.MuteTiming` and `Grafana.MessageTemplate` ship** — see
-  [grafana-alerting.md](./grafana-alerting.md), not repeated here.
-- **`Grafana.AlertRuleGroup` ships** — see [grafana-alerting-rules.md](./grafana-alerting-rules.md),
-  not repeated here.
-- **`Grafana.NotificationPolicy`** — the last stacked follow-up PR, the singleton policy tree, on
-  the same operations; not blocked on anything.
 - **`read` never answers `Unowned`** — the same open gap forgejo's and netbox's own families
   still carry (see upstream-conformance.md); a maintainer decision on the ownership-check shape.
