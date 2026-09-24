@@ -10,7 +10,7 @@ import * as RemovalPolicy from 'alchemy/RemovalPolicy';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { engineOver } from '../verify/fake-engine.ts';
-import { ProxmoxCephDaemon, ProxmoxCephDaemonProvider } from './ceph-daemon.ts';
+import { ProxmoxCephDaemon, ProxmoxCephDaemonProvider, reconcileDaemon } from './ceph-daemon.ts';
 import { FAKE_TARGET, type PveCall, fakePve, withoutBao } from './fake-pve.ts';
 
 const NODE = 'node-b';
@@ -107,5 +107,52 @@ describe('destroying a mgr', () => {
       await engine.deploy(Effect.void);
     });
     expect(fake.writes()).toEqual([`DELETE ${OBJECT}`]);
+  });
+});
+
+describe("reconcile called directly, no diff first — the adversarial review's own proof", () => {
+  /**
+   * ⚠️ STRUCTURAL, NOT A REFUSAL — checked directly before writing this test:
+   *   `constraints.ts`'s `violations()` never checks a bare `format` rule (`mon-address`'s own
+   *   `{"format":"ip-list","type":"string"}` carries no `pattern`), and `mds`/`mgr`'s create
+   *   endpoints have EMPTY constraint tables — so nothing in this family's vendor table can
+   *   actually refuse a bad value today (a separate, recorded gap; not this PR's to fix). What IS
+   *   provable, and what the review's finding was actually about, is that `guardWrite` — and so
+   *   `createForm(news)`, which it must evaluate to build the value it checks — runs on the
+   *   ADOPTED-ROW PATH at all, before the `live !== undefined` early return. A getter on
+   *   `mon-address` proves it: `createForm` is the ONLY thing that reads this field on that path
+   *   (`createDaemon`, the other reader, is never reached when `live` is already defined), so it
+   *   firing at all means the guard ran; it firing zero times is exactly the bug the review found.
+   */
+  test('guardWrite (and the createForm it checks) still runs on an adopted row, before the early return', async () => {
+    const NAME = 'node-b';
+    const COLLECTION = `nodes/${NODE}/ceph/mon`;
+    const fake = fakePve((call: PveCall) => {
+      if (call.method === 'GET' && call.path === COLLECTION) {
+        return [{ addr: '198.51.100.12:6789/0', name: NAME, state: 'running' }];
+      }
+      return undefined;
+    });
+    let reads = 0;
+    const news = {
+      get 'mon-address'() {
+        reads += 1;
+        return '198.51.100.99';
+      },
+      kind: 'mon' as const,
+      name: NAME,
+      node: NODE,
+      target: FAKE_TARGET,
+    };
+    await withoutBao(async () => {
+      // ⛔ NOT engine.deploy() — this calls the exported `reconcileDaemon` straight, the way a
+      //   resumed apply or a verify harness would, with no `diff` run first.
+      const after = await Effect.runPromise(
+        reconcileDaemon({ news }).pipe(Effect.provide(fake.layer)),
+      );
+      expect(after.state).toBe('running');
+    });
+    expect(reads).toBeGreaterThan(0);
+    expect(fake.writes()).toEqual([]);
   });
 });

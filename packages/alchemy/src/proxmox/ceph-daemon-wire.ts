@@ -18,7 +18,7 @@
 import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
 import type { CephDaemonKind, CephDaemonProps } from './ceph-daemon.ts';
-import { daemonAttributes, daemonId } from './ceph-daemon-form.ts';
+import { daemonAttributes, daemonId, daemonPath } from './ceph-daemon-form.ts';
 import { runPve } from './distilled-pve.ts';
 
 /**
@@ -104,3 +104,12 @@ export const deleteDaemon = (props: CephDaemonProps) => {
 
 /** Re-exported so ceph-daemon.ts can narrow a switch exhaustively without importing the union twice. */
 export type { CephDaemonKind };
+
+/** ★ Moved here from ceph-daemon.ts's `reconcile` for the 250-line cap — matches ceph-fs.ts's own
+ *  `notCreated`/`notDestroyed` seam: the message, not the decision to die, lives with the calls. */
+export const notCreated = (props: CephDaemonProps) =>
+  new Error(
+    `${daemonPath(props)}: no ${props.kind} named ${daemonId(props)} in GET nodes/` +
+      `${props.node}/ceph/${props.kind} after the create task finished. POST answers a UPID, ` +
+      'not a result -- watch the task in the PVE UI (ceph-daemon-form.ts).',
+  );

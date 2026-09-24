@@ -46,17 +46,16 @@
  *   datacenter options and every other cluster-wide config write — so it is worth knowing that
  *   this credential already has it rather than discovering it the next time something is scoped.
  *
- * ★ MIGRATED OFF `client.ts` ONTO `@distilled.cloud/proxmox` (2026-09-24, decision 43, 2c —
- *   ceph-daemon-wire.ts's own header has the one-key rename and why no protocol gap blocks any
- *   of the three kinds). `readDaemon` keeps this family's pre-migration single-fold shape; see
- *   ceph-pool-wire.ts for why that is not a bug left unfixed.
+ * ★ MIGRATED OFF `client.ts` (2026-09-24, decision 43, 2c) — ceph-daemon-wire.ts has the rename
+ *   and why no protocol gap blocks any of the three kinds; `readDaemon` there keeps this family's
+ *   pre-migration single-fold shape (ceph-pool-wire.ts explains why that is not left unfixed).
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { DAEMON_ENDPOINTS, createForm, daemonId, daemonPath } from './ceph-daemon-form.ts';
-import { createDaemon, deleteDaemon, readDaemon } from './ceph-daemon-wire.ts';
+import { DAEMON_ENDPOINTS, createForm } from './ceph-daemon-form.ts';
+import { createDaemon, deleteDaemon, notCreated, readDaemon } from './ceph-daemon-wire.ts';
 import { guardWrite } from './distilled-guard.ts';
 import { type PveRequirements, type WithTarget } from './resource.ts';
 
@@ -197,6 +196,27 @@ export const ProxmoxCephDaemon = Resource<ProxmoxCephDaemon>('Proxmox.CephDaemon
  *     Change one by removing the declaration and re-adding it, ONE DAEMON AT A TIME, reading the
  *     ⛔ on destroy in the header first.
  */
+/**
+ * ★ The factory's shape with no `updateForm`: create if absent, else read back untouched.
+ * ⛔ `guardWrite` RUNS RIGHT AFTER THE READ, UNCONDITIONALLY, NOT ONLY ON THE CREATE BRANCH —
+ *   found on adversarial review, 2026-09-24, matching node-network.ts's own `reconcile`.
+ *   `reconcile` also runs for an ADOPTED row with no fresh `diff` first (Plan.ts forces it after
+ *   the probe even when `diff` said noop), so a guard only on the create branch would let a
+ *   caller that skips `diff` (a resumed apply, a verify harness) reach `createDaemon` with
+ *   `mon-address` — a real vendor rule — unchecked.
+ * ★ EXPORTED SO A TEST CAN CALL IT DIRECTLY, bypassing `diff` — the shape the review's own proof
+ *   needed: `findProvider` gives back the wrapped service, this gives the plain function.
+ */
+export const reconcileDaemon = Effect.fn(function* ({ news }: { news: CephDaemonProps }) {
+  const live = yield* readDaemon(news);
+  yield* guardWrite(DAEMON_ENDPOINTS[news.kind], createForm(news), live === undefined);
+  if (live !== undefined) return live;
+  yield* createDaemon(news);
+  const after = yield* readDaemon(news);
+  if (after === undefined) return yield* Effect.die(notCreated(news));
+  return after;
+});
+
 export const ProxmoxCephDaemonProvider = () =>
   Provider.effect(
     ProxmoxCephDaemon,
@@ -218,25 +238,7 @@ export const ProxmoxCephDaemonProvider = () =>
           }
           return { action: 'noop' } as const;
         }),
-        // ★ The factory's shape with no `updateForm`: create if absent, else read back untouched.
-        reconcile: Effect.fn(function* ({ news }) {
-          const live = yield* readDaemon(news);
-          if (live !== undefined) return live;
-          yield* guardWrite(DAEMON_ENDPOINTS[news.kind], createForm(news), true);
-          yield* createDaemon(news);
-          const after = yield* readDaemon(news);
-          if (after === undefined) {
-            return yield* Effect.die(
-              new Error(
-                `${daemonPath(news)}: the create task finished but a ${news.kind} named ` +
-                  `${daemonId(news)} is not in GET nodes/${news.node}/ceph/${news.kind}. Watch ` +
-                  'the task in the PVE UI before concluding the create failed -- POST answers a ' +
-                  'UPID, not a result (ceph-daemon-form.ts).',
-              ),
-            );
-          }
-          return after;
-        }),
+        reconcile: ({ news }) => reconcileDaemon({ news }),
         /**
          * ⛔ THE DANGEROUS ONE. Re-read the destroy ⛔ in the header before letting a plan that
          *   removes a mon run: two gone at once is a cluster with no quorum and every guest on

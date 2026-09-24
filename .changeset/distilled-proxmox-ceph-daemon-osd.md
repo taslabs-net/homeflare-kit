@@ -46,6 +46,27 @@ separately for its own fix (move `cleanup` into the query string, the way `destr
 ceph-fs-wire.ts already does for CephFs's own flags). It has zero live impact today either way,
 since the whole DELETE 403s for this package's credential regardless of `cleanup`.
 
+**One adversarial-review finding, fixed.** The hand-written `reconcile` returned early on
+`if (live !== undefined) return live;` BEFORE calling `guardWrite` — the pre-migration factory
+(`pveOperations.reconcile`, resource.ts) ran its create/update guard unconditionally right after
+the read, because `reconcile` also runs for an ADOPTED row with no fresh `diff` first (Plan.ts
+forces it after the probe even when `diff` said noop). Inert today, since `diff` guards every
+normal plan — but a real gap for any caller that invokes `reconcile` directly (a resumed apply
+from persisted state, a verify/adopt harness). Fixed to match `node-network.ts`'s own `reconcile`:
+`guardWrite` now runs immediately after the read, unconditionally. `reconcileDaemon` is exported
+so a test can call it directly, bypassing `diff` the same way the gap would have been reached.
+
+**A related, separate finding, NOT fixed here — recorded to `decisions.md`'s open items.** Proving
+the guard fix with an actual refused value turned up that `constraints.ts`'s `violations()` never
+checks a bare `format` rule: `mon-address`'s own vendor entry is `{"format":"ip-list",
+"type":"string"}` with no `pattern`, and checked directly, `formViolations` returns `[]` for a
+malformed address. `mds`/`mgr`'s create endpoints carry EMPTY constraint tables too. About 105
+parameters across this whole package declare a `format`; none are enforced. This is a real,
+pre-existing gap unrelated to distilled or this migration — the new test instead proves the
+STRUCTURAL property (`guardWrite`, and the `createForm` it must evaluate, still run on the
+adopted-row path, via a field getter that only `createForm` reads on that path), confirmed to fail
+without the ordering fix by temporarily reverting it and re-running.
+
 **New tests**, proven against a deliberately broken implementation before landing:
 `ceph-daemon-write.test.ts` (a new mon POSTs `mon-address` as `mon_address` and reads the collection
 back; a new mds POSTs `hotstandby`; `RemovalPolicy.destroy()` then undeclaring a mgr sends exactly
