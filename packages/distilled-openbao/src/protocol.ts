@@ -31,9 +31,11 @@
  * match on status, or on message when OpenBao actually supplies one — see
  * `patches/`.
  *
- * Authentication is a single header, `X-Vault-Token`, plus an optional
- * `X-Vault-Namespace` when the credential carries one — the estate always
- * does (`BAO_NAMESPACE=homeflare`). A namespace does not change a mounted
+ * Authentication is `X-Vault-Token` when a credential carries a nonempty
+ * token; omit it for a local agent that supplies its own identity. An
+ * optional `X-Vault-Namespace` selects a namespace; absent means root.
+ * `X-Vault-Request: true` admits agent listeners with require_request_header
+ * (OpenBao v2.6.2 command/agent.go:544-548). A namespace does not change a mounted
  * backend's own path shape (see `stacks/distilled-submodules/spec-repos/
  * openbao/fetch-specs.ts`'s module docs for how that was confirmed), so it
  * is purely a request header here, never a path segment.
@@ -100,7 +102,10 @@ export const OpenBaoProtocol: Layer.Layer<API.Protocol> =
     }),
     baseUrl: (creds) => creds.apiBaseUrl,
     headers: (creds) => ({
-      "X-Vault-Token": Redacted.value(creds.token),
+      ...(creds.token && Redacted.value(creds.token) !== ""
+        ? { "X-Vault-Token": Redacted.value(creds.token) }
+        : {}),
+      "X-Vault-Request": "true",
       ...(creds.namespace ? { "X-Vault-Namespace": creds.namespace } : {}),
       Accept: "application/json",
     }),

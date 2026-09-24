@@ -45,7 +45,8 @@ export const normalizeBaseUrl = (addr: string): string => {
 };
 
 export interface Config {
-  readonly token: Redacted.Redacted<string>;
+  /** Absent for a local agent listener that supplies its own identity. */
+  readonly token?: Redacted.Redacted<string>;
   /** Fully-qualified API root, e.g. `http://127.0.0.1:8200/v1`. */
   readonly apiBaseUrl: string;
   /** `X-Vault-Namespace`, when the estate uses one. Absent = root namespace. */
@@ -58,7 +59,7 @@ export class Credentials extends Context.Service<
 >()("OpenBaoCredentials") {}
 
 const envConfig = EffectConfig.all({
-  token: EffectConfig.String("BAO_TOKEN"),
+  token: EffectConfig.String("BAO_TOKEN").pipe(EffectConfig.option),
   addr: EffectConfig.String("BAO_ADDR"),
   namespace: EffectConfig.String("BAO_NAMESPACE").pipe(EffectConfig.option),
 });
@@ -69,11 +70,14 @@ export const CredentialsFromEnv = Layer.succeed(
     Effect.mapError(
       () =>
         new ConfigError({
-          message: "BAO_ADDR and BAO_TOKEN environment variables are required",
+          message: "BAO_ADDR environment variable is required",
         }),
     ),
     Effect.map(({ token, addr, namespace }) => ({
-      token: Redacted.make(token),
+      token:
+        token.valueOrUndefined === undefined
+          ? undefined
+          : Redacted.make(token.valueOrUndefined),
       apiBaseUrl: normalizeBaseUrl(addr),
       namespace: namespace.valueOrUndefined,
     })),
@@ -83,7 +87,7 @@ export const CredentialsFromEnv = Layer.succeed(
 
 /** Convenience layer from a plain token, address and optional namespace. */
 export const credentials = (config: {
-  readonly token: string | Redacted.Redacted<string>;
+  readonly token?: string | Redacted.Redacted<string>;
   readonly addr: string;
   readonly namespace?: string;
 }): Layer.Layer<Credentials> =>

@@ -10,11 +10,10 @@
  * `packages/alchemy/src/openbao/bao-http.ts` caps in-flight OpenBao
  * exchanges at 8 process-wide (`BaoGate`, a `Semaphore`) after a real
  * outage: unbounded Alchemy fan-out took the dev listener's socket down
- * (measured 2026-09-14). That cap is `HttpClient` middleware, not a retry
- * policy, and stays exactly where it is — the kit's Effect runtime provides
- * the gated `HttpClient.HttpClient` layer underneath whichever protocol
- * (hand-rolled or this SDK) issues the request, so it keeps applying
- * unchanged to every call this package makes.
+ * (measured 2026-09-14). That cap lives inside the kit's call runner, not
+ * inside HttpClient. SDK consumers must explicitly share the same gate;
+ * merely supplying the HTTP client does not apply it. The kit runner also
+ * selects Retry.none so a failed response cannot repeat a sent write.
  *
  * @example
  * ```ts

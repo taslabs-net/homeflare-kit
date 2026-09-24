@@ -33,7 +33,7 @@ export {
   DEFAULT_ERRORS,
   API_ERRORS,
 } from "@distilled.cloud/core/errors";
-import type { DefaultErrors as CoreDefaultErrors } from "@distilled.cloud/core/errors";
+import type { API_ERRORS } from "@distilled.cloud/core/errors";
 
 import * as Schema from "effect/Schema";
 import * as Category from "@distilled.cloud/core/category";
@@ -70,4 +70,6 @@ export type ClientErrors = UnknownOpenBaoError | OpenBaoParseError;
  * Default OpenBao operation errors: the shared HTTP status errors from core
  * plus the client-level fallback/decode errors.
  */
-export type DefaultErrors = CoreDefaultErrors | ClientErrors;
+export type DefaultErrors =
+  | InstanceType<(typeof API_ERRORS)[number]>
+  | ClientErrors;
