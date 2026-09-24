@@ -36,6 +36,19 @@ describe('repoBaselineSettings', () => {
       visibility: undefined,
     });
   });
+
+  // K5 (2026-09-24): zero required checks means `gh pr merge --auto` has nothing to wait for —
+  // GitHub merges a CLEAN pull request immediately, with no review and no green run. Regression
+  // for repoBaselineSettings hardcoding `allowAutoMerge: true` regardless of `checks`.
+  test('zero checks turns auto-merge off — nothing would ever hold a merge back', () => {
+    const settings = repoBaselineSettings({ ...input, checks: [] });
+    expect(settings.allowAutoMerge).toBe(false);
+  });
+
+  test('at least one check keeps auto-merge on', () => {
+    const settings = repoBaselineSettings({ ...input, checks: ['ci'] });
+    expect(settings.allowAutoMerge).toBe(true);
+  });
 });
 
 describe('repoBaselineRuleset', () => {
