@@ -9,6 +9,7 @@ import type { ProxmoxOpContext } from "./protocol.ts";
 import * as Retry from "./retry.ts";
 import * as pools from "./services/pools.ts";
 import * as cluster from "./services/cluster.ts";
+import * as nodes from "./services/nodes.ts";
 
 const call = <A, E>(
   op: Effect.Effect<A, E, ProxmoxOpContext>,
@@ -149,5 +150,53 @@ describe("precise config absence tags", () => {
         errors: { id: "No such job 'absent'" },
       }),
     ).toMatchObject({ _tag: "ParameterVerificationFailed" });
+  });
+  test("network absence is the exact sole iface error on its GET only", async () => {
+    const body = {
+      data: null,
+      message: "Parameter verification failed.\n",
+      errors: { iface: "interface does not exist" },
+    };
+    expect(
+      await call(
+        nodes.getNodeNetwork({ node: "n2", iface: "vmbr9" }),
+        400,
+        body,
+      ),
+    ).toMatchObject({ _tag: "NetworkInterfaceNotFound" });
+    expect(
+      await call(
+        nodes.putNodeNetwork2({ node: "n2", iface: "vmbr9", type: "bridge" }),
+        400,
+        body,
+      ),
+    ).toMatchObject({
+      _tag: "ParameterVerificationFailed",
+      errors: body.errors,
+    });
+    for (const errors of [
+      { iface: "invalid interface name" },
+      { iface: "interface does not exist", type: "invalid type" },
+      { other: "interface does not exist" },
+    ]) {
+      expect(
+        await call(nodes.getNodeNetwork({ node: "n2", iface: "vmbr9" }), 400, {
+          ...body,
+          errors,
+        }),
+      ).toMatchObject({ _tag: "ParameterVerificationFailed", errors });
+    }
+    for (const [status, tag] of [
+      [403, "Forbidden"],
+      [500, "InternalServerError"],
+    ] as const) {
+      expect(
+        await call(
+          nodes.getNodeNetwork({ node: "n2", iface: "vmbr9" }),
+          status,
+          body,
+        ),
+      ).toMatchObject({ _tag: tag });
+    }
   });
 });

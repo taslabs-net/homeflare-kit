@@ -37,9 +37,10 @@ operations the vendor schema itself marks `proxyto: "node"`.
 Task polling belongs in the Alchemy provider: the SDK exports the generated
 `getNodeTaskStatus` operation, and the caller owns its bound and failure policy.
 
-Pool, backup-job and metric-server missing reads now expose precise typed tags
+Pool, backup-job, metric-server and network-interface missing reads expose precise typed tags
 from vendor source at pve-manager 9.2.11. Backup-job absence uses a sole nested
-`errors.id` under the parameter-verification envelope; other validation errors
+`errors.id`; network-interface absence uses the exact sole `errors.iface` on its
+detail GET. Both use the parameter-verification envelope; other validation errors
 retain their structured failure. PVE form arrays use repeated keys, preserving
 commas within a rule/property value. Scalar comma lists and query binding are
 unchanged. Protocol fixtures exercise both the accepted and rejected shapes.

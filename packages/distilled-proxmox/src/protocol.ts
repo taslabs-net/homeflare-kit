@@ -113,9 +113,9 @@ export type ProxmoxOpContext = Credentials | HttpClient.HttpClient;
 const errorEnvelope = (body: unknown): RestErrorEnvelope | undefined => {
   if (body === null || typeof body !== "object") return undefined;
   const b = body as Record<string, unknown>;
-  // PVE's backup read/delete missing-id exception is a 400 with the useful
-  // message in errors.id (Backup.pm:406,458 at pve-manager 9.2.11). Expose
-  // ONLY that exact sole-field detail to the operation's typed matcher.
+  // PVE missing backup/interface exceptions carry the useful message in one
+  // field (Backup.pm:406,458; Network.pm:852, pve-manager 9.2.11). Expose
+  // ONLY those exact sole-field details to the operation's typed matcher.
   // Multiple errors, other fields, and unrelated validation stay unchanged.
   const errors = b.errors;
   if (
@@ -124,12 +124,17 @@ const errorEnvelope = (body: unknown): RestErrorEnvelope | undefined => {
     errors !== null &&
     typeof errors === "object" &&
     !Array.isArray(errors) &&
-    Object.keys(errors).length === 1 &&
-    "id" in errors &&
-    typeof errors.id === "string" &&
-    /^No such job '[^']+'$/.test(errors.id)
+    Object.keys(errors).length === 1
   ) {
-    return { message: errors.id };
+    if (
+      "id" in errors &&
+      typeof errors.id === "string" &&
+      /^No such job '[^']+'$/.test(errors.id)
+    )
+      return { message: errors.id };
+    if ("iface" in errors && errors.iface === "interface does not exist") {
+      return { message: errors.iface };
+    }
   }
   return { message: typeof b.message === "string" ? b.message : undefined };
 };

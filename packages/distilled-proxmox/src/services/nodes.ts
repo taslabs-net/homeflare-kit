@@ -50,6 +50,18 @@ export class ClusterNodeUnreachable
     [{ status: 595 }],
   ) {}
 
+/** pve-manager 9.2.11, f6997e698c7933ea8e62319e2bf1bf7262daa56a, PVE/API2/Network.pm:817-858. The detail GET raises HTTP 400 with exactly errors.iface = interface does not exist. The same read-only response was measured by homeflare-kit on 2026-09-24. Only the exact sole-field detail is normalized for operation matching; all other validation errors remain ParameterVerificationFailed. Attached only to GET. */
+export class NetworkInterfaceNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<NetworkInterfaceNotFound>()(
+      "NetworkInterfaceNotFound",
+      {
+        message: S.String,
+      },
+    ).pipe(C.withBadRequestError),
+    [{ status: 400, message: { matches: "^interface does not exist$" } }],
+  ) {}
+
 export interface CloneNodesLxcRequest {
   node: string;
   vmid: string;
@@ -22297,7 +22309,7 @@ export const getNodeLxcVncwebsocket: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type GetNodeNetworkError = ProxmoxOpError;
+export type GetNodeNetworkError = NetworkInterfaceNotFound | ProxmoxOpError;
 /** Read network device configuration */
 export const getNodeNetwork: API.OperationMethod<
   GetNodeNetworkRequest,
@@ -22307,7 +22319,7 @@ export const getNodeNetwork: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: GetNodeNetworkRequest,
   output: GetNodeNetworkResponse,
-  errors: [],
+  errors: [NetworkInterfaceNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
