@@ -50,62 +50,13 @@ export const normalizeModel = (model: DashboardModel, uid: string): DashboardMod
 export const modelTitle = (model: DashboardModel): string =>
   typeof model.title === 'string' ? model.title : '';
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /**
- * ★ `declared` NEED ONLY BE A SUBSET OF `live` — an adversarial review of this PR (2026-09-24)
- *   found that plain structural equality made an ordinary, never-edited dashboard show `update`
- *   FOREVER: Grafana's own dashboard-save schema migration rewrites any panel or target whose
- *   `datasource` is absent into an explicit `{type, uid}` reference to the resolved default
- *   datasource — documented Grafana schema-migration behavior (not re-measured against a live
- *   instance in this PR — no live calls). A declared panel that never sets `datasource` (the
- *   common case: hand-authored JSON, or anything relying on the dashboard-level default) would,
- *   after the FIRST create, read back with that field populated; plain `deepEqual` (this file used
- *   `alchemy/Diff`'s before this fix) then disagreed with the declaration on every subsequent plan,
- *   `update` sent the undecorated model back, and Grafana redecorated it again on the next read —
- *   non-convergent.
- *
- * This function instead asks only "does every field the DECLARATION mentions, at any depth, still
- * match what is live" — `live` may carry additional fields, at any depth, that `declared` never
- * mentioned (the datasource auto-decoration above, or any future Grafana-injected default,
- * `fieldConfig` defaults and `pluginVersion` included) without being compared at all. A field
- * `declared` DOES mention that is missing, or different, in `live` still fails the match — real
- * content drift is still caught exactly as before; only fields the declaration is silent about are
- * now tolerated rather than compared.
- *
- * ⚠️ THE TRADE-OFF THIS ACCEPTS, DELIBERATELY: removing a field from the declaration (rather than
- *   changing its value) can no longer force Grafana to drop it. If a panel once declared an
- *   explicit `datasource` and a later declaration deletes that key entirely (rather than setting a
- *   different one), `live` keeps whatever the last write set — the declaration is silent about that
- *   key now, so nothing compares it, so no `update` ever fires to change it. This is the same
- *   "undeclared means don't care, never means force-to-default" convention already used everywhere
- *   else in this kit for a plain optional prop (e.g. `datasource.ts`'s `matches` never treats an
- *   undeclared `access` as "must be unset"); it now also applies inside the JSON model, not just at
- *   the props level. Declare an explicit replacement value to change a field; omission never clears
- *   one that was set by a previous declaration or by Grafana itself.
- *
- * ⚠️ ARRAYS COMPARE BY LENGTH, THEN ELEMENT-WISE SUBSET — never by a looser "declared has fewer
- *   items" rule. `panels`/`targets` are position-significant (see `normalizeModel`'s header); an
- *   array Grafana pads or reorders on its own would still need normalizing here explicitly, the
- *   same as any other newly-discovered auto-decoration — this function does not paper over that.
- * ⚠️ `null` ON EITHER SIDE OF A LEAF NEVER MISMATCHES (mirrors `alchemy/Diff`'s `deepEqual` with
- *   `stripNullish: true`, which this function replaces for the dashboard model specifically).
+ * `declared` need only be a subset of `live` — dashboard.ts's `matches` runs `normalizeModel`'s
+ * output through this. Moved to `subset-match.ts` once `Grafana.ContactPoint`'s `settings` needed
+ * the identical "declaration silent about a field means don't compare it" rule; re-exported here
+ * under its original name so this file's own callers and dashboard-model.test.ts are unchanged.
+ * See subset-match.ts for the full reasoning, including the regression this exists to fix
+ * (Grafana's dashboard-save schema migration auto-decorating a panel's `datasource`) and the
+ * trade-off it accepts (an omitted field can no longer force-clear a previously-set one).
  */
-export const declaredContentMatches = (declared: unknown, live: unknown): boolean => {
-  if (declared == null) return true;
-  if (Array.isArray(declared)) {
-    return (
-      Array.isArray(live) &&
-      declared.length === live.length &&
-      declared.every((item, index) => declaredContentMatches(item, live[index]))
-    );
-  }
-  if (isPlainObject(declared)) {
-    return (
-      isPlainObject(live) &&
-      Object.entries(declared).every(([key, value]) => declaredContentMatches(value, live[key]))
-    );
-  }
-  return declared === live;
-};
+export { declaredContentMatches } from './subset-match.ts';

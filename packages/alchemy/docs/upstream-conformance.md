@@ -261,13 +261,35 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
     `@homeflare/distilled-netbox` established. `Grafana.Datasource`'s props/attributes/generated code
     are unchanged (diffed operation-by-operation against the prior commit).
 
-    ✅ **`Grafana.Folder`/`Grafana.Dashboard` shipped** (this PR, on top of the same
+    ✅ **`Grafana.Folder`/`Grafana.Dashboard` shipped** (PR 245, on top of the same
     `@distilled.cloud/grafana` operations S22 unblocked) — the uid-required doctrine, the
     provisioned-object refusal, the parentUid-is-create-only refusal and the volatile-field
     normalization that makes an unchanged dashboard a true noop are all in
-    [grafana-folder-dashboard.md](./grafana-folder-dashboard.md), not repeated here. **Still open,
-    and not this PR's scope:** `Grafana.AlertRule`/`ContactPoint`/`NotificationPolicy`/`MuteTiming`
-    — follow-up PRs, no longer blocked on the SDK.
+    [grafana-folder-dashboard.md](./grafana-folder-dashboard.md), not repeated here.
+
+    ✅ **`Grafana.ContactPoint`/`Grafana.MuteTiming`/`Grafana.MessageTemplate` shipped** (this PR,
+    first of three stacked PRs — `Grafana.AlertRuleGroup` then `Grafana.NotificationPolicy` follow):
+    the foreign-provenance refusal (`alerting-provenance.ts`, an allowlist of Grafana's own
+    `ProvenanceNone`/`ProvenanceAPI` values, measured against `pkg/services/ngalert/models` and
+    Grafana's v13.1 docs) and the secret-settings-ref seam (`secret-refs.ts`, shared with
+    `Grafana.Datasource`) are both new shared building blocks — full detail:
+    [grafana-alerting.md](./grafana-alerting.md).
+    - 🔴 **New SDK gap found, not fixed here:** `MuteTimeInterval`'s generated type has no
+      `provenance`/`version` fields, and the SDK's own `TimeInterval` type is missing the real
+      Alertmanager time-interval fields (`weekdays`/`times`/`months`/etc.) entirely — Grafana's real
+      API returns and accepts all of them. NOT a data-loss gap: `@distilled.cloud/core`'s response
+      decoding never runs a strict schema decode (`JSON.parse` + a key-rename pass that leaves any
+      unmodeled key verbatim — `protocol-http.ts`'s `mapKeys`, confirmed by driving the real
+      operation through this family's fake-Grafana harness), so `mute-timing.ts` reads/writes both
+      through a locally-widened type instead. Same S22 fix route as the other named gaps
+      (regenerate the distilled clone's spec, copy forward) — not attempted here, since
+      `packages/distilled-grafana/src/` is vendored and never hand-edited.
+    - Measured, read-only, same census as PR 245's: `teslamate-grafana` has no contact points, mute
+      timings or templates configured either (consistent with the alerting-provisioning gap having
+      been real, not merely unexploited).
+
+    **Still open, not this PR's scope:** `Grafana.AlertRuleGroup`/`Grafana.NotificationPolicy` —
+    the next two stacked PRs, no longer blocked on the SDK.
     - ⛔ **Same open gaps as `forgejo/*` and `netbox/*` above:** `read` never answers `Unowned`
       (H1), and credentials come from an explicit env var NAME at call time rather than an
       `alchemy/Auth` provider (S24) — here the house's own `grafanaCredentials(target)`, not the

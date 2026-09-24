@@ -12,14 +12,20 @@
  *   deploys anything over HTTP already has one.
  */
 import * as Layer from 'effect/Layer';
+import { GrafanaContactPointProvider } from './contact-point.ts';
 import { type GrafanaTarget, grafanaCredentials } from './credentials.ts';
 import { GrafanaDashboardProvider } from './dashboard.ts';
 import { GrafanaDatasourceProvider } from './datasource.ts';
 import { GrafanaFolderProvider } from './folder.ts';
+import { GrafanaMessageTemplateProvider } from './message-template.ts';
+import { GrafanaMuteTimingProvider } from './mute-timing.ts';
 
 export const grafanaProviders = (target: GrafanaTarget) =>
   Layer.mergeAll(
     GrafanaDatasourceProvider(),
     GrafanaFolderProvider(),
     GrafanaDashboardProvider(),
+    GrafanaContactPointProvider(),
+    GrafanaMuteTimingProvider(),
+    GrafanaMessageTemplateProvider(),
   ).pipe(Layer.provide(grafanaCredentials(target)));
