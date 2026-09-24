@@ -1,5 +1,5 @@
 ---
-'@homeflare/distilled-opnsense': patch
+'@homeflare/distilled-opnsense': minor
 ---
 
 Byte-copy of the distilled-side fix for two measured defects in the OPNsense
@@ -43,6 +43,18 @@ carries the uuid segment) and a `profile` option-map field on
 `quagga_general.get`'s response (OPNSENSE-2: asserts it decodes as
 `{value, selected}` entries, not a string).
 
-No kit `Resource`s consume this package yet (see `packages/alchemy/docs/
-opnsense.md` — the family PR is separate and held for after this SDK PR
-lands), so this release has no live-plan impact of its own.
+**`minor`, not `patch`**: for this 0.x package, a GET response field
+changing type from `string` to a map, and `get<Item>` gaining a required
+`uuid` path label, are both breaking shape changes for any consumer
+decoding these responses.
+
+**This is not a no-op release**: the already-merged `opnsense/*` family
+(PR #236, `Opnsense.Firewall.Alias`/`Opnsense.Firewall.Group`) consumes
+this package's `get()` through `fetchLive` — this repo's bun workspace
+links `@distilled.cloud/opnsense` to this local package regardless of its
+declared `npm:` alias version, so that family's own pre-push gate caught
+the shape change immediately. See the sibling `@homeflare/alchemy`
+changeset in this same PR for the compatibility fix that keeps it
+decoding correctly, and its note on when that fix actually reaches a
+published `@homeflare/alchemy` consumer (the alias pin bump is a
+follow-up PR, not this one).
