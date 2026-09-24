@@ -19,12 +19,21 @@
  *   below returns the INDEX and `attributes` picks this filesystem out of the array client-side —
  *   the shape acl.ts uses for the one flat `GET /access/acl`. The POST goes to the `{name}` path,
  *   so `collection()` is the LONGER of the two strings, the mirror of metric-server.ts.
- *   ⚠️ AND THAT IS WHY `delete` AND `reconcile` ARE HAND-WRITTEN BELOW rather than taken from
- *     `pveHandlers`. `pveOperations.destroy` deletes `spec.path`, which here is the index:
- *     `DELETE /nodes/{node}/ceph/fs` is not a route, so a factory delete would fail every destroy
- *     while the filesystem stayed exactly where it was. `reconcile` is hand-written for a second,
- *     independent reason — the forked worker — set out in ceph-fs-wire.ts. acl.ts is the
- *     precedent for a family that genuinely does not fit; this is the second.
+ *   ⚠️ AND THAT IS WHY EVERY HANDLER BELOW IS HAND-WRITTEN rather than taken from a factory. A
+ *     factory `destroy` deletes the read path, which here is the index: `DELETE /nodes/{node}/
+ *     ceph/fs` is not a route, so it would fail every destroy while the filesystem stayed exactly
+ *     where it was. `reconcile` is hand-written for a second, independent reason — the forked
+ *     worker — set out in ceph-fs-wire.ts. acl.ts is the precedent for a family that genuinely
+ *     does not fit a shared shape.
+ *
+ * ★ MIGRATED OFF `client.ts`'s generic `pve()` ONTO `@distilled.cloud/proxmox`'s typed
+ *   `nodes.listNodeCephFs`/`updateNodeCephFs` for the READ and the CREATE (2026-09-24, decision
+ *   43's walk-down, 2c — ceph-fs-distilled.ts). `destroyFs` STAYS on `client.ts`, unmigrated:
+ *   distilled types the delete's `remove-pools`/`remove-storages` flags as a request BODY, and
+ *   this file's own next ⛔ (unchanged from before this migration) is the measured reason PVE
+ *   would silently ignore both on a DELETE sent that way — ceph-fs-wire.ts's header has the fuller
+ *   evidence. `readFs`/`diff`/`reconcile` keep the SAME single-fold, present-is-settled shape this
+ *   family always had; see ceph-pool-wire.ts's own header for why that is not a bug left unfixed.
  *
  * ⛔ CREATING A CephFS CREATES TWO CEPH POOLS, AND A `Proxmox.CephPool` MUST NOT ALSO DECLARE THEM.
  *   `createfs` builds `<name>_data` and `<name>_metadata` itself and refuses outright if either
@@ -59,16 +68,10 @@ import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import {
-  createForm,
-  createFs,
-  destroyFs,
-  notCreated,
-  notDestroyed,
-  objectPath,
-  readRow,
-} from './ceph-fs-wire.ts';
-import { type PveRequirements, type WithTarget, pveOperations } from './resource.ts';
+import { createFs, readFs } from './ceph-fs-distilled.ts';
+import { CEPH_FS_CREATE, createForm, destroyFs, notCreated, notDestroyed } from './ceph-fs-wire.ts';
+import { guardWrite } from './distilled-guard.ts';
+import { type PveRequirements, type WithTarget } from './resource.ts';
 
 export interface CephFsProps extends WithTarget {
   /** ⚠️ Which node answers the call, NOT which node holds the filesystem. See the header. */
@@ -143,33 +146,22 @@ export const ProxmoxCephFs = Resource<ProxmoxCephFs>('Proxmox.CephFs', {
   defaultRemovalPolicy: 'retain',
 });
 
-const ops = pveOperations<CephFsProps, CephFsAttributes>({
-  attributes: readRow,
-  /** ⚠️ The `{name}` path — longer than `path()`, deliberately. See the second ⛔ in the header. */
-  collection: objectPath,
-  createForm,
-  endpoint: { create: 'pve:POST /nodes/{node}/ceph/fs/{name}' }, // ⚠️ POSTed on the object.
-  /**
-   * ⛔ NOTHING IS COMPARED, AND THAT IS THE MOST DELIBERATE LINE IN THIS FILE. A CephFS has no
-   *   readable, writable field: the index returns only the name and the pools behind it, and every
-   *   prop this resource accepts is create-time or delete-time. So "present" IS "settled", and the
-   *   only honest comparison is none at all.
-   *   ⚠️ THE TEMPTING ADDITION IS `pg_num`, AND IT WOULD BE THE WORST BUG THIS PACKAGE HAS SHIPPED.
-   *     It is not in the index at all, so it can only be read from the pool endpoint — where the
-   *     autoscaler owns it. MEASURED on C1 today: created at 128, live at 32, with the metadata
-   *     pool already scheduled down to 16. Compared, that is an eternal mismatch; and because
-   *     `updateForm` is undefined, the action it produces is REPLACE. The plan would destroy and
-   *     rebuild a live filesystem on every deploy, triggered by a daemon on its own schedule.
-   *   ⚠️ `data_pools` AND `metadata_pool_id` ARE OUT FOR THE ORDINARY REASONS: a set PVE returns
-   *     in its own order, and an integer id for something written as a name. `name` is out because
-   *     it is the FILTER that produced these attributes, so comparing it is true by construction —
-   *     an identity change is handled in `diff`, not here. `node` is out because it is a route.
-   */
-  matches: () => true,
-  /** ⚠️ THE INDEX, NOT THE OBJECT. There is no GET on `{name}`; see the second ⛔ in the header. */
-  path: (props) => `nodes/${props.node}/ceph/fs`,
-});
-
+/**
+ * ⛔ NOTHING IS COMPARED, AND THAT IS THE MOST DELIBERATE LINE IN THIS FILE. A CephFS has no
+ *   readable, writable field: the index returns only the name and the pools behind it, and every
+ *   prop this resource accepts is create-time or delete-time. So "present" IS "settled", and the
+ *   only honest comparison is none at all.
+ *   ⚠️ THE TEMPTING ADDITION IS `pg_num`, AND IT WOULD BE THE WORST BUG THIS PACKAGE HAS SHIPPED.
+ *     It is not in the index at all, so it can only be read from the pool endpoint — where the
+ *     autoscaler owns it. MEASURED on C1 today: created at 128, live at 32, with the metadata
+ *     pool already scheduled down to 16. Compared, that is an eternal mismatch — and since there
+ *     is no update path, treating this as a diff would plan a REPLACE. The plan would destroy and
+ *     rebuild a live filesystem on every deploy, triggered by a daemon on its own schedule.
+ *   ⚠️ `data_pools` AND `metadata_pool_id` ARE OUT FOR THE ORDINARY REASONS: a set PVE returns
+ *     in its own order, and an integer id for something written as a name. `name` is out because
+ *     it is the FILTER that produced these attributes, so comparing it is true by construction —
+ *     an identity change is handled in `diff`, not here. `node` is out because it is a route.
+ */
 export const ProxmoxCephFsProvider = () =>
   Provider.effect(
     ProxmoxCephFs,
@@ -182,67 +174,72 @@ export const ProxmoxCephFsProvider = () =>
          */
         list: () => Effect.succeed([]),
         read: Effect.fn(function* ({ olds }) {
-          return yield* ops.read(olds);
+          return yield* readFs(olds);
         }),
         /**
-         * ⛔ A CHANGED `name` IS A REPLACE, AND THE FACTORY CANNOT SAY SO ALONE. Left to delegate,
-         *   a rename reads the NEW name, finds nothing, and returns the drift-shaped `update` that
-         *   `pveOperations.diff` uses for "Alchemy has state, the cluster does not" — so reconcile
-         *   would build the new filesystem and LEAVE THE OLD ONE, with its pools, its storage entry
-         *   and its bytes, owned by nobody and invisible in every later plan.
+         * ⛔ A CHANGED `name` IS A REPLACE, AND NOTHING ELSE CAN SAY SO. Left undetected, a rename
+         *   reads the NEW name, finds nothing, and plans the drift-shaped `update` this family uses
+         *   for "Alchemy has state, the cluster does not" — so reconcile would build the new
+         *   filesystem and LEAVE THE OLD ONE, with its pools, its storage entry and its bytes,
+         *   owned by nobody and invisible in every later plan.
          *   ⛔ SAYING `replace` IS HONEST, AND IT IS ALSO WHAT MAKES A TYPO EXPENSIVE. Alchemy
          *     creates first and deletes second, so the old filesystem is destroyed AFTER the new
          *     one exists — with `remove-pools` unset the bytes are stranded rather than erased, and
          *     that default is the only thing between a mis-typed rename and an unrecoverable one.
-         *     Do not "simplify" this back to the factory: the alternative is not safer, it is
-         *     silent. ⚠️ `node` is NOT part of identity and must never join this comparison.
+         *     ⚠️ `node` is NOT part of identity and must never join this comparison.
          */
         diff: Effect.fn(function* ({ news, output }) {
-          if (output !== undefined && isResolved(news) && news.name !== output.name) {
+          if (!isResolved(news)) return undefined;
+          yield* guardWrite(CEPH_FS_CREATE, createForm(news), output === undefined);
+          if (output !== undefined && news.name !== output.name) {
             return { action: 'replace' } as const;
           }
-          return yield* ops.diff(news, output);
+          if (output === undefined) return undefined;
+          const live = yield* readFs(news);
+          if (live === undefined) {
+            yield* guardWrite(CEPH_FS_CREATE, createForm(news), true);
+            return { action: 'update' } as const;
+          }
+          // ⛔ SEE THE ⛔ ABOVE `ProxmoxCephFsProvider`: NOTHING ELSE IS COMPARED. Present is settled.
+          return { action: 'noop' } as const;
         }),
         /**
-         * ⛔ NOT `ops.reconcile`, BECAUSE ITS READ-BACK RACES A FORKED WORKER. The POST returns a
-         *   UPID and nothing else; `createFs` waits the task out and surfaces its real error. The
-         *   read-back the factory does is kept here rather than dropped — waiting proves the task
-         *   ENDED, reading proves the filesystem EXISTS, and PVE has shipped tasks that end OK
-         *   having done nothing.
+         * ⚠️ THE READ-BACK IS KEPT EVEN THOUGH `createFs` ALREADY WAITED OUT THE TASK. Waiting
+         *   proves the task ENDED, reading proves the filesystem EXISTS, and PVE has shipped tasks
+         *   that end OK having done nothing.
          * ⚠️ AN EXISTING FILESYSTEM IS RETURNED UNTOUCHED. There is no update call to make, so the
          *   only write this handler can perform is a create; `diff` has already decided that a
          *   real change is a replace, and Alchemy calls delete for the old generation itself.
          */
         reconcile: Effect.fn(function* ({ news }) {
-          const live = yield* ops.read(news);
+          const live = yield* readFs(news);
           if (live !== undefined) return live;
           yield* createFs(news);
-          const after = yield* ops.read(news);
+          const after = yield* readFs(news);
           if (after === undefined) return yield* Effect.die(notCreated(news));
           return after;
         }),
         /**
-         * ⛔ NOT `ops.destroy`, AND NOT AN OVERSIGHT. It would DELETE `spec.path`, which on this
-         *   family is the index — a route PVE does not implement — so every destroy would fail
-         *   while the filesystem stayed exactly where it was. The read-back afterwards is what
-         *   turns "the task said OK" into "it is actually gone": `destroyfs` refuses while a
-         *   non-disabled `cephfs` storage still references the filesystem, and that refusal must
-         *   fail the destroy rather than letting Alchemy drop the state entry for a live object.
+         * ⛔ THE READ-BACK IS WHAT TURNS "the task said OK" INTO "it is actually gone": `destroyfs`
+         *   refuses while a non-disabled `cephfs` storage still references the filesystem, and that
+         *   refusal must fail the destroy rather than letting Alchemy drop the state entry for a
+         *   live object. `destroyFs` itself stays on `client.ts` — ceph-fs-wire.ts's own header has
+         *   the measured, protocol-level reason.
          */
         delete: Effect.fn(function* ({ olds }) {
           /**
            * ⚠️ A FILESYSTEM SOMEBODY ALREADY REMOVED BY HAND IS NOT AN ERROR. `destroyfs` dies
            *   synchronously with "no such cephfs", which would fail every destroy of a stack whose
            *   filesystem was cleaned up outside Alchemy and leave the state entry unremovable
-           *   without editing the store. ⚠️ THE COST IS STATED PLAINLY: `ops.read` folds a FAILED
+           *   without editing the store. ⚠️ THE COST IS STATED PLAINLY: `readFs` folds a FAILED
            *   read into "absent" (the storage.ts trap), so a read this credential cannot perform
            *   turns this into a destroy that reports success having done nothing. That is not a
            *   new hazard — a broken read defeats the read-back below in exactly the same way — but
            *   it is the reason a 403 on this family must be fixed rather than lived with.
            */
-          if ((yield* ops.read(olds)) === undefined) return;
+          if ((yield* readFs(olds)) === undefined) return;
           yield* destroyFs(olds);
-          const after = yield* ops.read(olds);
+          const after = yield* readFs(olds);
           if (after !== undefined) return yield* Effect.die(notDestroyed(olds));
         }),
       }),
