@@ -52,16 +52,9 @@ export {
   DEFAULT_ERRORS,
   API_ERRORS,
 } from "@distilled.cloud/core/errors";
-// `export { X } from "mod"` (above) is a RE-EXPORT ONLY — it creates no local
-// binding for `X`, so `BadRequest` needs its own `import type` to be usable
-// in this file's own `DefaultErrors` union below. Caught by the kit's copy
-// of this package typechecking under `verbatimModuleSyntax`, not by this
-// package's own `tsc -b` — see `docs/distilled-interim.md`'s "prove it in
-// both places" step for why that gap exists at all.
-import type {
-  BadRequest,
-  DefaultErrors as CoreDefaultErrors,
-} from "@distilled.cloud/core/errors";
+// Re-exports do not bind names locally. The operation union must cover every
+// class the package protocol can return through core's HTTP_STATUS_MAP.
+import type { API_ERRORS } from "@distilled.cloud/core/errors";
 
 import * as Schema from "effect/Schema";
 import * as Category from "@distilled.cloud/core/category";
@@ -153,7 +146,6 @@ export type ClientErrors = UnknownProxmoxError | ProxmoxParseError;
  * task-polling.json` adds it to.
  */
 export type DefaultErrors =
-  | CoreDefaultErrors
-  | BadRequest
+  | InstanceType<(typeof API_ERRORS)[number]>
   | ParameterVerificationFailed
   | ClientErrors;
