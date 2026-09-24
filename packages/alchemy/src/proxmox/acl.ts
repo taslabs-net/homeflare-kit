@@ -99,15 +99,21 @@ export const ProxmoxAcl = Resource<ProxmoxAcl>('Proxmox.Acl');
 
 /**
  * ⛔ `readRole: 'provision'`, WITHOUT WHICH EVERY GRANT READS BACK AS ABSENT — see the header's
- *   ⛔ on filtering. `orElseSucceed` still folds every OTHER failure into `undefined`.
+ *   ⛔ on filtering.
  * ★ `readOrUnreadable` (unreadable-read.ts) runs first: a REFUSED mint of `provision` — the
- *   "cries wolf" bug — comes back `UNREADABLE` instead of the same `undefined` a genuine
- *   absence produces, so `diff` below can tell them apart.
+ *   "cries wolf" bug — comes back `UNREADABLE` instead of the `undefined` a genuine, SUCCESSFUL
+ *   read (the row simply not being in the list) produces, so `diff` below can tell them apart.
+ * ⛔ NO `orElseSucceed` HERE ANY MORE — found on 2026-09-24, the SAME bug class as the credential
+ *   denial: it used to fold EVERY OTHER failure (a transport error, `PveClusterExhausted`, a
+ *   decode failure) into `undefined` too, which then read exactly like a genuine absence and
+ *   forced the same false `update`. Only a read that actually SUCCEEDS (and the grant is not in
+ *   the list it returns) may mean absent now; every other failure propagates and fails the whole
+ *   plan loudly — the engine's own contract for a failed `read`/`diff` (verify.ts's `readWithState`
+ *   already expects and reports it as `'failed'`).
  */
 const readAttributes = (props: AclProps) =>
   readOrUnreadable(runPve(props.target, 'provision', false, access.listAccessAcl({}))).pipe(
     Effect.map((rows) => (rows === UNREADABLE ? UNREADABLE : attributesOf(rows, props))),
-    Effect.orElseSucceed(() => undefined),
   );
 
 /** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */

@@ -1,10 +1,13 @@
 /**
- * `Proxmox.Group`'s wire shape: PVE's create/update forms and how a live item becomes
- * attributes. Split out of group.ts (2026-09-24) to keep that file under the 250-line cap —
- * the api-token.ts/api-token-form.ts seam, same reasoning as acl.ts/acl-wire.ts.
+ * `Proxmox.Group`'s wire shape: PVE's create/update forms, how a live item becomes attributes,
+ * and the read itself. Split out of group.ts (2026-09-24) to keep that file under the 250-line
+ * cap — the api-token.ts/api-token-form.ts seam, same reasoning as acl.ts/acl-wire.ts.
  */
-import type * as access from '@distilled.cloud/proxmox/access';
+import * as access from '@distilled.cloud/proxmox/access';
+import * as Effect from 'effect/Effect';
+import { runPve } from './distilled-pve.ts';
 import type { GroupAttributes, GroupProps } from './group.ts';
+import { UNREADABLE, type Unreadable, readOrUnreadable } from './unreadable-read.ts';
 import { csv, text } from './values.ts';
 
 export const GROUP_CREATE = 'pve:POST /access/groups';
@@ -41,10 +44,7 @@ export const updateForm = (props: GroupProps): access.PutAccessGroupRequest => (
   groupid: props.groupid,
 });
 
-export const attributesOf = (
-  live: access.GetAccessGroupResponse,
-  props: GroupProps,
-): GroupAttributes => ({
+const attributesOf = (live: access.GetAccessGroupResponse, props: GroupProps): GroupAttributes => ({
   /**
    * ⚠️ ABSENT IS EMPTY, NOT MISSING — `read_group` sets `comment` only `if defined(…)`. distilled
    *   types it `comment?: string`, so `text()`'s `''` fallback meets the same normalisation.
@@ -61,3 +61,57 @@ export const attributesOf = (
  */
 export const matches = (attributes: GroupAttributes, props: GroupProps) =>
   attributes.comment === storedComment(props.comment);
+
+/**
+ * ★ Default `read` role — nothing widened for this family, see group.ts's header privileges note.
+ * ⛔ `{ groupid: props.groupid }`, NEVER THE WHOLE `props` — MEASURED 2026-09-24, the regression
+ *   in kit 0.31.1. `GetAccessGroupRequest`'s schema declares only `groupid` (a path label); any
+ *   OTHER key on the object passed to `access.getAccessGroup` — `target`, `comment`, every field
+ *   this family's own props carry — is treated by distilled's `buildRequest` as an "unknown key"
+ *   and JSON-encoded onto the request as a BODY, on every one of these bodyless GETs. A stricter
+ *   fetch client than a bare `bun run` of this file refuses a GET carrying any body at all
+ *   (`TypeError [ERR_INVALID_ARG_VALUE]: fetch() request with GET/HEAD method cannot have body`),
+ *   which `runPveWith` retries across every member and exhausts identically —
+ *   `PveClusterExhausted`, then silently folded to "absent" by the old `orElseSucceed`, forcing a
+ *   false `update` on every group. `role.ts`'s list call and acl.ts's `listAccessAcl({})` were
+ *   never at risk: both are always called with a literal `{}`.
+ * ⛔ `live.members === undefined` IS DEFENSIVE, NOT THE ABSENCE SIGNAL — CORRECTED 2026-09-24.
+ *   This file previously claimed a missing group answers 200 with `{"data":null}`, unwrapped to
+ *   `{}`. MEASURED against the live cluster: `GET /access/groups/{missing}` answers a genuine 500
+ *   ("group '…' does not exist"), the SAME shape as user.ts's own measured 500 — there is no
+ *   success-path absence signal here at all. The check stays as insurance against a future PVE
+ *   release that does answer `{}`, but this function is what actually carries the "not found"
+ *   case, as a thrown error — `readGroup` below is the one that folds it.
+ */
+export const readGroupOrFail = (props: GroupProps) =>
+  readOrUnreadable(
+    runPve(props.target, 'read', false, access.getAccessGroup({ groupid: props.groupid })),
+  ).pipe(
+    Effect.map((live) =>
+      live === UNREADABLE
+        ? UNREADABLE
+        : live.members === undefined
+          ? undefined
+          : attributesOf(live, props),
+    ),
+  );
+
+/**
+ * ⛔ FOLDS A GENUINE READ FAILURE TO `undefined` TOO, AND ONLY `read`/`reconcile` MAY USE IT.
+ *   PVE's OWN missing-group answer is a thrown 500 (the ⛔ above), so `reconcile`'s create branch
+ *   NEEDS "absent" from a failure to ever run at all — without this fold, a brand-new group could
+ *   never be created, because its very-first read would always fail loudly. Safe here because a
+ *   wrongful fold costs at most a redundant `createAccessGroup` POST, which PVE refuses loudly
+ *   ("group already exists") rather than silently corrupting anything.
+ * ⛔ `group.ts`'s `diff` does **NOT** use this — found 2026-09-24, the SAME bug class as the
+ *   credential denial fix: folding a TRANSIENT failure (a `PveClusterExhausted`, the encoding bug
+ *   above) into "absent" at PLAN TIME is exactly what forced a false `update` with nothing
+ *   compared. `diff` calls `readGroupOrFail` directly instead, so a genuine failure there
+ *   propagates and fails the whole plan loudly — never silently misreports one row.
+ */
+export const readGroup = (props: GroupProps) =>
+  readGroupOrFail(props).pipe(Effect.orElseSucceed(() => undefined));
+
+/** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
+export const dropUnreadable = (live: GroupAttributes | Unreadable | undefined) =>
+  live === UNREADABLE ? undefined : live;

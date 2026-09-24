@@ -33,12 +33,12 @@
  *       user, so a role wide enough to edit the account can still be refused for one group.
  *     · `Sys.Audit` (or `User.Modify`) for the read, which the `read` role's auditor already has.
  *
- * ⚠️ A MISSING USER IS A 500, NOT A 404 — "no such user ('x@pve')". distilled turns that into an
- *   `UnknownProxmoxError` (protocol.ts), and `readOrUnreadable`'s own `orElseSucceed` folds it
- *   into "absent" same as the old hand-rolled client did. A 403 therefore also reads as absent
- *   UNLESS it is the one refusal `readOrUnreadable` catches (unreadable-read.ts): a REFUSED
- *   `provision` mint, the cries-wolf case. Any other refusal still reads as absent, and the
- *   honest error arrives one step later, from the create.
+ * ⚠️ A MISSING USER IS A 500, NOT A 404 — MEASURED against the live cluster, "no such user
+ *   ('x@pve')". distilled turns that into an `InternalServerError`, with no distinct "not found"
+ *   tag to catch. `user-wire.ts`'s `readUser` (used by `read`/`reconcile`, where the create
+ *   workflow needs "absent" from exactly this failure) still folds it; `readUserOrFail` (used by
+ *   `diff` below) does not — see that function's own header for why folding it there was the
+ *   cries-wolf bug all over again, just for a genuine PVE quirk instead of a permission denial.
  *
  * ⚠️ THE WIRE URL FOR THIS FAMILY CHANGED, THOUGH NOTHING A CALLER SEES DID. MEASURED
  *   (user.test.ts): distilled's `{userid}` label substitution percent-encodes it —
@@ -60,18 +60,15 @@ import * as Effect from 'effect/Effect';
 import { guardWrite } from './distilled-guard.ts';
 import type { PveRequirements, WithTarget } from './resource-spec.ts';
 import { runPve } from './distilled-pve.ts';
-import {
-  UNREADABLE,
-  type Unreadable,
-  readOrUnreadable,
-  unreadableWarning,
-} from './unreadable-read.ts';
+import { UNREADABLE, unreadableWarning } from './unreadable-read.ts';
 import {
   USER_CREATE,
   USER_UPDATE,
-  attributesOf,
   createForm,
+  dropUnreadable,
   matches,
+  readUser,
+  readUserOrFail,
   updateForm,
 } from './user-wire.ts';
 
@@ -126,17 +123,6 @@ export interface ProxmoxUser extends Resource<
 
 export const ProxmoxUser = Resource<ProxmoxUser>('Proxmox.User');
 
-/** ★ Default `read` role for this family — only the write side needs `provision`. */
-const readUser = (props: UserProps) =>
-  readOrUnreadable(runPve(props.target, 'read', false, access.getAccessUser(props))).pipe(
-    Effect.map((live) => (live === UNREADABLE ? UNREADABLE : attributesOf(live, props))),
-    Effect.orElseSucceed(() => undefined),
-  );
-
-/** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
-const dropUnreadable = (live: UserAttributes | Unreadable | undefined) =>
-  live === UNREADABLE ? undefined : live;
-
 export const ProxmoxUserProvider = () =>
   Provider.effect(
     ProxmoxUser,
@@ -148,15 +134,31 @@ export const ProxmoxUserProvider = () =>
          *   identity someone made years ago. Adoption is an explicit act.
          */
         list: () => Effect.succeed([]),
-        read: Effect.fn(function* ({ olds }) {
-          return dropUnreadable(yield* readUser(olds));
+        // ⚠️ FOLDS ONLY WHEN `output` IS `undefined` — MEASURED 2026-09-24, an adversarial review
+        //   of this very fix caught the gap. The engine calls this ONE hook from FOUR places
+        //   (alchemy/src/{Plan,Apply,Drift}.ts), and only `output` tells them apart: Plan.ts's
+        //   cold-start adoption probe and interrupted-create recovery, and Apply.ts's
+        //   delete-recovery, all pass `output: undefined` — nothing is confirmed to exist yet, so
+        //   `readUser`'s fold is still needed there or a brand-new account could never be adopted
+        //   or created. `Drift.ts` (`alchemy drift`/`sync`/`deploy --detect-drift`) is different:
+        //   it calls this on an ALREADY-CONFIRMED row (`output: old.attr`, defined), exactly
+        //   `diff`'s own situation below — a transient failure folded to `undefined` there is
+        //   reported as `{action: 'missing'}` with NO error at all, the cries-wolf bug again, one
+        //   command over. `readUserOrFail` on that branch propagates it instead.
+        read: Effect.fn(function* ({ olds, output }) {
+          return dropUnreadable(
+            yield* output === undefined ? readUser(olds) : readUserOrFail(olds),
+          );
         }),
         diff: Effect.fn(function* ({ news, output }) {
           if (!isResolved(news)) return undefined;
           yield* guardWrite(USER_CREATE, createForm(news), output === undefined);
           yield* guardWrite(USER_UPDATE, updateForm(news), false);
           if (output === undefined) return undefined;
-          const live = yield* readUser(news);
+          // ⚠️ `readUserOrFail`, NOT `readUser` — see that function's own header (user-wire.ts).
+          //   A genuine failure here propagates and fails the whole plan loudly instead of
+          //   folding to "absent" and forcing a false update, the cries-wolf class of bug.
+          const live = yield* readUserOrFail(news);
           // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and force
           //   `update` on an account that was plainly there — see unreadable-read.ts.
           if (live === UNREADABLE) {

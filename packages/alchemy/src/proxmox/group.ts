@@ -76,19 +76,16 @@ import { guardWrite } from './distilled-guard.ts';
 import {
   GROUP_CREATE,
   GROUP_UPDATE,
-  attributesOf,
   createForm,
+  dropUnreadable,
   matches,
+  readGroup,
+  readGroupOrFail,
   updateForm,
 } from './group-wire.ts';
 import type { PveRequirements, WithTarget } from './resource-spec.ts';
 import { runPve } from './distilled-pve.ts';
-import {
-  UNREADABLE,
-  type Unreadable,
-  readOrUnreadable,
-  unreadableWarning,
-} from './unreadable-read.ts';
+import { UNREADABLE, unreadableWarning } from './unreadable-read.ts';
 
 export interface GroupProps extends WithTarget {
   /**
@@ -127,31 +124,6 @@ export const ProxmoxGroup = Resource<ProxmoxGroup>('Proxmox.Group', {
   defaultRemovalPolicy: 'retain',
 });
 
-/**
- * ★ Default `read` role — nothing widened for this family, see the header's privileges note.
- * ⛔ `live.members === undefined` MEANS ABSENT, NOT AN EMPTY GROUP. `@distilled.cloud/core`'s
- *   REST protocol unwraps PVE's `{"data": null}` (a genuinely missing object — MEASURED in
- *   `protocol.ts`: "a Unit-output endpoint... `data` is null/absent") to `{}` BEFORE the
- *   schema-driven decode, not to a decode failure. `members` is the one REQUIRED field on this
- *   response, so its absence is the only signal that the group was never there — the same trap
- *   api-token-form.ts's `attributes` guards with its own required-field check.
- */
-const readGroup = (props: GroupProps) =>
-  readOrUnreadable(runPve(props.target, 'read', false, access.getAccessGroup(props))).pipe(
-    Effect.map((live) =>
-      live === UNREADABLE
-        ? UNREADABLE
-        : live.members === undefined
-          ? undefined
-          : attributesOf(live, props),
-    ),
-    Effect.orElseSucceed(() => undefined),
-  );
-
-/** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
-const dropUnreadable = (live: GroupAttributes | Unreadable | undefined) =>
-  live === UNREADABLE ? undefined : live;
-
 export const ProxmoxGroupProvider = () =>
   Provider.effect(
     ProxmoxGroup,
@@ -162,15 +134,31 @@ export const ProxmoxGroupProvider = () =>
          *   cluster, `admins` (grants `Administrator` on `/`) included. Adoption stays explicit.
          */
         list: () => Effect.succeed([]),
-        read: Effect.fn(function* ({ olds }) {
-          return dropUnreadable(yield* readGroup(olds));
+        // ⚠️ FOLDS ONLY WHEN `output` IS `undefined` — MEASURED 2026-09-24, an adversarial review
+        //   of this very fix caught the gap. The engine calls this ONE hook from FOUR places
+        //   (alchemy/src/{Plan,Apply,Drift}.ts), and only `output` tells them apart: Plan.ts's
+        //   cold-start adoption probe and interrupted-create recovery, and Apply.ts's
+        //   delete-recovery, all pass `output: undefined` — nothing is confirmed to exist yet, so
+        //   `readGroup`'s fold is still needed there or a brand-new group could never be adopted
+        //   or created. `Drift.ts` (`alchemy drift`/`sync`/`deploy --detect-drift`) is different:
+        //   it calls this on an ALREADY-CONFIRMED row (`output: old.attr`, defined), exactly
+        //   `diff`'s own situation below — a transient failure folded to `undefined` there is
+        //   reported as `{action: 'missing'}` with NO error at all, the cries-wolf bug again, one
+        //   command over. `readGroupOrFail` on that branch propagates it instead.
+        read: Effect.fn(function* ({ olds, output }) {
+          return dropUnreadable(
+            yield* output === undefined ? readGroup(olds) : readGroupOrFail(olds),
+          );
         }),
         diff: Effect.fn(function* ({ news, output }) {
           if (!isResolved(news)) return undefined;
           yield* guardWrite(GROUP_CREATE, createForm(news), output === undefined);
           yield* guardWrite(GROUP_UPDATE, updateForm(news), false);
           if (output === undefined) return undefined;
-          const live = yield* readGroup(news);
+          // ⚠️ `readGroupOrFail`, NOT `readGroup` — see that function's own ⛔. A genuine
+          //   TRANSIENT failure here propagates and fails the whole plan loudly instead of
+          //   folding to "absent" and forcing a false update, the cries-wolf class of bug.
+          const live = yield* readGroupOrFail(news);
           // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and force
           //   `update` on a group that was plainly there — see unreadable-read.ts.
           if (live === UNREADABLE) {
