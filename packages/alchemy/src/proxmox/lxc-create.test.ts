@@ -96,7 +96,10 @@ describe('removing a container', () => {
       `POST nodes/${NODE}/lxc`,
       `DELETE nodes/${NODE}/lxc/${String(VMID)}`,
     ]);
-    expect(pve.seen.some((call) => /\/tasks\/UPID:.*vzdestroy/.test(call.path))).toBe(true);
+    // PVE APIServer/AnyEvent.pm uri_unescape runs before routing; the SDK encodes labels.
+    expect(
+      pve.seen.some((call) => /\/tasks\/UPID:.*vzdestroy/.test(decodeURIComponent(call.path))),
+    ).toBe(true);
     // ⛔ No `force` (stops a running guest), `purge` (drops it from HA and backup jobs) or
     //   `destroy-unreferenced-disks` (deletes volumes the config does not even name).
     const del = pve.seen.find((call) => call.method === 'DELETE');
