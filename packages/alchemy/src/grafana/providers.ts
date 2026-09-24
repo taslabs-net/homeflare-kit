@@ -12,6 +12,7 @@
  *   deploys anything over HTTP already has one.
  */
 import * as Layer from 'effect/Layer';
+import { GrafanaAlertRuleGroupProvider } from './alert-rule-group.ts';
 import { GrafanaContactPointProvider } from './contact-point.ts';
 import { type GrafanaTarget, grafanaCredentials } from './credentials.ts';
 import { GrafanaDashboardProvider } from './dashboard.ts';
@@ -28,4 +29,5 @@ export const grafanaProviders = (target: GrafanaTarget) =>
     GrafanaContactPointProvider(),
     GrafanaMuteTimingProvider(),
     GrafanaMessageTemplateProvider(),
+    GrafanaAlertRuleGroupProvider(),
   ).pipe(Layer.provide(grafanaCredentials(target)));

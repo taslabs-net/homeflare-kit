@@ -1,32 +1,66 @@
 /**
- * How a node interface crosses the wire in both directions — props to a PVE form, a PVE answer to
- * a comparable attribute — and when two of those values count as the same value.
- *
- * ★ SPLIT OUT OF node-network.ts TO KEEP BOTH FILES UNDER THE 250-LINE CAP, and the seam is the
- *   same one metric-server-form.ts uses, one field wider: this file owns the COERCIONS, in both
- *   directions, because a read that normalises differently from the write that produced it is
- *   exactly how a forever-diff is born — keeping `ifaceList` next to both ends is what stops that.
- *   node-network.ts answers "what is an interface, and which of its fields are safe to compare at
- *   all". Nothing here calls the cluster.
- *
- * ⚠️ THE `import type` BACK TO node-network.ts IS A CYCLE ON PAPER ONLY — type-only, erased before
- *   anything runs, so `NodeNetworkProps` stays in the file that declares the resource.
- *
- * * ⛔ THE LAST SEVEN ARE REPORTED AND NEVER COMPARED, AND EACH ONE IS A MEASURED FOREVER-DIFF.
- *   `priority` is assigned by PVE FROM FILE ORDER — `my $priority = 2; ... $d->{priority} =
- *   $priority++` — and it is not a POST or PUT parameter at all. MEASURED ACROSS C1: vmbr1.42 is
- *   priority 16 on node-b and node-c and 15 on node-d, because node-d has no `wlan0` above it. One declaration
- *   reused across three nodes would diff on exactly one of them, forever, over nothing.
- *   `method` is RECOMPUTED on every write from whether the form carried an address, `families` is
- *   recomputed the same way and never written to the file, `active` and `exists` describe the
- *   kernel rather than the config, and `bond_miimon`, `bridge_stp` and `bridge_fd` are emitted by
- *   PVE's writer with defaults (100, `off`, 0) while appearing in NEITHER write schema —
- *   `additionalProperties => 0` means sending one is a 400. Live proof of all three: node-b's bond0
- *   returns `bond_miimon "100"` and vmbr1 returns `bridge_stp "off"`, `bridge_fd "0"`, none of
- *   which any declaration can set.
+ * `Proxmox.NodeNetwork`'s declared shape (`NodeNetworkProps`) and WRITE side, plus the wire
+ * coercions the read side needs too — kept here since neither `matches` nor `updateForm` makes
+ * sense without agreeing on the same normalisation. Split out of node-network.ts (2026-09-24,
+ * the distilled migration; `Props` joined it in this PR's later line-cap trim) — the
+ * storage.ts/storage-form.ts seam.
  */
-import type { NodeNetworkAttributes, NodeNetworkProps } from './node-network.ts';
-import { bool, flag, int, text, withClears } from './values.ts';
+import type { NodeNetworkType } from './node-network-wire.ts';
+import { type WithTarget } from './resource-spec.ts';
+import { flag, text, withClears } from './values.ts';
+
+export interface NodeNetworkProps extends WithTarget {
+  /** Which node's file this stanza lives in. Interfaces are per node, never cluster-wide. */
+  node: string;
+  /** `vmbr0`, `bond0`, `vmbr1.42`. 2-20 characters, PVE's `pve-iface` format. */
+  iface: string;
+  /** ⛔ REQUIRED ON EVERY WRITE, update included, never used to retype — see node-network-wire.ts. */
+  type: NodeNetworkType;
+  /**
+   * `198.51.100.12/24`. ⛔ THE ONE FIELD WITH NO UNMANAGED MODE: leaving it out is an instruction
+   * to make the interface `manual`, not an instruction to leave its address alone. The ⛔ on
+   * `updateForm` in node-network-form.ts has the measurement and the consequence.
+   */
+  cidr?: string;
+  /** ⚠️ PVE allows exactly ONE default gateway per node and refuses a second with "Default
+   *  gateway already exists on interface '<other>'". On C1 it is vmbr0.41's. */
+  gateway?: string;
+  /**
+   * `auto <iface>` in the file. Absent on read means off, which is why `bool`'s fallback is used.
+   * ⚠️ UNDECLARED IS UNMANAGED ON AN UPDATE AND OFF ON A CREATE — the same asymmetry storage.ts
+   *   has, and it bites harder here: an interface created without `autostart` is one the node
+   *   will not bring up at boot. Every C1 bridge, bond and vlan carries it.
+   */
+  autostart?: boolean;
+  /** 1280-65520. Unset leaves the file without an `mtu` line and the kernel default in force. */
+  mtu?: number;
+  /** ⚠️ Round-trips only after normalisation — see `comment` in node-network-wire.ts. */
+  comments?: string;
+  /** Space-separated, a SET: `enp87s0`, or `bond0`. ⚠️ PVE refuses a port already used elsewhere. */
+  bridge_ports?: string;
+  /** `2-4094`, or `2 100-200`. Only written when `bridge_vlan_aware` is on. */
+  bridge_vids?: string;
+  /** ⛔ A `false` here is sent as `delete=`, never as `0` — node-network-form.ts's ⛔ says why. */
+  bridge_vlan_aware?: boolean;
+  /**
+   * A bond's members, space separated. ⚠️ THE PARAMETER IS `slaves`, NOT `bond_slaves`, in BOTH
+   * directions on this PVE: MEASURED, the POST/PUT schema names only `slaves` and the GET returns
+   * `"slaves":"enp2s0f0np0 enp2s0f1np1"`. `bond_slaves` appears nowhere in Network.pm here.
+   */
+  slaves?: string;
+  bond_mode?: string;
+  /** ⚠️ Only written when `bond_mode` is `balance-xor` or `802.3ad`; ignored otherwise. */
+  bond_xmit_hash_policy?: string;
+  /** active-backup only. Kept hyphenated because that is the wire name. */
+  'bond-primary'?: string;
+  /** ⚠️ DERIVED FROM A DOTTED NAME. `vmbr1.42` reports `vlan-id` 42 with no such line in the file;
+   *  declaring it there is harmless but adds a line the file did not have. */
+  'vlan-id'?: number;
+  'vlan-raw-device'?: string;
+}
+
+export const NODE_NETWORK_CREATE = 'pve:POST /nodes/{node}/network';
+export const NODE_NETWORK_UPDATE = 'pve:PUT /nodes/{node}/network/{iface}';
 
 /**
  * "Not set", for the three integers this family reports.
@@ -78,7 +112,7 @@ export const ifaceList = (value: unknown) =>
  */
 export const comment = (value: unknown) => text(value).replace(/\s+$/, '');
 
-/** Undeclared is unmanaged: neither sent nor compared. See the ⚠️ on `body`. */
+/** Undeclared is unmanaged: neither sent nor compared. */
 export const same = <T>(declared: T | undefined, live: T) =>
   declared === undefined || declared === live;
 
@@ -97,12 +131,13 @@ const field = (name: string, value: string | undefined): Record<string, string> 
  * ⚠️ UNDECLARED IS UNMANAGED — not sent, and not compared either. PVE's PUT MERGES the form into
  *   the existing stanza (`foreach my $k (keys %$param) { $ifaces->{$iface}->{$k} = $param->{$k} }`),
  *   so an omitted parameter is left exactly as it was. `cidr` is the one exception and it is not
- *   a small one — see the ⛔ in node-network.ts.
+ *   a small one — see node-network.ts's own ⛔.
  *
  * ⛔ `type` IS REQUIRED ON THE PUT, NOT ONLY ON THE POST. It carries no `optional` in either
- *   schema, and the merge above writes it straight into the stanza — so a PUT naming the wrong
- *   type would RETYPE A LIVE INTERFACE in the file and the writer would then emit a bridge stanza
- *   for what is really a vlan. node-network.ts refuses that case before it can reach here.
+ *   schema (CONFIRMED again in distilled's generated `PutNodeNetwork2Request`/
+ *   `CreateNodeNetworkRequest`), and the merge above writes it straight into the stanza — so a PUT
+ *   naming the wrong type would RETYPE A LIVE INTERFACE in the file. node-network-wire.ts's
+ *   `attributesOf` refuses that case before it can reach here.
  *
  * ⛔ `bridge_vlan_aware` IS SENT ONLY WHEN TRUE, AND A FALSE ONE IS A `delete=`. MEASURED in the
  *   writer: the test is `if (defined($d->{bridge_vlan_aware}))`, not a truth test, so `0` is
@@ -113,6 +148,14 @@ const field = (name: string, value: string | undefined): Record<string, string> 
  *   "netmask conflicts with cidr" when both are sent, and the reader rewrites whatever was written
  *   into prefix form — MEASURED: node-b's vmbr1.42 reports `"netmask":"24"`, never `255.255.255.0`.
  *   A resource accepting both spellings would let a declaration diff against its own value.
+ *
+ * ★ HYPHENATED, THE WIRE SHAPE — `guardWrite` (node-network.ts) checks this form directly, keyed
+ *   by PVE's own names (`generated/constraints/pve-nodes-network.ts`). `toDistilledCreate`/
+ *   `toDistilledUpdate` below translate a COPY for the actual SDK call — storage-form.ts's
+ *   `underscored` has the fuller measurement of why the wire itself does not need this rename
+ *   (distilled's own `T.Body()` annotation re-hyphenates on the way out either way), reused here
+ *   only for the three fields this family's schema renames: `bond-primary`, `vlan-id`,
+ *   `vlan-raw-device` -> `bond_primary`, `vlan_id`, `vlan_raw_device`.
  */
 export const body = (props: NodeNetworkProps): Record<string, string> => ({
   ...field('autostart', flag(props.autostart)),
@@ -135,18 +178,18 @@ export const body = (props: NodeNetworkProps): Record<string, string> => ({
 /**
  * The create form: `body` plus the name of the interface being created.
  *
- * 🔴 `iface` WAS MISSING UNTIL 2026-09-22, AND EVERY CREATE THIS FAMILY HAS EVER PLANNED WOULD
- *   HAVE 400ed. `POST /nodes/{node}/network` declares `iface` REQUIRED (`pve-iface`, 2..20) and
- *   `{node}` is its only path parameter, so the name has to travel in the BODY — unlike the PUT,
- *   where `/network/{iface}` carries it and `updateBody` is right to leave it out. Nothing caught
- *   it because no NodeNetwork has been created from a declaration yet: C1's three nodes were all
- *   adopted, which takes the PUT path. Found by wiring this family to the vendor's own table,
- *   which is exactly the 128-character comment again with a different parameter.
+ * 🔴 `iface` MUST BE IN THE BODY, NOT ONLY THE PATH — `POST /nodes/{node}/network` declares
+ *   `iface` REQUIRED (`pve-iface`, 2..20) and `{node}` is its only path parameter, CONFIRMED again
+ *   in distilled's generated `CreateNodeNetworkRequest`, which carries `iface` as a plain body
+ *   field, never a `T.Label()`. The pre-distilled client.ts version of this file shipped without
+ *   it for a time (see the git history around 2026-09-22) — every create this family had ever
+ *   planned would have 400ed, caught only because every C1 interface had been adopted, never
+ *   created, so nothing exercised the POST until the vendor table was wired in.
  *
  * ⚠️ NOT ADDED TO `body`, BECAUSE THE PUT MUST NOT CARRY IT. `additionalProperties => 0` on the
  *   update schema makes a second copy of the name a 400 rather than an ignored hint.
  */
-export const createBody = (props: NodeNetworkProps): Record<string, string> => ({
+export const createForm = (props: NodeNetworkProps): Record<string, string> => ({
   ...body(props),
   iface: props.iface,
 });
@@ -159,74 +202,25 @@ export const createBody = (props: NodeNetworkProps): Record<string, string> => (
  *   `$param->{method} = $param->{address} ? 'static' : 'manual'` — so a PUT WITHOUT an address
  *   makes the interface manual no matter what the caller intended. Left at that, the merge would
  *   leave the old `address` and `netmask` in the hash and the writer would emit an `address` line
- *   under `iface … inet manual`: a stanza PVE's own UI cannot produce, whose behaviour under
- *   `ifreload -a` I did NOT measure. Clearing cidr explicitly at least produces a clean, honest
- *   manual interface — and `matches` compares `cidr` UNCONDITIONALLY, so the plan says so first.
+ *   under `iface … inet manual`: a stanza PVE's own UI cannot produce. Clearing cidr explicitly at
+ *   least produces a clean, honest manual interface — and `matches` compares `cidr`
+ *   UNCONDITIONALLY, so the plan says so first.
  *
  * ⛔ ON vmbr1.42 THAT IS THE CEPH TRANSPORT. A declaration of that interface without its `cidr` is
  *   a declaration that it should have no address, applied across three nodes. The plan will read
  *   `1 to update` rather than `noop`; do not wave it through.
  *
- * ⚠️ `delete` IS A PUT-ONLY PARAMETER. The POST schema is `additionalProperties => 0` and has no
- *   `delete`, so sending it on a create is a 400 — which is why `createForm` calls `body` directly.
+ * ⚠️ `delete` IS A PUT-ONLY PARAMETER. The POST schema has no `delete` at all, which is why
+ *   `createForm` calls `body` directly rather than going through this function.
  */
-export const updateBody = (props: NodeNetworkProps): Record<string, string> => {
+export const updateForm = (props: NodeNetworkProps): Record<string, string> => {
   const clear = [
     ...(props.cidr === undefined ? ['cidr'] : []),
     ...(props.bridge_vlan_aware === false ? ['bridge_vlan_aware'] : []),
   ];
-  const fields = body(props);
-  return withClears(fields, clear);
+  return withClears(body(props), clear);
 };
 
-/**
- * One live interface as attributes, or `undefined` — "this is not really there".
- *
- * ⚠️ EVERY FIELD PVE REPORTS IS CARRIED HERE, INCLUDING THE SEVEN NO DECLARATION CAN SET. A plan
- *   that cannot show `priority`, `method` or `bond_miimon` cannot explain why it is ignoring them,
- *   and the next person to read a forever-diff would start by adding them to `matches`. They are
- *   reported precisely so that they are visibly OUT of it — see the ⛔ above the attribute type.
- */
-export const readAttributes = (
-  live: Record<string, unknown>,
-  props: NodeNetworkProps,
-): NodeNetworkAttributes | undefined => {
-  /**
-   * ⛔ AN INTERFACE OF ANOTHER TYPE IS ANOTHER OBJECT, AND "ABSENT" IS THE SAFE ANSWER — the
-   *   same call metric-server.ts makes, for a worse reason. `type` is required on the PUT and
-   *   the PUT MERGES, so a declaration naming `bridge` for what is really a vlan would write
-   *   `type bridge` into the stanza and PVE's writer would then emit bridge-ports and
-   *   bridge-stp lines for vmbr1.42. Reporting absent instead makes reconcile POST a create,
-   *   which PVE refuses with "interface already exists": loud, and it changes nothing.
-   */
-  const liveType = text(live['type']);
-  if (liveType !== '' && liveType !== props.type) return undefined;
-  return {
-    active: bool(live['active']),
-    autostart: bool(live['autostart']),
-    'bond-primary': text(live['bond-primary']),
-    bond_miimon: text(live['bond_miimon']),
-    bond_mode: text(live['bond_mode']),
-    bond_xmit_hash_policy: text(live['bond_xmit_hash_policy']),
-    bridge_fd: text(live['bridge_fd']),
-    bridge_ports: ifaceList(live['bridge_ports']),
-    bridge_stp: text(live['bridge_stp']),
-    bridge_vids: ifaceList(live['bridge_vids']),
-    bridge_vlan_aware: bool(live['bridge_vlan_aware']),
-    /** ⚠️ DERIVED BY THE READER from address+netmask, and always present when an address is. */
-    cidr: text(live['cidr']),
-    comments: comment(live['comments']),
-    exists: bool(live['exists']),
-    families: Array.isArray(live['families']) ? live['families'].join(',') : '',
-    gateway: text(live['gateway']),
-    iface: props.iface,
-    method: text(live['method']),
-    mtu: int(live['mtu'], UNSET),
-    node: props.node,
-    priority: int(live['priority'], UNSET),
-    slaves: ifaceList(live['slaves']),
-    type: liveType === '' ? props.type : liveType,
-    'vlan-id': int(live['vlan-id'], UNSET),
-    'vlan-raw-device': text(live['vlan-raw-device']),
-  };
-};
+// ⚠️ `toDistilledCreate`/`toDistilledUpdate` MOVED TO node-network.ts IN THIS PR'S LINE-CAP
+//   TRIM — the only caller, and the only place `nodes.CreateNodeNetworkRequest`/
+//   `PutNodeNetwork2Request` were otherwise needed. `createForm`/`updateForm` above are unchanged.
