@@ -68,7 +68,7 @@ migration on tested paths, not a behaviour change.
   worktree's `src/`).
 
   **The typed-error idea is not discarded**, just not spread further: it is written up as a HELD
-  upstream proposal in [`litellm.md`](../packages/alchemy/docs/litellm.md#credentials) — distilled's
+  upstream proposal in [`litellm.md`](../litellm.md#credentials) — distilled's
   own `LitellmOpError` already declares `ConfigError` and threads a real credentials failure into an
   operation's error channel, so the plumbing for a typed refusal genuinely exists; nobody has raised
   it to `alchemy-run/distilled`, and this PR doesn't either.
