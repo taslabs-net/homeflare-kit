@@ -45,19 +45,20 @@
  *   needs no widening for once. ⚠️ `Sys.Modify` on the ROOT path is broad — it also buys
  *   datacenter options and every other cluster-wide config write — so it is worth knowing that
  *   this credential already has it rather than discovering it the next time something is scoped.
+ *
+ * ★ MIGRATED OFF `client.ts` ONTO `@distilled.cloud/proxmox` (2026-09-24, decision 43, 2c —
+ *   ceph-daemon-wire.ts's own header has the one-key rename and why no protocol gap blocks any
+ *   of the three kinds). `readDaemon` keeps this family's pre-migration single-fold shape; see
+ *   ceph-pool-wire.ts for why that is not a bug left unfixed.
  */
 import { Resource } from 'alchemy';
+import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import {
-  DAEMON_ENDPOINTS,
-  collectionPath,
-  createForm,
-  daemonAttributes,
-  daemonPath,
-} from './ceph-daemon-form.ts';
-import { pve } from './client.ts';
-import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
+import { DAEMON_ENDPOINTS, createForm, daemonId, daemonPath } from './ceph-daemon-form.ts';
+import { createDaemon, deleteDaemon, readDaemon } from './ceph-daemon-wire.ts';
+import { guardWrite } from './distilled-guard.ts';
+import { type PveRequirements, type WithTarget } from './resource.ts';
 
 /**
  * Which Ceph daemon this is. The discriminant picks the collection, the create parameters and
@@ -180,53 +181,68 @@ export const ProxmoxCephDaemon = Resource<ProxmoxCephDaemon>('Proxmox.CephDaemon
   defaultRemovalPolicy: 'retain',
 });
 
-const handlers = pveHandlers<CephDaemonProps, CephDaemonAttributes>({
-  attributes: daemonAttributes,
-  /** ⛔ The ID path, not the collection — POST is registered on `{id}`, exactly like a metric server. */
-  collection: daemonPath,
-  createForm,
-  /** ⚠️ A function, because the kind picks the endpoint — see `DAEMON_ENDPOINTS`. */
-  endpoint: (props: CephDaemonProps) => DAEMON_ENDPOINTS[props.kind],
-  /**
-   * ⛔ TOTAL, AND THIS IS THE REASON THE FILE EXISTS RATHER THAN A SHORTCUT PAST WRITING IT. Every
-   *   field a declaration can carry is CREATE-ONLY and unreadable — `mon-address` comes back as a
-   *   different kind of string, `hotstandby` comes back as a state Ceph elects — and every field
-   *   the read returns is assigned by Ceph: state, rank, quorum, fs_name, standby_replay, addr,
-   *   version. Nothing is left that is both declared and readable. So the honest comparison is
-   *   "does a daemon of this kind and name exist", which `attributes` has already answered by
-   *   returning a value at all, and anything further would be a diff no write could ever satisfy.
-   *   ⛔ AND ON THIS FAMILY THAT DIFF IS NOT MERELY NOISY. There is no PUT, so resource.ts answers
-   *     `replace` rather than `update` whenever `matches` is false — and replace on a mon is
-   *     delete-then-create against a live quorum. A forever-diff here is a forever-OUTAGE-RISK.
-   *   ⚠️ THE PRICE, STATED PLAINLY: editing `hotstandby` or `mon-address` on a declared daemon
-   *     plans as `noop` and never applies. Same bargain storage.ts strikes for a changed `type`.
-   *     Change one by removing the declaration and re-adding it, ONE DAEMON AT A TIME, reading the
-   *     ⛔ on destroy in the header first.
-   */
-  matches: () => true,
-  /** ⛔ The COLLECTION, because there is no GET on the id path. See the second ⛔ in the header. */
-  path: collectionPath,
-  /** ⚠️ No `updateForm`: none of the three has a PUT, so nothing about a daemon is editable. */
-});
-
+/**
+ * ⛔ TOTAL, AND THIS IS THE REASON THE FILE EXISTS RATHER THAN A SHORTCUT PAST WRITING IT. Every
+ *   field a declaration can carry is CREATE-ONLY and unreadable — `mon-address` comes back as a
+ *   different kind of string, `hotstandby` comes back as a state Ceph elects — and every field
+ *   the read returns is assigned by Ceph: state, rank, quorum, fs_name, standby_replay, addr,
+ *   version. Nothing is left that is both declared and readable. So the honest comparison is
+ *   "does a daemon of this kind and name exist", which `readDaemon` has already answered by
+ *   returning a value at all, and anything further would be a diff no write could ever satisfy.
+ *   ⛔ AND ON THIS FAMILY THAT DIFF IS NOT MERELY NOISY. There is no PUT, so a false mismatch
+ *     would have to be a REPLACE — and replace on a mon is delete-then-create against a live
+ *     quorum. A forever-diff here is a forever-OUTAGE-RISK.
+ *   ⚠️ THE PRICE, STATED PLAINLY: editing `hotstandby` or `mon-address` on a declared daemon
+ *     plans as `noop` and never applies. Same bargain storage.ts strikes for a changed `type`.
+ *     Change one by removing the declaration and re-adding it, ONE DAEMON AT A TIME, reading the
+ *     ⛔ on destroy in the header first.
+ */
 export const ProxmoxCephDaemonProvider = () =>
   Provider.effect(
     ProxmoxCephDaemon,
     Effect.succeed(
       ProxmoxCephDaemon.Provider.of({
-        ...handlers,
+        /** ⛔ Empty, like every other resource here — adopting the whole cluster's daemons is not
+         *   an accident anyone should be one `destroy` away from. Adoption stays explicit. */
+        list: () => Effect.succeed([]),
+        read: ({ olds }) => readDaemon(olds),
+        // ★ Matches the pre-migration factory shape exactly (resource.ts): present is settled.
+        diff: Effect.fn(function* ({ news, output }) {
+          if (!isResolved(news)) return undefined;
+          yield* guardWrite(DAEMON_ENDPOINTS[news.kind], createForm(news), output === undefined);
+          if (output === undefined) return undefined;
+          const live = yield* readDaemon(news);
+          if (live === undefined) {
+            yield* guardWrite(DAEMON_ENDPOINTS[news.kind], createForm(news), true);
+            return { action: 'update' } as const;
+          }
+          return { action: 'noop' } as const;
+        }),
+        // ★ The factory's shape with no `updateForm`: create if absent, else read back untouched.
+        reconcile: Effect.fn(function* ({ news }) {
+          const live = yield* readDaemon(news);
+          if (live !== undefined) return live;
+          yield* guardWrite(DAEMON_ENDPOINTS[news.kind], createForm(news), true);
+          yield* createDaemon(news);
+          const after = yield* readDaemon(news);
+          if (after === undefined) {
+            return yield* Effect.die(
+              new Error(
+                `${daemonPath(news)}: the create task finished but a ${news.kind} named ` +
+                  `${daemonId(news)} is not in GET nodes/${news.node}/ceph/${news.kind}. Watch ` +
+                  'the task in the PVE UI before concluding the create failed -- POST answers a ' +
+                  'UPID, not a result (ceph-daemon-form.ts).',
+              ),
+            );
+          }
+          return after;
+        }),
         /**
-         * ⛔ THE ONE HANDLER NOT TAKEN FROM THE FACTORY, AND THE ONLY REASON IS THE PATH SPLIT.
-         *   `ops.destroy` DELETEs `spec.path`, which this resource must point at the collection so
-         *   that `read` works at all; DELETE on the collection is not implemented and would answer
-         *   501 while the daemon kept running — a failed destroy that reads like a permissions
-         *   problem. Everything else here is the factory's.
-         * ⚠️ AND IT IS THE DANGEROUS ONE. Re-read the destroy ⛔ in the header before letting a
-         *   plan that removes a mon run: two gone at once is a cluster with no quorum and every
-         *   guest on `rbd-c1` blocked on I/O.
+         * ⛔ THE DANGEROUS ONE. Re-read the destroy ⛔ in the header before letting a plan that
+         *   removes a mon run: two gone at once is a cluster with no quorum and every guest on
+         *   `rbd-c1` blocked on I/O.
          */
-        delete: ({ olds }: { olds: CephDaemonProps }) =>
-          pve(olds.target, 'provision', 'DELETE', daemonPath(olds)),
+        delete: ({ olds }) => deleteDaemon(olds),
       }),
     ),
   );
