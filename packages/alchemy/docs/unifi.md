@@ -91,3 +91,48 @@ trigger but a future write path must respect — whole-object `PUT`, ordering en
 replace the whole list, `removeDevice` unadopting and factory-resetting hardware — are recorded
 in the distilled package's own `README.md` and in the estate's `docs/unifi-api-notes.md`
 (outside this repo).
+
+## Spec-version check against the live-measured console (2026-09-24)
+
+`homeflare-network`'s `src/unifi/imported.ts` was generated 2026-09-24 against a live console
+self-reporting **10.6.97** (`GET /v1/info`, recorded in that file's own header) — two minor
+versions past this SDK's 10.4.57 pin. Checked whether any of the 11 imported networks or 14
+imported firewall zones could decode differently on a newer controller than this SDK's
+10.4.57-pinned types expect: diffed a 10.6.97 copy of Ubiquiti's OpenAPI document (a third-party
+mirror, used only as a diffing aid — never as this SDK's spec of record; see the distilled
+package's own `docs/spec-version-provenance.md`) against the pinned 10.4.57 document. Zero
+operations added or removed anywhere in the API; every full raw operation object (parameters,
+request body, responses, `$ref`s included) for every `Networks`-tagged operation and every
+`*FirewallZone*` operation is identical, byte for byte, not just its named schemas (11 operations
+on each side, same set — a named-schema diff alone would miss an inline, untagged parameter
+changing shape, so this checks the operations directly).
+
+**14 of the document's 379/380 component schemas do differ somewhere** — the switch-stack/LAG
+family (`Switching` tag, matching Ubiquiti's own 10.6 release notes on LAG support), the generic
+`filter`-query-syntax family (`FilterExpression`/`CompoundFilterExpression`/`NotFilterExpression`/
+`PropertyFilterExpression`), and one mDNS enum addition (`SHELLY`, `UniFi Devices` tag) — but
+**none of the 14 is reachable from a Networks or FirewallZone operation, even transitively**:
+resolved every `$ref` reachable from each of the 11 operations' full parameter/body/response
+trees, recursively, in both versions, and none of the 14 changed schema names appears in either
+closure. Full breakdown of the 14 (which changed vs. added/removed, and why the reachability check
+had to go beyond the direct operation-object diff above) is in the distilled package's own
+`docs/spec-version-provenance.md`, not this repo.
+
+**Answer: none of the imported rows would change shape against 10.6.97.** This does not
+generalize past 10.6.97, and it says nothing about any tag besides Networks/FirewallZones —
+re-check before importing or declaring against `Clients`, `WiFi Broadcasts`, `ACL Rules`, or any
+other tag.
+
+## 2026-09-24 doctrine walkdown
+
+Read directly against `origin/main`'s `src/unifi/{resource,network,network-form,firewall-zone,
+firewall-zone-form,policy}.ts`: `fetchLive` in `network.ts`/`firewall-zone.ts` folds only
+`catchTag('NotFound', …)`, never a blanket catch. `destroy` always refuses via the typed
+`UnifiWriteRefused` regardless of live state — correct here, not a departure from delete's usual
+idempotency rule: this family will never issue a real DELETE by policy, so idempotency of a
+delete it cannot perform is moot. No `Effect.orDie`/`Effect.die` anywhere in the family.
+`sortedSet` normalizes every measured unordered array (`dhcpGuarding.trustedDhcpServerIpAddresses`,
+`ipv6Configuration`'s two override lists, `firewall-zone-form.ts`'s `networkIds`) before it is
+attributed, declared or compared. Both declaration renderers and both `matches` use
+`value == null` / `deepEqual(..., { stripNullish: true })` consistently, per `network-form.ts`'s
+own header. No departure found — nothing in this family needed changing.
