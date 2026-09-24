@@ -151,6 +151,14 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
     - ⛔ **Still diverges on credentials (S24):** `LITELLM_PROXY_URL` / `LITELLM_PROXY_API_KEY`
       are read at call time, now through the SDK's `CredentialsFromEnv` rather than a
       hand-rolled `resolveCreds` — same divergence, unchanged by the transport swap.
+    - ✅ **S20 fixed 2026-09-24** (same branch, PR review pass): `CredentialsFromEnv` ended in
+      `Effect.orDie`, so a missing/misspelled env var died as an engine-crashing defect
+      instead of the typed `ConfigError` `LitellmOpError` already declared — a regression
+      this migration made newly reachable (the retired hand-rolled `credentials.ts` failed
+      typed). Fixed at the source: `@distilled.cloud/litellm`'s own `credentials.ts`
+      (`homeflare/litellm@4ad19154`, commit local, not pushed — S22), copied forward here.
+      `netbox/*`'s `CredentialsFromEnv` has the identical `orDie` shape and is unfixed —
+      out of scope for this item; tracked as its own follow-up (task `task_3bbe1684`).
 11. **Every family repeats `list: () => Effect.succeed([])`**, 30 times, and only
     `R2BucketLock` and `MeshNode` declare `nuke`. The constructor already defaults `list`
     (S12). **Fix:** write the reason where it differs, and declare `nuke: { skip: true }`
