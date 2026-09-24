@@ -50,11 +50,15 @@ function buildPullRequestRule(rule: RepositoryRulesetPullRequestRule): WireRule 
         minimum_approvals: r.minimumApprovals,
         reviewer: { id: r.reviewer.actorId, type: r.reviewer.actorType },
       })),
-      // ⛔ Only ever sent as `false` (H15) — see repository-ruleset.ts for why this exists at
-      //   all and repository-ruleset-wire.test.ts for whether Octokit forwards it untyped.
+      // Sent as declared, `true` or `false` (K1, 2026-09-23) — see repository-ruleset.ts's H15
+      // for why this field exists here at all (Octokit, not distilled) and
+      // repository-ruleset-wire.test.ts for whether Octokit forwards it untyped for both values.
       ...(rule.extraApprovalForUnattributedChanges === undefined
         ? {}
-        : { require_extra_approval_for_unattributed_changes: false }),
+        : {
+            require_extra_approval_for_unattributed_changes:
+              rule.extraApprovalForUnattributedChanges,
+          }),
     },
     // The extension field above has no home in Octokit's own rule union (H15) — the cast is
     // the only place that gap is bridged.

@@ -18,10 +18,13 @@ export interface RepositoryRulesetPullRequestRule extends NonNullable<
   /** @default every method GitHub allows — the house baseline always pins `['squash']`. */
   readonly allowedMergeMethods?: readonly ('merge' | 'squash' | 'rebase')[];
   readonly requiredReviewers?: readonly RepositoryRulesetReviewerRule[];
-  /** `require_extra_approval_for_unattributed_changes` — see repository-ruleset.ts's H15. Only
-   * `false` is modeled: sending `true` has no house use, and GitHub already defaults absent to
-   * `true`. */
-  readonly extraApprovalForUnattributedChanges?: false;
+  /** `require_extra_approval_for_unattributed_changes` — see repository-ruleset.ts's H15.
+   * Both values are modeled (K1, 2026-09-23): 8 live rulesets carry `true` (aop, cloudflareforms,
+   * doesthishelp-workeropen, homeflare-anyauth, homeflare-desktop, loggarr, magictransit,
+   * proxmox-tb4 — re-read live via `gh api repos/taslabs-net/<repo>/rulesets/<id>`,
+   * 2026-09-23), and this resource declares exactly what is live or it cannot adopt them —
+   * `undefined` stays "no opinion" (GitHub defaults an absent key to `true`). */
+  readonly extraApprovalForUnattributedChanges?: boolean;
 }
 
 export interface RepositoryRulesetStatusChecksRule extends NonNullable<
