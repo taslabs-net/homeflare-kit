@@ -6,15 +6,14 @@ any status check. Built 2026-09-24 against the live target `teslamate-grafana.se
 measured version **13.1.3** (`teslamate/grafana:4.2.0`), listening on `127.0.0.1:3100`, served
 publicly at `tesla.homeflare.dev/dash/`.
 
-## The SDK gap — why only `Datasource` ships
+## The SDK gap — history, and what shipped on top of the fix
 
 ✅ **SDK-level gap fixed 2026-09-24** (`@distilled.cloud/grafana`, aliased onto
-`@homeflare/distilled-grafana` — 0.1.0 pre-release, 0.2.0 once its `minor` changeset publishes it;
-see [docs/distilled-interim.md](./distilled-interim.md)).
-The gap below is otherwise unchanged and left as evidence of what was measured and why; only its
-status line moved. **Still true today:** only `Grafana.Datasource` ships as a house _resource_ —
-`Grafana.Folder`, `Grafana.Dashboard`, `Grafana.AlertRule` and friends are follow-up work on top of
-the now-available SDK operations, not part of this fix.
+`@homeflare/distilled-grafana` — 0.2.0; see [docs/distilled-interim.md](./distilled-interim.md)).
+The gap below is left as evidence of what was measured and why. `Grafana.Folder` and
+`Grafana.Dashboard` now ship on top of the unblocked operations —
+[grafana-folder-dashboard.md](./grafana-folder-dashboard.md) covers both in full. `Grafana.AlertRule`,
+`ContactPoint`, `NotificationPolicy` and `MuteTiming` remain follow-up work, not part of this PR.
 
 Measured 2026-09-24 against the published `@distilled.cloud/grafana@1.0.0-rc.12` tarball (its
 `lib/services/grafana.d.ts`, 4,938 lines): the package had **no create/read/update/delete
@@ -125,8 +124,10 @@ export class TeslaMateDatasource extends GrafanaDatasource('teslamate-datasource
 
 ## Not covered
 
-- **Folders, dashboards, alert rules, contact points, notification policies, mute timings.** The
-  SDK-level blocker is fixed (above); no house `Resource` calls these operations yet — follow-up
-  work, not blocked on anything.
+- **`Grafana.Folder` and `Grafana.Dashboard` ship** — see
+  [grafana-folder-dashboard.md](./grafana-folder-dashboard.md), not repeated here.
+- **Alert rules, contact points, notification policies, mute timings.** The SDK-level blocker is
+  fixed (above); no house `Resource` calls these operations yet — follow-up work, not blocked on
+  anything.
 - **`read` never answers `Unowned`** — the same open gap forgejo's and netbox's own families
   still carry (see upstream-conformance.md); a maintainer decision on the ownership-check shape.

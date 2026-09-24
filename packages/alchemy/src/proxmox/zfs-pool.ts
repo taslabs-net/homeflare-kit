@@ -26,14 +26,14 @@
  * ⛔ THERE IS NO PUT ON THIS FAMILY AT ALL. MEASURED from the cluster's own published schema
  *   (`/usr/share/pve-docs/api-viewer/apidoc.js`, read on node-b 2026-09-13): `/nodes/{node}/disks/zfs`
  *   has GET and POST, `/nodes/{node}/disks/zfs/{name}` has GET and DELETE, and that is the whole
- *   surface. So `updateForm` is omitted — which, per `resource.ts`, makes any `matches` = false a
- *   REPLACE. A replace is a delete followed by a create, and on this family the delete is the
- *   thing above. Read the ⛔ on `matches` before adding anything to it.
+ *   surface — CONFIRMED again in `@distilled.cloud/proxmox`'s generated `nodes.ts`, which declares
+ *   no `putNodeDiskZfs` at all. So `matches` (zfs-pool-wire.ts) always answers `true`: there is
+ *   nothing to plan a replace over, and the family's one write is the create below.
  *
  * ⛔ NOT ONE CREATE PARAMETER COMES BACK ON READ, SO `matches` COMPARES NOTHING. MEASURED against
- *   the live cluster: `GET /nodes/node-b/disks/zfs/rpool` answers exactly
- *   `{action, children, errors, leaf, name, scan, state, status}` — no `ashift`, no `compression`,
- *   no `raidlevel`, no `devices`, no `add_storage`. Every create parameter is write-only. There is
+ *   the live cluster: `GET /nodes/n2/disks/zfs/rpool` answers exactly
+ *   `{action?, children, errors, name, scan?, state, status?}` — no `ashift`, no `compression`, no
+ *   `raidlevel`, no `devices`, no `add_storage`. Every create parameter is write-only. There is
  *   therefore no field a declaration and a live pool can both be asked about, and a `matches` that
  *   invented one would plan a replace — i.e. a `zpool destroy` — over a difference it could never
  *   verify in the first place.
@@ -46,11 +46,20 @@
  *   is compared, and the three churning strings are kept out of the state store entirely rather
  *   than rewriting this resource's row every time somebody writes a file.
  *
- * ⚠️ TWO HANDLERS ARE OVERRIDDEN AND THE OTHER THREE COME FROM THE FACTORY — see the ★ above
- *   `handlers`. `delete` is the ⛔ above. `reconcile` is because the create is a FORKED WORKER, so
- *   the factory's immediate read-back would report a successful create as a failure; the measured
- *   detail, and the adopt-only refusal decision 9 adds, are both in `createPool` in
- *   zfs-pool-write.ts.
+ * ⛔ A MISSING POOL IS A 500, NOT A 404 — MEASURED against the live cluster (TB4 n2, 2026-09-24,
+ *   read-role, read-only probe): `GET /nodes/n2/disks/zfs/hf-measure-nonexistent-pool` answers a
+ *   generic shelled-out command failure at HTTP 500, the same shape as every other family this
+ *   package has migrated. `zfs-pool-wire.ts` carries the same dual-path read PR 239/243
+ *   established: `readPoolOrFail` (non-folding, used by `diff`) and `readPool` (folding, used by
+ *   `createPool`'s settle-poll and by `read`/`reconcile`).
+ *
+ * ★ MIGRATED OFF `client.ts`'s generic `pve()`/`pveOperations` ONTO `@distilled.cloud/proxmox`'s
+ *   typed `nodes.getNodeDiskZfs`/`createNodeDiskZfs`/`deleteNodeDiskZfs` (2026-09-24, decision
+ *   43's proxmox walk-down, nodes/storage sub-area). `distilled-pve.ts`'s `runPve` replaces
+ *   `pve()`; the cries-wolf fix is wired the same way as every other migrated family. `reconcile`
+ *   and `delete` are still hand-written (never the factory) for the SAME two reasons as before the
+ *   migration — the forked-worker settle-poll, and a DELETE that destroys data — now calling
+ *   `zfs-pool-form.ts`'s `createPool`/`destroyPool` directly instead of through `pveHandlers`.
  *
  * ⚠️ PRIVILEGES, FROM THE SCHEMA. Read and diff need `Sys.Audit` on `/` — both GETs check it.
  *   Reconcile needs `Sys.Modify` on `/` for the POST. `Datastore.Allocate` on `/storage` is NOT
@@ -60,31 +69,23 @@
  *   family checks it, not only the POST. MEASURED the same day as the rest of this paragraph:
  *   `ceph-osd.ts`'s own privilege comparison names `disks/zfs` as one of the sibling families
  *   whose write verbs DO carry a `Sys.Modify` check, unlike `ceph/osd`'s create and delete, which
- *   carry no permissions block at all and 403 for any identity but `root@pam`. This line
- *   previously said delete "needs nothing at all, since it calls nothing", which repeated the same
- *   mistake the header above corrects: `delete` calls the DELETE endpoint, so it needs whatever
- *   that endpoint checks.
+ *   carry no permissions block at all and 403 for any identity but `root@pam`.
  */
 import { Resource } from 'alchemy';
+import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import type { NodesNodeDisksZfsPostParams } from './generated/pve.ts';
-import { type PveRequirements, type WithTarget, pveHandlers, pveOperations } from './resource.ts';
-import { spec } from './zfs-pool-spec.ts';
-import { createPool, destroyPool } from './zfs-pool-write.ts';
+import { asForm } from './distilled-guard.ts';
+import { guardForm } from './constraint-guard.ts';
+import type { PveRequirements, WithTarget } from './resource-spec.ts';
+import { UNREADABLE, unreadableWarning } from './unreadable-read.ts';
+import { dropUnreadable, readPool, readPoolOrFail } from './zfs-pool-wire.ts';
+import type { ZfsPoolAttributes } from './zfs-pool-wire.ts';
+import { createForm, createPool, destroyPool, zfsPoolCreateEndpoint } from './zfs-pool-form.ts';
+import type { ZfsCompression, ZfsRaidLevel } from './zfs-pool-form.ts';
 
-/**
- * PVE's layouts, generated (2026-09-23) from `NodesNodeDisksZfsPostParams['raidlevel']`
- * (`generated/pve.ts`, manifest `pve-apidoc` pve-manager 9.2.11 sha256 9def8f13…) rather than
- * hand-typed, per decision 9. ⚠️ Each has a minimum disk count PVE enforces, and `raid10` needs an
- * even one. ⛔ THERE IS NO `stripe` IN THIS ENUM. n1's `speed` pool is one (decision 14 accepts it
- * as-is): `ZfsPoolProps` below is why a stripe pool is declarable at all — as an ADOPT-ONLY
- * declaration with no `raidlevel`, never as a full one.
- */
-export type ZfsRaidLevel = NonNullable<NodesNodeDisksZfsPostParams['raidlevel']>;
-
-/** Generated the same way, from `NodesNodeDisksZfsPostParams['compression']`. */
-export type ZfsCompression = NonNullable<NodesNodeDisksZfsPostParams['compression']>;
+export type { ZfsPoolAttributes } from './zfs-pool-wire.ts';
+export type { ZfsCompression, ZfsRaidLevel } from './zfs-pool-form.ts';
 
 /**
  * ⛔ THERE IS NO `add_storage`, `cleanup-config` OR `cleanup-disks` PROP, AND THAT IS NOT AN
@@ -122,7 +123,7 @@ export interface ZfsPoolProps extends WithTarget {
    *   both this and `raidlevel` undeclared declares an ADOPT-ONLY pool — one this resource may
    *   read and report but never build. That is the only shape available for a pool PVE's own POST
    *   schema cannot fully describe, such as n1's `speed`, whose layout is a stripe and whose
-   *   `raidlevel` enum (above) has no stripe to declare. `createForm` (zfs-pool-write.ts) omits
+   *   `raidlevel` enum (above) has no stripe to declare. `createForm` (zfs-pool-form.ts) omits
    *   both keys when they are absent, and `createPool` refuses before any POST if the pool it
    *   would need to build is not already there — an adopt-only declaration never creates. Declare
    *   both fields together for a pool this resource should build from scratch; declaring only one
@@ -152,30 +153,6 @@ export interface ZfsPoolProps extends WithTarget {
   'draid-config'?: string;
 }
 
-/**
- * ⚠️ EVERYTHING HERE IS REPORTED, NOTHING HERE IS COMPARED — see the ⛔ on `matches`. These exist
- *   so a plan and the state store can say what the pool actually is, on a family where the
- *   declaration and the live object share no comparable field at all.
- */
-export interface ZfsPoolAttributes {
-  /** ★ The value a `Proxmox.Storage` should read to order itself after this pool. */
-  name: string;
-  node: string;
-  /** `ONLINE` | `DEGRADED` | `FAULTED` | … Health, not configuration. */
-  state: string;
-  /** ZFS's own error summary, e.g. `No known data errors`. */
-  errors: string;
-  /**
-   * The leaf devices ZFS reports, in vdev order, comma-joined.
-   *
-   * ⚠️ THIS IS WHAT ZFS RESOLVED, NOT WHAT WAS DECLARED, and the two normally differ: PVE rewrites
-   *   a `/dev/sdb` into a by-id link before creating, and ZFS reports partition paths (`…-part3`)
-   *   for a pool built on partitions — MEASURED, that is exactly what node-b's `rpool` reports. Never
-   *   compare it with `props.devices`.
-   */
-  devices: string;
-}
-
 export interface ProxmoxZfsPool extends Resource<
   'Proxmox.ZfsPool',
   ZfsPoolProps,
@@ -189,24 +166,77 @@ export const ProxmoxZfsPool = Resource<ProxmoxZfsPool>('Proxmox.ZfsPool', {
   defaultRemovalPolicy: 'retain',
 });
 
-const ops = pveOperations(spec);
-
-/**
- * ★ THREE HANDLERS COME FROM THE FACTORY AND TWO DO NOT, SO THE TWO ARE THE ONLY ONES WRITTEN OUT.
- *   `list`, `read` and `diff` are the factory's, unchanged — the spread is what proves it, rather
- *   than three re-typed delegations nobody rereads. `reconcile` and `delete` are the two the header
- *   explains, and they are the only places this family departs from every other resource here.
- *   This is the acl.ts precedent, for a different reason: there the factory's delete hits an
- *   endpoint PVE does not implement, here it hits one that works and destroys the data.
- */
-const handlers = {
-  ...pveHandlers(spec),
-  delete: Effect.fn(function* ({ olds }: { olds: ZfsPoolProps }) {
-    yield* destroyPool(olds, spec.path(olds));
-  }),
-  reconcile: ({ news }: { news: ZfsPoolProps }) =>
-    createPool(news, spec.collection(news), spec.path(news), ops.read),
-};
-
 export const ProxmoxZfsPoolProvider = () =>
-  Provider.effect(ProxmoxZfsPool, Effect.succeed(ProxmoxZfsPool.Provider.of(handlers)));
+  Provider.effect(
+    ProxmoxZfsPool,
+    Effect.succeed(
+      ProxmoxZfsPool.Provider.of({
+        /** ⛔ EMPTY — `GET /nodes/{node}/disks/zfs` returns telemetry for every pool on the node,
+         *   `rpool` included. Adoption stays explicit. */
+        list: () => Effect.succeed([]),
+        // ⚠️ FOLDS ONLY WHEN `output` IS `undefined` — storage.ts's own ⚠️, applied here from the
+        //   start: `output === undefined` (Plan.ts's adoption probe, Apply.ts's delete recovery)
+        //   keeps `readPool`'s fold; `output !== undefined` (Drift.ts's already-confirmed row)
+        //   uses `readPoolOrFail` instead, so `alchemy drift` never reports a transient failure as
+        //   a silent `{action: 'missing'}`.
+        read: Effect.fn(function* ({ olds, output }) {
+          return dropUnreadable(
+            yield* output === undefined ? readPool(olds) : readPoolOrFail(olds),
+          );
+        }),
+        diff: Effect.fn(function* ({ news, output }) {
+          if (!isResolved(news)) return undefined;
+          // ⚠️ `guardForm`, NOT `guardWrite` — the only migrated family whose create-guard is
+          //   CONDITIONAL. `guardWrite`'s own signature requires a real `EndpointKey`, but decision
+          //   9's adopt-only mode needs `undefined` some of the time (`zfsPoolCreateEndpoint`'s own
+          //   header) — `guardForm` (constraint-guard.ts) is the one `distilled-guard.ts`'s
+          //   `guardWrite` itself calls, and it already accepts `EndpointKey | undefined`.
+          yield* guardForm(
+            zfsPoolCreateEndpoint(news),
+            asForm(createForm(news)),
+            output === undefined,
+          );
+          if (output === undefined) return undefined;
+          // ⚠️ `readPoolOrFail`, NOT `readPool` — a genuine TRANSIENT failure here propagates and
+          //   fails the whole plan loudly instead of folding to "absent" and forcing a false
+          //   update, the cries-wolf class of bug.
+          const live = yield* readPoolOrFail(news);
+          if (live === UNREADABLE) {
+            yield* unreadableWarning('Proxmox.ZfsPool', `${news.node}/${news.name}`);
+            return { action: 'noop' } as const;
+          }
+          // ⛔ FOUND WRITING THIS FILE, 2026-09-24 — an earlier edit that removed the dead
+          //   `matches()` call (zfs-pool-wire.ts's own ⛔) took this whole branch out with it,
+          //   leaving a genuinely-absent pool planning `noop` unconditionally instead of `update`
+          //   — a silent no-op on a state row Alchemy still holds, caught by
+          //   zfs-pool-adopt.test.ts's own "an adopted pool that vanishes" case rejecting the plan
+          //   loudly rather than resolving. Restored before this PR opened.
+          if (live === undefined) {
+            yield* guardForm(zfsPoolCreateEndpoint(news), asForm(createForm(news)), true);
+            return { action: 'update' } as const;
+          }
+          // A live pool means `noop`, unconditionally — `matches` (zfs-pool-wire.ts's own ⛔)
+          // always answers `true`, since every create parameter is write-only: there is nothing a
+          // declaration and a live pool can be compared on, so nothing here can ever be a replace.
+          return { action: 'noop' } as const;
+        }),
+        /**
+         * ⛔ THE ONLY WRITE THIS FAMILY EVER MAKES IS `createPool`'s create — see zfs-pool-form.ts.
+         *   An existing pool is returned exactly as read, unwritten.
+         * ⚠️ `readPool` PIPED THROUGH `dropUnreadable` — `createPool`'s settle-poll treats a
+         *   refused mid-poll credential exactly like "not found yet" (its own header), so its own
+         *   `read` parameter is typed `Attributes | undefined`, never `Unreadable`; folding here is
+         *   what keeps that true rather than leaking the sentinel into `reconcile`'s own return
+         *   value, which the engine expects to be real attributes or nothing.
+         */
+        reconcile: Effect.fn(function* ({ news }) {
+          return yield* createPool(news, (props) =>
+            readPool(props).pipe(Effect.map(dropUnreadable)),
+          );
+        }),
+        delete: Effect.fn(function* ({ olds }) {
+          yield* destroyPool(olds);
+        }),
+      }),
+    ),
+  );

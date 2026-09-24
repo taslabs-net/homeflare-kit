@@ -259,10 +259,15 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
     `@homeflare/distilled-grafana` (0.1.0 pre-release, 0.2.0 once this PR's `minor` changeset
     releases it), aliased onto `@distilled.cloud/grafana` the same S22 route
     `@homeflare/distilled-netbox` established. `Grafana.Datasource`'s props/attributes/generated code
-    are unchanged (diffed operation-by-operation against the prior commit). **Still open, and not
-    this PR's scope:** no `Grafana.Folder`/`Dashboard`/`AlertRule`/`ContactPoint`/
-    `NotificationPolicy`/`MuteTiming` resource calls the newly-available operations yet — follow-up
-    PRs, no longer blocked on the SDK.
+    are unchanged (diffed operation-by-operation against the prior commit).
+
+    ✅ **`Grafana.Folder`/`Grafana.Dashboard` shipped** (this PR, on top of the same
+    `@distilled.cloud/grafana` operations S22 unblocked) — the uid-required doctrine, the
+    provisioned-object refusal, the parentUid-is-create-only refusal and the volatile-field
+    normalization that makes an unchanged dashboard a true noop are all in
+    [grafana-folder-dashboard.md](./grafana-folder-dashboard.md), not repeated here. **Still open,
+    and not this PR's scope:** `Grafana.AlertRule`/`ContactPoint`/`NotificationPolicy`/`MuteTiming`
+    — follow-up PRs, no longer blocked on the SDK.
     - ⛔ **Same open gaps as `forgejo/*` and `netbox/*` above:** `read` never answers `Unowned`
       (H1), and credentials come from an explicit env var NAME at call time rather than an
       `alchemy/Auth` provider (S24) — here the house's own `grafanaCredentials(target)`, not the
