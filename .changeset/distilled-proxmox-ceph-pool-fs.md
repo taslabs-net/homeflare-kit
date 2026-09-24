@@ -63,7 +63,7 @@ is an upstream-distilled fact rather than a kit one: `DeleteNodeCephFsRequest` t
 body on — the same class of finding as `Proxmox.NetworkApply`'s two, worth the same upstream
 attention if `@distilled.cloud/proxmox` is ever patched again.
 
-**New tests**, both proven against a deliberately weakened check before landing:
+**New tests**, every one proven against a deliberately weakened check before landing:
 `ceph-pool-write.test.ts` (a genuinely new pool creates once the index is confirmed empty; the
 PG-merge guard refuses a create when the index lists the name but the status read still fails —
 confirmed this fails without the guard by temporarily removing the `confirmAbsent` call and
@@ -72,6 +72,17 @@ re-running; `RemovalPolicy.destroy()` then undeclaring sends exactly one DELETE)
 `running` before `stopped`/`OK` — proving the poll loop actually loops — and reads the index back;
 a task that finishes with a real Ceph error dies with the task-log pointer rather than a false
 create).
+
+**`ceph-fs-delete.test.ts` (new, added after the adversarial review's finding).** The review's one
+substantive finding: `Proxmox.CephFs`'s `delete` handler is the single place in this PR that
+composes a distilled call (`readFs`, before and after) with the unmigrated hand-client one
+(`destroyFs`) inside one handler — the exact boundary this PR's whole design rests on — and that
+composition had zero test coverage anywhere in the repo, before or after the rest of this PR
+(each half was proven separately, never together, and the destroy is destructive and hard to
+reverse). Added two tests: a genuine `RemovalPolicy.destroy()` then undeclare, confirmed to fail
+(the read-back reports the filesystem still present) by temporarily removing the `destroyFs` call
+and re-running; and a filesystem removed by hand between the adopt and the undeclare, proving
+`delete` is a silent no-op rather than a false DELETE against an object already gone.
 
 **Expected after this releases and the consumer bumps:** no live plan change for either family —
 C1's read-role lease could always read the live Ceph objects cleanly, so this is a transport
