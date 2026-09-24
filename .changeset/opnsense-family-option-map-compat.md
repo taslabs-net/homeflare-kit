@@ -33,3 +33,15 @@ anyway).
 `Category`/`Group` to their now-correct per-item `getCategory`/`getGroup`
 (OPNSENSE-1) instead of whole-model `get()`, `catchTag` typed errors, a
 delete-of-absent test and a transient-read-propagates test.
+
+**The opnsense family is correct for consumers only after the alias pin
+moves to the released `distilled-opnsense`.** `packages/alchemy/
+package.json` still pins `"@distilled.cloud/opnsense": "npm:@homeflare/
+distilled-opnsense@0.2.0"` exactly — this PR does not bump it. The bun
+workspace links the local package during development, which is why this
+fix's tests and this repo's own pre-push gate pass, but a published
+`@homeflare/alchemy` consumer installs the pinned `0.2.0` from npm, which
+still cannot decode option maps, underneath family code that now expects
+them. Moving the pin is a separate, later PR, once `@homeflare/
+distilled-opnsense` has actually released (the same two-step precedent as
+kit commit `06591c9` / PR #206).
