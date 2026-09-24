@@ -38,5 +38,19 @@ export type {
   PodmanContainerProps,
   PodmanUnitLine,
 } from './container.ts';
-export { QUADLET_DEFAULT_DIRECTORY, QUADLET_SEARCH_DIRECTORIES } from './container-form.ts';
+// ★ `renderContainerFile`/`containerPathFor` are the pure `.container` file renderer and its path
+//   rule — the same kind of pure helper `renderUnit`/`DEFAULT_UNIT_DIRECTORY` above already are
+//   for `Systemd.Unit`. A consumer needs these to prove ITS OWN declared props render into the
+//   directive set it expects (an equivalence/fixture test against a live host), the same way this
+//   package's own container-fixture.test.ts does internally — without them, a consuming repo has
+//   no import path to the real renderer and has to reimplement it to write that test at all
+//   (found: homeflare-ct100 PR #1). `containerProblems`/`refuseContainer`/`serviceNameFor` stay
+//   internal — no consumer need for those was raised, and validation/naming internals are a wider
+//   surface to commit to than one pure render function.
+export {
+  containerPathFor,
+  QUADLET_DEFAULT_DIRECTORY,
+  QUADLET_SEARCH_DIRECTORIES,
+  renderContainerFile,
+} from './container-form.ts';
 export { PodmanContainer, PodmanContainerProvider } from './container.ts';
