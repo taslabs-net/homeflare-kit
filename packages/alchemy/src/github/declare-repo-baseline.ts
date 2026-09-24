@@ -8,12 +8,12 @@
  *       visibility: 'private',
  *     });
  *
- * Provide `GitHub.providers()` AND `RepositoryRulesetProvider()` — this subpath ships no
- * provider of its own, the same as `declareRepoPolicy`. Both resources are `retain` and
- * `adopt(true)` ALWAYS, unlike `declareRepoPolicy`'s optional `adopt` — a baseline this widely
- * shared is meant for a checkout adopting the estate's existing repository and ruleset by name,
- * never for creating one out from under a caller who forgot the flag (H1: a name match is not
- * ours until adopted).
+ * Provide `repoPolicyProviders()` (repository-ruleset-providers.ts) — this subpath ships no
+ * provider of its own beyond the ruleset bridge, the same as `declareRepoPolicy`. Both resources
+ * are `retain` and `adopt(true)` ALWAYS, unlike `declareRepoPolicy`'s optional `adopt` — a
+ * baseline this widely shared is meant for a checkout adopting the estate's existing repository
+ * and ruleset by name, never for creating one out from under a caller who forgot the flag (H1: a
+ * name match is not ours until adopted).
  *
  * ⛔ NO IMPORT FROM `@homeflare/config`, either direction — see `renderRepoShape`'s own header
  *   in `packages/config/src/repo-shape/render.ts`. A caller spreads `renderRepoShape(shape)

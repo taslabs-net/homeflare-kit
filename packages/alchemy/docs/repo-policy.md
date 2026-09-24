@@ -18,7 +18,22 @@ Effect.gen(function* () {
 });
 ```
 
-Provide `GitHub.providers()` **and** `RepositoryRulesetProvider()` from this subpath.
+Provide `repoPolicyProviders()` from this subpath as the stack's `providers` — the composed
+`GitHub.providers()` + `RepositoryRulesetProvider()` layer:
+
+```ts
+import { repoPolicyProviders } from '@homeflare/alchemy/github';
+
+// providers: repoPolicyProviders()
+```
+
+⛔ **Writing the two providers side by side does not typecheck** (measured 2026-09-24,
+homeflare-builds bump PR 6): `RepositoryRulesetProvider()`'s handlers need `GitHubCredentials`,
+and merging layers does not thread one's output into another's requirement.
+`repoPolicyProviders()` feeds `GitHub.providers()` into `RepositoryRulesetProvider()` with
+`Layer.provideMerge` so the composed layer needs nothing further — see
+[repository-ruleset.md](./repository-ruleset.md#providers) for the full account.
+
 ⚠️ **Rewired 2026-09-23**: the ruleset half now composes this house's own
 `GitHub.RepositoryRuleset` (see [repository-ruleset.md](./repository-ruleset.md)), not
 upstream `GitHub.Ruleset` — every hazard [below](#-the-ruleset-half-has-hazards-of-its-own)

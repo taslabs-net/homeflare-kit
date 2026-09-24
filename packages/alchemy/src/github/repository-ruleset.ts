@@ -38,11 +38,33 @@
  *   meant to allow. `octokitFor`/`GitHubCredentials` are upstream's own EXPORTED building
  *   blocks (S23's second clause: reuse Alchemy's own client construction), so the client itself
  *   is not hand-rolled — only the choice of Octokit over distilled is a recorded divergence.
+ *
+ * ⛔ CREDENTIALS BELONG TO THE PROVIDER'S LAYER, NOT THE RESOURCE'S DECLARATION — MEASURED
+ *   2026-09-24 (homeflare-builds bump PR 6, tsc TS2345). The `Resource<Type, Props, Attributes,
+ *   Binding, Providers>` 5th type parameter had `GitHubCredentials` here; that puts the
+ *   credential requirement on every `yield* RepositoryRuleset(...)` CALL SITE (see
+ *   `alchemy/src/Resource.ts#ResourceClass`: `Req = R["Providers"] extends undefined ?
+ *   Provider<R> : R["Providers"]`), so a STACK BODY that merely declares the resource would
+ *   itself need `GitHubCredentials` in its own effect context — which a stack body cannot
+ *   produce (`Alchemy.Stack`'s own type, `alchemy/src/Stack.ts#ProviderServices`, is a closed
+ *   union of tagged marker interfaces — `ProviderCollectionLike | Provider<any> |
+ *   EnvironmentLike | CredentialsLike | DockerLike` — and `GitHubCredentials` matches none of
+ *   them structurally). VERIFIED against upstream `Ruleset` (`node_modules/alchemy/src/GitHub/
+ *   Ruleset.ts`): its 5th slot is `GitHub.Providers`, the ProviderCollection tag `GitHub.
+ *   providers()` OUTPUTS — never the raw `GitHubCredentials` service upstream's OWN provider
+ *   handlers pull in via `octokitFor`. `GitHubCredentials` stays confined to the PROVIDER's
+ *   layer requirement (`Provider.succeed`'s inferred `ReadReq | DiffReq | ReconcileReq |
+ *   DeleteReq`, below), never the declaration's. Omitting the 5th parameter here defaults it to
+ *   `undefined`, so the declaration's own requirement becomes `Provider<RepositoryRuleset>` —
+ *   itself a `Provider<any>`, a real `ProviderServices` member — matching the pattern a
+ *   standalone (non-collection) resource actually needs. See `repoPolicyProviders()` in
+ *   repository-ruleset-providers.ts for the layer composition this now requires (the provider
+ *   still needs `GitHubCredentials` fed in — that half of the fix was already correct, per
+ *   `docs/repository-ruleset.md`).
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
-import type { GitHubCredentials } from 'alchemy/GitHub';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import {
@@ -75,8 +97,10 @@ export interface RepositoryRuleset extends Resource<
   'GitHub.RepositoryRuleset',
   RepositoryRulesetProps,
   RepositoryRulesetAttributes,
-  never,
-  GitHubCredentials
+  never
+  // ⛔ NO 5th (`Providers`) ARGUMENT — see the file header. Defaulting it to `undefined` makes
+  // a `yield* RepositoryRuleset(...)` call site require `Provider<RepositoryRuleset>`, not
+  // `GitHubCredentials`; the credential requirement lives on the PROVIDER below instead.
 > {}
 
 export const RepositoryRuleset = Resource<RepositoryRuleset>('GitHub.RepositoryRuleset', {
