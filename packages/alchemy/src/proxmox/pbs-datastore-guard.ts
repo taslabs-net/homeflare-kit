@@ -76,13 +76,15 @@ export const guardBackend = (live: PbsDatastoreAttributes, props: PbsDatastorePr
 /**
  * Wait for PBS to finish, then answer the last thing it said.
  *
- * ⛔ IT EXISTS BECAUSE A PBS CREATE IS A FORKED WORKER AND THE CONFIG SECTION IS WRITTEN LAST.
+ * ⛔ THE ORIGINAL CREATE-WORKER ASSUMPTION BELOW WAS REASONED, NOT MEASURED.
  *   `POST /config/datastore` answers with a UPID while a `create-datastore` task builds the chunk
  *   store's 65536 directories; only when that finishes does the section reach `datastore.cfg`. An
  *   immediate read-back therefore sees a datastore that is not there yet, and the factory's "the
  *   write returned no error but the object is still absent" would fire on a create going perfectly.
  *   The DELETE forks a worker too. ⚠️ DOCUMENTED FROM THE PUBLISHED SCHEMA, NOT MEASURED — I hold
- *   no PBS token. If a create turns out to be synchronous, the first poll simply succeeds.
+ *   no PBS token. The pinned PBS 4.2.6-1 schema actually declares a NULL create response,
+ *   while DELETE declares a UPID. We preserve bounded readback for both; a synchronous create
+ *   succeeds at the first poll rather than depending on the old UPID assumption.
  * ★ IT TAKES THE READ AS AN EFFECT RATHER THAN A FUNCTION — the one simplification over
  *   ceph-pool-settle.ts: an Effect is a description, so re-running it re-reads and no dependency
  *   has to be threaded back in to avoid a cycle.
@@ -91,8 +93,9 @@ export const guardBackend = (live: PbsDatastoreAttributes, props: PbsDatastorePr
  *   Anything still unsettled after two minutes is a fault to surface, not a wait to lengthen, and
  *   the caller's message points at the task log, which is where the real answer is. `Effect.sleep`
  *   yields between polls; nothing here parks a call on one long wait.
- * ⚠️ POLLING THE TASK STATUS INSTEAD WOULD BE WORSE, for ceph-pool-settle.ts's reason: every call
- *   mints a FRESH token, so the token asking about the task is not the one that started it.
+ * ⚠️ THE ORIGINAL TRANSPORT MINTED A TOKEN PER CALL, making task-owner polling unreliable.
+ *   The SDK runner now reuses leases, but create has no task id in its measured response schema.
+ *   This migration therefore preserves bounded readback rather than inventing a task handle.
  */
 export const settle = <A, E, R>(read: Effect.Effect<A, E, R>, done: (live: A) => boolean) =>
   Effect.gen(function* () {
