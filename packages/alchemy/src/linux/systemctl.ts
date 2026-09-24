@@ -26,6 +26,10 @@
  *   the state is read back with `show` afterwards rather than assumed.
  * ⛔ NEVER PUT `show` STDOUT WITH NO PROPERTY FILTER IN AN ERROR: the unfiltered property set
  *   carries the unit's whole environment block.
+ * ★ `SourcePath` ADDED 2026-09-24 for `Podman.Container` (container-generator.ts): a systemd
+ *   GENERATOR's output unit carries the source file it was generated from — MEASURED on CT100,
+ *   `systemctl show caddy.service -p SourcePath` -> `/etc/containers/systemd/caddy.container`. An
+ *   ordinary hand-written unit's `SourcePath` is empty, so this is additive for `Systemd.Unit`.
  */
 import type { HostRunner } from '../launchd/runner.ts';
 
@@ -39,6 +43,7 @@ export const SHOW_PROPERTIES = [
   'SubState',
   'UnitFileState',
   'FragmentPath',
+  'SourcePath',
   'NeedDaemonReload',
 ] as const;
 
@@ -60,6 +65,8 @@ export type UnitStatus = {
   readonly unitFileState?: string;
   /** The unit file systemd would read. Empty when there is none. */
   readonly fragmentPath?: string;
+  /** A GENERATOR's source file, e.g. Quadlet's `.container` file. Empty for a hand-written unit. */
+  readonly sourcePath?: string;
   /** systemd's own view that its on-disk unit files are newer than what it has loaded. */
   readonly needDaemonReload: boolean;
 };
@@ -81,6 +88,7 @@ export const statusOf = (stdout: string): UnitStatus => {
   const loadState = fields.get('LoadState') ?? 'not-found';
   const unitFileState = fields.get('UnitFileState') ?? '';
   const fragmentPath = fields.get('FragmentPath') ?? '';
+  const sourcePath = fields.get('SourcePath') ?? '';
   const subState = fields.get('SubState') ?? '';
   return {
     activeState: fields.get('ActiveState') ?? 'inactive',
@@ -92,6 +100,7 @@ export const statusOf = (stdout: string): UnitStatus => {
     ...(subState === '' ? {} : { subState }),
     ...(unitFileState === '' ? {} : { unitFileState }),
     ...(fragmentPath === '' ? {} : { fragmentPath }),
+    ...(sourcePath === '' ? {} : { sourcePath }),
   };
 };
 
