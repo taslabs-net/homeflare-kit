@@ -61,7 +61,7 @@ export async function isPublished(
   version: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<boolean> {
-  const url = `https://registry.npmjs.org/${name.replace('/', '%2f')}/${encodeURIComponent(version)}`;
+  const url = `https://registry.npmjs.org/${name.replaceAll('/', '%2f')}/${encodeURIComponent(version)}`;
   const res = await fetchImpl(url, { method: 'GET' });
   if (res.status === 200) return true;
   if (res.status === 404) return false;
