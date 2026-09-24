@@ -6,16 +6,17 @@
  *   synchronous. Ceph's are not — a pool delete returns before the PGs are gone — so this file is
  *   the polling that difference forces, and ceph-pool.ts is the declaration.
  */
+import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
 import type { CephPoolAttributes, CephPoolProps } from './ceph-pool-form.ts';
-import { pve } from './client.ts';
+import { runPve } from './distilled-pve.ts';
 import type { PveRequirements } from './resource.ts';
 
 /**
  * ⚠️ THE DEPENDENCIES ARE PASSED IN RATHER THAN IMPORTED, and that is what made this file
- *   separable at all. `collection`, `object` and `ops.read` are module-level bindings in
- *   ceph-pool.ts; importing them back would be a runtime cycle, and duplicating them would be two
- *   definitions of one path. Passing them is the pattern zfs-pool-write.ts already uses.
+ *   separable at all. `ops.read` — now `readPoolStatus` (ceph-pool-wire.ts) — is a module-level
+ *   binding in ceph-pool.ts; importing it back would be a runtime cycle, and duplicating it would
+ *   be two definitions of one path. Passing it is the pattern zfs-pool-write.ts already uses.
  */
 export type PoolRead = (
   props: CephPoolProps,
@@ -28,11 +29,16 @@ export type PoolRead = (
  *   rather than folded, so "I could not ask" fails the deploy instead of creating over live data.
  *   An empty list is trusted: the collection 403s when the role is too narrow rather than
  *   filtering, so `[]` really does mean a cluster with no pools.
+ *
+ * ⚠️ `describe` IS STILL A PLAIN STRING (ceph-pool.ts builds it from `object`/`collection` in
+ *   ceph-pool-form.ts) — this function no longer takes a `collection` PATH, since
+ *   `nodes.listNodeCephPool` addresses the endpoint itself; the parameter list keeps `describe`
+ *   only, to name the object in the refusal message.
  */
-export const confirmAbsent = (props: CephPoolProps, collection: string, describe: string) =>
-  pve<{ pool_name?: string }[]>(props.target, 'read', 'GET', collection).pipe(
+export const confirmAbsent = (props: CephPoolProps, describe: string) =>
+  runPve(props.target, 'read', false, nodes.listNodeCephPool({ node: props.node })).pipe(
     Effect.flatMap((rows) =>
-      (rows ?? []).some((row) => row.pool_name === props.name)
+      rows.some((row) => row.pool_name === props.name)
         ? Effect.die(
             new Error(
               `${describe}: the cluster lists this pool but its status could not be read, ` +

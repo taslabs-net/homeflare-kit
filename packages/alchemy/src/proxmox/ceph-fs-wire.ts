@@ -48,6 +48,17 @@
  *   user needs 'Sys.Audit' permissions on '/nodes/<node>' if they are not the owner of the task."
  *   Grant it on the `read` role, or every create burns the full cap below and reports the wrong
  *   cause.
+ *
+ * ★ AS OF 2026-09-24 (decision 43's walk-down, 2c) THIS FILE IS `client.ts`'s HALF ONLY. The read
+ *   (`readRow`) moved to `ceph-fs-distilled.ts`, and so did the create — `nodes.updateNodeCephFs`
+ *   (distilled's own misnamed POST, confirmed against its `T.Http` annotation) plus a SEPARATE
+ *   distilled `settle`, using the raw `getNodeTaskStatus` operation in its own tolerant poll loop
+ *   rather than `Task.awaitTask`, which does not tolerate a poll failure the way this family needs
+ *   (network-apply-read.ts's own header has the fuller reasoning). `destroyFs` stays HERE,
+ *   unmigrated: distilled types `remove_pools`/`remove_storages` as `T.Body` on a DELETE, and the
+ *   ⛔ two paragraphs up is the MEASURED reason PVE would silently ignore both flags if sent that
+ *   way — a real protocol gap, not a judgement call. `settle` below is still shared where it can
+ *   be: `createForm`/`objectPath`/`destroyPath` are pure and reused by the distilled file too.
  */
 import * as Effect from 'effect/Effect';
 import type { CephFsAttributes, CephFsProps } from './ceph-fs.ts';
@@ -97,11 +108,15 @@ type TaskStatus = { readonly status?: string; readonly exitstatus?: string };
  *   itself spends waiting for an MDS to go active, and is short enough that a stuck task fails the
  *   deploy rather than parking it for the afternoon.
  */
-const POLL_SECONDS = 2;
-const POLL_ATTEMPTS = 45;
+// ★ EXPORTED so ceph-fs-distilled.ts's OWN settle polls the same cadence and cap — one number.
+export const POLL_SECONDS = 2;
+export const POLL_ATTEMPTS = 45;
 
 /** ⚠️ `nodes/{n}/ceph/fs/{name}` — the POST and DELETE target, and NOT where a read goes. */
 export const objectPath = (props: CephFsProps) => `nodes/${props.node}/ceph/fs/${props.name}`;
+
+/** The vendor rules `createForm` is checked against — `guardWrite`, distilled-guard.ts. */
+export const CEPH_FS_CREATE = 'pve:POST /nodes/{node}/ceph/fs/{name}';
 
 /** Only the declared flags. ⚠️ An omitted one is PVE's own default, not a value to send. */
 const field = (name: string, value: string | undefined): Record<string, string> =>
@@ -171,35 +186,6 @@ const settle = (target: PveTarget, node: string, upid: string, what: string) =>
           'task owner and is answered 403 rather than told to wait.',
       ),
     );
-  });
-
-/**
- * POST the create, then wait for the worker. ⛔ The caller still reads back; see ceph-fs.ts.
- *
- * ⚠️ A CREATE NEEDS A RUNNING *AND* A STANDBY MDS, and refuses BEFORE it forks -- "no running
- *   Metadata Server (MDS) found!" / "no standby Metadata Server (MDS) found!" are synchronous, so
- *   they surface as a failed POST rather than as a silent worker. C1 has three (MEASURED: node-c
- *   `up:active` for cephfs-c1, node-b and node-d `up:standby`), so this is a note for a smaller cluster.
- * ⚠️ BOTH WRITES CHECK `Sys.Modify` ON `/` -- the root, with the breadth metric-server.ts warns
- *   about: granting it buys datacenter options and every other cluster-wide config write too.
- */
-export const createFs = (props: CephFsProps) =>
-  Effect.gen(function* () {
-    const upid = text(
-      yield* pve<string>(props.target, 'provision', 'POST', objectPath(props), createForm(props)),
-    );
-    // ⛔ NO UPID MEANS NO WORKER. PVE answers 200 with `{"data":null}` on calls that did nothing,
-    //   and here that is indistinguishable from success by status code alone. Refusing now is the
-    //   difference between a clear failure and a state entry for a filesystem nobody built.
-    if (upid === '') {
-      return yield* Effect.die(
-        new Error(
-          `${objectPath(props)}: POST returned no task id. PVE wraps every answer in ` +
-            '{"data":...} and can report success on a call that did nothing.',
-        ),
-      );
-    }
-    yield* settle(props.target, props.node, upid, objectPath(props));
   });
 
 /**
