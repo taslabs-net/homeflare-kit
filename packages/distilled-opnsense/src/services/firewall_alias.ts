@@ -193,6 +193,232 @@ export const GetRequest = /*@__PURE__*/ S.suspend(() =>
   ),
 ).annotate({ identifier: "GetRequest" }) as any as S.Schema<GetRequest>;
 
+export interface OptionEntry {
+  value: string;
+  selected: number;
+}
+export const OptionEntry = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    value: S.String,
+    selected: S.Number,
+  }),
+).annotate({ identifier: "OptionEntry" }) as any as S.Schema<OptionEntry>;
+
+export type ModelAliasReadItemTypeMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelAliasReadItemTypeMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelAliasReadItemTypeMap>;
+
+export type ModelAliasReadItemProtoMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelAliasReadItemProtoMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelAliasReadItemProtoMap>;
+
+export type ModelAliasReadItemInterfaceMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelAliasReadItemInterfaceMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelAliasReadItemInterfaceMap>;
+
+export type ModelAliasReadItemContentMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelAliasReadItemContentMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelAliasReadItemContentMap>;
+
+export type ModelAliasReadItemAuthtypeMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelAliasReadItemAuthtypeMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelAliasReadItemAuthtypeMap>;
+
+export type ModelAliasReadItemCategoriesMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelAliasReadItemCategoriesMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelAliasReadItemCategoriesMap>;
+
+export interface ModelAliasReadItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  enabled: string;
+  /** OPNsense FieldType: .\AliasNameField */
+  name: string;
+  /** OPNsense FieldType: OptionField */
+  type: ModelAliasReadItemTypeMap;
+  /** OPNsense FieldType: TextField */
+  path_expression?: string;
+  /** OPNsense FieldType: OptionField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  proto?: ModelAliasReadItemProtoMap;
+  /** OPNsense FieldType: InterfaceField */
+  interface?: ModelAliasReadItemInterfaceMap;
+  /** OPNsense FieldType: BooleanField */
+  counters?: string;
+  /** OPNsense FieldType: NumericField */
+  updatefreq?: string;
+  /** OPNsense FieldType: .\AliasContentField */
+  content?: ModelAliasReadItemContentMap;
+  /** OPNsense FieldType: TextField */
+  password?: string;
+  /** OPNsense FieldType: TextField */
+  username?: string;
+  /** OPNsense FieldType: OptionField */
+  authtype?: ModelAliasReadItemAuthtypeMap;
+  /** OPNsense FieldType: IntegerField; range 60..999999999 (as text) */
+  expire?: string;
+  /** OPNsense FieldType: ModelRelationField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  categories?: ModelAliasReadItemCategoriesMap;
+  /** OPNsense FieldType: IntegerField */
+  current_items?: string;
+  /** OPNsense FieldType: TextField */
+  last_updated?: string;
+  /** OPNsense FieldType: IntegerField */
+  eval_nomatch?: string;
+  /** OPNsense FieldType: IntegerField */
+  eval_match?: string;
+  /** OPNsense FieldType: IntegerField */
+  in_block_p?: string;
+  /** OPNsense FieldType: IntegerField */
+  in_block_b?: string;
+  /** OPNsense FieldType: IntegerField */
+  in_pass_p?: string;
+  /** OPNsense FieldType: IntegerField */
+  in_pass_b?: string;
+  /** OPNsense FieldType: IntegerField */
+  out_block_p?: string;
+  /** OPNsense FieldType: IntegerField */
+  out_block_b?: string;
+  /** OPNsense FieldType: IntegerField */
+  out_pass_p?: string;
+  /** OPNsense FieldType: IntegerField */
+  out_pass_b?: string;
+  /** OPNsense FieldType: DescriptionField */
+  description?: string;
+}
+export const ModelAliasReadItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    enabled: S.String,
+    name: S.String,
+    type: ModelAliasReadItemTypeMap,
+    path_expression: S.optional(S.String),
+    proto: S.optional(ModelAliasReadItemProtoMap),
+    interface: S.optional(ModelAliasReadItemInterfaceMap),
+    counters: S.optional(S.String),
+    updatefreq: S.optional(S.String),
+    content: S.optional(ModelAliasReadItemContentMap),
+    password: S.optional(S.String),
+    username: S.optional(S.String),
+    authtype: S.optional(ModelAliasReadItemAuthtypeMap),
+    expire: S.optional(S.String),
+    categories: S.optional(ModelAliasReadItemCategoriesMap),
+    current_items: S.optional(S.String),
+    last_updated: S.optional(S.String),
+    eval_nomatch: S.optional(S.String),
+    eval_match: S.optional(S.String),
+    in_block_p: S.optional(S.String),
+    in_block_b: S.optional(S.String),
+    in_pass_p: S.optional(S.String),
+    in_pass_b: S.optional(S.String),
+    out_block_p: S.optional(S.String),
+    out_block_b: S.optional(S.String),
+    out_pass_p: S.optional(S.String),
+    out_pass_b: S.optional(S.String),
+    description: S.optional(S.String),
+  }),
+).annotate({
+  identifier: "ModelAliasReadItem",
+}) as any as S.Schema<ModelAliasReadItem>;
+
+export type ModelAliasReadItemMap = {
+  [key: string]: ModelAliasReadItem | undefined;
+};
+export const ModelAliasReadItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  ModelAliasReadItem,
+) as any as S.Schema<ModelAliasReadItemMap>;
+
+export interface ModelAliasesRead {
+  alias?: ModelAliasReadItemMap;
+}
+export const ModelAliasesRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    alias: S.optional(ModelAliasReadItemMap),
+  }),
+).annotate({
+  identifier: "ModelAliasesRead",
+}) as any as S.Schema<ModelAliasesRead>;
+
+export interface ModelRead {
+  aliases?: ModelAliasesRead;
+}
+export const ModelRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    aliases: S.optional(ModelAliasesRead),
+  }),
+).annotate({ identifier: "ModelRead" }) as any as S.Schema<ModelRead>;
+
+export interface GetResponse {
+  alias?: ModelRead;
+}
+export const GetResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    alias: S.optional(ModelRead),
+  }),
+).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
+
+export interface SearchAliasRequest {}
+export const SearchAliasRequest = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({}).pipe(
+    T.Http({
+      method: "POST",
+      uri: "/api/firewall/alias/searchItem",
+      code: 200,
+    }),
+  ),
+).annotate({
+  identifier: "SearchAliasRequest",
+}) as any as S.Schema<SearchAliasRequest>;
+
+export type AliasList = Array<AliasItem>;
+export const AliasList = /*@__PURE__*/ S.Array(
+  AliasItem,
+) as any as S.Schema<AliasList>;
+
+export interface SearchAliasResponse {
+  /** Total matching items before pagination. */
+  total?: number;
+  rowCount?: number;
+  /** Current page number. */
+  current?: number;
+  rows?: AliasList;
+}
+export const SearchAliasResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    total: S.optional(S.Number),
+    rowCount: S.optional(S.Number),
+    current: S.optional(S.Number),
+    rows: S.optional(AliasList),
+  }),
+).annotate({
+  identifier: "SearchAliasResponse",
+}) as any as S.Schema<SearchAliasResponse>;
+
 export type ModelAliasItemType =
   | "host"
   | "network"
@@ -330,52 +556,6 @@ export const Model = /*@__PURE__*/ S.suspend(() =>
     aliases: S.optional(ModelAliases),
   }),
 ).annotate({ identifier: "Model" }) as any as S.Schema<Model>;
-
-export interface GetResponse {
-  alias?: Model;
-}
-export const GetResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    alias: S.optional(Model),
-  }),
-).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
-
-export interface SearchAliasRequest {}
-export const SearchAliasRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({
-      method: "POST",
-      uri: "/api/firewall/alias/searchItem",
-      code: 200,
-    }),
-  ),
-).annotate({
-  identifier: "SearchAliasRequest",
-}) as any as S.Schema<SearchAliasRequest>;
-
-export type AliasList = Array<AliasItem>;
-export const AliasList = /*@__PURE__*/ S.Array(
-  AliasItem,
-) as any as S.Schema<AliasList>;
-
-export interface SearchAliasResponse {
-  /** Total matching items before pagination. */
-  total?: number;
-  rowCount?: number;
-  /** Current page number. */
-  current?: number;
-  rows?: AliasList;
-}
-export const SearchAliasResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    total: S.optional(S.Number),
-    rowCount: S.optional(S.Number),
-    current: S.optional(S.Number),
-    rows: S.optional(AliasList),
-  }),
-).annotate({
-  identifier: "SearchAliasResponse",
-}) as any as S.Schema<SearchAliasResponse>;
 
 export interface SetRequest {
   alias?: Model;
