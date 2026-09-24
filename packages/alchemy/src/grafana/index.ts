@@ -7,11 +7,18 @@
  *   depend on.
  *
  * `Grafana.Datasource`, `Grafana.Folder`, `Grafana.Dashboard`, `Grafana.ContactPoint`,
- * `Grafana.MuteTiming` and `Grafana.MessageTemplate` ship here. `Grafana.AlertRuleGroup` and
- * `Grafana.NotificationPolicy` are stacked follow-up PRs on the same SDK operations — see
- * docs/grafana.md, docs/grafana-folder-dashboard.md and docs/grafana-alerting.md for what shipped
- * and what is still open.
+ * `Grafana.MuteTiming`, `Grafana.MessageTemplate` and `Grafana.AlertRuleGroup` ship here.
+ * `Grafana.NotificationPolicy` — the singleton policy tree — is a stacked follow-up PR on the same
+ * SDK operations — see docs/grafana.md, docs/grafana-folder-dashboard.md and
+ * docs/grafana-alerting.md for what shipped and what is still open.
  */
+export {
+  type AlertRuleGroupAttributes,
+  type AlertRuleGroupProps,
+  type AlertRuleInput,
+  GrafanaAlertRuleGroup,
+  GrafanaAlertRuleGroupProvider,
+} from './alert-rule-group.ts';
 export {
   type DatasourceAttributes,
   type DatasourceProps,

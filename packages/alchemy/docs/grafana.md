@@ -128,7 +128,9 @@ export class TeslaMateDatasource extends GrafanaDatasource('teslamate-datasource
   [grafana-folder-dashboard.md](./grafana-folder-dashboard.md), not repeated here.
 - **`Grafana.ContactPoint`, `Grafana.MuteTiming` and `Grafana.MessageTemplate` ship** — see
   [grafana-alerting.md](./grafana-alerting.md), not repeated here.
-- **`Grafana.AlertRuleGroup` and `Grafana.NotificationPolicy`** — stacked follow-up PRs on the same
-  operations, per grafana-alerting.md's own ordering; not blocked on anything.
+- **`Grafana.AlertRuleGroup` ships** — see [grafana-alerting-rules.md](./grafana-alerting-rules.md),
+  not repeated here.
+- **`Grafana.NotificationPolicy`** — the last stacked follow-up PR, the singleton policy tree, on
+  the same operations; not blocked on anything.
 - **`read` never answers `Unowned`** — the same open gap forgejo's and netbox's own families
   still carry (see upstream-conformance.md); a maintainer decision on the ownership-check shape.

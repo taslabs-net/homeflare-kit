@@ -267,8 +267,9 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
     normalization that makes an unchanged dashboard a true noop are all in
     [grafana-folder-dashboard.md](./grafana-folder-dashboard.md), not repeated here.
 
-    ✅ **`Grafana.ContactPoint`/`Grafana.MuteTiming`/`Grafana.MessageTemplate` shipped** (this PR,
-    first of three stacked PRs — `Grafana.AlertRuleGroup` then `Grafana.NotificationPolicy` follow):
+    ✅ **`Grafana.ContactPoint`/`Grafana.MuteTiming`/`Grafana.MessageTemplate` shipped** (kit PR
+    250, first of three stacked PRs — `Grafana.AlertRuleGroup` then `Grafana.NotificationPolicy`
+    follow):
     the foreign-provenance refusal (`alerting-provenance.ts`, an allowlist of Grafana's own
     `ProvenanceNone`/`ProvenanceAPI` values, measured against `pkg/services/ngalert/models` and
     Grafana's v13.1 docs) and the secret-settings-ref seam (`secret-refs.ts`, shared with
@@ -288,8 +289,19 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
       timings or templates configured either (consistent with the alerting-provisioning gap having
       been real, not merely unexploited).
 
-    **Still open, not this PR's scope:** `Grafana.AlertRuleGroup`/`Grafana.NotificationPolicy` —
-    the next two stacked PRs, no longer blocked on the SDK.
+    ✅ **`Grafana.AlertRuleGroup` shipped** (this PR, second of three, branched fresh off `main`
+    after PR 250 merged): group, not per-rule, is the unit — `PUT .../rule-groups/{Group}` owns
+    evaluation `interval` and the full ordered `rules[]` together, which per-rule operations
+    cannot express (no `interval` field, no reordering). Rule order is significant, proven by a
+    dedicated test. The per-rule provenance refusal (each `ProvisionedAlertRule.provenance`, since
+    the group type itself carries none) reuses `alerting-provenance.ts` unchanged, including the
+    missing-means-foreign fix from PR 250's review. A declared group whose folder does not exist
+    refuses as a typed `BadRequest` (`RoutePutAlertRuleGroupError` has no `NotFound` case) rather
+    than being auto-created — this resource never calls `Grafana.Folder`'s create path. Full
+    detail: [grafana-alerting-rules.md](./grafana-alerting-rules.md).
+
+    **Still open, not this PR's scope:** `Grafana.NotificationPolicy` — the last stacked PR, the
+    singleton policy tree, no longer blocked on the SDK.
     - ⛔ **Same open gaps as `forgejo/*` and `netbox/*` above:** `read` never answers `Unowned`
       (H1), and credentials come from an explicit env var NAME at call time rather than an
       `alchemy/Auth` provider (S24) — here the house's own `grafanaCredentials(target)`, not the

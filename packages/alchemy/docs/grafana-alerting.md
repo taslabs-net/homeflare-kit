@@ -3,9 +3,11 @@
 Declares Grafana's alerting-provisioning objects (decision 40: every internal alert lands in one
 place). Ships in three stacked PRs, in the order this file's own history records:
 
-1. **This PR:** `Grafana.ContactPoint`, `Grafana.MuteTiming`, `Grafana.MessageTemplate`.
-2. Next: `Grafana.AlertRuleGroup`.
-3. Then: `Grafana.NotificationPolicy` — the singleton policy tree, last on purpose (it references
+1. **`Grafana.ContactPoint`, `Grafana.MuteTiming`, `Grafana.MessageTemplate`** — this file, kit
+   PR 250.
+2. **`Grafana.AlertRuleGroup`** — [grafana-alerting-rules.md](./grafana-alerting-rules.md), a
+   separate stacked PR (its own diff off `main`, not this one) once this file's doc budget filled.
+3. Next: `Grafana.NotificationPolicy` — the singleton policy tree, last on purpose (it references
    contact points, mute timings and templates by name).
 
 All three ship on the same `@distilled.cloud/grafana@0.2.0` operations
