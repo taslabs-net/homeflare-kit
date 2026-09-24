@@ -27,7 +27,10 @@
  *   packed tarball, so nothing needs to be named for it here or in the README's install line.
  *   `/litellm` (2026-09-24, the same move) imports `@distilled.cloud/litellm` the same
  *   `dependencies`-not-peer way, aliased onto `@homeflare/distilled-litellm`.
- *   ⛔ None of them failed at INSTALL. All four threw at import, which is why a test that
+ *   `/grafana` (2026-09-24, new family, not a migration) imports `@distilled.cloud/grafana`
+ *   the same way `/forgejo` does: a plain peer, published upstream, named below and in the
+ *   README exactly as PR 222 declared it.
+ *   ⛔ None of them failed at INSTALL. All five threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -130,6 +133,7 @@ import { ReleaseBinary, VICTORIA_RELEASES, catalogBinary, identifyBinary, releas
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 import { isLiteLLMPassThroughEndpoint, litellmProviders } from '@homeflare/alchemy/litellm';
 import { GOOGLE_ACCESS_TOKEN_ENV, GoogleWorkspaceGroup, describeKeyRef, googleWorkspaceProviders } from '@homeflare/alchemy/google-workspace';
+import { GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders } from '@homeflare/alchemy/grafana';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 
 for (const [name, value] of Object.entries({
@@ -144,6 +148,7 @@ for (const [name, value] of Object.entries({
   parseVerifyArgs, verifySession, verifyStack,
   litellmProviders,
   GoogleWorkspaceGroup, describeKeyRef, googleWorkspaceProviders, GOOGLE_ACCESS_TOKEN_ENV,
+  GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
 }
@@ -293,6 +298,17 @@ if (!isLiteLLMPassThroughEndpoint({ Type: 'LiteLLM.PassThroughEndpoint' }) || is
 if (typeof litellmProviders !== 'function') {
   throw new Error('litellmProviders from dist is not callable');
 }
+// ★ THE GRAFANA SUBPATH THROUGH THE PUBLISHED FILE. Pure checks only — no Grafana instance is
+//   reached: the resource's tag string, the typed secret-ref refusal, and that the provider
+//   factory (built on @distilled.cloud/grafana's own typed operations, per-instance credentials
+//   composed with Layer.provide) is still callable from dist.
+if (GrafanaDatasource === undefined) throw new Error('Grafana.Datasource from dist is undefined');
+if (new GrafanaSecretRefUnsetError({ message: 'smoke' }).message !== 'smoke') {
+  throw new Error('GrafanaSecretRefUnsetError from dist did not construct');
+}
+if (typeof grafanaProviders !== 'function') {
+  throw new Error('grafanaProviders from dist is not callable');
+}
 // ★ THE POSTGRES SUBPATH THROUGH THE PUBLISHED FILE: a pure name-length refusal and the
 //   identifier quoter, so an export map pointing at a missing file fails here, not in a stack.
 if (!isPostgresDatabase(PostgresDatabase) || quoteIdent('a"b') !== '"a""b"') {
@@ -302,7 +318,7 @@ if (nameByteRefusal('a'.repeat(64))?.byteLength !== 64 || nameByteRefusal('a'.re
   throw new Error('postgres subpath from dist lost the NAMEDATALEN byte-length refusal');
 }
 
-console.log('all fifteen subpaths import and resolve');
+console.log('all sixteen subpaths import and resolve');
 `,
   );
 

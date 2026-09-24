@@ -225,6 +225,29 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
 13. **Tests never use `alchemy/Test/Bun`.** Every lifecycle is proven against loopback
     fakes (S28, H12). Live suites need a place to run, and that is a maintainer decision.
 
+14. **`grafana/*` (added 2026-09-24) ships only `Datasource` — a real SDK gap, not scope-trimming.**
+    Measured against the published `@distilled.cloud/grafana@1.0.0-rc.12` tarball's
+    `lib/services/grafana.d.ts` (4,938 lines): the package has no create/read/update/delete
+    operations for folders (only `updateFolderPermissions` exists), plain dashboards (only
+    snapshot/public-dashboard routes exist — no `POST /dashboards/db`, no
+    `GET/DELETE /dashboards/uid/{uid}`), alert rules or contact points (both have only a
+    `routeGet*Export` read-only route under `/v1/provisioning/`, no create/update/delete). S1
+    found no upstream `Alchemy` family for any of these either. Full detail:
+    [grafana.md](./grafana.md#the-sdk-gap--why-only-datasource-ships). **Decision:** maintainer,
+    on whether the kit patches distilled (S22) or waits for upstream to add the routes — S23
+    forbids a hand-rolled `HttpClient` client for the missing pieces alone, half a family through
+    the SDK and half through a second client.
+    - ⛔ **Same open gaps as `forgejo/*` and `netbox/*` above:** `read` never answers `Unowned`
+      (H1), and credentials come from an explicit env var NAME at call time rather than an
+      `alchemy/Auth` provider (S24) — here the house's own `grafanaCredentials(target)`, not the
+      SDK's `CredentialsFromEnv`, because more than one Grafana instance exists on this estate
+      (grafana.md's own Credentials section).
+    - Measured, read-only, on `teslamate-grafana.service` (CT100, `teslamate/grafana:4.2.0`,
+      Grafana 13.1.3): one datasource (file-provisioned, not API-managed — a live example this
+      family COULD adopt), dashboards baked into the image (not API-managed either way), and no
+      folders, alert rules or contact points configured — consistent with the gap being real
+      rather than merely unexploited. No stack yet imports `@homeflare/alchemy/grafana`.
+
 ## Conforms
 
 - **`paperless/*` (`Tag`, `DocumentType`, `StoragePath`, `CustomField`)** — ✅ **S23 fixed
