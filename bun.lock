@@ -76,6 +76,19 @@
       "name": "@homeflare/config",
       "version": "0.11.1",
     },
+    "packages/distilled-caddy": {
+      "name": "@homeflare/distilled-caddy",
+      "version": "0.1.0",
+      "dependencies": {
+        "@distilled.cloud/core": "1.0.0-rc.12",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
+    },
     "packages/distilled-litellm": {
       "name": "@homeflare/distilled-litellm",
       "version": "0.1.0",
@@ -463,6 +476,8 @@
     "@homeflare/cloudflare": ["@homeflare/cloudflare@workspace:packages/cloudflare"],
 
     "@homeflare/config": ["@homeflare/config@workspace:packages/config"],
+
+    "@homeflare/distilled-caddy": ["@homeflare/distilled-caddy@workspace:packages/distilled-caddy"],
 
     "@homeflare/distilled-litellm": ["@homeflare/distilled-litellm@workspace:packages/distilled-litellm"],
 
