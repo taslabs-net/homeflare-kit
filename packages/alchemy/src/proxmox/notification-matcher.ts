@@ -24,22 +24,19 @@
  *   ⛔ `Mapping.Use` IS NOT ENOUGH, though the COLLECTION GET accepts it: the per-object read this
  *     family makes lists only Audit and Modify (pve-manager API2/Cluster/Notifications.pm
  *     `get_matcher`, read at HEAD 2026-09-22 — corrected here; PR 95 said Use sufficed).
- *   ⛔ A MISSING READ PRIVILEGE LOOKS LIKE "ABSENT", not like a 403 — see the same file. For
- *     `default-matcher` that turns an adoption into a planned CREATE that PVE refuses as a
- *     duplicate: the noop below needs a read lease holding Mapping.Audit.
+ *   ⛔ THE OLD HAND CLIENT FOLDED A MISSING READ PRIVILEGE INTO "ABSENT", planning a duplicate
+ *     create. The distilled read now catches only NotFound: a refused read fails the plan.
+ *     The noop still requires a read lease holding Mapping.Audit.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import {
-  type NotificationMatcherAttributes,
-  type NotificationMatcherFields,
-  matcherAttributes,
-  matcherCreateForm,
-  matcherMatches,
-  matcherUpdateForm,
+import type {
+  NotificationMatcherAttributes,
+  NotificationMatcherFields,
 } from './notification-matcher-form.ts';
-import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
+import type { PveRequirements, WithTarget } from './resource-spec.ts';
+import { matcherHandlers } from './notification-matcher-lifecycle.ts';
 
 export interface NotificationMatcherProps extends NotificationMatcherFields, WithTarget {}
 
@@ -60,22 +57,8 @@ export const ProxmoxNotificationMatcher = Resource<ProxmoxNotificationMatcher>(
   'Proxmox.NotificationMatcher',
 );
 
-const handlers = pveHandlers<NotificationMatcherProps, NotificationMatcherAttributes>({
-  attributes: (live, props) => matcherAttributes(live, props.name),
-  collection: () => 'cluster/notifications/matchers',
-  createForm: matcherCreateForm,
-  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
-  endpoint: {
-    create: 'pve:POST /cluster/notifications/matchers',
-    update: 'pve:PUT /cluster/notifications/matchers/{name}',
-  },
-  matches: matcherMatches,
-  path: (props) => `cluster/notifications/matchers/${props.name}`,
-  updateForm: matcherUpdateForm,
-});
-
 export const ProxmoxNotificationMatcherProvider = () =>
   Provider.effect(
     ProxmoxNotificationMatcher,
-    Effect.succeed(ProxmoxNotificationMatcher.Provider.of(handlers)),
+    Effect.succeed(ProxmoxNotificationMatcher.Provider.of(matcherHandlers)),
   );
