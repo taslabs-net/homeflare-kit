@@ -1,5 +1,53 @@
 # @homeflare/alchemy
 
+## 0.30.0
+
+### Minor Changes
+
+- [#229](https://github.com/taslabs-net/homeflare-kit/pull/229) [`b4d714e`](https://github.com/taslabs-net/homeflare-kit/commit/b4d714eff527c8c875afca2cb529d5f312bd1efa) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Added `caddy/formatCaddyfile(text)`: pipes a Caddyfile through the LOCAL
+  `caddy fmt -` binary (stdin in, formatted text out) — the same formatter the
+  `caddy fmt` CLI command runs. There is no admin API endpoint for this
+  (`cmd/commandfuncs.go` is CLI-only), so it shells out with
+  `ChildProcessSpawner` (S19) rather than going through `@distilled.cloud/caddy`,
+  and it never reimplements the formatter in TypeScript: a missing or failing
+  binary fails the Effect with a typed `CaddyFmtNotFound` / `CaddyFmtFailed`,
+  it never silently returns the input unformatted.
+
+  Also: `Caddy.Config`'s plan (`diffConfig`) and deploy (`CaddyConfigProvider`'s
+  `reconcile`) now surface the adapter's "Caddyfile input is not formatted"
+  warning as its own clear line naming the fix, separately from any other
+  adapter warnings — it used to be silent at plan time, and just another line
+  in the pile at deploy time. Nothing here changes what gets loaded onto Caddy:
+  formatting should never change the adapted JSON digest.ts compares (reasoned
+  from the Caddyfile grammar; not measured against a real Caddy in this
+  package — see docs/caddy-fmt.md).
+
+- [#226](https://github.com/taslabs-net/homeflare-kit/pull/226) [`bfc71a3`](https://github.com/taslabs-net/homeflare-kit/commit/bfc71a31e811aab0ccdbbc5ce82ee6803c7ad277) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add the Google Workspace provider family (`@homeflare/alchemy/google-workspace`): `Group`,
+  `GroupMember`, `DomainAlias` and `OrgUnit` over the Admin SDK Directory API, built on
+  `@distilled.cloud/google-workspace@1.0.0-rc.12`'s typed `admin_directory_v1` operations
+  (S23 — no hand-rolled client). Adopt-first by get-by-key, `retain` on removal for everything
+  but membership, and no `User` resource (Google's own `User` schema carries a `password` field).
+  Credential setup — domain-wide delegation, the least OAuth scopes each resource needs, and
+  where the service-account key lives in OpenBao — is in
+  `packages/alchemy/docs/google-workspace.md`.
+
+- [#225](https://github.com/taslabs-net/homeflare-kit/pull/225) [`a68c021`](https://github.com/taslabs-net/homeflare-kit/commit/a68c0212f951d3492e5fde981f7f334f777d21fe) Thanks [@taslabs-net](https://github.com/taslabs-net)! - New family: `@homeflare/alchemy/grafana`. `Grafana.Datasource` declares one data source, keyed by
+  `uid`, calling `@distilled.cloud/grafana`'s typed `addDataSource`/`getDataSourceByUID`/
+  `updateDataSourceByUID`/`deleteDataSourceByUID` operations, `catchTag('NotFound', ...)` in place of
+  a status check. Credentials are a `GrafanaTarget` (instance origin + a token env var NAME, never a
+  literal value) resolved lazily per call, parameterized per instance rather than fixed like
+  Forgejo's — this estate runs more than one Grafana. `grafanaProviders(target)` composes the
+  provider with its credentials, mirroring `litellmProviders`.
+
+  Only `Datasource` ships: `@distilled.cloud/grafana@1.0.0-rc.12` has no create/update/delete
+  operations for folders, dashboards, alert rules or contact points, measured against its published
+  types — recorded in `docs/grafana.md` and `docs/upstream-conformance.md` rather than worked
+  around with a hand-rolled client for the missing pieces.
+
+  Built and measured, read-only, against the live target `teslamate-grafana.service` on CT100
+  (Grafana 13.1.3, `teslamate/grafana:4.2.0`): one file-provisioned datasource, image-baked
+  dashboards, no folders, alert rules or contact points. No stack yet imports this subpath.
+
 ## 0.29.1
 
 ### Patch Changes
