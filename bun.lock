@@ -24,7 +24,7 @@
       },
       "dependencies": {
         "@distilled.cloud/caddy": "npm:@homeflare/distilled-caddy@0.2.2",
-        "@distilled.cloud/grafana": "npm:@homeflare/distilled-grafana@0.1.0",
+        "@distilled.cloud/grafana": "npm:@homeflare/distilled-grafana@0.2.0",
         "@distilled.cloud/litellm": "npm:@homeflare/distilled-litellm@0.2.0",
         "@distilled.cloud/netbox": "npm:@homeflare/distilled-netbox@0.3.0",
         "@distilled.cloud/opnsense": "npm:@homeflare/distilled-opnsense@0.2.0",
@@ -34,6 +34,7 @@
         "@distilled.cloud/unifi-network": "npm:@homeflare/distilled-unifi-network@0.2.0",
       },
       "devDependencies": {
+        "@distilled.cloud/argocd": "1.0.0-rc.12",
         "@distilled.cloud/cloudflare": "1.0.0-rc.12",
         "@distilled.cloud/discord": "1.0.0-rc.12",
         "@distilled.cloud/forgejo": "1.0.0-rc.12",
@@ -47,6 +48,7 @@
         "mime": "4.1.0",
       },
       "peerDependencies": {
+        "@distilled.cloud/argocd": "1.0.0-rc.12",
         "@distilled.cloud/cloudflare": "1.0.0-rc.12",
         "@distilled.cloud/discord": "1.0.0-rc.12",
         "@distilled.cloud/forgejo": "1.0.0-rc.12",
@@ -447,6 +449,8 @@
     "@cloudflare/workers-types": ["@cloudflare/workers-types@5.20260908.1", "", {}, "sha512-cILmYEd/YtL+Hlwytc5n+QVV8F+E5doQOtc6QiBtPb51kK+5fkk909db+G8dxeUsMd2ytJgdpAt/lyciUEobcw=="],
 
     "@date-fns/tz": ["@date-fns/tz@1.5.0", "", {}, "sha512-lwYN/vDPeNRULcepoE/LO2Pgx+7/RV+S9ARfbc9lr2DtGkOD7pAiruHvbR1RX3Qyf6ja47EWJDMsNK5vK08DJg=="],
+
+    "@distilled.cloud/argocd": ["@distilled.cloud/argocd@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-dpVazLmj9beJkmLjpS2zKXUNvVKshlnbCvNumuNmXr12I7/JIZVLU5fhWX20r0MbNXGGrB5Xtz7CD11gO9uOhA=="],
 
     "@distilled.cloud/aws": ["@distilled.cloud/aws@1.0.0-rc.12", "", { "dependencies": { "@aws-sdk/types": "^3.974.3", "@distilled.cloud/core": "1.0.0-rc.12", "@smithy/shared-ini-file-loader": "^4.7.0", "@smithy/types": "^4.17.2", "@smithy/util-base64": "^4.6.0", "fast-xml-parser": "^5.10.1" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-L4TTEwMKB1ymXbYUqvYeoy5UWgmJtqQSzry2qWtAvD2ccwVGy0F7cFViEIYQk7boF4ZIP6SfhAls4+y1fVIi/g=="],
 
