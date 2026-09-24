@@ -103,6 +103,30 @@ describe('drift', () => {
   });
 });
 
+describe('argv', () => {
+  test('chmod and chown omit -- on Darwin; mkdir keeps it on every platform', async () => {
+    const fake = host();
+    const created = await reconcileDirectory(fake.runner, {
+      group: 0,
+      mode: 0o755,
+      owner: 0,
+      path: '/opt/app/bin',
+    });
+    await reconcileDirectory(
+      fake.runner,
+      { group: 0, mode: 0o750, owner: 0, path: '/opt/app/bin' },
+      created,
+    );
+    const gnu = process.platform !== 'darwin';
+    const chown = fake.calls.find((call) => call[0] === 'chown');
+    const chmod = fake.calls.find((call) => call[0] === 'chmod');
+    const mkdir = fake.calls.find((call) => call[0] === 'mkdir');
+    expect(chown?.includes('--')).toBe(gnu);
+    expect(chmod?.includes('--')).toBe(gnu);
+    expect(mkdir).toContain('--');
+  });
+});
+
 describe('delete', () => {
   test('is rmdir: a directory that still holds a file is a refusal', async () => {
     const fake = host();
