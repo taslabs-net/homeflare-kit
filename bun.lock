@@ -18,7 +18,7 @@
     },
     "packages/alchemy": {
       "name": "@homeflare/alchemy",
-      "version": "0.27.4",
+      "version": "0.28.0",
       "bin": {
         "hf-adopt-verify": "./dist/verify/cli.js",
       },
@@ -252,10 +252,10 @@
     "@changesets/cli": "3.0.3",
     "@cloudflare/kumo": "2.13.2",
     "@cloudflare/workers-types": "5.20260908.1",
-    "@flue/cli": "2.0.8",
-    "@flue/react": "2.0.8",
-    "@flue/runtime": "2.0.8",
-    "@flue/vite": "2.0.8",
+    "@flue/cli": "2.1.1",
+    "@flue/react": "2.1.1",
+    "@flue/runtime": "2.1.1",
+    "@flue/vite": "2.1.1",
     "@hono/zod-openapi": "1.6.3",
     "@octokit/rest": "22.0.1",
     "@phosphor-icons/react": "2.1.10",
