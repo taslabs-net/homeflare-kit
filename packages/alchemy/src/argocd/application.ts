@@ -73,14 +73,15 @@ export const isArgoCDApplication = (value: unknown): value is ArgoCDApplication 
   value !== null &&
   (value as { Type?: unknown }).Type === 'ArgoCD.Application';
 
-const specOf = (props: ApplicationProps): argocd.V1alpha1ApplicationSpec => ({
-  destination: destinationWire(props.destination),
-  project: props.project ?? 'default',
-  source: sourceWire(props.source),
-  ...(syncPolicyWire(props.syncPolicy) === undefined
-    ? {}
-    : { syncPolicy: syncPolicyWire(props.syncPolicy) }),
-});
+const specOf = (props: ApplicationProps): argocd.V1alpha1ApplicationSpec => {
+  const syncPolicy = syncPolicyWire(props.syncPolicy);
+  return {
+    destination: destinationWire(props.destination),
+    project: props.project ?? 'default',
+    source: sourceWire(props.source),
+    ...(syncPolicy === undefined ? {} : { syncPolicy }),
+  };
+};
 
 export const spec: ArgoCDSpec<
   ApplicationProps,
@@ -134,5 +135,5 @@ export const handlers = argocdHandlers(spec);
 export const ArgoCDApplicationProvider = () =>
   Provider.effect(ArgoCDApplication, Effect.succeed(ArgoCDApplication.Provider.of(handlers)));
 
-export const application = (id: string, props: ApplicationProps): ArgoCDApplication =>
+export const application = (id: string, props: ApplicationProps) =>
   ArgoCDApplication(id, props).pipe(adopt(true));

@@ -145,5 +145,5 @@ export const handlers = argocdHandlers(spec);
 export const ArgoCDRepositoryProvider = () =>
   Provider.effect(ArgoCDRepository, Effect.succeed(ArgoCDRepository.Provider.of(handlers)));
 
-export const repository = (id: string, props: RepositoryProps): ArgoCDRepository =>
+export const repository = (id: string, props: RepositoryProps) =>
   ArgoCDRepository(id, props).pipe(adopt(true));

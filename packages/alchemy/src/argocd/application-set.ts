@@ -198,5 +198,5 @@ export const handlers = argocdHandlers(spec);
 export const ArgoCDApplicationSetProvider = () =>
   Provider.effect(ArgoCDApplicationSet, Effect.succeed(ArgoCDApplicationSet.Provider.of(handlers)));
 
-export const applicationSet = (id: string, props: ApplicationSetProps): ArgoCDApplicationSet =>
+export const applicationSet = (id: string, props: ApplicationSetProps) =>
   ArgoCDApplicationSet(id, props).pipe(adopt(true));

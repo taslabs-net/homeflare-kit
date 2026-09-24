@@ -124,5 +124,5 @@ export const handlers = argocdHandlers(spec);
 export const ArgoCDAppProjectProvider = () =>
   Provider.effect(ArgoCDAppProject, Effect.succeed(ArgoCDAppProject.Provider.of(handlers)));
 
-export const appProject = (id: string, props: AppProjectProps): ArgoCDAppProject =>
+export const appProject = (id: string, props: AppProjectProps) =>
   ArgoCDAppProject(id, props).pipe(adopt(true));
