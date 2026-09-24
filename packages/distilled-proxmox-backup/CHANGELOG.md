@@ -1,5 +1,21 @@
 # @homeflare/distilled-proxmox-backup
 
+## 0.3.1
+
+### Patch Changes
+
+- [#272](https://github.com/taslabs-net/homeflare-kit/pull/272) [`839aa8d`](https://github.com/taslabs-net/homeflare-kit/commit/839aa8d7e5a9176e3b26eb3f083cb23d7df3a1e1) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Encode PVE and PBS form arrays as repeated keys and expose precisely typed
+  missing configuration errors so Alchemy providers can adopt and delete safely.
+  Validate PBS responses while preserving extra fields and valid Unit responses;
+  malformed payload diagnostics do not retain server data.
+  Both SDK error unions now include every HTTP status class their protocols return,
+  so callers can handle typed NotFound without hiding other failures.
+
+  Regenerated from local distilled source against pve-manager 9.2.11 and
+  proxmox-backup-server 4.2.6-1 schemas. Read-only probes on PVE 9.2.11 and PBS
+  4.2.3 confirmed missing-resource wire shapes; the PBS SDK also read live version,
+  datastore and notification configuration successfully. No upstream write.
+
 ## 0.3.0
 
 ### Minor Changes

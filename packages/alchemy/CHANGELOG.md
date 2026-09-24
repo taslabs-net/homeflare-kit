@@ -1,5 +1,14 @@
 # @homeflare/alchemy
 
+## 0.37.2
+
+### Patch Changes
+
+- [#270](https://github.com/taslabs-net/homeflare-kit/pull/270) [`7710691`](https://github.com/taslabs-net/homeflare-kit/commit/77106917f0781d53bfedde224f71e7a7ad9b62bc) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Complete the CephFS transport migration to distilled Proxmox 0.3.0 (vendor schema
+  pve-manager 9.2.11): send destructive DELETE flags through its corrected query binding
+  and fold only the typed CephFsNotFound error. Preserve bounded task polling, safe
+  omitted-flag defaults and the final live index read that proves deletion.
+
 ## 0.37.1
 
 ### Patch Changes
