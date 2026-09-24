@@ -173,6 +173,17 @@ The alternative — a check that tolerated an older render — is a check that t
 drift, which is the thing this exists to stop. A loud, one-command failure is the better
 half of that trade, but it is a trade.
 
+## A file the renderer stops emitting is deleted, not left behind
+
+`renderRepoShape` only emits what a shape asks for today, and `refreshRepoShape` only
+writes what it renders — so on its own, a file the renderer retires would never get
+deleted by a refresh; it would just stop being updated, in every repository that already
+had it. `RETIRED_FILES` in `src/repo-shape/retired.ts` closes that gap: `repo-shape check`
+flags a retired path that is still present, and a refresh deletes it — but only when the
+file provably carries this package's generated-file header, never a hand-written file that
+happens to share the name. [repo-shape-retired.md](repo-shape-retired.md) has the mechanism
+and the measurement that found the first fossil.
+
 ## What this does not render yet
 
 `.github/workflows/release.yml`. Thirteen copies, 166–197 lines each, thirteen distinct
