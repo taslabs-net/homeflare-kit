@@ -109,5 +109,7 @@ describe('notify-consumers', () => {
     const dispatch = steps.find((s) => s.run?.includes('gh workflow run kit-bump.yml'));
 
     expect(dispatch?.run).toContain('--ref main');
+    // kit-bump.yml's dry_run input defaults to true; an automatic dispatch must be a real run.
+    expect(dispatch?.run).toContain('-f dry_run=false');
   });
 });
