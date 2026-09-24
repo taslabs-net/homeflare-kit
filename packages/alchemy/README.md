@@ -148,14 +148,16 @@ one is logged (argv only, never content) before it runs. A plan never calls sudo
 
 ## Linux hosts — `@homeflare/alchemy/linux`
 
-The same `HostRunner` seam, over ssh, plus the three families the launchd subpath had no Linux twin
+The same `HostRunner` seam, over ssh, plus the four families the launchd subpath had no Linux twin
 for: `HostDirectory` (because no file resource creates a parent), `RemoteFile` (a whole file, or one
-**managed block** inside a file somebody else owns) and `SystemdUnit` / `SystemdTimer`.
-`linuxProviders(await sshRunner({ host }))` provides all four.
+**managed block** inside a file somebody else owns), `SystemdUnit` / `SystemdTimer`, and
+`PodmanContainer` (one Quadlet `.container` file and the systemd unit its generator produces).
+`linuxProviders(await sshRunner({ host }))` provides all five.
 
 ```ts
 RemoteFile('block', { path: '/etc/example.conf', region: { name: 'homeflare' }, content: 'a line\n' });
 SystemdUnit('thing', { name: 'thing.service', sections: [...], restartOn: [config.sha256] });
+PodmanContainer('thing', { name: 'thing', container: { image: 'example/thing:1', network: 'host' } });
 ```
 
 - ⛔ **A deploy never mass-restarts.** A unit restarts only when its own file changed, when state or
@@ -166,7 +168,12 @@ SystemdUnit('thing', { name: 'thing.service', sections: [...], restartOn: [confi
   without its framing marker is an Error — never "nothing is there".
 - ⛔ **No silent sudo:** a root-owned path needs a root ssh destination or your own privileged runner.
 - ⛔ **The directive set is systemd's:** unit files render verbatim; nothing here invents a schema.
+- ⛔ **`PodmanContainer`'s `[Container]` section IS typed and doc-checked** (Podman 5.4,
+  `podman-systemd.unit(5)`) — Quadlet's own schema, unlike bare `systemd.unit(5)`. It has no
+  `enabled` prop and never calls `systemctl enable`: Quadlet applies `[Install]` itself at every
+  `daemon-reload`, and a generator failure is a typed `QuadletGeneratorError`, never "absent".
 - Guide, the measured `systemctl` shapes and the limits: [docs/linux-host.md](./docs/linux-host.md).
+  `PodmanContainer`'s own guide: [docs/quadlet-container.md](./docs/quadlet-container.md).
 
 ## Release binaries — `@homeflare/alchemy/release`
 
@@ -248,6 +255,17 @@ endpoint lives in ONE `general_settings` field (a whole-list read-modify-write),
 declared in `config.yaml` is refused rather than silently overridden, and a literal secret in a
 forwarded header is refused at plan: [docs/litellm.md](./docs/litellm.md).
 
+## OPNsense — `@homeflare/alchemy/opnsense`
+
+`Opnsense.Firewall.Alias`, `.Category` and `.Group` — READ-ONLY BY DESIGN, generated
+from `@distilled.cloud/opnsense` (an interim alias, like NetBox/Proxmox above — not a
+peer, `bun add` resolves it from the tarball). ⛔ `reconcile` and `delete` always
+refuse with a typed error; there is no flag that lifts it, and no write operation is
+reachable from any handler (`write-refusal.test.ts` proves it against a fake that
+fails on any non-GET). `read` answers `Unowned` on every match, `adopt(true)` is on
+by default, and a pure declaration renderer turns one live read into the props a
+noop declaration needs: [docs/opnsense.md](./docs/opnsense.md).
+
 ## Discord — `@homeflare/alchemy/discord`
 
 `Discord.ApplicationCommand` (global) and `Discord.GuildApplicationCommand` (guild-scoped)
@@ -268,6 +286,24 @@ export const help =
     name: 'help',
     description: 'Show available commands',
   });
+```
+
+## UniFi Network — `@homeflare/alchemy/unifi`
+
+`Unifi.Network` and `Unifi.FirewallZone`, generated from Ubiquiti's own UniFi Network
+Integration API 10.4.57 via `@distilled.cloud/unifi-network`. ⛔ **READ-ONLY, by Tim's rule
+(2026-09-24):** `reconcile`/`delete` both fail with a typed `UnifiWriteRefused` naming the
+policy — this family never calls a write operation, only `getNetworkDetails`/`getFirewallZone`
+and their list counterparts. ⛔ `read` answers `Unowned` on every match (never a silent adopt —
+`adopt(true)` is on by default via the `network`/`firewallZone` constructors), and a UniFi
+**Console ID** (part of a cloud-connector base URL) is never logged, committed or written to
+state: [docs/unifi.md](./docs/unifi.md).
+
+```ts
+import { declareNetwork, network, providers } from '@homeflare/alchemy/unifi';
+
+// A later import script writes rows like this one from a live read:
+export const lan = network('lan', declareNetwork(liveNetworkDetails, 'site-id'));
 ```
 
 ## Google Workspace — `@homeflare/alchemy/google-workspace`

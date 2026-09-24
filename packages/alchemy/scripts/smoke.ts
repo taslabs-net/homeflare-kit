@@ -35,7 +35,10 @@
  *   resolved automatically from the packed tarball and named in neither place below. `/discord`
  *   and `/google-workspace` (2026-09-24, new families, not migrations) import
  *   `@distilled.cloud/discord` and `@distilled.cloud/google-workspace` the same plain-peer way.
- *   ⛔ None of them failed at INSTALL. All seven threw at import, which is why a test that
+ *   `/opnsense` (2026-09-24, new family, read-only by design — see docs/opnsense.md) imports
+ *   `@distilled.cloud/opnsense` the same `dependencies`-not-peer way `/netbox` and `/litellm`
+ *   do, aliased onto `@homeflare/distilled-opnsense`.
+ *   ⛔ None of them failed at INSTALL. All eight threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -140,6 +143,7 @@ import { GOOGLE_ACCESS_TOKEN_ENV, GoogleWorkspaceGroup, describeKeyRef, googleWo
 import { GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders } from '@homeflare/alchemy/grafana';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 import { DiscordApplicationCommand, DiscordGuildApplicationCommand, isDiscordApplicationCommand, isDiscordGuildApplicationCommand, providers as discordProviders } from '@homeflare/alchemy/discord';
+import { OpnsenseWriteRefused, isOpnsenseFirewallAlias, providers as opnsenseProviders } from '@homeflare/alchemy/opnsense';
 
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
@@ -155,6 +159,7 @@ for (const [name, value] of Object.entries({
   GoogleWorkspaceGroup, describeKeyRef, googleWorkspaceProviders, GOOGLE_ACCESS_TOKEN_ENV,
   GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders,
   DiscordApplicationCommand, DiscordGuildApplicationCommand, discordProviders,
+  opnsenseProviders,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
 }
@@ -173,6 +178,20 @@ if (
 }
 if (typeof discordProviders !== 'function') {
   throw new Error('discord providers() from dist is not callable');
+}
+
+// ★ THE OPNSENSE SUBPATH THROUGH THE PUBLISHED FILE. Pure checks only — no edge is reached: the
+//   resource's own type guard, the typed write-refusal error still constructing with its
+//   read-only message (policy.ts), and that the provider factory is still callable from dist.
+if (!isOpnsenseFirewallAlias({ Type: 'Opnsense.Firewall.Alias' }) || isOpnsenseFirewallAlias({})) {
+  throw new Error('isOpnsenseFirewallAlias from dist lost its resource type guard');
+}
+const refusal = new OpnsenseWriteRefused({ action: 'delete', id: 'smoke', resourceType: 'Opnsense.Firewall.Alias' });
+if (!refusal.message.includes('read-only by')) {
+  throw new Error('OpnsenseWriteRefused from dist lost its read-only policy message');
+}
+if (typeof opnsenseProviders !== 'function') {
+  throw new Error('opnsense providers() from dist is not callable');
 }
 
 // ★ Render once through the PUBLISHED file, so a launchd subpath that imports but cannot run
@@ -340,7 +359,7 @@ if (nameByteRefusal('a'.repeat(64))?.byteLength !== 64 || nameByteRefusal('a'.re
   throw new Error('postgres subpath from dist lost the NAMEDATALEN byte-length refusal');
 }
 
-console.log('all eighteen subpaths import and resolve');
+console.log('all nineteen subpaths import and resolve');
 `,
   );
 

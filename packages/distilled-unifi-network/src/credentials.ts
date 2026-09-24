@@ -18,13 +18,15 @@
  * persist an `apiBaseUrl` that contains one outside of the caller's own
  * runtime configuration.
  *
- * ⛔ AUTHENTICATION IS NOT DOCUMENTED IN THE SPEC: `network_v10.4.57_openapi.json`
- * declares no `components.securitySchemes` and no operation carries a
- * `security` requirement — the `X-API-KEY` header below comes from
- * Ubiquiti's own Integration API guide (https://developer.ui.com/unifi-integration-api-guide/),
- * not from the machine-readable description. Re-verify this against a live
- * console (a request without it should 401) before depending on it in
- * anything that writes.
+ * ⚠️ AUTHENTICATION IS NOT DOCUMENTED IN THE SPEC, BUT IS MEASURED FOR READS (2026-09-24):
+ * `network_v10.4.57_openapi.json` declares no `components.securitySchemes` and no operation
+ * carries a `security` requirement — the `X-API-KEY` header below comes from Ubiquiti's own
+ * Integration API guide (https://developer.ui.com/unifi-integration-api-guide/), not from the
+ * machine-readable description. A hand-run, read-only probe against a live local console
+ * confirmed it: `X-API-KEY` on the local shape above returns HTTP 200 on `GET /v1/info` and
+ * `GET /v1/sites`. The SAME key returned 401 against the cloud-connector shape — the wrong door
+ * for a key minted on a local console, not evidence the cloud shape rejects `X-API-KEY` outright.
+ * Only reads were probed: re-verify before depending on this header in anything that writes.
  *
  * The key itself is an Integrations → API Key created in the console's own
  * UI (Settings → Control Plane → Integrations on a local console). It is a

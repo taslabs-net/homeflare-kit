@@ -57,15 +57,18 @@ always `@distilled.cloud/unifi-network`, aliased in the consuming package's
 so the eventual cutover to the real published package is a one-line alias
 swap with no import changes anywhere in the kit.
 
-### Authentication is NOT documented in the spec
+### Authentication is NOT documented in the spec, but is measured for reads
 
 `components.securitySchemes` is absent and no operation carries a
 `security` requirement. The `X-API-KEY` header this SDK sends comes from
 [Ubiquiti's own Integration API guide](https://developer.ui.com/unifi-integration-api-guide/),
-not the machine-readable description — **unverified against a live
-console as of this package's creation**; see the auth-probe handoff this
-package shipped alongside, and re-verify before depending on it for
-anything that writes.
+not the machine-readable description. The auth-probe handoff this package
+shipped alongside was **run live, read-only, on 2026-09-24**: `X-API-KEY`
+against a local console returned HTTP 200 on `GET /v1/info` and
+`GET /v1/sites`; the same key against the cloud-connector shape returned
+401 (the wrong door for a key minted on a local console, not evidence the
+cloud shape rejects `X-API-KEY` outright). Only reads were probed —
+re-verify before depending on this header for anything that writes.
 
 ## Resource-level traps a future provider must not ignore
 

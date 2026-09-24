@@ -13,6 +13,7 @@
  */
 import * as Layer from 'effect/Layer';
 import { type HostRunner, hostRunnerLayer } from '../launchd/runner.ts';
+import { PodmanContainerProvider } from './container.ts';
 import { HostDirectoryProvider } from './directory.ts';
 import { RemoteFileProvider } from './remote-file.ts';
 import { SystemdTimerProvider, SystemdUnitProvider } from './unit.ts';
@@ -20,6 +21,7 @@ import { SystemdTimerProvider, SystemdUnitProvider } from './unit.ts';
 export const linuxProviders = (runner: HostRunner) =>
   Layer.mergeAll(
     HostDirectoryProvider(),
+    PodmanContainerProvider(),
     RemoteFileProvider(),
     SystemdTimerProvider(),
     SystemdUnitProvider(),
