@@ -2,8 +2,10 @@
  * `Opnsense.Firewall.Group` — a read-only declaration of one `firewall/group` item (an
  * "Interface Group", not a permission group) on the edge. READ-ONLY BY DESIGN — see policy.ts's
  * header. `reconcile`/`delete` always refuse. Mirrors alias.ts exactly; see that file's header
- * for why `get()` (whole model) is the read source rather than `getGroup` — the same generation
- * gap (no `uuid` in `GetGroupRequest`'s schema) applies here too.
+ * for why `get()` (whole model) is the read source uniformly across this family rather than the
+ * now-correct `getGroup` per-item operation (OPNSENSE-1 fixed `GetGroupRequest`'s missing `uuid`,
+ * but switching to it is a separate, later PR). `members` decodes as an option map, not a comma
+ * string — see `group-form.ts`'s `attributesOf` (OPNSENSE-2).
  */
 import { adopt } from 'alchemy/AdoptPolicy';
 import { Resource } from 'alchemy';
@@ -54,7 +56,12 @@ export const isOpnsenseFirewallGroup = (value: unknown): value is OpnsenseFirewa
   value !== null &&
   (value as { Type?: unknown }).Type === 'Opnsense.Firewall.Group';
 
-export const spec: OpnsenseSpec<GroupProps, Group.GroupItem, GroupAttributes, OpnsenseOpError> = {
+export const spec: OpnsenseSpec<
+  GroupProps,
+  Group.ModelIfgroupentryReadItem,
+  GroupAttributes,
+  OpnsenseOpError
+> = {
   attributes: attributesOf,
   fetchLive: (props) =>
     Group.get({}).pipe(Effect.map((res) => res.group?.ifgroupentry?.[props.uuid])),

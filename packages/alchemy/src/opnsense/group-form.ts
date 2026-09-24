@@ -5,13 +5,22 @@
  */
 import type { GroupAttributes, GroupProps } from './group.ts';
 import type * as group from '@distilled.cloud/opnsense/firewall_group';
-import { bool01, csvSet, csvSetOf, numField } from './wire.ts';
+import { bool01, csvSetOf, numField, selectedOf } from './wire.ts';
 
-/** ★ Attributes and the declaration renderer are one function — see alias-form.ts's header note. */
-export const attributesOf = (uuid: string, live: group.GroupItem): GroupAttributes => ({
+/**
+ * ★ Attributes and the declaration renderer are one function — see alias-form.ts's header note.
+ *
+ * `live` is `ModelIfgroupentryReadItem` (the WHOLE-MODEL `get()`'s read-shaped item), not
+ * `GroupItem` — `members` (`.\InterfaceField`, `Multiple="Y"`) decodes as an option map, not a
+ * comma string (OPNSENSE-2; see wire.ts's module doc).
+ */
+export const attributesOf = (
+  uuid: string,
+  live: group.ModelIfgroupentryReadItem,
+): GroupAttributes => ({
   description: live.descr ?? '',
   ifname: live.ifname,
-  members: csvSet(live.members),
+  members: selectedOf(live.members),
   nogroup: bool01(live.nogroup, false),
   sequence: numField(live.sequence, 0),
   uuid,

@@ -3,15 +3,16 @@
  * READ-ONLY BY DESIGN — see policy.ts's header. `reconcile`/`delete` always refuse.
  *
  * ★ READ GOES THROUGH `get()`, NEVER `getItem`/`searchItem`. `get()` (`firewall_alias.ts#get`)
- *   returns the WHOLE model tree — `{ alias: { aliases: { alias: { <uuid>: AliasItem, ... } } } }`
- *   — so finding one item by uuid is an object-key lookup, not a request the vendor could answer
- *   ambiguously. That sidesteps two real gaps in this early SDK, both measured against the
- *   generated `firewall_alias.ts`: (1) there is no per-item `getAlias` operation at all — only
- *   `get` (whole model) and `searchAlias` (paginated, see below) exist; (2) `firewall_category.ts`
- *   and `firewall_group.ts` DO export a `getCategory`/`getGroup`, but their generated request
- *   schema carries no `uuid` path parameter (`GetCategoryRequest`/`GetGroupRequest` are both
- *   `S.Struct({})` against a `uri` with no `{uuid}` placeholder) — a generation gap, not a design
- *   choice, so this family does not rely on them for any of the three resources, uniformly.
+ *   returns the WHOLE model tree — `{ alias: { aliases: { alias: { <uuid>: ModelAliasReadItem,
+ *   ... } } } }` — so finding one item by uuid is an object-key lookup, not a request the vendor
+ *   could answer ambiguously. `Alias` has no per-item `getAlias` operation at all (`getItemAction`
+ *   decorates its result — see the distilled clone's package README) — only `get` (whole model)
+ *   and `searchAlias` (paginated, see below) exist, so this family's whole-model read is the only
+ *   option here (unlike Category/Group, whose `getCategory`/`getGroup` per-item operations now
+ *   exist correctly — OPNSENSE-1 — but this file still uses `get()` uniformly across the three
+ *   resources; switching Category/Group to their per-item operation is a separate, later PR).
+ *   `ModelAliasReadItem`'s list-shaped fields (`type`/`interface`/`proto`/`categories`) decode as
+ *   option maps, not strings (OPNSENSE-2) — see `alias-form.ts`'s `attributesOf`.
  *
  * ⛔ NOT `searchAlias`. It is POST-shaped (a read, per OPNsense's own MVC convention — see the
  *   family's docs page) and paginated with no typed limit/offset the generated request schema
@@ -87,7 +88,12 @@ export const isOpnsenseFirewallAlias = (value: unknown): value is OpnsenseFirewa
   (value as { Type?: unknown }).Type === 'Opnsense.Firewall.Alias';
 
 /** Exported for direct testing against `fake-opnsense.ts` — the same seam `../discord/*.ts` uses. */
-export const spec: OpnsenseSpec<AliasProps, Alias.AliasItem, AliasAttributes, OpnsenseOpError> = {
+export const spec: OpnsenseSpec<
+  AliasProps,
+  Alias.ModelAliasReadItem,
+  AliasAttributes,
+  OpnsenseOpError
+> = {
   attributes: attributesOf,
   fetchLive: (props) =>
     Alias.get({}).pipe(Effect.map((res) => res.alias?.aliases?.alias?.[props.uuid])),
