@@ -99,4 +99,15 @@ describe('notify-consumers', () => {
     // oxlint-disable-next-line no-template-curly-in-string
     expect(dispatch?.env?.['GH_TOKEN']).toBe('${{ steps.token.outputs.token }}');
   });
+
+  test('--ref is explicit, because the App token cannot read the default branch', async () => {
+    // ⛔ WITHOUT --ref, gh asks GraphQL for repository.defaultBranchRef — a read this
+    //   App token does not have (only actions:write, metadata:read) — and the dispatch
+    //   fails: "Resource not accessible by integration". Measured 2026-09-23, run
+    //   35952899162. This pins the flag so it cannot silently regress.
+    const steps = (await releaseDoc()).jobs['notify-consumers'].steps;
+    const dispatch = steps.find((s) => s.run?.includes('gh workflow run kit-bump.yml'));
+
+    expect(dispatch?.run).toContain('--ref main');
+  });
 });
