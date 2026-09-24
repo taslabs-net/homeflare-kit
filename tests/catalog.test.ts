@@ -38,7 +38,7 @@ const PACKAGES: readonly string[] = await Array.fromAsync(
 ).then((paths) => paths.map((path) => path.split('/')[1] ?? '').sort());
 
 /**
- * Peers pinned EXACTLY, on purpose, per package. ⛔ Each entry is a measured exception to
+ * Peers pinned EXACTLY, on purpose. ⛔ Each explicit entry below is a measured exception to
  * "peer ranges stay ranges", not a convenience:
  * - Effect release candidates break each other (measured 2026-09-16: `>=4.0.0-rc.112`
  *   resolved to rc.115 and `Config.string` vanished), and Alchemy's betas pin one rc.
@@ -56,8 +56,22 @@ const PACKAGES: readonly string[] = await Array.fromAsync(
  *   against `node_modules/alchemy/package.json` for it.
  * - `@effect/sql-pg` is the same Effect-rc case as `effect` itself: alchemy's own peer is
  *   `>=4.0.0-rc.115`, and the estate runs one aligned rc across the whole workspace (S37).
+ *
+ * ★ EVERY `packages/distilled-*` INTERIM COPY IS THE SAME ONE EXCEPTION, NOT A NEW ONE EACH
+ *   TIME, so it is DERIVED below rather than listed — a hand entry per vendor (and its own
+ *   copy of this same comment) was a merge-conflict hot spot: two interim-package PRs landing
+ *   the same night collided on this file every time (kit PRs #185, #188, #196, #198, #200,
+ *   #201, #202 each touched it). It is `effect` alone, for the SAME Effect-rc reasoning as
+ *   alchemy/site above — NOT because the real, not-yet-published `@distilled.cloud/<vendor>`
+ *   itself pins exact (it will peer on a RANGE, matching every already-published
+ *   `@distilled.cloud/*` sibling, e.g. `>=4.0.0-rc.115 || >=4.0.0`); this interim copy pins
+ *   exact only because alchemy/site already established that an unpinned Effect rc range can
+ *   resolve a DIFFERENT rc across packages in THIS workspace (measured 2026-09-16:
+ *   `>=4.0.0-rc.112` resolved to rc.115 and `Config.string` vanished) — a version this
+ *   package's copied generated code was never typechecked against. The exact pin is a
+ *   kit-local safety measure, not something to carry into the real upstream package.
  */
-const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
+const EXPLICIT_EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
   alchemy: [
     '@distilled.cloud/cloudflare',
     '@distilled.cloud/forgejo',
@@ -68,33 +82,11 @@ const EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
     'mime',
   ],
   site: ['effect'],
-  // Same Effect-rc reasoning as alchemy/site above — NOT because the real,
-  // not-yet-published @distilled.cloud/netbox itself pins exact (it will
-  // peer on a RANGE, matching every already-published @distilled.cloud/*
-  // sibling, e.g. `>=4.0.0-rc.115 || >=4.0.0`; this interim copy pins exact
-  // only because alchemy/site already established that an unpinned Effect
-  // rc range can resolve a DIFFERENT rc across packages in THIS workspace
-  // (measured 2026-09-16: `>=4.0.0-rc.112` resolved to rc.115 and
-  // `Config.string` vanished) — a version this package's copied generated
-  // code was never typechecked against. The exact pin is a kit-local
-  // safety measure, not something to carry into the real upstream package.
-  'distilled-netbox': ['effect'],
-  // Same reasoning as 'distilled-netbox' above — this is the second
-  // interim-package copy, not a new pattern.
-  'distilled-proxmox': ['effect'],
-  // Third interim-package copy, same reasoning again.
-  'distilled-paperless-ngx': ['effect'],
-  // Fourth interim-package copy, same reasoning again.
-  'distilled-unifi-network': ['effect'],
-  // Fifth interim-package copy, same reasoning again.
-  'distilled-proxmox-backup': ['effect'],
-  // Sixth interim-package copy, same reasoning again.
-  'distilled-opnsense': ['effect'],
-  // Seventh interim-package copy, same reasoning again.
-  'distilled-litellm': ['effect'],
-  // Eighth interim-package copy, same reasoning again.
-  'distilled-caddy': ['effect'],
 };
+
+/** Every explicit entry above, plus `effect` alone for every `distilled-*` interim copy. */
+const exactPeersFor = (pkg: string): readonly string[] =>
+  EXPLICIT_EXACT_PEERS[pkg] ?? (pkg.startsWith('distilled-') ? ['effect'] : []);
 
 async function manifest(name: string): Promise<Manifest> {
   return (await Bun.file(new URL(`packages/${name}/package.json`, root)).json()) as Manifest;
@@ -144,7 +136,7 @@ describe('catalog', () => {
     //   catalog pins what WE install, a peer declares what a consumer may bring.
     for (const pkg of PACKAGES) {
       const peers = (await manifest(pkg)).peerDependencies ?? {};
-      const exact = EXACT_PEERS[pkg] ?? [];
+      const exact = exactPeersFor(pkg);
 
       for (const [name, spec] of Object.entries(peers)) {
         if (exact.includes(name)) expect(spec).toMatch(/^\d+\.\d+\.\d+/);
