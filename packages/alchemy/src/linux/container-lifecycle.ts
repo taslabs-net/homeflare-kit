@@ -22,7 +22,7 @@ import type { Diff } from 'alchemy/Diff';
 import type { HostRunner } from '../launchd/runner.ts';
 import { UNIT_WRITE, isUnitRunning } from './unit-form.ts';
 import { daemonReload, showUnit, stopUnit } from './systemctl.ts';
-import { verifyGenerated } from './container-generator.ts';
+import { needsVerificationReload, verifyGenerated } from './container-generator.ts';
 import {
   type ContainerAttributes,
   type ContainerProps,
@@ -147,7 +147,25 @@ export const reconcileContainer = async (
   const stale = prior !== undefined && prior.containerSha256 !== desired;
   const preStatus = await showUnit(runner, serviceName);
   assertUsable(props, preStatus);
-  const needsReload = wrote || stale || preStatus.needDaemonReload;
+  /**
+   * ⛔ `prior === undefined` (a create, or an adopt) AND `needsVerificationReload` — found on
+   *   adversarial review, the same bug class as `stale` above but for a resource with no prior
+   *   state at all. An INTERRUPTED CREATE (the write landed, the apply crashed before its
+   *   `daemon-reload` ran) retries with `wrote: false` (the file already holds `desired`) and
+   *   `stale: false` (there is no PRIOR state to disagree with) — without this, nothing ever
+   *   reloaded and `verifyGenerated` threw on the still-missing generated unit FOREVER: loud, but
+   *   stuck, since a plain retry changes nothing about that. `needsVerificationReload`
+   *   (container-generator.ts) shares its predicate with `verifyGenerated` itself, so the two can
+   *   never disagree about what counts as already proven. Cost: one extra, idempotent reload on an
+   *   ordinary adoption whose generation was already fine — `daemon-reload` restarts nothing, so
+   *   the never-mass-restart property (`changed`, below) is untouched.
+   *   Test: container-generator.test.ts, "an interrupted CREATE that crashed before daemon-reload".
+   */
+  const needsReload =
+    wrote ||
+    stale ||
+    preStatus.needDaemonReload ||
+    (prior === undefined && needsVerificationReload(path, preStatus));
   if (wrote) await runner.writeFileAtomic(path, encoder.encode(text), UNIT_WRITE);
   if (needsReload) await daemonReload(runner);
   const status = needsReload ? await showUnit(runner, serviceName) : preStatus;

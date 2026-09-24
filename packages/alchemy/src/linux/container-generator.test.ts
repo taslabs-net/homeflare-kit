@@ -68,6 +68,9 @@ describe('a generator failure is a typed, loud error', () => {
 
   test('a file already on disk that the generator refuses is not "rolled back" onto itself', async () => {
     // ⚠️ wrote === false: nothing NEW to restore to (container-lifecycle.ts's header explains why).
+    //   A reload IS still attempted — needsVerificationReload (container-generator.ts) rightly
+    //   tries once before giving up, since nothing has proven this content ever generated at all —
+    //   but it finds the same failure, so still no write and still no rollback.
     const fake = fakeQuadletHost();
     fake.files.set(PATH, {
       bytes: new TextEncoder().encode(renderContainerFile(broken)),
@@ -79,8 +82,8 @@ describe('a generator failure is a typed, loud error', () => {
     await expect(reconcileContainer(fake.runner, broken, undefined, true)).rejects.toThrow(
       QuadletGeneratorError,
     );
-    // Only the one read-only `show` that found nothing generated — no write, no reload attempted.
-    expect(verbs(fake.calls)).toEqual(['show']);
+    expect(verbs(fake.calls)).toEqual(['show', 'daemon-reload', 'show']);
+    expect(fake.calls.some((call) => call[0] === 'write')).toBe(false);
   });
 });
 
@@ -131,6 +134,38 @@ describe('an interrupted apply that crashed before daemon-reload', () => {
     expect(retried.containerSha256).toBe(newDigest);
     // ★ Not just a claim in state: the fake's OWN generated-unit record is built from the NEW file.
     expect(fake.units.get(SERVICE)?.loadedSha).toBe(newDigest);
+  });
+});
+
+describe('an interrupted CREATE that crashed before daemon-reload', () => {
+  test('the retry still reloads, verifies and starts — rather than getting stuck forever', async () => {
+    const fake = fakeQuadletHost();
+    const newProps = props('example/new:1');
+    // ★ Simulate apply 1: its write landed (the file is on disk with the desired content already),
+    //   but it crashed before `daemon-reload` ran — no generated unit exists yet, and a create that
+    //   never returns never gets a state row at all, so this retry starts from `output: undefined`,
+    //   the same as Alchemy's own "Cannot resume creating … Re-run with --adopt" (`adopt: true`).
+    fake.files.set(PATH, {
+      bytes: new TextEncoder().encode(renderContainerFile(newProps)),
+      gid: 0,
+      kind: 'file',
+      mode: 0o644,
+      uid: 0,
+    });
+    const before = fake.calls.length;
+    const retried = await reconcileContainer(fake.runner, newProps, undefined, true);
+    const after = verbs(fake.calls.slice(before));
+    // ⛔ THE BUG THIS PROVES FIXED: without `needsVerificationReload`, `wrote` is false (the file
+    //   already holds the new content) and there is no PRIOR state for `stale` to disagree with —
+    //   so nothing would ever reload, and `verifyGenerated` would throw on the still-missing
+    //   generated unit on every retry, FOREVER: loud, but stuck, since nothing a plain retry does
+    //   ever changes any of those three signals.
+    expect(after).toContain('daemon-reload');
+    expect(after).toContain('start');
+    const newDigest = digestOf(renderContainerFile(newProps));
+    expect(retried.containerSha256).toBe(newDigest);
+    expect(fake.units.get(SERVICE)?.loadedSha).toBe(newDigest);
+    expect(fake.units.get(SERVICE)?.active).toBe(true);
   });
 });
 

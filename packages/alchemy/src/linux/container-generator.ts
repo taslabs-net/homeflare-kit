@@ -39,6 +39,16 @@
  *   full confidence by this check alone. Restoring the last-known-good file on ANY verification
  *   failure (container-lifecycle.ts) does not depend on this gap: it always leaves the host at the
  *   file that is known to generate, closing the risk window even where detection is uncertain.
+ * ⛔ `needsVerificationReload` (below) is what stops a NEW resource from getting stuck — found on
+ *   adversarial review. `container-lifecycle.ts`'s `needsReload` used to be `wrote || stale ||
+ *   preStatus.needDaemonReload`; for an INTERRUPTED CREATE (the write landed, the apply crashed
+ *   before `daemon-reload` ran) the retry sees `wrote: false` (the file already holds `desired`)
+ *   and `stale: false` (there is no PRIOR state to disagree with — this is a create), so nothing
+ *   ever reloaded and `verifyGenerated` threw on the still-missing generated unit, forever: loud,
+ *   but stuck, since nothing about a plain retry ever changed. The same holds for adopting a file
+ *   whose generated unit is missing or does not match. `needsVerificationReload` shares
+ *   `generatedMatches` with `verifyGenerated` itself, so the reload gate and the verification it
+ *   is gating can never disagree about what "already proven" means.
  */
 import type { UnitStatus } from './systemctl.ts';
 
@@ -51,6 +61,24 @@ export class QuadletGeneratorError extends Error {
     this.name = 'QuadletGeneratorError';
   }
 }
+
+/** Whether `status` already proves a generated unit that came from `containerPath` — the one
+ *  question both `verifyGenerated` (throws when false) and `needsVerificationReload` (reloads to
+ *  try to make it true) ask. */
+const generatedMatches = (containerPath: string, status: UnitStatus): boolean =>
+  status.known &&
+  status.loadState === 'loaded' &&
+  (status.sourcePath === undefined || status.sourcePath === containerPath);
+
+/**
+ * Whether `container-lifecycle.ts` must `daemon-reload` before trusting `status` as proof of
+ * anything — true whenever `status` does not already show a matching generation. Called on the
+ * PRE-write status, so it costs nothing when `wrote`/`stale`/`NeedDaemonReload` already force a
+ * reload; it earns its keep exactly when none of them do but nothing has actually been proven yet
+ * (a fresh create or adopt with no prior state to compare against).
+ */
+export const needsVerificationReload = (containerPath: string, status: UnitStatus): boolean =>
+  !generatedMatches(containerPath, status);
 
 /**
  * Throws a typed, loud `QuadletGeneratorError` — never lets a generator failure read as "the
