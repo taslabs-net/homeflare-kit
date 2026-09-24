@@ -40,7 +40,18 @@
  *   (members.ts) exists to rule out across members ("a request that may have reached a member
  *   must not be sent again"). The hand-rolled client never auto-retried anything; member failover
  *   was its only resilience. `Retry.none` below keeps that property true here too.
+ *
+ * ⛔ GAP FOUND ON REVIEW, FIXED 2026-09-24: `Retry.none` only stops the SDK re-sending to the SAME
+ *   member -- it added no bound on how long ONE attempt may wait. A member that accepts the TCP
+ *   connection but never answers hung this whole function forever, since the for-loop below never
+ *   got a result to classify and so never reached a healthy member. `MEMBER_TIMEOUT` (members.ts,
+ *   shared with `client.ts`'s `executeOnCluster`) now bounds each attempt; `isTransportFailure`
+ *   treats the resulting `Cause.TimeoutError` as failover-eligible for a read, and
+ *   `isPreSendTransport` still refuses it for a write, for the same reason a post-send timeout
+ *   always was refused.
  */
+import type * as Cause from 'effect/Cause';
+import type * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Result from 'effect/Result';
 import type * as HttpClient from 'effect/unstable/http/HttpClient';
@@ -50,6 +61,7 @@ import * as ProxmoxRetry from '@distilled.cloud/proxmox/Retry';
 import type { PveCredential, PveRole, PveTarget } from './credentials.ts';
 import { leased } from './lease-cache.ts';
 import {
+  MEMBER_TIMEOUT,
   type MemberAttempt,
   describeTransport,
   isPreSendTransport,
@@ -74,13 +86,19 @@ export class PveClusterExhausted extends Error {
  *
  * @param isWrite Whether `op` may have a side effect once sent — decides which transport
  *   failures may retry on the next member. Pass `true` for anything that is not a plain read.
+ * @param timeout Bound on ONE member's attempt — defaults to `MEMBER_TIMEOUT` (members.ts). A
+ *   test passes a short one to prove failover/bounding without waiting out the real bound;
+ *   production code never overrides it. A member that answers past this is failed over (a read)
+ *   or failed outright (a write, since the request may already have landed) — see
+ *   `isTransportFailure`/`isPreSendTransport`.
  */
 export const runPveWith = <A, E>(
   target: PveTarget,
   credential: PveCredential,
   isWrite: boolean,
   op: Effect.Effect<A, E, ProxmoxOpContext>,
-): Effect.Effect<A, E | PveClusterExhausted, HttpClient.HttpClient> =>
+  timeout: Duration.Input = MEMBER_TIMEOUT,
+): Effect.Effect<A, E | Cause.TimeoutError | PveClusterExhausted, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const attempts: MemberAttempt[] = [];
     for (const member of orderedMembers(target)) {
@@ -89,7 +107,12 @@ export const runPveWith = <A, E>(
         secret: credential.secret,
         tokenId: credential.tokenId,
       });
-      const outcome = yield* op.pipe(ProxmoxRetry.none, Effect.provide(credLayer), Effect.result);
+      const outcome = yield* op.pipe(
+        ProxmoxRetry.none,
+        Effect.provide(credLayer),
+        Effect.timeout(timeout),
+        Effect.result,
+      );
       if (Result.isSuccess(outcome)) {
         noteGoodMember(target, member);
         return outcome.success;
@@ -117,7 +140,7 @@ export const runPve = <A, E>(
   role: PveRole,
   isWrite: boolean,
   op: Effect.Effect<A, E, ProxmoxOpContext>,
-): Effect.Effect<A, E | PveClusterExhausted | Error, HttpClient.HttpClient> =>
+): Effect.Effect<A, E | Cause.TimeoutError | PveClusterExhausted | Error, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const credential = yield* leased(target, role);
     return yield* runPveWith(target, credential, isWrite, op);

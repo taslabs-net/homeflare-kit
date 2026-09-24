@@ -8,6 +8,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import * as Cause from 'effect/Cause';
 import * as HttpClientError from 'effect/unstable/http/HttpClientError';
 import { isPreSendTransport, isTransportFailure } from './members.ts';
 
@@ -50,5 +51,13 @@ describe('transport classification', () => {
   it('never treats an HTTP answer as a transport failure', () => {
     assert.equal(isTransportFailure(new Error('500')), false);
     assert.equal(isPreSendTransport(new Error('ConnectionRefused')), false);
+  });
+
+  // ★ `MEMBER_TIMEOUT` produces this via `Effect.timeout` — see members-timeout.test.ts for the
+  //   live-server proof that it actually fires and bounds a hung attempt.
+  it('treats a bounded-attempt timeout as transport for a read, never pre-send for a write', () => {
+    const timedOut = new Cause.TimeoutError();
+    assert.equal(isTransportFailure(timedOut), true);
+    assert.equal(isPreSendTransport(timedOut), false);
   });
 });
