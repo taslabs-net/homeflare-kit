@@ -208,6 +208,10 @@ with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:20
 - ⛔ **Delete never unloads or stops Caddy.** Order of file and load: [docs/caddy.md](./docs/caddy.md).
 - ★ **Managed Caddies run `--resume` with their own `XDG_CONFIG_HOME`**, so a restart runs the last
   config Caddy accepted — and after one, SIGUSR1 has no file to reload. Why, and the rest: same doc.
+- **`formatCaddyfile(text)`** runs the local `caddy fmt -` binary (no admin API does this); plan and
+  deploy both call out Caddy's own "not formatted" warning as its own clear line. Formatting should
+  never change the adapted JSON (reasoned from the grammar, not measured in this package — see the
+  doc). Details: [docs/caddy-fmt.md](./docs/caddy-fmt.md).
 
 ## PostgreSQL — `@homeflare/alchemy/postgres`
 
@@ -244,6 +248,44 @@ upstream target, generated from LiteLLM 1.100.0's own OpenAPI document. ⛔ Ever
 endpoint lives in ONE `general_settings` field (a whole-list read-modify-write), a path already
 declared in `config.yaml` is refused rather than silently overridden, and a literal secret in a
 forwarded header is refused at plan: [docs/litellm.md](./docs/litellm.md).
+
+## Discord — `@homeflare/alchemy/discord`
+
+`Discord.ApplicationCommand` (global) and `Discord.GuildApplicationCommand` (guild-scoped)
+declare a slash/user/message command, generated from Discord API v10 via
+`@distilled.cloud/discord`. `reconcile` is one upsert call — Discord's own create endpoint
+overwrites a command with the same name. ⛔ `read` answers `Unowned` on every match (never a
+silent adopt — `adopt(true)` is on by default on both constructors), and declaring
+`Discord.GuildApplicationCommand` against a guild `hf-discord-halibut.service` still
+self-registers into fights the bot, not replaces it: [docs/discord.md](./docs/discord.md).
+
+```ts
+import { applicationCommand, guildApplicationCommand, providers } from '@homeflare/alchemy/discord';
+
+export const help =
+  yield *
+  applicationCommand('help', {
+    applicationId: '123456789012345678',
+    name: 'help',
+    description: 'Show available commands',
+  });
+```
+
+## Google Workspace — `@homeflare/alchemy/google-workspace`
+
+`Group`, `GroupMember`, `DomainAlias` and `OrgUnit` over the Admin SDK Directory API, generated
+from `@distilled.cloud/google-workspace@1.0.0-rc.12`. ⛔ No `User` resource — Google's own `User`
+schema carries a `password` field, and Alchemy persists props unencrypted. Credential setup
+(domain-wide delegation, the least scopes each resource needs, where the key lives in OpenBao):
+[docs/google-workspace.md](./docs/google-workspace.md).
+
+## Grafana — `@homeflare/alchemy/grafana`
+
+`Grafana.Datasource` declares one data source, keyed by `uid`, generated from
+`@distilled.cloud/grafana`'s own typed `addDataSource`/`getDataSourceByUID`/
+`updateDataSourceByUID`/`deleteDataSourceByUID` operations. ⛔ The SDK at `1.0.0-rc.12` has no
+folder, dashboard, alert-rule or contact-point CRUD — only `Datasource` ships, and the gap is
+recorded rather than worked around: [docs/grafana.md](./docs/grafana.md).
 
 ## GitHub — `@homeflare/alchemy/github`
 

@@ -35,6 +35,7 @@ import { isUnreachable } from './caddy-http-client.ts';
 import type { CaddyConfigAttributes, CaddyConfigProps } from './config-form.ts';
 import { probeLive, readLive } from './config-lifecycle.ts';
 import { diffConfig, reconcileConfig } from './config-reconcile.ts';
+import { formattingFixLine, splitFormattingWarning } from './format-warnings.ts';
 
 export type { CaddyConfigAttributes, CaddyConfigProps } from './config-form.ts';
 
@@ -136,7 +137,13 @@ export const CaddyConfigProvider = () =>
             const takeOver = sameCaddy || (yield* adoptEnabled(fqn));
             const stored = output === undefined ? {} : { stored: output.configSha256 };
             const applied = yield* reconcileConfig(news, { takeOver, ...stored });
-            for (const warning of applied.warnings) {
+            // ★ THE FORMATTING WARNING GETS ITS OWN LINE, NAMING THE FIX — separate from the rest,
+            //   which keep logging exactly as before (format-warnings.ts).
+            const { formatting, rest } = splitFormattingWarning(applied.warnings);
+            if (formatting.length > 0) {
+              yield* Effect.logWarning(formattingFixLine(admin.endpoint));
+            }
+            for (const warning of rest) {
               yield* Effect.logWarning(`Caddy.Config at ${admin.endpoint}: ${warning}`);
             }
             return applied.attributes;

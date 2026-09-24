@@ -27,7 +27,12 @@
  *   packed tarball, so nothing needs to be named for it here or in the README's install line.
  *   `/litellm` (2026-09-24, the same move) imports `@distilled.cloud/litellm` the same
  *   `dependencies`-not-peer way, aliased onto `@homeflare/distilled-litellm`.
- *   ⛔ None of them failed at INSTALL. All four threw at import, which is why a test that
+ *   `/grafana` (2026-09-24, new family, not a migration) imports `@distilled.cloud/grafana`
+ *   the same way `/forgejo` does: a plain peer, published upstream, named below and in the
+ *   README exactly as PR 222 declared it. `/discord` and `/google-workspace` (2026-09-24, new
+ *   families, not migrations) import `@distilled.cloud/discord` and
+ *   `@distilled.cloud/google-workspace` the same plain-peer way.
+ *   ⛔ None of them failed at INSTALL. All seven threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -129,7 +134,10 @@ import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, r
 import { ReleaseBinary, VICTORIA_RELEASES, catalogBinary, identifyBinary, releaseProviders, releaseUrl } from '@homeflare/alchemy/release';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
 import { isLiteLLMPassThroughEndpoint, litellmProviders } from '@homeflare/alchemy/litellm';
+import { GOOGLE_ACCESS_TOKEN_ENV, GoogleWorkspaceGroup, describeKeyRef, googleWorkspaceProviders } from '@homeflare/alchemy/google-workspace';
+import { GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders } from '@homeflare/alchemy/grafana';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
+import { DiscordApplicationCommand, DiscordGuildApplicationCommand, isDiscordApplicationCommand, isDiscordGuildApplicationCommand, providers as discordProviders } from '@homeflare/alchemy/discord';
 
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
@@ -142,8 +150,27 @@ for (const [name, value] of Object.entries({
   HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, ReleaseBinary, releaseProviders,
   parseVerifyArgs, verifySession, verifyStack,
   litellmProviders,
+  GoogleWorkspaceGroup, describeKeyRef, googleWorkspaceProviders, GOOGLE_ACCESS_TOKEN_ENV,
+  GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders,
+  DiscordApplicationCommand, DiscordGuildApplicationCommand, discordProviders,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
+}
+
+// ★ THE DISCORD GUARDS THROUGH THE PUBLISHED FILE: pure Type-field checks, no Discord API
+//   reached — an export map that resolved /discord to a file missing either guard would pass
+//   the import above and refuse nothing here.
+if (!isDiscordApplicationCommand({ Type: 'Discord.ApplicationCommand' }) || isDiscordApplicationCommand({})) {
+  throw new Error('isDiscordApplicationCommand from dist lost its resource type guard');
+}
+if (
+  !isDiscordGuildApplicationCommand({ Type: 'Discord.GuildApplicationCommand' }) ||
+  isDiscordGuildApplicationCommand({})
+) {
+  throw new Error('isDiscordGuildApplicationCommand from dist lost its resource type guard');
+}
+if (typeof discordProviders !== 'function') {
+  throw new Error('discord providers() from dist is not callable');
 }
 
 // ★ Render once through the PUBLISHED file, so a launchd subpath that imports but cannot run
@@ -237,6 +264,24 @@ try {
 }
 if (!scoped) throw new Error('repoPolicy from dist allowed an exclude that matches no ref');
 
+// ★ Google Workspace's key-ref formatter through the PUBLISHED file, pure and network-free: it
+//   proves both the happy path and the refusal that keeps a key out of the census/docs text.
+const keyRefLine = describeKeyRef({
+  delegatedAdmin: 'admin@schenanigans.com',
+  openBaoPath: 'kv/google-workspace/service-accounts/directory-admin',
+  scopes: ['https://www.googleapis.com/auth/admin.directory.group'],
+});
+if (!keyRefLine.includes('admin@schenanigans.com') || !GOOGLE_ACCESS_TOKEN_ENV.includes('GOOGLE')) {
+  throw new Error('describeKeyRef from dist did not format the reference');
+}
+let keyShaped = false;
+try {
+  describeKeyRef({ delegatedAdmin: 'x', openBaoPath: '-----BEGIN PRIVATE KEY-----', scopes: [] });
+} catch {
+  keyShaped = true;
+}
+if (!keyShaped) throw new Error('describeKeyRef from dist accepted key-shaped input');
+
 // ★ THE NETBOX TABLE THROUGH THE PUBLISHED FILE. The constraint data is a GENERATED module the
 //   bundler inlines, so a build that tree-shook it away — or an export map that resolved the
 //   subpath to a file without it — would pass the import above and then refuse nothing at all on
@@ -273,6 +318,17 @@ if (!isLiteLLMPassThroughEndpoint({ Type: 'LiteLLM.PassThroughEndpoint' }) || is
 if (typeof litellmProviders !== 'function') {
   throw new Error('litellmProviders from dist is not callable');
 }
+// ★ THE GRAFANA SUBPATH THROUGH THE PUBLISHED FILE. Pure checks only — no Grafana instance is
+//   reached: the resource's tag string, the typed secret-ref refusal, and that the provider
+//   factory (built on @distilled.cloud/grafana's own typed operations, per-instance credentials
+//   composed with Layer.provide) is still callable from dist.
+if (GrafanaDatasource === undefined) throw new Error('Grafana.Datasource from dist is undefined');
+if (new GrafanaSecretRefUnsetError({ message: 'smoke' }).message !== 'smoke') {
+  throw new Error('GrafanaSecretRefUnsetError from dist did not construct');
+}
+if (typeof grafanaProviders !== 'function') {
+  throw new Error('grafanaProviders from dist is not callable');
+}
 // ★ THE POSTGRES SUBPATH THROUGH THE PUBLISHED FILE: a pure name-length refusal and the
 //   identifier quoter, so an export map pointing at a missing file fails here, not in a stack.
 if (!isPostgresDatabase(PostgresDatabase) || quoteIdent('a"b') !== '"a""b"') {
@@ -282,7 +338,7 @@ if (nameByteRefusal('a'.repeat(64))?.byteLength !== 64 || nameByteRefusal('a'.re
   throw new Error('postgres subpath from dist lost the NAMEDATALEN byte-length refusal');
 }
 
-console.log('all fifteen subpaths import and resolve');
+console.log('all eighteen subpaths import and resolve');
 `,
   );
 

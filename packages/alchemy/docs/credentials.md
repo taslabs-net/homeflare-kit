@@ -45,3 +45,23 @@ the same two variable names the retired hand-rolled `credentials.ts` read (LiteL
 CLI client's variable names, not a house choice), still resolved on the calling fiber per request,
 never captured at module scope. `Authorization: Bearer <value>` is built by the package's protocol
 layer, not by this package. ⛔ The key is never a prop, for the same reason as above.
+
+The Discord subpath (2026-09-24, new — `@distilled.cloud/discord`, no prior hand-rolled client)
+resolves credentials through the SDK's own `CredentialsFromEnv` layer, which reads
+`DISCORD_BOT_TOKEN` (falling back to `DISCORD_TOKEN`), resolved on the calling fiber per request,
+never captured at module scope. `Authorization: Bot <value>` is built by the package's protocol
+layer. On CT100, `hf-discord-halibut.service` holds its own bot token at
+`/opt/homeflare/env/discord-halibut.env`; this package never reads that file. ⛔ The token is
+never a prop, for the same reason as above. See [discord.md](./discord.md) for the live census
+this credential would let a deploy act against.
+
+The Google Workspace subpath (new 2026-09-24, on `@distilled.cloud/google-workspace`) resolves
+credentials through the SDK's own `CredentialsFromEnv`, which reads `GOOGLE_ACCESS_TOKEN` — but
+unlike NetBox/Forgejo/Paperless/LiteLLM's API-token schemes, this variable holds an OAuth2 bearer
+access token the SDK does not know how to mint: no ADC, no service-account signing, no refresh
+flow. A Bun wrapper (H8's shape, unwritten by this package) performs the domain-wide-delegation
+JWT exchange against a service-account key in OpenBao and exports the short-lived result into
+this one variable. `Authorization: Bearer <value>` is still built by the package's protocol layer.
+`GoogleWorkspaceKeyRef`/`describeKeyRef` (this subpath's own `credentials.ts`) are a typed,
+key-free REFERENCE to where that service-account key lives, for a stack file to keep alongside its
+declarations — full setup: [google-workspace.md](./google-workspace.md).

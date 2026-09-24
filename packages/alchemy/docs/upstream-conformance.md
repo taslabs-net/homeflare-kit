@@ -224,6 +224,45 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
     the house's glyph rationale into `//` comments.
 13. **Tests never use `alchemy/Test/Bun`.** Every lifecycle is proven against loopback
     fakes (S28, H12). Live suites need a place to run, and that is a maintainer decision.
+14. **`discord/*` is new (2026-09-24, task-authorized, kit PR TBD) and built directly on
+    `@distilled.cloud/discord` — no hand-rolled `client.ts` ever existed to retire.**
+    `Discord.ApplicationCommand` and `Discord.GuildApplicationCommand` call the SDK's
+    typed operations, `catchTag`'d through the shared `DiscordOpError` union (S21), with no
+    status sniffing anywhere in `resource.ts`. It follows upstream's `Snippet.ts` reference
+    exactly for a marker-less API (S7, S8): a cold `read` returns `Unowned(attrs)`, and both
+    convenience constructors pipe `adopt(true)` (H5) — a stricter posture than `netbox/*`'s
+    documented H1 gap, not a repeat of it. Rate-limit handling is the SDK's own default
+    `Retry` policy (bounded: `Schedule.recurs(8)`, S26) — this family adds nothing on top.
+    Full detail, the live Halibut census and its ownership-handover sequence, and every SDK
+    gap: [`discord.md`](./discord.md). ⛔ **Diverges on S24/S25 the same way every distilled
+    family in this ledger does:** credentials are read at call time through the SDK's own
+    `CredentialsFromEnv`, not a house `alchemy/Auth` provider — unchanged from `netbox/*`
+    and `litellm/*`'s entries above. **Gap, not yet fixed:** no vendor constraint table
+    (unlike NetBox/Paperless); `options` passed through opaquely rather than modeled from
+    the schema (`docs/discord.md#sdk-gaps`).
+
+15. **`grafana/*` (added 2026-09-24) ships only `Datasource` — a real SDK gap, not scope-trimming.**
+    Measured against the published `@distilled.cloud/grafana@1.0.0-rc.12` tarball's
+    `lib/services/grafana.d.ts` (4,938 lines): the package has no create/read/update/delete
+    operations for folders (only `updateFolderPermissions` exists), plain dashboards (only
+    snapshot/public-dashboard routes exist — no `POST /dashboards/db`, no
+    `GET/DELETE /dashboards/uid/{uid}`), alert rules or contact points (both have only a
+    `routeGet*Export` read-only route under `/v1/provisioning/`, no create/update/delete). S1
+    found no upstream `Alchemy` family for any of these either. Full detail:
+    [grafana.md](./grafana.md#the-sdk-gap--why-only-datasource-ships). **Decision:** maintainer,
+    on whether the kit patches distilled (S22) or waits for upstream to add the routes — S23
+    forbids a hand-rolled `HttpClient` client for the missing pieces alone, half a family through
+    the SDK and half through a second client.
+    - ⛔ **Same open gaps as `forgejo/*` and `netbox/*` above:** `read` never answers `Unowned`
+      (H1), and credentials come from an explicit env var NAME at call time rather than an
+      `alchemy/Auth` provider (S24) — here the house's own `grafanaCredentials(target)`, not the
+      SDK's `CredentialsFromEnv`, because more than one Grafana instance exists on this estate
+      (grafana.md's own Credentials section).
+    - Measured, read-only, on `teslamate-grafana.service` (CT100, `teslamate/grafana:4.2.0`,
+      Grafana 13.1.3): one datasource (file-provisioned, not API-managed — a live example this
+      family COULD adopt), dashboards baked into the image (not API-managed either way), and no
+      folders, alert rules or contact points configured — consistent with the gap being real
+      rather than merely unexploited. No stack yet imports `@homeflare/alchemy/grafana`.
 
 ## Conforms
 
@@ -263,6 +302,20 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
   an Output. That fix also belongs in the engine upstream.
 - **`verify/*`** (`hf-adopt-verify`) runs Alchemy's own planner. It exists because beta.79
   labels every cold adoption as an update (H6).
+- **`google-workspace/*`** (new 2026-09-24, `Group`, `GroupMember`, `DomainAlias`, `OrgUnit`)
+  is built directly on `@distilled.cloud/google-workspace@1.0.0-rc.12`'s typed
+  `unstable/admin_directory_v1` operations from the first commit — no hand-rolled client ever
+  existed for it to migrate off (S23), so there is no `client.ts` deletion to record. Every
+  `fetchLive` is get-by-key with its own `catchTag('NotFound', …)`, the same split forgejo's and
+  netbox's engines use (resource.ts). Get-by-key rather than NetBox's list-then-disambiguate,
+  since Directory addresses every object this family models by a stable key. ⛔ **Diverges on
+  credentials, same shape as the rest of this ledger (S24):** `GOOGLE_ACCESS_TOKEN` is read at
+  call time through the SDK's own `CredentialsFromEnv` — but here the SDK provides no way to
+  MINT that token at all (no service-account/DWD support), so a Bun wrapper outside this
+  package (H8, unwritten by this PR) is load-bearing in a way NetBox's/Forgejo's simple
+  API-token env vars are not. SDK gaps (the `unstable/` service tree, no per-operation error
+  beyond the shared 4xx set, no group-alias update) and the full credential/scope setup:
+  [google-workspace.md](./google-workspace.md).
 
 ## The Bun line
 

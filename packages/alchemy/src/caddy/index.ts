@@ -24,6 +24,13 @@ export { CaddyAdminService, caddyAdminLayer } from './admin.ts';
 export { isUnreachable } from './caddy-http-client.ts';
 export type { CaddyConfigAttributes, CaddyConfigProps } from './config.ts';
 export { CaddyConfig, CaddyConfigProvider } from './config.ts';
+export {
+  CaddyFmtFailed,
+  CaddyFmtNotFound,
+  DEFAULT_CADDY_BINARY,
+  formatCaddyfile,
+  type FormatCaddyfileOptions,
+} from './format.ts';
 export type { LocalCaddyAdminOptions } from './local-admin.ts';
 export { DEFAULT_ADMIN_ADDRESS, localCaddyAdmin } from './local-admin.ts';
 export { caddyProviders } from './providers.ts';

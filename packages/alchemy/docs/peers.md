@@ -54,6 +54,15 @@ enforces it. `@effect/sql-pg` is optional on `alchemy`'s own manifest (its modul
 does not reach `SQL/Postgres` unless a stack imports it); here it stays a plain peer like
 every other one.
 
+⚠️ **`@distilled.cloud/grafana` (added 2026-09-24, kit PR 222, ahead of `/grafana`) is
+required for the same reason `@distilled.cloud/forgejo` is: a plain dependency of this
+package, not something a hoisting installer can hide from a strict one.** Pinned to
+`1.0.0-rc.12`, the same distilled release line as every other pin on this page. Unlike
+Forgejo, this family is credential-parameterized per instance (`grafanaCredentials`/
+`grafanaProviders` take a `GrafanaTarget`, not a fixed env-var pair) — see
+[grafana.md](./grafana.md) for why one instance was never going to be enough for this
+estate. The peer itself does not change for that: it is still one package, one pin.
+
 ★ **`@distilled.cloud/netbox` (added 2026-09-23, moving `/netbox` off a hand-rolled
 `HttpClient` client the same way `/forgejo` did) is NOT on this install line, and that is
 deliberate — see [distilled-interim.md](./distilled-interim.md).** The real

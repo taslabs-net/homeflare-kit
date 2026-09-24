@@ -81,6 +81,13 @@ the adapter's warnings, which the provider still reports as a refusal.
 `read` and `diff` plan a create/update with a warning (the plan-time `/adapt` did not run). The apply
 still needs Caddy, and fails loudly until it answers.
 
+## Formatting
+
+`formatCaddyfile(text)` runs the local `caddy fmt -` binary (there is no admin API for it). Plan
+and deploy both surface Caddy's own "not formatted" warning as one clear line naming the fix —
+formatting never changes the adapted JSON, so it can never cause drift. Details, the error types
+and the exact log line: [caddy-fmt.md](./caddy-fmt.md).
+
 ## Order: file, then `/load`
 
 `caddyWithFile()` passes the HostFile's `path` Output into the CaddyConfig, so Alchemy writes the
