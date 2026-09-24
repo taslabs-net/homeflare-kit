@@ -27,11 +27,14 @@
  *   packed tarball, so nothing needs to be named for it here or in the README's install line.
  *   `/litellm` (2026-09-24, the same move) imports `@distilled.cloud/litellm` the same
  *   `dependencies`-not-peer way, aliased onto `@homeflare/distilled-litellm`.
- *   `/grafana` (2026-09-24, new family, not a migration) imports `@distilled.cloud/grafana`
- *   the same way `/forgejo` does: a plain peer, published upstream, named below and in the
- *   README exactly as PR 222 declared it. `/discord` and `/google-workspace` (2026-09-24, new
- *   families, not migrations) import `@distilled.cloud/discord` and
- *   `@distilled.cloud/google-workspace` the same plain-peer way.
+ *   `/grafana` (2026-09-24, new family, PR 222) started as a plain peer, published upstream at
+ *   `1.0.0-rc.12`, named below and in the README like `/forgejo`. It moved to the same
+ *   `dependencies`-not-peer alias as `/netbox` and `/litellm` the same PR that patched
+ *   `@distilled.cloud/grafana`'s upstream-acceptable folder/dashboard/alerting-provisioning gap
+ *   (see docs/grafana.md) and shipped the fix as `@homeflare/distilled-grafana` — so it too is
+ *   resolved automatically from the packed tarball and named in neither place below. `/discord`
+ *   and `/google-workspace` (2026-09-24, new families, not migrations) import
+ *   `@distilled.cloud/discord` and `@distilled.cloud/google-workspace` the same plain-peer way.
  *   ⛔ None of them failed at INSTALL. All seven threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
@@ -110,7 +113,6 @@ try {
       '@distilled.cloud/forgejo@1.0.0-rc.12',
       '@distilled.cloud/discord@1.0.0-rc.12',
       '@distilled.cloud/google-workspace@1.0.0-rc.12',
-      '@distilled.cloud/grafana@1.0.0-rc.12',
       '@effect/sql-pg@4.0.0-rc.115',
     ],
     scratch,

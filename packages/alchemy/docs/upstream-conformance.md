@@ -249,10 +249,20 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
     `GET/DELETE /dashboards/uid/{uid}`), alert rules or contact points (both have only a
     `routeGet*Export` read-only route under `/v1/provisioning/`, no create/update/delete). S1
     found no upstream `Alchemy` family for any of these either. Full detail:
-    [grafana.md](./grafana.md#the-sdk-gap--why-only-datasource-ships). **Decision:** maintainer,
-    on whether the kit patches distilled (S22) or waits for upstream to add the routes — S23
-    forbids a hand-rolled `HttpClient` client for the missing pieces alone, half a family through
-    the SDK and half through a second client.
+    [grafana.md](./grafana.md#the-sdk-gap--why-only-datasource-ships).
+
+    ✅ **S22 fixed 2026-09-24** (branch `claude2/distilled-grafana`): root cause measured to be
+    `skipDeprecated: true` dropping 64 operations Grafana's own spec marks `deprecated: true` in
+    favor of a separate, undocumented-here Kubernetes-apiserver route — not a spec omission. RFC-6902
+    patches un-deprecate exactly the 32 operations this finding named (folders, dashboards,
+    alerting-provisioning writes); the other 32 stay excluded. Shipped as
+    `@homeflare/distilled-grafana` (0.1.0 pre-release, 0.2.0 once this PR's `minor` changeset
+    releases it), aliased onto `@distilled.cloud/grafana` the same S22 route
+    `@homeflare/distilled-netbox` established. `Grafana.Datasource`'s props/attributes/generated code
+    are unchanged (diffed operation-by-operation against the prior commit). **Still open, and not
+    this PR's scope:** no `Grafana.Folder`/`Dashboard`/`AlertRule`/`ContactPoint`/
+    `NotificationPolicy`/`MuteTiming` resource calls the newly-available operations yet — follow-up
+    PRs, no longer blocked on the SDK.
     - ⛔ **Same open gaps as `forgejo/*` and `netbox/*` above:** `read` never answers `Unowned`
       (H1), and credentials come from an explicit env var NAME at call time rather than an
       `alchemy/Auth` provider (S24) — here the house's own `grafanaCredentials(target)`, not the
