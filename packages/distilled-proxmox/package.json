@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/distilled-proxmox",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Interim npm home for @distilled.cloud/proxmox — see docs/distilled-interim.md. Not published upstream yet; the kit aliases @distilled.cloud/proxmox onto this package until it is.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/distilled-proxmox#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
