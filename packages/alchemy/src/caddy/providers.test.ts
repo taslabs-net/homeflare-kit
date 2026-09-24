@@ -224,13 +224,21 @@ describe('the barrel', () => {
       'CaddyAdminService',
       'CaddyConfig',
       'CaddyConfigProvider',
+      // The two typed failures formatCaddyfile() can raise — see format.ts.
+      'CaddyFmtFailed',
+      'CaddyFmtNotFound',
       'DEFAULT_ADMIN_ADDRESS',
+      // `caddy` resolved on PATH, unless formatCaddyfile()'s caller points at a build — format.ts.
+      'DEFAULT_CADDY_BINARY',
       // Caddyfile TEXT for an Access-protected route, not a resource — see
       // access-forward-auth.ts. It pairs with @homeflare/cloudflare/access-auth.
       'accessForwardAuth',
       'caddyAdminLayer',
       'caddyProviders',
       'caddyWithFile',
+      // `caddy fmt -`, piped through the local binary — see format.ts's module doc for why this
+      // is never a TS reimplementation and never belongs in @distilled.cloud/caddy.
+      'formatCaddyfile',
       // The type guard config.ts's plan-time escape hatch narrows unreachable failures with —
       // exported so a consumer's own transport (an SSH forward, a remote runner) can reuse it.
       'isUnreachable',
