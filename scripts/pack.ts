@@ -61,7 +61,12 @@ export async function packForPublish(dir: string, destination: string): Promise<
     const packed = out.trim().split('\n').at(-1) ?? '';
     if (!packed.endsWith('.tgz')) throw new Error(`no tarball from ${dir}: ${out}`);
 
-    await stripScriptsInTarball(packed);
+    await editPackedManifest(packed, (manifest) => {
+      // ⛔ Only these two come out. Everything else — above all the dependency versions bun
+      //   just resolved from the lockfile — is left exactly as packed.
+      delete manifest['scripts'];
+      delete manifest['devDependencies'];
+    });
 
     const name = packed.split('/').pop() ?? 'package.tgz';
     const tarball = `${root}/${name.replace(/\.tgz$/, '')}-${Bun.randomUUIDv7()}.tgz`;
@@ -74,7 +79,8 @@ export async function packForPublish(dir: string, destination: string): Promise<
 }
 
 /**
- * Strip dev-only fields from the manifest INSIDE a packed tarball.
+ * Edit the manifest INSIDE a packed tarball. packForPublish uses it to strip dev-only fields;
+ * the alchemy smoke test uses it to point an alias at a not-yet-published sibling's tarball.
  *
  * 🔴 IT MUST EDIT THE PACKED COPY, NOT THE ONE ON DISK. Measured 2026-09-16: writing the
  *   on-disk manifest into the tarball put `"@homeflare/kit": "workspace:*"` back, because
@@ -91,7 +97,10 @@ export async function packForPublish(dir: string, destination: string): Promise<
  *   the only place it is needed, since AppleDouble members are a macOS phenomenon.
  * ⚠️ Without it, bsdtar adds `._` members and the published tarball differs from CI's.
  */
-async function stripScriptsInTarball(tarball: string): Promise<void> {
+export async function editPackedManifest(
+  tarball: string,
+  edit: (manifest: Record<string, unknown>) => void | Promise<void>,
+): Promise<void> {
   const scratch = `${tarball}.rewrite-${Bun.randomUUIDv7()}`;
   const run = async (cmd: readonly string[]): Promise<void> => {
     const p = Bun.spawn([...cmd], {
@@ -114,10 +123,7 @@ async function stripScriptsInTarball(tarball: string): Promise<void> {
     //   cloudflare and auth packages compile against narrows BunFile without it.
     const packed = JSON.parse(await Bun.file(packedPath).text()) as Record<string, unknown>;
 
-    // ⛔ Only these two come out. Everything else — above all the dependency versions bun
-    //   just resolved from the lockfile — is left exactly as packed.
-    delete packed['scripts'];
-    delete packed['devDependencies'];
+    await edit(packed);
 
     await Bun.write(packedPath, `${JSON.stringify(packed, null, 2)}\n`);
     // ⚠️ COPYFILE_DISABLE is the portable half: bsdtar honours it, GNU tar ignores it.
