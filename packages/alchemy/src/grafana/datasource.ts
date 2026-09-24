@@ -20,9 +20,11 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as grafana from '@distilled.cloud/grafana';
-import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import { type GrafanaSpec, grafanaHandlers } from './resource.ts';
+import { GrafanaSecretRefUnsetError, resolveSecretRefs } from './secret-refs.ts';
+
+export { GrafanaSecretRefUnsetError };
 
 export interface DatasourceProps {
   uid: string;
@@ -64,33 +66,9 @@ export interface GrafanaDatasource extends Resource<
 
 export const GrafanaDatasource = Resource<GrafanaDatasource>('Grafana.Datasource');
 
-/** A named secure-field env var is unset — a domain refusal, not a distilled error. */
-export class GrafanaSecretRefUnsetError extends Data.TaggedError('GrafanaSecretRefUnsetError')<{
-  readonly message: string;
-}> {}
-
 /** Reads every named env var fresh, inside the caller's effect (S24) — never at plan time. */
-const resolveSecureJsonData = (
-  refs: Record<string, string> | undefined,
-): Effect.Effect<Record<string, string> | undefined, GrafanaSecretRefUnsetError> =>
-  Effect.gen(function* () {
-    if (refs === undefined) return undefined;
-    const out: Record<string, string> = {};
-    for (const [field, envVar] of Object.entries(refs)) {
-      const raw = process.env[envVar];
-      if (raw === undefined || raw.trim() === '') {
-        return yield* Effect.fail(
-          new GrafanaSecretRefUnsetError({
-            message:
-              `${envVar} is unset. Export the value of secureJsonData.${field} there — ` +
-              'never as an Alchemy prop.',
-          }),
-        );
-      }
-      out[field] = raw.trim();
-    }
-    return out;
-  });
+const resolveSecureJsonData = (refs: Record<string, string> | undefined) =>
+  resolveSecretRefs(refs, (field) => `secureJsonData.${field}`);
 
 /** `exactOptionalPropertyTypes` means an undeclared field must be OMITTED, never sent as `undefined`. */
 const fields = (props: DatasourceProps) => ({
