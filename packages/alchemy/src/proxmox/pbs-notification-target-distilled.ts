@@ -58,6 +58,23 @@ export const readTarget = (props: Props) =>
     Effect.catchTag('NotFound', () => Effect.succeed(undefined)),
   );
 
+/** No request: run the same translated-input validation before replacement can delete anything. */
+export const validateTargetWrite = (props: Props, form: PveForm, mode: 'create' | 'update') => {
+  const schema =
+    mode === 'create'
+      ? {
+          sendmail: config.CreateConfigNotificationEndpointSendmailRequest,
+          smtp: config.CreateConfigNotificationEndpointSmtpRequest,
+          webhook: config.CreateConfigNotificationEndpointWebhookRequest,
+        }[props.type]
+      : {
+          sendmail: config.PutConfigNotificationEndpointSendmailRequest,
+          smtp: config.PutConfigNotificationEndpointSmtpRequest,
+          webhook: config.PutConfigNotificationEndpointWebhookRequest,
+        }[props.type];
+  return notificationInput(schema, requestFields(props, form)).pipe(Effect.asVoid);
+};
+
 export const createTarget = (props: Props, form: PveForm) => {
   const fields = requestFields(props, form);
   const operation =

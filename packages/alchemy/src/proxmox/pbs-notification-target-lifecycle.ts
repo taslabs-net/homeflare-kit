@@ -19,6 +19,7 @@ import {
   deleteTarget,
   readTarget as readLive,
   updateTarget,
+  validateTargetWrite,
 } from './pbs-notification-target-distilled.ts';
 import { guardForm } from './constraint-guard.ts';
 import { pbsTargetEndpoint } from './pbs-notification-target-endpoint.ts';
@@ -118,10 +119,25 @@ export const handlers = {
   }) =>
     Effect.gen(function* () {
       if (output === undefined || !isResolved(news)) return undefined;
+      yield* refuse(news);
       if (olds !== undefined && (olds.type !== news.type || olds.name !== news.name)) {
+        // ⛔ Preflight the destination before delete-first can remove a working target. A rename
+        // may adopt an existing endpoint; its write-only values have no seal from this resource.
+        const destination = yield* readLive(news);
+        const groups = resolveGroups(news);
+        const carry =
+          destination === undefined
+            ? { header: true, sealed: true }
+            : toCarry(destination, news, groups, '');
+        if (carry !== undefined) {
+          yield* requireValues(news, groups, carry);
+          const mode = destination === undefined ? 'create' : 'update';
+          const form = targetForm(news, groups, carry, mode);
+          yield* guardForm(pbsTargetEndpoint(news)[mode], form, destination === undefined);
+          yield* validateTargetWrite(news, form, mode);
+        }
         return { action: 'replace', deleteFirst: olds.name === news.name } as const;
       }
-      yield* refuse(news);
       const live = yield* readLive(news);
       if (live === undefined) return { action: 'update' } as const;
       return toCarry(live, news, resolveGroups(news), output.sealed) === undefined

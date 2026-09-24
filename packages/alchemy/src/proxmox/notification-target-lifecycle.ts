@@ -13,6 +13,7 @@ import {
   deleteTarget,
   readTarget,
   updateTarget,
+  validateTargetWrite,
 } from './notification-target-distilled.ts';
 
 const { guardCreate, guardUpdate } = specGuards(targetSpec);
@@ -39,8 +40,14 @@ export const targetHandlers = {
     Effect.gen(function* () {
       if (!isResolved(news)) return undefined;
       // Names are unique across endpoint types. A same-name type change must delete first.
-      if (olds.name !== news.name || olds.type !== news.type)
+      if (olds.name !== news.name || olds.type !== news.type) {
+        // ⛔ Validate before delete-first can remove the working target. An existing destination
+        // is adoption: do not demand create-only secrets that the provider cannot declare.
+        const destination = yield* readTarget(news);
+        yield* guard(news, destination === undefined);
+        yield* validateTargetWrite(news, destination === undefined);
         return { action: 'replace', deleteFirst: olds.name === news.name } as const;
+      }
       yield* guard(news, output === undefined);
       if (output === undefined) return undefined;
       const live = yield* readTarget(news);

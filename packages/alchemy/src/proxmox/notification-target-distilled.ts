@@ -84,6 +84,24 @@ const fields = (props: Props, create: boolean) => {
   return form;
 };
 
+/** No request: replacement planning must reject SDK-only input errors before any DELETE. */
+export const validateTargetWrite = (props: Props, create: boolean) => {
+  const schema = create
+    ? {
+        sendmail: cluster.CreateClusterNotificationEndpointSendmailRequest,
+        smtp: cluster.CreateClusterNotificationEndpointSmtpRequest,
+        gotify: cluster.CreateClusterNotificationEndpointGotifyRequest,
+        webhook: cluster.CreateClusterNotificationEndpointWebhookRequest,
+      }[props.type]
+    : {
+        sendmail: cluster.PutClusterNotificationEndpointSendmailRequest,
+        smtp: cluster.PutClusterNotificationEndpointSmtpRequest,
+        gotify: cluster.PutClusterNotificationEndpointGotifyRequest,
+        webhook: cluster.PutClusterNotificationEndpointWebhookRequest,
+      }[props.type];
+  return notificationRequest(schema, fields(props, create)).pipe(Effect.asVoid);
+};
+
 export const createTarget = (props: Props) => {
   const form = fields(props, true);
   const operation =

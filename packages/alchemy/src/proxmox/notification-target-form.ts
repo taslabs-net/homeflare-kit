@@ -6,6 +6,8 @@
  *   one metric-server uses: this file turns a declaration into a form, and the resource file says
  *   what a target IS and when it has changed. The `import type` back is erased, so it is a cycle
  *   on paper only.
+ * ★ These shapes still feed specGuards and preserve scalar/default/omission mapping. The
+ *   distilled adapter replaces list fields with typed arrays; the SDK owns their wire encoding.
  */
 import type { NotificationTargetProps } from './notification-target.ts';
 import { text } from './values.ts';
