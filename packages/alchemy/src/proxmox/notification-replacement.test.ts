@@ -144,12 +144,18 @@ for (const declare of [pve, pbs]) {
   blocked.provider(`${declare.name} destination refusal prevents replacement deletion`, (scratch) =>
     Effect.gen(function* () {
       forbidden.calls.length = 0;
-      yield* scratch.deploy(declare({ name: 'pager', type: 'sendmail' }));
-      const replacement = declare({
-        name: 'pager',
-        type: 'webhook',
-        url: 'https://pager.example.com',
-        method: 'post',
+      yield* scratch.deploy(
+        Effect.gen(function* () {
+          yield* declare({ name: 'pager', type: 'sendmail' });
+        }),
+      );
+      const replacement = Effect.gen(function* () {
+        yield* declare({
+          name: 'pager',
+          type: 'webhook',
+          url: 'https://pager.example.com',
+          method: 'post',
+        });
       });
       expect((yield* Effect.exit(scratch.deploy(replacement)))._tag).toBe('Failure');
       expect(forbidden.writes()).toEqual([]);
