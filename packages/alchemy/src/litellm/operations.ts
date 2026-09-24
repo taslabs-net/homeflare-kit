@@ -31,6 +31,7 @@
 import * as misc from '@distilled.cloud/litellm/misc';
 import { Credentials } from '@distilled.cloud/litellm/Credentials';
 import type { LitellmOpContext } from '@distilled.cloud/litellm/Protocol';
+import type { ConfigError } from '@distilled.cloud/litellm/Errors';
 import * as Effect from 'effect/Effect';
 import * as Semaphore from 'effect/Semaphore';
 
@@ -54,10 +55,17 @@ const semaphoreFor = (baseUrl: string): Effect.Effect<Semaphore.Semaphore> =>
     return created;
   });
 
-/** Serialises a write against this call's own base URL — see the file header. */
+/**
+ * Serialises a write against this call's own base URL — see the file header.
+ *
+ * Resolving `Credentials` can itself fail typed (`ConfigError` — S20/S24, credentials.ts), so
+ * the return type carries that alongside the wrapped operation's own error `E`; every call
+ * site's declared error type already includes `ConfigError` as a member of the SDK's shared
+ * `LitellmOpError` (protocol.ts), so this widening is a no-op for callers.
+ */
 const mutate = <A, E>(
   io: Effect.Effect<A, E, LitellmOpContext>,
-): Effect.Effect<A, E, LitellmOpContext> =>
+): Effect.Effect<A, E | ConfigError, LitellmOpContext> =>
   Effect.gen(function* () {
     const resolve = yield* Credentials;
     const creds = yield* resolve;
