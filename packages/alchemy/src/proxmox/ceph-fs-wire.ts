@@ -49,21 +49,13 @@
  *   Grant it on the `read` role, or every create burns the full cap below and reports the wrong
  *   cause.
  *
- * ★ AS OF 2026-09-24 (decision 43's walk-down, 2c) THIS FILE IS `client.ts`'s HALF ONLY. The read
- *   (`readRow`) moved to `ceph-fs-distilled.ts`, and so did the create — `nodes.updateNodeCephFs`
- *   (distilled's own misnamed POST, confirmed against its `T.Http` annotation) plus a SEPARATE
- *   distilled `settle`, using the raw `getNodeTaskStatus` operation in its own tolerant poll loop
- *   rather than `Task.awaitTask`, which does not tolerate a poll failure the way this family needs
- *   (network-apply-read.ts's own header has the fuller reasoning). `destroyFs` stays HERE,
- *   unmigrated: distilled types `remove_pools`/`remove_storages` as `T.Body` on a DELETE, and the
- *   ⛔ two paragraphs up is the MEASURED reason PVE would silently ignore both flags if sent that
- *   way — a real protocol gap, not a judgement call. `settle` below is still shared where it can
- *   be: `createForm`/`objectPath`/`destroyPath` are pure and reused by the distilled file too.
+ * ★ THE ORIGINAL DISTILLED WALK MOVED READ AND CREATE FIRST, leaving DELETE here because
+ *   SDK flags were annotated as body fields. Distilled Proxmox 0.3.0 fixes their query binding
+ *   and adds the measured CephFsNotFound tag. All calls now live in ceph-fs-distilled.ts;
+ *   this file keeps the pure forms, attributes and read-back failure messages. The protocol
+ *   history above remains load-bearing: moving a DELETE flag back into a body loses it silently.
  */
-import * as Effect from 'effect/Effect';
 import type { CephFsAttributes, CephFsProps } from './ceph-fs.ts';
-import { pve } from './client.ts';
-import type { PveTarget } from './credentials.ts';
 import { csv, flag, int, text } from './values.ts';
 
 /**
@@ -100,9 +92,6 @@ export const readRow = (
   };
 };
 
-/** ⚠️ `exitstatus` is ABSENT while a task runs, and is the exact string `OK` only on success. */
-type TaskStatus = { readonly status?: string; readonly exitstatus?: string };
-
 /**
  * ⚠️ SHORT POLLS, LOW CAP. Ninety seconds covers two pool creates plus the ten seconds `createfs`
  *   itself spends waiting for an MDS to go active, and is short enough that a stuck task fails the
@@ -130,83 +119,6 @@ export const createForm = (props: CephFsProps): Record<string, string> => ({
   ...field('add-storage', flag(props['add-storage'])),
   ...field('pg_num', props.pg_num === undefined ? undefined : String(props.pg_num)),
 });
-
-/** The delete target with its flags in the query string — see the ⛔ in the header. */
-const destroyPath = (props: CephFsProps) => {
-  const query = [
-    props['remove-pools'] === true ? 'remove-pools=1' : undefined,
-    props['remove-storages'] === true ? 'remove-storages=1' : undefined,
-  ].filter((part) => part !== undefined);
-  return query.length === 0 ? objectPath(props) : `${objectPath(props)}?${query.join('&')}`;
-};
-
-/**
- * Wait for a forked PVE task, and fail loudly rather than quietly.
- *
- * ⚠️ THE UPID IS PERCENT-ENCODED BECAUSE IT IS FULL OF COLONS — `UPID:node-b:00396D3A:…:root@pam:`
- *   (MEASURED shape, from `GET /nodes/node-b/tasks`) is ONE path segment, not seven. Encoding is what
- *   guarantees it arrives as one; PVE's router decodes each segment before matching. REASONED from
- *   the URI handling rather than measured — no task of this provider's has been polled yet.
- */
-const settle = (target: PveTarget, node: string, upid: string, what: string) =>
-  Effect.gen(function* () {
-    for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
-      const status = yield* pve<TaskStatus>(
-        target,
-        'read',
-        'GET',
-        `nodes/${node}/tasks/${encodeURIComponent(upid)}/status`,
-      ).pipe(
-        // ⚠️ AN UNREADABLE STATUS IS "NOT SETTLED YET", NOT A FAILURE. It is a missing Sys.Audit
-        //   (see the header) or a node mid-restart; either way the task is still the cluster's
-        //   business, and the cap is what ends the wait rather than one unlucky GET.
-        Effect.orElseSucceed(() => undefined),
-      );
-      if (status?.status === 'stopped') {
-        const exit = text(status.exitstatus);
-        if (exit === 'OK') return;
-        return yield* Effect.die(
-          new Error(
-            `${what}: PVE task ${upid} finished with "${exit === '' ? 'no exit status' : exit}". ` +
-              'The write returned HTTP 200 because it only forked the worker -- the real error is ' +
-              `in \`pvesh get /nodes/${node}/tasks/${upid}/log\`.`,
-          ),
-        );
-      }
-      // ⚠️ A BARE NUMBER IS MILLISECONDS to Effect's Duration, not seconds. The cap in the
-      //   message below is derived from the same constant so the two cannot drift apart.
-      yield* Effect.sleep(POLL_SECONDS * 1000);
-    }
-    return yield* Effect.die(
-      new Error(
-        `${what}: PVE task ${upid} was still running after ` +
-          `${String(POLL_ATTEMPTS * POLL_SECONDS)}s, or its ` +
-          'status could not be read. Check the task log, and check that the `read` role holds ' +
-          `Sys.Audit on /nodes/${node} -- each call mints a new token, so the poller is never the ` +
-          'task owner and is answered 403 rather than told to wait.',
-      ),
-    );
-  });
-
-/**
- * DELETE the filesystem, then wait for the worker.
- *
- * ⛔ WHAT THIS TAKES AWAY DEPENDS ENTIRELY ON `remove-pools`, AND THE DEFAULT IS THE SAFE ONE. With
- *   it unset PVE removes the filesystem from the MDS map and LEAVES the two pools on disk: every
- *   mount breaks, but the bytes are still there for an operator to recover. With it set the pools
- *   go too and nothing is recoverable. Leaving it unset also means a later create of the SAME name
- *   fails with "ceph pools '<name>_data' and/or '<name>_metadata' already exist" -- that refusal is
- *   a BRAKE, not a bug, and it is the last thing standing between a mis-typed rename and the data.
- */
-export const destroyFs = (props: CephFsProps) =>
-  Effect.gen(function* () {
-    const upid = text(yield* pve<string>(props.target, 'provision', 'DELETE', destroyPath(props)));
-    // ⚠️ A DESTROY THAT ANSWERS WITHOUT A UPID IS NOT REFUSED HERE. `destroyfs` dies synchronously
-    //   with "no such cephfs" when the filesystem is already gone, which surfaces as a failed
-    //   DELETE; an empty answer that is not an error is best treated as already-absent, and the
-    //   caller's read-back is what proves it either way.
-    if (upid !== '') yield* settle(props.target, props.node, upid, destroyPath(props));
-  });
 
 /**
  * The two read-back failures, as messages rather than as guesses.
