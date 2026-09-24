@@ -10,6 +10,9 @@ measurements and open findings are preserved below.
    - 27 `Effect.die` sites in non-test source (defect risk, not a separate S20 ban);
    - 7 test files on `node:test`;
    - `Pbs.*` type strings (H14).
+     **SDK progress, 2026-09-24:** 17 PVE and all six existing PBS resource families now
+     call named distilled operations. The [migration record](./proxmox-sdk-migration.md)
+     separates that transport milestone, the published-consumer gate and remaining families.
 8. **`talos/*`.** Its `talosctl` calls go through `ChildProcessSpawner`, as upstream's Docker
    provider does, which conforms. Its file handling uses `Bun.file`, `Bun.write`,
    `Bun.YAML` and `node:fs` (S42), and it uses `Effect.promise` in 3 files (S19). The
@@ -75,8 +78,9 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
 12. **Resource JSDoc is not in upstream's generator format.** Zero files use `@resource`,
     `**Example:**` or `### Section` (S31, H10). **Decision:** maintainer, because it moves
     the house's glyph rationale into `//` comments.
-13. **Tests never use `alchemy/Test/Bun`.** Every lifecycle is proven against loopback
-    fakes (S28, H12). Live suites need a place to run, and that is a maintainer decision.
+13. **Original finding: tests did not use `alchemy/Test/Bun`.** The PVE/PBS SDK migration
+    now exercises provider lifecycles through that upstream engine harness with fake HTTP
+    responses. It does not claim live write coverage; live suites still need a place to run.
 14. **`discord/*` is new (2026-09-24, task-authorized, kit PR TBD) and built directly on
     `@distilled.cloud/discord` — no hand-rolled `client.ts` ever existed to retire.**
     `Discord.ApplicationCommand` and `Discord.GuildApplicationCommand` call the SDK's
