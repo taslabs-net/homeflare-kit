@@ -289,7 +289,7 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
       timings or templates configured either (consistent with the alerting-provisioning gap having
       been real, not merely unexploited).
 
-    ✅ **`Grafana.AlertRuleGroup` shipped** (this PR, second of three, branched fresh off `main`
+    ✅ **`Grafana.AlertRuleGroup` shipped** (kit PR 254, second of three, branched fresh off `main`
     after PR 250 merged): group, not per-rule, is the unit — `PUT .../rule-groups/{Group}` owns
     evaluation `interval` and the full ordered `rules[]` together, which per-rule operations
     cannot express (no `interval` field, no reordering). Rule order is significant, proven by a
@@ -297,11 +297,25 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
     the group type itself carries none) reuses `alerting-provenance.ts` unchanged, including the
     missing-means-foreign fix from PR 250's review. A declared group whose folder does not exist
     refuses as a typed `BadRequest` (`RoutePutAlertRuleGroupError` has no `NotFound` case) rather
-    than being auto-created — this resource never calls `Grafana.Folder`'s create path. Full
-    detail: [grafana-alerting-rules.md](./grafana-alerting-rules.md).
+    than being auto-created — this resource never calls `Grafana.Folder`'s create path. A whole-group
+    write silently dropping a live rule not in the declaration (found by that PR's own adversarial
+    review) is now warned about loudly rather than silent, never a refusal. Full detail:
+    [grafana-alerting-rules.md](./grafana-alerting-rules.md).
 
-    **Still open, not this PR's scope:** `Grafana.NotificationPolicy` — the last stacked PR, the
-    singleton policy tree, no longer blocked on the SDK.
+    ✅ **`Grafana.NotificationPolicy` shipped** (this PR, third and last of the stacked PRs,
+    branched fresh off `main` after PR 254 merged): a SINGLETON — `fetchLive` never returns
+    `undefined` (`RouteGetPolicyTreeError` has no `NotFound` case), so this resource has no create
+    or delete in the sense every sibling resource does, only adopt-and-update. `destroy` never
+    calls `routeResetPolicyTree` without an explicit `allowReset: true` prop, a gate independent of
+    (and in addition to) `defaultRemovalPolicy: 'retain'` — two gates, since resetting wipes the
+    WHOLE instance's routing back to Grafana's bare default, not one object. The tree is opaque
+    `Record<string, unknown>` (same reasoning as `mute-timing.ts`'s `timeIntervals` — Grafana's
+    matcher-expression types are complex unions this family does not hand-model), compared via
+    `subset-match.ts` for Grafana-injected-default tolerance, with route order significant. The
+    same dropped-item warning kit PR 254 introduced for rule groups is mirrored here for dropped
+    routes. Full detail: [grafana-notification-policy.md](./grafana-notification-policy.md).
+
+    This completes the alerting-provisioning family this project set out to cover.
     - ⛔ **Same open gaps as `forgejo/*` and `netbox/*` above:** `read` never answers `Unowned`
       (H1), and credentials come from an explicit env var NAME at call time rather than an
       `alchemy/Auth` provider (S24) — here the house's own `grafanaCredentials(target)`, not the
