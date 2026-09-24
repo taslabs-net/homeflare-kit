@@ -18,6 +18,7 @@
  *   The one exception is line endings, normalised so a CRLF checkout is not "drift".
  */
 import { type RenderedRepo, renderRepoShape } from './render.ts';
+import { RETIRED_FILES, retiredFileProblem } from './retired.ts';
 import type { RenderedPath, RepoShape, RepoShapeException } from './shape.ts';
 
 /** One thing to fix, in the imperative — the same `Problem` shape `./check` reports. */
@@ -69,8 +70,24 @@ function duplicateExceptions(exceptions: readonly RepoShapeException[]): Problem
   );
 }
 
+/**
+ * ★ A RETIRED PATH IS REPORTED WHETHER OR NOT IT IS PROVABLY OURS. This check only reads
+ *   the file to see if it is THERE — `wasRenderedByUs` is `refreshRepoShape`'s call to
+ *   make, because only the writer should decide whether to delete. Reporting here is what
+ *   makes a fossil visible even in a repository that only ever runs `--check` in CI.
+ */
+async function retiredFilesPresent(projectDir: string): Promise<Problem[]> {
+  const problems: Problem[] = [];
+  for (const file of RETIRED_FILES) {
+    if ((await readIfPresent(`${projectDir}/${file.path}`)) !== undefined) {
+      problems.push(retiredFileProblem(file));
+    }
+  }
+  return problems;
+}
+
 export interface DriftReport {
-  /** Empty when the committed files are the rendered ones. */
+  /** Empty when the committed files are the rendered ones and no retired path lingers. */
   readonly problems: readonly Problem[];
   /** Paths whose committed text differs from the render, excluding excepted files. */
   readonly drifted: readonly string[];
@@ -93,6 +110,7 @@ export async function driftInRepoShape(projectDir: string, shape: RepoShape): Pr
   const problems: Problem[] = [
     ...duplicateExceptions(exceptions),
     ...staleExceptions(rendered, exceptions),
+    ...(await retiredFilesPresent(projectDir)),
   ];
   const drifted: string[] = [];
 
