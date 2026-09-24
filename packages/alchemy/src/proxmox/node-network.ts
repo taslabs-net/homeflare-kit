@@ -11,6 +11,9 @@
  *   that apply — this one never calls it, exactly as `Proxmox.SdnZone` never calls
  *   `Proxmox.SdnApply`.
  *
+ * ⛔ `Proxmox.NetworkApply` STAYS ON `client.ts`, NOT MIGRATED WITH THIS FILE — network-apply-
+ *   read.ts's own header has the two MEASURED reasons distilled cannot represent yet.
+ *
  * ⛔ CEPH ON C1 RIDES TWO NETWORKS AND THIS API ONLY SEES ONE OF THEM. Measured from
  *   `/etc/pve/ceph.conf` on 2026-09-13:
  *
@@ -18,7 +21,8 @@
  *     cluster_network = 203.0.113.0/24     -> every OSD's cluster_addr: .102 / .103 / .104
  *
  *   The cluster network — OSD REPLICATION, the traffic that rebuilds a lost replica — lives on
- *   `203.0.113.10X/32` addresses carried by `tb0`, `tb1` and `dummy_c1`: the Thunderbolt mesh.
+ *   `203.0.113.10X/32` addresses carried by `tb0`, `tb1` and `dummy_c1`: the Thunderbolt mesh —
+ *   TB4's own fabric ports, EXCLUDED from this family by decision 28/29/9 (SdnFabric owns them).
  *
  * ⛔ AND THOSE ADDRESSES ARE INVISIBLE HERE, WHICH IS THE TRAP. They are declared in
  *   `/etc/network/interfaces.d/sdn`, and PVE's network API does not parse that directory.
@@ -34,8 +38,9 @@
  *   owns them, not this resource.
  *
  * ⚠️ Two ways this file limits the damage on the interfaces it CAN see: `cidr` is compared
- *   unconditionally (the ⛔ on `matches`), and a live interface whose `type` disagrees with the
- *   declaration is reported ABSENT rather than retyped (the ⛔ in `attributes`).
+ *   unconditionally (node-network-wire.ts's own ⛔ on `matches`), and a live interface whose
+ *   `type` disagrees with the declaration is reported ABSENT rather than retyped
+ *   (node-network-wire.ts's `attributesOf`).
  *
  * ★ THE REASON IT EXISTS IS THAT THE STAGED READ CANNOT TELL YOU THE NETWORK IS RIGHT — it can
  *   only tell you the FILE is. Once anything is staged, `GET /nodes/{node}/network/{iface}`
@@ -48,11 +53,9 @@
  *   object to scope to, so that also buys the node's services, certificates, DNS and time.
  *   Collected with every other family in docs/privileges.md.
  *
- * ★ A RECONCILE OVER A MATCHING INTERFACE IS A NO-WRITE, AND AN EARLIER DRAFT OF THIS COMMENT
- *   SAID THE OPPOSITE. `pveOperations.reconcile` gates on `matches` BEFORE the PUT
- *   (`resource.ts`: `else if (spec.updateForm !== undefined && !spec.matches(live, news))`), and
- *   the ⛔ above that line names THIS family as the reason the guard was added — adopting an
- *   interface a node already has would otherwise leave it holding a pending network change.
+ * ★ A RECONCILE OVER A MATCHING INTERFACE IS A NO-WRITE. `reconcile` below gates the PUT on
+ *   `matches` first — adopting an interface a node already has must not leave it holding a
+ *   pending network change, since a PUT under `/nodes/{node}/network/{iface}` STAGES one.
  *
  * ⚠️ WHAT IS STILL TRUE: when `matches` is false the PUT rewrites the whole stanza, and that can
  *   ADD lines the file did not have — a `vlan-raw-device vmbr1` under `vmbr1.42`, where PVE had
@@ -64,54 +67,46 @@
  *   them would put Alchemy one `destroy` away from staging the removal of a node's uplink — and
  *   `delete_network` has NO in-use check at all: MEASURED, it deletes the hash entry and writes
  *   the file. Adoption stays explicit.
+ *
+ * ★ MIGRATED OFF `client.ts`'s generic `pve()`/`pveHandlers` ONTO `@distilled.cloud/proxmox`'s
+ *   typed `nodes.getNodeNetwork`/`createNodeNetwork`/`putNodeNetwork2`/`deleteNodeNetwork2`
+ *   (2026-09-24, decision 43's proxmox walk-down, nodes/storage sub-area). `distilled-pve.ts`'s
+ *   `runPve` replaces `pve()`. No dual-path read here, unlike user.ts/group.ts/storage.ts/
+ *   zfs-pool.ts — see node-network-wire.ts's `readInterface` for why one function is enough.
  */
 import { Resource } from 'alchemy';
+import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
+import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
+import { guardWrite } from './distilled-guard.ts';
 import {
-  createBody,
-  readAttributes,
-  same,
-  sameComment,
-  sameList,
-  updateBody,
+  NODE_NETWORK_CREATE,
+  NODE_NETWORK_UPDATE,
+  createForm,
+  toDistilledCreate,
+  toDistilledUpdate,
+  updateForm,
 } from './node-network-form.ts';
-import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
+import { dropUnreadable, matches, readInterface } from './node-network-wire.ts';
+import type { NodeNetworkAttributes, NodeNetworkType } from './node-network-wire.ts';
+import { runPve } from './distilled-pve.ts';
+import { type PveRequirements, type WithTarget } from './resource-spec.ts';
+import { UNREADABLE } from './unreadable-read.ts';
 
-/**
- * PVE's interface types. `unknown` is what a NIC it does not manage reports — node-b and node-c both
- * report `wlan0` that way, and node-d has no such interface at all.
- *
- * ⚠️ THAT ASYMMETRY IS A TRAP FOR A DECLARATION SHARED ACROSS NODES. On node-d the read answers 404,
- *   which this provider cannot tell from "deleted", so reconcile POSTs — writing a stanza for a
- *   card that is not in the machine. Declare per node what each node actually has; a physical
- *   interface is discovered, not decided.
- */
-export type NodeNetworkType =
-  | 'OVSBond'
-  | 'OVSBridge'
-  | 'OVSIntPort'
-  | 'OVSPort'
-  | 'alias'
-  | 'bond'
-  | 'bridge'
-  | 'eth'
-  | 'fabric'
-  | 'unknown'
-  | 'vlan'
-  | 'vnet';
+export type { NodeNetworkAttributes, NodeNetworkType } from './node-network-wire.ts';
 
 export interface NodeNetworkProps extends WithTarget {
   /** Which node's file this stanza lives in. Interfaces are per node, never cluster-wide. */
   node: string;
   /** `vmbr0`, `bond0`, `vmbr1.42`. 2-20 characters, PVE's `pve-iface` format. */
   iface: string;
-  /** ⛔ REQUIRED ON EVERY WRITE, update included, never used to retype — see `readAttributes`. */
+  /** ⛔ REQUIRED ON EVERY WRITE, update included, never used to retype — see node-network-wire.ts. */
   type: NodeNetworkType;
   /**
    * `198.51.100.12/24`. ⛔ THE ONE FIELD WITH NO UNMANAGED MODE: leaving it out is an instruction
    * to make the interface `manual`, not an instruction to leave its address alone. The ⛔ on
-   * `updateBody` in node-network-form.ts has the measurement and the consequence.
+   * `updateForm` in node-network-form.ts has the measurement and the consequence.
    */
   cidr?: string;
   /** ⚠️ PVE allows exactly ONE default gateway per node and refuses a second with "Default
@@ -126,13 +121,13 @@ export interface NodeNetworkProps extends WithTarget {
   autostart?: boolean;
   /** 1280-65520. Unset leaves the file without an `mtu` line and the kernel default in force. */
   mtu?: number;
-  /** ⚠️ Round-trips only after normalisation — see `comment` in node-network-form.ts. */
+  /** ⚠️ Round-trips only after normalisation — see `comment` in node-network-wire.ts. */
   comments?: string;
   /** Space-separated, a SET: `enp87s0`, or `bond0`. ⚠️ PVE refuses a port already used elsewhere. */
   bridge_ports?: string;
   /** `2-4094`, or `2 100-200`. Only written when `bridge_vlan_aware` is on. */
   bridge_vids?: string;
-  /** ⛔ A `false` here is sent as `delete=`, never as `0` — the ⛔ on `body` says why. */
+  /** ⛔ A `false` here is sent as `delete=`, never as `0` — node-network-form.ts's ⛔ says why. */
   bridge_vlan_aware?: boolean;
   /**
    * A bond's members, space separated. ⚠️ THE PARAMETER IS `slaves`, NOT `bond_slaves`, in BOTH
@@ -151,38 +146,6 @@ export interface NodeNetworkProps extends WithTarget {
   'vlan-raw-device'?: string;
 }
 
-/**
- * ⛔ THE LAST SEVEN ARE REPORTED AND NEVER COMPARED — each is a MEASURED forever-diff, and the
- *   evidence for every one of them is in node-network-form.ts, beside the code that reads them.
- */
-export interface NodeNetworkAttributes {
-  node: string;
-  iface: string;
-  type: string;
-  cidr: string;
-  gateway: string;
-  autostart: boolean;
-  mtu: number;
-  comments: string;
-  bridge_ports: string;
-  bridge_vids: string;
-  bridge_vlan_aware: boolean;
-  slaves: string;
-  bond_mode: string;
-  bond_xmit_hash_policy: string;
-  'bond-primary': string;
-  'vlan-id': number;
-  'vlan-raw-device': string;
-  priority: number;
-  method: string;
-  families: string;
-  active: boolean;
-  exists: boolean;
-  bond_miimon: string;
-  bridge_stp: string;
-  bridge_fd: string;
-}
-
 export interface ProxmoxNodeNetwork extends Resource<
   'Proxmox.NodeNetwork',
   NodeNetworkProps,
@@ -196,54 +159,92 @@ export const ProxmoxNodeNetwork = Resource<ProxmoxNodeNetwork>('Proxmox.NodeNetw
   defaultRemovalPolicy: 'retain',
 });
 
-const handlers = pveHandlers<NodeNetworkProps, NodeNetworkAttributes>({
-  attributes: readAttributes,
-  collection: (props) => `nodes/${props.node}/network`,
-  /** ⚠️ No `delete` parameter on a POST — see the ⚠️ on `updateBody`. `iface` IS in the create
-   *   body though, and was missing until 2026-09-22 — the 🔴 on `createBody`. */
-  createForm: createBody,
-  /** The vendor rules both forms are checked against at plan time — resource-spec.ts. */
-  endpoint: {
-    create: 'pve:POST /nodes/{node}/network',
-    update: 'pve:PUT /nodes/{node}/network/{iface}',
-  },
-  /**
-   * ⛔ `cidr` IS THE ONLY FIELD COMPARED WHEN UNDECLARED, AND THAT ASYMMETRY IS THE POINT. Every
-   *   other field here follows storage.ts: undeclared means unmanaged, so it is neither sent nor
-   *   compared and a plan cannot report an update no write could satisfy. `cidr` cannot be
-   *   unmanaged, because PVE derives `method` from the presence of an address IN THE FORM — an
-   *   omission is an edit. Comparing it unconditionally is what makes that edit visible in `plan`
-   *   instead of at `ifreload` time.
-   *
-   * ⚠️ NOTHING IN THE REPORTED-ONLY BLOCK IS HERE, and that is what makes the C1 declaration
-   *   plan as `noop` on all three nodes at once — the ⛔ above `NodeNetworkAttributes` lists them
-   *   and the measurement behind each.
-   */
-  matches: (attributes, props) =>
-    attributes.cidr === (props.cidr ?? '') &&
-    same(props.gateway, attributes.gateway) &&
-    same(props.autostart, attributes.autostart) &&
-    same(props.mtu, attributes.mtu) &&
-    sameComment(props.comments, attributes.comments) &&
-    sameList(props.bridge_ports, attributes.bridge_ports) &&
-    sameList(props.bridge_vids, attributes.bridge_vids) &&
-    same(props.bridge_vlan_aware, attributes.bridge_vlan_aware) &&
-    sameList(props.slaves, attributes.slaves) &&
-    same(props.bond_mode, attributes.bond_mode) &&
-    same(props.bond_xmit_hash_policy, attributes.bond_xmit_hash_policy) &&
-    same(props['bond-primary'], attributes['bond-primary']) &&
-    same(props['vlan-id'], attributes['vlan-id']) &&
-    same(props['vlan-raw-device'], attributes['vlan-raw-device']),
-  path: (props) => `nodes/${props.node}/network/${props.iface}`,
-  updateForm: updateBody,
-});
-
-/**
- * ⚠️ THE DESTROY IS STAGED LIKE EVERY OTHER WRITE, WHICH MAKES IT THE ONE RECOVERABLE DESTROY IN
- *   THIS PACKAGE. It removes the stanza from `interfaces.new` and nothing else;
- *   `DELETE /nodes/{node}/network` puts the node back by unlinking that file. It becomes
- *   irreversible the moment somebody applies — and PVE performs NO in-use check before removing
- *   an interface other bridges or Ceph still stand on.
- */
 export const ProxmoxNodeNetworkProvider = () =>
-  Provider.effect(ProxmoxNodeNetwork, Effect.succeed(ProxmoxNodeNetwork.Provider.of(handlers)));
+  Provider.effect(
+    ProxmoxNodeNetwork,
+    Effect.succeed(
+      ProxmoxNodeNetwork.Provider.of({
+        /**
+         * ⛔ EMPTY, AND HERE IT MATTERS MORE THAN ANYWHERE ELSE IN THIS PACKAGE. `GET
+         *   /nodes/{node}/network` returns every interface the node has. Adoption stays explicit.
+         */
+        list: () => Effect.succeed([]),
+        // ⚠️ ONE FUNCTION, EVERY CALLER — node-network-wire.ts's `readInterface` own header. This
+        //   family's absence signal is a specific, PARSED typed error, not a generic fold, so the
+        //   `output`-branching user.ts/group.ts/storage.ts/zfs-pool.ts need for the Drift.ts gap
+        //   is unnecessary: a genuine transient failure already propagates for every caller.
+        read: Effect.fn(function* ({ olds }) {
+          return dropUnreadable(yield* readInterface(olds));
+        }),
+        diff: Effect.fn(function* ({ news, output }) {
+          if (!isResolved(news)) return undefined;
+          yield* guardWrite(NODE_NETWORK_CREATE, createForm(news), output === undefined);
+          yield* guardWrite(NODE_NETWORK_UPDATE, updateForm(news), false);
+          if (output === undefined) return undefined;
+          const live = yield* readInterface(news);
+          // ⛔ THE CRIES-WOLF FIX: a refused `provision` mint used to fall into `undefined` below
+          //   and force `update` on an interface that was plainly there — see unreadable-read.ts.
+          //   This family reads with `read`, but the same sentinel handling applies uniformly.
+          if (live === UNREADABLE) {
+            return { action: 'noop' } as const;
+          }
+          if (live === undefined) {
+            yield* guardWrite(NODE_NETWORK_CREATE, createForm(news), true);
+            return { action: 'update' } as const;
+          }
+          return matches(live, news)
+            ? ({ action: 'noop' } as const)
+            : ({ action: 'update' } as const);
+        }),
+        /**
+         * ⛔ THE DESTROY IS STAGED LIKE EVERY OTHER WRITE, WHICH MAKES IT THE ONE RECOVERABLE
+         *   DESTROY IN THIS PACKAGE. It removes the stanza from `interfaces.new` and nothing
+         *   else; `DELETE /nodes/{node}/network` (a DIFFERENT, collection-level endpoint —
+         *   `Proxmox.NetworkApply`'s own revert, never called here) puts the node back by
+         *   unlinking that file. It becomes irreversible the moment somebody applies — and PVE
+         *   performs NO in-use check before removing an interface other bridges or Ceph still
+         *   stand on.
+         */
+        reconcile: Effect.fn(function* ({ news }) {
+          const before = dropUnreadable(yield* readInterface(news));
+          yield* guardWrite(NODE_NETWORK_CREATE, createForm(news), before === undefined);
+          yield* guardWrite(NODE_NETWORK_UPDATE, updateForm(news), false);
+          if (before === undefined) {
+            yield* runPve(
+              news.target,
+              'provision',
+              true,
+              nodes.createNodeNetwork(toDistilledCreate(news)),
+            );
+          } else if (!matches(before, news)) {
+            yield* runPve(
+              news.target,
+              'provision',
+              true,
+              nodes.putNodeNetwork2(toDistilledUpdate(news)),
+            );
+          }
+          const after = dropUnreadable(yield* readInterface(news));
+          if (after === undefined) {
+            return yield* Effect.die(
+              new Error(
+                `nodes/${news.node}/network/${news.iface}: the write returned no error but the ` +
+                  'interface is still absent. PVE wraps every answer in {"data":...} and can ' +
+                  'report success on a call that did nothing -- read back rather than trusting ' +
+                  'the status code.',
+              ),
+            );
+          }
+          return after;
+        }),
+        delete: Effect.fn(function* ({ olds }) {
+          yield* runPve(
+            olds.target,
+            'provision',
+            true,
+            nodes.deleteNodeNetwork2({ iface: olds.iface, node: olds.node }),
+          );
+        }),
+      }),
+    ),
+  );

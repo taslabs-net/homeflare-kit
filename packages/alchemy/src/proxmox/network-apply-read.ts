@@ -18,6 +18,12 @@
  *   drops the envelope, so the one readable pending signal is invisible to every other resource in
  *   this package. Without the fetch below, `Proxmox.NetworkApply` could not diff honestly at all.
  *   ★ `pveEnvelopeWith` in client.ts now carries the same member failover as every other call.
+ *   ⛔ WHY THIS FAMILY DID NOT MOVE TO DISTILLED WITH `Proxmox.NodeNetwork` (2026-09-24, decision
+ *     43's walk-down): CONFIRMED against `@distilled.cloud/proxmox`'s own `protocol.ts` that its
+ *     `transformResponse` unconditionally returns `body.data ?? {}` for every operation, before a
+ *     generated call's typed output is even built — no typed call, current or future, could see
+ *     `changes` without a protocol-level change upstream. `pveEnvelopeWith` stays because nothing
+ *     else preserves the sibling this function needs.
  *
  * ⛔ AND THE INTERFACE ROWS CANNOT TELL YOU EITHER. MEASURED in PVE/INotify.pm `read_file`: when
  *   `/etc/network/interfaces.new` exists, THAT is the file that gets parsed, so
@@ -188,6 +194,12 @@ const ATTEMPTS = 30;
  *   of the task". Every mint returns a NEW token id, so a second mint is a different identity and
  *   is not the owner — which is why this takes a `PveCredential` and the caller keeps one lease
  *   across both calls, instead of widening the provisioning role to read its own tasks.
+ *
+ * ⛔ THE OTHER REASON THIS FAMILY DID NOT MOVE TO DISTILLED (2026-09-24): CHECKED against
+ *   `@distilled.cloud/proxmox`'s own `Task.awaitTask` (`src/task.ts`) before deciding — it
+ *   propagates a poll failure as a genuine typed `GetNodeTaskStatusError` rather than collapsing
+ *   it to `UNREACHABLE` the way this function does, which would turn the ⛔ two paragraphs above
+ *   into a failed `reconcile` on exactly the poll a mid-reload connection drop is expected to hit.
  */
 export const awaitTask = (
   target: PveTarget,

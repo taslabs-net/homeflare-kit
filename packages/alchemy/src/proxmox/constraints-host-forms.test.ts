@@ -11,7 +11,7 @@
 import { describe, expect, test } from 'bun:test';
 import { constraintsFor, formViolations } from './constraint-guard.ts';
 import type { PbsTarget, PveTarget } from './credentials.ts';
-import { createBody as ifaceCreateForm } from './node-network-form.ts';
+import { createForm as ifaceCreateForm } from './node-network-form.ts';
 import { resolveGroups, targetForm } from './pbs-notification-target-form.ts';
 import { createForm as zfsCreateForm } from './zfs-pool-write.ts';
 
@@ -26,7 +26,7 @@ describe('the host families plan clean against their own creates', () => {
    * 🔴 THE BUG THIS PROOF FOUND. `createForm` was `body`, which never sent `iface` — and PVE marks
    *   it REQUIRED on the POST while `{node}` is the only path parameter. Every NodeNetwork create
    *   this repository could have made would have 400ed; nothing caught it because C1's three nodes
-   *   were all adopted, which takes the PUT path. See the 🔴 on `createBody`.
+   *   were all adopted, which takes the PUT path. See the 🔴 on `createForm`.
    */
   test('an interface create carries iface, which PVE requires in the body', () => {
     const form = ifaceCreateForm({
