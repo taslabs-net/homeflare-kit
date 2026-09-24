@@ -7,8 +7,9 @@ place). Ships in three stacked PRs, in the order this file's own history records
    PR 250.
 2. **`Grafana.AlertRuleGroup`** — [grafana-alerting-rules.md](./grafana-alerting-rules.md), a
    separate stacked PR (its own diff off `main`, not this one) once this file's doc budget filled.
-3. Next: `Grafana.NotificationPolicy` — the singleton policy tree, last on purpose (it references
-   contact points, mute timings and templates by name).
+3. **`Grafana.NotificationPolicy`** — [grafana-notification-policy.md](./grafana-notification-policy.md),
+   the singleton policy tree, last on purpose (it references contact points, mute timings and
+   templates by name).
 
 All three ship on the same `@distilled.cloud/grafana@0.2.0` operations
 [grafana.md](./grafana.md#the-sdk-gap--history-and-what-shipped-on-top-of-the-fix) already
