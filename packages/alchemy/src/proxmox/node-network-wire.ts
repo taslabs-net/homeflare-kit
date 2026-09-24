@@ -19,8 +19,15 @@
 import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
 import { runPve } from './distilled-pve.ts';
-import { UNSET, comment, ifaceList, same, sameComment, sameList } from './node-network-form.ts';
-import type { NodeNetworkProps } from './node-network.ts';
+import {
+  type NodeNetworkProps,
+  UNSET,
+  comment,
+  ifaceList,
+  same,
+  sameComment,
+  sameList,
+} from './node-network-form.ts';
 import { UNREADABLE, type Unreadable, readOrUnreadable } from './unreadable-read.ts';
 import { bool, int, text } from './values.ts';
 
@@ -153,16 +160,12 @@ const attributesOf = (
  *   than collapsing it to an opaque `BadRequest` — PVE's OWN 400 is never one shape (it is
  *   whatever the endpoint's parameter verification rejected), so `errors.ts`'s own header spells
  *   out why this ONE typed error is global rather than per-operation.
- * ⛔ ONLY THIS EXACT SIGNAL MEANS ABSENT — nothing else does, in EITHER direction this file is
- *   used (there is no folding/non-folding split for this family, unlike user.ts/group.ts/
- *   storage.ts/zfs-pool.ts). A malformed request, a permission gap this credential's role does not
- *   cover, a network blip, or ANY OTHER `ParameterVerificationFailed` reason PROPAGATES as a
- *   genuine failure — never silently treated as "this interface is not there". A missing user or
- *   group needed a fold because their absence is a thrown, generic 500 indistinguishable from a
- *   transient one; this family's absence is a specific, PARSED, typed signal, so nothing here
- *   needs to guess — `diff`, `read` and `reconcile` all call this SAME function.
+ * ⛔ ONLY THIS EXACT SIGNAL MEANS ABSENT, EVEN WITH THE FOLD BELOW. A different 400 reason, a
+ *   permission gap, a network blip, or ANY OTHER `ParameterVerificationFailed` reason is never
+ *   read as "this interface is not there" — `diff` calls this directly and propagates every one
+ *   of them loudly.
  */
-export const readInterface = (props: NodeNetworkProps) =>
+export const readInterfaceOrFail = (props: NodeNetworkProps) =>
   readOrUnreadable(
     runPve(
       props.target,
@@ -182,6 +185,26 @@ export const readInterface = (props: NodeNetworkProps) =>
       return live === undefined ? undefined : attributesOf(live, props);
     }),
   );
+
+/**
+ * ⛔ FOLDS A GENUINE READ FAILURE TO `undefined` TOO, AND ONLY `read`'s adoption/recovery branch
+ *   AND `reconcile` MAY USE IT — FOUND BY ADVERSARIAL REVIEW, 2026-09-24: a first draft used
+ *   `readInterfaceOrFail` (precise, non-folding) for EVERY caller, on the reasoning that a typed,
+ *   parsed absence signal made folding unnecessary. That reasoning conflated two different
+ *   questions: HOW PRECISELY a signal means absent (this family's is unusually precise), and
+ *   WHETHER a given caller can safely treat an UNRELATED failure as "proceed as though absent"
+ *   (storage.ts's/user.ts's own reasoning: a wrongful fold costs at most a redundant
+ *   `createNodeNetwork` POST, refused loudly). Plan.ts's cold-start adoption probe and
+ *   interrupted-create recovery, and Apply.ts's delete recovery, all call `read` with
+ *   `output: undefined` and NO catch of their own (`Plan.ts` v2.0.0-beta.79 ~line 1308) — and
+ *   Plan.ts fails the WHOLE PLAN, every other resource included, if that call throws. A malformed
+ *   `iface` in ONE brand-new declaration (a DIFFERENT `ParameterVerificationFailed` than the
+ *   absence one) would abort `bun run plan` for the entire stack under the precise-only design,
+ *   where every other migrated family instead defers that same malformed declaration to a scoped,
+ *   loud refusal at apply. This restores that same fold for those three call sites.
+ */
+export const readInterface = (props: NodeNetworkProps) =>
+  readInterfaceOrFail(props).pipe(Effect.orElseSucceed(() => undefined));
 
 /** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
 export const dropUnreadable = (live: NodeNetworkAttributes | Unreadable | undefined) =>

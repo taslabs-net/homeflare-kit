@@ -70,9 +70,8 @@
  *
  * ★ MIGRATED OFF `client.ts`'s generic `pve()`/`pveHandlers` ONTO `@distilled.cloud/proxmox`'s
  *   typed `nodes.getNodeNetwork`/`createNodeNetwork`/`putNodeNetwork2`/`deleteNodeNetwork2`
- *   (2026-09-24, decision 43's proxmox walk-down, nodes/storage sub-area). `distilled-pve.ts`'s
- *   `runPve` replaces `pve()`. No dual-path read here, unlike user.ts/group.ts/storage.ts/
- *   zfs-pool.ts — see node-network-wire.ts's `readInterface` for why one function is enough.
+ *   (2026-09-24, decision 43). Dual-path read and `read`'s `output`-branching wired like every
+ *   other migrated family; node-network-wire.ts's `readInterfaceOrFail` has the new nuance.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
@@ -83,68 +82,26 @@ import { guardWrite } from './distilled-guard.ts';
 import {
   NODE_NETWORK_CREATE,
   NODE_NETWORK_UPDATE,
+  type NodeNetworkProps,
   createForm,
-  toDistilledCreate,
-  toDistilledUpdate,
   updateForm,
 } from './node-network-form.ts';
-import { dropUnreadable, matches, readInterface } from './node-network-wire.ts';
-import type { NodeNetworkAttributes, NodeNetworkType } from './node-network-wire.ts';
+import {
+  dropUnreadable,
+  matches,
+  readInterface,
+  readInterfaceOrFail,
+} from './node-network-wire.ts';
+import type { NodeNetworkAttributes } from './node-network-wire.ts';
 import { runPve } from './distilled-pve.ts';
-import { type PveRequirements, type WithTarget } from './resource-spec.ts';
+import { type PveRequirements } from './resource-spec.ts';
 import { UNREADABLE, unreadableWarning } from './unreadable-read.ts';
 
 export type { NodeNetworkAttributes, NodeNetworkType } from './node-network-wire.ts';
-
-export interface NodeNetworkProps extends WithTarget {
-  /** Which node's file this stanza lives in. Interfaces are per node, never cluster-wide. */
-  node: string;
-  /** `vmbr0`, `bond0`, `vmbr1.42`. 2-20 characters, PVE's `pve-iface` format. */
-  iface: string;
-  /** ⛔ REQUIRED ON EVERY WRITE, update included, never used to retype — see node-network-wire.ts. */
-  type: NodeNetworkType;
-  /**
-   * `198.51.100.12/24`. ⛔ THE ONE FIELD WITH NO UNMANAGED MODE: leaving it out is an instruction
-   * to make the interface `manual`, not an instruction to leave its address alone. The ⛔ on
-   * `updateForm` in node-network-form.ts has the measurement and the consequence.
-   */
-  cidr?: string;
-  /** ⚠️ PVE allows exactly ONE default gateway per node and refuses a second with "Default
-   *  gateway already exists on interface '<other>'". On C1 it is vmbr0.41's. */
-  gateway?: string;
-  /**
-   * `auto <iface>` in the file. Absent on read means off, which is why `bool`'s fallback is used.
-   * ⚠️ UNDECLARED IS UNMANAGED ON AN UPDATE AND OFF ON A CREATE — the same asymmetry storage.ts
-   *   has, and it bites harder here: an interface created without `autostart` is one the node
-   *   will not bring up at boot. Every C1 bridge, bond and vlan carries it.
-   */
-  autostart?: boolean;
-  /** 1280-65520. Unset leaves the file without an `mtu` line and the kernel default in force. */
-  mtu?: number;
-  /** ⚠️ Round-trips only after normalisation — see `comment` in node-network-wire.ts. */
-  comments?: string;
-  /** Space-separated, a SET: `enp87s0`, or `bond0`. ⚠️ PVE refuses a port already used elsewhere. */
-  bridge_ports?: string;
-  /** `2-4094`, or `2 100-200`. Only written when `bridge_vlan_aware` is on. */
-  bridge_vids?: string;
-  /** ⛔ A `false` here is sent as `delete=`, never as `0` — node-network-form.ts's ⛔ says why. */
-  bridge_vlan_aware?: boolean;
-  /**
-   * A bond's members, space separated. ⚠️ THE PARAMETER IS `slaves`, NOT `bond_slaves`, in BOTH
-   * directions on this PVE: MEASURED, the POST/PUT schema names only `slaves` and the GET returns
-   * `"slaves":"enp2s0f0np0 enp2s0f1np1"`. `bond_slaves` appears nowhere in Network.pm here.
-   */
-  slaves?: string;
-  bond_mode?: string;
-  /** ⚠️ Only written when `bond_mode` is `balance-xor` or `802.3ad`; ignored otherwise. */
-  bond_xmit_hash_policy?: string;
-  /** active-backup only. Kept hyphenated because that is the wire name. */
-  'bond-primary'?: string;
-  /** ⚠️ DERIVED FROM A DOTTED NAME. `vmbr1.42` reports `vlan-id` 42 with no such line in the file;
-   *  declaring it there is harmless but adds a line the file did not have. */
-  'vlan-id'?: number;
-  'vlan-raw-device'?: string;
-}
+// ⚠️ MOVED TO node-network-form.ts IN THIS PR'S LINE-CAP TRIM — every field on it is already
+//   documented there against `body`/`createForm`/`updateForm`, so it travels with them rather
+//   than duplicating that documentation here. Nothing about its shape changed.
+export type { NodeNetworkProps } from './node-network-form.ts';
 
 export interface ProxmoxNodeNetwork extends Resource<
   'Proxmox.NodeNetwork',
@@ -159,6 +116,37 @@ export const ProxmoxNodeNetwork = Resource<ProxmoxNodeNetwork>('Proxmox.NodeNetw
   defaultRemovalPolicy: 'retain',
 });
 
+/**
+ * The three fields distilled's generator renamed to an underscore (`bond-primary`, `vlan-id`,
+ * `vlan-raw-device`) — everything else round-trips as-is. `storage-form.ts`'s `underscored` is a
+ * generic transform for a free-form bag; this family's fields are all named ahead of time, so a
+ * small local map is clearer than importing a generic helper for three keys. Moved here from
+ * node-network-form.ts in this PR's line-cap trim — this is the only caller.
+ */
+const RENAMED: Readonly<Record<string, string>> = {
+  'bond-primary': 'bond_primary',
+  'vlan-id': 'vlan_id',
+  'vlan-raw-device': 'vlan_raw_device',
+};
+
+const toDistilled = (form: Record<string, string>): Record<string, string> =>
+  Object.fromEntries(Object.entries(form).map(([key, value]) => [RENAMED[key] ?? key, value]));
+
+/** The actual `createNodeNetwork` call body — `createForm`, translated once. See `toDistilled`. */
+const toDistilledCreate = (props: NodeNetworkProps): nodes.CreateNodeNetworkRequest =>
+  ({
+    ...toDistilled(createForm(props)),
+    node: props.node,
+  }) as unknown as nodes.CreateNodeNetworkRequest;
+
+/** The actual `putNodeNetwork2` call body — `updateForm`, translated once. See `toDistilledCreate`. */
+const toDistilledUpdate = (props: NodeNetworkProps): nodes.PutNodeNetwork2Request =>
+  ({
+    ...toDistilled(updateForm(props)),
+    iface: props.iface,
+    node: props.node,
+  }) as unknown as nodes.PutNodeNetwork2Request;
+
 export const ProxmoxNodeNetworkProvider = () =>
   Provider.effect(
     ProxmoxNodeNetwork,
@@ -169,19 +157,19 @@ export const ProxmoxNodeNetworkProvider = () =>
          *   /nodes/{node}/network` returns every interface the node has. Adoption stays explicit.
          */
         list: () => Effect.succeed([]),
-        // ⚠️ ONE FUNCTION, EVERY CALLER — node-network-wire.ts's `readInterface` own header. This
-        //   family's absence signal is a specific, PARSED typed error, not a generic fold, so the
-        //   `output`-branching user.ts/group.ts/storage.ts/zfs-pool.ts need for the Drift.ts gap
-        //   is unnecessary: a genuine transient failure already propagates for every caller.
-        read: Effect.fn(function* ({ olds }) {
-          return dropUnreadable(yield* readInterface(olds));
+        // ⚠️ FOLDS ONLY WHEN `output` IS `undefined`, restored by adversarial review after a
+        //   first draft dropped it — node-network-wire.ts's `readInterface` has the reasoning.
+        read: Effect.fn(function* ({ olds, output }) {
+          return dropUnreadable(
+            yield* output === undefined ? readInterface(olds) : readInterfaceOrFail(olds),
+          );
         }),
         diff: Effect.fn(function* ({ news, output }) {
           if (!isResolved(news)) return undefined;
           yield* guardWrite(NODE_NETWORK_CREATE, createForm(news), output === undefined);
           yield* guardWrite(NODE_NETWORK_UPDATE, updateForm(news), false);
           if (output === undefined) return undefined;
-          const live = yield* readInterface(news);
+          const live = yield* readInterfaceOrFail(news);
           // ⛔ THE CRIES-WOLF FIX: a refused mint used to fall into `undefined` and force `update`
           //   on an interface that was plainly there — see unreadable-read.ts.
           if (live === UNREADABLE) {
@@ -228,10 +216,9 @@ export const ProxmoxNodeNetworkProvider = () =>
           if (after === undefined) {
             return yield* Effect.die(
               new Error(
-                `nodes/${news.node}/network/${news.iface}: the write returned no error but the ` +
-                  'interface is still absent. PVE wraps every answer in {"data":...} and can ' +
-                  'report success on a call that did nothing -- read back rather than trusting ' +
-                  'the status code.',
+                `nodes/${news.node}/network/${news.iface}: wrote with no error, but the ` +
+                  'interface is still absent -- PVE wraps every answer in {"data":...} and can ' +
+                  'report success on a call that did nothing, so read back rather than trust it.',
               ),
             );
           }

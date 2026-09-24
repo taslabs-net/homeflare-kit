@@ -6,9 +6,10 @@ The `proxmox/*` family's `nodes/storage` sub-area, third resource (decision 43's
 walk-down, after `access` in PR 231/239, `storage` in PR 243 and `ZfsPool` in PR 246): migrates
 `Proxmox.NodeNetwork` off `client.ts`'s hand-rolled `pve()`/`pveHandlers` onto
 `@distilled.cloud/proxmox`'s typed `nodes.getNodeNetwork`/`createNodeNetwork`/`putNodeNetwork2`/
-`deleteNodeNetwork2`. Split into `node-network.ts` (resource + props), `node-network-wire.ts` (the
-read side) and `node-network-form.ts` (the write side, plus the coercion helpers `matches` and
-`attributesOf` both need) — the storage.ts/storage-form.ts seam.
+`deleteNodeNetwork2`. Split into `node-network.ts` (the resource and its provider),
+`node-network-wire.ts` (the read side — `readInterfaceOrFail`/`readInterface`, `matches`,
+`attributesOf`) and `node-network-form.ts` (`NodeNetworkProps`, the write side, and the
+coercion helpers both other files need) — the storage.ts/storage-form.ts seam.
 
 **`Proxmox.NetworkApply` stays on `client.ts`, deliberately, not migrated with this PR.** Decision
 28/29/9 ("NetworkApply stays an operator step") plus two MEASURED reasons, checked directly
@@ -37,28 +38,40 @@ MEASURED against the live cluster (TB4 `n2`, read-role, read-only probe): `GET
 /nodes/n2/network/vmbr9` answers `{"errors":{"iface":"interface does not exist"},"data":null,
 "message":"Parameter verification failed.\n"}` at HTTP 400. `@distilled.cloud/proxmox` types PVE's
 400 as a genuine typed error, `ParameterVerificationFailed`, carrying the per-field `errors`
-object rather than collapsing it to an opaque `BadRequest`.
+object rather than collapsing it to an opaque `BadRequest`. Only that exact signal —
+`error.errors.iface === 'interface does not exist'` — means absent; a different 400 reason, a
+genuine 500, or a network blip all propagate as real failures rather than being read as "gone".
 
-**Only that exact signal means absent — nowhere in this file, unlike every other migrated
-family.** `readInterface` (node-network-wire.ts) is ONE function, used identically by `read`,
-`diff` and `reconcile`: it catches `ParameterVerificationFailed` and checks
-`error.errors.iface === 'interface does not exist'` specifically — anything else (a different
-400 reason, a genuine 500, a network blip) propagates as a real failure. This family therefore
-needs neither the dual-path read (`readXOrFail`/foldingX) NOR `read`'s `output`-branching for the
-`Drift.ts` gap that user.ts/group.ts/storage.ts/zfs-pool.ts all carry — a precise, parsed absence
-signal makes both unnecessary, since a genuine failure already propagates for every caller.
+**A precise absence signal does not remove the need for the dual-path read.** A first draft
+reasoned that a parsed, specific absence signal made `readXOrFail`/folding-`readX` and `read`'s
+`output`-branching unnecessary — every other migrated family carries that pair for the
+`Drift.ts` gap, but this family's absence check already rejects anything that is not the exact
+measured 400, so nothing wrongly propagates as absence. A Sonnet adversarial review caught the
+flaw: precision of the absence signal and safety of folding at a given call site are separate
+questions. Three of Alchemy's four `read` call sites (`Plan.ts`'s cold-start adoption probe,
+`Plan.ts`'s interrupted-create recovery, `Apply.ts`'s delete recovery) call `provider.read` with
+no state to compare against yet and no catch of their own around a typed failure — and `Plan.ts`
+aggregates every resource's diff/probe effects fail-fast, so one resource's malformed or
+transiently-failing declaration would abort the whole plan. Folding at those sites is what turns
+that into a normal `create`/`noop` instead. Fixed by restoring the pair:
+`readInterfaceOrFail` (non-folding, used by `diff` always and by `reconcile`'s write path) and
+`readInterface` (folding, used by `read` when `output` is `undefined`, mirroring
+user.ts/group.ts/storage.ts/zfs-pool.ts). `node-network-wire.ts`'s own header on both functions
+has the full reasoning.
 
 **TB4's fabric ports stay excluded, unchanged.** `tb0`/`tb1`/`dummy_c1` (the Thunderbolt mesh
 SdnFabric owns, per decision 28/29/9) were never declared through this family and still are not —
 this migration touches only how an interface this family DOES manage gets read and written, never
-what gets declared through it. The header's own warning about them is carried forward verbatim.
+what gets declared through it. The header's own warning about them is carried forward verbatim,
+now with an explicit pointer to decision 28/29/9.
 
-Two bugs I introduced while writing this migration and caught myself, before requesting review,
-by re-running the full test suite: an early draft's `diff` forgot to call `unreadableWarning` on
-a refused-credential row (every OTHER migrated family logs it; this one silently didn't) — fixed,
-now covered by `node-network-read-failure.test.ts`'s own cries-wolf test. And an unused import
+Bugs caught before opening the PR, all fixed: an early draft's `diff` forgot to call
+`unreadableWarning` on a refused-credential row (every OTHER migrated family logs it; this one
+silently didn't) — self-caught, re-running the full test suite, fixed and now covered by
+`node-network-read-failure.test.ts`'s own cries-wolf test. An unused import
 (`ParameterVerificationFailed` imported as a value, needed only as the string tag
-`Effect.catchTag` matches against) — caught by the pre-commit lint gate, not a runtime bug.
+`Effect.catchTag` matches against) — caught by the pre-commit lint gate. And the dual-path
+regression above — caught by the adversarial review, not self-caught.
 
 `node-network-read-failure.test.ts` (new — this family had no dedicated test file before this
 migration, only the create-form's vendor-constraint proof in `constraints-host-forms.test.ts`)

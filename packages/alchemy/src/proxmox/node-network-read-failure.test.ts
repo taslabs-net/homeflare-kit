@@ -139,6 +139,37 @@ describe('only the measured "interface does not exist" 400 means absent', () => 
     });
   });
 
+  /**
+   * ★ WHY `read` FOLDS AT ALL, SPELLED OUT ON A BRAND NEW DECLARATION. Plan.ts's cold-start
+   *   adoption probe (no prior Alchemy state for this declaration) calls `provider.read` with no
+   *   catch of its own, and aggregates every resource's probe fail-fast — so an uncaught failure
+   *   here would abort the WHOLE plan, every other resource in it included, over one interface a
+   *   flaky read happened to hit. Proven here: a genuine 500 (never the absence signal) on a
+   *   cold-start read still resolves to `create`, not a thrown plan failure.
+   * ⚠️ THIS TEST ALONE DOES NOT DISTINGUISH THE FIX FROM THE DISPROVEN DESIGN — checked directly:
+   *   the pre-fix single-function `read` folded unconditionally too, so it passes either way. The
+   *   test that actually regresses without `read`'s `output`-branching is the drift test right
+   *   below (`output` IS defined there, on an already-confirmed row, and that is the case the
+   *   fix changes): verified by temporarily reverting `read` to the pre-fix form and confirming
+   *   that test, and only that one, fails. Kept anyway as a direct demonstration of the
+   *   reasoning above, not as the regression proof.
+   */
+  test("a cold-start declaration's adoption probe folds a genuine 500, and the plan is not aborted", async () => {
+    const fake = clusterOverInterface('n2', 'vmbr8', {});
+    fake.setAnswer('server-error');
+    await withoutBao(async () => {
+      const engine = engineOver(ProxmoxNodeNetworkProvider().pipe(Layer.provideMerge(fake.layer)));
+      const declareNew = () =>
+        ProxmoxNodeNetwork('n2-vmbr8', {
+          iface: 'vmbr8',
+          node: 'n2',
+          target: FAKE_TARGET,
+          type: 'bridge',
+        });
+      expect(await engine.deploy(declareNew())).toEqual({ 'n2-vmbr8': 'create' });
+    });
+  });
+
   test('a different 400 (not "interface does not exist") propagates instead of creating', async () => {
     const fake = clusterOverInterface('n2', 'vmbr0', live);
     await withoutBao(async () => {
@@ -160,6 +191,9 @@ describe('only the measured "interface does not exist" 400 means absent', () => 
     });
   });
 
+  // ⛔ THE ADVERSARIAL REVIEW'S OWN REGRESSION TEST — `output` is defined here (an already
+  //   -confirmed row), the one case `read`'s `output`-branching actually changes. Confirmed by
+  //   temporarily reverting `read` to the pre-fix, non-branching form: only this test fails.
   test('alchemy drift never reports a transient failure as missing', async () => {
     const fake = clusterOverInterface('n2', 'vmbr0', live);
     await withoutBao(async () => {

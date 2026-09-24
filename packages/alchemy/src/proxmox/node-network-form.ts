@@ -1,12 +1,63 @@
 /**
- * `Proxmox.NodeNetwork`'s WRITE side, PLUS the wire coercions node-network-wire.ts's own read
- * side needs too — kept here rather than duplicated, since neither `matches` (comparison) nor
- * `updateForm` (clearing) makes sense without agreeing on the same normalisation. Split out of
- * node-network.ts (2026-09-24, the distilled migration) — the storage.ts/storage-form.ts seam.
+ * `Proxmox.NodeNetwork`'s declared shape (`NodeNetworkProps`) and WRITE side, plus the wire
+ * coercions the read side needs too — kept here since neither `matches` nor `updateForm` makes
+ * sense without agreeing on the same normalisation. Split out of node-network.ts (2026-09-24,
+ * the distilled migration; `Props` joined it in this PR's later line-cap trim) — the
+ * storage.ts/storage-form.ts seam.
  */
-import type * as nodes from '@distilled.cloud/proxmox/nodes';
-import type { NodeNetworkProps } from './node-network.ts';
+import type { NodeNetworkType } from './node-network-wire.ts';
+import { type WithTarget } from './resource-spec.ts';
 import { flag, text, withClears } from './values.ts';
+
+export interface NodeNetworkProps extends WithTarget {
+  /** Which node's file this stanza lives in. Interfaces are per node, never cluster-wide. */
+  node: string;
+  /** `vmbr0`, `bond0`, `vmbr1.42`. 2-20 characters, PVE's `pve-iface` format. */
+  iface: string;
+  /** ⛔ REQUIRED ON EVERY WRITE, update included, never used to retype — see node-network-wire.ts. */
+  type: NodeNetworkType;
+  /**
+   * `198.51.100.12/24`. ⛔ THE ONE FIELD WITH NO UNMANAGED MODE: leaving it out is an instruction
+   * to make the interface `manual`, not an instruction to leave its address alone. The ⛔ on
+   * `updateForm` in node-network-form.ts has the measurement and the consequence.
+   */
+  cidr?: string;
+  /** ⚠️ PVE allows exactly ONE default gateway per node and refuses a second with "Default
+   *  gateway already exists on interface '<other>'". On C1 it is vmbr0.41's. */
+  gateway?: string;
+  /**
+   * `auto <iface>` in the file. Absent on read means off, which is why `bool`'s fallback is used.
+   * ⚠️ UNDECLARED IS UNMANAGED ON AN UPDATE AND OFF ON A CREATE — the same asymmetry storage.ts
+   *   has, and it bites harder here: an interface created without `autostart` is one the node
+   *   will not bring up at boot. Every C1 bridge, bond and vlan carries it.
+   */
+  autostart?: boolean;
+  /** 1280-65520. Unset leaves the file without an `mtu` line and the kernel default in force. */
+  mtu?: number;
+  /** ⚠️ Round-trips only after normalisation — see `comment` in node-network-wire.ts. */
+  comments?: string;
+  /** Space-separated, a SET: `enp87s0`, or `bond0`. ⚠️ PVE refuses a port already used elsewhere. */
+  bridge_ports?: string;
+  /** `2-4094`, or `2 100-200`. Only written when `bridge_vlan_aware` is on. */
+  bridge_vids?: string;
+  /** ⛔ A `false` here is sent as `delete=`, never as `0` — node-network-form.ts's ⛔ says why. */
+  bridge_vlan_aware?: boolean;
+  /**
+   * A bond's members, space separated. ⚠️ THE PARAMETER IS `slaves`, NOT `bond_slaves`, in BOTH
+   * directions on this PVE: MEASURED, the POST/PUT schema names only `slaves` and the GET returns
+   * `"slaves":"enp2s0f0np0 enp2s0f1np1"`. `bond_slaves` appears nowhere in Network.pm here.
+   */
+  slaves?: string;
+  bond_mode?: string;
+  /** ⚠️ Only written when `bond_mode` is `balance-xor` or `802.3ad`; ignored otherwise. */
+  bond_xmit_hash_policy?: string;
+  /** active-backup only. Kept hyphenated because that is the wire name. */
+  'bond-primary'?: string;
+  /** ⚠️ DERIVED FROM A DOTTED NAME. `vmbr1.42` reports `vlan-id` 42 with no such line in the file;
+   *  declaring it there is harmless but adds a line the file did not have. */
+  'vlan-id'?: number;
+  'vlan-raw-device'?: string;
+}
 
 export const NODE_NETWORK_CREATE = 'pve:POST /nodes/{node}/network';
 export const NODE_NETWORK_UPDATE = 'pve:PUT /nodes/{node}/network/{iface}';
@@ -170,32 +221,6 @@ export const updateForm = (props: NodeNetworkProps): Record<string, string> => {
   return withClears(body(props), clear);
 };
 
-/**
- * The three fields distilled's generator renamed to an underscore (`bond-primary`, `vlan-id`,
- * `vlan-raw-device`) — everything else round-trips as-is. `storage-form.ts`'s `underscored` is a
- * generic transform for a free-form bag; this family's fields are all named ahead of time, so a
- * small local map is clearer than importing a generic helper for three keys.
- */
-const RENAMED: Readonly<Record<string, string>> = {
-  'bond-primary': 'bond_primary',
-  'vlan-id': 'vlan_id',
-  'vlan-raw-device': 'vlan_raw_device',
-};
-
-const toDistilled = (form: Record<string, string>): Record<string, string> =>
-  Object.fromEntries(Object.entries(form).map(([key, value]) => [RENAMED[key] ?? key, value]));
-
-/** The actual `createNodeNetwork` call body — `createForm`, translated once. See `toDistilled`. */
-export const toDistilledCreate = (props: NodeNetworkProps): nodes.CreateNodeNetworkRequest =>
-  ({
-    ...toDistilled(createForm(props)),
-    node: props.node,
-  }) as unknown as nodes.CreateNodeNetworkRequest;
-
-/** The actual `putNodeNetwork2` call body — `updateForm`, translated once. See `toDistilledCreate`. */
-export const toDistilledUpdate = (props: NodeNetworkProps): nodes.PutNodeNetwork2Request =>
-  ({
-    ...toDistilled(updateForm(props)),
-    iface: props.iface,
-    node: props.node,
-  }) as unknown as nodes.PutNodeNetwork2Request;
+// ⚠️ `toDistilledCreate`/`toDistilledUpdate` MOVED TO node-network.ts IN THIS PR'S LINE-CAP
+//   TRIM — the only caller, and the only place `nodes.CreateNodeNetworkRequest`/
+//   `PutNodeNetwork2Request` were otherwise needed. `createForm`/`updateForm` above are unchanged.
