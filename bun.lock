@@ -18,7 +18,7 @@
     },
     "packages/alchemy": {
       "name": "@homeflare/alchemy",
-      "version": "0.31.1",
+      "version": "0.31.2",
       "bin": {
         "hf-adopt-verify": "./dist/verify/cli.js",
       },
@@ -98,9 +98,22 @@
         "effect": "4.0.0-rc.115",
       },
     },
+    "packages/distilled-cilium": {
+      "name": "@homeflare/distilled-cilium",
+      "version": "0.1.0",
+      "dependencies": {
+        "@distilled.cloud/core": "1.0.0-rc.12",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
+    },
     "packages/distilled-grafana": {
       "name": "@homeflare/distilled-grafana",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@distilled.cloud/core": "1.0.0-rc.12",
       },
@@ -179,6 +192,19 @@
     "packages/distilled-proxmox-backup": {
       "name": "@homeflare/distilled-proxmox-backup",
       "version": "0.2.0",
+      "dependencies": {
+        "@distilled.cloud/core": "1.0.0-rc.12",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
+    },
+    "packages/distilled-traefik": {
+      "name": "@homeflare/distilled-traefik",
+      "version": "0.1.0",
       "dependencies": {
         "@distilled.cloud/core": "1.0.0-rc.12",
       },
@@ -515,6 +541,8 @@
 
     "@homeflare/distilled-caddy": ["@homeflare/distilled-caddy@workspace:packages/distilled-caddy"],
 
+    "@homeflare/distilled-cilium": ["@homeflare/distilled-cilium@workspace:packages/distilled-cilium"],
+
     "@homeflare/distilled-grafana": ["@homeflare/distilled-grafana@workspace:packages/distilled-grafana"],
 
     "@homeflare/distilled-litellm": ["@homeflare/distilled-litellm@workspace:packages/distilled-litellm"],
@@ -528,6 +556,8 @@
     "@homeflare/distilled-proxmox": ["@homeflare/distilled-proxmox@workspace:packages/distilled-proxmox"],
 
     "@homeflare/distilled-proxmox-backup": ["@homeflare/distilled-proxmox-backup@workspace:packages/distilled-proxmox-backup"],
+
+    "@homeflare/distilled-traefik": ["@homeflare/distilled-traefik@workspace:packages/distilled-traefik"],
 
     "@homeflare/distilled-unifi-network": ["@homeflare/distilled-unifi-network@workspace:packages/distilled-unifi-network"],
 
