@@ -25,7 +25,9 @@
  *   plain `dependencies` entry (aliased onto `@homeflare/distilled-netbox` — see
  *   docs/distilled-interim.md), not a peer: `bun add` below resolves it automatically from the
  *   packed tarball, so nothing needs to be named for it here or in the README's install line.
- *   ⛔ None of them failed at INSTALL. All three threw at import, which is why a test that
+ *   `/litellm` (2026-09-24, the same move) imports `@distilled.cloud/litellm` the same
+ *   `dependencies`-not-peer way, aliased onto `@homeflare/distilled-litellm`.
+ *   ⛔ None of them failed at INSTALL. All four threw at import, which is why a test that
  *     only packs is not enough — this one imports.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -123,7 +125,7 @@ import { PAPERLESS_CONSTRAINTS_DIGEST, Tag as PaperlessTag, bodyViolations as pa
 import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, renderUnit, sshRunner } from '@homeflare/alchemy/linux';
 import { ReleaseBinary, VICTORIA_RELEASES, catalogBinary, identifyBinary, releaseProviders, releaseUrl } from '@homeflare/alchemy/release';
 import { CaddyConfig, caddyProviders, caddyWithFile, localCaddyAdmin } from '@homeflare/alchemy/caddy';
-import { LITELLM_PROXY_API_KEY_ENV, LITELLM_PROXY_URL_ENV, LitellmCredentialsError, isLiteLLMPassThroughEndpoint, litellmProviders } from '@homeflare/alchemy/litellm';
+import { isLiteLLMPassThroughEndpoint, litellmProviders } from '@homeflare/alchemy/litellm';
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 
 for (const [name, value] of Object.entries({
@@ -136,7 +138,7 @@ for (const [name, value] of Object.entries({
   PostgresDatabase, isPostgresDatabase, nameByteRefusal, quoteIdent,
   HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, ReleaseBinary, releaseProviders,
   parseVerifyArgs, verifySession, verifyStack,
-  litellmProviders, LitellmCredentialsError,
+  litellmProviders,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
 }
@@ -259,16 +261,11 @@ if (!/^[0-9a-f]{16}$/.test(PAPERLESS_CONSTRAINTS_DIGEST)) {
 if (PaperlessTag === undefined) throw new Error('Paperless.Tag from dist is undefined');
 
 // ★ THE LITELLM SUBPATH THROUGH THE PUBLISHED FILE. Pure checks only — no LiteLLM proxy is
-//   reached: the env-var names LiteLLM's own CLI uses (credentials.ts), the resource's tag
-//   string, and the typed credentials error construct the way MeshNodeError does above.
-if (LITELLM_PROXY_URL_ENV !== 'LITELLM_PROXY_URL' || LITELLM_PROXY_API_KEY_ENV !== 'LITELLM_PROXY_API_KEY') {
-  throw new Error('litellm credential env var names from dist do not match the vendor CLI');
-}
+//   reached: the resource's tag string and that the provider factory (now built on
+//   @distilled.cloud/litellm's own CredentialsFromEnv, not a hand-rolled credentials.ts) is
+//   still callable from dist.
 if (!isLiteLLMPassThroughEndpoint({ Type: 'LiteLLM.PassThroughEndpoint' }) || isLiteLLMPassThroughEndpoint({})) {
   throw new Error('isLiteLLMPassThroughEndpoint from dist lost its resource type guard');
-}
-if (new LitellmCredentialsError({ message: 'smoke' }).message !== 'smoke') {
-  throw new Error('LitellmCredentialsError from dist did not construct');
 }
 if (typeof litellmProviders !== 'function') {
   throw new Error('litellmProviders from dist is not callable');

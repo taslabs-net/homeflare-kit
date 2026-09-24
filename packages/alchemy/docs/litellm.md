@@ -1,11 +1,15 @@
 # LiteLLM — `@homeflare/alchemy/litellm`
 
 `LiteLLM.PassThroughEndpoint` declares one row of LiteLLM's `/config/pass_through_endpoint`
-family: a route on the proxy that forwards requests to an upstream target, generated from
-LiteLLM **1.100.0**'s own OpenAPI document (`codegen/manifest.json`'s `litellm-openapi` entry —
-vendor code at tag `v1.100.0`, dumped by the vendor's own `gen-api-types.mjs`, cross-checked
-byte-identically against the tag's committed `schema.d.ts`; NOT a live read, because the reference
-proxy's `/openapi.json` could not be reached when this was walked — see the manifest entry's note).
+family: a route on the proxy that forwards requests to an upstream target. Every call goes
+through `@distilled.cloud/litellm`'s typed `misc` operations (2026-09-24, moved off a hand-rolled
+`client.ts`/`generated/pass-through.ts` the same way `/netbox` and `/forgejo` did —
+[distilled-interim.md](./distilled-interim.md); not published upstream yet, so aliased onto
+`@homeflare/distilled-litellm`). Its types are generated from LiteLLM **1.100.0**'s own OpenAPI
+document (the distilled clone's own `packages/litellm/README.md` has the provenance: vendor code
+at tag `v1.100.0`, dumped by the vendor's own `gen-api-types.mjs`, cross-checked byte-identically
+against the tag's committed `schema.d.ts`; NOT a live read, because the reference proxy's
+`/openapi.json` could not be reached when this was walked).
 
 ## What is DB-backed and API-managed, versus config-file only
 
@@ -21,11 +25,13 @@ Measured at 1.100.0 (`schema.prisma`, `pass_through_endpoints.py`, and the mini'
 
 ## Credentials
 
-Reads `LITELLM_PROXY_URL` and `LITELLM_PROXY_API_KEY` at call time — LiteLLM's own variable
-names, the ones its `litellm` CLI reads (`litellm/proxy/client/cli/main.py` at the tag). No
-default URL. The key must be LiteLLM's master key or another `PROXY_ADMIN` key:
-`update_config_general_settings`, the function every mutation goes through, is `PROXY_ADMIN`
-only. Never a prop — see [docs/credentials.md](./credentials.md) for the house rule.
+Reads `LITELLM_PROXY_URL` and `LITELLM_PROXY_API_KEY` at call time, through
+`@distilled.cloud/litellm`'s own `CredentialsFromEnv` — the same two variable names LiteLLM's own
+`litellm` CLI reads (`litellm/proxy/client/cli/main.py` at the tag), unchanged by the move off the
+retired hand-rolled `credentials.ts`. No default URL. The key must be LiteLLM's master key or
+another `PROXY_ADMIN` key: `update_config_general_settings`, the function every mutation goes
+through, is `PROXY_ADMIN` only. Never a prop — see [docs/credentials.md](./credentials.md) for the
+house rule.
 
 ## Refusals
 
@@ -59,9 +65,11 @@ two rows on the same path, which this resource never allows.
 ## The whole-field write, and why every mutation is serialised
 
 Every pass-through endpoint lives in ONE `general_settings.pass_through_endpoints` list. Create,
-update and delete are each a read-modify-write of that WHOLE list. `client.ts` wraps every
-mutating call in a per-base-URL `Effect` semaphore, so two of THIS PROCESS's own calls never
-race each other — two endpoints declared in the same deploy both survive.
+update and delete are each a read-modify-write of that WHOLE list. `operations.ts` wraps every
+mutating call — now the SDK's typed operations, not a hand-rolled client — in a per-base-URL
+`Effect` semaphore, so two of THIS PROCESS's own calls never race each other — two endpoints
+declared in the same deploy both survive. The SDK has no opinion on this: it is a quirk of how
+THIS vendor stores the resource, not a distilled protocol concern.
 
 ⛔ **What the semaphore does not cover.** It serialises this package's own writes within one
 process. It cannot serialise against the LiteLLM UI, another stack, or a second concurrent

@@ -18,7 +18,8 @@
  *   ADDRESSED by the id-keyed update/delete calls this provider uses, so it is refused rather than
  *   silently adopted into an id-based lifecycle it cannot actually manage — see docs/litellm.md.
  * ⛔ NO CREDENTIAL IS A PROP (S25). `LITELLM_PROXY_URL`/`LITELLM_PROXY_API_KEY` are read at call
- *   time by credentials.ts.
+ *   time by `@distilled.cloud/litellm`'s own `CredentialsFromEnv` (providers.ts) — the same two
+ *   variable names the retired hand-rolled `credentials.ts` read.
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
@@ -28,18 +29,21 @@ import { createPhysicalName } from 'alchemy/PhysicalName';
 import * as Provider from 'alchemy/Provider';
 import type { Stack } from 'alchemy/Stack';
 import type { Stage } from 'alchemy/Stage';
-import * as Data from 'effect/Data';
+import type * as misc from '@distilled.cloud/litellm/misc';
 import * as Effect from 'effect/Effect';
 import * as Predicate from 'effect/Predicate';
 import {
-  type LitellmError,
   type LitellmRequirements,
   createPassThroughEndpoint,
   deletePassThroughEndpoint,
   listPassThroughEndpoints,
   updatePassThroughEndpoint,
-} from './client.ts';
-import type { PassThroughGenericEndpoint } from './generated/pass-through.ts';
+} from './operations.ts';
+import {
+  LitellmConfigPathConflictError,
+  LitellmLiteralSecretHeaderError,
+  LitellmUnaddressableRowError,
+} from './pass-through-errors.ts';
 import {
   type PassThroughEndpointAttributes,
   type PassThroughEndpointProps,
@@ -51,26 +55,12 @@ import {
 } from './pass-through-form.ts';
 
 export type { PassThroughEndpointAttributes, PassThroughEndpointProps };
-
-export class LitellmConfigPathConflictError extends Data.TaggedError(
-  'LitellmConfigPathConflictError',
-)<{
-  readonly path: string;
-}> {}
-export class LitellmUnaddressableRowError extends Data.TaggedError('LitellmUnaddressableRowError')<{
-  readonly path: string;
-}> {}
-export class LitellmLiteralSecretHeaderError extends Data.TaggedError(
-  'LitellmLiteralSecretHeaderError',
-)<{
-  readonly headers: readonly string[];
-}> {}
-
-export type PassThroughEndpointError =
-  | LitellmError
-  | LitellmConfigPathConflictError
-  | LitellmUnaddressableRowError
-  | LitellmLiteralSecretHeaderError;
+export {
+  LitellmConfigPathConflictError,
+  LitellmLiteralSecretHeaderError,
+  LitellmUnaddressableRowError,
+  type PassThroughEndpointError,
+} from './pass-through-errors.ts';
 
 export interface LiteLLMPassThroughEndpoint extends Resource<
   'LiteLLM.PassThroughEndpoint',
@@ -88,7 +78,7 @@ export const isLiteLLMPassThroughEndpoint = (value: unknown): value is LiteLLMPa
   Predicate.hasProperty(value, 'Type') && value.Type === 'LiteLLM.PassThroughEndpoint';
 
 const toAttributes = (
-  row: PassThroughGenericEndpoint,
+  row: misc.PassThroughGenericEndpoint,
   fallbackId: string,
 ): PassThroughEndpointAttributes => ({
   ...row,
@@ -104,12 +94,12 @@ const physicalIdOf = (logicalId: string, instanceId: string) =>
  * file header — or a genuine foreign DB row to hand back `Unowned`).
  */
 const locate = (
-  rows: readonly PassThroughGenericEndpoint[],
+  rows: readonly misc.PassThroughGenericEndpoint[],
   objectId: string,
   path: string,
 ): {
-  readonly mine: PassThroughGenericEndpoint | undefined;
-  readonly conflict: PassThroughGenericEndpoint | undefined;
+  readonly mine: misc.PassThroughGenericEndpoint | undefined;
+  readonly conflict: misc.PassThroughGenericEndpoint | undefined;
 } => {
   const mine = rows.find((row) => row.id === objectId);
   const conflict = mine === undefined ? rows.find((row) => row.path === path) : undefined;
@@ -117,13 +107,13 @@ const locate = (
 };
 
 /** The typed refusal for a `path` conflict that cannot ever be adopted (config row, or no id). */
-const conflictRefusal = (conflict: PassThroughGenericEndpoint, path: string) =>
+const conflictRefusal = (conflict: misc.PassThroughGenericEndpoint, path: string) =>
   conflict.is_from_config === true
     ? new LitellmConfigPathConflictError({ path })
     : new LitellmUnaddressableRowError({ path });
 
 /** `read`'s answer for a path conflict: `Unowned` when it is a real, addressable DB row — a typed refusal otherwise. */
-const readConflict = (conflict: PassThroughGenericEndpoint, path: string) =>
+const readConflict = (conflict: misc.PassThroughGenericEndpoint, path: string) =>
   conflict.is_from_config !== true && conflict.id !== undefined && conflict.id !== null
     ? Effect.succeed(Unowned(toAttributes(conflict, conflict.id)))
     : Effect.fail(conflictRefusal(conflict, path));
