@@ -263,6 +263,20 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
   an Output. That fix also belongs in the engine upstream.
 - **`verify/*`** (`hf-adopt-verify`) runs Alchemy's own planner. It exists because beta.79
   labels every cold adoption as an update (H6).
+- **`google-workspace/*`** (new 2026-09-24, `Group`, `GroupMember`, `DomainAlias`, `OrgUnit`)
+  is built directly on `@distilled.cloud/google-workspace@1.0.0-rc.12`'s typed
+  `unstable/admin_directory_v1` operations from the first commit — no hand-rolled client ever
+  existed for it to migrate off (S23), so there is no `client.ts` deletion to record. Every
+  `fetchLive` is get-by-key with its own `catchTag('NotFound', …)`, the same split forgejo's and
+  netbox's engines use (resource.ts). Get-by-key rather than NetBox's list-then-disambiguate,
+  since Directory addresses every object this family models by a stable key. ⛔ **Diverges on
+  credentials, same shape as the rest of this ledger (S24):** `GOOGLE_ACCESS_TOKEN` is read at
+  call time through the SDK's own `CredentialsFromEnv` — but here the SDK provides no way to
+  MINT that token at all (no service-account/DWD support), so a Bun wrapper outside this
+  package (H8, unwritten by this PR) is load-bearing in a way NetBox's/Forgejo's simple
+  API-token env vars are not. SDK gaps (the `unstable/` service tree, no per-operation error
+  beyond the shared 4xx set, no group-alias update) and the full credential/scope setup:
+  [google-workspace.md](./google-workspace.md).
 
 ## The Bun line
 

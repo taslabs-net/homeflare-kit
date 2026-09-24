@@ -245,6 +245,14 @@ endpoint lives in ONE `general_settings` field (a whole-list read-modify-write),
 declared in `config.yaml` is refused rather than silently overridden, and a literal secret in a
 forwarded header is refused at plan: [docs/litellm.md](./docs/litellm.md).
 
+## Google Workspace — `@homeflare/alchemy/google-workspace`
+
+`Group`, `GroupMember`, `DomainAlias` and `OrgUnit` over the Admin SDK Directory API, generated
+from `@distilled.cloud/google-workspace@1.0.0-rc.12`. ⛔ No `User` resource — Google's own `User`
+schema carries a `password` field, and Alchemy persists props unencrypted. Credential setup
+(domain-wide delegation, the least scopes each resource needs, where the key lives in OpenBao):
+[docs/google-workspace.md](./docs/google-workspace.md).
+
 ## GitHub — `@homeflare/alchemy/github`
 
 `declareRepoPolicy` declares one repository's merge policy and its default-branch ruleset in a
