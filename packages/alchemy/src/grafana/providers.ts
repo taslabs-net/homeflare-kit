@@ -13,7 +13,13 @@
  */
 import * as Layer from 'effect/Layer';
 import { type GrafanaTarget, grafanaCredentials } from './credentials.ts';
+import { GrafanaDashboardProvider } from './dashboard.ts';
 import { GrafanaDatasourceProvider } from './datasource.ts';
+import { GrafanaFolderProvider } from './folder.ts';
 
 export const grafanaProviders = (target: GrafanaTarget) =>
-  GrafanaDatasourceProvider().pipe(Layer.provide(grafanaCredentials(target)));
+  Layer.mergeAll(
+    GrafanaDatasourceProvider(),
+    GrafanaFolderProvider(),
+    GrafanaDashboardProvider(),
+  ).pipe(Layer.provide(grafanaCredentials(target)));
