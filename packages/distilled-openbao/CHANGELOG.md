@@ -1,5 +1,12 @@
 # @homeflare/distilled-openbao
 
+## 0.2.1
+
+### Patch Changes
+
+- [#273](https://github.com/taslabs-net/homeflare-kit/pull/273) [`50ce7c3`](https://github.com/taslabs-net/homeflare-kit/commit/50ce7c34cc1a3c7fee121acc8b0b0e4f1b020fa6) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Support OpenBao agent listeners with an omitted token and the required request header.
+  Include every HTTP status error emitted by the protocol in operation error unions.
+
 ## 0.2.0
 
 ### Minor Changes

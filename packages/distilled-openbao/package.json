@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/distilled-openbao",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Interim npm home for @distilled.cloud/openbao — see docs/distilled-interim.md. Not published upstream yet; the kit aliases @distilled.cloud/openbao onto this package until it is.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/distilled-openbao#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
