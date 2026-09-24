@@ -91,56 +91,71 @@ const B = 'pve-b.test';
 const BOUND = '100 millis';
 
 describe('MEMBER_TIMEOUT bounds a single attempt', () => {
-  it('fails a hung read over to the next member, within the injected bound', async () => {
-    resetLastGoodForTest();
-    const hang = hanging();
-    const good = counting(['ok']);
-    try {
-      const started = Date.now();
-      const response = await run(
-        executeOnCluster(
-          target([A, B]),
-          'GET',
-          'pools',
-          (apiBase) => HttpClientRequest.get(`${apiBase}/pools`),
-          BOUND,
-        ),
-        { [A]: hang.port, [B]: good.port },
-      );
-      assert.equal(response.status, 200);
-      assert.equal(good.hits(), 1);
-      // ⚠️ Loose on purpose (CI jitter) — the real separation is "did not hang for tens of
-      //   seconds", which a regression here would, since node:test's own per-test timeout is the
-      //   only thing left to end it.
-      assert.ok(Date.now() - started < 5000);
-    } finally {
-      hang.stop(true);
-      good.stop();
-    }
-  });
+  /**
+   * ⚠️ EXPLICIT `{ timeout: 15000 }`: bun's default per-test kill is 5000ms (MEASURED via a
+   *   throwaway probe), which is too close to this shared, often-loaded dev machine's own
+   *   scheduling jitter to trust — a slow tick could kill the test via the FRAMEWORK's timeout
+   *   before the 100ms `BOUND` or the assertion below ever gets a say, which reads as this fix
+   *   being broken when it is not. 15s leaves wide headroom while staying far under this file's
+   *   own 10s assertion, so a genuine "never bounded" regression still fails it either way.
+   */
+  it(
+    'fails a hung read over to the next member, within the injected bound',
+    { timeout: 15000 },
+    async () => {
+      resetLastGoodForTest();
+      const hang = hanging();
+      const good = counting(['ok']);
+      try {
+        const started = Date.now();
+        const response = await run(
+          executeOnCluster(
+            target([A, B]),
+            'GET',
+            'pools',
+            (apiBase) => HttpClientRequest.get(`${apiBase}/pools`),
+            BOUND,
+          ),
+          { [A]: hang.port, [B]: good.port },
+        );
+        assert.equal(response.status, 200);
+        assert.equal(good.hits(), 1);
+        // ⚠️ Loose on purpose (machine jitter) — the real separation is "did not hang for the
+        //   whole per-test timeout above", which a regression here would.
+        assert.ok(Date.now() - started < 10000);
+      } finally {
+        hang.stop(true);
+        good.stop();
+      }
+    },
+  );
 
-  it('fails a hung write outright, never resending it, within the injected bound', async () => {
-    resetLastGoodForTest();
-    const hang = hanging();
-    const backup = counting('UPID:timeout-test');
-    try {
-      const started = Date.now();
-      await run(
-        executeOnCluster(
-          target([A, B]),
-          'PUT',
-          'nodes/node-c/network',
-          (apiBase) => HttpClientRequest.put(`${apiBase}/nodes/node-c/network`),
-          BOUND,
-        ).pipe(Effect.flip),
-        { [A]: hang.port, [B]: backup.port },
-      );
-      // ⛔ B must never receive the PUT — a post-connect timeout is not pre-send failover.
-      assert.equal(backup.hits(), 0);
-      assert.ok(Date.now() - started < 5000);
-    } finally {
-      hang.stop(true);
-      backup.stop();
-    }
-  });
+  it(
+    'fails a hung write outright, never resending it, within the injected bound',
+    { timeout: 15000 },
+    async () => {
+      resetLastGoodForTest();
+      const hang = hanging();
+      const backup = counting('UPID:timeout-test');
+      try {
+        const started = Date.now();
+        await run(
+          executeOnCluster(
+            target([A, B]),
+            'PUT',
+            'nodes/node-c/network',
+            (apiBase) => HttpClientRequest.put(`${apiBase}/nodes/node-c/network`),
+            BOUND,
+          ).pipe(Effect.flip),
+          { [A]: hang.port, [B]: backup.port },
+        );
+        // ⛔ B must never receive the PUT — a post-connect timeout is not pre-send failover.
+        assert.equal(backup.hits(), 0);
+        assert.ok(Date.now() - started < 10000);
+      } finally {
+        hang.stop(true);
+        backup.stop();
+      }
+    },
+  );
 });

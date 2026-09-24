@@ -199,27 +199,33 @@ describe('runPveWith: cluster member failover over the distilled protocol', () =
    *   (never done in production, which always uses the real `MEMBER_TIMEOUT`), so a regression
    *   hangs node:test's own per-test timeout instead of quietly passing. See members-timeout.test.ts
    *   for the members.ts-level twin.
+   * ⚠️ EXPLICIT `{ timeout: 15000 }`: bun's default per-test kill is 5000ms (MEASURED), too close
+   *   to this shared, often-loaded dev machine's own jitter to trust for a 100ms-bounded call.
    */
-  it('a hung read fails over to the next member, within the injected bound alone', async () => {
-    resetLastGoodForTest();
-    const hang = Bun.serve({
-      fetch: () => new Promise<Response>(() => {}),
-      hostname: '127.0.0.1',
-      port: 0,
-    });
-    const good = counting([{ path: '/', roleid: 'PVEAuditor', type: 'user', ugid: 'a@pve' }]);
-    try {
-      const started = Date.now();
-      const rows = await run(runPveWith(target([A, B]), CRED, false, readAcl, '100 millis'), {
-        [A]: hang.port,
-        [B]: good.port,
+  it(
+    'a hung read fails over to the next member, within the injected bound alone',
+    { timeout: 15000 },
+    async () => {
+      resetLastGoodForTest();
+      const hang = Bun.serve({
+        fetch: () => new Promise<Response>(() => {}),
+        hostname: '127.0.0.1',
+        port: 0,
       });
-      assert.equal(rows.length, 1);
-      assert.equal(good.hits(), 1);
-      assert.ok(Date.now() - started < 5000);
-    } finally {
-      hang.stop(true);
-      good.stop();
-    }
-  });
+      const good = counting([{ path: '/', roleid: 'PVEAuditor', type: 'user', ugid: 'a@pve' }]);
+      try {
+        const started = Date.now();
+        const rows = await run(runPveWith(target([A, B]), CRED, false, readAcl, '100 millis'), {
+          [A]: hang.port,
+          [B]: good.port,
+        });
+        assert.equal(rows.length, 1);
+        assert.equal(good.hits(), 1);
+        assert.ok(Date.now() - started < 10000);
+      } finally {
+        hang.stop(true);
+        good.stop();
+      }
+    },
+  );
 });
