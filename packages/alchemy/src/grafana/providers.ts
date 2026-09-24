@@ -20,6 +20,7 @@ import { GrafanaDatasourceProvider } from './datasource.ts';
 import { GrafanaFolderProvider } from './folder.ts';
 import { GrafanaMessageTemplateProvider } from './message-template.ts';
 import { GrafanaMuteTimingProvider } from './mute-timing.ts';
+import { GrafanaNotificationPolicyProvider } from './notification-policy.ts';
 
 export const grafanaProviders = (target: GrafanaTarget) =>
   Layer.mergeAll(
@@ -30,4 +31,5 @@ export const grafanaProviders = (target: GrafanaTarget) =>
     GrafanaMuteTimingProvider(),
     GrafanaMessageTemplateProvider(),
     GrafanaAlertRuleGroupProvider(),
+    GrafanaNotificationPolicyProvider(),
   ).pipe(Layer.provide(grafanaCredentials(target)));
