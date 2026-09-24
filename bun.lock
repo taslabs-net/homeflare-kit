@@ -18,7 +18,7 @@
     },
     "packages/alchemy": {
       "name": "@homeflare/alchemy",
-      "version": "0.31.1",
+      "version": "0.36.0",
       "bin": {
         "hf-adopt-verify": "./dist/verify/cli.js",
       },
@@ -102,7 +102,7 @@
     },
     "packages/distilled-grafana": {
       "name": "@homeflare/distilled-grafana",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@distilled.cloud/core": "1.0.0-rc.12",
       },
@@ -129,6 +129,19 @@
     "packages/distilled-netbox": {
       "name": "@homeflare/distilled-netbox",
       "version": "0.3.0",
+      "dependencies": {
+        "@distilled.cloud/core": "1.0.0-rc.12",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
+    },
+    "packages/distilled-openbao": {
+      "name": "@homeflare/distilled-openbao",
+      "version": "0.1.0",
       "dependencies": {
         "@distilled.cloud/core": "1.0.0-rc.12",
       },
@@ -526,6 +539,8 @@
     "@homeflare/distilled-litellm": ["@homeflare/distilled-litellm@workspace:packages/distilled-litellm"],
 
     "@homeflare/distilled-netbox": ["@homeflare/distilled-netbox@workspace:packages/distilled-netbox"],
+
+    "@homeflare/distilled-openbao": ["@homeflare/distilled-openbao@workspace:packages/distilled-openbao"],
 
     "@homeflare/distilled-opnsense": ["@homeflare/distilled-opnsense@workspace:packages/distilled-opnsense"],
 
