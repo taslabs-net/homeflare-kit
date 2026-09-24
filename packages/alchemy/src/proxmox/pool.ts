@@ -26,6 +26,7 @@ import type { PoolsPoolidPutParams, PoolsPostParams } from './generated/pve.ts';
 import type { PveRequirements, PveSpec, WithTarget } from './resource-spec.ts';
 import { runPve } from './distilled-pve.ts';
 import { specGuards } from './resource-guard.ts';
+import { formToSend } from './update-guard.ts';
 
 export interface PoolProps extends WithTarget {
   /** PVE's primary key for a pool. Changing it is a replace, not an update. */
@@ -134,16 +135,18 @@ export const ProxmoxPoolProvider = () =>
           yield* guardUpdate(news);
           if (live === undefined) {
             yield* runPve(news.target, 'provision', true, pools.createPool(poolCreateForm(news)));
-          } else if (!spec.matches(live, news)) {
-            yield* runPve(
-              news.target,
-              'provision',
-              true,
-              pools.putPool({
-                ...poolUpdateForm(news),
-                poolid: news.poolid,
-              }),
-            );
+          } else {
+            const form = formToSend(spec.matches, live, news, poolUpdateForm(news));
+            if (form !== undefined)
+              yield* runPve(
+                news.target,
+                'provision',
+                true,
+                pools.putPool({
+                  ...form,
+                  poolid: news.poolid,
+                }),
+              );
           }
           const after = yield* readPool(news);
           if (after === undefined)

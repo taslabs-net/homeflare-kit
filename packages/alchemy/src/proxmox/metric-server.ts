@@ -33,6 +33,7 @@ import { isResolved } from 'alchemy/Diff';
 import * as cluster from '@distilled.cloud/proxmox/cluster';
 import { runPve } from './distilled-pve.ts';
 import { specGuards } from './resource-guard.ts';
+import { formToSend } from './update-guard.ts';
 import { metricServerSpec } from './metric-server-config.ts';
 import {
   deleteMetricServer,
@@ -181,15 +182,20 @@ export const ProxmoxMetricServerProvider = () =>
                 type: news.type,
               }),
             );
-          } else if (!metricServerSpec.matches(live, news)) {
-            yield* runPve(
-              news.target,
-              'provision',
-              true,
-              cluster.putClusterMetricsServer(
-                metricServerRequest(news, metricServerSpec.updateForm(news)),
-              ),
+          } else {
+            const form = formToSend(
+              metricServerSpec.matches,
+              live,
+              news,
+              metricServerSpec.updateForm(news),
             );
+            if (form !== undefined)
+              yield* runPve(
+                news.target,
+                'provision',
+                true,
+                cluster.putClusterMetricsServer(metricServerRequest(news, form)),
+              );
           }
           const after = yield* readMetricServer(news);
           if (after === undefined)

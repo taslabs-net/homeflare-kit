@@ -8,14 +8,17 @@ import type { BackupJobProps } from './backup-job.ts';
 import { runPve } from './distilled-pve.ts';
 
 /** SDK member names differ from the vendor's hyphenated form keys; omission stays omission. */
-export const backupJobRequest = (props: BackupJobProps): cluster.PutClusterBackupRequest => {
+export const backupJobRequest = (
+  props: BackupJobProps,
+  form = backupJobSpec.updateForm(props),
+): cluster.PutClusterBackupRequest => {
   const {
     'notes-template': notes_template,
     'notification-mode': notification_mode,
     'prune-backups': prune_backups,
     'repeat-missed': repeat_missed,
     ...fields
-  } = backupJobSpec.updateForm(props);
+  } = form;
   return {
     ...fields,
     id: props.id,

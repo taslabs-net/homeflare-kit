@@ -33,6 +33,7 @@ import { isResolved } from 'alchemy/Diff';
 import * as cluster from '@distilled.cloud/proxmox/cluster';
 import { runPve } from './distilled-pve.ts';
 import { specGuards } from './resource-guard.ts';
+import { formToSend } from './update-guard.ts';
 import { backupJobSpec } from './backup-job-config.ts';
 import { backupJobRequest, deleteBackupJob, readBackupJob } from './backup-job-distilled.ts';
 
@@ -146,13 +147,20 @@ export const ProxmoxBackupJobProvider = () =>
               true,
               cluster.createClusterBackup(backupJobRequest(news)),
             );
-          } else if (!backupJobSpec.matches(live, news)) {
-            yield* runPve(
-              news.target,
-              'provision',
-              true,
-              cluster.putClusterBackup(backupJobRequest(news)),
+          } else {
+            const form = formToSend(
+              backupJobSpec.matches,
+              live,
+              news,
+              backupJobSpec.updateForm(news),
             );
+            if (form !== undefined)
+              yield* runPve(
+                news.target,
+                'provision',
+                true,
+                cluster.putClusterBackup(backupJobRequest(news, form)),
+              );
           }
           const after = yield* readBackupJob(news);
           if (after === undefined)
