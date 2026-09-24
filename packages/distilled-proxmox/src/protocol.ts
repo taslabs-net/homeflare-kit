@@ -81,6 +81,7 @@ import {
   type RestErrorEnvelope,
 } from "@distilled.cloud/core/protocol-rest";
 import { Credentials, type Config } from "./credentials.ts";
+import { withPveFormArrays } from "./protocol-form.ts";
 import {
   ParameterVerificationFailed,
   UnknownProxmoxError,
@@ -112,6 +113,24 @@ export type ProxmoxOpContext = Credentials | HttpClient.HttpClient;
 const errorEnvelope = (body: unknown): RestErrorEnvelope | undefined => {
   if (body === null || typeof body !== "object") return undefined;
   const b = body as Record<string, unknown>;
+  // PVE's backup read/delete missing-id exception is a 400 with the useful
+  // message in errors.id (Backup.pm:406,458 at pve-manager 9.2.11). Expose
+  // ONLY that exact sole-field detail to the operation's typed matcher.
+  // Multiple errors, other fields, and unrelated validation stay unchanged.
+  const errors = b.errors;
+  if (
+    (b.message === "Parameter verification failed." ||
+      b.message === "Parameter verification failed.\n") &&
+    errors !== null &&
+    typeof errors === "object" &&
+    !Array.isArray(errors) &&
+    Object.keys(errors).length === 1 &&
+    "id" in errors &&
+    typeof errors.id === "string" &&
+    /^No such job '[^']+'$/.test(errors.id)
+  ) {
+    return { message: errors.id };
+  }
   return { message: typeof b.message === "string" ? b.message : undefined };
 };
 
@@ -128,7 +147,7 @@ const PROXMOX_STATUS_MAP: Record<number, new (args: any) => unknown> = {
 };
 delete (PROXMOX_STATUS_MAP as Record<number, unknown>)[400];
 
-export const ProxmoxProtocol: Layer.Layer<API.Protocol> =
+export const ProxmoxProtocol: Layer.Layer<API.Protocol> = withPveFormArrays(
   makeRestProtocol<Config>({
     // Resolved on the CALLING fiber per request (the layer is memoized per
     // process); the Credentials service holds an effect, so a token rotated
@@ -203,4 +222,5 @@ export const ProxmoxProtocol: Layer.Layer<API.Protocol> =
       }
       return new UnknownProxmoxError({ status, message, body });
     },
-  });
+  }),
+);

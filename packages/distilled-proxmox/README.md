@@ -34,12 +34,15 @@ every failed write can carry) and non-retryable `BadRequest` fallback, and
 request that couldn't reach its target node) on the task-management
 operations the vendor schema itself marks `proxyto: "node"`.
 
-Also ships `awaitTask` (`./Task`), because a PVE POST/PUT/DELETE that
-queues a long-running action answers 200 with a bare task id the moment it
-is QUEUED, not once it finishes — `awaitTask` polls the generated
-`getNodeTaskStatus` operation until an `exitstatus` appears, and fails
-unless it is EXACTLY `"OK"` (PVE also answers `"OK (warnings)"`, which is
-not success).
+Task polling belongs in the Alchemy provider: the SDK exports the generated
+`getNodeTaskStatus` operation, and the caller owns its bound and failure policy.
+
+Pool, backup-job and metric-server missing reads now expose precise typed tags
+from vendor source at pve-manager 9.2.11. Backup-job absence uses a sole nested
+`errors.id` under the parameter-verification envelope; other validation errors
+retain their structured failure. PVE form arrays use repeated keys, preserving
+commas within a rule/property value. Scalar comma lists and query binding are
+unchanged. Protocol fixtures exercise both the accepted and rejected shapes.
 
 ```ts
 import * as Proxmox from '@distilled.cloud/proxmox'; // aliased onto this package — see docs/distilled-interim.md
@@ -70,13 +73,12 @@ From the distilled clone's `homeflare/proxmox` worktree:
 ```sh
 DISTILLED_SPECS_LOCAL=1 pnpm --filter @distilled.cloud/proxmox run convert
 DISTILLED_SPECS_LOCAL=1 pnpm --filter @distilled.cloud/proxmox run generate
-pnpm --filter @distilled.cloud/proxmox run typecheck
+pnpm typecheck:ci
 pnpm format && pnpm specs:check
 ```
 
-Then copy `src/` here verbatim, bump this package's own `version` (a patch
-release — the generated content changed, not this package's own shape), add
-a changeset, and let the kit's normal release flow publish it.
+Then copy `src/` here verbatim and add a changeset. The normal release flow
+versions and publishes the package.
 
 ## License
 
