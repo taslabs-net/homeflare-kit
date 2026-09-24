@@ -104,6 +104,10 @@
       "types": "./dist/unifi/index.d.ts",
       "default": "./dist/unifi/index.js"
     },
+    "./opnsense": {
+      "types": "./dist/opnsense/index.d.ts",
+      "default": "./dist/opnsense/index.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -111,9 +115,9 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/cloudflare/index.ts ./src/forgejo/index.ts ./src/github/index.ts ./src/openbao/index.ts ./src/talos/index.ts ./src/proxmox/index.ts ./src/netbox/index.ts ./src/postgres/index.ts ./src/launchd/index.ts ./src/linux/index.ts ./src/paperless/index.ts ./src/release/index.ts ./src/caddy/index.ts ./src/litellm/index.ts ./src/google-workspace/index.ts ./src/grafana/index.ts ./src/discord/index.ts ./src/unifi/index.ts ./src/verify/index.ts ./src/verify/cli.ts --root ./src --outdir dist --target node --format esm --packages external --sourcemap=linked",
+    "build:js": "bun build ./src/index.ts ./src/cloudflare/index.ts ./src/forgejo/index.ts ./src/github/index.ts ./src/openbao/index.ts ./src/talos/index.ts ./src/proxmox/index.ts ./src/netbox/index.ts ./src/postgres/index.ts ./src/launchd/index.ts ./src/linux/index.ts ./src/paperless/index.ts ./src/release/index.ts ./src/caddy/index.ts ./src/litellm/index.ts ./src/google-workspace/index.ts ./src/grafana/index.ts ./src/discord/index.ts ./src/unifi/index.ts ./src/opnsense/index.ts ./src/verify/index.ts ./src/verify/cli.ts --root ./src --outdir dist --target node --format esm --packages external --sourcemap=linked",
     "build:types": "bun run build:interim-deps && tsc --project tsconfig.build.json",
-    "build:interim-deps": "bun --cwd=../distilled-netbox run build && bun --cwd=../distilled-proxmox run build && bun --cwd=../distilled-paperless-ngx run build && bun --cwd=../distilled-litellm run build && bun --cwd=../distilled-caddy run build && bun --cwd=../distilled-grafana run build && bun --cwd=../distilled-unifi-network run build",
+    "build:interim-deps": "bun --cwd=../distilled-netbox run build && bun --cwd=../distilled-proxmox run build && bun --cwd=../distilled-paperless-ngx run build && bun --cwd=../distilled-litellm run build && bun --cwd=../distilled-caddy run build && bun --cwd=../distilled-grafana run build && bun --cwd=../distilled-unifi-network run build && bun --cwd=../distilled-opnsense run build",
     "clean": "rm -rf dist",
     "types": "bun run build:interim-deps && tsc --noEmit",
     "test": "bun test",
@@ -124,6 +128,7 @@
     "@distilled.cloud/grafana": "npm:@homeflare/distilled-grafana@0.2.0",
     "@distilled.cloud/litellm": "npm:@homeflare/distilled-litellm@0.2.0",
     "@distilled.cloud/netbox": "npm:@homeflare/distilled-netbox@0.3.0",
+    "@distilled.cloud/opnsense": "npm:@homeflare/distilled-opnsense@0.2.0",
     "@distilled.cloud/paperless-ngx": "npm:@homeflare/distilled-paperless-ngx@0.3.0",
     "@distilled.cloud/proxmox": "npm:@homeflare/distilled-proxmox@0.2.0",
     "@distilled.cloud/proxmox-backup": "npm:@homeflare/distilled-proxmox-backup@0.2.0",

@@ -255,6 +255,17 @@ endpoint lives in ONE `general_settings` field (a whole-list read-modify-write),
 declared in `config.yaml` is refused rather than silently overridden, and a literal secret in a
 forwarded header is refused at plan: [docs/litellm.md](./docs/litellm.md).
 
+## OPNsense — `@homeflare/alchemy/opnsense`
+
+`Opnsense.Firewall.Alias`, `.Category` and `.Group` — READ-ONLY BY DESIGN, generated
+from `@distilled.cloud/opnsense` (an interim alias, like NetBox/Proxmox above — not a
+peer, `bun add` resolves it from the tarball). ⛔ `reconcile` and `delete` always
+refuse with a typed error; there is no flag that lifts it, and no write operation is
+reachable from any handler (`write-refusal.test.ts` proves it against a fake that
+fails on any non-GET). `read` answers `Unowned` on every match, `adopt(true)` is on
+by default, and a pure declaration renderer turns one live read into the props a
+noop declaration needs: [docs/opnsense.md](./docs/opnsense.md).
+
 ## Discord — `@homeflare/alchemy/discord`
 
 `Discord.ApplicationCommand` (global) and `Discord.GuildApplicationCommand` (guild-scoped)

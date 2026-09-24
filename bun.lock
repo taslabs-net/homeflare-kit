@@ -27,6 +27,7 @@
         "@distilled.cloud/grafana": "npm:@homeflare/distilled-grafana@0.1.0",
         "@distilled.cloud/litellm": "npm:@homeflare/distilled-litellm@0.2.0",
         "@distilled.cloud/netbox": "npm:@homeflare/distilled-netbox@0.3.0",
+        "@distilled.cloud/opnsense": "npm:@homeflare/distilled-opnsense@0.2.0",
         "@distilled.cloud/paperless-ngx": "npm:@homeflare/distilled-paperless-ngx@0.3.0",
         "@distilled.cloud/proxmox": "npm:@homeflare/distilled-proxmox@0.2.0",
         "@distilled.cloud/proxmox-backup": "npm:@homeflare/distilled-proxmox-backup@0.2.0",
@@ -461,6 +462,8 @@
     "@distilled.cloud/neon": ["@distilled.cloud/neon@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-jiypsVQCcKa9qNgG9HULXNgXj1E4FFO96Hk9p2JX6CEHca7ePldJSJEOf7roogQGC7lrnldBDCiZrxQLOapD3Q=="],
 
     "@distilled.cloud/netbox": ["@homeflare/distilled-netbox@workspace:packages/distilled-netbox"],
+
+    "@distilled.cloud/opnsense": ["@homeflare/distilled-opnsense@workspace:packages/distilled-opnsense"],
 
     "@distilled.cloud/paperless-ngx": ["@homeflare/distilled-paperless-ngx@workspace:packages/distilled-paperless-ngx"],
 
