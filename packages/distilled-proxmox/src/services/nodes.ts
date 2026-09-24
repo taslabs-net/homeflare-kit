@@ -12,6 +12,32 @@ import * as Retry from "../retry.ts";
 
 export type { ProxmoxOpError, ProxmoxOpContext };
 
+/** The Ceph filesystem does not exist. PVE's `destroyfs` dies synchronously with `no such cephfs '<name>'` when the named filesystem is already gone (an async task is never even queued, so this surfaces directly from the DELETE call, not from polling its UPID). This shape states the honest status (404) while matching the wire's real one — 500, the same class PVE answers for a missing user/group/storage/pool. Traced to source, not paraphrased (correcting an earlier draft of this patch, which carried forward the kit's own paraphrase, 'no such cephfs' with no filesystem name — the kit comments it cited, `ceph-fs-wire.ts:203-206` and `ceph-fs.ts:230-233`, never claimed to quote the wire text verbatim either): `pve-manager` (commit f6997e698c7933ea8e62319e2bf1bf7262daa56a, "bump version to 9.2.11") `PVE/API2/Ceph/FS.pm:327`, inside the `DELETE .../ceph/fs/{name}` handler's `code => sub`: `die "no such cephfs '$fs_name'\n" if !$fs;` — reached only when `$fs_name` (the `name` path label) is not found in `PVE::Ceph::Tools::ls_fs()`'s list. No live DELETE was run to confirm this byte-for-byte (per this pass's read-only-GET constraint); the regex is anchored on the verified-from-source prefix and object-kind qualifier only, deliberately not asserting the exact trailing punctuation/newline. */
+export class CephFsNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<CephFsNotFound>()("CephFsNotFound", {
+      message: S.String,
+    }).pipe(C.withBadRequestError),
+    [{ status: 500, message: { matches: "^no such cephfs '[^']*'" } }],
+  ) {}
+
+/** The Ceph pool does not exist. PVE shells out to `ceph osd pool get` and reports its failure verbatim as HTTP 500 with `{"data":null,"message":"error with 'osd pool get': mon_cmd failed - unrecognized pool '<name>'\n"}` — a generic command failure, not a parsed field, but distinctively named ('unrecognized pool'), unlike ZfsPool's equivalent 'exit code 1' shape (deliberately left untyped — see zfs-pool-read-failure.test.ts: that message names no object kind at all, so typing it would risk folding an unrelated zpool-command failure into 'absent'). This shape states the honest status (404) while matching the wire's real one. Call site traced to source: `pve-manager` (git.proxmox.com/git/pve-manager.git, commit f6997e698c7933ea8e62319e2bf1bf7262daa56a, "bump version to 9.2.11" — the SDK's own pinned version, matching `pve-docs`'s own repoid for this snapshot) `PVE/API2/Ceph/Pool.pm` (~line 850), inside the `status` GET handler: `$rados->mon_command({ prefix => 'osd pool get', pool => "$pool", var => 'all' })`. `mon_cmd failed - unrecognized pool '<name>'` is Ceph's/librados's own wire text for a missing pool, not a PVE-authored string, so it was not independently re-derived from Perl source (there is none to read — it crosses into Ceph's own C++ `mon_command` implementation, out of scope for this pass). Measured: `taslabs-net/homeflare-kit`'s `packages/alchemy/src/proxmox/ceph-pool-write.test.ts:5-14`, live cluster TB4 `n2`, `GET /nodes/{node}/ceph/pool/{name}/status`, 2026-09-24, read-role, read-only probe. */
+export class CephPoolNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<CephPoolNotFound>()("CephPoolNotFound", {
+      message: S.String,
+    }).pipe(C.withBadRequestError),
+    [
+      {
+        status: 500,
+        message: {
+          matches:
+            "^error with 'osd pool get': mon_cmd failed - unrecognized pool",
+        },
+      },
+    ],
+  ) {}
+
 /** PVE forwarded this call to another cluster member and could not reach it (pveproxy/pvedaemon's own connection-failure status, not a standard HTTP code). Transient — the target node may be mid-reboot or between cluster-membership changes. */
 export class ClusterNodeUnreachable
   extends /*@__PURE__*/ T.applyErrorMatchers(
@@ -3913,14 +3939,13 @@ export const DeleteNodeCephFsRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     node: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
-    remove_pools: S.optional(S.String.pipe(T.Body("remove-pools"))),
-    remove_storages: S.optional(S.String.pipe(T.Body("remove-storages"))),
+    remove_pools: S.optional(S.String.pipe(T.Query("remove-pools"))),
+    remove_storages: S.optional(S.String.pipe(T.Query("remove-storages"))),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/ceph/fs/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4018,13 +4043,12 @@ export const DeleteNodeCephOsdRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     node: S.String.pipe(T.Label()),
     osdid: S.String.pipe(T.Label()),
-    cleanup: S.optional(S.String),
+    cleanup: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/ceph/osd/{osdid}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4052,15 +4076,14 @@ export const DeleteNodeCephPoolRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     node: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
-    force: S.optional(S.String),
-    remove_ecprofile: S.optional(S.String),
-    remove_storages: S.optional(S.String),
+    force: S.optional(S.String.pipe(T.Query())),
+    remove_ecprofile: S.optional(S.String.pipe(T.Query())),
+    remove_storages: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/ceph/pool/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4106,13 +4129,12 @@ export interface DeleteNodeCertificateCustomRequest {
 export const DeleteNodeCertificateCustomRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     node: S.String.pipe(T.Label()),
-    restart: S.optional(S.String),
+    restart: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/certificates/custom",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4138,14 +4160,13 @@ export const DeleteNodeDiskDirectoryRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     node: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
-    cleanup_config: S.optional(S.String.pipe(T.Body("cleanup-config"))),
-    cleanup_disks: S.optional(S.String.pipe(T.Body("cleanup-disks"))),
+    cleanup_config: S.optional(S.String.pipe(T.Query("cleanup-config"))),
+    cleanup_disks: S.optional(S.String.pipe(T.Query("cleanup-disks"))),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/disks/directory/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4171,14 +4192,13 @@ export const DeleteNodeDiskLvmRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     node: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
-    cleanup_config: S.optional(S.String.pipe(T.Body("cleanup-config"))),
-    cleanup_disks: S.optional(S.String.pipe(T.Body("cleanup-disks"))),
+    cleanup_config: S.optional(S.String.pipe(T.Query("cleanup-config"))),
+    cleanup_disks: S.optional(S.String.pipe(T.Query("cleanup-disks"))),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/disks/lvm/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4206,15 +4226,14 @@ export const DeleteNodeDiskLvmthinRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     node: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
-    cleanup_config: S.optional(S.String.pipe(T.Body("cleanup-config"))),
-    cleanup_disks: S.optional(S.String.pipe(T.Body("cleanup-disks"))),
-    volume_group: S.String.pipe(T.Body("volume-group")),
+    cleanup_config: S.optional(S.String.pipe(T.Query("cleanup-config"))),
+    cleanup_disks: S.optional(S.String.pipe(T.Query("cleanup-disks"))),
+    volume_group: S.String.pipe(T.Query("volume-group")),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/disks/lvmthin/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4240,14 +4259,13 @@ export const DeleteNodeDiskZfsRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     node: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
-    cleanup_config: S.optional(S.String.pipe(T.Body("cleanup-config"))),
-    cleanup_disks: S.optional(S.String.pipe(T.Body("cleanup-disks"))),
+    cleanup_config: S.optional(S.String.pipe(T.Query("cleanup-config"))),
+    cleanup_disks: S.optional(S.String.pipe(T.Query("cleanup-disks"))),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/disks/zfs/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4271,13 +4289,12 @@ export const DeleteNodeFirewallRuleRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     node: S.String.pipe(T.Label()),
     pos: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/firewall/rules/{pos}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4306,17 +4323,12 @@ export const DeleteNodeLxcRequest = /*@__PURE__*/ S.suspend(() =>
     node: S.String.pipe(T.Label()),
     vmid: S.String.pipe(T.Label()),
     destroy_unreferenced_disks: S.optional(
-      S.String.pipe(T.Body("destroy-unreferenced-disks")),
+      S.String.pipe(T.Query("destroy-unreferenced-disks")),
     ),
-    force: S.optional(S.String),
-    purge: S.optional(S.String),
+    force: S.optional(S.String.pipe(T.Query())),
+    purge: S.optional(S.String.pipe(T.Query())),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/nodes/{node}/lxc/{vmid}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/nodes/{node}/lxc/{vmid}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteNodeLxcRequest",
@@ -4341,13 +4353,12 @@ export const DeleteNodeLxcFirewallAliasRequest = /*@__PURE__*/ S.suspend(() =>
     node: S.String.pipe(T.Label()),
     vmid: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/lxc/{vmid}/firewall/aliases/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4373,13 +4384,12 @@ export const DeleteNodeLxcFirewallIpsetRequest = /*@__PURE__*/ S.suspend(() =>
     node: S.String.pipe(T.Label()),
     vmid: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
-    force: S.optional(S.String),
+    force: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/lxc/{vmid}/firewall/ipset/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4407,13 +4417,12 @@ export const DeleteNodeLxcFirewallIpset2Request = /*@__PURE__*/ S.suspend(() =>
     vmid: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
     cidr: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/lxc/{vmid}/firewall/ipset/{name}/{cidr}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4439,13 +4448,12 @@ export const DeleteNodeLxcFirewallRuleRequest = /*@__PURE__*/ S.suspend(() =>
     node: S.String.pipe(T.Label()),
     vmid: S.String.pipe(T.Label()),
     pos: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/lxc/{vmid}/firewall/rules/{pos}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4471,13 +4479,12 @@ export const DeleteNodeLxcSnapshotRequest = /*@__PURE__*/ S.suspend(() =>
     node: S.String.pipe(T.Label()),
     vmid: S.String.pipe(T.Label()),
     snapname: S.String.pipe(T.Label()),
-    force: S.optional(S.String),
+    force: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/lxc/{vmid}/snapshot/{snapname}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4552,17 +4559,12 @@ export const DeleteNodeQemuRequest = /*@__PURE__*/ S.suspend(() =>
     node: S.String.pipe(T.Label()),
     vmid: S.String.pipe(T.Label()),
     destroy_unreferenced_disks: S.optional(
-      S.String.pipe(T.Body("destroy-unreferenced-disks")),
+      S.String.pipe(T.Query("destroy-unreferenced-disks")),
     ),
-    purge: S.optional(S.String),
-    skiplock: S.optional(S.String),
+    purge: S.optional(S.String.pipe(T.Query())),
+    skiplock: S.optional(S.String.pipe(T.Query())),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/nodes/{node}/qemu/{vmid}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/nodes/{node}/qemu/{vmid}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteNodeQemuRequest",
@@ -4587,13 +4589,12 @@ export const DeleteNodeQemuFirewallAliasRequest = /*@__PURE__*/ S.suspend(() =>
     node: S.String.pipe(T.Label()),
     vmid: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/qemu/{vmid}/firewall/aliases/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4619,13 +4620,12 @@ export const DeleteNodeQemuFirewallIpsetRequest = /*@__PURE__*/ S.suspend(() =>
     node: S.String.pipe(T.Label()),
     vmid: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
-    force: S.optional(S.String),
+    force: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/qemu/{vmid}/firewall/ipset/{name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4653,13 +4653,12 @@ export const DeleteNodeQemuFirewallIpset2Request = /*@__PURE__*/ S.suspend(() =>
     vmid: S.String.pipe(T.Label()),
     name: S.String.pipe(T.Label()),
     cidr: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/qemu/{vmid}/firewall/ipset/{name}/{cidr}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4685,13 +4684,12 @@ export const DeleteNodeQemuFirewallRuleRequest = /*@__PURE__*/ S.suspend(() =>
     node: S.String.pipe(T.Label()),
     vmid: S.String.pipe(T.Label()),
     pos: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/qemu/{vmid}/firewall/rules/{pos}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4717,13 +4715,12 @@ export const DeleteNodeQemuSnapshotRequest = /*@__PURE__*/ S.suspend(() =>
     node: S.String.pipe(T.Label()),
     vmid: S.String.pipe(T.Label()),
     snapname: S.String.pipe(T.Label()),
-    force: S.optional(S.String),
+    force: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/qemu/{vmid}/snapshot/{snapname}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4749,13 +4746,12 @@ export const DeleteNodeStorageContentRequest = /*@__PURE__*/ S.suspend(() =>
     node: S.String.pipe(T.Label()),
     storage: S.String.pipe(T.Label()),
     volume: S.String.pipe(T.Label()),
-    delay: S.optional(S.String),
+    delay: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/storage/{storage}/content/{volume}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -4787,15 +4783,16 @@ export const DeleteNodeStoragePrunebackupsRequest = /*@__PURE__*/ S.suspend(
     S.Struct({
       node: S.String.pipe(T.Label()),
       storage: S.String.pipe(T.Label()),
-      prune_backups: S.optional(S.String.pipe(T.Body("prune-backups"))),
-      type: S.optional(DeleteNodeStoragePrunebackupsRequestType),
-      vmid: S.optional(S.String),
+      prune_backups: S.optional(S.String.pipe(T.Query("prune-backups"))),
+      type: S.optional(
+        DeleteNodeStoragePrunebackupsRequestType.pipe(T.Query()),
+      ),
+      vmid: S.optional(S.String.pipe(T.Query())),
     }).pipe(
       T.Http({
         method: "DELETE",
         uri: "/nodes/{node}/storage/{storage}/prunebackups",
         code: 200,
-        contentType: "form-urlencoded",
       }),
     ),
 ).annotate({
@@ -21206,7 +21203,7 @@ export const createNodeWakeonlan: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type DeleteNodeCephFsError = ProxmoxOpError;
+export type DeleteNodeCephFsError = CephFsNotFound | ProxmoxOpError;
 /** Destroy a Ceph filesystem. Refuses if any PVE storage entry of type 'cephfs' still references the filesystem and is not disabled. Optionally also removes the storage entries and/or the underlying metadata and data pools. (root-privileged endpoint) */
 export const deleteNodeCephFs: API.OperationMethod<
   DeleteNodeCephFsRequest,
@@ -21216,7 +21213,7 @@ export const deleteNodeCephFs: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: DeleteNodeCephFsRequest,
   output: DeleteNodeCephFsResponse,
-  errors: [],
+  errors: [CephFsNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
@@ -21911,7 +21908,7 @@ export const getNodeCephPool: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type GetNodeCephPoolStatusError = ProxmoxOpError;
+export type GetNodeCephPoolStatusError = CephPoolNotFound | ProxmoxOpError;
 /** Show the current pool status. (root-privileged endpoint) */
 export const getNodeCephPoolStatus: API.OperationMethod<
   GetNodeCephPoolStatusRequest,
@@ -21921,7 +21918,7 @@ export const getNodeCephPoolStatus: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: GetNodeCephPoolStatusRequest,
   output: GetNodeCephPoolStatusResponse,
-  errors: [],
+  errors: [CephPoolNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));

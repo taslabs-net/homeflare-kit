@@ -24,13 +24,15 @@
  * (a) **Async POST/PUT/DELETE answer 200 with a UPID and can fail later.**
  *     PVE hands back a bare task id string (`"UPID:node:...);"`) for any
  *     long-running action — a VM start, a backup, a storage scan — and the
- *     200 means "the task was QUEUED", not "the task succeeded". Handled
- *     with real code: `src/task.ts`'s `awaitTask`, which polls
- *     `GetNodeTaskStatus` (this package's own generated operation) until
- *     `exitstatus` is present, then fails with the typed
- *     `ProxmoxTaskFailed` unless it is EXACTLY `"OK"` — PVE also answers
- *     `"OK (warnings)"`, which is not a bare-prefix match on purpose (see
- *     that file).
+ *     200 means "the task was QUEUED", not "the task succeeded". A caller
+ *     must poll `GetNodeTaskStatus` (this package's own generated
+ *     operation) until `exitstatus` is present, then treat anything other
+ *     than EXACTLY `"OK"` as a failure — PVE also answers `"OK
+ *     (warnings)"`, so a bare-prefix match is wrong. This package ships
+ *     the typed `ProxmoxTaskFailed` for that comparison but not the poll
+ *     loop itself: polling is provider-side (P13 of the 2026-09-24
+ *     walk-down; no distilled precedent for a package-level poll helper —
+ *     see `errors.ts`'s `ProxmoxTaskFailed` doc for the removal note).
  *
  * (b) **Some PUTs answer 200 `{"data":null}` even when nothing changed.**
  *     PVE's update handlers commonly return `null` unconditionally on
