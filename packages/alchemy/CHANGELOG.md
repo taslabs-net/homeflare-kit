@@ -1,5 +1,64 @@
 # @homeflare/alchemy
 
+## 0.28.0
+
+### Minor Changes
+
+- [#206](https://github.com/taslabs-net/homeflare-kit/pull/206) [`06591c9`](https://github.com/taslabs-net/homeflare-kit/commit/06591c91d622178fdf1b09d8ac2f455bafa70107) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Aliases four more distilled interim SDKs onto `@homeflare/alchemy`'s
+  `dependencies`, following `docs/distilled-interim.md`'s step 5:
+  `@distilled.cloud/proxmox-backup`, `@distilled.cloud/paperless-ngx`,
+  `@distilled.cloud/litellm` and `@distilled.cloud/caddy`, each aliased onto
+  its published `@homeflare/distilled-<vendor>` interim copy (kit PRs [#200](https://github.com/taslabs-net/homeflare-kit/issues/200),
+  [#194](https://github.com/taslabs-net/homeflare-kit/issues/194)/[#195](https://github.com/taslabs-net/homeflare-kit/issues/195), [#201](https://github.com/taslabs-net/homeflare-kit/issues/201), [#202](https://github.com/taslabs-net/homeflare-kit/issues/202)) at its current workspace version — not opnsense or
+  unifi-network, neither of which is aliased anywhere yet. No resource in this
+  package imports any of the four yet; that migration is each family's own
+  later PR, per `distilled-interim.md`'s "what NOT to do".
+
+  The root `build:interim-packages` script (kept root-level and non-nested,
+  the CI-race fix from kit PR [#193](https://github.com/taslabs-net/homeflare-kit/issues/193)) is now generic: it discovers which
+  `packages/distilled-*` copies to build by scanning every workspace
+  manifest's `dependencies` for a `"@distilled.cloud/<vendor>":
+"npm:@homeflare/distilled-<vendor>@<version>"` alias, instead of a
+  hard-coded netbox/proxmox list — a new alias needs no edit to this script.
+  `tests/catalog.test.ts`'s `EXACT_PEERS` table is now derived the same way
+  for every `distilled-*` interim copy (`effect` alone, one reasoning comment
+  kept in one place) instead of one hand-added entry and comment per vendor,
+  which had become a recurring merge-conflict hot spot across concurrent
+  interim-package PRs landing the same night.
+
+  This is a `minor`, not a `patch`: `@homeflare/alchemy`'s own `dependencies`
+  gained four new runtime entries, even though no exported code changed.
+
+- [#205](https://github.com/taslabs-net/homeflare-kit/pull/205) [`3ab881e`](https://github.com/taslabs-net/homeflare-kit/commit/3ab881ecd53108050b1d23db39d955e82a07c322) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `GitHub.RepositoryRuleset` now expresses a live ruleset's exact shape when that shape is
+  narrower than the house baseline: a `rules.pullRequest: false` declares its deliberate absence
+  (matching the `requiredStatusChecks: false` pattern that already existed), and `bypassActors`
+  already carried an arbitrary `actor_id`/`actor_type`/`bypass_mode` list — the gap was never the
+  prop shape, it was that nothing stopped a declaration from silently narrowing what is live.
+
+  Two new guards close that: `bypassNarrowingRefusal` refuses a declared `bypassActors` that drops
+  a live actor, and `ruleNarrowingRefusal` refuses a declared `false` (any modeled rule) that drops
+  a rule the live ruleset still has — both unless the declaration also carries the matching new
+  prop, `acknowledgeBypassNarrowing: { reason: string }` or `acknowledgeRuleNarrowing: { reason:
+string }`, a reasoned, explicit sign-off. The two acknowledgements are deliberately separate
+  props, not one shared flag: an adversarial review found that a single shared
+  `acknowledgeNarrowing` let a reason worded for one kind of drop silently also excuse the other
+  kind in the same declaration, so each guard now reads only the prop scoped to what it checks.
+  Widening bypass stays refused unconditionally, as before — this only ever loosens the NARROWING
+  side, and only with a recorded, correctly-scoped reason.
+
+  Prompted by a red-team finding against a design for declaring ~88 `taslabs-net` repos' GitHub
+  settings in Alchemy: 5 live repos (`taslabs-net`, `aop`, `magictransit`, `loggarr`,
+  `doesthishelp-workeropen`) carry a non-empty live `bypass_actors`, and `taslabs-net` itself has
+  no live `pull_request` rule — the exact combination `repoBaselineRuleset()`'s hardcoded
+  `bypassActors: []` and always-on `pullRequest` rule could not adopt without silently stripping
+  protection. `repoBaselineRuleset()` itself is unchanged — it keeps its baseline defaults, for
+  repos the baseline shape actually fits; a caller with a narrower live ruleset now declares
+  `RepositoryRuleset` directly with the live shape instead.
+
+  Tested against all 5 live shapes, re-read via `gh api repos/taslabs-net/<repo>/rulesets/<id>`
+  2026-09-23 (not copied from an earlier paraphrase — `doesthishelp-workeropen`'s two bypass
+  actors' `bypass_mode`s differ from how an earlier design doc described them).
+
 ## 0.27.4
 
 ### Patch Changes
