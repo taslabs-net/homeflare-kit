@@ -75,6 +75,19 @@ Kit code never imports `@homeflare/distilled-proxmox` directly — always
 so the eventual cutover to the real published package is a one-line alias
 swap with no import changes anywhere in the kit.
 
+## Source provenance
+
+This SDK source matches local distilled commit
+`07d587885b198e85bdd5b37ce3c7406c7b29c0ba` byte for byte. Its patch chain adds
+precise interface, container-config, replication-job and firewall-alias absence
+without treating unrelated validation or server failures as missing resources.
+The patch files record pinned PVE 9.2.11 and installed package versions/hashes.
+
+`ReplicationJobNotFound` covers the vendor's read/update/delete exceptions;
+ordinary DELETE still marks asynchronous cleanup without force or keep.
+`FirewallAliasNotFound` covers only the exact sole-field validation error on
+GET/PUT. Alias DELETE is already idempotent, so other failures propagate.
+
 ## Updating it
 
 From the distilled clone's `homeflare/proxmox` worktree:

@@ -21,7 +21,7 @@ export class BackupJobNotFound
     [{ status: 400, message: { matches: "^No such job '[^']+'$" } }],
   ) {}
 
-/** Installed pve-firewall 6.0.5 PVE/API2/Firewall/Aliases.pm:209-210,252, read-only 2026-09-24; SHA256 aa4d71ea897515ca71caa8e04abd142aedf8077058649f793605f014be84db0e. GET and PUT raise HTTP400 Parameter verification failed with the sole field errors.name = no such alias. DELETE is intrinsically idempotent and has no missing-alias exception. Other validation failures remain ParameterVerificationFailed. */
+/** Installed pve-firewall 6.0.5 PVE/API2/Firewall/Aliases.pm:203-204,252, read-only 2026-09-24; SHA256 aa4d71ea897515ca71caa8e04abd142aedf8077058649f793605f014be84db0e. GET and PUT raise HTTP400 Parameter verification failed with the sole field errors.name = no such alias. DELETE is intrinsically idempotent and has no missing-alias exception. Other validation failures remain ParameterVerificationFailed. */
 export class FirewallAliasNotFound
   extends /*@__PURE__*/ T.applyErrorMatchers(
     /*@__PURE__*/ S.TaggedError<FirewallAliasNotFound>()(
@@ -53,7 +53,7 @@ export class MetricServerNotFound
     ],
   ) {}
 
-/** pve-manager 9.2.11 f6997e698c7933ea8e62319e2bf1bf7262daa56a PVE/API2/ReplicationConfig.pm:110,227,311. GET raises no such replication job; PUT and non-force DELETE raise no such job. Exact structured job IDs only. DELETE normally marks remove_job=full for background cleanup; an absent job is already removed. */
+/** pve-manager 9.2.11 f6997e698c7933ea8e62319e2bf1bf7262daa56a PVE/API2/ReplicationConfig.pm:107,226,305. GET raises no such replication job; PUT and non-force DELETE raise no such job. Exact structured job IDs only. DELETE normally marks remove_job=full for background cleanup; an absent job is already removed. */
 export class ReplicationJobNotFound
   extends /*@__PURE__*/ T.applyErrorMatchers(
     /*@__PURE__*/ S.TaggedError<ReplicationJobNotFound>()(
