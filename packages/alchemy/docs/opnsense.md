@@ -4,17 +4,30 @@ Declares `Opnsense.Firewall.Alias`, `.Category` and `.Group` against
 `@distilled.cloud/opnsense` (aliased onto `@homeflare/distilled-opnsense@0.2.0` —
 [`distilled-interim.md`](./distilled-interim.md)). Built 2026-09-24. **READ-ONLY BY
 DESIGN** — see "The policy" below before reading anything else here. This is the
-estate's **edge firewall**: nothing in this family, or in building it, contacted
-the live box, and nothing about it may reconfigure one.
+estate's **edge firewall**: nothing in this family's code, or in building it,
+contacted the live box, and nothing about it may reconfigure one. (The vendor
+version pin below WAS confirmed against the live box once, read-only, during
+review — see "Vendor version" below; that probe used neither this family's
+code nor this SDK's generated client.)
 
-## Vendor version — inferred, never measured
+## Vendor version — measured 2026-09-24
 
-`@homeflare/distilled-opnsense`'s own README states its pin: generated against
-`opnsense/core`/`opnsense/plugins` tag `26.7.2`, **inferred** from a captured
-package list, not measured live (SSH to the edge is forbidden by house policy —
-a failed probe gets the caller's IP CrowdSec-banned). Keep that caveat attached to
-every OPNsense claim this family makes; patch releases inside one series rarely
-change model/controller shape, but "rarely" is not "measured".
+`@homeflare/distilled-opnsense`'s own README carries its generation pin:
+`opnsense/core`/`opnsense/plugins` tag `26.7.2`. That pin used to be an
+**inference** from a captured package list, never measured live (SSH to the
+edge is forbidden by house policy — a failed probe gets the caller's IP
+CrowdSec-banned). This PR's review measured it instead (Probe 14, 2026-09-24),
+live and read-only, over the HTTPS API only — no SSH:
+
+- `firmware-info` returned `200` with `product_version=26.7.2_2`.
+- `alias-search` returned `200` (keys: `current`, `rowCount`, `rows`, `total`).
+
+So the pin is now **measured**, not inferred: the live edge runs `26.7.2_2`,
+one patch ahead of the `26.7.2` tag the model/controller shape was generated
+from — the same series the "patch releases rarely change shape" reasoning
+already relied on, now confirmed rather than assumed. `alias-search`'s 200
+also confirms the live box's Firewall Alias API answers in the shape this SDK
+expects, even though this family reads through `get()`, not `search*` (below).
 
 ## Resource set, and why these three
 
@@ -108,6 +121,12 @@ auth, the vendor's own scheme), re-exported from `credentials.ts` rather than
 re-implemented. No OpenBao mint yet (H8's target is unreleased); a deploy process
 exports the three variables itself today. This package never reads, logs or
 mints them.
+
+The only key that exists today is a **ROOT API key** — not scoped to Firewall
+Alias/Category/Group, or to read-only. That is one more reason "The policy"
+above refuses every write unconditionally rather than trusting a props-level
+flag: any write path this key could reach would carry root's full blast
+radius on the estate's edge firewall, not just these three object types.
 
 ## SDK gaps
 

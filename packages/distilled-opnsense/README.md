@@ -26,18 +26,24 @@ and relicensing a copy would misstate what it is. See `LICENSE`.
 
 ## Provenance and version pin
 
-Generated against `opnsense/core` and `opnsense/plugins` tag `26.7.2`. The
-edge firewall's exact installed version has **never been measured live**
-(SSH to the edge is forbidden by house policy; CrowdSec bans the caller's
-IP on a failed probe) — `26.7.2` is inferred, read-only, from a captured
-package list (`os-frr-1.54` matches that one tag's plugin tree exactly) and
-a runbook stating the box runs "26.7.x". See the distilled clone's
-`packages/opnsense/README.md` for the full evidence chain. Patch releases
-inside one OPNsense series essentially never change model/controller shape,
-so this pin's model XML/controller PHP is very likely correct even if the
-edge sits on a different `26.7.x` patch — but it is an inference, not a
-measurement, and should be confirmed on the box before this package is
-trusted for anything consequential.
+Generated against `opnsense/core` and `opnsense/plugins` tag `26.7.2`, from
+a captured package list (`os-frr-1.54` matches that one tag's plugin tree
+exactly) and a runbook stating the box runs "26.7.x" — see the distilled
+clone's `packages/opnsense/README.md` for the full evidence chain.
+
+The edge firewall's exact installed version was **measured live 2026-09-24**
+(Probe 14, during PR 236's review — the PR that added `@homeflare/alchemy`'s
+`opnsense/*` resources on top of this package), read-only, over the HTTPS
+API only — no SSH (SSH to the edge is forbidden by house policy; CrowdSec
+bans the caller's IP on a failed probe): `firmware-info` returned `200` with
+`product_version=26.7.2_2`, and `alias-search` returned `200` (keys:
+`current`, `rowCount`, `rows`, `total`). The edge runs `26.7.2_2`, one patch
+ahead of the `26.7.2` generation tag — the same series, so the reasoning
+that patch releases essentially never change model/controller shape now
+rests on a measurement, not an inference. The probe went straight at the
+vendor's own HTTPS API, not through this package's generated client — see
+"Not done here" below: this package's own code has still never been pointed
+at a live instance.
 
 ## What's in it
 

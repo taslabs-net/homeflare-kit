@@ -4,7 +4,8 @@
 
 New `@homeflare/alchemy/opnsense` subpath, built on `@distilled.cloud/opnsense` (aliased onto
 `@homeflare/distilled-opnsense@0.2.0`, generated against `opnsense/core`/`opnsense/plugins`
-`26.7.2` — **inferred, never measured live**; SSH to the edge is forbidden by house policy).
+`26.7.2` — **measured live 2026-09-24** over the HTTPS API only, no SSH: the edge reports
+`26.7.2_2`, one patch ahead of the generation tag, same series; see `docs/opnsense.md`).
 `Opnsense.Firewall.Alias`, `.Category` and `.Group` (interface groups) are **READ-ONLY BY
 DESIGN**: `reconcile` and `delete` always fail with a typed `OpnsenseWriteRefused`, naming the
 policy ("read-only by Tim's rule, 2026-09-24; lifting it is a kit change") — neither handler
@@ -30,6 +31,8 @@ singleton with no uuid; `quagga_bgp` mixes several item types with no `search*` 
 `quagga_service` is pure runtime control (start/stop/restart/status).
 
 Credentials are `OPNSENSE_URL`/`OPNSENSE_API_KEY`/`OPNSENSE_API_SECRET`, read at call time through
-the SDK's own `CredentialsFromEnv` (HTTP Basic, the vendor's own scheme), never a prop. No live
-call of any kind was made building this family — every test runs against `fake-opnsense.ts`, a
-loopback fake.
+the SDK's own `CredentialsFromEnv` (HTTP Basic, the vendor's own scheme), never a prop — today the
+only key that exists is ROOT-level, one more reason writes stay refused unconditionally. This
+family's own test suite makes no live call — every test runs against `fake-opnsense.ts`, a
+loopback fake; the SDK's `26.7.2` version pin was measured separately, live and read-only
+(`docs/opnsense.md`).
