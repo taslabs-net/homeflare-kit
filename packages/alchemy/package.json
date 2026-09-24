@@ -113,7 +113,10 @@
   },
   "devDependencies": {
     "@distilled.cloud/cloudflare": "1.0.0-rc.12",
+    "@distilled.cloud/discord": "1.0.0-rc.12",
     "@distilled.cloud/forgejo": "1.0.0-rc.12",
+    "@distilled.cloud/google-workspace": "1.0.0-rc.12",
+    "@distilled.cloud/grafana": "1.0.0-rc.12",
     "@effect/platform-bun": "4.0.0-rc.115",
     "@effect/platform-node": "4.0.0-rc.115",
     "@effect/sql-pg": "4.0.0-rc.115",
@@ -124,7 +127,10 @@
   },
   "peerDependencies": {
     "@distilled.cloud/cloudflare": "1.0.0-rc.12",
+    "@distilled.cloud/discord": "1.0.0-rc.12",
     "@distilled.cloud/forgejo": "1.0.0-rc.12",
+    "@distilled.cloud/google-workspace": "1.0.0-rc.12",
+    "@distilled.cloud/grafana": "1.0.0-rc.12",
     "@effect/platform-node": "4.0.0-rc.115",
     "@effect/sql-pg": "4.0.0-rc.115",
     "alchemy": "2.0.0-beta.79",
