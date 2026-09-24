@@ -123,8 +123,9 @@ export class RequiredChecksOmitted extends Data.TaggedError('RequiredChecksOmitt
   }
 }
 
-/** A context being ADDED to `requiredStatusChecks` has never reported success on the default
- * branch. Requiring it would leave every future pull request pending forever. */
+/** A context being ADDED to `requiredStatusChecks` has never reported success anywhere this
+ * family looks (the default branch's tip, then recent merged PR heads — K2, bounded, not full
+ * history). Requiring it would leave every future pull request pending forever. */
 export class NeverReportedContext extends Data.TaggedError('NeverReportedContext')<{
   readonly owner: string;
   readonly repository: string;
@@ -133,8 +134,9 @@ export class NeverReportedContext extends Data.TaggedError('NeverReportedContext
   override get message(): string {
     return (
       `GitHub.RepositoryRuleset: "${this.context}" has never reported success on ` +
-      `${this.owner}/${this.repository}'s default branch. Requiring it now would leave every ` +
-      'pull request waiting on a check that has never once reported — refused before any write.'
+      `${this.owner}/${this.repository}'s default branch tip or any of its recent merged pull ` +
+      'requests. Requiring it now would leave every pull request waiting on a check that has ' +
+      'never once reported — refused before any write.'
     );
   }
 }

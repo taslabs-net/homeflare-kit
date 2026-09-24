@@ -14,15 +14,20 @@
  *   Integration 29110 is `always`, not the reverse) — see repository-ruleset-narrowing-guards.ts
  *   for the guard these fixtures exercise.
  *
- * `taslabs-net` is the only one of the 5 whose FULL ruleset (bypass AND rules) is provable as a
- * true zero-write adopt today: its live `pull_request` rules (aop/magictransit/loggarr/
- * doesthishelp-workeropen) all carry `require_extra_approval_for_unattributed_changes: true`,
- * which this resource cannot yet declare (K1 — a separate, later PR; H15's comment on
- * `extraApprovalForUnattributedChanges` explains why only `false` is modeled today). The other
- * 4 fixtures below prove the narrower claim K1 does not gate: that this resource's `bypassActors`
- * round-trips an arbitrary `actor_id`/`actor_type`/`bypass_mode` combination — single-actor by
- * role, single-actor by integration, and multi-actor with mixed modes — onto the wire exactly as
- * declared, with neither `BypassActorWidened` nor `BypassActorNarrowed` firing on a match.
+ * ★ K1 LANDED 2026-09-23: `extraApprovalForUnattributedChanges` now declares `true`, not only
+ *   `false` — the gap this file's earlier revision named as blocking a true zero-write adopt for
+ *   aop/magictransit/loggarr/doesthishelp-workeropen (all four carry
+ *   `require_extra_approval_for_unattributed_changes: true` live). The 4 fixtures below still
+ *   prove the narrower claim: that `bypassActors` round-trips an arbitrary
+ *   `actor_id`/`actor_type`/`bypass_mode` combination — single-actor by role, single-actor by
+ *   integration, and multi-actor with mixed modes — onto the wire exactly as declared, with
+ *   neither `BypassActorWidened` nor `BypassActorNarrowed` firing on a match; their declarations
+ *   still use `BASE_PULL_REQUEST` (`extraApprovalForUnattributedChanges: false`), so each is
+ *   still a genuine `update`, not a noop — that keeps this file's original point (bypass alone
+ *   round-trips) legible on its own. The case K1 unblocks — `aop`'s FULL live shape, extra-
+ *   approval flag included, as a true zero-write adopt — is proven in
+ *   repository-ruleset-exact-adopt-k1.test.ts, split out purely to keep this file under the
+ *   250-line cap.
  */
 import { describe, expect, test } from 'bun:test';
 import { makeGetOnlyFake, makeRecordingFake } from './repository-ruleset-fake-octokit.ts';

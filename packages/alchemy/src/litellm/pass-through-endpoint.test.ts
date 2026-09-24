@@ -2,15 +2,16 @@
  * `LiteLLM.PassThroughEndpoint`'s lifecycle handlers, called directly against `fake-litellm.ts` —
  * the loopback-fake pattern this kit uses in place of `alchemy/Test/*` (H12, no live writes).
  */
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
+import { credentials } from '@distilled.cloud/litellm/Credentials';
 import { Unowned } from 'alchemy/AdoptPolicy';
 import { Stack } from 'alchemy/Stack';
 import { Stage } from 'alchemy/Stage';
 import * as Effect from 'effect/Effect';
+import * as Layer from 'effect/Layer';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import { litellmCredentialsLayerFor } from './credentials.ts';
-import { type FakeLitellm, startFakeLitellm } from './fake-litellm.ts';
-import { createPassThroughEndpoint } from './client.ts';
+import { FAKE_BASE, type FakeLitellm, startFakeLitellm } from './fake-litellm.ts';
+import { createPassThroughEndpoint } from './operations.ts';
 import {
   LitellmConfigPathConflictError,
   LitellmLiteralSecretHeaderError,
@@ -22,11 +23,11 @@ const MASTER_KEY = 'sk-test-master';
 const INSTANCE_ID = 'a'.repeat(32);
 const FAKE_STACK = { actions: {}, bindings: {}, name: 's', resources: {}, stage: 'test' } as never;
 
+/** No `.stop()` any more — `fake.fetch` is a plain function, no real socket to close. */
 let fake: FakeLitellm;
 beforeEach(() => {
   fake = startFakeLitellm({ masterKey: MASTER_KEY });
 });
-afterEach(() => fake.stop());
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>): Promise<A> =>
   Effect.runPromise(effect as Effect.Effect<A, E, never>);
@@ -34,7 +35,8 @@ const run = <A, E>(effect: Effect.Effect<A, E, never>): Promise<A> =>
 const withServices = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     Effect.provide(FetchHttpClient.layer),
-    Effect.provide(litellmCredentialsLayerFor({ apiKey: MASTER_KEY, baseUrl: fake.url })),
+    Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fake.fetch)),
+    Effect.provide(credentials({ apiKey: MASTER_KEY, baseUrl: FAKE_BASE })),
     Effect.provideService(Stage, 'test'),
     Effect.provideService(Stack, FAKE_STACK),
   ) as Effect.Effect<A, E, never>;
@@ -150,7 +152,6 @@ describe('two endpoints created in one deploy', () => {
 
 describe('a path held by an is_from_config row', () => {
   test('is refused at read, before any write', async () => {
-    fake.stop();
     fake = startFakeLitellm({
       masterKey: MASTER_KEY,
       seed: [{ ...PROPS, id: 'cfg-1', is_from_config: true }],
@@ -167,7 +168,6 @@ describe('a path held by an is_from_config row', () => {
 
 describe('a foreign DB row on the same path', () => {
   test('is Unowned, and read works with output undefined', async () => {
-    fake.stop();
     fake = startFakeLitellm({
       masterKey: MASTER_KEY,
       seed: [{ ...PROPS, id: 'foreign-1', is_from_config: false }],

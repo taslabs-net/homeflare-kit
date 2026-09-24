@@ -1,59 +1,73 @@
 /**
- * A fake Paperless-ngx for the tests beside it — `Bun.serve` on an ephemeral 127.0.0.1 port, the
- * same shape `../openbao/fake-bao.ts` and `../caddy/fake-caddy.ts` use.
+ * A minimal in-memory Paperless-ngx REST API for this family's tests — an in-memory `fetch`
+ * handed to Effect's real `FetchHttpClient` through its `Fetch` reference, mirroring
+ * `../netbox/fake-netbox.ts` and `../forgejo/fake-forgejo.ts`. Tests exercise distilled's REAL
+ * path assembly, JSON encode/decode and status→typed-error matching (`404` → `NotFound`, `403` →
+ * `Forbidden`, `400` → `BadRequest`, …) — nothing about that matching is re-implemented here, only
+ * the wire responses and in-memory rows a scenario needs.
  *
- * ⛔ TEST-ONLY. No provider imports this file. It stores rows in memory for exactly the four
- *   taxonomy collections and answers `name__iexact` the way Django does — case-insensitive,
- *   never collapsing two differently-cased rows into one.
+ * ⛔ TEST-ONLY, AND NO NETWORK. No provider imports this file. Stores rows in memory for the four
+ *   taxonomy collections and answers `name__iexact` the way Django does — case-insensitive, never
+ *   collapsing two differently-cased rows into one. Ported from the pre-migration `Bun.serve`
+ *   fake: production now goes through `@distilled.cloud/paperless-ngx`'s `CredentialsFromEnv`,
+ *   which resolves through Effect `Config` and snapshots `process.env` once (measured in the
+ *   forgejo migration, kit PR 180) — a test can no longer point production code at a fake server
+ *   by mutating env vars, so this hands an explicit `credentials()` layer instead.
  */
+import { type Credentials, credentials } from '@distilled.cloud/paperless-ngx/Credentials';
+import type { PaperlessNgxOpContext } from '@distilled.cloud/paperless-ngx/Protocol';
 import * as Effect from 'effect/Effect';
+import * as Layer from 'effect/Layer';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import type { PaperlessRequirements } from './client.ts';
-import { type PaperlessCredentialsError, environmentLayer } from './credentials.ts';
-import type { PaperlessError } from './errors.ts';
 
-export const FAKE_TOKEN = 'fake-token-not-real';
+export const FAKE_BASE = 'https://paperless.example.com';
+export const FAKE_TOKEN = 'placeholder-paperless-token';
 
 export interface Seen {
   readonly method: string;
   readonly path: string;
-  readonly headers: Headers;
   readonly body: string;
 }
 
 export type Row = Record<string, unknown> & { id: number };
 
 const COLLECTIONS = ['tags', 'document_types', 'storage_paths', 'custom_fields'] as const;
+type Collection = (typeof COLLECTIONS)[number];
 
 export interface FakePaperless {
-  readonly url: string;
+  readonly fetch: typeof globalThis.fetch;
   readonly seen: Seen[];
-  readonly rows: (collection: (typeof COLLECTIONS)[number]) => readonly Row[];
-  /** `undefined` to answer normally; a status to force it once per subsequent call. */
+  readonly rows: (collection: Collection) => readonly Row[];
+  /** `undefined` to answer normally; a status to force it once for the NEXT call only. */
   forceStatus: number | undefined;
-  stop(): void;
 }
 
-const nextId = (store: Row[]): number =>
+const nextId = (store: readonly Row[]): number =>
   store.length === 0 ? 1 : Math.max(...store.map((r) => r.id)) + 1;
 
+const json = (status: number, body: unknown): Response =>
+  new Response(status === 204 ? null : JSON.stringify(body), {
+    headers: { 'content-type': 'application/json' },
+    status,
+  });
+
+/**
+ * A stateful CRUD router across the four collections — this is what makes it possible to test
+ * `matching.ts`'s full create → read-back → PATCH → DELETE lifecycle, not just one canned
+ * response per test the way `fakeNetbox`/`fakeForgejo`'s simpler `route` callback does.
+ */
 export const fakePaperless = (): FakePaperless => {
   const seen: Seen[] = [];
-  const store = new Map<(typeof COLLECTIONS)[number], Row[]>(COLLECTIONS.map((c) => [c, []]));
+  const store = new Map<Collection, Row[]>(COLLECTIONS.map((c) => [c, []]));
   let forced: number | undefined;
 
-  const fetch = async (request: Request): Promise<Response> => {
+  const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const request =
+      input instanceof Request ? new Request(input, init) : new Request(String(input), init);
     const url = new URL(request.url);
     const body = await request.text();
-    seen.push({
-      body,
-      headers: request.headers,
-      method: request.method,
-      path: `${url.pathname}${url.search}`,
-    });
+    seen.push({ body, method: request.method, path: `${url.pathname}${url.search}` });
 
-    const token = request.headers.get('Authorization');
-    if (token !== `Token ${FAKE_TOKEN}`) return json(401, { detail: 'Invalid token.' });
     if (forced !== undefined) {
       const status = forced;
       forced = undefined;
@@ -62,7 +76,7 @@ export const fakePaperless = (): FakePaperless => {
 
     const segments = url.pathname.split('/').filter((s) => s !== '');
     // ['api', collection, (id)?]
-    const collection = segments[1] as (typeof COLLECTIONS)[number] | undefined;
+    const collection = segments[1] as Collection | undefined;
     if (collection === undefined || !COLLECTIONS.includes(collection))
       return json(404, { detail: 'Not found.' });
     const rows = store.get(collection) as Row[];
@@ -96,10 +110,10 @@ export const fakePaperless = (): FakePaperless => {
       return new Response(null, { status: 204 });
     }
     return json(405, { detail: 'method not allowed' });
-  };
+  }) as typeof globalThis.fetch;
 
-  const server = Bun.serve({ fetch, hostname: '127.0.0.1', port: 0 });
   return {
+    fetch,
     get forceStatus() {
       return forced;
     },
@@ -108,49 +122,26 @@ export const fakePaperless = (): FakePaperless => {
     },
     rows: (collection) => store.get(collection) ?? [],
     seen,
-    stop: () => void server.stop(true),
-    url: server.url.origin,
   };
 };
 
-const json = (status: number, body: unknown): Response =>
-  new Response(status === 204 ? null : JSON.stringify(body), {
-    headers: { 'content-type': 'application/json' },
-    status,
-  });
+/**
+ * distilled Credentials + the real FetchHttpClient over the fake — `PaperlessNgxOpContext`, what
+ * `matchingOperations(spec)` (matching.ts, unwrapped — not `matchingHandlers`, which bakes in
+ * `CredentialsFromEnv` and so cannot be pointed at a fake server, per this file's own header)
+ * needs to run against a fake.
+ */
+export const fakePaperlessLayer = (
+  fetchFn: typeof globalThis.fetch,
+  creds: Layer.Layer<Credentials> = credentials({ baseUrl: FAKE_BASE, token: FAKE_TOKEN }),
+) => Layer.mergeAll(creds, FetchHttpClient.layer, Layer.succeed(FetchHttpClient.Fetch, fetchFn));
 
-/** Run `body` against a fresh fake, `PAPERLESS_URL`/`PAPERLESS_TOKEN` set only for its duration. */
-export const withFake = async (body: (fake: FakePaperless) => Promise<void>): Promise<void> => {
-  const fake = fakePaperless();
-  const savedUrl = process.env['PAPERLESS_URL'];
-  const savedToken = process.env['PAPERLESS_TOKEN'];
-  process.env['PAPERLESS_URL'] = fake.url;
-  process.env['PAPERLESS_TOKEN'] = FAKE_TOKEN;
-  try {
-    await body(fake);
-  } finally {
-    fake.stop();
-    if (savedUrl === undefined) delete process.env['PAPERLESS_URL'];
-    else process.env['PAPERLESS_URL'] = savedUrl;
-    if (savedToken === undefined) delete process.env['PAPERLESS_TOKEN'];
-    else process.env['PAPERLESS_TOKEN'] = savedToken;
-  }
-};
+export const run = <A, E>(
+  effect: Effect.Effect<A, E, PaperlessNgxOpContext>,
+  fetchFn: typeof globalThis.fetch,
+) => Effect.runPromise(effect.pipe(Effect.provide(fakePaperlessLayer(fetchFn))));
 
-/** Run an effect through the real `FetchHttpClient` and the real environment credentials layer. */
-export const run = <A>(
-  effect: Effect.Effect<A, PaperlessError | PaperlessCredentialsError, PaperlessRequirements>,
-) =>
-  Effect.runPromise(
-    effect.pipe(Effect.provide(FetchHttpClient.layer), Effect.provide(environmentLayer)),
-  );
-
-export const runFailure = <A>(
-  effect: Effect.Effect<A, PaperlessError | PaperlessCredentialsError, PaperlessRequirements>,
-) =>
-  Effect.runPromise(
-    Effect.flip(effect).pipe(
-      Effect.provide(FetchHttpClient.layer),
-      Effect.provide(environmentLayer),
-    ),
-  );
+export const runFailure = <A, E>(
+  effect: Effect.Effect<A, E, PaperlessNgxOpContext>,
+  fetchFn: typeof globalThis.fetch,
+) => Effect.runPromise(Effect.flip(effect).pipe(Effect.provide(fakePaperlessLayer(fetchFn))));

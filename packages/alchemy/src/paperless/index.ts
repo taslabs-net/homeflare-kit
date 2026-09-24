@@ -5,20 +5,14 @@
  *   header. `matching.ts`'s internals and the raw generated modules are not re-exported; a
  *   consumer wanting the same guard a Resource uses gets it through `constraintsFor`/
  *   `bodyViolations`, not by importing `generated/` directly.
+ *
+ * 🔴 `PaperlessCredentials`/`PaperlessError` AND FRIENDS ARE GONE (2026-09-24, the
+ *   `@distilled.cloud/paperless-ngx` migration — matching.ts's header), the same way
+ *   `../netbox/index.ts` dropped `NetboxError`/`apiBase` in its own migration. A caller that
+ *   needs the typed errors now imports them from `@distilled.cloud/paperless-ngx` directly (e.g.
+ *   `@distilled.cloud/paperless-ngx/tags`'s `NotFound`); nothing in this estate imported the old
+ *   names (measured 2026-09-24).
  */
-export {
-  PaperlessCredentials,
-  type PaperlessCredentialValue,
-  PaperlessCredentialsError,
-  environmentLayer as paperlessEnvironmentLayer,
-} from './credentials.ts';
-export {
-  PaperlessNotFound,
-  PaperlessUnauthorized,
-  PaperlessValidation,
-  PaperlessUnavailable,
-  type PaperlessError,
-} from './errors.ts';
 export {
   PAPERLESS_CONSTRAINTS,
   bodyViolations,

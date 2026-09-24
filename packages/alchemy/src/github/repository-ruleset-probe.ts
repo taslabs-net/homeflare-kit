@@ -71,7 +71,8 @@ export interface RulesetOctokit<R = never> {
     readonly repo: string;
     readonly rulesetId: number;
   }) => Effect.Effect<void, Error, R>;
-  /** Whether `context` has ever reported success against the repository's default branch —
+  /** Whether `context` has reported success against the repository's default branch tip OR a
+   * recent merged PR head (K2, bounded — see repository-ruleset-octokit.ts's file header) —
    * backs the `NeverReportedContext` guard. */
   readonly hasContextReportedSuccess: (input: {
     readonly owner: string;

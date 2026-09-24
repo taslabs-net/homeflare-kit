@@ -54,6 +54,14 @@ export {
   RENDERED_PATHS,
   renderRepoShape,
 } from './repo-shape/render.ts';
+export {
+  type RetiredFile,
+  type RetiredPath,
+  GENERATED_FILE_MARKER,
+  RETIRED_FILES,
+  retiredFileProblem,
+  wasRenderedByUs,
+} from './repo-shape/retired.ts';
 export { renderSecurity } from './repo-shape/security.ts';
 export {
   type ExtraJob,

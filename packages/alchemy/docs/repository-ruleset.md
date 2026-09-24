@@ -30,10 +30,44 @@ Effect.gen(function* () {
 });
 ```
 
-Provide **both** `GitHub.providers()` (for `GitHub.Repository`, if declared alongside) and
-`RepositoryRulesetProvider()` — this is a separate `Provider`, registered under its own
-type string (`GitHub.RepositoryRuleset`), not inside upstream's `GitHub.Providers`
-collection. The two coexist in one stack without any change to upstream's own code.
+This is a separate `Provider`, registered under its own type string
+(`GitHub.RepositoryRuleset`), not inside upstream's `GitHub.Providers` collection — the two
+coexist in one stack without any change to upstream's own code.
+
+## Providers
+
+Provide `repoPolicyProviders()` (`@homeflare/alchemy/github`) as the stack's `providers`, not
+`GitHub.providers()` and `RepositoryRulesetProvider()` written side by side:
+
+```ts
+import { repoPolicyProviders } from '@homeflare/alchemy/github';
+
+// providers: repoPolicyProviders()
+```
+
+⛔ **The side-by-side form does not typecheck** — measured 2026-09-24 (homeflare-builds bump PR
+6, tsc TS2345), two separate bugs stacked on top of each other:
+
+1. **The layer** still requires `GitHubCredentials` when the two providers are merged plainly:
+   `RepositoryRulesetProvider()`'s handlers call `octokitFor`, which needs it, and merging two
+   layers does not thread one's output into the other's requirement. `repoPolicyProviders()`
+   feeds `GitHub.providers()` into `RepositoryRulesetProvider()` with `Layer.provideMerge`
+   instead of a plain merge. `GitHub.providers()` resolves credentials internally and — because
+   it chains `provideMerge`, not `provide`, onto its own auth layer — re-exposes
+   `GitHubCredentials` in its own output too, so this both satisfies the requirement and keeps
+   `GitHub.Providers` available for any `GitHub.Repository`/`GitHub.Ruleset` declared alongside.
+2. **The declaration** failed to typecheck on its own, even with the layer fixed, whenever a
+   stack body called `RepositoryRuleset` — directly, or via
+   `declareRepoPolicy`/`declareRepoBaseline`. `RepositoryRuleset`'s `Resource<>` declaration put
+   `GitHubCredentials` in the 5th (`Providers`) type parameter, which puts the credential
+   requirement on the DECLARATION itself, not just the provider. A stack body cannot supply
+   `GitHubCredentials` this way — `Alchemy.Stack`'s own `ProviderServices` type is a closed
+   union that `GitHubCredentials` does not structurally match (see repository-ruleset.ts's file
+   header for the full trace against `alchemy/src/Resource.ts` and `alchemy/src/Stack.ts`).
+   Upstream's own `GitHub.Ruleset` never makes this mistake: its 5th slot is `GitHub.Providers`
+   (the collection tag), never the raw credential service. `RepositoryRuleset` now omits the
+   5th parameter, defaulting its declaration requirement to `Provider<RepositoryRuleset>`
+   instead.
 
 ## Type string: H14
 
@@ -55,12 +89,12 @@ exported credential service.
 
 ## What it models beyond upstream `RulesetProps`
 
-| field                                             | upstream `Ruleset` | this resource      |
-| ------------------------------------------------- | ------------------ | ------------------ |
-| `pullRequest.allowedMergeMethods`                 | no                 | yes                |
-| `pullRequest.requiredReviewers`                   | no                 | yes                |
-| `pullRequest.extraApprovalForUnattributedChanges` | no                 | `false` only (H15) |
-| `requiredStatusChecks.doNotEnforceOnCreate`       | no                 | yes                |
+| field                                             | upstream `Ruleset` | this resource            |
+| ------------------------------------------------- | ------------------ | ------------------------ |
+| `pullRequest.allowedMergeMethods`                 | no                 | yes                      |
+| `pullRequest.requiredReviewers`                   | no                 | yes                      |
+| `pullRequest.extraApprovalForUnattributedChanges` | no                 | `true`/`false` (K1, H15) |
+| `requiredStatusChecks.doNotEnforceOnCreate`       | no                 | yes                      |
 
 `RULE_TYPE_COVERAGE` in `repository-ruleset-constraints.ts` classifies every rule type
 Octokit's own installed types know (21 of them — see the file for the 27.0.0-vs-29.0.1
@@ -79,9 +113,11 @@ being silently dropped by the wholesale `rules` PUT.
   see `undeclaredLiveRuleRefusal`'s own comment for the concrete scenario (forgetting
   `deletion: true` would otherwise silently drop branch-deletion protection) that made
   this the general case rather than a special one.
-- **Adding a required check that has never reported success** on the default branch's
-  current tip (checks + statuses): refused before any write. Documented limitation: this
-  checks the current tip only, not full history (repository-ruleset-octokit.ts).
+- **Adding a required check that has never reported success**: refused before any write.
+  Checked at the default branch's current tip, then (K2) up to `RECENT_MERGED_PR_LIMIT`
+  recent merged PR heads — bounded, not full history (repository-ruleset-octokit.ts). The
+  fallback exists because the rendered CI runs on `pull_request` only, so `ci`/`secret
+scan`/`CodeQL` never report on the tip itself.
 - **A readback mismatch**: after any write, an INDEPENDENT `GET` — never the write's own
   response — is compared against what was sent for the approval count, merge methods and
   the extension flag. A mismatch fails the plan.
@@ -110,5 +146,9 @@ caller, the same as upstream `GitHub.Ruleset`.
   what a create sends, zero writes on a noop or a refusal, exactly one update on real
   drift, and the readback check.
 - `repository-ruleset-wire.test.ts` — the H15 measurement against a real Octokit instance.
+- `repository-ruleset-octokit.test.ts` — the K2 measurement, same real-Octokit-with-fetch-
+  shim pattern as the wire test: a context reporting only on a recent merged PR head is
+  accepted, one reporting nowhere (tip or any recent merged head) is still refused, and
+  one reporting only past `RECENT_MERGED_PR_LIMIT` stays refused too (the bound is real).
 - `repository-ruleset-coverage.test.ts` — the rule-type coverage change detector (the
   completeness guarantee itself is enforced by `tsc`, not this file — see its header).

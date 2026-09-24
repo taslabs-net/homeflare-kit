@@ -3,10 +3,13 @@
  * one bridge resource this house builds atop upstream GitHub: `GitHub.RepositoryRuleset`.
  *
  * ⚠️ `declareRepoPolicy`/`declareRepoBaseline` COMPOSE UPSTREAM `GitHub.Repository` PLUS THIS
- *   SUBPATH'S OWN `RepositoryRulesetProvider()` — provide BOTH `GitHub.providers()` and
- *   `RepositoryRulesetProvider()`. Before 2026-09-23 this subpath shipped no provider at all,
- *   composing only vendor resources; `RepositoryRuleset` is the one exception, and
- *   repository-ruleset.ts's header says why upstream's own `Ruleset` cannot fill the gap.
+ *   SUBPATH'S OWN `RepositoryRulesetProvider()` — provide `repoPolicyProviders()`
+ *   (repository-ruleset-providers.ts), the composed `GitHub.providers()` +
+ *   `RepositoryRulesetProvider()` layer that actually typechecks (2026-09-24: writing the two
+ *   side by side leaves `RepositoryRulesetProvider()`'s own `GitHubCredentials` requirement
+ *   unfed). Before 2026-09-23 this subpath shipped no provider at all, composing only vendor
+ *   resources; `RepositoryRuleset` is the one exception, and repository-ruleset.ts's header
+ *   says why upstream's own `Ruleset` cannot fill the gap.
  * ★ WHY THE POLICY HELPERS EXIST. "Open a pull request, let auto-merge land it" is safe only
  *   when five repository properties and four ruleset rules all agree, and every way of getting
  *   one of them wrong is silent — an auto-merge that lands on red, a force push that rewrites
@@ -42,6 +45,7 @@ export {
   type RepositoryRulesetRules,
   type RepositoryRulesetStatusChecksRule,
 } from './repository-ruleset.ts';
+export { repoPolicyProviders } from './repository-ruleset-providers.ts';
 export { RULE_TYPE_COVERAGE, type RepositoryRuleType } from './repository-ruleset-constraints.ts';
 export {
   BypassActorNarrowed,

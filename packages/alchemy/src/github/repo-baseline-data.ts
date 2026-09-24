@@ -21,7 +21,16 @@ export interface RepoBaselineInput {
 
 /** `GitHub.Repository` fields this baseline owns. Every merge-automation caller across the 17
  * tray checkouts uses `--squash` (measured 2026-09-23; the only non-squash mentions are
- * GitLab-era comments in cliff.toml), so squash-only is not a per-repo choice. */
+ * GitLab-era comments in cliff.toml), so squash-only is not a per-repo choice.
+ *
+ * ⛔ K5 (2026-09-24): `allowAutoMerge` FOLLOWS `checks.length`, NOT A HARDCODED `true`. `gh pr
+ *   merge --auto` (and the ruleset's own auto-merge) is a queue only while something is
+ *   outstanding — with zero required status checks there is nothing to wait for, so GitHub
+ *   merges a CLEAN pull request on the spot, with no review and no green run. This is the same
+ *   failure `repo-policy-guards.ts`'s `assertAutoMergeWaits` refuses on the sibling `repoPolicy`
+ *   path (five doors to the same "nothing outstanding" state); this baseline has no `autoMerge`
+ *   opt-out prop to refuse WITH, so the fix here is unconditional rather than a thrown refusal —
+ *   a repo with an empty `checks` list simply never gets auto-merge turned on by this baseline. */
 export function repoBaselineSettings(input: RepoBaselineInput) {
   return {
     owner: input.owner,
@@ -31,7 +40,7 @@ export function repoBaselineSettings(input: RepoBaselineInput) {
     allowSquashMerge: true,
     allowMergeCommit: false,
     allowRebaseMerge: false,
-    allowAutoMerge: true,
+    allowAutoMerge: input.checks.length > 0,
     deleteBranchOnMerge: true,
     hasWiki: false,
   };

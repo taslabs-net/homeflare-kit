@@ -5,14 +5,17 @@
  * ★ EXTRACTED SO IT CAN BE TESTED WITHOUT A SERVER — the same reason netbox keeps `prefix-form.ts`
  *   beside `prefix.ts` (S32/testing-and-docs.md).
  *
- * ⛔ PROPS ARE THE GENERATED TYPE, MINUS THE TWO FIELDS THIS RESOURCE OWNS ITSELF: `id` (a
- *   deterministic physical name — pass-through-endpoint.ts) and `is_from_config` (response-only;
- *   the vendor sets it, a declaration never does). Deriving `Props` with `Omit<>` rather than
- *   hand-typing it means a vendor schema change that adds, removes or narrows a field is felt here
- *   as a compiler error, not silently ignored.
+ * ⛔ PROPS ARE `@distilled.cloud/litellm`'s OWN GENERATED TYPE, MINUS THE TWO FIELDS THIS RESOURCE
+ *   OWNS ITSELF: `id` (a deterministic physical name — pass-through-endpoint.ts) and
+ *   `is_from_config` (response-only; the vendor sets it, a declaration never does). Deriving
+ *   `Props` with `Omit<>` rather than hand-typing it means a vendor schema change the SDK's own
+ *   next regeneration picks up is felt here as a compiler error, not silently ignored — the same
+ *   reason this used to derive from the kit's own hand-generated `./generated/pass-through.ts`
+ *   (retired by this migration: the SDK's type is the same shape, generated from the same LiteLLM
+ *   1.100.0 OpenAPI document, and keeping a second copy would only drift).
  */
 import { deepEqual } from 'alchemy/Diff';
-import type * as Generated from './generated/pass-through.ts';
+import type * as Generated from '@distilled.cloud/litellm/misc';
 
 export type PassThroughEndpointProps = Omit<
   Generated.PassThroughGenericEndpoint,
@@ -71,10 +74,17 @@ export const createBody = (
  * `undefined` OR an explicit `null` here would be dropped by the server anyway; sending neither is
  * the same outcome with no request made when nothing changed (`Object.keys(body).length === 0`
  * checked by the caller in pass-through-endpoint.ts).
+ *
+ * ⛔ `path`/`target` ARE NOT `Partial` HERE, UNLIKE EVERY OTHER FIELD. The SDK's own update
+ *   request type requires both non-optionally (the vendor's PATCH route still wants the full
+ *   route/target pair on every call, unlike the other fields' `exclude_none` merge) — typing them
+ *   as always-present here is what lets `operations.ts`'s `updatePassThroughEndpoint` pass this
+ *   straight to the SDK without an unsafe cast.
  */
-export const updateBody = (
-  props: PassThroughEndpointProps,
-): Partial<Generated.PassThroughGenericEndpoint> =>
+export type UpdateBody = Partial<Omit<Generated.PassThroughGenericEndpoint, 'path' | 'target'>> &
+  Pick<Generated.PassThroughGenericEndpoint, 'path' | 'target'>;
+
+export const updateBody = (props: PassThroughEndpointProps): UpdateBody =>
   prune({
     ...settled(props),
     guardrails: isUnset(props.guardrails) ? undefined : props.guardrails,
@@ -82,7 +92,7 @@ export const updateBody = (
     path: props.path,
     target: props.target,
     timeout: isUnset(props.timeout) ? undefined : props.timeout,
-  }) as Partial<Generated.PassThroughGenericEndpoint>;
+  }) as UpdateBody;
 
 /**
  * Whether ANY of the three nullable fields went from set (in `live`) to unset (in `props`) — the

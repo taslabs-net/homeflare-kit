@@ -7,8 +7,9 @@
  *       checks: ['ci', 'secret scan'],
  *     });
  *
- * Provide `GitHub.providers()` AND `RepositoryRulesetProvider()`; this subpath adds no GitHub
- * provider of its own.
+ * Provide `repoPolicyProviders()` (repository-ruleset-providers.ts) — the composed
+ * `GitHub.providers()` + `RepositoryRulesetProvider()` layer; this subpath adds no GitHub
+ * provider of its own beyond the ruleset bridge.
  *
  * ★ REWIRED 2026-09-23 onto `GitHub.RepositoryRuleset`, not upstream `GitHub.Ruleset` — the
  *   ADOPT-SAFE bridge documented in repository-ruleset.ts. Only `builds` calls this, and its
