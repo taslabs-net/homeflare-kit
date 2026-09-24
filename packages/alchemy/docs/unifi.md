@@ -101,13 +101,22 @@ imported firewall zones could decode differently on a newer controller than this
 10.4.57-pinned types expect: diffed a 10.6.97 copy of Ubiquiti's OpenAPI document (a third-party
 mirror, used only as a diffing aid — never as this SDK's spec of record; see the distilled
 package's own `docs/spec-version-provenance.md`) against the pinned 10.4.57 document. Zero
-operations added or removed anywhere in the API; every Networks- and FirewallZones-tagged
-component schema is byte-identical between the two versions; and — since a named schema diff
-alone would miss an inline, untagged parameter changing shape — every full raw operation object
-(parameters, request body, responses, `$ref`s included) for every `Networks`-tagged operation and
-every `*FirewallZone*` operation is _also_ identical, byte for byte, not just its named schemas.
-The only real content difference in the whole document is in the `Switching` tag (new LAG/switch-
-stack schemas, matching Ubiquiti's own 10.6 release notes) — a tag this package does not use.
+operations added or removed anywhere in the API; every full raw operation object (parameters,
+request body, responses, `$ref`s included) for every `Networks`-tagged operation and every
+`*FirewallZone*` operation is identical, byte for byte, not just its named schemas (11 operations
+on each side, same set — a named-schema diff alone would miss an inline, untagged parameter
+changing shape, so this checks the operations directly).
+
+**14 of the document's 379/380 component schemas do differ somewhere** — the switch-stack/LAG
+family (`Switching` tag, matching Ubiquiti's own 10.6 release notes on LAG support), the generic
+`filter`-query-syntax family (`FilterExpression`/`CompoundFilterExpression`/`NotFilterExpression`/
+`PropertyFilterExpression`), and one mDNS enum addition (`SHELLY`, `UniFi Devices` tag) — but
+**none of the 14 is reachable from a Networks or FirewallZone operation, even transitively**:
+resolved every `$ref` reachable from each of the 11 operations' full parameter/body/response
+trees, recursively, in both versions, and none of the 14 changed schema names appears in either
+closure. Full breakdown of the 14 (which changed vs. added/removed, and why the reachability check
+had to go beyond the direct operation-object diff above) is in the distilled package's own
+`docs/spec-version-provenance.md`, not this repo.
 
 **Answer: none of the imported rows would change shape against 10.6.97.** This does not
 generalize past 10.6.97, and it says nothing about any tag besides Networks/FirewallZones —
