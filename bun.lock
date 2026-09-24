@@ -32,7 +32,10 @@
       },
       "devDependencies": {
         "@distilled.cloud/cloudflare": "1.0.0-rc.12",
+        "@distilled.cloud/discord": "1.0.0-rc.12",
         "@distilled.cloud/forgejo": "1.0.0-rc.12",
+        "@distilled.cloud/google-workspace": "1.0.0-rc.12",
+        "@distilled.cloud/grafana": "1.0.0-rc.12",
         "@effect/platform-bun": "4.0.0-rc.115",
         "@effect/platform-node": "4.0.0-rc.115",
         "@effect/sql-pg": "4.0.0-rc.115",
@@ -43,7 +46,10 @@
       },
       "peerDependencies": {
         "@distilled.cloud/cloudflare": "1.0.0-rc.12",
+        "@distilled.cloud/discord": "1.0.0-rc.12",
         "@distilled.cloud/forgejo": "1.0.0-rc.12",
+        "@distilled.cloud/google-workspace": "1.0.0-rc.12",
+        "@distilled.cloud/grafana": "1.0.0-rc.12",
         "@effect/platform-node": "4.0.0-rc.115",
         "@effect/sql-pg": "4.0.0-rc.115",
         "alchemy": "2.0.0-beta.79",
@@ -425,9 +431,15 @@
 
     "@distilled.cloud/core": ["@distilled.cloud/core@1.0.0-rc.12", "", { "dependencies": { "graphql": "16.11.0" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-YeH/uPohGXp2qIctbqVzBtQV+bUs+K5Zdac8qIid7/t6VlwY964SALme5znRdFu/rQgrloXnaej8iTSK9RIQdA=="],
 
+    "@distilled.cloud/discord": ["@distilled.cloud/discord@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-z4GyyfJKN8ay74wlEVjfwii+M9xZh1aKmKPfJBMfhc9aD+oYLgQ+sPiP5Zi3PAyyZ2sQc8QYRGdG5dfkvCvlmg=="],
+
     "@distilled.cloud/fly-io": ["@distilled.cloud/fly-io@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-ACgR8Kcx/OP8gAF+PnXYneGGZNUqyiQHrcTB3/lRcv5gQdacXhTAvreV/d0t7jclRo5BBdNxnd5TuuHpr9vDLA=="],
 
     "@distilled.cloud/forgejo": ["@distilled.cloud/forgejo@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-e2671ORI5yjg5hlpI4oiWdyc/wm47T6F9Qbny1tNTQOn2f8W2M1An2Rt/c1f83fgO0Remb6u7pE4Qmd/Ld9Oig=="],
+
+    "@distilled.cloud/google-workspace": ["@distilled.cloud/google-workspace@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-xvuqFcIIpCpj6LOKcaiuuY6Bg4M+tBoqwZApHmnTad2KHCY3jXliOPt65kDdyBlICxnoePiZKQUOnafrwzvZUQ=="],
+
+    "@distilled.cloud/grafana": ["@distilled.cloud/grafana@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-/K9hDz+Ri779NAQ3yLQQjJOXccSJ5SUWy8eKrPC4yEQVeBXgKBO+UTrsoiKrl7ldj8ynIaMCf7kWVtm0MclsTQ=="],
 
     "@distilled.cloud/hetzner": ["@distilled.cloud/hetzner@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-G6QzOXTNply63I90IjOtNofs0nHkEd1we/fgXiOjobLZt4+sKjjNBVTAHYHGMDeidbtxw270oF9JakgT11Pzww=="],
 
