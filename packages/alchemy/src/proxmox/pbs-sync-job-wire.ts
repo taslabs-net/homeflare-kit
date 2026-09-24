@@ -3,8 +3,7 @@ import * as config from '@distilled.cloud/proxmox-backup/config';
 import * as Effect from 'effect/Effect';
 import { runPbs } from './distilled-pbs.ts';
 import type { SyncJobProps } from './pbs-sync-job.ts';
-import { createBody, updateBody } from './pbs-sync-job-form.ts';
-import { spec } from './pbs-sync-job-form.ts';
+import { createBody, spec, updateBody } from './pbs-sync-job-form.ts';
 
 /** SDK member names differ from the vendor form names; omission stays unmanaged. */
 const members = (form: Record<string, string>) => ({

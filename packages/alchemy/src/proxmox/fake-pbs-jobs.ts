@@ -26,6 +26,7 @@ export const fakePbsJobs = () => {
   const writes: Write[] = [];
   const calls: { method: string; path: string }[] = [];
   let failure: { status: number; body: unknown } | undefined;
+  let deleteFailure: { status: number; body: unknown } | undefined;
   const stub = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const request =
       input instanceof Request ? new Request(input, init) : new Request(String(input), init);
@@ -54,6 +55,9 @@ export const fakePbsJobs = () => {
     const form = Object.fromEntries(new URLSearchParams(await request.text()));
     writes.push({ method: request.method, path, form });
     if (request.method === 'DELETE') {
+      if (deleteFailure !== undefined) {
+        return Response.json(deleteFailure.body, { status: deleteFailure.status });
+      }
       rows.delete(path);
       return Response.json({ data: family === 'datastore' ? 'UPID:fake:delete' : null });
     }
@@ -78,11 +82,15 @@ export const fakePbsJobs = () => {
     failRead: (status: number, body: unknown) => {
       failure = { status, body };
     },
+    failDelete: (status: number, body: unknown) => {
+      deleteFailure = { status, body };
+    },
     reset: () => {
       rows.clear();
       calls.length = 0;
       writes.length = 0;
       failure = undefined;
+      deleteFailure = undefined;
     },
     layer: FetchHttpClient.layer.pipe(
       Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchStub as typeof fetch)),
