@@ -1,5 +1,4 @@
 import { Unowned } from 'alchemy/AdoptPolicy';
-import * as Provider from 'alchemy/Provider';
 import { Resource, type ResourceClass } from 'alchemy/Resource';
 /**
  * `Cloudflare.R2BucketLock` — the lock rule set on one R2 bucket, declared rather than applied by
@@ -33,11 +32,8 @@ import { Resource, type ResourceClass } from 'alchemy/Resource';
  *   match.
  */
 import type { CloudflareOpContext } from '@distilled.cloud/cloudflare/r2';
-import { Credentials } from '@distilled.cloud/cloudflare/Credentials';
 import * as r2 from '@distilled.cloud/cloudflare/r2';
-import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
 import {
   type Jurisdiction,
   type R2LockRule,
@@ -46,6 +42,7 @@ import {
   toBody,
 } from './lock-rules.ts';
 import type { Providers } from './providers.ts';
+import { R2BucketLockRefusal } from './r2-bucket-lock-errors.ts';
 
 export interface R2BucketLockProps {
   readonly accountId: string;
@@ -103,7 +100,9 @@ export const R2BucketLock: ResourceClass<R2BucketLock> = Resource<R2BucketLock>(
  *   same case the status check used to cover — but by the vendor's own error identity, not by
  *   reading a number off the response. Letting it propagate would make the resource impossible to
  *   plan; swallowing every failure would also hide a 403 from a mis-scoped token, which is the
- *   failure this estate spends the most time on. So: `NoSuchBucket` → absent, everything else dies.
+ *   failure this estate spends the most time on. So: `NoSuchBucket` → absent, everything else is a
+ *   typed `R2BucketLockRefusal` (S20; decision 49) — never a status check, and, since 2026-09-24,
+ *   never `Effect.orDie` either. See `r2-bucket-lock-errors.ts`.
  *
  * ⛔ AN EMPTY LIVE RULE SET IS "NO LOCK", NOT "A LOCK WITH NOTHING IN IT", so it reads as absent
  *   and the resource CREATES. The API answers `{}` for a bucket that has never been locked and
@@ -117,14 +116,17 @@ export const R2BucketLock: ResourceClass<R2BucketLock> = Resource<R2BucketLock>(
 export const readLock = (
   props: { accountId: string; bucketName: string; jurisdiction?: Jurisdiction },
   written: boolean,
-): Effect.Effect<R2BucketLockAttributes | undefined, never, CloudflareOpContext> =>
+): Effect.Effect<R2BucketLockAttributes | undefined, R2BucketLockRefusal, CloudflareOpContext> =>
   Effect.gen(function* () {
     const jurisdiction = jurisdictionOf(props);
     const live = yield* r2
       .getBucketLock({ accountId: props.accountId, bucketName: props.bucketName, jurisdiction })
       .pipe(
         Effect.catchTag('NoSuchBucket', () => Effect.succeed(undefined)),
-        Effect.orDie,
+        Effect.mapError(
+          (cause) =>
+            new R2BucketLockRefusal({ operation: 'read', bucketName: props.bucketName, cause }),
+        ),
       );
     if (live === undefined) return undefined;
     const rules = (live.rules ?? []) as readonly R2LockRule[];
@@ -144,12 +146,13 @@ export const readLock = (
  *   persisted (or what `read` just adopted), so the comparison costs nothing either.
  * ⛔ `NoSuchBucket` IS NOT CAUGHT HERE. Unlike `read`, a `reconcile` that hits it means the bucket
  *   this declaration names is genuinely gone — that is a real failure to surface, not a case to
- *   paper over, so it dies like every other tagged error `putBucketLock` can raise.
+ *   paper over, so it fails like every other tagged error `putBucketLock` can raise: as a typed
+ *   `R2BucketLockRefusal`, never as the `Effect.orDie` defect that used to crash the whole engine.
  */
 export const reconcileLock = (
   news: R2BucketLockProps,
   output: R2BucketLockAttributes | undefined,
-): Effect.Effect<R2BucketLockAttributes, never, CloudflareOpContext> =>
+): Effect.Effect<R2BucketLockAttributes, R2BucketLockRefusal, CloudflareOpContext> =>
   Effect.gen(function* () {
     const jurisdiction = jurisdictionOf(news);
     if (output !== undefined && rulesEqual(output.rules, news.rules)) return output;
@@ -160,7 +163,12 @@ export const reconcileLock = (
         jurisdiction,
         ...toBody(news.rules),
       })
-      .pipe(Effect.orDie);
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new R2BucketLockRefusal({ operation: 'reconcile', bucketName: news.bucketName, cause }),
+        ),
+      );
     return { bucketName: news.bucketName, jurisdiction, rules: news.rules };
   });
 
@@ -170,11 +178,14 @@ export const reconcileLock = (
  *   rule is configured, so retiring the repository has to start here — and it is behind
  *   `defaultRemovalPolicy: 'retain'` and the estate CLI's refusal of `destroy` precisely because
  *   no ordinary deploy should ever reach it.
+ * ⛔ IDEMPOTENT (S11, P10): a bucket that is already gone has nothing left to unlock, so
+ *   `NoSuchBucket` is a success here, not a refusal — the one case `delete` treats specially,
+ *   the mirror image of `read`'s own `NoSuchBucket` catch above.
  */
 export const deleteLock = (
   output: R2BucketLockAttributes,
   accountId: string,
-): Effect.Effect<void, never, CloudflareOpContext> =>
+): Effect.Effect<void, R2BucketLockRefusal, CloudflareOpContext> =>
   Effect.gen(function* () {
     yield* r2
       .putBucketLock({
@@ -183,46 +194,15 @@ export const deleteLock = (
         jurisdiction: output.jurisdiction,
         rules: [],
       })
-      .pipe(Effect.orDie);
-  });
-
-export const R2BucketLockProvider = () =>
-  Provider.effect(
-    R2BucketLock,
-    Effect.gen(function* () {
-      // ★ CAPTURED AT BUILD, LIKE `MeshNodeProvider`. `Credentials` and `HttpClient.HttpClient`
-      //   are the whole of distilled's `CloudflareOpContext` (r2.ts re-exports the type); pinning
-      //   them here rather than reading ambient context inside each handler keeps this provider
-      //   correct whether or not the stack also merges `Cloudflare.providers()`.
-      const services = Context.make(Credentials, yield* Credentials).pipe(
-        Context.add(HttpClient.HttpClient, yield* HttpClient.HttpClient),
+      .pipe(
+        Effect.catchTag('NoSuchBucket', () => Effect.void),
+        Effect.mapError(
+          (cause) =>
+            new R2BucketLockRefusal({
+              operation: 'delete',
+              bucketName: output.bucketName,
+              cause,
+            }),
+        ),
       );
-      const run = <A, E>(effect: Effect.Effect<A, E, CloudflareOpContext>) =>
-        Effect.provideContext(effect, services);
-
-      return R2BucketLock.Provider.of({
-        /**
-         * ⛔ EMPTY, AND ALCHEMY'S OWN CONTRACT ASKS FOR EXACTLY THAT. `ProviderService.list`:
-         *   "Resources with no native enumeration API (… sub-resources keyed entirely by a parent)
-         *   should return an empty array rather than throwing." There is no list-locks endpoint —
-         *   a lock is reachable only through the bucket that owns it — so enumerating would mean
-         *   listing every bucket in the account and GETting each one's lock.
-         * ⛔⛔ AND `nuke.singleton` IS WHY THAT IS NOT MERELY UNAVAILABLE BUT UNWANTED. `list`
-         *   feeds `alchemy unsafe nuke`, which lists and then deletes; `delete` here is an UNLOCK.
-         *   A working enumeration would hand one command the ability to strip the retention floor
-         *   off every bucket in the account — the precise event a floor exists to make impossible.
-         *   `singleton` is the documented word for it: always-present configuration whose delete
-         *   resets rather than removes.
-         */
-        list: () => Effect.succeed([]),
-        nuke: { singleton: true },
-        read: Effect.fn(function* ({ olds, output }) {
-          const props = olds ?? undefined;
-          if (props === undefined) return undefined;
-          return yield* run(readLock(props, output !== undefined));
-        }),
-        reconcile: Effect.fn(({ news, output }) => run(reconcileLock(news, output))),
-        delete: Effect.fn(({ olds, output }) => run(deleteLock(output, olds.accountId))),
-      });
-    }),
-  );
+  });
