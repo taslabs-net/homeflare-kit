@@ -7,6 +7,7 @@ bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
         @effect/platform-node@4.0.0-rc.115 mime@4.1.0 \
         @distilled.cloud/cloudflare@1.0.0-rc.12 @distilled.cloud/forgejo@1.0.0-rc.12 \
         @distilled.cloud/discord@1.0.0-rc.12 @distilled.cloud/google-workspace@1.0.0-rc.12 \
+        @distilled.cloud/argocd@1.0.0-rc.12 \
         @effect/sql-pg@4.0.0-rc.115
 ```
 
@@ -286,6 +287,19 @@ export const help =
     name: 'help',
     description: 'Show available commands',
   });
+```
+
+## Argo CD — `@homeflare/alchemy/argocd`
+
+`Argocd.Repository`, `Argocd.RepoCreds` and `Argocd.Cluster` declare Argo CD's own REST-managed
+objects (backed by labeled `Secret`s, not CRDs), generated from `@distilled.cloud/argocd`. Built
+2026-09-24, **ahead of need** — no Talos-on-PVE cluster or Argo CD instance exists yet; every test
+runs against a fake. `Application`/`AppProject` are genuinely Kubernetes CRDs and are deliberately
+NOT here — declare them with upstream Alchemy's own `Kubernetes.Manifest` instead:
+[docs/argocd.md](./docs/argocd.md) and [docs/argocd-kubernetes.md](./docs/argocd-kubernetes.md).
+
+```ts
+import { ArgocdRepository, providers } from '@homeflare/alchemy/argocd';
 ```
 
 ## UniFi Network — `@homeflare/alchemy/unifi`

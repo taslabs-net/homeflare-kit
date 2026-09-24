@@ -78,3 +78,10 @@ upstream, the alias's target changes (or the entry becomes a normal peer, matchi
 `HttpClient` client the same way `/netbox` did) is the same shape**: aliased onto
 `@homeflare/distilled-litellm@0.2.0` as a plain `dependencies` entry, not a peer — nothing to
 add here, nothing for `peers.test.ts` to check.
+
+⚠️ **`@distilled.cloud/argocd` (added 2026-09-24, `/argocd`, built ahead of a Talos-on-PVE
+cluster that does not exist yet) is required for the same reason `@distilled.cloud/forgejo` and
+`/discord` are: a plain dependency of this package, not something a hoisting installer can hide
+from a strict one.** Pinned to `1.0.0-rc.12` — measured (`npm view @distilled.cloud/argocd`,
+2026-09-24) as genuinely published at that version, matching every other pin on this page; no
+interim alias was needed (see [distilled-interim.md](./distilled-interim.md) for when one is).
