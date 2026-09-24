@@ -83,9 +83,103 @@ export const AuthListEnabledMethodsRequest = /*@__PURE__*/ S.suspend(() =>
   identifier: "AuthListEnabledMethodsRequest",
 }) as any as S.Schema<AuthListEnabledMethodsRequest>;
 
-export interface AuthListEnabledMethodsResponse {}
+export type MountOptions = { [key: string]: string | undefined };
+export const MountOptions = /*@__PURE__*/ S.Record(
+  S.String,
+  S.String,
+) as any as S.Schema<MountOptions>;
+
+export type MountStrings = Array<string>;
+export const MountStrings = /*@__PURE__*/ S.Array(
+  S.String,
+) as any as S.Schema<MountStrings>;
+
+export interface MountUserLockoutConfig {
+  user_lockout_counter_reset_duration: number;
+  user_lockout_threshold: number;
+  user_lockout_duration: number;
+  user_lockout_disable: boolean;
+}
+export const MountUserLockoutConfig = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    user_lockout_counter_reset_duration: S.Number,
+    user_lockout_threshold: S.Number,
+    user_lockout_duration: S.Number,
+    user_lockout_disable: S.Boolean,
+  }),
+).annotate({
+  identifier: "MountUserLockoutConfig",
+}) as any as S.Schema<MountUserLockoutConfig>;
+
+export interface MountConfig {
+  default_lease_ttl: number;
+  max_lease_ttl: number;
+  force_no_cache: boolean;
+  audit_non_hmac_request_keys?: MountStrings;
+  audit_non_hmac_response_keys?: MountStrings;
+  passthrough_request_headers?: MountStrings;
+  allowed_response_headers?: MountStrings;
+  listing_visibility?: string;
+  token_type?: string;
+  user_lockout_config?: MountUserLockoutConfig;
+}
+export const MountConfig = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    default_lease_ttl: S.Number,
+    max_lease_ttl: S.Number,
+    force_no_cache: S.Boolean,
+    audit_non_hmac_request_keys: S.optional(MountStrings),
+    audit_non_hmac_response_keys: S.optional(MountStrings),
+    passthrough_request_headers: S.optional(MountStrings),
+    allowed_response_headers: S.optional(MountStrings),
+    listing_visibility: S.optional(S.String),
+    token_type: S.optional(S.String),
+    user_lockout_config: S.optional(MountUserLockoutConfig),
+  }),
+).annotate({ identifier: "MountConfig" }) as any as S.Schema<MountConfig>;
+
+export interface MountInfo {
+  type: string;
+  description: string;
+  accessor: string;
+  uuid: string;
+  plugin_version: string;
+  running_plugin_version: string;
+  running_sha256: string;
+  local: boolean;
+  seal_wrap: boolean;
+  external_entropy_access: boolean;
+  options: MountOptions | null;
+  config: MountConfig;
+  deprecation_status?: string;
+}
+export const MountInfo = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    type: S.String,
+    description: S.String,
+    accessor: S.String,
+    uuid: S.String,
+    plugin_version: S.String,
+    running_plugin_version: S.String,
+    running_sha256: S.String,
+    local: S.Boolean,
+    seal_wrap: S.Boolean,
+    external_entropy_access: S.Boolean,
+    options: S.NullOr(MountOptions),
+    config: MountConfig,
+    deprecation_status: S.optional(S.String),
+  }),
+).annotate({ identifier: "MountInfo" }) as any as S.Schema<MountInfo>;
+
+export type MountTable = { [key: string]: MountInfo | undefined };
+export const MountTable = /*@__PURE__*/ S.Record(
+  S.String,
+  MountInfo,
+) as any as S.Schema<MountTable>;
+
+export type AuthListEnabledMethodsResponse = MountTable;
 export const AuthListEnabledMethodsResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}),
+  MountTable.pipe(T.MountTable()),
 ).annotate({
   identifier: "AuthListEnabledMethodsResponse",
 }) as any as S.Schema<AuthListEnabledMethodsResponse>;

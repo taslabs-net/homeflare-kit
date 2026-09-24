@@ -33,6 +33,22 @@ actually measured against the ephemeral dev server (see
 `patches/policies/_errors.json` in the distilled clone); more are added as
 each kit family migrates onto this SDK.
 
+The copied source is distilled commit
+`52a18936d4e46786c005424549b6085c144ce047` (2026-09-24). Its auth-method and
+secrets-engine inventories return typed maps keyed by exact mount path. The
+OpenBao 2.6.2 OpenAPI document omits both response schemas; source-side Smithy
+patches derive them from the pinned server's `vault/logical_system.go`
+`mountInfo`, `handleAuthTable` and `handleMountTable`, cross-checked against the
+official Go API client. See `packages/openbao/patches/mount-tables.md` in that
+source commit for provenance and reproduction.
+
+Only those two inventory operations require and validate a `data` map.
+Unknown metadata and nested mount paths survive; malformed bodies fail with
+`OpenBaoParseError` without response values. An explicit empty map is valid.
+HTTP failures remain typed errors, including a 404 of the table endpoint;
+individual mount absence is a missing key in a successful inventory. This
+does not add auth/login envelope support or custom plugin endpoints.
+
 ```ts
 import * as OpenBao from '@distilled.cloud/openbao'; // aliased onto this package — see docs/distilled-interim.md
 import * as Effect from 'effect/Effect';
@@ -59,15 +75,15 @@ swap with no import changes anywhere in the kit.
 
 ## Updating it
 
-From the distilled clone's `homeflare/openbao` worktree:
+From an isolated worktree of the recorded distilled source commit:
 
 ```sh
 DISTILLED_SPECS_LOCAL=1 pnpm generate openbao   # or pnpm specs:sync first for a real refresh
 pnpm typecheck:ci && pnpm specs:check && pnpm format:check
 ```
 
-Then copy `src/` back here (`cp -R`, `diff -rq` to prove it), bump this
-package's `version`, and add a changeset.
+Then copy `src/` back here (`cp -R`, `diff -rq` to prove it), update the source
+commit above, and add a changeset. Changesets owns the package version bump.
 
 ## License
 
