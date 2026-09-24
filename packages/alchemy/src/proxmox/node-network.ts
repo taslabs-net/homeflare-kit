@@ -92,7 +92,7 @@ import { dropUnreadable, matches, readInterface } from './node-network-wire.ts';
 import type { NodeNetworkAttributes, NodeNetworkType } from './node-network-wire.ts';
 import { runPve } from './distilled-pve.ts';
 import { type PveRequirements, type WithTarget } from './resource-spec.ts';
-import { UNREADABLE } from './unreadable-read.ts';
+import { UNREADABLE, unreadableWarning } from './unreadable-read.ts';
 
 export type { NodeNetworkAttributes, NodeNetworkType } from './node-network-wire.ts';
 
@@ -182,10 +182,10 @@ export const ProxmoxNodeNetworkProvider = () =>
           yield* guardWrite(NODE_NETWORK_UPDATE, updateForm(news), false);
           if (output === undefined) return undefined;
           const live = yield* readInterface(news);
-          // ⛔ THE CRIES-WOLF FIX: a refused `provision` mint used to fall into `undefined` below
-          //   and force `update` on an interface that was plainly there — see unreadable-read.ts.
-          //   This family reads with `read`, but the same sentinel handling applies uniformly.
+          // ⛔ THE CRIES-WOLF FIX: a refused mint used to fall into `undefined` and force `update`
+          //   on an interface that was plainly there — see unreadable-read.ts.
           if (live === UNREADABLE) {
+            yield* unreadableWarning('Proxmox.NodeNetwork', `${news.node}/${news.iface}`);
             return { action: 'noop' } as const;
           }
           if (live === undefined) {
