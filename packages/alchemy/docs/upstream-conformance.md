@@ -125,6 +125,17 @@ then tidiness.
    `caddyProviders()` and this family's tests were the ones actually broken by it, but any
    family whose provider handlers read a service from context has the same exposure.
 
+   **File-size note, added in the `claude2/distilled-caddy-followup` review pass:** the
+   `encode()` fix above grew `packages/distilled-caddy/src/protocol.ts` from 243 to 294
+   lines, past the house's 250-line code-file cap — the original PR didn't flag this. Left
+   as-is on purpose, not split: `distilled-interim.md` treats all of
+   `packages/distilled-*/src/**` as copied-not-edited vendor code (⛔ "src/ is copied,
+   never hand-edited in the kit"; already exempt from `.oxfmtrc.json`/`.oxlintrc.json` for
+   the identical reason), which is the AGENTS.md line-cap rule's own carve-out for
+   "vendored code." Its source of truth is branch `homeflare/caddy` in the distilled clone
+   — a split belongs there first, then gets copied forward on the next regeneration, not
+   decided unilaterally in this kit copy.
+
 6. **`openbao/*` has no upstream equivalent, and it conforms on the contract** (Effect
    `HttpClient`, strict `Unowned`, retain). It diverges in three ways:
    - 30 `Effect.die` sites in non-test source, several of them on `diff` and
