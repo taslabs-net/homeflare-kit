@@ -138,4 +138,30 @@ describe('adopting an adopt-only ZfsPool declaration', () => {
     const r: ZfsRaidLevel = 'stripe';
     expect(String(r)).toBe('stripe');
   });
+
+  /**
+   * ⛔ FOUND BY ADVERSARIAL REVIEW, 2026-09-24: a genuinely FIRST-EVER declaration never reaches
+   *   `diff` at all (upstream `Plan.ts` routes `oldState === undefined` straight to `create`), so
+   *   the vendor-constraint check `diff` runs had never once protected a brand-new pool's own
+   *   create -- only an ADOPT's later plans. `createPool` (zfs-pool-form.ts) now re-checks before
+   *   its own POST, the same pattern `ceph-pool.ts`'s hand-written `reconcile` already uses.
+   */
+  test('a malformed ashift on a brand-new (non-adopt) declaration is refused before any write', async () => {
+    const fake = cluster(new Set());
+    await withoutBao(async () => {
+      const engine = engineFor(fake);
+      const bad = () =>
+        ProxmoxZfsPool('bad', {
+          // ⛔ PVE's own bound is 9-16 (generated/constraints/pve-nodes-disks.ts) -- 99 is refused.
+          ashift: 99,
+          devices: ['/dev/disk/by-id/fake-0'],
+          name: 'newpool',
+          node: 'node-b',
+          raidlevel: 'single',
+          target: FAKE_TARGET,
+        });
+      await expect(engine.deploy(bad())).rejects.toBeDefined();
+    });
+    expect(fake.writes()).toEqual([]);
+  });
 });
