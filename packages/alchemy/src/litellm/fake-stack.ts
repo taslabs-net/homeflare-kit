@@ -12,13 +12,13 @@
  * ★ NOT alchemy/Test/Bun — same reasoning as openbao/fake-stack.ts: no CLI profile/credentials
  *   files, no file logger. Just the provider, an in-memory state store, and the stack's services.
  */
+import { credentials } from '@distilled.cloud/litellm/Credentials';
 import * as Alchemy from 'alchemy';
 import { AdoptPolicy } from 'alchemy/AdoptPolicy';
 import { provideFreshArtifactStore } from 'alchemy/Artifacts';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import { type LitellmCreds, litellmCredentialsLayerFor } from './credentials.ts';
 import { LiteLLMPassThroughEndpointProvider } from './pass-through-endpoint.ts';
 
 /** The planned action for each resource, deletions included, keyed by FQN. */
@@ -53,13 +53,20 @@ const actionsOf = (plan: PlanView): Planned => {
 /**
  * ⚠️ CREDENTIALS/HTTPCLIENT ARE PROVIDED AROUND `deploy`, NOT BAKED INTO THE PROVIDER LAYER.
  *   `Provider.effect`'s own construction effect is `Effect.succeed(...)` (pass-through-endpoint.ts)
- *   — it never actually reads `LitellmCredentials`/`HttpClient`; only the HANDLERS it returns do,
- *   and those run later, whenever `Apply.ts` calls `provider.reconcile`/`read`/`delete`. Effect
+ *   — it never actually reads `Credentials`/`HttpClient`; only the HANDLERS it returns do, and
+ *   those run later, whenever `Apply.ts` calls `provider.reconcile`/`read`/`delete`. Effect
  *   resolves a `yield*`'s service from whatever ambient context wraps the CALL SITE, so the layers
  *   those handlers need must wrap the whole plan+apply pipeline below, exactly where openbao's
  *   fake-stack.ts wraps `BaoEnv` around its own `deploy`.
+ * ★ `fetchFn` IS `startFakeLitellm(...).fetch` (fake-litellm.ts) — this harness never opens a real
+ *   socket; `FetchHttpClient.Fetch` is the seam the SDK's protocol layer calls through, same as
+ *   `../netbox/fake-netbox.ts`'s `fakeNetboxLayer`.
  */
-export const fakeStack = (creds: LitellmCreds, name = 'PassThroughStack'): FakeStack => {
+export const fakeStack = (
+  creds: { readonly apiKey: string; readonly baseUrl: string },
+  fetchFn: typeof globalThis.fetch,
+  name = 'PassThroughStack',
+): FakeStack => {
   const state = Alchemy.inMemoryState();
   const providers = LiteLLMPassThroughEndpointProvider();
   const stack = Alchemy.Stack as unknown as (
@@ -83,8 +90,9 @@ export const fakeStack = (creds: LitellmCreds, name = 'PassThroughStack'): FakeS
     }).pipe(
       options.adopt === undefined ? (e) => e : Effect.provideService(AdoptPolicy, options.adopt),
       Effect.provideService(Alchemy.Stage, 'test'),
-      Effect.provide(litellmCredentialsLayerFor(creds)),
+      Effect.provide(credentials(creds)),
       Effect.provide(FetchHttpClient.layer),
+      Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetchFn)),
       Effect.scoped,
     );
 

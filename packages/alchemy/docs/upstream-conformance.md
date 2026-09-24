@@ -121,14 +121,44 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
    - ⛔ **Still diverges on credentials (S24):** `NETBOX_TOKEN` / `NETBOX_URL` are read at
      call time, now through the SDK's `CredentialsFromEnv` rather than a hand-rolled
      `token()` — same divergence, unchanged by the transport swap.
-10. **Every family repeats `list: () => Effect.succeed([])`**, 30 times, and only
+10. **`litellm/*` has no upstream equivalent** (LiteLLM has no upstream Alchemy family, the
+    same situation `openbao/*` is in above), and conforms on the transport contract.
+    - ✅ **S23 fixed 2026-09-24** (branch `claude2/litellm-distilled`, mirroring the NetBox
+      migration above, decision 43). `LiteLLM.PassThroughEndpoint` now calls
+      `@distilled.cloud/litellm`'s typed `misc` operations (`operations.ts`) instead of a
+      hand-rolled `Effect HttpClient` client. The old status-carrying `LitellmBadRequestError`
+      family is gone: every failure the four operations declare (`BadRequest`, `NotFound` on
+      update, `UnprocessableEntity`, plus the shared `Unauthorized`/`TooManyRequests`/server
+      errors) is the SDK's own typed error, `catchTag`'d — `deletePassThroughEndpoint`'s
+      re-list-on-ambiguous-`BadRequest` trick (S21: a status-and-a-real-read decision, never
+      body text) is unchanged, now keyed on the tag instead of the status code. The
+      per-base-URL write semaphore this vendor's whole-list storage forces (docs/litellm.md)
+      is unchanged too — the SDK has no opinion on it, so it stays one layer above the typed
+      calls, in `operations.ts`. `client.ts` and the kit's own hand-generated
+      `generated/pass-through.ts` are both deleted (the SDK's `misc.PassThroughGenericEndpoint`
+      is the same shape, generated from the same LiteLLM 1.100.0 OpenAPI document — see
+      `codegen/manifest.json`'s `litellm-openapi` entry, left in place and unconsumed rather
+      than deleted, the same pattern the two UniFi entries already establish). Not published
+      upstream yet, so aliased onto `@homeflare/distilled-litellm@0.2.0` as a plain
+      `dependencies` entry, not a peer — [distilled-interim.md](./distilled-interim.md). State
+      did not move: props/attributes stay byte-identical, proven by the family's unchanged
+      existing tests (now against a fake LiteLLM exercising the real distilled protocol
+      through `FetchHttpClient.Fetch`, not a loopback `Bun.serve`) plus the engine-level
+      replace test through `fake-stack.ts`. No stack in this estate currently imports
+      `litellmProviders`/`LiteLLM.PassThroughEndpoint` (measured 2026-09-24 across
+      homeflare-landscape's own repositories, including this one's `stacks/`), so there is no
+      live plan to re-run.
+    - ⛔ **Still diverges on credentials (S24):** `LITELLM_PROXY_URL` / `LITELLM_PROXY_API_KEY`
+      are read at call time, now through the SDK's `CredentialsFromEnv` rather than a
+      hand-rolled `resolveCreds` — same divergence, unchanged by the transport swap.
+11. **Every family repeats `list: () => Effect.succeed([])`**, 30 times, and only
     `R2BucketLock` and `MeshNode` declare `nuke`. The constructor already defaults `list`
     (S12). **Fix:** write the reason where it differs, and declare `nuke: { skip: true }`
     where nuke must never reach the object.
-11. **Resource JSDoc is not in upstream's generator format.** Zero files use `@resource`,
+12. **Resource JSDoc is not in upstream's generator format.** Zero files use `@resource`,
     `**Example:**` or `### Section` (S31, H10). **Decision:** maintainer, because it moves
     the house's glyph rationale into `//` comments.
-12. **Tests never use `alchemy/Test/Bun`.** Every lifecycle is proven against loopback
+13. **Tests never use `alchemy/Test/Bun`.** Every lifecycle is proven against loopback
     fakes (S28, H12). Live suites need a place to run, and that is a maintainer decision.
 
 ## Conforms

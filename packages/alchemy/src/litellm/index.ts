@@ -2,32 +2,18 @@
  * LiteLLM providers for Alchemy.
  *
  * ⛔ THIS BARREL IS THE PUBLIC API, deliberately smaller than the directory — `fake-litellm.ts`
- *   and the internals `pass-through-form.ts`/`client.ts` need but a consumer should not depend on
- *   directly are not re-exported here (netbox/index.ts's own rule).
+ *   and the internals `pass-through-form.ts`/`operations.ts` need but a consumer should not depend
+ *   on directly are not re-exported here (netbox/index.ts's own rule).
+ * ★ CREDENTIALS AND TYPES NOW COME FROM `@distilled.cloud/litellm` ITSELF (2026-09-24, moved off a
+ *   hand-rolled `client.ts`/`credentials.ts` the same way `/netbox` and `/forgejo` did) — a
+ *   consumer building its own credentials layer imports `Credentials`/`CredentialsFromEnv`/
+ *   `credentials` from `@distilled.cloud/litellm/Credentials` directly, not through this barrel.
  */
-export {
-  LITELLM_PROXY_API_KEY_ENV,
-  LITELLM_PROXY_URL_ENV,
-  LitellmCredentials,
-  type LitellmCreds,
-  LitellmCredentialsError,
-  litellmCredentialsLayer,
-  litellmCredentialsLayerFor,
-} from './credentials.ts';
-export {
-  LITELLM_OPERATIONS,
-  LitellmBadRequestError,
-  type LitellmError,
-  LitellmHttpError,
-  type LitellmRequirements,
-  LitellmTransportError,
-  LitellmUnauthorizedError,
-} from './client.ts';
 export type {
   PassThroughEndpointResponse,
   PassThroughGenericEndpoint,
   PassThroughGuardrailSettings,
-} from './generated/pass-through.ts';
+} from '@distilled.cloud/litellm/misc';
 export {
   LiteLLMPassThroughEndpoint,
   LiteLLMPassThroughEndpointProvider,

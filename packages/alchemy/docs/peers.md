@@ -64,3 +64,8 @@ automatically for every consumer that installs `@homeflare/alchemy` — nothing 
 peer install line, and nothing for `peers.test.ts` to check. When the real package ships
 upstream, the alias's target changes (or the entry becomes a normal peer, matching
 `@distilled.cloud/forgejo` above) and this line still does not change for it.
+
+★ **`@distilled.cloud/litellm` (added 2026-09-24, moving `/litellm` off a hand-rolled
+`HttpClient` client the same way `/netbox` did) is the same shape**: aliased onto
+`@homeflare/distilled-litellm@0.2.0` as a plain `dependencies` entry, not a peer — nothing to
+add here, nothing for `peers.test.ts` to check.
