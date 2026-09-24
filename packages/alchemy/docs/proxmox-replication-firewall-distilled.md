@@ -26,7 +26,7 @@ read over SSH on 2026-09-24 without reading firewall configuration:
 `PVE/API2/Firewall/Aliases.pm`, SHA256
 `aa4d71ea897515ca71caa8e04abd142aedf8077058649f793605f014be84db0e`.
 
-- GET lines 205–212 and PUT line 252 raise an HTTP 400 parameter exception
+- GET lines 203–206 and PUT line 252 raise an HTTP 400 parameter exception
   containing only `errors.name = "no such alias"` when absent.
 - DELETE lines 299–327 removes the map key without checking existence. It is
   already idempotent; actual delete failures still propagate.
