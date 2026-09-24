@@ -44,6 +44,9 @@ retain their structured failure. PVE form arrays use repeated keys, preserving
 commas within a rule/property value. Scalar comma lists and query binding are
 unchanged. Protocol fixtures exercise both the accepted and rejected shapes.
 
+`PoolNotFound` keeps a non-retryable client-error category despite PVE's wire
+status 500; the patch matcher records the actual status independently.
+
 ```ts
 import * as Proxmox from '@distilled.cloud/proxmox'; // aliased onto this package — see docs/distilled-interim.md
 import * as Effect from 'effect/Effect';
