@@ -2,15 +2,20 @@
  * The three OpenBao calls Bao.Policy makes — read, write and delete of `sys/policies/acl/<name>`.
  * Split from policy.ts so the trailing-newline round trip can be tested against a fake server.
  */
+import {
+  policiesDeleteAclPolicy,
+  policiesReadAclPolicy,
+  policiesWriteAclPolicy,
+} from '@distilled.cloud/openbao/policies';
 import * as Effect from 'effect/Effect';
-import { baoDelete, baoRead, baoWrite } from './bao-http.ts';
 import { BaoError } from './bao-status.ts';
+import { runBao, runBaoRead } from './distilled.ts';
 
 /** The endpoint the CLI's policy commands used — openbao v2.6.2 api/sys_policy.go:60, :100, :122. */
 export const policyPath = (name: string) => `sys/policies/acl/${name}`;
 
 /**
- * The live policy text, or '' when the policy is genuinely absent. Anything else FAILS.
+ * The live policy text, or undefined only when the SDK reports PolicyNotFound. Other errors FAIL.
  *
  * 🔴 THE ABSENCE WORDING WAS THE POLICY COMMAND'S OWN, AND ASSUMING OTHERWISE MADE A NEW POLICY
  *   UNCREATABLE. `No value found at` was measured for `bao read`; `bao policy read` never printed
@@ -33,13 +38,21 @@ export const policyPath = (name: string) => `sys/policies/acl/${name}`;
  *   ("no policy found in response", api/sys_policy.go:81-85).
  */
 export const readPolicy = (name: string) =>
-  Effect.flatMap(baoRead(policyPath(name)), (data) => {
-    if (data === undefined) return Effect.succeed('');
-    const text = data['policy'];
-    return typeof text === 'string'
-      ? Effect.succeed(text)
-      : Effect.fail(new BaoError(200, 'GET', policyPath(name), ['no data.policy in the response']));
-  });
+  runBaoRead(policiesReadAclPolicy({ name })).pipe(
+    Effect.flatMap((data) => {
+      const text = data['policy'];
+      return typeof text === 'string'
+        ? Effect.succeed(text)
+        : Effect.fail(
+            new BaoError(200, 'GET', policyPath(name), ['no data.policy in the response']),
+          );
+    }),
+    Effect.catchTag('PolicyNotFound', () => Effect.succeed(undefined)),
+  );
+
+/** Even a live empty policy occupies its name; rename guards must not overwrite it. */
+export const policyExists = (name: string) =>
+  Effect.map(readPolicy(name), (policy) => policy !== undefined);
 
 /**
  * ★ THE HCL TRAVELS IN THE REQUEST BODY (`{"policy": …}`, api/sys_policy.go:96-101). The CLI path
@@ -47,7 +60,11 @@ export const readPolicy = (name: string) =>
  *   list; a JSON body never reaches argv, so the temp file is gone with it.
  */
 export const writePolicy = (name: string, hcl: string) =>
-  baoWrite('PUT', policyPath(name), { policy: hcl });
+  runBao(policiesWriteAclPolicy({ name, policy: hcl })).pipe(Effect.asVoid);
 
 /** Deleting a policy that is already gone answers success (handlePoliciesDelete returns nothing). */
-export const deletePolicy = (name: string) => baoDelete(policyPath(name));
+export const deletePolicy = (name: string) =>
+  runBao(policiesDeleteAclPolicy({ name })).pipe(
+    Effect.catchTag('NotFound', () => Effect.void),
+    Effect.asVoid,
+  );

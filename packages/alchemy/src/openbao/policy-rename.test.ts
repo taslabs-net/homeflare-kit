@@ -38,7 +38,7 @@ describe('Bao.Policy rename, through the engine', () => {
         Policy: 'replace',
       });
       assert.deepEqual(writes(bao.seen), [
-        'PUT /v1/sys/policies/acl/app-new',
+        'POST /v1/sys/policies/acl/app-new',
         'DELETE /v1/sys/policies/acl/app-old',
       ]);
       assert.deepEqual(live(), ['app-new']);
@@ -101,7 +101,7 @@ describe('Bao.Policy rename, through the engine', () => {
         stack.deploy(body('/policies/two')),
         /identity moved from app-1 to app-2/,
       );
-      assert.deepEqual(writes(bao.seen), ['PUT /v1/sys/policies/acl/upstream']);
+      assert.deepEqual(writes(bao.seen), ['POST /v1/sys/policies/acl/upstream']);
       assert.deepEqual(await stack.deploy(body('/policies/two')), {
         Policy: 'replace',
         Upstream: 'noop',

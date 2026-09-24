@@ -10,9 +10,9 @@ import { ownedRead } from '../ownership/probe.ts';
 import { provingResumes } from '../ownership/resume.ts';
 import { sha256 } from './digest.ts';
 import { isEmptyAssembly } from './policy-assembly.ts';
-import { deletePolicy, policyPath, readPolicy, writePolicy } from './policy-wire.ts';
-import { policyKey } from './rename.ts';
-import { guardRename, judgeRename, nameIdentity } from './rename-identity.ts';
+import { judgePolicyRename, policyIdentity } from './policy-identity.ts';
+import { deletePolicy, readPolicy, writePolicy } from './policy-wire.ts';
+import { guardRename } from './rename-identity.ts';
 
 /**
  * An OpenBao ACL policy, assembled from the HCL fragments that declare it.
@@ -103,9 +103,6 @@ export const BaoPolicy = Resource<BaoPolicy>('Bao.Policy', {
   defaultRemovalPolicy: 'retain',
 });
 
-/** A policy is its name, keyed as OpenBao keys it (`policyKey`). */
-const IDENTITY = nameIdentity<BaoPolicyAttributes>('Bao.Policy', policyPath, policyKey);
-
 /** `path "..."` grant count — the same number the apply script prints. */
 const grantsOf = (hcl: string) => (hcl.match(/^path /gm) ?? []).length;
 
@@ -140,12 +137,12 @@ export const BaoPolicyProvider = () =>
          */
         list: () => Effect.succeed([]),
 
-        // ★ '' means genuinely absent (a 404); a refusal fails. policy-wire.ts has the history.
+        // ★ Only undefined means absent (a typed 404); even a live empty policy occupies its name.
         // ⛔ With no attributes in state, a live policy is `Unowned` unless it is the one our own
         //   interrupted create wrote: these fragments, byte for byte (ownership/probe.ts).
         read: Effect.fn(function* ({ fqn, instanceId, olds, output }) {
           const live = yield* readPolicy(olds.name);
-          const found = live.length === 0 ? undefined : attributesOf(olds.name, live, 0);
+          const found = live === undefined ? undefined : attributesOf(olds.name, live, 0);
           const ours = Effect.map(
             assemble(olds.fragments),
             (a) => sha256(a.joined) === found?.digest,
@@ -170,7 +167,7 @@ export const BaoPolicyProvider = () =>
            *   delete, so a role outside this graph that names the old policy must move in the same
            *   PR (REPLACE.md).
            */
-          const move = yield* judgeRename(IDENTITY, olds, news, output);
+          const move = yield* judgePolicyRename(olds, news, output);
           // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
           if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
@@ -180,7 +177,7 @@ export const BaoPolicyProvider = () =>
           if (!isResolved(news)) return undefined;
           const { joined } = yield* assemble(news.fragments);
           const live = yield* readPolicy(news.name);
-          return live.length > 0 && sha256(live) === sha256(joined)
+          return live !== undefined && sha256(live) === sha256(joined)
             ? ({ action: 'noop' } as const)
             : ({ action: 'update' } as const);
         }),
@@ -188,7 +185,7 @@ export const BaoPolicyProvider = () =>
         reconcile: Effect.fn(function* ({ fqn, instanceId, news, output }) {
           const name = news.name;
           // ⛔ An `update` across a rename the diff could not see — refused before any write.
-          yield* guardRename(IDENTITY, news, output);
+          yield* guardRename(policyIdentity, news, output);
           const { joined, parts } = yield* assemble(news.fragments);
           /**
            * ⛔ AN EMPTY ASSEMBLY IS A REFUSAL, NOT AN EMPTY POLICY. `bao policy write` with
@@ -218,9 +215,9 @@ export const BaoPolicyProvider = () =>
            *   sibling PVE provider does exactly this in pveOperations.reconcile.
            */
           const current = yield* readPolicy(name);
-          if (current.length > 0)
+          if (current !== undefined)
             yield* refuseTakeover({ fqn, instanceId, output }, `Bao.Policy ${name}`);
-          if (current.length > 0 && sha256(current) === sha256(joined)) {
+          if (current !== undefined && sha256(current) === sha256(joined)) {
             return attributesOf(name, joined, parts);
           }
           // ⚠️ In the request body, never on argv — see `writePolicy` for why the temp file went.

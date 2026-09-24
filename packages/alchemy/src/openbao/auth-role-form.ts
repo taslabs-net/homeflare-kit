@@ -70,25 +70,6 @@ export const attributesOf = (
 
 export const readPath = (name: string) => `auth/approle/role/${name}`;
 
-/**
- * The body for `PUT auth/approle/role/<name>`.
- *
- * ★ ALL STRINGS, EXACTLY THE `k=v` PAIRS `bao write` USED TO SEND — see `baoWrite` in bao-http.ts.
- */
-export const writeBody = (props: BaoAuthRoleProps): Record<string, string> => {
-  const body: Record<string, string> = {
-    token_policies: props.tokenPolicies.join(','),
-    token_ttl: props.tokenTtl,
-    token_max_ttl: props.tokenMaxTtl,
-    secret_id_ttl: props.secretIdTtl,
-  };
-  if (props.bindSecretId !== undefined) body['bind_secret_id'] = String(props.bindSecretId);
-  if (props.secretIdNumUses !== undefined) {
-    body['secret_id_num_uses'] = String(props.secretIdNumUses);
-  }
-  return body;
-};
-
 const samePolicies = (want: readonly string[], have: readonly string[]) =>
   want.length === have.length && want.every((policy, index) => policy === have[index]);
 

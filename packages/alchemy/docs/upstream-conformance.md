@@ -144,9 +144,11 @@ then tidiness.
    - 42 test files on `node:test` (S43);
    - `Bao.*` type strings, where the vendor name is `OpenBao` (H14).
 
-   No distilled SDK exists. OpenBao serves an OpenAPI document, so a generated SDK in
-   distilled's shape is the S23 path. **Decision:** maintainer, on whether the kit authors
-   a distilled package.
+   The generated SDK ships as `@homeflare/distilled-openbao` (interim alias for
+   `@distilled.cloud/openbao`). `Bao.Policy` and `Bao.AuthRole` use it for CRUD and rename collision
+   reads, sharing the existing eight-request gate, timeout and agent transport. Other
+   Bao families still use the raw client. Auth/login envelope decoding and house plugin
+   schemas remain separate SDK work before those families can migrate.
 
 ## Remaining family findings
 
