@@ -30,10 +30,44 @@ Effect.gen(function* () {
 });
 ```
 
-Provide **both** `GitHub.providers()` (for `GitHub.Repository`, if declared alongside) and
-`RepositoryRulesetProvider()` — this is a separate `Provider`, registered under its own
-type string (`GitHub.RepositoryRuleset`), not inside upstream's `GitHub.Providers`
-collection. The two coexist in one stack without any change to upstream's own code.
+This is a separate `Provider`, registered under its own type string
+(`GitHub.RepositoryRuleset`), not inside upstream's `GitHub.Providers` collection — the two
+coexist in one stack without any change to upstream's own code.
+
+## Providers
+
+Provide `repoPolicyProviders()` (`@homeflare/alchemy/github`) as the stack's `providers`, not
+`GitHub.providers()` and `RepositoryRulesetProvider()` written side by side:
+
+```ts
+import { repoPolicyProviders } from '@homeflare/alchemy/github';
+
+// providers: repoPolicyProviders()
+```
+
+⛔ **The side-by-side form does not typecheck** — measured 2026-09-24 (homeflare-builds bump PR
+6, tsc TS2345), two separate bugs stacked on top of each other:
+
+1. **The layer** still requires `GitHubCredentials` when the two providers are merged plainly:
+   `RepositoryRulesetProvider()`'s handlers call `octokitFor`, which needs it, and merging two
+   layers does not thread one's output into the other's requirement. `repoPolicyProviders()`
+   feeds `GitHub.providers()` into `RepositoryRulesetProvider()` with `Layer.provideMerge`
+   instead of a plain merge. `GitHub.providers()` resolves credentials internally and — because
+   it chains `provideMerge`, not `provide`, onto its own auth layer — re-exposes
+   `GitHubCredentials` in its own output too, so this both satisfies the requirement and keeps
+   `GitHub.Providers` available for any `GitHub.Repository`/`GitHub.Ruleset` declared alongside.
+2. **The declaration** failed to typecheck on its own, even with the layer fixed, whenever a
+   stack body called `RepositoryRuleset` — directly, or via
+   `declareRepoPolicy`/`declareRepoBaseline`. `RepositoryRuleset`'s `Resource<>` declaration put
+   `GitHubCredentials` in the 5th (`Providers`) type parameter, which puts the credential
+   requirement on the DECLARATION itself, not just the provider. A stack body cannot supply
+   `GitHubCredentials` this way — `Alchemy.Stack`'s own `ProviderServices` type is a closed
+   union that `GitHubCredentials` does not structurally match (see repository-ruleset.ts's file
+   header for the full trace against `alchemy/src/Resource.ts` and `alchemy/src/Stack.ts`).
+   Upstream's own `GitHub.Ruleset` never makes this mistake: its 5th slot is `GitHub.Providers`
+   (the collection tag), never the raw credential service. `RepositoryRuleset` now omits the
+   5th parameter, defaulting its declaration requirement to `Provider<RepositoryRuleset>`
+   instead.
 
 ## Type string: H14
 
