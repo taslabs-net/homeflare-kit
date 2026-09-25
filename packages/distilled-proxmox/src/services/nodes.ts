@@ -50,6 +50,35 @@ export class ClusterNodeUnreachable
     [{ status: 595 }],
   ) {}
 
+/** The requested container config is absent on this node. VM IDs are cluster-wide: callers must still check whether another node or QEMU guest holds the ID before creating. Also raised by PUT (update_vm) and DELETE (destroy_vm), which both call the same load_config first. This GET requires VM.Audit on /vms/{vmid}; retain its credential for any permission-filtered cluster index read. */
+export class LxcConfigNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<LxcConfigNotFound>()("LxcConfigNotFound", {
+      message: S.String,
+    }).pipe(C.withBadRequestError),
+    [
+      {
+        status: 500,
+        message: {
+          matches:
+            "^Configuration file 'nodes/[^/']+/lxc/[0-9]+\\.conf' does not exist\\n?$",
+        },
+      },
+    ],
+  ) {}
+
+/** pve-manager 9.2.11, PVE/API2/Network.pm. GET (network_config) and PUT (update_network) both raise HTTP 400 with exactly errors.iface = interface does not exist -- verified against the live n2 source on 2026-09-25. DELETE (delete_network) raises it too but is left untyped: no generated deleteNodeNetwork2 caller exists yet. Only the exact sole-field detail is normalized for operation matching; all other validation errors remain ParameterVerificationFailed. Attached to GET and PUT. */
+export class NetworkInterfaceNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<NetworkInterfaceNotFound>()(
+      "NetworkInterfaceNotFound",
+      {
+        message: S.String,
+      },
+    ).pipe(C.withBadRequestError),
+    [{ status: 400, message: { matches: "^interface does not exist$" } }],
+  ) {}
+
 export interface CloneNodesLxcRequest {
   node: string;
   vmid: string;
@@ -21398,7 +21427,7 @@ export const deleteNodeFirewallRule: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type DeleteNodeLxcError = ProxmoxOpError;
+export type DeleteNodeLxcError = LxcConfigNotFound | ProxmoxOpError;
 /** Destroy the container (also delete all uses files). (root-privileged endpoint) */
 export const deleteNodeLxc: API.OperationMethod<
   DeleteNodeLxcRequest,
@@ -21408,7 +21437,7 @@ export const deleteNodeLxc: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: DeleteNodeLxcRequest,
   output: DeleteNodeLxcResponse,
-  errors: [],
+  errors: [LxcConfigNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
@@ -22088,7 +22117,7 @@ export const getNodeLxc: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type GetNodeLxcConfigError = ProxmoxOpError;
+export type GetNodeLxcConfigError = LxcConfigNotFound | ProxmoxOpError;
 /** Get container configuration. */
 export const getNodeLxcConfig: API.OperationMethod<
   GetNodeLxcConfigRequest,
@@ -22098,7 +22127,7 @@ export const getNodeLxcConfig: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: GetNodeLxcConfigRequest,
   output: GetNodeLxcConfigResponse,
-  errors: [],
+  errors: [LxcConfigNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
@@ -22297,7 +22326,7 @@ export const getNodeLxcVncwebsocket: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type GetNodeNetworkError = ProxmoxOpError;
+export type GetNodeNetworkError = NetworkInterfaceNotFound | ProxmoxOpError;
 /** Read network device configuration */
 export const getNodeNetwork: API.OperationMethod<
   GetNodeNetworkRequest,
@@ -22307,7 +22336,7 @@ export const getNodeNetwork: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: GetNodeNetworkRequest,
   output: GetNodeNetworkResponse,
-  errors: [],
+  errors: [NetworkInterfaceNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
@@ -24738,7 +24767,7 @@ export const putNodeFirewallRule: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type PutNodeLxcConfigError = ProxmoxOpError;
+export type PutNodeLxcConfigError = LxcConfigNotFound | ProxmoxOpError;
 /** Set container options. (root-privileged endpoint) */
 export const putNodeLxcConfig: API.OperationMethod<
   PutNodeLxcConfigRequest,
@@ -24748,7 +24777,7 @@ export const putNodeLxcConfig: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: PutNodeLxcConfigRequest,
   output: PutNodeLxcConfigResponse,
-  errors: [],
+  errors: [LxcConfigNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
@@ -24858,7 +24887,7 @@ export const putNodeNetwork: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type PutNodeNetwork2Error = ProxmoxOpError;
+export type PutNodeNetwork2Error = NetworkInterfaceNotFound | ProxmoxOpError;
 /** Update network device configuration (root-privileged endpoint) */
 export const putNodeNetwork2: API.OperationMethod<
   PutNodeNetwork2Request,
@@ -24868,7 +24897,7 @@ export const putNodeNetwork2: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: PutNodeNetwork2Request,
   output: PutNodeNetwork2Response,
-  errors: [],
+  errors: [NetworkInterfaceNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
