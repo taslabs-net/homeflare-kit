@@ -67,6 +67,23 @@ export class LxcConfigNotFound
     ],
   ) {}
 
+/** qemu-server PVE/API2/Qemu.pm vm_config GET and destroy_vm both call QemuConfig->load_config. pve-guest-common AbstractConfig.pm load_config dies when the cfs file is missing: Configuration file '$cfspath' does not exist. QemuConfig's path is nodes/$node/qemu-server/$vmid.conf, HTTP 500. A missing file on this node is not a free cluster-wide vmid. */
+export class QemuConfigNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<QemuConfigNotFound>()("QemuConfigNotFound", {
+      message: S.String,
+    }).pipe(C.withBadRequestError),
+    [
+      {
+        status: 500,
+        message: {
+          matches:
+            "^Configuration file 'nodes/[^/']+/qemu-server/[0-9]+\\.conf' does not exist\\n?$",
+        },
+      },
+    ],
+  ) {}
+
 /** pve-manager 9.2.11, PVE/API2/Network.pm. GET (network_config) and PUT (update_network) both raise HTTP 400 with exactly errors.iface = interface does not exist -- verified against the live n2 source on 2026-09-25. DELETE (delete_network) raises it too but is left untyped: no generated deleteNodeNetwork2 caller exists yet. Only the exact sole-field detail is normalized for operation matching; all other validation errors remain ParameterVerificationFailed. Attached to GET and PUT. */
 export class NetworkInterfaceNotFound
   extends /*@__PURE__*/ T.applyErrorMatchers(
@@ -21547,7 +21564,7 @@ export const deleteNodeNetwork2: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type DeleteNodeQemuError = ProxmoxOpError;
+export type DeleteNodeQemuError = QemuConfigNotFound | ProxmoxOpError;
 /** Destroy the VM and all used/owned volumes. Removes any VM specific permissions and firewall rules (root-privileged endpoint) */
 export const deleteNodeQemu: API.OperationMethod<
   DeleteNodeQemuRequest,
@@ -21557,7 +21574,7 @@ export const deleteNodeQemu: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: DeleteNodeQemuRequest,
   output: DeleteNodeQemuResponse,
-  errors: [],
+  errors: [QemuConfigNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
@@ -22566,7 +22583,7 @@ export const getNodeQemuCloudinitDump: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type GetNodeQemuConfigError = ProxmoxOpError;
+export type GetNodeQemuConfigError = QemuConfigNotFound | ProxmoxOpError;
 /** Get the virtual machine configuration with pending configuration changes applied. Set the 'current' parameter to get the current configuration instead. */
 export const getNodeQemuConfig: API.OperationMethod<
   GetNodeQemuConfigRequest,
@@ -22576,7 +22593,7 @@ export const getNodeQemuConfig: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: GetNodeQemuConfigRequest,
   output: GetNodeQemuConfigResponse,
-  errors: [],
+  errors: [QemuConfigNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));

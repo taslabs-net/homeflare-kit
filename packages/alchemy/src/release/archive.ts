@@ -54,7 +54,10 @@ export const extractMembers = async (
       offset += SLICE;
     },
   });
-  const unzipped = source.pipeThrough(new DecompressionStream('gzip')).getReader();
+  // ⚠️ TS 7's DOM lib types this writable chunk as BufferSource, which pipeThrough
+  //   will not accept as Uint8Array. The slices enqueued above are Uint8Array.
+  const gunzip = new DecompressionStream('gzip') as ReadableWritablePair<Uint8Array, Uint8Array>;
+  const unzipped = source.pipeThrough(gunzip).getReader();
   try {
     for (;;) {
       const { done, value } = await unzipped.read();
