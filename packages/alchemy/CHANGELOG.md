@@ -2,6 +2,29 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.37.7
+
+### Patch Changes
+
+- [#278](https://github.com/taslabs-net/homeflare-kit/pull/278) [`4b3c9eb`](https://github.com/taslabs-net/homeflare-kit/commit/4b3c9ebc0792386e797b2e1293b3c41cce4ddac7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Move Lxc reads, writes and task polling to named distilled operations. Preserve task
+  credentials, ownership, digests, no-shrink checks and retention; prove absence with
+  the exact SDK missing-config tag and the same credential's cluster-wide vmid check.
+
+- [#283](https://github.com/taslabs-net/homeflare-kit/pull/283) [`a19c663`](https://github.com/taslabs-net/homeflare-kit/commit/a19c6632e3654c73fb3bf03dd9e2869b9ed65fdd) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Keep the PVE network `changes` sibling through the distilled protocol, and move NetworkApply onto named operations without storing the diff.
+
+- [#278](https://github.com/taslabs-net/homeflare-kit/pull/278) [`4b3c9eb`](https://github.com/taslabs-net/homeflare-kit/commit/4b3c9ebc0792386e797b2e1293b3c41cce4ddac7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Move ReplicationJob and FirewallAlias lifecycle transport to named distilled SDK operations. Preserve no-write adoption, existing form and deletion semantics, and fail closed on unrelated errors or malformed reads.
+
+- [#278](https://github.com/taslabs-net/homeflare-kit/pull/278) [`4b3c9eb`](https://github.com/taslabs-net/homeflare-kit/commit/4b3c9ebc0792386e797b2e1293b3c41cce4ddac7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix two regressions from the distilled transport migration: ReplicationJob reads no
+  longer fail closed when a SectionConfig release echoes guest/jobnum as text instead
+  of a JSON number, and lxcTask's poll loop no longer aborts a still-running task on a
+  status word other than exactly "running"/"stopped".
+
+- [#282](https://github.com/taslabs-net/homeflare-kit/pull/282) [`08b1789`](https://github.com/taslabs-net/homeflare-kit/commit/08b1789cf835af177960aba5e4fbf16d007b087e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Move Proxmox.Vm onto named QEMU operations. Guest deletion uses the destroy route, and only the vendor missing-config error is absence.
+
+- [#282](https://github.com/taslabs-net/homeflare-kit/pull/282) [`08b1789`](https://github.com/taslabs-net/homeflare-kit/commit/08b1789cf835af177960aba5e4fbf16d007b087e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix a regression in the QEMU distilled transport migration: qemuTask's poll loop no
+  longer aborts a still-running VM create/destroy on a status word other than exactly
+  "running"/"stopped" (the same class of fix already shipped for lxcTask).
+
 ## 0.37.6
 
 ### Patch Changes
