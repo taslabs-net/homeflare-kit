@@ -55,6 +55,15 @@ import type { UnitStatus } from './systemctl.ts';
 /** MEASURED on CT100 2026-09-24: `systemctl show caddy.service -p FragmentPath`. */
 export const GENERATED_UNIT_DIRECTORY = '/run/systemd/generator';
 
+/**
+ * Whether `fragmentPath` is Quadlet's OWN generator output, not a hand-written or vendor-packaged
+ * unit that merely shares the service name — the one fact `container-preflight.ts`'s
+ * `assertUnshadowed` needs to tell "nothing here yet" apart from "something else already answers
+ * to this name". Kept here, beside `GENERATED_UNIT_DIRECTORY`, so the two can never drift apart.
+ */
+export const isGeneratorFragment = (fragmentPath: string | undefined): boolean =>
+  fragmentPath !== undefined && fragmentPath.startsWith(`${GENERATED_UNIT_DIRECTORY}/`);
+
 export class QuadletGeneratorError extends Error {
   constructor(name: string, detail: string) {
     super(`Podman.Container ${name}: ${detail}`);

@@ -3,7 +3,8 @@
  * like it, cares most about the NEGATIVE assertions: an adopted container that already matches is
  * not restarted, a re-run restarts nothing, and a read that fails writes nothing. Generator-failure
  * rollback and the never-enable guarantee are in container-generator.test.ts; secret refusal is in
- * container-secrets.test.ts; the CT100 fixture is in container-fixture.test.ts.
+ * container-secrets.test.ts; the CT100 fixture is in container-fixture.test.ts; a plain unit
+ * shadowing the service name (`assertUnshadowed`) is in container-shadow.test.ts.
  */
 import { describe, expect, test } from 'bun:test';
 import { fakeQuadletHost } from './fake-quadlet.ts';

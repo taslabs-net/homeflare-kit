@@ -36,6 +36,7 @@ import {
 import {
   assertMayWrite,
   assertReplaceable,
+  assertUnshadowed,
   assertUsable,
   assertValid,
 } from './container-preflight.ts';
@@ -44,7 +45,20 @@ import { attributesOf, settle } from './container-settle.ts';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/** What is on the host now: the `.container` file's digest and the GENERATED unit's status. */
+/**
+ * What is on the host now: the `.container` file's digest and the GENERATED unit's status.
+ *
+ * ⛔ A FILE-LESS `known` UNIT IS NOT NECESSARILY OURS — found on adversarial review. The OLD test
+ *   here was `bytes === undefined && !status.known`: absent file, unknown unit → nothing. But a
+ *   PLAIN unit under `/etc/systemd/system` (or `/usr/lib/systemd/system`) with the same service
+ *   name also makes `status.known` true, with no `.container` file behind it at all — the read
+ *   then reported a container that has never been declared as "exists", and a plan built on that
+ *   said "adopted" for something a create would later fail to make real (`assertUnshadowed`,
+ *   container-preflight.ts, has the measured precedence fact and the plan-time refusal). A REAL
+ *   Quadlet generation (this or an earlier apply's own file, later removed) reads no differently
+ *   here than before: its `FragmentPath` sits under Quadlet's own generator directory, which
+ *   `assertUnshadowed` never refuses.
+ */
 export const readContainer = async (
   runner: HostRunner,
   props: ContainerProps,
@@ -52,7 +66,10 @@ export const readContainer = async (
   const path = containerPathFor(props);
   const bytes = await runner.readFile(path);
   const status = await showUnit(runner, serviceNameFor(props));
-  if (bytes === undefined && !status.known) return undefined;
+  if (bytes === undefined) {
+    if (!status.known) return undefined;
+    assertUnshadowed(props, status);
+  }
   const sha = bytes === undefined ? '' : digestOf(decoder.decode(bytes));
   return attributesOf(
     props,

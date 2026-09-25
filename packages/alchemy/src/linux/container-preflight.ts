@@ -9,6 +9,7 @@
 import { type HostRunner, canActAsRoot } from '../launchd/runner.ts';
 import { UNIT_WRITE, digestOf } from './unit-form.ts';
 import { type UnitStatus, showUnit } from './systemctl.ts';
+import { GENERATED_UNIT_DIRECTORY, isGeneratorFragment } from './container-generator.ts';
 import {
   type ContainerAttributes,
   type ContainerProps,
@@ -71,6 +72,43 @@ export const assertUnclaimed = async (runner: HostRunner, props: ContainerProps)
         'new resource and deploy with --adopt.',
     );
   }
+};
+
+/**
+ * ⛔ A PLAIN UNIT SHARING THE SERVICE NAME OUTRANKS QUADLET'S GENERATOR, SILENTLY — the fact
+ *   `container-generator.ts`'s header measures for `verifyGenerated`: `/etc/systemd/system` (and
+ *   `/usr/lib/systemd/system`) search BEFORE `${GENERATED_UNIT_DIRECTORY}` in systemd's own unit
+ *   load path (systemd.unit(5) "Unit File Load Path"). With no `.container` file of ours on disk
+ *   yet, a `FragmentPath` that is NOT under the generator directory means some OTHER unit file —
+ *   hand-written, or shipped by a package — already answers to this name: writing and reloading
+ *   would generate a unit systemd never actually loads, because the plain one still wins.
+ * ★ TWIN OF `unit-preflight.ts`'s `assertUnclaimed`, for the one failure mode `Systemd.Unit` can't
+ *   have: there is no generator standing between ITS file and the unit systemd loads, so nothing
+ *   there can be shadowed the way a Quadlet generation can.
+ * ★ ONLY WHEN THE `.container` FILE ITSELF IS ABSENT (called from `readContainer` in that branch):
+ *   a present file with different content is `assertUnclaimed`'s job; a present file that IS ours
+ *   generating a shadowed unit is `verifyGenerated`'s job, at apply time, once daemon-reload has
+ *   actually run — this is the "nothing declared yet" half neither of those covers, and the one
+ *   this bug leaves refusing only mid-apply instead of at plan time.
+ * ⚠️ NEVER FIRES WITHOUT A CONCRETE `fragmentPath` TO NAME, AND NEVER FOR A MASKED UNIT — MEASURED
+ *   against this family's own fake (`fakeQuadletHost`, unlike `sudo-lifecycle.test.ts`'s, which is
+ *   a different fake and reads differently): `placeUnit(path, text, {masked: true})` still reports
+ *   a real `FragmentPath`. Refusing there anyway would work, but with THIS function's generic
+ *   "plain unit" wording instead of `assertUsable`'s specific, more actionable "is masked, run
+ *   `systemctl unmask` deliberately" — masking is a person's decision, not an accident to explain
+ *   as a name collision. `assertUsable` stays the one place that message comes from.
+ */
+export const assertUnshadowed = (props: Pick<ContainerProps, 'name'>, status: UnitStatus): void => {
+  if (!status.known || status.fragmentPath === undefined) return;
+  if (status.loadState === 'masked' || status.unitFileState === 'masked') return;
+  if (isGeneratorFragment(status.fragmentPath)) return;
+  throw refuseContainer(
+    props.name,
+    `${serviceNameFor(props)} already exists as a plain unit at ${status.fragmentPath}, not a ` +
+      `Quadlet generation — Quadlet's own output (${GENERATED_UNIT_DIRECTORY}/…) would be ` +
+      'shadowed by it and never actually run: systemd loads the higher-precedence file first. ' +
+      'Move the plain unit aside — a cutover — before declaring this container.',
+  );
 };
 
 /** The half of a rename check that needs only the NEW NAME — mirrors `assertRenameTarget`. */
