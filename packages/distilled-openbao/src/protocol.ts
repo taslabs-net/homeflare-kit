@@ -53,6 +53,7 @@ import {
 } from "@distilled.cloud/core/protocol-rest";
 import { Credentials, type Config } from "./credentials.ts";
 import { UnknownOpenBaoError, type DefaultErrors } from "./errors.ts";
+import { withMountTables } from "./protocol-mount-tables.ts";
 
 /**
  * Error channel shared by every generated OpenBao operation. Generated
@@ -122,4 +123,4 @@ export const OpenBaoProtocol: Layer.Layer<API.Protocol> =
         message,
         body,
       }),
-  });
+  }).pipe(withMountTables);

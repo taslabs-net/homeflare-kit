@@ -4,8 +4,16 @@
  * Re-exports the generic protocol traits from core so generated operations
  * import everything from one place. OpenBao speaks plain token-REST JSON
  * with a `data`-enveloped success body (unwrapped in `protocol.ts`), so
- * there are no provider-specific traits.
+ * MountTable marks the two inventory responses whose data is a path-keyed map.
  */
+import { makeAnnotation } from "@distilled.cloud/core/trait";
+
+export const mountTableSymbol = Symbol.for(
+  "@distilled.cloud/openbao/mount-table",
+);
+/** A typed dynamic map inside a required logical-response data envelope. */
+export const MountTable = () => makeAnnotation(mountTableSymbol, true);
+
 export {
   Body,
   Header,
