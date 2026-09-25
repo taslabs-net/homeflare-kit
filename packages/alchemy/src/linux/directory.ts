@@ -18,13 +18,10 @@ import { lift, resolvedString } from '../launchd/host-effect.ts';
 import { HostRunnerService } from '../launchd/runner.ts';
 import { adoptsAtApply } from '../ownership/adopt.ts';
 import { noteUnfinished } from '../ownership/resume.ts';
+import { recordedGeneration } from '../ownership/rows.ts';
 import type { HostDirectoryAttributes, HostDirectoryProps } from './directory-lifecycle.ts';
-import {
-  deleteDirectory,
-  diffDirectory,
-  readDirectory,
-  reconcileDirectory,
-} from './directory-lifecycle.ts';
+import { deleteDirectory, diffDirectory, reconcileDirectory } from './directory-lifecycle.ts';
+import { readInterruptedDirectory } from './directory-read.ts';
 
 export type { HostDirectoryAttributes, HostDirectoryProps } from './directory-lifecycle.ts';
 
@@ -44,11 +41,24 @@ export const HostDirectoryProvider = () =>
       return HostDirectory.Provider.of({
         list: () => Effect.succeed([]),
 
-        read: ({ olds, output }) =>
-          lift(async () => {
-            const found = await readDirectory(runner, olds.path);
-            if (found === undefined) return undefined;
-            return output === undefined ? Unowned(found) : found;
+        // ⛔ Recovery of a `creating` row whose path was still an Output never stats (directory-read.ts).
+        read: ({ fqn, instanceId, olds, output }) =>
+          Effect.gen(function* () {
+            const recovering =
+              typeof olds.path === 'string'
+                ? false
+                : (yield* recordedGeneration(fqn, instanceId)) !== undefined;
+            if (recovering) {
+              yield* Effect.logWarning(
+                `${fqn}: the interrupted create's row has no directory path; nothing is recovered, ` +
+                  'and the create is re-driven with the declaration as it is now',
+              );
+            }
+            return yield* lift(async () => {
+              const found = await readInterruptedDirectory(runner, olds.path, recovering);
+              if (found === undefined) return undefined;
+              return output === undefined ? Unowned(found) : found;
+            });
           }),
 
         diff: ({ instanceId, news, output }) => {
