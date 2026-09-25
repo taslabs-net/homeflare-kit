@@ -10,6 +10,7 @@ import {
   readDirectory,
   reconcileDirectory,
 } from './directory-lifecycle.ts';
+import { readInterruptedDirectory } from './directory-read.ts';
 import { fakeLinuxHost } from './fake-linux-host.ts';
 
 const host = () =>
@@ -152,5 +153,24 @@ describe('validation', () => {
     expect(directoryProblems({ mode: 0o10000, path: '/opt/app' })).toContain(
       'mode must be 0–0o7777',
     );
+  });
+});
+
+describe('an interrupted create', () => {
+  test('a missing path is not stat-ed, and a probe still fails', async () => {
+    const fake = host();
+    let stats = 0;
+    const runner = {
+      ...fake.runner,
+      stat: async (path: string) => {
+        stats += 1;
+        return fake.runner.stat(path);
+      },
+    };
+    expect(await readInterruptedDirectory(runner, undefined, true)).toBeUndefined();
+    await expect(readInterruptedDirectory(runner, undefined, false)).rejects.toThrow(
+      'path must be a string',
+    );
+    expect(stats).toBe(0);
   });
 });
