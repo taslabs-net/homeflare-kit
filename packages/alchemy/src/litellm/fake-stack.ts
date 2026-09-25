@@ -19,7 +19,7 @@ import { provideFreshArtifactStore } from 'alchemy/Artifacts';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import { LiteLLMPassThroughEndpointProvider } from './pass-through-endpoint.ts';
+import { litellmProviders } from './providers.ts';
 
 /** The planned action for each resource, deletions included, keyed by FQN. */
 export type Planned = Readonly<Record<string, string>>;
@@ -51,13 +51,13 @@ const actionsOf = (plan: PlanView): Planned => {
 };
 
 /**
- * ⚠️ CREDENTIALS/HTTPCLIENT ARE PROVIDED AROUND `deploy`, NOT BAKED INTO THE PROVIDER LAYER.
- *   `Provider.effect`'s own construction effect is `Effect.succeed(...)` (pass-through-endpoint.ts)
- *   — it never actually reads `Credentials`/`HttpClient`; only the HANDLERS it returns do, and
- *   those run later, whenever `Apply.ts` calls `provider.reconcile`/`read`/`delete`. Effect
- *   resolves a `yield*`'s service from whatever ambient context wraps the CALL SITE, so the layers
- *   those handlers need must wrap the whole plan+apply pipeline below, exactly where openbao's
- *   fake-stack.ts wraps `BaoEnv` around its own `deploy`.
+ * ⚠️ CREDENTIALS COME FROM `litellmProviders`, NOT AN OUTER `Effect.provide`. The handlers read
+ *   `Credentials` when Apply calls them, not when the provider value is built. `provideMerge`
+ *   keeps that service in the layer output, so it is in `compiled.services` — the context this
+ *   harness gives Apply. An outer `Effect.provide(credentials)` would hide a sealed `Layer.provide`:
+ *   the handlers would still see the key, and this harness would not catch the regression.
+ * ⚠️ `HttpClient` STAYS AMBIENT, wrapped around the pipeline below. `litellmProviders` does not
+ *   bundle one; Alchemy's runtime provides it the same way. Do not add a second client here.
  * ★ `fetchFn` IS `startFakeLitellm(...).fetch` (fake-litellm.ts) — this harness never opens a real
  *   socket; `FetchHttpClient.Fetch` is the seam the SDK's protocol layer calls through, same as
  *   `../netbox/fake-netbox.ts`'s `fakeNetboxLayer`.
@@ -68,7 +68,11 @@ export const fakeStack = (
   name = 'PassThroughStack',
 ): FakeStack => {
   const state = Alchemy.inMemoryState();
-  const providers = LiteLLMPassThroughEndpointProvider();
+  const providers = litellmProviders(credentials(creds));
+  // ⚠️ THE CAST STAYS. `StackBody` is `Effect<unknown, unknown, unknown>` so a test can pass any
+  //   declaration, and that channel is not a legal `Alchemy.Stack` body. The uncast construction
+  //   is pass-through-stack.test.ts. This cast used to also hide `Credentials` leaking out of the
+  //   resource type; that leak is gone, and this harness still has to deploy.
   const stack = Alchemy.Stack as unknown as (
     stackName: string,
     options: { providers: typeof providers; state: typeof state },
@@ -90,7 +94,6 @@ export const fakeStack = (
     }).pipe(
       options.adopt === undefined ? (e) => e : Effect.provideService(AdoptPolicy, options.adopt),
       Effect.provideService(Alchemy.Stage, 'test'),
-      Effect.provide(credentials(creds)),
       Effect.provide(FetchHttpClient.layer),
       Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetchFn)),
       Effect.scoped,

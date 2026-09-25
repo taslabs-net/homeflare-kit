@@ -92,6 +92,17 @@ export const readDirectory = async (
 
 const octal = (mode: number) => mode.toString(8).padStart(3, '0');
 
+/**
+ * ★ GNU chmod and chown take `--` so a path is never read as an option. BSD chmod and chown
+ *   on macOS do not. Measured 2026-09-24: `/bin/chmod 755 -- /path` and
+ *   `/usr/sbin/chown 0:0 -- /path` both exit 1 with `--: No such file or directory`, after
+ *   mkdir had already created the directory. mkdir and rmdir accept `--` on both, so they
+ *   keep it. These paths are absolute, so the token is only an option guard.
+ * ⛔ Linux keeps `--`. The sudo allowlist requires that exact token; dropping it there
+ *   refuses the elevation.
+ */
+const chmodChownEnd = (): readonly string[] => (process.platform === 'darwin' ? [] : ['--']);
+
 /** One program, checked: anything but exit 0 is an Error naming the argv and the host's words. */
 const must = async (runner: HostRunner, path: string, argv: readonly string[]): Promise<void> => {
   const result = await runner.exec(argv);
@@ -149,7 +160,7 @@ export const reconcileDirectory = async (
     }
     await must(runner, props.path, ['mkdir', '-m', octal(want.mode), '--', props.path]);
   } else if (stat.mode !== want.mode) {
-    await must(runner, props.path, ['chmod', octal(want.mode), '--', props.path]);
+    await must(runner, props.path, ['chmod', octal(want.mode), ...chmodChownEnd(), props.path]);
   }
   /**
    * ★ Only when it is actually wrong. A `chown` that changes nothing is still a write on the host
@@ -162,7 +173,8 @@ export const reconcileDirectory = async (
   )
     ? undefined
     : ownerArg(want);
-  if (owner !== undefined) await must(runner, props.path, ['chown', owner, '--', props.path]);
+  if (owner !== undefined)
+    await must(runner, props.path, ['chown', owner, ...chmodChownEnd(), props.path]);
   const after = await readDirectory(runner, props.path);
   // ⚠️ READ BACK: a runner that ignored the mode shows up here, not as a forever-`update`.
   if (after === undefined || after.mode !== want.mode || !ownerMatches(after, want)) {
