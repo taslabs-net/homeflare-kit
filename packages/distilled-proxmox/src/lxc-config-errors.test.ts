@@ -1,4 +1,10 @@
-/** Exact installed pve-container6.1.13/libpve-guest-common-perl6.0.5 absence; never generic500. */
+/**
+ * Exact installed pve-container6.1.13/libpve-guest-common-perl6.0.5 absence; never generic500.
+ * ⛔ ATTACHED TO GET, PUT AND DELETE — all three call `AbstractConfig::load_config` first
+ *   (patches/nodes/lxc-config-errors.json's own provenance) and raise byte-identical text; a
+ *   PUT/DELETE against a container config a caller believes exists gets the same typed absence
+ *   a GET would, not a generic 500 a retry policy or catchTag could mistake for transient.
+ */
 import { expect, test } from "bun:test";
 import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/unstable/http/HttpClient";
@@ -56,18 +62,39 @@ test("only exact container-config absence on GET becomes LxcConfigNotFound", asy
     });
   }
   expect(await call(get(), 403, missing)).toMatchObject({ _tag: "Forbidden" });
+});
+
+test("the same exact absence on PUT and DELETE also becomes LxcConfigNotFound", async () => {
   expect(
     await call(
       nodes.putNodeLxcConfig({ node: "pve-test", vmid: "900" }),
       500,
       missing,
     ),
-  ).toMatchObject({ _tag: "InternalServerError" });
+  ).toMatchObject({ _tag: "LxcConfigNotFound" });
   expect(
     await call(
       nodes.deleteNodeLxc({ node: "pve-test", vmid: "900" }),
       500,
       missing,
     ),
-  ).toMatchObject({ _tag: "InternalServerError" });
+  ).toMatchObject({ _tag: "LxcConfigNotFound" });
+  // ⛔ STILL NOT ABSENCE ON PUT/DELETE EITHER — a generic failure on the write paths must stay
+  //   generic, exactly like the GET-only assertions above.
+  for (const message of ["got timeout\n", missing + "other error"]) {
+    expect(
+      await call(
+        nodes.putNodeLxcConfig({ node: "pve-test", vmid: "900" }),
+        500,
+        message,
+      ),
+    ).toMatchObject({ _tag: "InternalServerError" });
+    expect(
+      await call(
+        nodes.deleteNodeLxc({ node: "pve-test", vmid: "900" }),
+        500,
+        message,
+      ),
+    ).toMatchObject({ _tag: "InternalServerError" });
+  }
 });

@@ -39,17 +39,20 @@ Task polling belongs in the Alchemy provider: the SDK exports the generated
 
 Pool, backup-job, metric-server and network-interface missing reads expose precise typed tags
 from vendor source at pve-manager 9.2.11. Backup-job absence uses a sole nested
-`errors.id`; network-interface absence uses the exact sole `errors.iface` on its
-detail GET. Both use the parameter-verification envelope; other validation errors
-retain their structured failure. PVE form arrays use repeated keys, preserving
-commas within a rule/property value. Scalar comma lists and query binding are
-unchanged. Protocol fixtures exercise both the accepted and rejected shapes.
+`errors.id`; network-interface absence uses the exact sole `errors.iface` — on both its
+detail GET and its PUT (both call the same vendor check; DELETE raises it too but is
+deliberately left untyped, tracked separately). Both use the parameter-verification
+envelope; other validation errors retain their structured failure. PVE form arrays use
+repeated keys, preserving commas within a rule/property value. Scalar comma lists and
+query binding are unchanged. Protocol fixtures exercise both the accepted and rejected
+shapes.
 
 `PoolNotFound` keeps a non-retryable client-error category despite PVE's wire
 status 500; the patch matcher records the actual status independently.
 
-Container config GET also exposes `LxcConfigNotFound`, backed by installed
-pve-container 6.1.13 and libpve-guest-common-perl 6.0.5 source. This proves only the
+Container config GET, PUT and DELETE also expose `LxcConfigNotFound`, backed by
+installed pve-container 6.1.13 and libpve-guest-common-perl 6.0.5 source — all three
+call the same `load_config` and raise byte-identical text. This proves only the
 node-local config is missing: providers must still check the cluster-wide vmid
 with the same credential before considering creation.
 

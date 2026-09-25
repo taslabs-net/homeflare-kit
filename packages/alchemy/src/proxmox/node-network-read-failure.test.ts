@@ -140,6 +140,30 @@ describe('only the measured "interface does not exist" 400 means absent', () => 
   });
 
   /**
+   * ⛔ THE RETAG REGRESSION'S OWN TEST — RED-TEAM FINDING, 2026-09-25: `@distilled.cloud/proxmox`
+   *   retagged this exact 400 from the generic `ParameterVerificationFailed` to a specific
+   *   `NetworkInterfaceNotFound` (`nodes.ts`), and `readInterfaceOrFail`'s `catchTag` still named
+   *   the OLD tag — so on an already-adopted row (this is `diff`'s and `verify --all`'s `read`'s
+   *   `output !== undefined` branch, the non-folding one) the absence signal went UNCAUGHT and
+   *   threw straight through `engine.verify`, instead of resolving a `diff`/`missing` report.
+   *   Proven by temporarily reverting the `catchTag` to `'ParameterVerificationFailed'`: only this
+   *   test fails, with an unhandled `NetworkInterfaceNotFound`.
+   */
+  test('an already-adopted interface whose live GET now answers genuinely absent resolves via diff as missing, never throws', async () => {
+    const fake = clusterOverInterface('n2', 'vmbr0', live);
+    await withoutBao(async () => {
+      const engine = engineOver(ProxmoxNodeNetworkProvider().pipe(Layer.provideMerge(fake.layer)));
+      expect(await engine.deploy(declare())).toEqual({ 'n2-vmbr0': 'adopted' });
+      fake.setAnswer('genuinely-absent');
+      const report = await engine.verify(declare(), { all: true });
+      // ⛔ `update` IS THE RIGHT ANSWER HERE, NOT A THROW: this resource's `diff` treats a
+      //   vanished interface as something `reconcile` recreates (node-network.ts's `diff`,
+      //   `live === undefined` branch), the same as any other drifted-away row.
+      expect(report.rows[0]).toMatchObject({ diff: 'update' });
+    });
+  });
+
+  /**
    * ★ WHY `read` FOLDS AT ALL, SPELLED OUT ON A BRAND NEW DECLARATION. Plan.ts's cold-start
    *   adoption probe (no prior Alchemy state for this declaration) calls `provider.read` with no
    *   catch of its own, and aggregates every resource's probe fail-fast — so an uncaught failure

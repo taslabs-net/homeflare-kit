@@ -151,7 +151,7 @@ describe("precise config absence tags", () => {
       }),
     ).toMatchObject({ _tag: "ParameterVerificationFailed" });
   });
-  test("network absence is the exact sole iface error on its GET only", async () => {
+  test("network absence is the exact sole iface error on GET and PUT", async () => {
     const body = {
       data: null,
       message: "Parameter verification failed.\n",
@@ -164,16 +164,16 @@ describe("precise config absence tags", () => {
         body,
       ),
     ).toMatchObject({ _tag: "NetworkInterfaceNotFound" });
+    // ⛔ RETAG REGRESSION'S OWN CASE — PVE's `update_network` (PUT) raises the byte-identical
+    //   400 (Network.pm:750) that `network_config` (GET) raises (:852); a consumer's catchTag
+    //   keyed on this tag must see the same absence signal from either operation.
     expect(
       await call(
         nodes.putNodeNetwork2({ node: "n2", iface: "vmbr9", type: "bridge" }),
         400,
         body,
       ),
-    ).toMatchObject({
-      _tag: "ParameterVerificationFailed",
-      errors: body.errors,
-    });
+    ).toMatchObject({ _tag: "NetworkInterfaceNotFound" });
     for (const errors of [
       { iface: "invalid interface name" },
       { iface: "interface does not exist", type: "invalid type" },
