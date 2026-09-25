@@ -2,6 +2,26 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.37.6
+
+### Patch Changes
+
+- [#276](https://github.com/taslabs-net/homeflare-kit/pull/276) [`0d9175d`](https://github.com/taslabs-net/homeflare-kit/commit/0d9175d89f5b05eea64da731affb4a5edc9b4e25) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Use the distilled OpenBao SDK for AppRole metadata reads, writes, deletes and rename
+  collision checks. Preserve omitted role settings and existing no-op, ownership and deletion
+  guards; permission and malformed-response failures never become absence. Reads and the
+  metadata write retain the existing bounded transport retry — the write sends every managed
+  field every time, so replaying it after a transport failure converges on the same role;
+  delete makes one attempt. Checked against the OpenBao 2.6.2 generated AppRole schema and
+  pinned vendor source. No login or credential issuance operations change.
+
+- [#276](https://github.com/taslabs-net/homeflare-kit/pull/276) [`0d9175d`](https://github.com/taslabs-net/homeflare-kit/commit/0d9175d89f5b05eea64da731affb4a5edc9b4e25) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Run every OpenBao ACL policy lifecycle call, including rename collision reads, through
+  the distilled OpenBao SDK. Preserve shared concurrency limits, agent sockets, runtime
+  credentials, namespace selection, and token trace redaction. Only typed missing-policy
+  errors mean absence; refused and malformed reads fail. Reads retain bounded transport
+  retries; a policy write sends the full policy text every time, so it retries a transport
+  failure the same bounded way; a delete makes one attempt after an uncertain response.
+  Checked against the OpenBao 2.6.2 generated schema and pinned vendor policy handlers.
+
 ## 0.37.5
 
 ### Patch Changes

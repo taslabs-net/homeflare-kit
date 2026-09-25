@@ -1,5 +1,14 @@
 # @homeflare/distilled-openbao
 
+## 0.2.2
+
+### Patch Changes
+
+- [#279](https://github.com/taslabs-net/homeflare-kit/pull/279) [`e2ecee8`](https://github.com/taslabs-net/homeflare-kit/commit/e2ecee84764bc44541bb71d0b3ce34d36af39399) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Type the OpenBao auth-method and secrets-engine inventories as maps keyed by mount
+  path, using schemas derived from the OpenBao 2.6.2 server. Validate these two
+  responses so malformed or missing data cannot look like an empty inventory,
+  preserve unknown metadata, and keep response values out of parse errors.
+
 ## 0.2.1
 
 ### Patch Changes

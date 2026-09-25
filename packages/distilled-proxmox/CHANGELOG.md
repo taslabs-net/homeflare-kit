@@ -1,5 +1,19 @@
 # @homeflare/distilled-proxmox
 
+## 0.3.2
+
+### Patch Changes
+
+- [#277](https://github.com/taslabs-net/homeflare-kit/pull/277) [`855f3fb`](https://github.com/taslabs-net/homeflare-kit/commit/855f3fbf6fd10ddced3debe03ac7038715207809) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Expose the vendor's exact missing-container-config response as LxcConfigNotFound on
+  GET, PUT and DELETE (all three raise byte-identical vendor text). Keep generic server
+  failures and other guest paths distinct.
+
+- [#277](https://github.com/taslabs-net/homeflare-kit/pull/277) [`855f3fb`](https://github.com/taslabs-net/homeflare-kit/commit/855f3fbf6fd10ddced3debe03ac7038715207809) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Expose the vendor's exact missing-network-interface response as NetworkInterfaceNotFound
+  on GET and PUT (both raise byte-identical vendor text). Keep unrelated or multi-field
+  parameter validation failures distinct.
+
+- [#277](https://github.com/taslabs-net/homeflare-kit/pull/277) [`855f3fb`](https://github.com/taslabs-net/homeflare-kit/commit/855f3fbf6fd10ddced3debe03ac7038715207809) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Classify source-backed replication-job and firewall-alias absence with precise typed errors, retaining unrelated validation and server failures.
+
 ## 0.3.1
 
 ### Patch Changes
