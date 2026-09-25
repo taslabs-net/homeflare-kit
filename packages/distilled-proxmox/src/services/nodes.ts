@@ -12591,9 +12591,28 @@ export const ListNodeNetworkResponseBodyList = /*@__PURE__*/ S.Array(
   ListNodeNetworkResponseBodyItem,
 ) as any as S.Schema<ListNodeNetworkResponseBodyList>;
 
-export type ListNodeNetworkResponse = ListNodeNetworkResponseBodyList;
+/** Present only when PVE staged an interfaces diff. The string can contain secrets. */
+export interface ListNodeNetworkPendingResponse {
+  data: ListNodeNetworkResponseBodyList;
+  changes: string;
+}
+export const ListNodeNetworkPendingResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    data: ListNodeNetworkResponseBodyList,
+    changes: S.String,
+  }),
+).annotate({
+  identifier: "ListNodeNetworkPendingResponse",
+}) as any as S.Schema<ListNodeNetworkPendingResponse>;
+
+export type ListNodeNetworkResponse =
+  | ListNodeNetworkResponseBodyList
+  | ListNodeNetworkPendingResponse;
 export const ListNodeNetworkResponse = /*@__PURE__*/ S.suspend(() =>
-  ListNodeNetworkResponseBodyList.pipe(T.RawResponseRoot()),
+  S.Union([
+    ListNodeNetworkResponseBodyList.pipe(T.RawResponseRoot()),
+    ListNodeNetworkPendingResponse,
+  ]),
 ).annotate({
   identifier: "ListNodeNetworkResponse",
 }) as any as S.Schema<ListNodeNetworkResponse>;

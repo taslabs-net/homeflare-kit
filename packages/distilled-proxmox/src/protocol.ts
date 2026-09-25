@@ -174,13 +174,22 @@ export const ProxmoxProtocol: Layer.Layer<API.Protocol> = withPveFormArrays(
     // Unwrap PVE's `{"data": …}` envelope BEFORE the schema-driven decode —
     // see the module header. `data` is `null`/absent for a Unit-output
     // operation; `?? {}` is core's own convention for "no body".
+    // ⛔ `changes` is a sibling, not a field of `data`. PVE/HTTPServer.pm copies
+    //   `$rpcenv->get_result_attrib('changes')` beside `data`. Network.pm sets
+    //   that attrib to the interfaces diff. Dropping it makes a pending reload
+    //   invisible. Only a string sibling is preserved; every other envelope
+    //   still unwraps. The network list schema is the union that can decode it.
     transformResponse: (body) => {
       if (
         body !== null &&
         typeof body === "object" &&
         "data" in (body as Record<string, unknown>)
       ) {
-        return (body as Record<string, unknown>).data ?? {};
+        const record = body as Record<string, unknown>;
+        if (typeof record.changes === "string") {
+          return { changes: record.changes, data: record.data ?? [] };
+        }
+        return record.data ?? {};
       }
       return body;
     },
