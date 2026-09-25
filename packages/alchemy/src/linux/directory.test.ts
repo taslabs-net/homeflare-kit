@@ -10,6 +10,7 @@ import {
   readDirectory,
   reconcileDirectory,
 } from './directory-lifecycle.ts';
+import { readInterruptedDirectory } from './directory-read.ts';
 import { fakeLinuxHost } from './fake-linux-host.ts';
 
 const host = () =>
@@ -103,6 +104,30 @@ describe('drift', () => {
   });
 });
 
+describe('argv', () => {
+  test('chmod and chown omit -- on Darwin; mkdir keeps it on every platform', async () => {
+    const fake = host();
+    const created = await reconcileDirectory(fake.runner, {
+      group: 0,
+      mode: 0o755,
+      owner: 0,
+      path: '/opt/app/bin',
+    });
+    await reconcileDirectory(
+      fake.runner,
+      { group: 0, mode: 0o750, owner: 0, path: '/opt/app/bin' },
+      created,
+    );
+    const gnu = process.platform !== 'darwin';
+    const chown = fake.calls.find((call) => call[0] === 'chown');
+    const chmod = fake.calls.find((call) => call[0] === 'chmod');
+    const mkdir = fake.calls.find((call) => call[0] === 'mkdir');
+    expect(chown?.includes('--')).toBe(gnu);
+    expect(chmod?.includes('--')).toBe(gnu);
+    expect(mkdir).toContain('--');
+  });
+});
+
 describe('delete', () => {
   test('is rmdir: a directory that still holds a file is a refusal', async () => {
     const fake = host();
@@ -128,5 +153,24 @@ describe('validation', () => {
     expect(directoryProblems({ mode: 0o10000, path: '/opt/app' })).toContain(
       'mode must be 0–0o7777',
     );
+  });
+});
+
+describe('an interrupted create', () => {
+  test('a missing path is not stat-ed, and a probe still fails', async () => {
+    const fake = host();
+    let stats = 0;
+    const runner = {
+      ...fake.runner,
+      stat: async (path: string) => {
+        stats += 1;
+        return fake.runner.stat(path);
+      },
+    };
+    expect(await readInterruptedDirectory(runner, undefined, true)).toBeUndefined();
+    await expect(readInterruptedDirectory(runner, undefined, false)).rejects.toThrow(
+      'path must be a string',
+    );
+    expect(stats).toBe(0);
   });
 });
