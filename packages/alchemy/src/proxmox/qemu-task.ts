@@ -36,7 +36,15 @@ export const qemuTask = <E>(
         false,
         nodes.getNodeTaskStatus({ node: props.node, upid }),
       ).pipe(Effect.orElseSucceed(() => undefined));
-      if (status === undefined || !['running', 'stopped'].includes(status.status)) {
+      // ⚠️ "COULD NOT BE READ" IS A MISSING ANSWER OR A MISSING `status` FIELD, NOT AN UNEXPECTED
+      //   ONE. `GetNodeTaskStatusResponseStatus` types `status` as the closed union
+      //   `"running" | "stopped"`, but the runtime validator is `S.String` (measured in
+      //   distilled-proxmox's nodes.ts), so a well-formed answer with a status word this
+      //   endpoint's contract was never proven to exclude (something other than exactly
+      //   "running") must keep polling rather than abort, since only "stopped" ends the task
+      //   (2026-09-25 adversarial review; matches lxc-task.ts and network-apply-read.ts's
+      //   awaitTask).
+      if (status === undefined || status.status === undefined) {
         exit = 'the task could not be read';
         break;
       }

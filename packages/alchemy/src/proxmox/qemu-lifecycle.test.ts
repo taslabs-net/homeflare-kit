@@ -68,6 +68,35 @@ describe('Proxmox.Vm distilled transport', () => {
     expect(fake.calls.some((call) => call.path.includes('/tasks/'))).toBe(true);
   });
 
+  test('a transitional task status keeps polling instead of aborting the create', async () => {
+    // ⚠️ `GetNodeTaskStatusResponseStatus` types `status` as the closed union
+    //   "running" | "stopped", but the runtime validator is `S.String` (distilled-proxmox's
+    //   nodes.ts) -- a status word this endpoint's contract was never proven to exclude must
+    //   keep polling rather than abort the whole create, since only "stopped" ends the task
+    //   (2026-09-25 adversarial review; matches lxc-task.ts's own regression test).
+    let exists = false;
+    let polls = 0;
+    const fake = fakePve((call) => {
+      if (call.path.includes('/tasks/') && call.path.endsWith('/status')) {
+        polls++;
+        return polls === 1 ? { status: 'starting' } : { status: 'stopped', exitstatus: 'OK' };
+      }
+      if (isIndex(call)) return [];
+      if (call.method === 'GET') return exists ? live : missing();
+      exists = true;
+      return UPID;
+    });
+    await withoutBao(async () => {
+      const stack = engine(fake);
+      await stack.deploy(ProxmoxVm('row', props));
+      expect((await stack.verify(ProxmoxVm('row', props), { all: true })).rows[0]).toMatchObject({
+        diff: 'noop',
+      });
+    });
+    expect(polls).toBe(2);
+    expect(fake.writes()).toEqual([`POST nodes/${NODE}/qemu`]);
+  });
+
   test('a vmid held by a container is not created', async () => {
     const fake = fakePve((call) => {
       if (isIndex(call)) {
