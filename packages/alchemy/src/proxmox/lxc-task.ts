@@ -40,7 +40,17 @@ export const lxcTask = <E>(
         false,
         nodes.getNodeTaskStatus({ node: where.node, upid }),
       ).pipe(Effect.orElseSucceed(() => undefined));
-      if (status === undefined || !['running', 'stopped'].includes(status?.status)) {
+      // ⚠️ "COULD NOT BE READ" IS A MISSING ANSWER OR A MISSING `status` FIELD, NOT AN UNEXPECTED
+      //   ONE. `GetNodeTaskStatusResponseStatus` types `status` as the closed union
+      //   `"running" | "stopped"`, but the runtime validator is `S.String` (measured in
+      //   distilled-proxmox's nodes.ts) and MEASURED here to accept an empty `{}` for a malformed
+      //   `data: null` answer (status.status undefined, no decode error) — so `status.status ===
+      //   undefined` is the real "unreadable" signal, matching network-apply-read.ts's `awaitTask`
+      //   and this file's own malformed-answer test. A well-formed answer with a status word this
+      //   endpoint's contract was never proven to exclude (something other than exactly "running")
+      //   must keep polling rather than abort, since only "stopped" ends the task
+      //   (2026-09-25 adversarial review).
+      if (status === undefined || status.status === undefined) {
         exit =
           'the task could not be read -- the node stopped answering, or this lease cannot see it';
         break;

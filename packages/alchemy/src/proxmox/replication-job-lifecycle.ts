@@ -11,6 +11,7 @@ import { replicationJobSpec as spec } from './replication-job-config.ts';
 import { jobId } from './replication-job-form.ts';
 import { specGuards } from './resource-guard.ts';
 import { formToSend } from './update-guard.ts';
+import { int } from './values.ts';
 
 const { guardCreate, guardUpdate } = specGuards(spec);
 const malformed = () =>
@@ -22,14 +23,27 @@ const malformed = () =>
 export const readReplicationJob = (props: ReplicationJobProps) =>
   runPve(props.target, 'read', false, cluster.getClusterReplication({ id: jobId(props) })).pipe(
     Effect.flatMap((live) =>
-      // SectionConfig releases can echo a fractional rate as text; retain the existing normalizer.
+      // ⚠️ SectionConfig releases can echo `guest`/`jobnum` (and `rate`) as text rather than a JSON
+      //   number — measured on replication-job-config.ts's own `int()`/`rateOf()` fields, which is
+      //   why every other numeric read in this family goes through `int()` rather than a strict
+      //   type. `GetClusterReplicationResponse` types `guest`/`jobnum` as `S.Number` with no
+      //   coercion, so a string echo fails decode before the identity check below ever runs;
+      //   normalize both through `int()` first, same as `rate` is normalized to skip its own
+      //   release-dependent shape.
       Schema.decodeUnknownEffect(Schema.toType(cluster.GetClusterReplicationResponse))({
         ...live,
+        guest: int(live.guest, Number.NaN),
+        jobnum: int(live.jobnum, Number.NaN),
         rate: undefined,
       }).pipe(Effect.mapError(malformed), Effect.as(live)),
     ),
     Effect.flatMap((live) =>
-      live.id === jobId(props) && live.guest === props.guest && live.jobnum === props.jobnum
+      // ⛔ `id` alone (a string PVE always returns, e.g. "900-0") already proves identity; the
+      //   guest/jobnum recheck is defense in depth, so it must tolerate the same string-or-number
+      //   wire shape as the decode above rather than `===` against the raw, possibly-text value.
+      live.id === jobId(props) &&
+      int(live.guest, Number.NaN) === props.guest &&
+      int(live.jobnum, Number.NaN) === props.jobnum
         ? Effect.succeed(spec.attributes({ ...live }, props))
         : Effect.fail(malformed()),
     ),

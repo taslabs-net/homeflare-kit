@@ -142,6 +142,20 @@ test('replication ignores migrated source/target and undeclared fractional rate'
   expect(fake.writes()).toEqual([]);
 });
 
+test('replication tolerates guest/jobnum echoed as text, not just as numbers', async () => {
+  // ⚠️ SectionConfig releases can echo `guest`/`jobnum` as text the same way `rate` sometimes
+  //   arrives as text above; a strict `===` against the raw wire value would misread the exact
+  //   same job as an identity mismatch and fail the read closed (2026-09-25 adversarial review).
+  const fake = fakePve(() => ({ ...replicationLive, guest: '900', jobnum: '0' }));
+  await withoutBao(async () => {
+    const engine = engineOver(ProxmoxReplicationJobProvider().pipe(Layer.provideMerge(fake.layer)));
+    expect(
+      (await engine.verify(ProxmoxReplicationJob('row', replicationProps), { all: true })).rows[0],
+    ).toMatchObject({ diff: 'noop', ok: true });
+  });
+  expect(fake.writes()).toEqual([]);
+});
+
 test('vendor constraints reject invalid declarations before any write', async () => {
   for (const replication of [true, false]) {
     const fake = fakePve(() => (replication ? replicationLive : { ...aliasLive, name: 'x' }));

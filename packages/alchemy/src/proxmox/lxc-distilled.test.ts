@@ -195,6 +195,38 @@ test('a still-running task stops at its bound with no second POST', async () => 
   expect(fake.seen.filter((call) => call.method === 'POST')).toHaveLength(1);
 });
 
+test('a transitional status value keeps polling, never aborts like an unreadable poll', async () => {
+  // ⚠️ `GetNodeTaskStatusResponseStatus` TYPES `status` AS "running" | "stopped" BUT VALIDATES IT
+  //   AT RUNTIME AS A PLAIN STRING — that union is not actually enforced on the wire, so a value
+  //   this endpoint's real contract was never proven to exclude must be tolerated the same way
+  //   `awaitTask` (network-apply-read.ts) tolerates it, rather than read as "task could not be
+  //   read" and abort the deploy. The sibling malformed-answer tests above pin the other half:
+  //   a response with no `status` field at all still aborts (2026-09-25 adversarial review).
+  let polls = 0;
+  const fake = transport(() => {
+    polls++;
+    return Response.json({
+      data: { status: polls === 1 ? 'queued' : 'stopped', exitstatus: 'OK' },
+    });
+  });
+  const outcome = await withoutBao(() =>
+    Effect.runPromise(
+      lxcTask(
+        props,
+        nodes.createNodeLxc({
+          node: props.node,
+          vmid: String(props.vmid),
+          ostemplate: props.ostemplate ?? '',
+        }),
+        'create test CT',
+        5,
+      ).pipe(Effect.provide(fake.layer)),
+    ),
+  );
+  expect(outcome).toBeUndefined();
+  expect(polls).toBe(2);
+});
+
 for (const index of [null, [{}], [{ vmid: 'unknown', node: 'pve1', type: 'lxc' }]]) {
   test(`malformed guest index ${JSON.stringify(index)} cannot prove absence`, async () => {
     const fake = transport(undefined, index);
