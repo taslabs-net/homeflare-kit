@@ -9,7 +9,7 @@ import {
 } from '@distilled.cloud/openbao/policies';
 import * as Effect from 'effect/Effect';
 import { BaoError } from './bao-status.ts';
-import { runBao, runBaoRead } from './distilled.ts';
+import { runBao, runBaoRead, runBaoWrite } from './distilled.ts';
 
 /** The endpoint the CLI's policy commands used — openbao v2.6.2 api/sys_policy.go:60, :100, :122. */
 export const policyPath = (name: string) => `sys/policies/acl/${name}`;
@@ -58,9 +58,12 @@ export const policyExists = (name: string) =>
  * ★ THE HCL TRAVELS IN THE REQUEST BODY (`{"policy": …}`, api/sys_policy.go:96-101). The CLI path
  *   needed a scoped temp file because passing HCL on argv would have put every grant in the process
  *   list; a JSON body never reaches argv, so the temp file is gone with it.
+ * ★ A FULL-REPLACE WRITE: the whole policy text is sent every time, so it is safe to retry a
+ *   transport failure through `runBaoWrite` — a replayed attempt converges on the same policy
+ *   rather than compounding a partial one.
  */
 export const writePolicy = (name: string, hcl: string) =>
-  runBao(policiesWriteAclPolicy({ name, policy: hcl })).pipe(Effect.asVoid);
+  runBaoWrite(policiesWriteAclPolicy({ name, policy: hcl })).pipe(Effect.asVoid);
 
 /** Deleting a policy that is already gone answers success (handlePoliciesDelete returns nothing). */
 export const deletePolicy = (name: string) =>

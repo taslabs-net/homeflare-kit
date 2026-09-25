@@ -15,7 +15,7 @@ import {
 import * as Effect from 'effect/Effect';
 import { type BaoAuthRoleProps, readPath } from './auth-role-form.ts';
 import { BaoError } from './bao-status.ts';
-import { runBao, runBaoRead } from './distilled.ts';
+import { runBao, runBaoRead, runBaoWrite } from './distilled.ts';
 import { parseDuration } from './mount-form.ts';
 
 const identity = (name: string) => ({ approle_mount_path: 'approle', role_name: name });
@@ -76,8 +76,13 @@ export const authRoleRequest = (props: BaoAuthRoleProps) =>
     return request;
   });
 
+/**
+ * ★ A FULL-REPLACE WRITE, like the policy write: every managed field travels in the request
+ * every time (only genuinely omitted knobs stay omitted), so a transport failure is safe to
+ * retry through `runBaoWrite` — the replay sends the identical desired state.
+ */
 export const writeAuthRole = (props: BaoAuthRoleProps) =>
-  authRoleRequest(props).pipe(Effect.flatMap((request) => runBao(appRoleWriteRole(request))));
+  authRoleRequest(props).pipe(Effect.flatMap((request) => runBaoWrite(appRoleWriteRole(request))));
 
 /** Other typed SDK failures, including denied deletes, propagate unchanged. */
 export const deleteAuthRole = (name: string) =>

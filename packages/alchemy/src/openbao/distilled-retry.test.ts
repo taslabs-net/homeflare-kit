@@ -4,11 +4,19 @@ import * as Effect from 'effect/Effect';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
 import { HttpClientError, TransportError } from 'effect/unstable/http/HttpClientError';
 import * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
-import { readAuthRole } from './auth-role-wire.ts';
+import { readAuthRole, writeAuthRole } from './auth-role-wire.ts';
 import { BaoEnv } from './bao-http.ts';
 import { BaoError } from './bao-status.ts';
 import { runBaoRead } from './distilled.ts';
 import { deletePolicy, readPolicy, writePolicy } from './policy-wire.ts';
+
+const ROLE_PROPS = {
+  name: 'test',
+  tokenPolicies: ['default'],
+  tokenTtl: '15m',
+  tokenMaxTtl: '1h',
+  secretIdTtl: '2160h',
+};
 
 const TOKEN = 'fixture-retry-token';
 const POLICY = { policy: 'path "test" {}' };
@@ -62,6 +70,42 @@ test('read transport retries stop after three attempts without exposing the toke
   expect(JSON.stringify(error)).not.toContain(TOKEN);
 });
 
+/**
+ * A FULL-REPLACE write sends the complete desired state on every attempt, so — unlike a
+ * create or a non-idempotent call — it is safe to replay after a transport-level failure.
+ * `runBaoWrite` restores the bounded retry `baoCall()` gave every call before the distilled
+ * SDK path landed with `Retry.none`.
+ */
+for (const [name, write] of [
+  ['Policy', writePolicy('test', 'path "test" {}')],
+  ['AppRole', writeAuthRole(ROLE_PROPS)],
+] as const) {
+  test(`${name} write retries a dropped transport attempt and then succeeds`, async () => {
+    let attempts = 0;
+    const client = HttpClient.make((request) => {
+      attempts++;
+      expect(request.method).toBe('POST');
+      return attempts === 1
+        ? Effect.fail(new HttpClientError({ reason: new TransportError({ request }) }))
+        : Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })));
+    });
+    await runWith(write, client);
+    expect(attempts).toBe(2);
+  });
+
+  test(`${name} write transport retries stop after three attempts without exposing the token`, async () => {
+    let attempts = 0;
+    const client = HttpClient.make((request) => {
+      attempts++;
+      return Effect.fail(new HttpClientError({ reason: new TransportError({ request }) }));
+    });
+    const error = await runWith(Effect.flip(write), client);
+    expect(attempts).toBe(3);
+    expect(error).toBeInstanceOf(BaoError);
+    expect(JSON.stringify(error)).not.toContain(TOKEN);
+  });
+}
+
 test('a read timeout has a fresh bound on its next attempt', async () => {
   let attempts = 0;
   const client = HttpClient.make((request) => {
@@ -74,21 +118,21 @@ test('a read timeout has a fresh bound on its next attempt', async () => {
   expect(attempts).toBe(2);
 });
 
-for (const [name, operation] of [
-  ['write', writePolicy('test', 'path "test" {}')],
-  ['delete', deletePolicy('test')],
-] as const) {
-  test(`an uncertain ${name} is never replayed`, async () => {
-    let attempts = 0;
-    const client = HttpClient.make((request) => {
-      attempts++;
-      return Effect.fail(new HttpClientError({ reason: new TransportError({ request }) }));
-    });
-    const error = await runWith(Effect.flip(operation), client);
-    expect(error).toBeInstanceOf(BaoError);
-    expect(attempts).toBe(1);
+/**
+ * Delete stays single-attempt: it is idempotent (a policy or role already gone is success,
+ * per policy-wire.ts / auth-role-wire.ts), but it is not a full-replace write, and this suite
+ * scopes the restored retry to the writes that carry the complete desired state on the wire.
+ */
+test('an uncertain delete is never replayed', async () => {
+  let attempts = 0;
+  const client = HttpClient.make((request) => {
+    attempts++;
+    return Effect.fail(new HttpClientError({ reason: new TransportError({ request }) }));
   });
-}
+  const error = await runWith(Effect.flip(deletePolicy('test')), client);
+  expect(error).toBeInstanceOf(BaoError);
+  expect(attempts).toBe(1);
+});
 
 test('typed denied reads are returned immediately without transport retries', async () => {
   let attempts = 0;
