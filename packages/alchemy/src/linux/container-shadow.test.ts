@@ -98,3 +98,34 @@ describe('neither a file nor a unit exists', () => {
     expect(await readContainer(fake.runner, props)).toBeUndefined();
   });
 });
+
+/**
+ * ⛔ REGRESSION FOR A FALSE POSITIVE — found on adversarial review. An earlier version of
+ *   `assertUnshadowed` refused for ANY `FragmentPath` not literally under the generator directory,
+ *   including a vendor unit at `/usr/lib/systemd/system` — which is LOWER precedence than
+ *   Quadlet's generator (`isShadowingFragment`, container-generator.ts, has the measured order), so
+ *   writing and reloading our `.container` file would actually win the name, same as any other
+ *   cutover from a package-installed daemon to a Podman container. Refusing there blocked exactly
+ *   the create/adopt an apply would have handled fine.
+ */
+describe('a plain unit at a directory LOWER precedence than the generator is not a shadow', () => {
+  test('a vendor unit at /usr/lib/systemd/system does not refuse — it reads as adopted', async () => {
+    const fake = fakeQuadletHost();
+    fake.placeUnit(`/usr/lib/systemd/system/${SERVICE}`, '[Service]\nExecStart=/usr/bin/true\n', {
+      active: true,
+    });
+    const attrs = await readContainer(fake.runner, props);
+    expect(attrs).toMatchObject({ name: NAME, serviceName: SERVICE });
+  });
+
+  test('a vendor unit at /usr/local/lib/systemd/system does not refuse either', async () => {
+    const fake = fakeQuadletHost();
+    fake.placeUnit(
+      `/usr/local/lib/systemd/system/${SERVICE}`,
+      '[Service]\nExecStart=/usr/bin/true\n',
+      { active: true },
+    );
+    const attrs = await readContainer(fake.runner, props);
+    expect(attrs).toMatchObject({ name: NAME, serviceName: SERVICE });
+  });
+});

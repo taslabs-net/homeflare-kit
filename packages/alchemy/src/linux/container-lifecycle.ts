@@ -50,11 +50,15 @@ const decoder = new TextDecoder();
  *
  * ⛔ A FILE-LESS `known` UNIT IS NOT NECESSARILY OURS — found on adversarial review. The OLD test
  *   here was `bytes === undefined && !status.known`: absent file, unknown unit → nothing. But a
- *   PLAIN unit under `/etc/systemd/system` (or `/usr/lib/systemd/system`) with the same service
- *   name also makes `status.known` true, with no `.container` file behind it at all — the read
- *   then reported a container that has never been declared as "exists", and a plan built on that
- *   said "adopted" for something a create would later fail to make real (`assertUnshadowed`,
- *   container-preflight.ts, has the measured precedence fact and the plan-time refusal). A REAL
+ *   PLAIN unit under `/etc/systemd/system` with the same service name also makes `status.known`
+ *   true, with no `.container` file behind it at all — the read then reported a container that has
+ *   never been declared as "exists", and a plan built on that said "adopted" for something a create
+ *   would later fail to make real (`assertUnshadowed`, container-preflight.ts, has the measured
+ *   precedence fact and the plan-time refusal). ⛔ `/usr/lib/systemd/system` is DELIBERATELY NOT
+ *   named alongside `/etc/systemd/system` here — corrected on adversarial re-review: it is LOWER
+ *   precedence than Quadlet's generator, not higher (`isShadowingFragment`, container-generator.ts),
+ *   so a plain unit there is exists-but-not-a-shadow: `readContainer` reports it as adopted, same as
+ *   before, and a create/update writes our `.container` file, which then wins for real. A REAL
  *   Quadlet generation (this or an earlier apply's own file, later removed) reads no differently
  *   here than before: its `FragmentPath` sits under Quadlet's own generator directory, which
  *   `assertUnshadowed` never refuses.
