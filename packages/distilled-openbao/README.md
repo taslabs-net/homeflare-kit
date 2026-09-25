@@ -75,7 +75,16 @@ swap with no import changes anywhere in the kit.
 
 ## Updating it
 
-From an isolated worktree of the recorded distilled source commit:
+⚠️ **The commit above lives only in the house's local `alchemy-run/distilled`
+clone.** Per the never-push policy at the top of this file (decision 42),
+that clone's `homeflare/openbao` worktree is never pushed anywhere — no
+fork, no branch, no PR on `alchemy-run/distilled` itself — so the commit
+hash is a provenance record for this copy, not a fetchable ref. Regenerating
+needs a machine with that clone (or a fresh one built from
+`.agents/skills/distilled-sdk/SKILL.md` against the same OpenBao pin), not
+a checkout of the hash from origin.
+
+From that worktree, at the recorded source commit:
 
 ```sh
 DISTILLED_SPECS_LOCAL=1 pnpm generate openbao   # or pnpm specs:sync first for a real refresh
