@@ -74,6 +74,40 @@ need a write); an exact match returns the live attributes and calls nothing.
 `GET /v1/sites/{siteId}/networks` answers every network on the site. Adoption stays explicit —
 the same reasoning `Proxmox.User`'s and NetBox's own `list` give.
 
+## Defense in depth: GET-only at the wire (2026-09-26)
+
+`policy.ts`'s `UnifiWriteRefused` stops write INTENT at `reconcile`/`delete` — this family calls
+no SDK write op anywhere today. `GetOnlyHttpClient` (`resource.ts`), installed in
+`unifiHandlers`'s `withCredentials`, stops the same thing one layer lower, AT THE WIRE: it wraps
+whatever `HttpClient` the caller provides so ANY non-`GET` method dies with `UnifiNonGetRequest`
+before the request reaches the transport — a backstop for a future resource file that, by
+mistake, called an SDK write operation directly. `write-op-reference.test.ts` is the matching
+static check: it scans every file in this directory for a reference to an SDK export whose name
+starts `create`/`update`/`delete`/`patch`/`execute`/`remove`/`adopt`, scoped to
+`@distilled.cloud/unifi-network/*` imports so it never flags Alchemy's own `adopt()` combinator.
+`get-only-guard.test.ts` proves the wire guard itself, directly against a fake `HttpClient`.
+
+## Pagination helper
+
+`paginate.ts`'s `pageAll` is a CONSUMER-SIDE sequential offset pager for the SDK's list
+operations (`getNetworksOverviewPage`, `getFirewallZones`, …), none of which paginate on their
+own — no `smithy.api#paginated` trait exists in the pinned spec, and neither the SDK nor
+`@distilled.cloud/core` gained one for this. It stops on the response's `totalCount`, never on
+`data.length < limit` (a page can legitimately come back short of the requested limit without
+being the last page). No family here has enough rows to need it yet; it exists ahead of
+`Unifi.FirewallPolicy` (424 live policies, `alchemy-ledger-network.md`), which does.
+
+## Field-level drift
+
+`network.ts`/`firewall-zone.ts` each export a pure `driftOf(live, props)` (`network-drift.ts`,
+`firewall-zone-form.ts`), built on the SAME normalizers and comparisons their own `matches`
+already runs (`drift.ts`'s `makeDriftOf` framework), so the two can never quietly disagree.
+Where `matches` collapses a comparison to one boolean, `driftOf` returns one entry per field that
+actually differs, each carrying its own live and declared value — the shape a future pre-import
+drift check (`homeflare-network`) needs to show WHICH fields changed before overwriting a
+committed declaration. Not consumed by a provider itself; `matches` remains what `resource.ts`
+calls.
+
 ## The declaration renderer
 
 `declareNetwork(live, siteId)` and `declareFirewallZone(live, siteId)` are pure functions: given
@@ -136,3 +170,9 @@ delete it cannot perform is moot. No `Effect.orDie`/`Effect.die` anywhere in the
 attributed, declared or compared. Both declaration renderers and both `matches` use
 `value == null` / `deepEqual(..., { stripNullish: true })` consistently, per `network-form.ts`'s
 own header. No departure found — nothing in this family needed changing.
+
+⚠️ **Correction (2026-09-26):** the line above is no longer true as written. `resource.ts` now
+has exactly one `Effect.die` — `GetOnlyHttpClient`'s guard (see "Defense in depth" above) —
+classified in its own comment per distilled-doctrine's "classify every die/orDie": it raises a
+NEW defect for a failure mode outside every generated SDK operation's declared error union, never
+converts an existing typed failure the way `orDie` would. Still no `Effect.orDie` anywhere.

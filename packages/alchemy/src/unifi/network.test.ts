@@ -9,6 +9,7 @@ import * as Retry from '@distilled.cloud/unifi-network/Retry';
 import * as Effect from 'effect/Effect';
 import { fakeFailure, fakeUnifi, fakeUnifiLayer } from './fake-unifi.ts';
 import { attributesOf, matches } from './network-form.ts';
+import { driftOf } from './network-drift.ts';
 import { type NetworkProps, declareNetwork, spec } from './network.ts';
 import { unifiOperations } from './resource.ts';
 
@@ -81,6 +82,24 @@ describe('declareNetwork -- the declaration renderer', () => {
     const declared = declareNetwork(live, 'site-1');
     const attrs = attributesOf(live, declared);
     expect(matches(attrs, declared)).toBe(true);
+  });
+});
+
+describe('driftOf -- B6 field-level drift, straight from one live read', () => {
+  test('a live object that matches its declaration drifts on nothing', () => {
+    const live = liveNetwork();
+    expect(driftOf(live, PROPS)).toEqual([]);
+  });
+
+  test('a drifted field reports its own live and declared values, by name', () => {
+    const live = liveNetwork({ vlanId: 999 });
+    expect(driftOf(live, PROPS)).toEqual([{ field: 'vlanId', live: 999, declared: 40 }]);
+  });
+
+  test('agrees with matches() on every case matches() already covers', () => {
+    const live = liveNetwork({ name: 'Guest', vlanId: 7 });
+    expect(matches(attributesOf(live, PROPS), PROPS)).toBe(false);
+    expect(driftOf(live, PROPS).length > 0).toBe(true);
   });
 });
 

@@ -34,6 +34,7 @@ import { unifiHandlers } from './resource.ts';
 
 export type { NetworkAttributes, NetworkProps } from './network-form.ts';
 export { declareNetwork } from './network-form.ts';
+export { driftOf } from './network-drift.ts';
 
 export interface UnifiNetwork extends Resource<
   'Unifi.Network',

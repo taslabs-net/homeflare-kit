@@ -44,7 +44,10 @@ const sortedSet = (values: readonly string[]): string[] => [...new Set(values)].
 //   `TypeError: Cannot read properties of null` the first time a console omits either field —
 //   `== null` catches both and returns the value through untouched, matching what the rest of
 //   this file already does for every other optional field.
-const normalizeDhcpGuarding = (
+// ★ EXPORTED (not just used below): `network-drift.ts`'s `driftOf` reuses these exact two
+//   normalizers so it can never quietly disagree with `matches` about what counts as a change —
+//   see that file's own header.
+export const normalizeDhcpGuarding = (
   value: networks.NetworkDHCPGuarding | undefined,
 ): networks.NetworkDHCPGuarding | undefined =>
   value == null
@@ -56,7 +59,7 @@ const normalizeDhcpGuarding = (
 //   `NetworkIPv6Configuration` types them `field?: T`, not `field?: T | undefined`. Conditional
 //   spread (rather than `field: value.field === undefined ? undefined : sortedSet(...)`) is what
 //   keeps an absent key absent.
-const normalizeIpv6Configuration = (
+export const normalizeIpv6Configuration = (
   value: networks.NetworkIPv6Configuration | undefined,
 ): networks.NetworkIPv6Configuration | undefined =>
   value == null

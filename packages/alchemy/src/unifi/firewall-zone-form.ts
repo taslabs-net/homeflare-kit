@@ -13,6 +13,7 @@
  *   the same reasoning `proxmox/user-wire.ts`'s `groupSet` gives for PVE's `groups`.
  */
 import type * as firewall from '@distilled.cloud/unifi-network/firewall';
+import { makeDriftOf } from './drift.ts';
 
 export interface FirewallZoneProps {
   siteId: string;
@@ -48,6 +49,32 @@ export const attributesOf = (
 export const matches = (attributes: FirewallZoneAttributes, props: FirewallZoneProps): boolean =>
   attributes.name === props.name &&
   attributes.networkIds.join(',') === sortedSet(props.networkIds).join(',');
+
+/**
+ * B6: the SAME two comparisons `matches` runs above, reused through `makeDriftOf` (`drift.ts`) so
+ * the two can never quietly disagree — `matches(attrs, props) === (driftOf(live, props).length
+ * === 0)` by construction (`firewall-zone.test.ts` proves it). `networkIds`' custom `equal`
+ * mirrors `matches`' own set comparison exactly; its reported `live`/`declared` values are the
+ * SORTED arrays, not the joined strings `matches` compares internally, so a real diff reads as a
+ * set difference, not two opaque strings.
+ */
+const fieldDrift = makeDriftOf<FirewallZoneAttributes, FirewallZoneProps>([
+  { field: 'name', live: (a) => a.name, declared: (p) => p.name },
+  {
+    field: 'networkIds',
+    live: (a) => a.networkIds,
+    declared: (p) => sortedSet(p.networkIds),
+    equal: (live, declared) => (live as string[]).join(',') === (declared as string[]).join(','),
+  },
+]);
+
+/**
+ * Per-field live-vs-declared drift straight from one live read — the task's own API
+ * (`driftOf(live, props)`), so `homeflare-network`'s pre-import drift check never has to derive
+ * `attributesOf` itself just to call this.
+ */
+export const driftOf = (live: firewall.FirewallZone, props: FirewallZoneProps) =>
+  fieldDrift(attributesOf(live, props), props);
 
 /**
  * The declaration renderer (task spec: "given one live object, return the props a declaration
