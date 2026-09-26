@@ -148,6 +148,65 @@ describe('removing a download', () => {
   });
 });
 
+describe('identity (red-team I1/I2 on PR 297)', () => {
+  test('a changed filename replaces: the old file is deleted, the new one downloaded', async () => {
+    const NEW_FILENAME = 'talos-v1.14.0-metal-amd64.qcow2';
+    // ⚠️ ALCHEMY REPLACES CREATE-FIRST (acl.test.ts's own note): the new file exists alongside the
+    //   old one for a moment, so the fixture tracks a SET of files, not one current name.
+    const files = new Set<string>();
+    const fake = fakePve((call) => {
+      if (isTaskStatus(call)) return { status: 'stopped', exitstatus: 'OK' };
+      if (isList(call)) return [...files].map((f) => row({ volid: `${STORAGE}:import/${f}` }));
+      if (isDownload(call)) {
+        files.add(call.form['filename'] ?? '');
+        return UPID;
+      }
+      if (call.method === 'DELETE') {
+        // ⚠️ The volid path segment may arrive percent-encoded (its own `:` and `/`) — match by
+        //   decoded suffix, the same way readDownload matches a listed row (storage-download-props.ts).
+        const decoded = decodeURIComponent(call.path);
+        const gone = [...files].find((f) => decoded.endsWith(f));
+        if (gone !== undefined) files.delete(gone);
+        return UPID;
+      }
+      return null;
+    });
+    await withoutBao(async () => {
+      const stack = engine(fake);
+      await stack.deploy(ProxmoxStorageDownload('image', declare()));
+      expect(
+        await stack.deploy(ProxmoxStorageDownload('image', declare({ filename: NEW_FILENAME }))),
+      ).toEqual({ image: 'replace' });
+    });
+    const [download1, download2] = fake.writes().filter((w) => w.includes('download-url'));
+    expect(download1).toBeDefined();
+    expect(download2).toBeDefined();
+    expect(fake.writes().some((w) => w.startsWith('DELETE') && w.endsWith(FILENAME))).toBe(true);
+    expect(files).toEqual(new Set([NEW_FILENAME]));
+  });
+
+  test('a changed checksum on the same filename is refused, never silently planned noop', async () => {
+    let downloaded = false;
+    const fake = fakePve((call) => {
+      if (isTaskStatus(call)) return { status: 'stopped', exitstatus: 'OK' };
+      if (isList(call)) return downloaded ? [row()] : [];
+      if (isDownload(call)) {
+        downloaded = true;
+        return UPID;
+      }
+      return null;
+    });
+    await withoutBao(async () => {
+      const stack = engine(fake);
+      await stack.deploy(ProxmoxStorageDownload('image', declare()));
+      await expect(
+        stack.deploy(ProxmoxStorageDownload('image', declare({ checksum: 'b'.repeat(64) }))),
+      ).rejects.toThrow(/checksum changed but filename did not/);
+    });
+    expect(fake.writes()).toEqual([`POST nodes/${NODE}/storage/${STORAGE}/download-url`]);
+  });
+});
+
 describe('no secret prop', () => {
   test('every declared field is a public identity or download parameter, never a credential', () => {
     for (const key of Object.keys(declare())) {

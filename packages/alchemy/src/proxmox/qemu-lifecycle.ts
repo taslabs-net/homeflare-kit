@@ -3,14 +3,24 @@
  * ⛔ GET and PUT use `/nodes/{node}/qemu/{vmid}/config`. DELETE uses `/nodes/{node}/qemu/{vmid}`.
  *   qemu-server Qemu.pm names that second route `destroy_vm`. Sending DELETE to the config
  *   route does not destroy the guest.
+ *
+ * ⛔ WRITES GO THROUGH `qemu-judge.ts`, NOT A WHOLE-FORM PUT (2026-09-26, red-team C1/C2/I1 on
+ *   PR 297). `judge` decides per key, on the live volume id and live MAC (qemu-volume.ts,
+ *   qemu-net.ts); only drifted keys are sent. `ownedRead`/`refuseTakeover` (C2) refuse to adopt or
+ *   write a live VM this stack holds no state for, unless `--adopt` / `adopt(true)` says so —
+ *   ownership.md's rule, ported here the way openbao/policy.ts already does it. `identityRefusal`
+ *   (I1) refuses a changed vmid rather than building a second VM.
  */
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
+import { refuseTakeover } from '../ownership/adopt.ts';
+import { ownedRead } from '../ownership/probe.ts';
 import { runPve } from './distilled-pve.ts';
 import { createForm, formRefusals, updateForm } from './qemu-form.ts';
 import { QemuRefusedError } from './qemu-errors.ts';
+import { identityRefusal, judge } from './qemu-judge.ts';
 import {
   type VmAttributes,
   type VmProps,
@@ -24,7 +34,6 @@ import { readVm } from './qemu-read.ts';
 import { qemuTask } from './qemu-task.ts';
 import type { PveSpec } from './resource-spec.ts';
 import { specGuards } from './resource-guard.ts';
-import { formToSend } from './update-guard.ts';
 
 const CREATE_POLLS = 180;
 const DELETE_POLLS = 60;
@@ -36,9 +45,9 @@ const attributesOf = (live: Record<string, unknown>, props: VmProps): VmAttribut
 });
 
 /**
- * ⛔ DECLARED MANAGED KEYS ONLY — see qemu-props.ts's header for the "5-default PUT" this
- *   replaces. A key the declaration leaves out is unmanaged: it is never compared here, so it can
- *   never be reported as drift or written over.
+ * ⚠️ KEPT ONLY TO SATISFY `PveSpec`'S REQUIRED FIELD — `qemu-judge.ts`'s `judge` is what diff and
+ *   reconcile actually decide by, since a plain string compare is exactly the bug C1 found (it
+ *   never matches the "new disk" or MAC-less spellings a declaration may use).
  */
 const matches = (attributes: VmAttributes, props: VmProps) =>
   declaredKeys(props)
@@ -96,29 +105,82 @@ const refuseUnmanaged = (props: VmProps) => {
   return refused.length === 0 ? Effect.void : Effect.fail(new QemuRefusedError(refused.join('\n')));
 };
 
+const refuseChange = (change: { readonly refuse: readonly string[] }) =>
+  change.refuse.length === 0
+    ? Effect.void
+    : Effect.fail(new QemuRefusedError(change.refuse.join('\n')));
+
 export const qemuHandlers = {
   list: () => Effect.succeed([]),
-  read: ({ olds }: { olds: VmProps }) => readQemu(olds),
+  /**
+   * ⛔ `Unowned` UNLESS STATE ALREADY VOUCHES FOR IT (C2). With no attributes this is Alchemy's
+   *   adoption probe or the recovery read for an interrupted create (ownership/probe.ts); `settled`
+   *   is the same `judge` reconcile uses, so "proven ours" and "reconcile would write nothing" are
+   *   the same question asked once.
+   */
+  read: Effect.fn(function* ({
+    fqn,
+    instanceId,
+    olds,
+    output,
+  }: {
+    fqn: string;
+    instanceId: string;
+    olds: VmProps;
+    output: VmAttributes | undefined;
+  }) {
+    const found = yield* readQemu(olds);
+    const settled = Effect.sync(
+      () => found !== undefined && judge(olds, found.config).drift.length === 0,
+    );
+    return yield* ownedRead({ fqn, instanceId, output }, found, settled);
+  }),
   diff: Effect.fn(function* ({
     news,
+    olds,
     output,
   }: {
     news: Input<VmProps>;
+    olds: VmProps;
     output: VmAttributes | undefined;
   }) {
     if (!isResolved(news)) return undefined;
+    const identity = identityRefusal(news.vmid, output?.vmid ?? olds.vmid);
+    if (identity !== undefined) return yield* Effect.fail(new QemuRefusedError(identity));
     yield* refuseUnmanaged(news);
     yield* guardCreate(news, output === undefined);
     yield* guardUpdate(news);
     if (output === undefined) return undefined;
     const live = yield* readQemu(news);
     if (live === undefined) {
+      // ⚠️ `update`, not `create`: state exists and the VM does not. reconcile rebuilds it from the
+      //   declaration -- said here too, so an operator reading the plan sees it before the deploy.
+      yield* Effect.logWarning(
+        `Proxmox.Vm ${news.node}/${String(news.vmid)}: the cluster lists no VM with this vmid -- ` +
+          'a deploy CREATES it again, with new, empty volumes.',
+      );
       yield* guardCreate(news, true);
       return { action: 'update' } as const;
     }
-    return { action: spec.matches(live, news) ? 'noop' : 'update' } as const;
+    const change = judge(news, live.config);
+    yield* refuseChange(change);
+    return { action: change.drift.length === 0 ? 'noop' : 'update' } as const;
   }),
-  reconcile: Effect.fn(function* ({ news }: { news: VmProps }) {
+  reconcile: Effect.fn(function* ({
+    fqn,
+    instanceId,
+    news,
+    olds,
+    output,
+  }: {
+    fqn: string;
+    instanceId: string;
+    news: VmProps;
+    olds: VmProps | undefined;
+    output: VmAttributes | undefined;
+  }) {
+    const identity = identityRefusal(news.vmid, output?.vmid ?? olds?.vmid);
+    if (identity !== undefined) return yield* Effect.fail(new QemuRefusedError(identity));
     yield* refuseUnmanaged(news);
     const live = yield* readQemu(news);
     yield* guardCreate(news, live === undefined);
@@ -131,13 +193,20 @@ export const qemuHandlers = {
         CREATE_POLLS,
       );
     } else {
-      const form = formToSend(spec.matches, live, news, spec.updateForm(news));
-      if (form !== undefined) {
+      // ⛔ C2: a live VM this stack holds no state for is refused unless adoption is on — dies
+      //   (never returns) for a fresh create/replace generation; a no-op otherwise (adopt.ts).
+      yield* refuseTakeover(
+        { fqn, instanceId, output },
+        `Proxmox.Vm VM ${String(news.vmid)} on ${news.node}`,
+      );
+      const change = judge(news, live.config);
+      yield* refuseChange(change);
+      if (Object.keys(change.put).length > 0) {
         yield* runPve(
           news.target,
           'provision',
           true,
-          nodes.putNodeQemuConfig({ ...form, node: news.node, vmid: String(news.vmid) }),
+          nodes.putNodeQemuConfig({ ...change.put, node: news.node, vmid: String(news.vmid) }),
         );
       }
     }
@@ -146,6 +215,15 @@ export const qemuHandlers = {
       return yield* Effect.fail(
         new QemuRefusedError(
           `${spec.path(news)}: write returned success but the VM is still absent`,
+        ),
+      );
+    }
+    const left = judge(news, after.config);
+    if (left.drift.length > 0) {
+      return yield* Effect.fail(
+        new QemuRefusedError(
+          `${spec.path(news)}: after the write, ${left.drift.join(', ')} still differ from the ` +
+            'declaration. PVE may have normalised the value -- declare what it stores.',
         ),
       );
     }

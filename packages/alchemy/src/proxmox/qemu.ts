@@ -16,9 +16,9 @@
  *   is found running on a DIFFERENT node than the one declared ("A migration is not an update") --
  *   unchanged by the 2026-09-26 export, and exactly what keeps a node-pinned Talos VM pinned.
  *
- * ⚠️ POWER STATE IS REPORTED, NEVER DECLARED. `status` is an attribute so a plan can show it; there
- *   is no `running` prop. Starting and stopping a VM from a plan would make a deploy a maintenance
- *   window, and the estate has one of those already.
+ * ⚠️ POWER STATE IS NEITHER DECLARED NOR REPORTED. There is no `running` prop and `VmAttributes`
+ *   carries no `status` field (qemu-props.ts) — starting and stopping a VM from a plan would make a
+ *   deploy a maintenance window, and the estate has one of those already.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';

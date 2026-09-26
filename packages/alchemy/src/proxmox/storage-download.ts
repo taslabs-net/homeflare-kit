@@ -16,9 +16,11 @@
  *
  * ⛔ THERE IS NO UPDATE PATH. PVE does not remember the `url` or `checksum` a volume was created
  *   from — `GET .../content` reports only `format`/`size`/`volid` — so once the file exists on
- *   `storage`, this resource has nothing left to compare a new declaration against. A DIFFERENT
- *   `checksum` on an existing `filename` plans `noop`: change the filename to force a new
- *   download, exactly as an immutable artifact should be replaced.
+ *   `storage`, this resource has nothing left to compare a new declaration against except the
+ *   PREVIOUS one (storage-download-identity.ts). A DIFFERENT `checksum`/`url` on the SAME `filename`
+ *   is REFUSED, never silently written or silently `noop` (2026-09-26, red-team I2 on PR 297):
+ *   change `filename` to force a new download, which plans a `replace` — the old file is deleted and
+ *   the new one downloaded under its own name — exactly as an immutable artifact should be.
  *
  * ⛔ NO SECRET IS A PROP. Every field here — `node`, `storage`, `filename`, `url`, the checksum
  *   pair, `compression`, `verifyCertificates` — is either an identity or a public download

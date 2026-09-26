@@ -71,6 +71,41 @@ describe('Proxmox.Vm distilled transport', () => {
     expect(fake.calls.some((call) => call.path.includes('/tasks/'))).toBe(true);
   });
 
+  test('C1: a "fresh" disk/cloudinit and a MAC-less NIC do not re-drift after PVE allocates them', async () => {
+    // ⛔ THE MEASURED REGRESSION: before qemu-judge.ts, every deploy after the create re-sent
+    //   scsi0/ide2/net0 in their DECLARED (fresh) spelling, because a plain string compare never
+    //   equals what PVE reports back for an allocated volume or a generated MAC -- reallocating the
+    //   disk and handing out a new MAC on every single deploy.
+    const declared = {
+      ...props,
+      ide2: 'cephtb4:cloudinit',
+      net0: 'virtio,bridge=vmbr0,tag=20',
+      scsi0: 'cephtb4:32',
+    };
+    const allocated = {
+      ide2: 'cephtb4:vm-150-cloudinit,media=cdrom',
+      net0: 'virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,tag=20',
+      scsi0: 'cephtb4:vm-150-disk-0,size=32G',
+    };
+    let created = false;
+    const fake = fakePve((call) => {
+      if (call.path.includes('/tasks/') && call.path.endsWith('/status')) {
+        return { status: 'stopped', exitstatus: 'OK' };
+      }
+      if (isIndex(call)) return [];
+      if (call.method === 'GET') return created ? { ...live, ...allocated } : missing();
+      created = true;
+      return UPID;
+    });
+    await withoutBao(async () => {
+      const stack = engine(fake);
+      await stack.deploy(ProxmoxVm('row', declared));
+      await stack.deploy(ProxmoxVm('row', declared));
+      await stack.deploy(ProxmoxVm('row', declared));
+    });
+    expect(fake.writes()).toEqual([`POST nodes/${NODE}/qemu`]);
+  });
+
   test('a transitional task status keeps polling instead of aborting the create', async () => {
     // ⚠️ `GetNodeTaskStatusResponseStatus` types `status` as the closed union
     //   "running" | "stopped", but the runtime validator is `S.String` (distilled-proxmox's
