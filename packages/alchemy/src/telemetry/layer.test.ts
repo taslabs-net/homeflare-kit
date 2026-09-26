@@ -44,26 +44,32 @@ const probingProvider = (target: string) =>
     delete: () => Effect.void,
   });
 
-const spanNamesIn = (collector: FakeCollector, path: string): string[] =>
-  collector.at(path).flatMap((request) => {
-    const body = request.body as {
-      resourceSpans?: Array<{ scopeSpans?: Array<{ spans?: Array<{ name: string }> }> }>;
-    };
-    return (body.resourceSpans ?? []).flatMap((rs) =>
-      (rs.scopeSpans ?? []).flatMap((ss) => (ss.spans ?? []).map((span) => span.name)),
-    );
-  });
-
 let collectors: FakeCollector[] = [];
 const collector = (): FakeCollector => {
   const c = fakeCollector();
   collectors.push(c);
   return c;
 };
+/** A plain HTTP server for the redteam repros below — a real "target" a provider calls, not an OTLP
+ * collector, so it doesn't belong in `collectors`/`FakeCollector`. */
+let servers: Array<{ stop: () => void }> = [];
 afterEach(() => {
   for (const c of collectors) c.stop();
   collectors = [];
+  for (const s of servers) s.stop();
+  servers = [];
 });
+
+/** A target that answers every request 404 — a provider call that fails. */
+const notFound = (): string => {
+  const server = Bun.serve({
+    fetch: () => new Response('nope', { status: 404 }),
+    hostname: '127.0.0.1',
+    port: 0,
+  });
+  servers.push({ stop: () => void server.stop(true) });
+  return `http://127.0.0.1:${String(server.port)}`;
+};
 
 describe('telemetryLayer', () => {
   test('sends nothing to any signal when every endpoint is left unconfigured', async () => {
@@ -85,16 +91,33 @@ describe('telemetryLayer', () => {
       telemetryLayer({ endpoints: { traces: `${otlp.url}/v1/traces` }, serviceName: 'test' }),
     ).pipe(Layer.provideMerge(FetchHttpClient.layer));
     await engineOver(providers).deploy(Thing('t', { name: 'x' }));
-    const names = spanNamesIn(otlp, '/v1/traces');
     // The provider's own span, the HttpClient client span it made, and alchemy's OWN engine
     // instrumentation (Apply.ts `instrumentLifecycle`/`apply`/`apply.resource`, Plan.ts
     // `plan.make`) — measured together in docs/telemetry-spike.md's run against beta.79.
-    expect(names).toContain('probe.custom-span');
-    expect(names).toContain('http.client GET');
-    expect(names).toContain('provider.create');
-    expect(names).toContain('apply');
-    expect(names).toContain('apply.resource');
-    expect(names).toContain('plan.make');
+    for (const name of [
+      'probe.custom-span',
+      'http.client GET',
+      'provider.create',
+      'apply',
+      'apply.resource',
+      'plan.make',
+    ]) {
+      expect(otlp.sawText(name)).toBe(true);
+    }
+  });
+
+  test('redteam PR 302 item 1: OTLP bodies are protobuf, not JSON', async () => {
+    const otlp = collector();
+    const target = collector();
+    const providers = Layer.mergeAll(
+      probingProvider(target.url),
+      telemetryLayer({ endpoints: { traces: `${otlp.url}/v1/traces` }, serviceName: 'test' }),
+    ).pipe(Layer.provideMerge(FetchHttpClient.layer));
+    await engineOver(providers).deploy(Thing('t', { name: 'x' }));
+    const request = otlp.at('/v1/traces')[0];
+    // VictoriaLogs/Metrics answer OTLP JSON with 400 "json encoding isn't supported" — only
+    // protobuf's `content-type` ingests on all three (docs/telemetry-spike.md's follow-up measurement).
+    expect(request?.headers.get('content-type')).toBe('application/x-protobuf');
   });
 
   test('redaction holds for a real HttpClient call: no query string, no headers, denylisted host blanked', async () => {
@@ -110,12 +133,72 @@ describe('telemetryLayer', () => {
       }),
     ).pipe(Layer.provideMerge(FetchHttpClient.layer));
     await engineOver(providers).deploy(Thing('t', { name: 'x' }));
-    const request = otlp.at('/v1/traces')[0];
-    const attributes = JSON.stringify(request?.body);
-    expect(attributes).not.toContain('SECRET123');
-    expect(attributes).not.toContain('sekrit');
-    expect(attributes).not.toContain('http.request.header');
-    expect(attributes).not.toContain(targetHost);
-    expect(attributes).toContain('<redacted>');
+    expect(otlp.sawText('SECRET123')).toBe(false);
+    expect(otlp.sawText('sekrit')).toBe(false);
+    expect(otlp.sawText('http.request.header')).toBe(false);
+    expect(otlp.sawText(targetHost)).toBe(false);
+    expect(otlp.sawText('<redacted>')).toBe(true);
+  });
+
+  test('redteam PR 302 items 2+3: a FAILED provider call no longer leaks the query secret or denylisted segments via exception/status', async () => {
+    const otlp = collector();
+    const targetUrl = notFound();
+    const host = new URL(targetUrl).hostname;
+    const secretUrl = `${targetUrl}/secret-site-abc123/probe?token=SECRET123`;
+    const failingProvider = Provider.succeed(Thing, {
+      read: () => Effect.succeed(undefined),
+      reconcile: () =>
+        Effect.gen(function* () {
+          const client = HttpClient.filterStatusOk(yield* HttpClient.HttpClient);
+          const response = yield* client.execute(HttpClientRequest.get(secretUrl));
+          yield* response.text;
+          return { name: 'x' };
+        }).pipe(Effect.withSpan('rt.provider-call')),
+      delete: () => Effect.void,
+    });
+    const providers = Layer.mergeAll(
+      failingProvider,
+      telemetryLayer({
+        endpoints: { traces: `${otlp.url}/v1/traces` },
+        redaction: { denylist: [host, 'secret-site-abc123'] },
+        serviceName: 'rt',
+      }),
+    ).pipe(Layer.provideMerge(FetchHttpClient.layer));
+    await engineOver(providers)
+      .deploy(Thing('t', { name: 'x' }))
+      .catch(() => undefined);
+    // Redteam measured this leaking via `exception.message`/`status.message`, computed from the exit's
+    // Cause at export time — after `wrapTracer`'s own hooks already ran. `redactedSerialization`
+    // (redact-serialization.ts) is the fix: it scrubs the wire-format `TraceData` one level deeper.
+    expect(otlp.sawText('SECRET123')).toBe(false);
+    expect(otlp.sawText('secret-site-abc123')).toBe(false);
+    expect(otlp.sawText(`${host}:`)).toBe(false);
+  });
+
+  test('redteam PR 302 items 2+3: a log line inside a span no longer leaks via the span event name', async () => {
+    const otlp = collector();
+    const secretUrl = 'http://private.example.test/secret-site-abc123/x?token=SECRET123';
+    const loggingProvider = Provider.succeed(Thing, {
+      read: () => Effect.succeed(undefined),
+      reconcile: () =>
+        Effect.logWarning(`calling ${secretUrl}`).pipe(
+          Effect.as({ name: 'x' }),
+          Effect.withSpan('rt.logging'),
+        ),
+      delete: () => Effect.void,
+    });
+    const providers = Layer.mergeAll(
+      loggingProvider,
+      telemetryLayer({
+        endpoints: { traces: `${otlp.url}/v1/traces` },
+        redaction: { denylist: ['private.example.test', 'secret-site-abc123'] },
+        serviceName: 'rt',
+      }),
+    );
+    await engineOver(providers).deploy(Thing('t', { name: 'x' }));
+    // effect's default `tracerLogger` turns this into a span EVENT whose NAME is the log message —
+    // `wrapTracer.event()` redacts the attributes but passed the name straight through before this fix.
+    expect(otlp.sawText('SECRET123')).toBe(false);
+    expect(otlp.sawText('secret-site-abc123')).toBe(false);
   });
 });

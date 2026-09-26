@@ -57,12 +57,18 @@ export const redactAttribute = (key: string, value: unknown, policy: RedactionPo
   //   `server.address` to `url.origin` (`http://host:port`), NOT a bare hostname — a denylist entry
   //   naming just a hostname would never match the raw value, so this parses it out the same way
   //   `url.full` does.
+  // ⛔ FIX (redteam PR 302 MINOR item 5, 2026-09-26): the OTel semantic convention's own default for
+  //   `server.address` IS a bare hostname with no scheme (`new URL(value)` throws on that), and other
+  //   instrumentation could emit exactly that even though effect's `HttpClient` doesn't today —
+  //   `redactAttribute('server.address', 'db1.example.test', { denylist: ['db1.example.test'] })`
+  //   returned the value verbatim before this fallback. Compare the raw string directly when it
+  //   isn't a parseable URL, instead of giving up.
   if (key === 'server.address') {
     try {
       const url = new URL(value);
       return denylist.has(url.hostname) ? REDACTED : value;
     } catch {
-      return value;
+      return denylist.has(value) ? REDACTED : value;
     }
   }
   if (key === 'url.path') return redactSegments(value, denylist);

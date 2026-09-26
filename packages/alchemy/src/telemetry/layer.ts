@@ -20,22 +20,26 @@
  *   ports/paths — docs/telemetry.md has the exact paths). `OtlpTracer`/`OtlpLogger`/`OtlpMetrics`
  *   each take their own `url` and post to it verbatim (OtlpExporter.ts `make`: `HttpClientRequest.
  *   post(options.url, …)`, no suffix appended) — exactly the shape three independent endpoints need.
+ * ⛔ PROTOBUF, NOT JSON (redteam PR 302 CRITICAL item 1, 2026-09-26, measured against the pinned
+ *   binaries in homeflare-mini's `src/obs`): VictoriaLogs 1.52.0 and VictoriaMetrics 1.151.0 both
+ *   answer OTLP/HTTP JSON with `400 "json encoding isn't supported for opentelemetry format"` —
+ *   effect's exporter treats a 400 as non-transient, drops the batch silently and disables itself for
+ *   60s at debug-only log level, so a JSON-encoded consumer sees traces (VictoriaTraces alone
+ *   tolerates JSON) but never logs or metrics, with no visible error. `redactedSerialization` below
+ *   provides `OtlpSerialization.layerProtobuf`, which all three ingested in the same measurement.
  */
 import type * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import * as Logger from 'effect/Logger';
+import * as LogLevel from 'effect/LogLevel';
 import * as Tracer from 'effect/Tracer';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import {
-  OtlpExporter,
-  OtlpLogger,
-  OtlpMetrics,
-  OtlpSerialization,
-  OtlpTracer,
-} from 'effect/unstable/observability';
+import { OtlpExporter, OtlpLogger, OtlpMetrics, OtlpTracer } from 'effect/unstable/observability';
+import { redactedSerialization } from './redact-serialization.ts';
 import { type RedactionPolicy, wrapTracer } from './redact.ts';
 
-/** Full OTLP/HTTP endpoint per signal — e.g. `http://127.0.0.1:10428/insert/opentelemetry/v1/traces`. Any entry left `undefined` sends nothing for that signal. */
+/** Full OTLP/HTTP endpoint per signal — e.g. `http://victoria.example.test:10428/insert/opentelemetry/v1/traces`. Any entry left `undefined` sends nothing for that signal. */
 export interface TelemetryEndpoints {
   readonly traces?: string;
   readonly logs?: string;
@@ -58,6 +62,18 @@ export interface TelemetryOptions {
    * misses; docs/telemetry-spike.md measured both paths.
    */
   readonly exportInterval?: Duration.Input;
+  /**
+   * Floor below which a log record never reaches the OTLP logger.
+   * @default 'Info' — redteam PR 302 IMPORTANT item 4: the `alchemy` CLI sets the GLOBAL minimum
+   * log level to Debug (`GlobalLog.ts`), and `OtlpLogger` has no floor of its own, so without one
+   * every Debug-level record (a provider's own connection-string/config dump, annotation noise)
+   * would ship — once `redactedSerialization` fixed item 1's silent-JSON-failure, they would
+   * actually start arriving. This floor applies ONLY to what THIS layer exports; a consumer's
+   * console/file loggers keep whatever level the CLI's own global setting gives them, since
+   * `logsMinimumLevel` filters after `Logger.layer`'s `mergeWithExisting: true` has already added
+   * this logger alongside them, not by lowering that global setting.
+   */
+  readonly logsMinimumLevel?: LogLevel.LogLevel;
 }
 
 // ⚠️ `exactOptionalPropertyTypes` — omit a key entirely rather than set it `undefined`, or the
@@ -83,6 +99,25 @@ const tracerLayer = (url: string, options: TelemetryOptions, exportInterval: Dur
   ).pipe(Layer.provideMerge(OtlpExporter.layerFlusher));
 
 /**
+ * `OtlpLogger.layer`'s own composition (`Logger.layer([make(options)], { mergeWithExisting: true })
+ * .pipe(Layer.provideMerge(Exporter.layerFlusher))`), with a level floor inserted between `make` and
+ * `Logger.layer` — see `TelemetryOptions.logsMinimumLevel`'s own doc for why.
+ */
+const loggerLayer = (url: string, options: TelemetryOptions, exportInterval: Duration.Input) => {
+  const floor = options.logsMinimumLevel ?? 'Info';
+  return Logger.layer(
+    [
+      Effect.map(OtlpLogger.make({ exportInterval, resource: resourceOf(options), url }), (inner) =>
+        Logger.make((record) =>
+          LogLevel.isGreaterThanOrEqualTo(record.logLevel, floor) ? inner.log(record) : undefined,
+        ),
+      ),
+    ],
+    { mergeWithExisting: true },
+  ).pipe(Layer.provideMerge(OtlpExporter.layerFlusher));
+};
+
+/**
  * The Layer a consumer stack merges into its own `providers` — see docs/telemetry.md for how a
  * site file wires real hosts in, and docs/telemetry-spike.md for what a stack's `providers` Layer does and does
  * not carry a span for.
@@ -105,16 +140,13 @@ export const telemetryLayer = (options: TelemetryOptions): Layer.Layer<never> =>
   // OTLP layers' own `exportInterval?: Duration.Input` (no `| undefined` in their signatures).
   const exportInterval: Duration.Input = options.exportInterval ?? '1 second';
   const tracer = traces === undefined ? Layer.empty : tracerLayer(traces, options, exportInterval);
-  const logger =
-    logs === undefined
-      ? Layer.empty
-      : OtlpLogger.layer({ exportInterval, resource: resourceOf(options), url: logs });
+  const logger = logs === undefined ? Layer.empty : loggerLayer(logs, options, exportInterval);
   const meter =
     metrics === undefined
       ? Layer.empty
       : OtlpMetrics.layer({ exportInterval, resource: resourceOf(options), url: metrics });
   return Layer.mergeAll(tracer, logger, meter).pipe(
-    Layer.provide(OtlpSerialization.layerJson),
+    Layer.provide(redactedSerialization(options.redaction ?? {})),
     Layer.provide(FetchHttpClient.layer),
   );
 };
