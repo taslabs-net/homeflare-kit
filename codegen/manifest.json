@@ -30,6 +30,7 @@
         "packages/alchemy/src/proxmox/generated/constraints/pve-nodes-lxc.ts",
         "packages/alchemy/src/proxmox/generated/constraints/pve-nodes-network.ts",
         "packages/alchemy/src/proxmox/generated/constraints/pve-nodes-qemu.ts",
+        "packages/alchemy/src/proxmox/generated/constraints/pve-nodes-storage.ts",
         "packages/alchemy/src/proxmox/generated/constraints/pve-pools.ts",
         "packages/alchemy/src/proxmox/generated/constraints/pve-storage.ts",
         "packages/alchemy/src/proxmox/generated/pve.ts"

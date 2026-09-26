@@ -22,6 +22,7 @@ import { PVE_NODES_DISKS_CONSTRAINTS } from './pve-nodes-disks.ts';
 import { PVE_NODES_LXC_CONSTRAINTS } from './pve-nodes-lxc.ts';
 import { PVE_NODES_NETWORK_CONSTRAINTS } from './pve-nodes-network.ts';
 import { PVE_NODES_QEMU_CONSTRAINTS } from './pve-nodes-qemu.ts';
+import { PVE_NODES_STORAGE_CONSTRAINTS } from './pve-nodes-storage.ts';
 import { PVE_POOLS_CONSTRAINTS } from './pve-pools.ts';
 import { PVE_STORAGE_CONSTRAINTS } from './pve-storage.ts';
 import { PBS_CONFIG_CONSTRAINTS } from './pbs-config.ts';
@@ -41,6 +42,7 @@ export const PROXMOX_CONSTRAINTS: Readonly<Record<string, EndpointConstraints>> 
   ...PVE_NODES_LXC_CONSTRAINTS,
   ...PVE_NODES_NETWORK_CONSTRAINTS,
   ...PVE_NODES_QEMU_CONSTRAINTS,
+  ...PVE_NODES_STORAGE_CONSTRAINTS,
   ...PVE_POOLS_CONSTRAINTS,
   ...PVE_STORAGE_CONSTRAINTS,
   ...PBS_CONFIG_CONSTRAINTS,
@@ -52,4 +54,4 @@ export const PROXMOX_CONSTRAINTS: Readonly<Record<string, EndpointConstraints>> 
  * ★ A DIGEST OF THE DATA, NOT OF THE FILE TEXT, so reformatting is not a stale generation while
  *   changing a 128 to a 129 by hand is. `tests/schema-manifest.test.ts` recomputes it.
  */
-export const PROXMOX_CONSTRAINTS_DIGEST = '56eba80750ddb1d2';
+export const PROXMOX_CONSTRAINTS_DIGEST = '8b6745a471839974';

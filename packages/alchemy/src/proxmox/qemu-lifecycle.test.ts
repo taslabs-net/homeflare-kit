@@ -5,7 +5,7 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { engineOver } from '../verify/fake-engine.ts';
 import { FAKE_TARGET, type FakePve, fakePve, withoutBao } from './fake-pve.ts';
-import { ProxmoxVm, ProxmoxVmProvider } from './qemu.ts';
+import { ProxmoxVm, ProxmoxVmProvider, type VmProps } from './qemu.ts';
 
 const NODE = 'pve1';
 const VMID = 150;
@@ -42,24 +42,27 @@ describe('Proxmox.Vm distilled transport', () => {
   });
 
   test('absence creates on the collection route, waits, then settles', async () => {
-    let exists = false;
+    let posted: Record<string, string> | undefined;
     const fake = fakePve((call) => {
       if (call.path.includes('/tasks/') && call.path.endsWith('/status')) {
         return { status: 'stopped', exitstatus: 'OK' };
       }
       if (isIndex(call)) return [];
-      if (call.method === 'GET') return exists ? live : missing();
-      exists = true;
+      // ⚠️ `net0` IS NOW A MANAGED, COMPARED KEY (qemu-props.ts) — the old fixture answered the
+      //   SAME static `live` regardless of what was posted, which only worked because the old
+      //   `matches` never looked at `net0` at all. Echoing the create form back is what proves
+      //   the declared value is what a real PVE config would report.
+      if (call.method === 'GET') return posted === undefined ? missing() : { ...live, ...posted };
+      posted = call.form;
       return UPID;
     });
+    const declared = { ...props, net0: 'virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0' };
     await withoutBao(async () => {
       const stack = engine(fake);
-      await stack.deploy(
-        ProxmoxVm('row', { ...props, net0: 'virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0' }),
+      await stack.deploy(ProxmoxVm('row', declared));
+      expect((await stack.verify(ProxmoxVm('row', declared), { all: true })).rows[0]).toMatchObject(
+        { diff: 'noop' },
       );
-      expect((await stack.verify(ProxmoxVm('row', props), { all: true })).rows[0]).toMatchObject({
-        diff: 'noop',
-      });
     });
     expect(fake.writes()).toEqual([`POST nodes/${NODE}/qemu`]);
     expect(fake.calls.find((call) => call.method === 'POST')?.form['net0']).toBe(
@@ -113,24 +116,45 @@ describe('Proxmox.Vm distilled transport', () => {
     expect(fake.writes()).toEqual([]);
   });
 
-  test('drift updates the config route and the next plan is a no-op', async () => {
-    let current: unknown = { ...live, memory: '256' };
+  test('drift on a declared field updates the config route, and only that field', async () => {
+    // ⛔ THE "5-DEFAULT PUT" REGRESSION TEST. `name` is deliberately left UNDECLARED and deliberately
+    //   NOT what qemu-form.ts's old default would have produced (`vm150`) -- the old `shape()` sent
+    //   it (and `cores`/`sockets`/`onboot`) on every write regardless, silently resetting an
+    //   undeclared field to its factory value. Only `memory` is declared here, so only `memory`
+    //   may appear in the PUT body.
+    const declared = { ...props, memory: 512 };
+    let current: unknown = { ...live, memory: '256', name: 'a-name-nobody-declared' };
     const fake = fakePve((call) => {
       if (call.method === 'GET') return current;
-      current = live;
+      current = { ...(current as Record<string, unknown>), memory: '512' };
       return null;
     });
     await withoutBao(async () => {
       const stack = engine(fake);
-      expect((await stack.verify(ProxmoxVm('row', props), { all: true })).rows[0]).toMatchObject({
-        diff: 'update',
-      });
-      await stack.deploy(ProxmoxVm('row', props));
-      expect((await stack.verify(ProxmoxVm('row', props), { all: true })).rows[0]).toMatchObject({
-        diff: 'noop',
-      });
+      expect((await stack.verify(ProxmoxVm('row', declared), { all: true })).rows[0]).toMatchObject(
+        { diff: 'update' },
+      );
+      await stack.deploy(ProxmoxVm('row', declared));
+      expect((await stack.verify(ProxmoxVm('row', declared), { all: true })).rows[0]).toMatchObject(
+        { diff: 'noop' },
+      );
     });
     expect(fake.writes()).toEqual([`PUT nodes/${NODE}/qemu/${String(VMID)}/config`]);
+    const put = fake.calls.find((call) => call.method === 'PUT');
+    expect(put?.form).toEqual({ memory: '512' });
+  });
+
+  test('an unmanaged key smuggled past the types is refused before any write', async () => {
+    const fake = fakePve((call) => (call.method === 'GET' ? live : null));
+    // ⛔ `cipassword` IS TYPED `never` (qemu-props.ts): a cast is the only way in, exactly the
+    //   scenario the type cannot guard against by itself. `formRefusals` is the runtime backstop.
+    const smuggled = { ...props, cipassword: 'not-a-real-secret' } as unknown as VmProps;
+    await withoutBao(async () => {
+      await expect(engine(fake).deploy(ProxmoxVm('row', smuggled))).rejects.toThrow(
+        /cipassword: not a config key this resource manages/,
+      );
+    });
+    expect(fake.writes()).toEqual([]);
   });
 
   test('unrelated read failures and a digest-less body do not write', async () => {

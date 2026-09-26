@@ -88,6 +88,18 @@ export const PVE_NODE_OWNERSHIP: readonly Ownership[] = [
     writes: crud('/nodes/{node}/network', '/nodes/{node}/network/{iface}'),
   },
   {
+    // ⚠️ POST creates the FILE (download-url), DELETE removes the CONTENT ROW `download-url`
+    //   created — two different sub-resources of one storage, exactly the createDestroy shape.
+    //   No PUT: storage-download.ts's header explains why there is no update path at all.
+    resource: 'Proxmox.StorageDownload',
+    system: 'pve',
+    file: `${P}/storage-download-lifecycle.ts`,
+    writes: createDestroy(
+      '/nodes/{node}/storage/{storage}/download-url',
+      '/nodes/{node}/storage/{storage}/content/{volume}',
+    ),
+  },
+  {
     resource: 'Proxmox.Vm',
     system: 'pve',
     file: `${P}/qemu.ts`,

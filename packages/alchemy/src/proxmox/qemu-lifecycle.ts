@@ -9,44 +9,41 @@ import type { Input } from 'alchemy/Input';
 import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
 import { runPve } from './distilled-pve.ts';
-import { createForm, shape } from './qemu-form.ts';
+import { createForm, formRefusals, updateForm } from './qemu-form.ts';
 import { QemuRefusedError } from './qemu-errors.ts';
+import {
+  type VmAttributes,
+  type VmProps,
+  declaredKeys,
+  declaredValue,
+  isManagedKey,
+  storedConfig,
+  wireValue,
+} from './qemu-props.ts';
 import { readVm } from './qemu-read.ts';
 import { qemuTask } from './qemu-task.ts';
-import type { VmAttributes, VmProps } from './qemu.ts';
 import type { PveSpec } from './resource-spec.ts';
 import { specGuards } from './resource-guard.ts';
 import { formToSend } from './update-guard.ts';
-import { int } from './values.ts';
 
 const CREATE_POLLS = 180;
 const DELETE_POLLS = 60;
 
-const attributesOf = (
-  live: {
-    cores?: unknown;
-    memory?: unknown;
-    name?: unknown;
-    onboot?: unknown;
-    sockets?: unknown;
-  },
-  props: VmProps,
-): VmAttributes => ({
-  cores: int(live.cores, 1),
-  memory: int(live.memory, 512),
-  name: typeof live.name === 'string' ? live.name : '',
+const attributesOf = (live: Record<string, unknown>, props: VmProps): VmAttributes => ({
+  config: storedConfig(live),
   node: props.node,
-  onboot: live.onboot === 1 || live.onboot === true,
-  sockets: int(live.sockets, 1),
   vmid: props.vmid,
 });
 
+/**
+ * ⛔ DECLARED MANAGED KEYS ONLY — see qemu-props.ts's header for the "5-default PUT" this
+ *   replaces. A key the declaration leaves out is unmanaged: it is never compared here, so it can
+ *   never be reported as drift or written over.
+ */
 const matches = (attributes: VmAttributes, props: VmProps) =>
-  attributes.name === (props.name ?? `vm${String(props.vmid)}`) &&
-  attributes.memory === (props.memory ?? 512) &&
-  attributes.cores === (props.cores ?? 1) &&
-  attributes.sockets === (props.sockets ?? 1) &&
-  attributes.onboot === (props.onboot === true);
+  declaredKeys(props)
+    .filter(isManagedKey)
+    .every((key) => attributes.config[key] === wireValue(declaredValue(props, key)));
 
 const spec = {
   attributes: attributesOf,
@@ -58,14 +55,24 @@ const spec = {
   },
   matches,
   path: (props: VmProps) => `nodes/${props.node}/qemu/${String(props.vmid)}/config`,
-  updateForm: shape,
+  updateForm,
 } satisfies PveSpec<VmProps, VmAttributes>;
 
 const { guardCreate, guardUpdate } = specGuards(spec);
 
 export const readQemu = (props: VmProps) =>
   readVm(props).pipe(
-    Effect.map((live) => (live === undefined ? undefined : attributesOf(live, props))),
+    Effect.map((live) =>
+      live === undefined
+        ? undefined
+        : // ⚠️ WIDENED ON PURPOSE. `GetNodeQemuConfigResponse` types only the keys pve-manager's
+          //   apidoc names as SCALARS; it cannot express `scsi[n]`/`net[n]`/`ipconfig[n]` at all
+          //   (qemu-props.ts's header), so it carries no index signature. `storedConfig` reads
+          //   those keys anyway, because the ACTUAL wire response has them (protocol-http.ts's
+          //   `mapKeys` passes an unrecognised key through undecoded, both directions) — this
+          //   cast only tells TypeScript what runtime already knows.
+          attributesOf(live as unknown as Record<string, unknown>, props),
+    ),
   );
 
 /** No purge, no skiplock, no destroy-unreferenced-disks. A missing config is already gone. */
@@ -76,6 +83,18 @@ export const deleteQemu = (props: VmProps) =>
     `destroy VM ${String(props.vmid)}`,
     DELETE_POLLS,
   ).pipe(Effect.catchTag('QemuConfigNotFound', () => Effect.void));
+
+/**
+ * ★ ONE PLACE, RUN BEFORE EVERY DIFF AND EVERY RECONCILE. A key smuggled past `VmProps`'s types
+ *   (a cast, a JS caller: `cipassword`, `machine`, `hookscript`) is refused here rather than
+ *   silently dropped from the form or silently sent — the same rule `lxc-create-form.ts` enforces
+ *   for `Proxmox.Lxc`, and the check `qemu-props.ts`'s `cipassword?: never`/`machine?: never`
+ *   cannot make by itself once a caller casts around the type.
+ */
+const refuseUnmanaged = (props: VmProps) => {
+  const refused = formRefusals(props);
+  return refused.length === 0 ? Effect.void : Effect.fail(new QemuRefusedError(refused.join('\n')));
+};
 
 export const qemuHandlers = {
   list: () => Effect.succeed([]),
@@ -88,6 +107,7 @@ export const qemuHandlers = {
     output: VmAttributes | undefined;
   }) {
     if (!isResolved(news)) return undefined;
+    yield* refuseUnmanaged(news);
     yield* guardCreate(news, output === undefined);
     yield* guardUpdate(news);
     if (output === undefined) return undefined;
@@ -99,6 +119,7 @@ export const qemuHandlers = {
     return { action: spec.matches(live, news) ? 'noop' : 'update' } as const;
   }),
   reconcile: Effect.fn(function* ({ news }: { news: VmProps }) {
+    yield* refuseUnmanaged(news);
     const live = yield* readQemu(news);
     yield* guardCreate(news, live === undefined);
     yield* guardUpdate(news);
