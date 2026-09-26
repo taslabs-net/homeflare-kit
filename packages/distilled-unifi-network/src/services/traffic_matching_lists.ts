@@ -87,7 +87,7 @@ export type CreateTrafficMatchingListRequestItems =
   | CreateTrafficMatchingListRequestItemsCase1List
   | CreateTrafficMatchingListRequestItemsCase2List;
 export const CreateTrafficMatchingListRequestItems =
-  /*@__PURE__*/ S.Unknown.pipe(T.UnionCases([[], [], []]));
+  S.Unknown as any as S.Schema<CreateTrafficMatchingListRequestItems>;
 
 export interface CreateTrafficMatchingListRequest {
   siteId: string;
@@ -133,9 +133,8 @@ export type TrafficMatchingListItems =
   | TrafficMatchingListItemsCase0List
   | TrafficMatchingListItemsCase1List
   | TrafficMatchingListItemsCase2List;
-export const TrafficMatchingListItems = /*@__PURE__*/ S.Unknown.pipe(
-  T.UnionCases([[], [], []]),
-);
+export const TrafficMatchingListItems =
+  S.Unknown as any as S.Schema<TrafficMatchingListItems>;
 
 export interface TrafficMatchingList {
   id: string;
@@ -274,7 +273,7 @@ export type UpdateTrafficMatchingListRequestItems =
   | UpdateTrafficMatchingListRequestItemsCase1List
   | UpdateTrafficMatchingListRequestItemsCase2List;
 export const UpdateTrafficMatchingListRequestItems =
-  /*@__PURE__*/ S.Unknown.pipe(T.UnionCases([[], [], []]));
+  S.Unknown as any as S.Schema<UpdateTrafficMatchingListRequestItems>;
 
 export interface UpdateTrafficMatchingListRequest {
   siteId: string;

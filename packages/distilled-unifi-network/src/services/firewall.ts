@@ -976,13 +976,7 @@ export type FirewallPolicyIPProtocolScopeProtocolFilter =
   | FirewallPolicyIPv4AndIPv6Protocol
   | FirewallPolicyIPv6Protocol;
 export const FirewallPolicyIPProtocolScopeProtocolFilter =
-  /*@__PURE__*/ S.Unknown.pipe(
-    T.UnionCases([
-      ["type", "matchOpposite", "protocol", "preset", "protocolNumber"],
-      ["type", "matchOpposite", "protocol", "preset", "protocolNumber"],
-      ["type", "matchOpposite", "protocol", "preset", "protocolNumber"],
-    ]),
-  );
+  S.Unknown as any as S.Schema<FirewallPolicyIPProtocolScopeProtocolFilter>;
 
 /** Defines rules for matching by IP version and protocol. */
 export interface FirewallPolicyIPProtocolScope {
@@ -1087,7 +1081,7 @@ export type FirewallPolicySourceTrafficFilterMacAddressFilter =
   | string
   | FirewallPolicyMACAddressFilter;
 export const FirewallPolicySourceTrafficFilterMacAddressFilter =
-  /*@__PURE__*/ S.Unknown.pipe(T.UnionCases([[], ["macAddresses"]]));
+  S.Unknown as any as S.Schema<FirewallPolicySourceTrafficFilterMacAddressFilter>;
 
 export interface FirewallPolicySourceTrafficFilter {
   type: string;

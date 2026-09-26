@@ -82,12 +82,7 @@ export type CreateAclRuleRequestDestinationFilter =
   | IPACLRuleEndpoint
   | MACACLRuleEndpoint;
 export const CreateAclRuleRequestDestinationFilter =
-  /*@__PURE__*/ S.Unknown.pipe(
-    T.UnionCases([
-      ["type", "ipAddressesOrSubnets", "portFilter", "networkIds"],
-      ["type", "macAddresses", "prefixLength"],
-    ]),
-  );
+  S.Unknown as any as S.Schema<CreateAclRuleRequestDestinationFilter>;
 
 /** List of Switch capable device IDs to which the ACL rule will be provisioned. */
 export type ACLRuleDeviceFilterDeviceIdsList = Array<string>;
@@ -113,12 +108,8 @@ export const ACLRuleDeviceFilter = /*@__PURE__*/ S.suspend(() =>
 export type CreateAclRuleRequestSourceFilter =
   | IPACLRuleEndpoint
   | MACACLRuleEndpoint;
-export const CreateAclRuleRequestSourceFilter = /*@__PURE__*/ S.Unknown.pipe(
-  T.UnionCases([
-    ["type", "ipAddressesOrSubnets", "portFilter", "networkIds"],
-    ["type", "macAddresses", "prefixLength"],
-  ]),
-);
+export const CreateAclRuleRequestSourceFilter =
+  S.Unknown as any as S.Schema<CreateAclRuleRequestSourceFilter>;
 
 export type CreateAclRuleRequestProtocolFilterItem = "TCP" | "UDP";
 export const CreateAclRuleRequestProtocolFilterItem = S.String;
@@ -181,12 +172,8 @@ export const ACLRuleAction = S.String;
 
 /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
 export type ACLRuleDestinationFilter = IPACLRuleEndpoint | MACACLRuleEndpoint;
-export const ACLRuleDestinationFilter = /*@__PURE__*/ S.Unknown.pipe(
-  T.UnionCases([
-    ["type", "ipAddressesOrSubnets", "portFilter", "networkIds"],
-    ["type", "macAddresses", "prefixLength"],
-  ]),
-);
+export const ACLRuleDestinationFilter =
+  S.Unknown as any as S.Schema<ACLRuleDestinationFilter>;
 
 export type UserDefinedOrDerivedEntityMetadataSource = "SDWAN";
 export const UserDefinedOrDerivedEntityMetadataSource = S.String;
@@ -206,12 +193,8 @@ export const UserDefinedOrDerivedEntityMetadata = /*@__PURE__*/ S.suspend(() =>
 
 /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
 export type ACLRuleSourceFilter = IPACLRuleEndpoint | MACACLRuleEndpoint;
-export const ACLRuleSourceFilter = /*@__PURE__*/ S.Unknown.pipe(
-  T.UnionCases([
-    ["type", "ipAddressesOrSubnets", "portFilter", "networkIds"],
-    ["type", "macAddresses", "prefixLength"],
-  ]),
-);
+export const ACLRuleSourceFilter =
+  S.Unknown as any as S.Schema<ACLRuleSourceFilter>;
 
 export type ACLRuleProtocolFilterItem = "TCP" | "UDP";
 export const ACLRuleProtocolFilterItem = S.String;
@@ -370,21 +353,13 @@ export const ACLRuleObjectAction = S.String;
 export type ACLRuleObjectDestinationFilter =
   | IPACLRuleEndpoint
   | MACACLRuleEndpoint;
-export const ACLRuleObjectDestinationFilter = /*@__PURE__*/ S.Unknown.pipe(
-  T.UnionCases([
-    ["type", "ipAddressesOrSubnets", "portFilter", "networkIds"],
-    ["type", "macAddresses", "prefixLength"],
-  ]),
-);
+export const ACLRuleObjectDestinationFilter =
+  S.Unknown as any as S.Schema<ACLRuleObjectDestinationFilter>;
 
 /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
 export type ACLRuleObjectSourceFilter = IPACLRuleEndpoint | MACACLRuleEndpoint;
-export const ACLRuleObjectSourceFilter = /*@__PURE__*/ S.Unknown.pipe(
-  T.UnionCases([
-    ["type", "ipAddressesOrSubnets", "portFilter", "networkIds"],
-    ["type", "macAddresses", "prefixLength"],
-  ]),
-);
+export const ACLRuleObjectSourceFilter =
+  S.Unknown as any as S.Schema<ACLRuleObjectSourceFilter>;
 
 export type ACLRuleObjectProtocolFilterItem = "TCP" | "UDP";
 export const ACLRuleObjectProtocolFilterItem = S.String;
@@ -472,23 +447,14 @@ export type UpdateAclRuleRequestDestinationFilter =
   | IPACLRuleEndpoint
   | MACACLRuleEndpoint;
 export const UpdateAclRuleRequestDestinationFilter =
-  /*@__PURE__*/ S.Unknown.pipe(
-    T.UnionCases([
-      ["type", "ipAddressesOrSubnets", "portFilter", "networkIds"],
-      ["type", "macAddresses", "prefixLength"],
-    ]),
-  );
+  S.Unknown as any as S.Schema<UpdateAclRuleRequestDestinationFilter>;
 
 /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
 export type UpdateAclRuleRequestSourceFilter =
   | IPACLRuleEndpoint
   | MACACLRuleEndpoint;
-export const UpdateAclRuleRequestSourceFilter = /*@__PURE__*/ S.Unknown.pipe(
-  T.UnionCases([
-    ["type", "ipAddressesOrSubnets", "portFilter", "networkIds"],
-    ["type", "macAddresses", "prefixLength"],
-  ]),
-);
+export const UpdateAclRuleRequestSourceFilter =
+  S.Unknown as any as S.Schema<UpdateAclRuleRequestSourceFilter>;
 
 export type UpdateAclRuleRequestProtocolFilterItem = "TCP" | "UDP";
 export const UpdateAclRuleRequestProtocolFilterItem = S.String;
