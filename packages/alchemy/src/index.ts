@@ -10,6 +10,7 @@
  *     import { BaoMount } from '@homeflare/alchemy/openbao';
  *     import { TalosCluster } from '@homeflare/alchemy/talos';
  *     import { ProxmoxAcl } from '@homeflare/alchemy/proxmox';
+ *     import { CephAuthEntity } from '@homeflare/alchemy/ceph';
  *     import { LaunchdJob } from '@homeflare/alchemy/launchd';
  *     import { ReleaseBinary } from '@homeflare/alchemy/release';
  *     import { CaddyConfig } from '@homeflare/alchemy/caddy';
