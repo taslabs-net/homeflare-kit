@@ -1,0 +1,106 @@
+/**
+ * `Talos.ClusterHealth` — no swallowed transport errors (K-talos-first-boot). Fully offline:
+ * fake-process.ts fakes `bao`/`talosctl`, nothing real spawns.
+ */
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import * as Effect from 'effect/Effect';
+import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import { type FakeCall, fakeSpawner } from './fake-process.ts';
+import {
+  diffClusterHealth,
+  readClusterHealth,
+  reconcileClusterHealth,
+} from './talos-cluster-health.ts';
+
+const TARGET = { cluster: 'c1', mount: 'talos-c1' };
+const props = () => ({ controlPlaneNodes: ['198.51.100.10'], target: TARGET });
+
+const run = <A, E>(
+  effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,
+  handler: (c: FakeCall) => { stdout?: string; stderr?: string; exitCode?: number },
+) =>
+  Effect.runPromise(
+    Effect.provideService(effect, ChildProcessSpawner.ChildProcessSpawner, fakeSpawner(handler)),
+  );
+
+const baoOk = (call: FakeCall) =>
+  call.command === 'bao'
+    ? { stdout: JSON.stringify({ data: { data: { talosconfig: 'x' } } }) }
+    : undefined;
+
+/** `talosctl health` ran and reported unhealthy — the one case this family may call "not healthy". */
+const unhealthy = (call: FakeCall) =>
+  baoOk(call) ?? { exitCode: 1, stderr: 'kube-proxy not ready' };
+
+/** `talosctl health` ran and reported healthy. */
+const healthy = (call: FakeCall) => baoOk(call) ?? {};
+
+/** `bao` itself fails — a transport/credential problem, not a cluster-health verdict. */
+const vaultDown = (call: FakeCall) =>
+  call.command === 'bao' ? { exitCode: 1, stderr: 'permission denied' } : {};
+
+describe('readClusterHealth', () => {
+  it('reports healthy:false when talosctl health ran and exited non-zero', async () => {
+    const result = await run(readClusterHealth(props()), unhealthy);
+    assert.equal(result.healthy, false);
+  });
+
+  it('reports healthy:true when talosctl health exits zero', async () => {
+    const result = await run(readClusterHealth(props()), healthy);
+    assert.equal(result.healthy, true);
+  });
+
+  it('propagates a vault/transport failure instead of reporting healthy:false', async () => {
+    await assert.rejects(
+      run(readClusterHealth(props()), vaultDown),
+      (error: unknown) => error instanceof Error && error.message.includes('permission denied'),
+    );
+  });
+});
+
+describe('diffClusterHealth', () => {
+  it('plans update when the cluster genuinely reports unhealthy', async () => {
+    const result = await run(
+      diffClusterHealth(props(), {
+        controlPlaneNodes: '198.51.100.10',
+        healthy: false,
+        workerNodes: '',
+      }),
+      unhealthy,
+    );
+    assert.equal(result?.action, 'update');
+  });
+
+  it('propagates a vault/transport failure rather than planning update silently', async () => {
+    await assert.rejects(
+      run(
+        diffClusterHealth(props(), {
+          controlPlaneNodes: '198.51.100.10',
+          healthy: false,
+          workerNodes: '',
+        }),
+        vaultDown,
+      ),
+    );
+  });
+});
+
+describe('reconcileClusterHealth', () => {
+  it('wraps a TalosError with a "cluster not healthy" message', async () => {
+    await assert.rejects(
+      run(reconcileClusterHealth(props()), unhealthy),
+      (error: unknown) => error instanceof Error && error.message.includes('cluster not healthy'),
+    );
+  });
+
+  it('propagates a vault/transport failure WITHOUT the "cluster not healthy" mislabel', async () => {
+    await assert.rejects(
+      run(reconcileClusterHealth(props()), vaultDown),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message.includes('permission denied') &&
+        !error.message.includes('cluster not healthy'),
+    );
+  });
+});

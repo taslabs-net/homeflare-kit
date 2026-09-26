@@ -115,18 +115,22 @@ not an alternative, it is a dependency.
   drift is caught at reconcile (which elevates, on the admin lane) and by the
   post-deploy operator check; verify honestly cannot prove live convergence
   for this family and says so.
-- Reconcile (observe → ensure → sync, ordered for M4): `auth get <entity>`,
-  caps-only-filtered **on the node** by the committed script → **present**:
-  compare caps, differ → exactly `auth caps` (⚠️ `get-or-create` on an
-  existing entity with different caps errors — REASONED, hence the explicit
-  branch) → **absent** (proven by a successful read): `auth get-or-create`
-  with the declared caps → capture the key **in memory only** → write it to
-  OpenBao via stdin (⛔ never argv, never a temp file) → attributes: entity,
-  caps, `sha256(key)` fingerprint, bao path.
-- ⛔ The stdout of an unfiltered `auth get*` holds the key: only the create
-  path may read it, error paths report stderr only
-  (the `talos/credentials.ts:83` rule), and the runner's per-call log line
-  prints argv, never output.
+- Reconcile (observe → ensure → sync, ordered for M4): `auth get <entity>` →
+  **present**: compare caps, differ → exactly `auth caps` (⚠️ `get-or-create`
+  on an existing entity with different caps errors — REASONED, hence the
+  explicit branch) → **absent** (proven by a successful read): `auth
+get-or-create` with the declared caps → capture the key **in memory only**
+  → write it to OpenBao via stdin (⛔ never argv, never a temp file) →
+  attributes: entity, caps, `sha256(key)` fingerprint, bao path.
+- ⛔ **DECISION 65 (Tim, 2026-09-26) AMENDS THIS: no node-side shell filter for
+  `auth get`.** Its full stdout (key included) may be read directly on
+  **every** reconcile now, not only create — the key is parsed out and
+  dropped in the reconcile process's **own memory** before anything is
+  logged, returned or stored, the same in-memory discipline the create path
+  above already uses (one fewer script to maintain per mon node). Error paths
+  stay stderr-only (never echo stdout on failure, `talos/credentials.ts:83`'s
+  rule), and the runner's per-call log line prints argv, never output; tests
+  prove the key never reaches a log line, a return value or a state fixture.
 - Rows are creates through the first-create gate, no `adopt()`. The consuming
   side — the ceph-csi secret inside k8s reading the key from the vault — is
   its own design when the k8s consumer path exists; one line here on purpose.

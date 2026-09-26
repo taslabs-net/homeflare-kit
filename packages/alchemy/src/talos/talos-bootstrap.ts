@@ -6,6 +6,22 @@
  *   the bootstrap node. This command must run exactly once per cluster.
  *
  * ⛔ NOT A FACTORY RESOURCE — bootstrap cannot be deleted or updated in place; `delete` is a no-op.
+ *
+ * ⛔ ONCE MEANS ONCE (K-talos-first-boot, 2026-09-26) — THE SHIPPED SHAPE COULD BOOTSTRAP A SECOND
+ *   etcd CLUSTER. The original `isBootstrapped` turned every read failure into `false`
+ *   (`Effect.orElseSucceed`), `diff` then planned `update`, and `reconcile` re-ran `talosctl
+ *   bootstrap` — Talos's only server-side guard is a non-empty etcd data directory (REASONED,
+ *   `v1alpha1_server.go:441`), so a reinstalled or reset bootstrap node re-bootstrapped a fresh,
+ *   isolated single-member cluster: split brain. Fixed per
+ *   docs/plans/2026-09-26-talos-stack-first-boot.md's "Bootstrap — once means once" section:
+ *     - `read` now answers presence/absence correctly instead of always returning a defined
+ *       object — `undefined` only from a SUCCESSFUL read that finds no members (cold-start
+ *       absence); a failing read propagates its error instead of being reinterpreted as absence.
+ *     - `diff` trusts `output.bootstrapped` once it is `true` and reports `noop` without touching
+ *       the live cluster at all — confirmation is `reconcile`'s job now, not plan's.
+ *     - `reconcile` checks `output?.bootstrapped` FIRST: once true, it NEVER calls `talosctl
+ *       bootstrap` again, no matter what a live read says. A live read that fails OR comes back
+ *       empty both raise the same `TalosReBootstrapRefused` — re-bootstrap is a human decision.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
@@ -14,6 +30,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { mintTalosconfig } from './credentials.ts';
 import type { TalosRequirements, WithTarget } from './resource.ts';
+import { TalosReBootstrapRefused } from './talos-errors.ts';
 import { talosctl, talosctlOrAlready } from './talosctl.ts';
 
 export interface BootstrapProps extends WithTarget {
@@ -44,42 +61,97 @@ export const TalosBootstrap = Resource<TalosBootstrap>('Talos.Bootstrap', {
 /**
  * REASONED: `talosctl get etcdmembers -o json` should list members after bootstrap.
  * ⚠️ NOT MEASURED — first live deploy confirms the resource type name.
+ * ⛔ NO SWALLOWING (K-talos-first-boot) — a transport failure propagates as its own error; only a
+ *   SUCCESSFUL read may conclude presence or absence. Every caller decides for itself what a
+ *   failure here means (see `read` and `reconcile` below), so it is not decided here.
  */
 const isBootstrapped = (props: BootstrapProps, talosconfigPath: string) =>
   talosctl(['get', 'etcdmembers', '-o', 'json'], {
     nodes: [props.node],
     talosconfigPath,
-  }).pipe(
-    Effect.map((text) => text.includes('"id"') || text.includes('"member"')),
-    Effect.orElseSucceed(() => false),
-  );
+  }).pipe(Effect.map((text) => text.includes('"id"') || text.includes('"member"')));
 
 /**
  * ⛔ WRAPPED IN `Effect.scoped` (K-A3, 2026-09-26) — `mintTalosconfig` contributes `Scope.Scope`
  *   to its own return type rather than closing its scope internally (the C1 fix, credentials.ts's
  *   own header); this is the caller that owns the temp talosconfig's lifetime for the read.
+ *
+ * ⛔ ANSWERS PRESENCE/ABSENCE, NOT "attrs-or-error" (K-talos-first-boot, fixes the shipped shape).
+ *   `undefined` only when a read SUCCEEDS and finds no members — the honest "not created yet"
+ *   Alchemy's engine expects from a cold-start adoption probe. A failing read propagates instead
+ *   of being reinterpreted as absence — this is the fix `isBootstrapped` no longer hides.
+ *
+ * ★ EXPORTED (like proxmox/ceph-daemon.ts's `reconcileDaemon`, machine-config-read.ts's
+ *   `readMachineConfig`) so talos-bootstrap.test.ts calls it directly with a fake spawner instead
+ *   of driving it through the full Alchemy engine.
  */
-const read = (props: BootstrapProps) =>
+export const readBootstrap = (props: BootstrapProps) =>
   Effect.scoped(
     Effect.gen(function* () {
       const credential = yield* mintTalosconfig(props.target);
       const bootstrapped = yield* isBootstrapped(props, credential.talosconfigPath);
-      return { bootstrapped, node: props.node };
+      return bootstrapped ? ({ bootstrapped: true, node: props.node } as const) : undefined;
     }),
   );
 
-const diff = (news: Input<BootstrapProps>, output: BootstrapAttributes | undefined) =>
+/**
+ * ⛔ TRUSTS STATE, NEVER TOUCHES THE LIVE CLUSTER (K-talos-first-boot) — once `output.bootstrapped`
+ *   is `true` this always reports `noop`. Confirming the invariant against etcd is `reconcile`'s
+ *   job (every deploy calls it); doing it here too would mean a single transient plan-time read
+ *   failure could abort every future plan for an already-bootstrapped node, for no benefit — plan
+ *   never needs to prove convergence, only to say whether reconcile has work to do.
+ */
+export const diffBootstrap = (
+  news: Input<BootstrapProps>,
+  output: BootstrapAttributes | undefined,
+) =>
   Effect.gen(function* () {
     if (output === undefined || !isResolved(news)) return undefined;
-    const live = yield* read(news);
-    if (live.bootstrapped) return { action: 'noop' } as const;
-    return { action: 'update' } as const;
+    if (output.bootstrapped) return { action: 'noop' } as const;
+    const live = yield* readBootstrap(news);
+    return live?.bootstrapped === true
+      ? ({ action: 'noop' } as const)
+      : ({ action: 'update' } as const);
   });
 
-const reconcile = (props: BootstrapProps) =>
+/**
+ * ⛔ ONCE MEANS ONCE — see this file's own header. `output?.bootstrapped === true` is checked
+ *   BEFORE anything else, and that branch never builds a `talosctl bootstrap` argv at all — the
+ *   confirmation read below can fail, or succeed and say "absent", and EITHER way this raises
+ *   `TalosReBootstrapRefused` rather than treating "absent" as licence to bootstrap again.
+ */
+export const reconcileBootstrap = (
+  props: BootstrapProps,
+  output: BootstrapAttributes | undefined,
+) =>
   Effect.scoped(
     Effect.gen(function* () {
       const credential = yield* mintTalosconfig(props.target);
+
+      if (output?.bootstrapped === true) {
+        const stillBootstrapped = yield* isBootstrapped(props, credential.talosconfigPath).pipe(
+          Effect.catchIf(
+            (): boolean => true,
+            (cause) =>
+              Effect.fail(
+                new TalosReBootstrapRefused({
+                  detail: `live read failed: ${String(cause)}`,
+                  node: props.node,
+                }),
+              ),
+          ),
+        );
+        if (!stillBootstrapped) {
+          return yield* Effect.fail(
+            new TalosReBootstrapRefused({
+              detail: 'etcd members are absent on a live read against already-bootstrapped state',
+              node: props.node,
+            }),
+          );
+        }
+        return { bootstrapped: true, node: props.node };
+      }
+
       const before = yield* isBootstrapped(props, credential.talosconfigPath);
       if (!before) {
         yield* talosctlOrAlready(['bootstrap'], {
@@ -108,10 +180,16 @@ const handlers = {
   }: {
     news: Input<BootstrapProps>;
     output: BootstrapAttributes | undefined;
-  }) => diff(news, output),
+  }) => diffBootstrap(news, output),
   list: () => Effect.succeed([]),
-  read: ({ olds }: { olds: BootstrapProps }) => read(olds),
-  reconcile: ({ news }: { news: BootstrapProps }) => reconcile(news),
+  read: ({ olds }: { olds: BootstrapProps }) => readBootstrap(olds),
+  reconcile: ({
+    news,
+    output,
+  }: {
+    news: BootstrapProps;
+    output: BootstrapAttributes | undefined;
+  }) => reconcileBootstrap(news, output),
 };
 
 export const TalosBootstrapProvider = () =>
