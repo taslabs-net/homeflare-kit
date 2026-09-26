@@ -25,7 +25,7 @@ import type { UnifiRequirements, UnifiSpec } from './resource.ts';
 import { unifiHandlers } from './resource.ts';
 
 export type { FirewallZoneAttributes, FirewallZoneProps } from './firewall-zone-form.ts';
-export { declareFirewallZone } from './firewall-zone-form.ts';
+export { declareFirewallZone, driftOf } from './firewall-zone-form.ts';
 
 export interface UnifiFirewallZone extends Resource<
   'Unifi.FirewallZone',

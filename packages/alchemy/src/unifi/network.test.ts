@@ -2,13 +2,19 @@
  * `Unifi.Network`'s `spec` against a fake UniFi Network API, proving the real distilled wire
  * path (path assembly, JSON decode, `NotFound` folding), the declaration renderer, and — the
  * task's own requirement — that no handler this family exposes ever sends a non-`GET` request.
+ *
+ * ⚠️ `driftOf`/`matches` coverage (the DHCP/IPv6 unordered-array normalizers, the MEDIUM-4
+ *   mutant-closing tests) lives in `network-drift.test.ts`, split out to keep this file under the
+ *   house 250-line cap once that coverage grew — same split `network-drift.ts` itself is from
+ *   `network-form.ts`, not a different family.
  */
 import { describe, expect, test } from 'bun:test';
 import type * as networks from '@distilled.cloud/unifi-network/networks';
 import * as Retry from '@distilled.cloud/unifi-network/Retry';
 import * as Effect from 'effect/Effect';
 import { fakeFailure, fakeUnifi, fakeUnifiLayer } from './fake-unifi.ts';
-import { attributesOf, matches } from './network-form.ts';
+import { attributesOf } from './network-form.ts';
+import { matches } from './network-drift.ts';
 import { type NetworkProps, declareNetwork, spec } from './network.ts';
 import { unifiOperations } from './resource.ts';
 
@@ -81,87 +87,6 @@ describe('declareNetwork -- the declaration renderer', () => {
     const declared = declareNetwork(live, 'site-1');
     const attrs = attributesOf(live, declared);
     expect(matches(attrs, declared)).toBe(true);
-  });
-});
-
-describe('matches -- unordered arrays (dhcpGuarding, ipv6Configuration)', () => {
-  // ⛔ `deepEqual` (alchemy/Diff) sorts object keys but not array elements: without normalizing
-  //   these three fields (see network-form.ts's header), a console returning the same set in a
-  //   different order would plan a spurious update.
-  test('the same trusted DHCP servers in a different order is a noop', () => {
-    const live = liveNetwork({
-      dhcpGuarding: { trustedDhcpServerIpAddresses: ['10.0.0.2', '10.0.0.1'] },
-    });
-    const props: NetworkProps = {
-      ...PROPS,
-      dhcpGuarding: { trustedDhcpServerIpAddresses: ['10.0.0.1', '10.0.0.2'] },
-    };
-    expect(matches(attributesOf(live, props), props)).toBe(true);
-  });
-
-  test('a different set of trusted DHCP servers is an update', () => {
-    const live = liveNetwork({
-      dhcpGuarding: { trustedDhcpServerIpAddresses: ['10.0.0.1', '10.0.0.2'] },
-    });
-    const props: NetworkProps = {
-      ...PROPS,
-      dhcpGuarding: { trustedDhcpServerIpAddresses: ['10.0.0.1', '10.0.0.3'] },
-    };
-    expect(matches(attributesOf(live, props), props)).toBe(false);
-  });
-
-  test('the same IPv6 host subnets and DNS overrides in a different order is a noop', () => {
-    const live = liveNetwork({
-      ipv6Configuration: {
-        clientAddressAssignment: { slaacEnabled: true },
-        interfaceType: 'ETHERNET',
-        additionalHostIpSubnets: ['2001:db8::/64', '2001:db8:1::/64'],
-        dnsServerIpAddressesOverride: ['2001:4860:4860::8888', '2001:4860:4860::8844'],
-      },
-    });
-    const props: NetworkProps = {
-      ...PROPS,
-      ipv6Configuration: {
-        clientAddressAssignment: { slaacEnabled: true },
-        interfaceType: 'ETHERNET',
-        additionalHostIpSubnets: ['2001:db8:1::/64', '2001:db8::/64'],
-        dnsServerIpAddressesOverride: ['2001:4860:4860::8844', '2001:4860:4860::8888'],
-      },
-    };
-    expect(matches(attributesOf(live, props), props)).toBe(true);
-  });
-
-  test('a different set of IPv6 host subnets is an update', () => {
-    const live = liveNetwork({
-      ipv6Configuration: {
-        clientAddressAssignment: { slaacEnabled: true },
-        interfaceType: 'ETHERNET',
-        additionalHostIpSubnets: ['2001:db8::/64', '2001:db8:1::/64'],
-      },
-    });
-    const props: NetworkProps = {
-      ...PROPS,
-      ipv6Configuration: {
-        clientAddressAssignment: { slaacEnabled: true },
-        interfaceType: 'ETHERNET',
-        additionalHostIpSubnets: ['2001:db8::/64', '2001:db8:2::/64'],
-      },
-    };
-    expect(matches(attributesOf(live, props), props)).toBe(false);
-  });
-
-  test('a live `null` (not `undefined`) for either field does not throw', () => {
-    // UniFi's JSON answers `null` for an unset optional field (see network-form.ts's header) —
-    // a reality the SDK's `T | undefined` types don't model. The double cast lands `null` at
-    // runtime the same way a real JSON decode would, past what the type system alone allows.
-    const live = {
-      ...liveNetwork(),
-      dhcpGuarding: null,
-      ipv6Configuration: null,
-    } as unknown as networks.NetworkDetails;
-    const declared = declareNetwork(live, 'site-1');
-    expect(() => attributesOf(live, declared)).not.toThrow();
-    expect(matches(attributesOf(live, declared), declared)).toBe(true);
   });
 });
 

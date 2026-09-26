@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import type * as firewall from '@distilled.cloud/unifi-network/firewall';
 import * as Effect from 'effect/Effect';
 import { fakeFailure, fakeUnifi, fakeUnifiLayer } from './fake-unifi.ts';
-import { attributesOf, matches } from './firewall-zone-form.ts';
+import { attributesOf, driftOf, matches } from './firewall-zone-form.ts';
 import { type FirewallZoneProps, declareFirewallZone, spec } from './firewall-zone.ts';
 import { unifiOperations } from './resource.ts';
 
@@ -56,6 +56,26 @@ describe('declareFirewallZone -- the declaration renderer', () => {
     const declared = declareFirewallZone(live, 'site-1');
     const attrs = attributesOf(live, declared);
     expect(matches(attrs, declared)).toBe(true);
+  });
+});
+
+describe('driftOf -- B6 field-level drift, straight from one live read', () => {
+  test('a live object that matches its declaration drifts on nothing, order included', () => {
+    // `networkIds` in a different order is a noop for `matches` (the header's own rule) --
+    // `driftOf` must agree, not report a set that only LOOKS different because of order.
+    expect(driftOf(liveZone(), PROPS)).toEqual([]);
+  });
+
+  test('a real name change reports its own field, live and declared', () => {
+    const live = liveZone({ name: 'Garage' });
+    expect(driftOf(live, PROPS)).toEqual([{ field: 'name', live: 'Garage', declared: 'Cameras' }]);
+  });
+
+  test('a genuine networkIds difference reports SORTED arrays, not joined strings', () => {
+    const live = liveZone({ networkIds: ['net-1'] });
+    expect(driftOf(live, PROPS)).toEqual([
+      { field: 'networkIds', live: ['net-1'], declared: ['net-1', 'net-2'] },
+    ]);
   });
 });
 
