@@ -6,10 +6,10 @@ with a typed `UnifiWriteRefused` naming the policy rather than calling any SDK w
 Lifting the rule is a kit change — a PR that adds a write path, reviewed as one — not a flag a
 stack can pass. See `packages/alchemy/src/unifi/policy.ts`.
 
-This page covers `Unifi.Network`/`Unifi.FirewallZone` only. Two more read-only families each have
-their own doc, per family (`docs/unifi.md` would breach the 200-line cap otherwise):
-[`Unifi.DnsPolicy`](./unifi-dns-policy.md) and
-[`Unifi.AclRule`/`Unifi.AclRuleOrdering`](./unifi-acl-rule.md).
+This page covers `Unifi.Network`/`Unifi.FirewallZone` only. Every other read-only family has its
+own doc, per family (`docs/unifi.md` would breach the 200-line cap otherwise): [`Unifi.DnsPolicy`](./unifi-dns-policy.md), [`Unifi.AclRule`/`Unifi.AclRuleOrdering`](./unifi-acl-rule.md),
+[`Unifi.WifiBroadcast`](./unifi-wifi.md), [`Unifi.FirewallPolicy`/`Unifi.FirewallPolicyOrdering`](./unifi-firewall-policy.md),
+and [`Unifi.TrafficMatchingList`](./unifi-traffic-matching-list.md).
 
 ## What's declared, and why these two first
 
@@ -18,9 +18,8 @@ their own doc, per family (`docs/unifi.md` would breach the 200-line cap otherwi
 not runtime state (a connected client, a device statistic, a hotspot voucher, a switch stack).
 `Site` was the SDK README's other first suggestion; it has no `getSite`, only the list operation,
 so it fails this house's own "both a list and a get" bar for a first import. `FirewallPolicy` is
-also a list+get config object, but its `source`/`destination`/`ipProtocolScope` fields carry
-several of the vendor's converter-flattened discriminator variants each, and its ordering
-endpoint replaces the whole rule list — modelling that correctly is a bigger, separate PR.
+also a list+get config object; modelling it correctly needed its own PR (now shipped — [`docs/unifi-firewall-policy.md`](./unifi-firewall-policy.md)) because its ordering endpoint replaces the whole
+rule list per zone pair, and it was gated on A3 typing its filter fields' discriminator variants first.
 
 ## Credentials
 
@@ -107,8 +106,9 @@ operations (`getNetworksOverviewPage`, `getFirewallZones`, …), none of which p
 own — no `smithy.api#paginated` trait exists in the pinned spec, and neither the SDK nor
 `@distilled.cloud/core` gained one for this. It stops on the response's `totalCount`, never on
 `data.length < limit` (a page can legitimately come back short of the requested limit without
-being the last page). No family here has enough rows to need it yet; it exists ahead of
-`Unifi.FirewallPolicy` (hundreds of rows on a real console), which does.
+being the last page). `Unifi.WifiBroadcast` (`docs/unifi-wifi.md`) is its first resource-level
+consumer, walking every page because that family has no get-by-id call at all; `docs/unifi-firewall-policy.md`'s own decode-proof test exercises the same page shape for `getFirewallPolicies`
+(hundreds of rows on a real console — T9), though `Unifi.FirewallPolicy` itself still reads by id.
 
 It also fails with a typed `UnifiPaginationInconsistent` — never silently returns a wrong row
 set — the moment a paged response contradicts itself: a page's echoed `offset` doesn't match what

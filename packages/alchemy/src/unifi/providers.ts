@@ -12,8 +12,11 @@ import * as Layer from 'effect/Layer';
 import { UnifiAclRuleProvider } from './acl-rule.ts';
 import { UnifiAclRuleOrderingProvider } from './acl-rule-ordering.ts';
 import { UnifiDnsPolicyProvider } from './dns-policy.ts';
+import { UnifiFirewallPolicyProvider } from './firewall-policy.ts';
+import { UnifiFirewallPolicyOrderingProvider } from './firewall-policy-ordering.ts';
 import { UnifiFirewallZoneProvider } from './firewall-zone.ts';
 import { UnifiNetworkProvider } from './network.ts';
+import { UnifiTrafficMatchingListProvider } from './traffic-matching-list.ts';
 import { UnifiWifiBroadcastProvider } from './wifi-broadcast.ts';
 
 export const providers = () =>
@@ -24,4 +27,7 @@ export const providers = () =>
     UnifiAclRuleProvider(),
     UnifiAclRuleOrderingProvider(),
     UnifiWifiBroadcastProvider(),
+    UnifiFirewallPolicyProvider(),
+    UnifiFirewallPolicyOrderingProvider(),
+    UnifiTrafficMatchingListProvider(),
   );

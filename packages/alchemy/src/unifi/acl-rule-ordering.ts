@@ -2,8 +2,9 @@
  * `Unifi.AclRuleOrdering` — the ONE ordered list of user-defined ACL rule IDs for a site
  * (`getAclRuleOrdering`/`updateAclRuleOrdering`, `GET`/`PUT /v1/sites/{siteId}/acl-rules/ordering`),
  * READ-ONLY (`policy.ts`). T5's per-family variant of the ordering trap `docs/unifi-api-notes.md`
- * warns about for `Unifi.FirewallPolicy` (a separate, not-yet-built PR): the endpoint replaces the
- * WHOLE list on a write, so a partial or resorted body would drop or reorder every OTHER rule too.
+ * warns about for `Unifi.FirewallPolicyOrdering` (`firewall-policy-ordering.ts`, keyed per zone
+ * pair rather than site-wide — see its own header for why): the endpoint replaces the WHOLE list
+ * on a write, so a partial or resorted body would drop or reorder every OTHER rule too.
  * This family never writes at all, but its `matches`/`driftOf` (`acl-rule-ordering-form.ts`) are
  * still order-preserving, never `sortedSet`, so a future write path inherits a correct comparison
  * rather than one that has to be fixed alongside the first `update`.
