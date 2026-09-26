@@ -79,13 +79,29 @@ Part of the design suite gating Talos-on-PVE work. Companions:
   reinstalled or reset bootstrap node (say, after a VM replace) re-bootstraps
   a fresh single-member etcd cluster: split brain.
 - K-A3: once state records `bootstrapped: true`, bootstrap **never runs
-  again** — diff reports noop while the read confirms, and a not-bootstrapped
-  read against bootstrapped state is a typed error that refuses and hands the
-  node to the operator. Re-bootstrap is a human decision, not a reconcile.
+  again** — diff reports noop WITHOUT touching the live cluster (Alchemy never
+  reconciles a `noop` node — LAND red team I3, verified against `Apply.ts`),
+  and a not-bootstrapped or failing read AGAINST BOOTSTRAPPED STATE is a typed
+  error that refuses and hands the node to the operator. That confirm-and-refuse
+  branch runs from reconcile, so it only executes on `--force` or a genuine
+  `update`/`create` node — an ordinary `plan`/`deploy` never reaches it once a
+  node is noop, so a reset control-plane node (etcd wiped, VM replaced) is
+  invisible to plan/deploy alike until an operator runs `--force` or a verify
+  pass. Re-bootstrap is a human decision, not a reconcile; this gap is open
+  work, not a regression this doc's original text hid on purpose.
 - ⛔ No swallowing reads anywhere in the Talos family: a failed read
   propagates as its typed transport error (`catchTag` on the named tags,
   distilled doctrine — the shipped `orElseSucceed` shapes are removed).
   Absence may only ever be concluded from a **successful** read.
+- ⛔ LAND red team I4 — a **lost state row** (wrong `--stage`, a wiped state
+  store) plus a genuinely reset node is a second split-brain path the "once
+  means once" fix above doesn't close by itself: the cold-start adoption read
+  on the reset node comes back empty, so plan calls `create`, and bootstrap
+  would run there too even though the cluster already lives on the other
+  control-plane nodes. `BootstrapProps.peers` closes it: the CREATE path now
+  requires every listed peer to show a successful, EMPTY etcd-members read
+  before it will bootstrap. Optional (a single-control-plane declaration keeps
+  working unguarded), but the 3-node stack this doc describes SHOULD set it.
 
 ## CNI ordering — Cilium cannot install itself
 

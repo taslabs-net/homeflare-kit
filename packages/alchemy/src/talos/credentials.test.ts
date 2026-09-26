@@ -11,7 +11,7 @@ import { existsSync, statSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import * as Effect from 'effect/Effect';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
-import { mintKvTempFile, mintTalosconfig, readKvValue } from './credentials.ts';
+import { mintKubeconfig, mintKvTempFile, mintTalosconfig, readKvValue } from './credentials.ts';
 import { type FakeCall, fakeSpawner } from './fake-process.ts';
 
 const bao =
@@ -120,6 +120,29 @@ describe('mintKvTempFile', () => {
       ),
     );
     assert.equal(existsSync(path), false);
+  });
+});
+
+describe('mintKubeconfig — the consumer-side seam, same lifetime shape as mintTalosconfig', () => {
+  it('reads the default kubeconfig key and the file survives only within the caller scope', async () => {
+    const calls: FakeCall[] = [];
+    let capturedPath = '';
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const file = yield* mintKubeconfig({ cluster: 'c1', mount: 'talos-c1' });
+          capturedPath = file.path;
+          assert.ok(existsSync(capturedPath));
+        }),
+      ).pipe(
+        Effect.provideService(
+          ChildProcessSpawner.ChildProcessSpawner,
+          fakeSpawner(bao({ kubeconfig: 'fake-kubeconfig-body' }), calls),
+        ),
+      ),
+    );
+    assert.deepEqual(calls[0]?.args, ['kv', 'get', '-format=json', 'talos-c1/kubeconfig']);
+    assert.equal(existsSync(capturedPath), false);
   });
 });
 

@@ -60,6 +60,13 @@ export type TalosCredential = {
 const DEFAULT_TALOSCONFIG_KEY = 'talosconfig';
 
 /**
+ * Default OpenBao KV path (under `target.mount`) for the admin kubeconfig `Talos.Kubeconfig`
+ * writes once at cluster bring-up. See kubeconfig.ts's own header (K-talos-first-boot, 2026-09-26)
+ * and docs/plans/2026-09-26-talos-secrets-flow.md's O1 key list.
+ */
+export const DEFAULT_KUBECONFIG_KEY = 'kubeconfig';
+
+/**
  * Read one OpenBao KV-v2 value and return the first of `fields` that is a non-empty string.
  *
  * ★ THE ONE PLACE THIS PACKAGE SHELLS TO `bao` — talosconfig, per-node machine config and any
@@ -177,4 +184,23 @@ export const mintTalosconfig = (
   ]).pipe(
     Effect.flatMap((raw) => mintKvTempFile(raw, `${target.cluster}-talosconfig`)),
     Effect.map(({ path }): TalosCredential => ({ talosconfigPath: path })),
+  );
+
+/**
+ * Mint one temp kubeconfig file from the vault copy `Talos.Kubeconfig` writes at bring-up
+ * (K-talos-first-boot, 2026-09-26) — the consumer-side counterpart to {@link mintTalosconfig},
+ * named as the future seam for `Kubernetes.ClusterAdapter` in
+ * docs/plans/2026-09-26-talos-secrets-flow.md ("consumers mint it the way the talosconfig is
+ * minted"). Not yet wired to that adapter — this only makes the read+materialize step exist.
+ */
+export const mintKubeconfig = (
+  target: TalosTarget,
+  key = DEFAULT_KUBECONFIG_KEY,
+): Effect.Effect<
+  { readonly path: string },
+  Error,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+> =>
+  readKvValue(target.mount, key, ['kubeconfig', 'config']).pipe(
+    Effect.flatMap((raw) => mintKvTempFile(raw, `${target.cluster}-kubeconfig`)),
   );

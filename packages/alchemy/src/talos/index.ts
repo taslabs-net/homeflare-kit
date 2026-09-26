@@ -11,21 +11,36 @@
  *   calls out for `ProxmoxVm`). MachineConfig is safe to declare today: it fails closed on a digest
  *   mismatch before touching a node, and its cold-start read never silently adopts (PR 307 fix-first
  *   #1, machine-config-read.ts's own header).
- * ⛔ BOOTSTRAP, CLUSTERHEALTH AND KUBECONFIG STAY PROVIDER-ONLY (PR 307 red team, fix-first #3).
- *   Exporting their Resource constructors would let a stack actually declare them, and today that
- *   is not safe: `Talos.Bootstrap` can plan and run a second `talosctl bootstrap` after a failing
- *   plan-time read (the etcd split-brain risk docs/plans/2026-09-26-talos-stack-first-boot.md's
- *   "Bootstrap — once means once" section names, still open), and `Talos.Kubeconfig` still writes a
- *   cluster-admin kubeconfig to un-vaulted host disk (the secrets-flow doc's "Measured today"
- *   section, also still open). Their own K-A3 follow-ups land these exports when the fixes do.
+ * ★ BOOTSTRAP, CLUSTERHEALTH AND KUBECONFIG JOIN THEM (K-talos-first-boot, 2026-09-26) — PR 307's
+ *   red team (fix-first #3) held these back because `Talos.Bootstrap` could re-run `talosctl
+ *   bootstrap` against an already-bootstrapped cluster and `Talos.Kubeconfig` wrote a cluster-admin
+ *   kubeconfig to un-vaulted host disk. Both are fixed now: bootstrap's "once means once" invariant
+ *   (talos-bootstrap.ts's own header) and kubeconfig landing in OpenBao, written once at bring-up
+ *   (kubeconfig.ts's own header) — plus `Talos.ClusterHealth`'s error handling no longer conflates a
+ *   vault/transport failure with "cluster not healthy yet" (talos-cluster-health.ts's own header).
  * ★ Anything unlisted is still reachable by path if you genuinely need it — that is a
  *   deliberate, visible act rather than an accident of barrelling.
  */
 export type { TalosCredential, TalosTarget } from './credentials.ts';
-export { TalosKubeconfigProvider } from './kubeconfig.ts';
+export {
+  type KubeconfigAttributes,
+  type KubeconfigProps,
+  TalosKubeconfig,
+  TalosKubeconfigProvider,
+} from './kubeconfig.ts';
 export type { ApplyMode, WithTarget } from './resource.ts';
-export { TalosBootstrapProvider } from './talos-bootstrap.ts';
-export { TalosClusterHealthProvider } from './talos-cluster-health.ts';
+export {
+  type BootstrapAttributes,
+  type BootstrapProps,
+  TalosBootstrap,
+  TalosBootstrapProvider,
+} from './talos-bootstrap.ts';
+export {
+  type ClusterHealthAttributes,
+  type ClusterHealthProps,
+  TalosClusterHealth,
+  TalosClusterHealthProvider,
+} from './talos-cluster-health.ts';
 export {
   type MachineConfigAttributes,
   type MachineConfigProps,
