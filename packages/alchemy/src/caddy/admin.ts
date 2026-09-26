@@ -56,7 +56,16 @@ export interface CaddyTarget {
 
 /** What `localCaddyAdmin()` (or a consumer's own transport) hands `caddyAdminLayer`. */
 export interface CaddyTransport extends CaddyTarget {
-  /** Provides the SDK's own `Credentials` and `HttpClient.HttpClient` — see local-admin.ts. */
+  /**
+   * Provides the SDK's own `Credentials` and `HttpClient.HttpClient` — see local-admin.ts.
+   * ⚠️ BUILT AND TORN DOWN ON EVERY `read`/`diff`/`reconcile` CALL — config.ts's `Effect.provide
+   *   (transportLayer)` runs fresh each time, scoped to that one call (the scoping fix this file's
+   *   own ⛔ documents). `localCaddyAdmin()`'s layer is three plain `Layer.succeed` values, so this
+   *   costs nothing; a transport that opens something stateful (an SSH forward, a connection pool)
+   *   would open and close it per call instead of once per stack. No such transport exists in the
+   *   tray today (2026-09-26) — keep `layer` cheap and stateless, or build once and hand config.ts a
+   *   pre-built `Context` instead, if that changes.
+   */
   readonly layer: Layer.Layer<Credentials | HttpClient.HttpClient>;
 }
 
