@@ -77,7 +77,13 @@ const emitParam = (
   const out: Record<string, unknown> = {
     default: scalarDefault(param.default),
     each: isElementRule(vendor) ? true : undefined,
-    enum: param.enum,
+    // ⛔ `?? undefined`, NOT `param.enum` BARE. `VendorParam.enum` is typed `readonly string[] |
+    //   undefined`, but that is a cast over untyped JSON, not a validation — pve-manager's own
+    //   `download-url`'s `compression` parameter states `"enum": null` (an explicit "no enum",
+    //   apidoc.js's own way of saying open-ended) rather than omitting the key. `prune` below
+    //   drops `undefined`, never `null`, so an unguarded copy emitted a literal `"enum": null`
+    //   into the committed table — no other tabled parameter had hit this vendor spelling before.
+    enum: param.enum ?? undefined,
     format: formatName(param.format),
     maxLength: bound(param.maxLength),
     maximum: bound(param.maximum),

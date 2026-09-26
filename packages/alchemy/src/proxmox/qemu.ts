@@ -1,5 +1,7 @@
 /**
- * `Proxmox.Vm` — a QEMU virtual machine, declared.
+ * `Proxmox.Vm` — a QEMU virtual machine, declared. Exported (not just Provider-only) since
+ * 2026-09-26 for Talos: see qemu-props.ts for what a declaration may say and why `cipassword`
+ * and `machine` may never be one of them.
  *
  * ⚠️ CREATE is `POST /nodes/{node}/qemu`. GET and PUT stay on `.../qemu/{vmid}/config`.
  *   ⛔ DELETE is `DELETE /nodes/{node}/qemu/{vmid}` (`destroy_vm` in qemu-server Qemu.pm). The
@@ -10,39 +12,22 @@
  *   collision Alchemy can see -- they are different resource types -- and PVE refuses the second
  *   with "already exists". Pick ids per cluster, not per kind.
  *
- * ⚠️ POWER STATE IS REPORTED, NEVER DECLARED. `status` is an attribute so a plan can show it; there
- *   is no `running` prop. Starting and stopping a VM from a plan would make a deploy a maintenance
- *   window, and the estate has one of those already.
+ * ⛔ THIS RESOURCE NEVER MIGRATES. `qemu-read.ts` refuses the plan outright when the declared vmid
+ *   is found running on a DIFFERENT node than the one declared ("A migration is not an update") --
+ *   unchanged by the 2026-09-26 export, and exactly what keeps a node-pinned Talos VM pinned.
+ *
+ * ⚠️ POWER STATE IS NEITHER DECLARED NOR REPORTED. There is no `running` prop and `VmAttributes`
+ *   carries no `status` field (qemu-props.ts) — starting and stopping a VM from a plan would make a
+ *   deploy a maintenance window, and the estate has one of those already.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { qemuHandlers } from './qemu-lifecycle.ts';
-import type { PveRequirements, WithTarget } from './resource.ts';
+import type { PveRequirements } from './resource.ts';
+import type { VmAttributes, VmProps } from './qemu-props.ts';
 
-export interface VmProps extends WithTarget {
-  node: string;
-  /** ⛔ Cluster-wide, and shared with LXC. See the ⛔ above. */
-  vmid: number;
-  name?: string;
-  /** MiB. */
-  memory?: number;
-  cores?: number;
-  sockets?: number;
-  /** e.g. `virtio=<mac>,bridge=vmbr0`. */
-  net0?: string;
-  onboot?: boolean;
-}
-
-export interface VmAttributes {
-  vmid: number;
-  node: string;
-  name: string;
-  memory: number;
-  cores: number;
-  sockets: number;
-  onboot: boolean;
-}
+export type { VmAttributes, VmProps } from './qemu-props.ts';
 
 export interface ProxmoxVm extends Resource<
   'Proxmox.Vm',
@@ -52,7 +37,8 @@ export interface ProxmoxVm extends Resource<
   PveRequirements
 > {}
 
-export const ProxmoxVm = Resource<ProxmoxVm>('Proxmox.Vm');
+/** ★ `retain` by default — a VM's disks cannot be rebuilt from a line. See resource.ts / lxc.ts. */
+export const ProxmoxVm = Resource<ProxmoxVm>('Proxmox.Vm', { defaultRemovalPolicy: 'retain' });
 
 export { createForm } from './qemu-form.ts';
 

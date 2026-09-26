@@ -2933,7 +2933,7 @@
         },
         {
           "method": "DELETE",
-          "owner": null,
+          "owner": "Proxmox.StorageDownload",
           "parameters": 4,
           "path": "/nodes/{node}/storage/{storage}/content/{volume}",
           "unenforced": ["delay", "node", "storage"]
@@ -2954,7 +2954,7 @@
         },
         {
           "method": "POST",
-          "owner": null,
+          "owner": "Proxmox.StorageDownload",
           "parameters": 9,
           "path": "/nodes/{node}/storage/{storage}/download-url",
           "unenforced": ["content", "filename", "node", "storage", "url"]
@@ -3162,10 +3162,10 @@
       "sha256Short": "9def8f13",
       "system": "pve",
       "totals": {
-        "ownedUnenforcedParams": 393,
+        "ownedUnenforcedParams": 401,
         "unenforcedParams": 1459,
-        "ownedWriteEndpoints": 88,
-        "ownedWritePaths": 59,
+        "ownedWriteEndpoints": 90,
+        "ownedWritePaths": 61,
         "writeEndpoints": 337,
         "writePaths": 258
       },

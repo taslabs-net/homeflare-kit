@@ -1,15 +1,19 @@
 /**
- * Public barrel: control-plane Resource constructors and `ProxmoxLxc`, not QEMU or NIC apply.
+ * Public barrel: control-plane Resource constructors and `ProxmoxLxc`, not NIC apply.
  *
- * ⛔ Vm stays Provider-only. NodeNetwork/NetworkApply stay off the barrel — they stage
- *   interfaces.new. ★ Lxc is a Resource since 2026-09-21: adopt-first, refuse-not-replace,
- *   retain on destroy (lxc.ts).
+ * ⛔ NodeNetwork/NetworkApply stay off the barrel — they stage interfaces.new. ★ Lxc is a
+ *   Resource since 2026-09-21: adopt-first, refuse-not-replace, retain on destroy (lxc.ts).
  * ★ CephDaemon, CephFs and CephOsd are Resources since 2026-09-22: adopt-only by shape and retain
  *   on destroy (ceph-adopt.test.ts). ⛔ CephFlag stays Provider-only: a declared flag reasserts a
  *   maintenance toggle on every deploy (ceph-flag.ts).
  * ★ ApiToken and ZfsPool are Resources since 2026-09-23, decision 9: ApiToken metadata-only,
  *   ZfsPool adopt-only when `devices`/`raidlevel` are left undeclared (api-token-adopt.test.ts,
  *   zfs-pool-adopt.test.ts).
+ * ★ Vm and StorageDownload are Resources since 2026-09-26, for Talos: Vm's declared-keys model
+ *   (qemu-props.ts) and retain-by-default; StorageDownload's checksum-pinned, create-oriented
+ *   `download-url` (storage-download.ts). Neither was Provider-only for a design reason that
+ *   changed — Vm's old "5-default PUT" is what kept it off this barrel until qemu-props.ts fixed
+ *   it, per qemu-lifecycle.test.ts's own regression test.
  */
 import { expect, test } from 'bun:test';
 import { PbsDatastore, ProxmoxStorage } from './index.ts';
@@ -42,7 +46,9 @@ const resourceExports = [
   'ProxmoxSdnVnet',
   'ProxmoxSdnZone',
   'ProxmoxStorage',
+  'ProxmoxStorageDownload',
   'ProxmoxUser',
+  'ProxmoxVm',
   'ProxmoxZfsPool',
 ] as const;
 
@@ -61,8 +67,7 @@ test('the provisioning baseline is on the barrel: the list, the declaration, the
   expect(barrel.provisionBootstrap()).toStartWith('#!/bin/sh\n');
 });
 
-test('QEMU, NIC apply and the Ceph flag stay Provider-only', () => {
-  expect(src).not.toMatch(/export \{ ProxmoxVm[, }]/);
+test('NIC apply and the Ceph flag stay Provider-only', () => {
   expect(src).not.toMatch(/export \{ ProxmoxNodeNetwork[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxNetworkApply[, }]/);
   expect(src).not.toMatch(/export \{ ProxmoxCephFlag[, }]/);

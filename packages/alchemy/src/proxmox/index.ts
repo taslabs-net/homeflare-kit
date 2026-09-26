@@ -6,8 +6,18 @@
  *   provider needs but a consumer should not depend on. An `export *` here would publish
  *   every helper as API and make the next refactor a breaking change.
  * ★ Control-plane Resource constructors (Storage, SDN, access, HA, backup,
- *   metrics, PBS) sit next to their Providers. NIC apply and QEMU stay
- *   Provider-only so a stack cannot declare them by accident.
+ *   metrics, PBS) sit next to their Providers. NIC apply stays Provider-only
+ *   so a stack cannot declare it by accident.
+ * ★ `ProxmoxVm` JOINED THEM 2026-09-26, FOR TALOS. Its declared-keys model (qemu-props.ts) is
+ *   what let it join safely: an undeclared field is unmanaged, so it is never sent and never
+ *   compared — the fix for the "5-default PUT" a Provider-only `Proxmox.Vm` never exercised.
+ *   `cipassword` and `machine` are typed `never` and refused if smuggled past the types
+ *   (qemu-form.ts's `formRefusals`); `defaultRemovalPolicy: 'retain'` means dropping a
+ *   declaration never destroys a guest's disks. Node-pinned semantics (qemu-read.ts's "A
+ *   migration is not an update") are unchanged by the export.
+ * ★ `Proxmox.StorageDownload` JOINED 2026-09-26 TOO, ALONGSIDE IT: `download-url` (content
+ *   `import`, checksum-pinned) as a CREATE-oriented family — no adoption, no update, a task-poll
+ *   failure (a checksum mismatch included) refuses rather than reports success.
  * ★ `ProxmoxLxc` JOINED THEM 2026-09-21, AND IT WAS KEPT OFF UNTIL IT COULD NOT HURT A GUEST.
  *   The provider-only version diffed four fields and would have planned a create over any read
  *   failure. The Resource now adopts from the live config, refuses every change PVE cannot make
@@ -102,7 +112,13 @@ export {
 } from './provision-baseline.ts';
 export { provisionBootstrap } from './provision-bootstrap.ts';
 export { type DeclareProvisionOptions, declareProvisionBaseline } from './provision-declare.ts';
-export { ProxmoxVmProvider } from './qemu.ts';
+export { ProxmoxVm, ProxmoxVmProvider, type VmAttributes, type VmProps } from './qemu.ts';
+export {
+  ProxmoxStorageDownload,
+  ProxmoxStorageDownloadProvider,
+  type StorageDownloadAttributes,
+  type StorageDownloadProps,
+} from './storage-download.ts';
 export { ProxmoxReplicationJobProvider } from './replication-job.ts';
 export { ProxmoxRole, ProxmoxRoleProvider } from './role.ts';
 export { ProxmoxSdnApply, ProxmoxSdnApplyProvider } from './sdn-apply.ts';
