@@ -33,10 +33,16 @@ across 44 paths), with `catchTag`-able errors for every HTTP status the
 protocol layer dispatches on. No OPERATION documents an error response, but
 the spec's own `components.schemas["Error Message"]` — `{code, message,
 requestId, requestPath, statusCode, statusName, timestamp}`, unreferenced
-by any operation — is decoded by `src/protocol.ts`'s `errorEnvelope`, so a
-vendor `code`/`message` surfaces on failures instead of a bare
-`HTTP <status>` (`requestPath` is dropped, never surfaced — see
-`src/errors.ts`'s doc comment). See the distilled clone's
+by any operation — is decoded by `src/protocol.ts`'s `errorEnvelope`: a
+mapped status (e.g. `NotFound`) gets the vendor's own `message` text
+instead of a bare `HTTP <status>`, but NOT `code`/`requestId`/`statusName`/
+`timestamp` — core's shared `HTTP_STATUS_MAP` dispatch keeps only
+`message` for a mapped class. Those extra fields survive only on
+`UnknownUnifiNetworkError`, the fallback for any status the map doesn't
+cover. `requestPath` is not modeled as its own field anywhere and never
+reaches a `message` (see `src/errors.ts`'s doc comment) — it does still
+sit, un-plucked, inside `UnknownUnifiNetworkError.body` for anyone who
+reads that raw value on purpose. See the distilled clone's
 `packages/unifi-network/docs/codegen-notes.md#typed-errors` (not shipped in
 this package — `src/` is the only thing copied here) for the full account.
 
@@ -105,7 +111,14 @@ doc comment and the distilled clone's
   per-package — see the distilled clone's `scripts/convert.ts`). Both must
   still be sourced from OpenBao at call time and never read back as plan
   attributes — `Redacted` only guards against an accidental log/print, not
-  against a provider persisting the unwrapped value into state.
+  against a provider persisting the unwrapped value into state. A
+  `DISTILLED_DEBUG_HTTP=1` session bypasses the guard entirely — core
+  prints the raw response body to stderr before any decode runs — never
+  set that flag against a real console. A Hotspot voucher's `code` is the
+  same shape (`components.schemas["Hotspot voucher details"].properties.code`,
+  "Secret code to active the voucher") and now decodes `Redacted` too, via
+  a targeted spec patch rather than a name pattern (`code` also names two
+  harmless schemas) — no kit provider reads this family yet.
 
 ## Scope and next steps
 
