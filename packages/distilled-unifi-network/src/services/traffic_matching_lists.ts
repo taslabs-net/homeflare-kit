@@ -12,19 +12,96 @@ import * as Retry from "../retry.ts";
 
 export type { UnifiNetworkOpError, UnifiNetworkOpContext };
 
+export interface IPv4Matching {
+  type: string;
+  /** IPv4 address */
+  value?: string;
+  /** IPv4 start address */
+  start?: string;
+  /** IPv4 stop address */
+  stop?: string;
+}
+export const IPv4Matching = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    type: S.String,
+    value: S.optional(S.String),
+    start: S.optional(S.String),
+    stop: S.optional(S.String),
+  }),
+).annotate({ identifier: "IPv4Matching" }) as any as S.Schema<IPv4Matching>;
+
+export type CreateTrafficMatchingListRequestItemsCase0List =
+  Array<IPv4Matching>;
+export const CreateTrafficMatchingListRequestItemsCase0List =
+  /*@__PURE__*/ S.Array(
+    IPv4Matching,
+  ) as any as S.Schema<CreateTrafficMatchingListRequestItemsCase0List>;
+
+export interface IPv6Matching {
+  type: string;
+  /** IPv6 address */
+  value?: string;
+}
+export const IPv6Matching = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    type: S.String,
+    value: S.optional(S.String),
+  }),
+).annotate({ identifier: "IPv6Matching" }) as any as S.Schema<IPv6Matching>;
+
+export type CreateTrafficMatchingListRequestItemsCase1List =
+  Array<IPv6Matching>;
+export const CreateTrafficMatchingListRequestItemsCase1List =
+  /*@__PURE__*/ S.Array(
+    IPv6Matching,
+  ) as any as S.Schema<CreateTrafficMatchingListRequestItemsCase1List>;
+
+export interface PortMatching {
+  type: string;
+  /** Port number */
+  value?: number;
+  /** Start port number */
+  start?: number;
+  /** Stop port number */
+  stop?: number;
+}
+export const PortMatching = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    type: S.String,
+    value: S.optional(S.Number),
+    start: S.optional(S.Number),
+    stop: S.optional(S.Number),
+  }),
+).annotate({ identifier: "PortMatching" }) as any as S.Schema<PortMatching>;
+
+export type CreateTrafficMatchingListRequestItemsCase2List =
+  Array<PortMatching>;
+export const CreateTrafficMatchingListRequestItemsCase2List =
+  /*@__PURE__*/ S.Array(
+    PortMatching,
+  ) as any as S.Schema<CreateTrafficMatchingListRequestItemsCase2List>;
+
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type CreateTrafficMatchingListRequestItems =
+  | CreateTrafficMatchingListRequestItemsCase0List
+  | CreateTrafficMatchingListRequestItemsCase1List
+  | CreateTrafficMatchingListRequestItemsCase2List;
+export const CreateTrafficMatchingListRequestItems =
+  /*@__PURE__*/ S.Unknown.pipe(T.UnionCases([[], [], []]));
+
 export interface CreateTrafficMatchingListRequest {
   siteId: string;
   name: string;
   type: string;
-  /** Shape varies by variant — widened by scripts/convert.ts; see README. */
-  items?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  items?: CreateTrafficMatchingListRequestItems;
 }
 export const CreateTrafficMatchingListRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     siteId: S.String.pipe(T.Label()),
     name: S.String,
     type: S.String,
-    items: S.optional(S.Unknown),
+    items: S.optional(CreateTrafficMatchingListRequestItems),
   }).pipe(
     T.Http({
       method: "POST",
@@ -36,19 +113,43 @@ export const CreateTrafficMatchingListRequest = /*@__PURE__*/ S.suspend(() =>
   identifier: "CreateTrafficMatchingListRequest",
 }) as any as S.Schema<CreateTrafficMatchingListRequest>;
 
+export type TrafficMatchingListItemsCase0List = Array<IPv4Matching>;
+export const TrafficMatchingListItemsCase0List = /*@__PURE__*/ S.Array(
+  IPv4Matching,
+) as any as S.Schema<TrafficMatchingListItemsCase0List>;
+
+export type TrafficMatchingListItemsCase1List = Array<IPv6Matching>;
+export const TrafficMatchingListItemsCase1List = /*@__PURE__*/ S.Array(
+  IPv6Matching,
+) as any as S.Schema<TrafficMatchingListItemsCase1List>;
+
+export type TrafficMatchingListItemsCase2List = Array<PortMatching>;
+export const TrafficMatchingListItemsCase2List = /*@__PURE__*/ S.Array(
+  PortMatching,
+) as any as S.Schema<TrafficMatchingListItemsCase2List>;
+
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type TrafficMatchingListItems =
+  | TrafficMatchingListItemsCase0List
+  | TrafficMatchingListItemsCase1List
+  | TrafficMatchingListItemsCase2List;
+export const TrafficMatchingListItems = /*@__PURE__*/ S.Unknown.pipe(
+  T.UnionCases([[], [], []]),
+);
+
 export interface TrafficMatchingList {
   id: string;
   name: string;
   type: string;
-  /** Shape varies by variant — widened by scripts/convert.ts; see README. */
-  items?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  items?: TrafficMatchingListItems;
 }
 export const TrafficMatchingList = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     id: S.String,
     name: S.String,
     type: S.String,
-    items: S.optional(S.Unknown),
+    items: S.optional(TrafficMatchingListItems),
   }),
 ).annotate({
   identifier: "TrafficMatchingList",
@@ -146,13 +247,42 @@ export const TrafficMatchingListsPage = /*@__PURE__*/ S.suspend(() =>
   identifier: "TrafficMatchingListsPage",
 }) as any as S.Schema<TrafficMatchingListsPage>;
 
+export type UpdateTrafficMatchingListRequestItemsCase0List =
+  Array<IPv4Matching>;
+export const UpdateTrafficMatchingListRequestItemsCase0List =
+  /*@__PURE__*/ S.Array(
+    IPv4Matching,
+  ) as any as S.Schema<UpdateTrafficMatchingListRequestItemsCase0List>;
+
+export type UpdateTrafficMatchingListRequestItemsCase1List =
+  Array<IPv6Matching>;
+export const UpdateTrafficMatchingListRequestItemsCase1List =
+  /*@__PURE__*/ S.Array(
+    IPv6Matching,
+  ) as any as S.Schema<UpdateTrafficMatchingListRequestItemsCase1List>;
+
+export type UpdateTrafficMatchingListRequestItemsCase2List =
+  Array<PortMatching>;
+export const UpdateTrafficMatchingListRequestItemsCase2List =
+  /*@__PURE__*/ S.Array(
+    PortMatching,
+  ) as any as S.Schema<UpdateTrafficMatchingListRequestItemsCase2List>;
+
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type UpdateTrafficMatchingListRequestItems =
+  | UpdateTrafficMatchingListRequestItemsCase0List
+  | UpdateTrafficMatchingListRequestItemsCase1List
+  | UpdateTrafficMatchingListRequestItemsCase2List;
+export const UpdateTrafficMatchingListRequestItems =
+  /*@__PURE__*/ S.Unknown.pipe(T.UnionCases([[], [], []]));
+
 export interface UpdateTrafficMatchingListRequest {
   siteId: string;
   trafficMatchingListId: string;
   name: string;
   type: string;
-  /** Shape varies by variant — widened by scripts/convert.ts; see README. */
-  items?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  items?: UpdateTrafficMatchingListRequestItems;
 }
 export const UpdateTrafficMatchingListRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
@@ -160,7 +290,7 @@ export const UpdateTrafficMatchingListRequest = /*@__PURE__*/ S.suspend(() =>
     trafficMatchingListId: S.String.pipe(T.Label()),
     name: S.String,
     type: S.String,
-    items: S.optional(S.Unknown),
+    items: S.optional(UpdateTrafficMatchingListRequestItems),
   }).pipe(
     T.Http({
       method: "PUT",
