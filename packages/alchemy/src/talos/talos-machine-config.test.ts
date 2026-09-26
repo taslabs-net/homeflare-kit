@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, statSync } from 'node:fs';
 import { describe, it } from 'node:test';
+import { Unowned } from 'alchemy/AdoptPolicy';
 import {
   CONFIG_TEXT,
   PIN,
@@ -16,12 +17,8 @@ import {
   wrapperFor,
 } from './machine-config-fixtures.ts';
 import type { FakeCall } from './fake-process.ts';
-import {
-  type MachineConfigAttributes,
-  diffMachineConfig,
-  readMachineConfig,
-  reconcileMachineConfig,
-} from './talos-machine-config.ts';
+import { diffMachineConfig, readMachineConfig } from './machine-config-read.ts';
+import { type MachineConfigAttributes, reconcileMachineConfig } from './talos-machine-config.ts';
 import { extractMachineConfigSpec } from './values.ts';
 
 describe('reconcileMachineConfig — digest gate', () => {
@@ -97,26 +94,49 @@ describe('readMachineConfig — extracted spec only, no swallowing', () => {
       readMachineConfig(props()),
       dispatcher({ liveWrapper: () => ({ stdout: wrapperFor(CONFIG_TEXT, '999') }) }),
     );
+    assert.ok(result);
     assert.equal(result.converged, 'read-back');
   });
 
-  it('reports false (not an error) when a successful read genuinely differs', async () => {
+  it('reports false (not an error), branded Unowned, when a successful read genuinely differs', async () => {
     const result = await run(
       readMachineConfig(props()),
       dispatcher({
         liveWrapper: () => ({ stdout: wrapperFor('machine:\n  type: controlplane\n') }),
       }),
     );
+    assert.ok(result);
     assert.equal(result.converged, false);
+    // ⛔ fix-first #1c — a digest mismatch on the engine's cold-start adoption probe must never
+    //   read as plain (silently-owned) attrs, or a mistyped node pointing at a sibling row's
+    //   configured node gets `apply-config` run onto it with no `adopt()` in sight.
+    assert.equal(Unowned.is(result), true);
   });
 
-  it('propagates a transport failure as a typed error, never as converged: false', async () => {
+  it('propagates the AUTHENTICATED failure when the maintenance probe also fails, never converged: false', async () => {
     await assert.rejects(
       run(
         readMachineConfig(props()),
         dispatcher({ liveWrapper: () => ({ exitCode: 1, stderr: 'unreachable' }) }),
       ),
+      (error: unknown) => error instanceof Error && error.message.includes('unreachable'),
     );
+  });
+});
+
+describe('readMachineConfig — cold-start adoption answer (fix-first #1)', () => {
+  it('returns undefined (not created) when the authenticated read fails but the node answers insecurely', async () => {
+    const result = await run(
+      readMachineConfig(props()),
+      dispatcher({
+        liveWrapper: () => ({
+          exitCode: 1,
+          stderr: 'x509: certificate signed by unknown authority',
+        }),
+        maintenanceReachable: true,
+      }),
+    );
+    assert.equal(result, undefined);
   });
 });
 
@@ -137,6 +157,26 @@ describe('diffMachineConfig', () => {
       }),
     );
     assert.equal(update?.action, 'update');
+  });
+
+  it('plans update when the live resource is gone (node reverted to maintenance mode)', async () => {
+    const output: MachineConfigAttributes = {
+      configDigest: PIN,
+      converged: 'read-back',
+      mode: 'auto',
+      node: props().node,
+    };
+    const result = await run(
+      diffMachineConfig(props(), output),
+      dispatcher({
+        liveWrapper: () => ({
+          exitCode: 1,
+          stderr: 'x509: certificate signed by unknown authority',
+        }),
+        maintenanceReachable: true,
+      }),
+    );
+    assert.equal(result?.action, 'update');
   });
 });
 

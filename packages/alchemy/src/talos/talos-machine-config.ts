@@ -21,16 +21,16 @@
  *   CREATE (`output === undefined`) applies `--insecure` and UPDATE never does (resource.ts).
  */
 import { Resource } from 'alchemy';
-import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { mintKvTempFile, mintTalosconfig, readKvValue } from './credentials.ts';
+import { diffMachineConfig, liveSpecDigest, readMachineConfig } from './machine-config-read.ts';
 import { type PollPolicy, confirmConverged } from './machine-config-poll.ts';
 import type { ApplyMode, TalosRequirements, WithTarget } from './resource.ts';
 import { TalosConfigDigestMismatch } from './talos-errors.ts';
 import { talosctl } from './talosctl.ts';
-import { configDigest, extractMachineConfigSpec } from './values.ts';
+import { configDigest } from './values.ts';
 
 export type { ApplyMode } from './resource.ts';
 
@@ -74,57 +74,11 @@ export interface TalosMachineConfig extends Resource<
 
 export const TalosMachineConfig = Resource<TalosMachineConfig>('Talos.MachineConfig');
 
-/** Single live read: `talosctl get machineconfig`, extract `spec`, hash it. No retry, no swallow. */
-const liveSpecDigest = (props: MachineConfigProps, talosconfigPath: string) =>
-  talosctl(['get', 'machineconfig', '-o', 'yaml'], {
-    nodes: [props.node],
-    talosconfigPath,
-  }).pipe(
-    Effect.flatMap((wrapperYaml) => {
-      const spec = extractMachineConfigSpec(wrapperYaml);
-      return spec === undefined
-        ? Effect.fail(
-            new Error(
-              `${props.node}: get machineconfig returned no string 'spec' field — see values.ts ` +
-                'extractMachineConfigSpec for the expected shape.',
-            ),
-          )
-        : Effect.succeed(configDigest(spec));
-    }),
-  );
-
 /**
- * ⛔ NO SWALLOWING. A transport failure here propagates as its own error (TalosError or the
- *   shape error above) — never as `converged: false`. A false only means "read succeeded, and
- *   genuinely differs" (docs/plans/2026-09-26-talos-stack-first-boot.md, acceptance test 3).
- *
- * ★ EXPORTED (like proxmox/ceph-daemon.ts's `reconcileDaemon`) so tests call it directly with a
- *   fake `ChildProcessSpawner` instead of driving it through the full Alchemy engine.
+ * The read path (`readMachineConfig`, `diffMachineConfig`, `liveSpecDigest`) lives in
+ * machine-config-read.ts — see that file's own header for the ownership-aware three-way answer
+ * `read` now gives (fix-first #1/#2, PR 307 red team).
  */
-export const readMachineConfig = (props: MachineConfigProps) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const credential = yield* mintTalosconfig(props.target);
-      const live = yield* liveSpecDigest(props, credential.talosconfigPath);
-      return {
-        configDigest: props.configDigest,
-        converged: live === props.configDigest ? ('read-back' as const) : false,
-        mode: props.mode ?? 'auto',
-        node: props.node,
-      } satisfies MachineConfigAttributes;
-    }),
-  );
-
-export const diffMachineConfig = (
-  news: Input<MachineConfigProps>,
-  output: MachineConfigAttributes | undefined,
-) =>
-  Effect.gen(function* () {
-    if (output === undefined || !isResolved(news)) return undefined;
-    const live = yield* readMachineConfig(news);
-    if (live.converged !== false) return { action: 'noop' } as const;
-    return { action: 'update' } as const;
-  });
 
 /** `pollPolicies` is a test seam only — see machine-config-poll.ts's `confirmConverged`. */
 export const reconcileMachineConfig = (

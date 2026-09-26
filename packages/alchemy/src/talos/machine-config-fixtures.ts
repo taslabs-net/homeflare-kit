@@ -36,6 +36,13 @@ export const dispatcher = (opts: {
   configText?: string;
   liveWrapper?: () => { stdout?: string; exitCode?: number };
   applyExitCode?: number;
+  /**
+   * Controls the fix-first #1 maintenance-mode probe (`talosctl version --insecure`), reached only
+   * when the authenticated `get machineconfig` above fails. Defaults to `false` so a bare failing
+   * `liveWrapper` (most tests) still exercises the "both reads fail → propagate" path rather than
+   * silently succeeding at the probe.
+   */
+  maintenanceReachable?: boolean;
 }) => {
   const configText = opts.configText ?? CONFIG_TEXT;
   return (call: FakeCall) => {
@@ -50,6 +57,10 @@ export const dispatcher = (opts: {
     }
     if (call.command === 'talosctl') {
       if (call.args[0] === 'apply-config') return { exitCode: opts.applyExitCode ?? 0 };
+      if (call.args[0] === 'version')
+        return (opts.maintenanceReachable ?? false)
+          ? { stdout: 'Client: v1.13.10\nServer: v1.13.10\n' }
+          : { exitCode: 1, stderr: 'dial tcp: connection refused' };
       if (call.args[0] === 'get')
         return opts.liveWrapper?.() ?? { stdout: wrapperFor(CONFIG_TEXT) };
     }

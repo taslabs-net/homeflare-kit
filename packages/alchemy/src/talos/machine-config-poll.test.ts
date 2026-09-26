@@ -21,7 +21,7 @@ describe('reconcileMachineConfig — bounded poll per mode', () => {
   const rebootish: ApplyMode = 'reboot';
   const immediate: ApplyMode = 'no-reboot';
 
-  it("no-reboot/try converge via a single successful read-back ('read-back')", async () => {
+  it("no-reboot converges via a single successful read-back ('read-back')", async () => {
     const out = await run(
       reconcileMachineConfig(props({ mode: immediate }), undefined, FAST_POLL),
       dispatcher({}),
@@ -29,7 +29,7 @@ describe('reconcileMachineConfig — bounded poll per mode', () => {
     assert.equal(out.converged, 'read-back');
   });
 
-  it("reboot/staged/auto tolerate a transient miss then converge ('accepted')", async () => {
+  it("reboot/auto tolerate a transient miss then converge ('accepted')", async () => {
     let attempt = 0;
     const out = await run(
       reconcileMachineConfig(props({ mode: rebootish }), undefined, FAST_POLL),

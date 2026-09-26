@@ -26,20 +26,40 @@ since a fixed value broke in both directions. No code path ever builds `--dry-ru
 cluster CA key and bootstrap token on an otherwise-empty node).
 
 The live convergence check now hashes only the `spec` payload extracted from
-`talosctl get machineconfig -o yaml`'s wrapper (`values.ts`'s new `extractMachineConfigSpec`) instead
-of the whole wrapper, which carries a version/timestamp that changes on every observation and could
-never match the pinned digest. `MachineConfigAttributes.converged` is now `'read-back' | 'accepted' |
+`talosctl get machineconfig v1alpha1 -o yaml`'s wrapper (`values.ts`'s new `extractMachineConfigSpec`)
+instead of the whole wrapper, which carries a version/timestamp that changes on every observation and
+could never match the pinned digest. The resource id is never omitted: an unfiltered `get
+machineconfig` also lists a `persistent` resource sorted ahead of `v1alpha1`, so a bare `doc[0]` (the
+shipped shape) silently read the wrong one — `extractMachineConfigSpec` now also refuses more than one
+document rather than guessing. `MachineConfigAttributes.converged` is `'read-back' | 'accepted' |
 false` instead of a boolean: `reconcile` proves convergence with a bounded, short-interval poll
-(`machine-config-poll.ts`) — `'read-back'` for `no-reboot`/`try` (the API never drops), `'accepted'`
-for `reboot`/`staged`/`auto` (tolerates the API dropping for a reboot) — and raises a typed
-`TalosConvergenceTimeout` rather than a silent pass if the cap expires; `read` returns `false` only
-when a live read genuinely succeeds and differs, never as a stand-in for a failed read, which now
-propagates as its own error instead of being swallowed.
+(`machine-config-poll.ts`) — `'read-back'` for `no-reboot` (the API never drops), `'accepted'` for
+`reboot`/`auto` (tolerates the API dropping for a reboot) — and raises a typed
+`TalosConvergenceTimeout` rather than a silent pass if the cap expires. `ApplyMode` drops `'staged'`
+and `'try'`: `try` reverts itself after its own timeout, so a poll "confirming" it would be watching a
+change already undone, and `staged` defers to a reboot this package never drives — both need design
+work this change does not do, not a policy guess.
 
-`TalosMachineConfig`, `TalosBootstrap`, `TalosClusterHealth`, `TalosKubeconfig` (the Resource
-constructors, not just their `*Provider`s) and `TalosTarget`/`TalosCredential`/`ApplyMode` now
-export from the package barrel, so a consuming stack can actually declare these rows.
+`read` now answers three ways instead of two (`machine-config-read.ts`), because Alchemy calls it with
+no prior state both as its cold-start adoption probe and to recover an interrupted create: an
+authenticated read that fails but an inserted `--insecure` maintenance-mode probe succeeds means "not
+created yet" (`undefined`); an authenticated read that succeeds and matches the pin is ours (plain
+attributes); one that succeeds and differs is `Unowned` — exists, not proven ours — so the engine
+fails closed behind `--adopt` instead of silently running `apply-config` onto a mistyped or foreign
+node; both reads failing propagates the authenticated error, never a disguised "not created". A
+transport failure was always meant to propagate rather than read as `converged: false` — this was the
+gap that broke it for the cold-start case specifically.
 
-Not in this change: `Talos.Kubeconfig` still writes the admin kubeconfig to a host `runtimePath`
-that is never cleaned up, rather than landing it in the vault the way the design's "Measured today"
-section describes for K-A3's full scope — flagged, not fixed, here.
+`TalosMachineConfig` and its `*Provider` now export from the package barrel, so a consuming stack can
+declare `Talos.MachineConfig` rows — it fails closed on a digest mismatch and never adopts silently.
+`Talos.Bootstrap`, `Talos.ClusterHealth` and `Talos.Kubeconfig` stay provider-only: exporting their
+Resource constructors would let a stack declare them, and that is not safe yet — Bootstrap can plan a
+second `talosctl bootstrap` after a failing plan-time read (etcd split-brain risk), and Kubeconfig
+still writes a cluster-admin kubeconfig to un-vaulted host disk. `TalosTarget`/`TalosCredential`/
+`ApplyMode` export unconditionally since they carry no such risk.
+
+Not in this change, flagged rather than fixed: `Talos.Kubeconfig`'s host-disk kubeconfig (above);
+`Talos.Bootstrap`'s re-bootstrap risk and `Talos.ClusterHealth`'s CNI-ordering swallow-on-failure
+(docs/plans/2026-09-26-talos-stack-first-boot.md's "Bootstrap" and "CNI ordering" sections); no kit
+command yet prints only a KV value's digest, so an operator computes `sha256(canonicalText(content))`
+by hand to pin it.

@@ -39,5 +39,12 @@ export type WithTarget = { target: TalosTarget };
  *   fails in both directions (`true` breaks every later update, `false` breaks the very first
  *   apply against a node with no talosconfig auth yet), so `Talos.MachineConfig` now derives it
  *   itself: CREATE (`output === undefined`) applies `--insecure`, UPDATE never does.
+ * ⛔ `'staged'` AND `'try'` ARE DROPPED (fix-first #2, PR 307 red team). `try` reverts itself after
+ *   its timeout, so a bounded poll that later reads the reverted config would see it never match
+ *   the pin and re-run `apply-config` on every deploy — the poll would be "confirming" a change
+ *   `try` had already undone. `staged` defers the write to the NEXT reboot rather than applying it,
+ *   which `isRebootish` (machine-config-poll.ts) cannot honestly claim `'accepted'` for without a
+ *   reboot ever happening — the reboot for a staged config is a separate, later operator action
+ *   this package does not drive. Both need their own design work, not a poll-policy guess.
  */
-export type ApplyMode = 'auto' | 'no-reboot' | 'reboot' | 'staged' | 'try';
+export type ApplyMode = 'auto' | 'no-reboot' | 'reboot';

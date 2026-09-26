@@ -16,14 +16,17 @@ import * as Effect from 'effect/Effect';
 import type { ApplyMode } from './resource.ts';
 import { TalosConvergenceTimeout } from './talos-errors.ts';
 
-/** Modes whose apply can trigger a full install + reboot. REASONED, Talos v1.13 CLI reference. */
-const isRebootish = (mode: ApplyMode) => mode === 'reboot' || mode === 'staged' || mode === 'auto';
+/**
+ * Modes whose apply can trigger a full install + reboot. REASONED, Talos v1.13 CLI reference.
+ * ⛔ `'staged'` is deliberately absent — resource.ts's own header explains why (fix-first #2).
+ */
+const isRebootish = (mode: ApplyMode) => mode === 'reboot' || mode === 'auto';
 
 /**
  * ★ TWO POLICIES, ONE PER MODE CLASS — REASONED, no live cluster to time this against yet.
- *   `no-reboot`/`try` never drop the API, so a handful of quick retries covers only ordinary
- *   config-propagation lag. `reboot`/`staged`/`auto` can drop the API for a full boot cycle, so
- *   the cap is longer and the interval coarser. Both stay well inside the house rule above.
+ *   `no-reboot` never drops the API, so a handful of quick retries covers only ordinary
+ *   config-propagation lag. `reboot`/`auto` can drop the API for a full boot cycle, so the cap is
+ *   longer and the interval coarser. Both stay well inside the house rule above.
  */
 export type PollPolicy = { readonly intervalMs: number; readonly maxAttempts: number };
 
@@ -53,8 +56,8 @@ const pollUntilMatch = <E, R>(
  * Confirm convergence per `mode`'s policy, or fail with `TalosConvergenceTimeout`.
  *
  * Returns which CLAIM was proven, never a boolean — `'read-back'` for the immediate policy
- * (no-reboot/try), `'accepted'` for the reboot-tolerant one (reboot/staged/auto): state records
- * which kind of confirmation actually happened, per the design doc's `converged` field.
+ * (no-reboot), `'accepted'` for the reboot-tolerant one (reboot/auto): state records which kind of
+ * confirmation actually happened, per the design doc's `converged` field.
  *
  * ⚠️ `policies` IS A TEST SEAM, NOT A PROP. `talos-machine-config.ts` never passes it, so
  *   production always runs the REASONED defaults above; tests pass tiny intervals so a bounded

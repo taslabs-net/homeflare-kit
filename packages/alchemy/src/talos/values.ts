@@ -30,6 +30,13 @@ export const configDigest = (text: string) => sha256(text);
  *   code's shape, docs/plans/2026-09-26-talos-stack-first-boot.md).
  * ⚠️ Returns `undefined` for any shape without a string `spec`, so a caller cannot mistake
  *   "unparsable wrapper" for "empty config" — those must fail differently (the caller's job).
+ * ⛔ MORE THAN ONE DOCUMENT IS REFUSED, NEVER `doc[0]` (fix-first #2, PR 307 red team). An unfiltered
+ *   `get machineconfig` lists BOTH the `persistent` and `v1alpha1` resources, sorted by id
+ *   (REASONED, cosi-project/runtime `inmem/collection.go:122-124`), so a bare `doc[0]` is always
+ *   `persistent` — never the config this package applies. The caller (machine-config-read.ts) now
+ *   always requests the single named resource (`get machineconfig v1alpha1`); a second document
+ *   showing up here means that request shape changed without this guard changing with it, and
+ *   silently picking one would repeat the exact shipped bug.
  */
 export const extractMachineConfigSpec = (wrapperYaml: string): string | undefined => {
   let doc: unknown;
@@ -38,9 +45,12 @@ export const extractMachineConfigSpec = (wrapperYaml: string): string | undefine
   } catch {
     return undefined;
   }
-  const first: unknown = Array.isArray(doc) ? doc[0] : doc;
-  if (first === null || typeof first !== 'object') return undefined;
-  const spec = (first as { spec?: unknown }).spec;
+  if (Array.isArray(doc)) {
+    if (doc.length !== 1) return undefined;
+    doc = doc[0];
+  }
+  if (doc === null || typeof doc !== 'object') return undefined;
+  const spec = (doc as { spec?: unknown }).spec;
   return typeof spec === 'string' ? spec : undefined;
 };
 

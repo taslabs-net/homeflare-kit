@@ -96,4 +96,13 @@ describe('extractMachineConfigSpec', () => {
     assert.equal(extractMachineConfigSpec('node: 192.0.2.10\n'), undefined);
     assert.equal(extractMachineConfigSpec('spec:\n  nested: true\n'), undefined);
   });
+
+  it('refuses more than one document rather than guessing which one (fix-first #2)', () => {
+    // Shape of an unfiltered `get machineconfig`: `persistent` then `v1alpha1`, sorted by id — a
+    // bare `doc[0]` here would silently pick `persistent`, the shipped bug this guard replaces.
+    const twoDocs =
+      '- node: 192.0.2.10\n  metadata:\n    id: persistent\n  spec: "not the applied config"\n' +
+      '- node: 192.0.2.10\n  metadata:\n    id: v1alpha1\n  spec: "machine:\\n  type: worker\\n"\n';
+    assert.equal(extractMachineConfigSpec(twoDocs), undefined);
+  });
 });
