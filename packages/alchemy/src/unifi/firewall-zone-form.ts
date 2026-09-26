@@ -46,17 +46,16 @@ export const attributesOf = (
   metadataOrigin: live.metadata.origin,
 });
 
-export const matches = (attributes: FirewallZoneAttributes, props: FirewallZoneProps): boolean =>
-  attributes.name === props.name &&
-  attributes.networkIds.join(',') === sortedSet(props.networkIds).join(',');
-
 /**
- * B6: the SAME two comparisons `matches` runs above, reused through `makeDriftOf` (`drift.ts`) so
- * the two can never quietly disagree — `matches(attrs, props) === (driftOf(live, props).length
- * === 0)` by construction (`firewall-zone.test.ts` proves it). `networkIds`' custom `equal`
- * mirrors `matches`' own set comparison exactly; its reported `live`/`declared` values are the
- * SORTED arrays, not the joined strings `matches` compares internally, so a real diff reads as a
- * set difference, not two opaque strings.
+ * B6: `fieldDrift` (`makeDriftOf`, `drift.ts`) is now the ONLY comparison this family has — MEDIUM-4
+ * (red team, 2026-09-26): a hand-written `matches` kept beside `fieldDrift` is two field lists an
+ * edit to one can silently leave out of sync with the other (a mutant deleting a `fieldDrift` entry
+ * left every test green, because `matches` never consulted it). `matches(attrs, props) ===
+ * (driftOf(live, props).length === 0)` is now true BY CONSTRUCTION, not just by a test that happens
+ * to check both. `networkIds`' custom `equal` is the set comparison the family has always used —
+ * see the header — and its reported `live`/`declared` values in a `driftOf` result are the SORTED
+ * arrays, not the joined strings this `equal` compares internally, so a real diff reads as a set
+ * difference, not two opaque strings.
  */
 const fieldDrift = makeDriftOf<FirewallZoneAttributes, FirewallZoneProps>([
   { field: 'name', live: (a) => a.name, declared: (p) => p.name },
@@ -67,6 +66,9 @@ const fieldDrift = makeDriftOf<FirewallZoneAttributes, FirewallZoneProps>([
     equal: (live, declared) => (live as string[]).join(',') === (declared as string[]).join(','),
   },
 ]);
+
+export const matches = (attributes: FirewallZoneAttributes, props: FirewallZoneProps): boolean =>
+  fieldDrift(attributes, props).length === 0;
 
 /**
  * Per-field live-vs-declared drift straight from one live read — the task's own API

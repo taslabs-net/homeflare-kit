@@ -23,17 +23,16 @@ import { adopt } from 'alchemy/AdoptPolicy';
 import * as Provider from 'alchemy/Provider';
 import * as networks from '@distilled.cloud/unifi-network/networks';
 import * as Effect from 'effect/Effect';
-import {
-  type NetworkAttributes,
-  type NetworkProps,
-  attributesOf,
-  matches,
-} from './network-form.ts';
+import { type NetworkAttributes, type NetworkProps, attributesOf } from './network-form.ts';
+import { matches } from './network-drift.ts';
 import type { UnifiRequirements, UnifiSpec } from './resource.ts';
 import { unifiHandlers } from './resource.ts';
 
 export type { NetworkAttributes, NetworkProps } from './network-form.ts';
 export { declareNetwork } from './network-form.ts';
+// MEDIUM-4: `matches` moved here from `network-form.ts` — see network-drift.ts's own header. Not
+// re-exported from this barrel file either, same as before the move: `spec.matches` below is the
+// only consumer a provider needs.
 export { driftOf } from './network-drift.ts';
 
 export interface UnifiNetwork extends Resource<

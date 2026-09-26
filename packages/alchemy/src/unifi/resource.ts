@@ -130,10 +130,11 @@ export const unifiOperations = <Props extends object, Live, Attributes extends o
 export class UnifiNonGetRequest extends Error {
   constructor(
     readonly method: string,
-    readonly url: string,
+    /** PATH ONLY, never the full URL — see `requestPath` below. */
+    readonly path: string,
   ) {
     super(
-      `UniFi HttpClient guard: refused ${method} ${url} -- ${UNIFI_READ_ONLY_POLICY}. This is a ` +
+      `UniFi HttpClient guard: refused ${method} ${path} -- ${UNIFI_READ_ONLY_POLICY}. This is a ` +
         'defect, not a recoverable condition: something under src/unifi tried to send a non-GET ' +
         "request, which policy.ts's per-operation refusal should already have made impossible. " +
         'Fix the kit code that produced this request.',
@@ -142,12 +143,27 @@ export class UnifiNonGetRequest extends Error {
   }
 }
 
+/**
+ * ⛔ PATH ONLY, NEVER THE HOST. A cloud connector's base URL embeds the account's Console ID
+ *   (`docs/unifi.md`'s Credentials section, T3) — a defect message is still a message that can
+ *   reach a log, a CI failure body or a pasted error report, so it gets the same treatment as
+ *   `redactUrls` gives the import layer's own error text. Falls back to a fixed placeholder rather
+ *   than the raw string on a parse failure, so a malformed URL can never leak through unredacted.
+ */
+const requestPath = (url: string): string => {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return '<unparseable request url>';
+  }
+};
+
 const guardGetOnly = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
   client.pipe(
     HttpClient.mapRequestEffect((request) =>
       request.method === 'GET'
         ? Effect.succeed(request)
-        : Effect.die(new UnifiNonGetRequest(request.method, request.url)),
+        : Effect.die(new UnifiNonGetRequest(request.method, requestPath(request.url))),
     ),
   );
 

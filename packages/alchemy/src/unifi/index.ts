@@ -6,7 +6,15 @@
  *   not depend on — mirrors `../netbox/index.ts`.
  */
 export { UNIFI_READ_ONLY_POLICY, UnifiWriteRefused, type UnifiWriteAction } from './policy.ts';
-export { UnifiNonGetRequest, type UnifiRequirements, type UnifiSpec } from './resource.ts';
+export {
+  // Barrel-exported (not just internal to `unifiHandlers`) so `homeflare-network`'s own
+  // import-layer guard (plan item C0) can reuse this instead of re-implementing the same
+  // `HttpClient` wrap against a second copy of the SDK's `HttpClient.HttpClient` service.
+  GetOnlyHttpClient,
+  UnifiNonGetRequest,
+  type UnifiRequirements,
+  type UnifiSpec,
+} from './resource.ts';
 export type { FieldDrift } from './drift.ts';
 export {
   UnifiNetwork,

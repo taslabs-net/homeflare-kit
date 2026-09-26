@@ -1,21 +1,24 @@
 /**
- * `pageAll` (B0b/T9) — pure walk-logic tests against a synthetic fetcher, plus one integration
- * test proving it type-checks and decodes against a REAL SDK list operation
- * (`getNetworksOverviewPage`) through the fake UniFi server. `M2`: this file does not repeat the
- * 404/500 decode tests `network.test.ts` already covers — those are about ONE page's failure, not
- * the walk this file exists to prove.
+ * `pageAll` (B0b/T9) — pure walk-logic tests against a synthetic fetcher, the three IMPORTANT-3
+ * consistency checks (red team, 2026-09-26) against fetchers that lie the exact ways a real vendor
+ * response could, and one integration test proving it type-checks and decodes against a REAL SDK
+ * list operation (`getNetworksOverviewPage`) through the fake UniFi server. `M2`: this file does
+ * not repeat the 404/500 decode tests `network.test.ts` already covers — those are about ONE
+ * page's failure, not the walk this file exists to prove.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as networks from '@distilled.cloud/unifi-network/networks';
 import { fakeFailure, fakeUnifi, fakeUnifiLayer } from './fake-unifi.ts';
-import { type OffsetPage, pageAll } from './paginate.ts';
+import { type OffsetPage, UnifiPaginationInconsistent, pageAll } from './paginate.ts';
 
 interface Row {
   readonly id: number;
 }
 
-/** A fake dataset served `pageSize` rows at a time, the same envelope every real list op uses. */
+/** A fake dataset served `pageSize` rows at a time, the same envelope every real list op uses —
+ *  including `offset` echoed back exactly as requested, the honest case every OTHER test in this
+ *  file deviates from on purpose. */
 const fakePages = (rows: readonly Row[], pageSize: number) => {
   const calls: { offset: number; limit: number | undefined }[] = [];
   const fetchPage = (request: { offset?: number; limit?: number }) => {
@@ -23,11 +26,15 @@ const fakePages = (rows: readonly Row[], pageSize: number) => {
     calls.push({ offset, limit: request.limit });
     return Effect.succeed<OffsetPage<Row>>({
       data: rows.slice(offset, offset + pageSize),
+      offset,
       totalCount: rows.length,
     });
   };
   return { calls, fetchPage };
 };
+
+const flip = <A>(effect: Effect.Effect<A, UnifiPaginationInconsistent>) =>
+  Effect.runPromise(Effect.flip(effect));
 
 describe('pageAll -- walk logic', () => {
   test('walks every page in order and returns every row exactly once', async () => {
@@ -72,7 +79,7 @@ describe('pageAll -- walk logic', () => {
     const fetchPage = (request: { offset?: number; limit?: number }) => {
       const offset = request.offset ?? 0;
       offsetsSeen.push(offset);
-      return Effect.succeed<OffsetPage<Row>>({ data: [{ id: offset }], totalCount: 3 });
+      return Effect.succeed<OffsetPage<Row>>({ data: [{ id: offset }], offset, totalCount: 3 });
     };
 
     const result = await Effect.runPromise(pageAll(fetchPage, { limit: 10 }));
@@ -98,6 +105,84 @@ describe('pageAll -- walk logic', () => {
     const result = await Effect.runPromise(Effect.flip(pageAll(fetchPage, { limit: 5 })));
 
     expect(result).toBe(boom);
+  });
+});
+
+describe('pageAll -- IMPORTANT-3: typed failures on a self-contradicting response', () => {
+  test('the server ignoring offset (always echoing 0) fails as offset-mismatch, not an infinite loop', async () => {
+    let calls = 0;
+    const fetchPage = () => {
+      calls += 1;
+      // Always answers page 1, regardless of the requested offset -- the "offset ignored" trap.
+      return Effect.succeed<OffsetPage<Row>>({
+        data: [{ id: 1 }, { id: 2 }],
+        offset: 0,
+        totalCount: 5,
+      });
+    };
+
+    const failure = await flip(pageAll(fetchPage, { limit: 2 }));
+
+    expect(failure).toBeInstanceOf(UnifiPaginationInconsistent);
+    expect(failure.reason).toBe('offset-mismatch');
+    // The FIRST page (offset 0 requested, 0 echoed) is fine; the SECOND (offset 2 requested, 0
+    // echoed) is what trips it -- proving this stops the walk instead of cycling forever.
+    expect(calls).toBe(2);
+  });
+
+  test('totalCount drifting between calls fails as total-count-changed', async () => {
+    let call = 0;
+    const fetchPage = (request: { offset?: number; limit?: number }) => {
+      call += 1;
+      const offset = request.offset ?? 0;
+      // A row is removed after the first page is read -- totalCount drops from 3 to 2.
+      return Effect.succeed<OffsetPage<Row>>({
+        data: [{ id: offset }],
+        offset,
+        totalCount: call === 1 ? 3 : 2,
+      });
+    };
+
+    const failure = await flip(pageAll(fetchPage, { limit: 1 }));
+
+    expect(failure.reason).toBe('total-count-changed');
+  });
+
+  test('an undercounted totalCount fails loudly instead of silently truncating (T9)', async () => {
+    // The exact scenario named in review: totalCount says 0 but the vendor still returns real
+    // rows on the one page fetched before the loop (correctly) stops on totalCount -- the OLD
+    // behavior returned those 2 rows as if they were the complete, correct answer.
+    const fetchPage = () =>
+      Effect.succeed<OffsetPage<Row>>({ data: [{ id: 1 }, { id: 2 }], offset: 0, totalCount: 0 });
+
+    const failure = await flip(pageAll(fetchPage, { limit: 10 }));
+
+    expect(failure.reason).toBe('row-count-mismatch');
+  });
+
+  test('a walk that never reaches totalCount fails at the page ceiling instead of looping forever', async () => {
+    // Offset IS honored (so this never trips offset-mismatch first) but totalCount is inflated far
+    // past what MAX_PAGES worth of single-row pages could ever reach -- the walk is internally
+    // consistent page-to-page, just never converges, which only the ceiling can catch.
+    const fetchPage = (request: { offset?: number; limit?: number }) =>
+      Effect.succeed<OffsetPage<Row>>({
+        data: [{ id: request.offset ?? 0 }],
+        offset: request.offset ?? 0,
+        totalCount: 1_000_000,
+      });
+
+    const failure = await flip(pageAll(fetchPage, { limit: 1 }));
+
+    expect(failure.reason).toBe('page-ceiling');
+  });
+
+  test('an honest, well-behaved server never trips any of the three checks', async () => {
+    const rows = Array.from({ length: 9 }, (_, id) => ({ id }));
+    const { fetchPage } = fakePages(rows, 4);
+
+    const result = await Effect.runPromise(pageAll(fetchPage, { limit: 4 }));
+
+    expect(result).toEqual(rows);
   });
 });
 
