@@ -4,6 +4,7 @@
  * alongside the SDK's own `NotFound`. Proves the two stay distinct: only the SDK's tag folds.
  */
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import * as organization from '@distilled.cloud/forgejo/organization';
 import * as Effect from 'effect/Effect';
 import { fakeFailure, fakeForgejo, fakeForgejoLayer } from './fake-forgejo.ts';
@@ -94,4 +95,17 @@ describe('Forgejo.TeamMember spec — the actual exported production functions',
     );
     expect(await readThrough(fake.fetch)).toBeUndefined();
   });
+});
+
+test('ForgejoTeamMember declares defaultRemovalPolicy: retain on the Resource() call itself', () => {
+  // ⛔ Anchored on the `Resource<ForgejoTeamMember>(...)` CALL, not on the substring appearing
+  //   anywhere in the file — team-member.ts's own header comment also says the phrase in prose, so
+  //   a plain `source.toContain(...)` (database-refusals.test.ts's simpler version, safe there
+  //   because database.ts's header never repeats the phrase) would pass here even if the option
+  //   were dropped from the actual call. mini PR 82's red team (970e8be) had to pipe
+  //   `RemovalPolicy.retain()` onto every call site because the kit resource had no default; this
+  //   proves the kit default carries the fix so a caller no longer has to remember its own.
+  const source = readFileSync(new URL('./team-member.ts', import.meta.url), 'utf8');
+  const call = source.match(/Resource<ForgejoTeamMember>\([\s\S]*?\);/);
+  expect(call?.[0]).toContain("defaultRemovalPolicy: 'retain'");
 });

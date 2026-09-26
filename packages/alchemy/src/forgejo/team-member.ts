@@ -22,6 +22,18 @@
  *   cannot create a team.
  *
  * ⛔ TOKEN NEEDS `write:organization` TO ADD OR REMOVE, and an identity allowed to manage the team.
+ *
+ * ⛔ `defaultRemovalPolicy: 'retain'` — MEASURED 2026-09-25 (mini PR 82's red team, `homeflare-mini`
+ *   970e8be): before this, `ForgejoRepository`/`ForgejoOrgLabel` defaulted to retain in the kit
+ *   itself but this family did not, so alchemy's own engine fallback (`destroy`) applied to it —
+ *   every caller had to remember its own `.pipe(RemovalPolicy.retain())`, the way mini's
+ *   `src/forgejo/declare.ts` now does for `forgejo-provision`'s row. Dropping a `TeamMember`
+ *   declaration — toggling a feature gate off, renaming the resource id — must not silently call
+ *   `organization.orgRemoveTeamMember` and revoke a real membership; that is the same "removal from
+ *   the stack is not removal from Forgejo" posture `ForgejoOrgLabel` and `ForgejoBranchProtection`
+ *   already take, for the same reason: this family exists to attach a stack's identity to a team it
+ *   never creates or destroys (`teamIdOf` above only ever locates the team, never manages it). Opt
+ *   into a real revoke with `.pipe(RemovalPolicy.destroy())`; `destroy` below is fully implemented.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
@@ -52,7 +64,9 @@ export interface ForgejoTeamMember extends Resource<
   ForgejoRequirements
 > {}
 
-export const ForgejoTeamMember = Resource<ForgejoTeamMember>('Forgejo.TeamMember');
+export const ForgejoTeamMember = Resource<ForgejoTeamMember>('Forgejo.TeamMember', {
+  defaultRemovalPolicy: 'retain',
+});
 
 export class ForgejoTeamNotFoundError extends Data.TaggedError('ForgejoTeamNotFoundError')<{
   readonly message: string;
