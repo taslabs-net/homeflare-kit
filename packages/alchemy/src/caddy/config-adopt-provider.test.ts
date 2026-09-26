@@ -9,7 +9,6 @@ import { AdoptPolicy, Unowned } from 'alchemy/AdoptPolicy';
 import { AlchemyContext } from 'alchemy/AlchemyContext';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import type * as Caddy from '@distilled.cloud/caddy';
 import { type CaddyAdminService, type CaddyTransport, caddyAdminLayer } from './admin.ts';
 import { CaddyConfig, CaddyConfigProvider } from './config.ts';
 import { configDigest } from './digest.ts';
@@ -40,9 +39,10 @@ type Deploy = { readonly adopt?: boolean; readonly contextAdopt?: boolean };
 const withProvider = <A>(
   admin: CaddyTransport,
   deploy: Deploy,
+  // ★ `CaddyAdminService` ONLY — see providers.test.ts's own `withProvider` for why.
   use: (
     p: Effect.Success<typeof CaddyConfig.Provider>,
-  ) => Effect.Effect<A, unknown, CaddyAdminService | Caddy.CaddyOpContext>,
+  ) => Effect.Effect<A, unknown, CaddyAdminService>,
 ) => {
   // ⚠️ `Layer.provideMerge`, not `Layer.provide` — providers.ts's own doc on `caddyAdminLayer` says
   //   why: `CaddyConfigProvider()`'s handlers still need these services every time they run, not
