@@ -161,3 +161,8 @@ itself holds everywhere else.
   published — `bun install` would fail to resolve it.
 - ⛔ Don't hand-fix a bug inside `packages/distilled-<vendor>/src/`. Fix it
   upstream (the distilled clone), regenerate, copy again.
+- ⛔ Don't invent `src/` by hand so a `@distilled.cloud/<vendor>` name can
+  publish. Interim packages are generate+copy from a real vendor schema
+  (steps 1–2). A missing official schema means no package — not a stub.
+  Talos + Argo CD dogfood vendors that skip this route:
+  [talos-argocd-dogfood.md](./talos-argocd-dogfood.md).
