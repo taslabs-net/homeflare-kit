@@ -9,6 +9,7 @@
 import { type HostRunner, canActAsRoot } from '../launchd/runner.ts';
 import { UNIT_WRITE, digestOf } from './unit-form.ts';
 import { type UnitStatus, showUnit } from './systemctl.ts';
+import { GENERATED_UNIT_DIRECTORY, isShadowingFragment } from './container-generator.ts';
 import {
   type ContainerAttributes,
   type ContainerProps,
@@ -71,6 +72,52 @@ export const assertUnclaimed = async (runner: HostRunner, props: ContainerProps)
         'new resource and deploy with --adopt.',
     );
   }
+};
+
+/**
+ * ⛔ A PLAIN UNIT SHARING THE SERVICE NAME CAN OUTRANK QUADLET'S GENERATOR, SILENTLY — but only
+ *   when it sits in one of the directories that actually search BEFORE `${GENERATED_UNIT_DIRECTORY}`
+ *   in systemd's own unit load path (systemd.unit(5) "Unit File Load Path") — `/etc/systemd/system`
+ *   chief among them (`isShadowingFragment`, container-generator.ts, has the full list and the
+ *   measured facts). ⛔ CORRECTED ON ADVERSARIAL RE-REVIEW: an EARLIER version of this check refused
+ *   for ANY `FragmentPath` not literally under the generator directory, including the vendor
+ *   directories (`/usr/local/lib/systemd/system`, `/usr/lib/systemd/system`) — those are LOWER
+ *   precedence than the generator, not higher, so a plain unit there is harmlessly shadowed BY our
+ *   generated unit once we write and reload; refusing for it was a false positive that blocked a
+ *   create/adopt apply would have handled fine (exactly what S49 "neither looser nor stricter"
+ *   forbids). With no `.container` file of ours on disk yet, a `FragmentPath` under one of the
+ *   genuinely higher-precedence directories means some OTHER unit file — hand-written, or shipped by
+ *   a package, and admin-controlled rather than vendor-controlled — already answers to this name:
+ *   writing and reloading would generate a unit systemd never actually loads, because the
+ *   higher-precedence plain one still wins.
+ * ★ TWIN OF `unit-preflight.ts`'s `assertUnclaimed`, for the one failure mode `Systemd.Unit` can't
+ *   have: there is no generator standing between ITS file and the unit systemd loads, so nothing
+ *   there can be shadowed the way a Quadlet generation can.
+ * ★ ONLY WHEN THE `.container` FILE ITSELF IS ABSENT (called from `readContainer` in that branch):
+ *   a present file with different content is `assertUnclaimed`'s job; a present file that IS ours
+ *   generating a shadowed unit is `verifyGenerated`'s job (container-generator.ts, hardened to check
+ *   this same `FragmentPath` fact), at apply time, once daemon-reload has actually run — this is the
+ *   "nothing declared yet" half neither of those covers, and the one this bug leaves refusing only
+ *   mid-apply instead of at plan time for the directories that genuinely shadow.
+ * ⚠️ NEVER FIRES WITHOUT A CONCRETE `fragmentPath` TO NAME, AND NEVER FOR A MASKED UNIT — MEASURED
+ *   against this family's own fake (`fakeQuadletHost`, unlike `sudo-lifecycle.test.ts`'s, which is
+ *   a different fake and reads differently): `placeUnit(path, text, {masked: true})` still reports
+ *   a real `FragmentPath`. Refusing there anyway would work, but with THIS function's generic
+ *   "plain unit" wording instead of `assertUsable`'s specific, more actionable "is masked, run
+ *   `systemctl unmask` deliberately" — masking is a person's decision, not an accident to explain
+ *   as a name collision. `assertUsable` stays the one place that message comes from.
+ */
+export const assertUnshadowed = (props: Pick<ContainerProps, 'name'>, status: UnitStatus): void => {
+  if (!status.known || status.fragmentPath === undefined) return;
+  if (status.loadState === 'masked' || status.unitFileState === 'masked') return;
+  if (!isShadowingFragment(status.fragmentPath)) return;
+  throw refuseContainer(
+    props.name,
+    `${serviceNameFor(props)} already exists as a plain unit at ${status.fragmentPath}, not a ` +
+      `Quadlet generation — Quadlet's own output (${GENERATED_UNIT_DIRECTORY}/…) would be ` +
+      'shadowed by it and never actually run: systemd loads the higher-precedence file first. ' +
+      'Move the plain unit aside — a cutover — before declaring this container.',
+  );
 };
 
 /** The half of a rename check that needs only the NEW NAME — mirrors `assertRenameTarget`. */

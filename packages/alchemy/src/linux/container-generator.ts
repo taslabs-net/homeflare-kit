@@ -55,6 +55,56 @@ import type { UnitStatus } from './systemctl.ts';
 /** MEASURED on CT100 2026-09-24: `systemctl show caddy.service -p FragmentPath`. */
 export const GENERATED_UNIT_DIRECTORY = '/run/systemd/generator';
 
+/**
+ * Whether `fragmentPath` is Quadlet's OWN generator output — the "did daemon-reload actually
+ * produce OUR unit" question `verifyGenerated` needs, as distinct from `isShadowingFragment`
+ * below (the "does something ELSE outrank the generator" question `assertUnshadowed` needs — the
+ * two are not complements of each other, see that function's header).
+ */
+export const isGeneratorFragment = (fragmentPath: string | undefined): boolean =>
+  fragmentPath !== undefined && fragmentPath.startsWith(`${GENERATED_UNIT_DIRECTORY}/`);
+
+/**
+ * ⛔ CORRECTED ON ADVERSARIAL RE-REVIEW OF THE FIX BELOW — the directories that ACTUALLY search
+ *   BEFORE `${GENERATED_UNIT_DIRECTORY}` in systemd's real Unit File Load Path (`systemd.unit(5)`,
+ *   tag v257, "Unit File Load Path"), highest to lowest precedence:
+ *     /etc/systemd/system.control, /run/systemd/system.control, /run/systemd/transient,
+ *     /etc/systemd/system, /etc/systemd/system.attached, /run/systemd/system,
+ *     /run/systemd/system.attached, [${GENERATED_UNIT_DIRECTORY}], /usr/local/lib/systemd/system,
+ *     /usr/lib/systemd/system, /run/systemd/generator.late.
+ * ⛔ `/usr/local/lib/systemd/system` AND `/usr/lib/systemd/system` ARE DELIBERATELY ABSENT — the
+ *   original version of this check (`isGeneratorFragment`'s NEGATION: "not the generator's own
+ *   output") treated ANY other FragmentPath as shadowing, including these two vendor directories,
+ *   which are LOWER precedence than the generator, not higher. A plain unit there is harmlessly
+ *   shadowed BY Quadlet's generated unit, same as `unit-form.ts`'s `UNIT_SEARCH_DIRECTORIES`
+ *   (measured via `systemd-analyze unit-paths`) independently lists them below `/run/systemd/system`,
+ *   and `systemctl.ts`'s own header distinguishes `/etc/systemd/system` from "the vendor's
+ *   `/usr/lib/systemd/system`" rather than lumping the two together. Refusing for either one blocked
+ *   a create/adopt apply would have handled fine — exactly the false positive S49 ("neither looser
+ *   nor stricter") forbids. `/etc/systemd/system.control`, `.attached` and `/run/systemd/transient`
+ *   are included for completeness against the man page though no family here writes into them.
+ */
+const SHADOWING_UNIT_DIRECTORIES = [
+  '/etc/systemd/system.control',
+  '/run/systemd/system.control',
+  '/run/systemd/transient',
+  '/etc/systemd/system',
+  '/etc/systemd/system.attached',
+  '/run/systemd/system',
+  '/run/systemd/system.attached',
+] as const;
+
+/**
+ * Whether `fragmentPath` genuinely OUTRANKS Quadlet's generator — the real question
+ * `container-preflight.ts`'s `assertUnshadowed` needs ("would writing our `.container` file and
+ * reloading still lose to this other unit?"), as opposed to the broader and wrong question the
+ * original check asked ("is this simply not the generator's own output?", which is also true of
+ * every LOWER-precedence vendor unit and wrongly refused those too).
+ */
+export const isShadowingFragment = (fragmentPath: string | undefined): boolean =>
+  fragmentPath !== undefined &&
+  SHADOWING_UNIT_DIRECTORIES.some((dir) => fragmentPath.startsWith(`${dir}/`));
+
 export class QuadletGeneratorError extends Error {
   constructor(name: string, detail: string) {
     super(`Podman.Container ${name}: ${detail}`);
@@ -85,6 +135,19 @@ export const needsVerificationReload = (containerPath: string, status: UnitStatu
  * resource is simply absent", which is what a plain `LoadState=not-found` would otherwise look
  * like to a caller that only knows the `Systemd.Unit` shape (a unit that has genuinely never been
  * declared also reads `not-found`).
+ *
+ * ⛔ THE FRAGMENTPATH CHECK BELOW WAS ADDED — found on adversarial review of `assertUnshadowed`
+ *   (container-preflight.ts): before it, this function trusted `LoadState`/`SourcePath` alone, and
+ *   neither one notices a genuinely-shadowing PLAIN unit. A real, already-loaded plain unit (e.g.
+ *   an admin's own `/etc/systemd/system/foo.service` sharing this container's service name) reports
+ *   `LoadState=loaded` — it is a valid unit — and `SourcePath` empty, since hand-written units never
+ *   carry one; both checks above pass it silently. MEASURED directly against this function: a
+ *   `status` built from exactly what `systemctl show` reports for that case (`loadState: 'loaded'`,
+ *   `fragmentPath` under `/etc/systemd/system`, `sourcePath: undefined`) did not throw before this
+ *   check existed. Without it, `assertUnshadowed`'s plan-time refusal was the ONLY thing standing
+ *   between a shadowing plain unit and a SILENT apply-time "success" that leaves the pre-existing
+ *   unit running untouched while state records attributes read back from it — not a loud mid-apply
+ *   throw, which is what earlier documentation of this fix claimed the pre-fix risk was.
  */
 export const verifyGenerated = (
   name: string,
@@ -100,6 +163,15 @@ export const verifyGenerated = (
         'key, a bad value, or an interaction this validation does not check. Debug on the host ' +
         "with '/usr/lib/systemd/system-generators/podman-system-generator --dryrun' or " +
         `'systemd-analyze --generators=true verify ${serviceName}' (podman-systemd.unit(5), Podman 5.4).`,
+    );
+  }
+  if (status.fragmentPath !== undefined && !isGeneratorFragment(status.fragmentPath)) {
+    throw new QuadletGeneratorError(
+      name,
+      `${serviceName} is loaded from ${status.fragmentPath}, not from Quadlet’s generator ` +
+        `(${GENERATED_UNIT_DIRECTORY}/…) — daemon-reload ran, but a plain unit at that path still ` +
+        'answers to this name, and systemd loaded IT, not ours. Move the plain unit aside — a ' +
+        'cutover — and redeploy.',
     );
   }
   if (status.sourcePath !== undefined && status.sourcePath !== containerPath) {

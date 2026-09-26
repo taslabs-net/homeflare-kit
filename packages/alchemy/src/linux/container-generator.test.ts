@@ -192,4 +192,37 @@ describe('verifyGenerated, directly', () => {
       }),
     ).toThrow(/earlier in Quadlet/);
   });
+
+  /**
+   * ⛔ REGRESSION — found on adversarial review. Before the FragmentPath check was added, a real,
+   *   already-loaded PLAIN unit (e.g. an admin's own `/etc/systemd/system/…` sharing this
+   *   container's service name) reported `LoadState=loaded` (it is a genuinely valid unit) and no
+   *   `SourcePath` (hand-written units never carry one) — both existing checks passed it silently,
+   *   so `verifyGenerated` was not the backstop its own doc comments claimed: a shadow that slipped
+   *   past `assertUnshadowed` (container-preflight.ts) would misapply silently, not throw loudly.
+   */
+  test('a loaded plain unit with no SourcePath is still caught, via FragmentPath', () => {
+    expect(() =>
+      verifyGenerated(NAME, PATH, SERVICE, {
+        activeState: 'active',
+        fragmentPath: '/etc/systemd/system/hf-example.service',
+        known: true,
+        loadState: 'loaded',
+        needDaemonReload: false,
+      }),
+    ).toThrow(/not from Quadlet.s generator/);
+  });
+
+  test('a real generated FragmentPath is not mistaken for a shadow', () => {
+    expect(() =>
+      verifyGenerated(NAME, PATH, SERVICE, {
+        activeState: 'active',
+        fragmentPath: `/run/systemd/generator/${SERVICE}`,
+        known: true,
+        loadState: 'loaded',
+        needDaemonReload: false,
+        sourcePath: PATH,
+      }),
+    ).not.toThrow();
+  });
 });
