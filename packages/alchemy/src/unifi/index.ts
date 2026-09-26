@@ -37,4 +37,31 @@ export {
   type FirewallZoneProps,
   driftOf as firewallZoneDriftOf,
 } from './firewall-zone.ts';
+export {
+  UnifiDnsPolicy,
+  UnifiDnsPolicyProvider,
+  declareDnsPolicy,
+  dnsPolicy,
+  type DnsPolicyAttributes,
+  type DnsPolicyProps,
+  driftOf as dnsPolicyDriftOf,
+} from './dns-policy.ts';
+export {
+  UnifiAclRule,
+  UnifiAclRuleProvider,
+  aclRule,
+  declareAclRule,
+  type AclRuleAttributes,
+  type AclRuleProps,
+  driftOf as aclRuleDriftOf,
+} from './acl-rule.ts';
+export {
+  UnifiAclRuleOrdering,
+  UnifiAclRuleOrderingProvider,
+  aclRuleOrdering,
+  declareAclRuleOrdering,
+  type AclRuleOrderingAttributes,
+  type AclRuleOrderingProps,
+  driftOf as aclRuleOrderingDriftOf,
+} from './acl-rule-ordering.ts';
 export { providers } from './providers.ts';

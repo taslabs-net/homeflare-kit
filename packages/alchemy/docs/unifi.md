@@ -6,6 +6,11 @@ with a typed `UnifiWriteRefused` naming the policy rather than calling any SDK w
 Lifting the rule is a kit change — a PR that adds a write path, reviewed as one — not a flag a
 stack can pass. See `packages/alchemy/src/unifi/policy.ts`.
 
+This page covers `Unifi.Network`/`Unifi.FirewallZone` only. Two more read-only families each have
+their own doc, per family (`docs/unifi.md` would breach the 200-line cap otherwise):
+[`Unifi.DnsPolicy`](./unifi-dns-policy.md) and
+[`Unifi.AclRule`/`Unifi.AclRuleOrdering`](./unifi-acl-rule.md).
+
 ## What's declared, and why these two first
 
 `Unifi.Network` (`getNetworkDetails`/`getNetworksOverviewPage`) and `Unifi.FirewallZone`
