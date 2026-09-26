@@ -23,9 +23,11 @@
   `packages/alchemy/docs/distilled-interim.md`. This PR does not alias
   `@distilled.cloud/unifi-network` onto it and adds no kit provider — the
   alias can only resolve once this package is actually on npm, and a UniFi
-  provider family is its own follow-up work. The package's own README and
-  `docs/codegen-notes.md` (copied from the distilled clone) record the
-  resource-level traps (whole-object PUT, ordering-list endpoints, adopt-only
-  objects, hardware-affecting writes) a future provider must not ignore, and
-  the `X-API-KEY` header this SDK sends is unverified against a live console —
-  this PR ships a separate, unrun auth-probe handoff script for that.
+  provider family is its own follow-up work. The package's own README records
+  the resource-level traps (whole-object PUT, ordering-list endpoints,
+  adopt-only objects, hardware-affecting writes) a future provider must not
+  ignore — full detail lives in the distilled clone's
+  `packages/unifi-network/docs/codegen-notes.md`, which is NOT copied into
+  this package (only `src/` is) — and the `X-API-KEY` header this SDK sends
+  is unverified against a live console — this PR ships a separate, unrun
+  auth-probe handoff script for that.

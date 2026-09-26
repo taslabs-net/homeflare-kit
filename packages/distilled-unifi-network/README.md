@@ -30,9 +30,15 @@ and relicensing a copy would misstate what it is. See `LICENSE`.
 `trafficMatchingLists`, `supportingResources`, plus the single-endpoint
 `applicationInfo` — an Effect-typed operation per API endpoint (73 total
 across 44 paths), with `catchTag`-able errors for every HTTP status the
-protocol layer dispatches on (the spec documents **zero** error responses
-on any operation — see `docs/codegen-notes.md#typed-errors` for what that
-means for this package's error channel).
+protocol layer dispatches on. No OPERATION documents an error response, but
+the spec's own `components.schemas["Error Message"]` — `{code, message,
+requestId, requestPath, statusCode, statusName, timestamp}`, unreferenced
+by any operation — is decoded by `src/protocol.ts`'s `errorEnvelope`, so a
+vendor `code`/`message` surfaces on failures instead of a bare
+`HTTP <status>` (`requestPath` is dropped, never surfaced — see
+`src/errors.ts`'s doc comment). See the distilled clone's
+`packages/unifi-network/docs/codegen-notes.md#typed-errors` (not shipped in
+this package — `src/` is the only thing copied here) for the full account.
 
 ```ts
 import * as UnifiNetwork from '@distilled.cloud/unifi-network'; // aliased onto this package — see docs/distilled-interim.md
@@ -72,8 +78,10 @@ re-verify before depending on this header for anything that writes.
 
 ## Resource-level traps a future provider must not ignore
 
-These are NOT solved in this SDK. Full detail in `src/credentials.ts`'s
-own doc comment and `docs/codegen-notes.md`; the headlines:
+These are NOT solved in this SDK. Full detail in `src/credentials.ts`'s own
+doc comment and the distilled clone's
+`packages/unifi-network/docs/codegen-notes.md` (not shipped here — see
+"What's in it" above); the headlines:
 
 - **Whole-object PUT.** Nine endpoints (`updateNetwork`,
   `updateFirewallPolicy`, `updateAclRule`, …) silently _disable_ any field
@@ -89,10 +97,15 @@ own doc comment and `docs/codegen-notes.md`; the headlines:
 - **Writes that power-cycle or reboot hardware** hide behind ordinary
   verbs (`executeAdoptedDeviceAction`'s `RESTART`, `executePortAction`'s
   `POWER_CYCLE`) — treat as gated commands, never declared props.
-- **Secrets never become attributes.** The controller API key and the WLAN
-  pre-shared key (`passphrase` — not caught by core's generic
-  `SENSITIVE_FIELD_PATTERNS`) are both write-only, sourced from OpenBao at
-  call time, never read back as plan attributes.
+- **Secrets never become attributes.** The controller API key is one. The
+  WLAN pre-shared key (`passphrase`) is **not write-only** — the WiFi
+  details GET returns it in the clear, so this SDK now decodes it as
+  `Redacted.Redacted<string>` (its name doesn't match core's generic
+  `SENSITIVE_FIELD_PATTERNS`, so `sensitivePatterns` is extended
+  per-package — see the distilled clone's `scripts/convert.ts`). Both must
+  still be sourced from OpenBao at call time and never read back as plan
+  attributes — `Redacted` only guards against an accidental log/print, not
+  against a provider persisting the unwrapped value into state.
 
 ## Scope and next steps
 
