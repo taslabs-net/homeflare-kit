@@ -351,6 +351,28 @@ checks you name required. ⛔ Auto-merge with nothing required merges **immediat
 `bunx --bun hf-adopt-verify --config alchemy.run.ts --stage live`: Alchemy's planner, no writes,
 each row's own diff, exit 0 only when all are no-ops. [docs/adopt-verify.md](./docs/adopt-verify.md)
 
+## Telemetry — `@homeflare/alchemy/telemetry`
+
+`telemetryLayer` builds an OTLP tracing/logging/metrics `Layer` for a stack's own `providers` —
+off unless you give it real endpoints, no default collector anywhere in it.
+
+```ts
+import { telemetryLayer } from '@homeflare/alchemy/telemetry';
+
+export const providers = Layer.mergeAll(
+  myProviders(),
+  telemetryLayer({
+    endpoints: { traces: 'http://<your-collector>/v1/traces' },
+    serviceName: 'my-stack',
+  }),
+);
+```
+
+Every span — a provider's own, `HttpClient`'s, and alchemy's own plan/apply engine — is redacted
+before export: every header dropped, every query string stripped, a denylisted host or path segment
+blanked. Options, the redaction policy and what a spike measured actually arriving at a collector:
+[docs/telemetry.md](./docs/telemetry.md) · [docs/telemetry-spike.md](./docs/telemetry-spike.md).
+
 ## Credentials
 
 ⛔ **Mint a short-lived, scoped token** — never a long-lived one, never a Global API Key. How each
