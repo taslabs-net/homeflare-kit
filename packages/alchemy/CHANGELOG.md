@@ -2,6 +2,98 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.39.0
+
+### Minor Changes
+
+- [#302](https://github.com/taslabs-net/homeflare-kit/pull/302) [`3f8a8af`](https://github.com/taslabs-net/homeflare-kit/commit/3f8a8af9df4dcdb0dd54be0f50f15d62e815b434) Thanks [@taslabs-net](https://github.com/taslabs-net)! - New `@homeflare/alchemy/telemetry`: `telemetryLayer`, an OTLP tracing/logging/metrics `Layer` a
+  stack merges into its own `providers` — off unless given explicit `{ traces?, logs?, metrics? }`
+  endpoints, no default collector anywhere in it. This is not alchemy's own CLI-wide telemetry
+  (`otel.alchemy.run`, hard-coded, opted out via `~/.alchemy/telemetry-disabled`): it is a per-stack
+  layer a consumer opts into with its own endpoints (the estate's Victoria stack, in homeflare-mini's
+  case — this package names no estate host).
+
+  Every span — a provider's own, effect's `HttpClient` client spans, and alchemy's own plan/apply
+  engine spans — is redacted before export in two passes: `Tracer.Tracer` itself drops every HTTP
+  header outright, strips every query string and blanks a consumer-supplied denylist of host/path
+  segments (e.g. a UniFi console id) to `<redacted>`; a second pass at `OtlpSerialization` catches what
+  that first pass cannot reach — a failed span's `exception.message`/`status.message` (built from the
+  exit's `Cause` at export time) and a log line turned into a span event — by matching the denylist as
+  a substring in that free text, and covers logs the same way. Bodies are protobuf-encoded, not
+  JSON — VictoriaLogs/Metrics both reject the OTLP JSON encoding, silently, so the wire format is not
+  a style choice. The transport is sealed — merging this layer into a stack's `providers` alongside a
+  fetch-based provider (Caddy, LiteLLM, Forgejo) never lets its own `FetchHttpClient` leak into that
+  provider's requirements, the same leak PR 293 fixed for Caddy's admin transport.
+
+  See [docs/telemetry.md](../packages/alchemy/docs/telemetry.md) for how a consumer stack wires real
+  endpoints in, and [docs/telemetry-spike.md](../packages/alchemy/docs/telemetry-spike.md) for what an
+  offline spike against alchemy 2.0.0-beta.79's own engine measured actually arriving at a collector.
+
+- [#296](https://github.com/taslabs-net/homeflare-kit/pull/296) [`4bdcc4f`](https://github.com/taslabs-net/homeflare-kit/commit/4bdcc4fc2340bea9696156b7b4ff4ef19eadfeff) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Forgejo.TeamMember` now declares `defaultRemovalPolicy: 'retain'`, matching `Forgejo.Repository`
+  and `Forgejo.OrgLabel`. Previously the family had no default, so alchemy's own engine fallback
+  (`destroy`) applied: dropping a `TeamMember` declaration from a stack — a feature gate toggled off,
+  a resource id renamed — called `organization.orgRemoveTeamMember` and revoked a real membership on
+  live Forgejo, with no way to tell from the declaration alone that this would happen. Found in
+  `homeflare-mini` PR 82's red team (970e8be), which had to pipe every `ForgejoTeamMember(...)` call
+  through `.pipe(RemovalPolicy.retain())` by hand to avoid dropping `forgejo-provision` from `Owners`.
+
+  A stack that means to remove a real membership still can, with `.pipe(RemovalPolicy.destroy())` —
+  `destroy` was, and stays, fully implemented. A stack already piping `RemovalPolicy.retain()` by hand
+  (homeflare-mini) is unaffected; the pipe is now redundant, not wrong. Bumped as `minor`, not `patch`:
+  this changes what removing a declaration does, not just an internal detail.
+
+  ⚠️ **The new default does not protect an existing row until you deploy once first.** Alchemy plans
+  a removal from the policy saved on that resource's state row, not from this default — the default
+  only reaches an already-existing row's state on a deploy where the resource is otherwise a no-op
+  (alchemy rewrites the row and logs `removal policy destroy → retain`). Concretely:
+
+  - **To adopt retain for a `TeamMember` declared before this bump:** deploy the version bump first,
+    with the declaration left in place (a no-op plan updates the saved policy). Only remove the
+    declaration in a later deploy.
+  - **Dropping the bump and the declaration in the SAME deploy still deletes the live membership** —
+    the plan reads the row's old `destroy` policy, not this new default.
+  - **To revoke a membership on purpose**, the sequence is unchanged: deploy with
+    `.pipe(RemovalPolicy.destroy())` first, then remove the declaration in a later deploy.
+
+- [#297](https://github.com/taslabs-net/homeflare-kit/pull/297) [`a821575`](https://github.com/taslabs-net/homeflare-kit/commit/a82157562aeea6fe06a2dd9382e131451411691e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `Proxmox.Vm` (`ProxmoxVm`) from the public barrel for Talos VMs: cpu/cores/sockets/memory,
+  scsi disks on any storage (including `cephtb4`), `net0`/indexed NICs as a VLAN-aware bridge+tag,
+  the cloud-init drive and `ipconfig0`, boot order, the guest agent and a serial console. Every field
+  is managed only when declared (`qemu-props.ts`'s declared-keys model) — the fix for the
+  "5-default PUT", where an update used to resend `cores`/`memory`/`name`/`onboot`/`sockets` with a
+  hard default for whichever field the declaration left out, silently resetting it on an adopted VM.
+  `cipassword` and `machine` can never be props (typed `never`, and refused at runtime if smuggled
+  past the types). `ProxmoxVm` defaults to `RemovalPolicy.retain()`. Node-pinned semantics are
+  unchanged: a VM found on another node still fails the plan ("A migration is not an update").
+
+  Add `Proxmox.StorageDownload` (`ProxmoxStorageDownload`): a checksum-pinned `download-url` fetch
+  onto a storage's `import` content, for staging a Talos boot image before a `Proxmox.Vm` references
+  it as a disk source. `checksum`/`checksumAlgorithm` are required props (narrower than the vendor's
+  own optional pair) and refused at runtime if left blank. There is no update path — PVE does not
+  remember the `url`/`checksum` a volume was created from, so `filename` (with `storage`) is the
+  identity: changing it plans a `replace` (the old file is deleted, the new one downloaded under its
+  own name); a changed `checksum`/`url`/etc on the SAME `filename` is refused at plan time rather than
+  silently accepted, since there is nothing left to verify it against. A failed download task (a
+  checksum mismatch included) refuses the plan rather than reporting success. Delete is idempotent
+  (a volume already gone is success) and not retained by default, since the file is reproducible from
+  its own declaration.
+
+  Both families are wired into the vendor constraint tables (`download-url`'s own
+  `generated/constraints/pve-nodes-storage.ts`) and the ownership ledger, so a value the vendor would
+  reject is refused at plan time. A live VM or file this stack holds no state for is never adopted or
+  written without `--adopt` / `adopt(true)` (`ownership/probe.ts`'s `ownedRead`, `ownership/adopt.ts`'s
+  `refuseTakeover`) — for `Proxmox.StorageDownload` this also guards its delete, since the family is
+  not retained by default. A changed `vmid` on an already-managed `Proxmox.Vm` is refused as a
+  different machine rather than planned as an update. Disk (`scsiN`/`ideN`) and NIC (`netN`) drift is
+  now judged per key against the live volume id and live MAC (`qemu-volume.ts`/`qemu-net.ts`), so a
+  declared "new disk" or MAC-less NIC no longer re-drifts (and gets rewritten) on every deploy after
+  PVE allocates the real volume or generates the real MAC. Fixed a codegen gap surfaced by
+  `download-url`'s `compression` parameter: an explicit vendor `"enum": null` (as opposed to an absent
+  `enum`) was copied verbatim into the emitted table instead of being treated as no constraint.
+
+### Patch Changes
+
+- [#301](https://github.com/taslabs-net/homeflare-kit/pull/301) [`413f62b`](https://github.com/taslabs-net/homeflare-kit/commit/413f62b01ddb7e3fafb1f39f4b0153aa9ddadf5b) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Unifi.*` providers now refuse any non-`GET` request at the wire (`GetOnlyHttpClient`, installed in `unifiHandlers`), defense in depth alongside the existing per-operation write refusal, backed by a static test that bans any create/update/delete/patch/execute/remove/adopt SDK reference under `src/unifi`. Added `src/unifi/paginate.ts`'s consumer-side offset pager for the SDK's un-paginated list operations, and a pure `driftOf(live, props)` per family (`Unifi.Network`, `Unifi.FirewallZone`) reporting field-level drift for a future pre-import check.
+
 ## 0.38.0
 
 ### Minor Changes
