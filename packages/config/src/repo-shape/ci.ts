@@ -76,14 +76,17 @@ concurrency:
   cancel-in-progress: true
 
 # ⛔ SECOND GUARD, NOT THE FIRST ONE. The estate's primary Alchemy telemetry opt-out is the
-#   persisted \`~/.alchemy/telemetry-disabled\` file (Tim, 2026-09-26, memory
-#   alchemy-telemetry-opt-out), which a CI runner never has — a self-hosted job starts a fresh
-#   container per run and a GitHub-hosted one is a fresh VM every time, so neither has read the
-#   file even if this estate's account somehow wrote it there. This env applies to every job and
-#   step in this workflow, so it reaches an Alchemy CLI invocation whether or not \`check\` calls
-#   one today; no repository's \`check\` does, measured 2026-09-26 (grepped every ci/security/
-#   release workflow for \`alchemy\`/\`bin/cli.js\`, zero hits), so this is defense-in-depth for
-#   whichever job calls it first.
+#   persisted \`~/.alchemy/telemetry-disabled\` file (Tim, 2026-09-26), which a CI runner never
+#   has — a self-hosted job starts a fresh container per run and a GitHub-hosted one is a fresh
+#   VM every time, so neither has read the file even if this estate's account somehow wrote it
+#   there. \`DO_NOT_TRACK\` is the opt-out alchemy's telemetry layer actually reads
+#   (\`!!process.env.DO_NOT_TRACK\`, alchemy \`src/Telemetry/Attributes.ts:126-129\`); this env
+#   applies to every job and step in this workflow. No repository's \`check\` invokes the Alchemy
+#   CLI today, measured 2026-09-26 (grepped every ci/security/release workflow for
+#   \`alchemy\`/\`bin/cli.js\`, zero hits), but alchemy's own \`Test\` helpers wire \`TelemetryLive\`
+#   into top-level \`deploy\`/\`destroy\` (\`src/Test/Core.ts:470,482\`), so a future kit test built on
+#   those (today's kit tests use only \`test.provider\` scratch stacks, which don't) would send
+#   telemetry from \`bun test\` without this guard — this closes that gap in advance.
 env:
   DO_NOT_TRACK: '1'
 `;
