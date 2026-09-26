@@ -20,17 +20,39 @@
  *   disk (post-write verification reads the config right back) and on every plan after, because
  *   the declared value is `import-from=...` again each time (Talos's `declareTalos` recomputes it
  *   from the download resource, never switches to the resolved volname). Fixed the same way as the
- *   other two: `NEW_IMPORT` below also counts as `kind: 'fresh'`, which already matches whatever is
- *   live unconditionally (line ~103) -- no special-casing of the live side needed.
+ *   other two: an `import-from` disk also counts as `kind: 'fresh'`, which already matches whatever
+ *   is live unconditionally when nothing else is declared (see `want.kind === 'fresh'` below) -- no
+ *   special-casing of the live side needed.
+ * ⛔ IMPORT-FROM IMPORTS ONLY AT CREATE. Changing just the `import-from=` *source* (e.g. bumping a
+ *   factory image path) on an already-created disk still reads as `noop`: PVE does not re-import an
+ *   existing volume, and this resource has no rebuild-the-disk path. That is correct for Talos, which
+ *   upgrades in place through `talosctl`, not by recreating its disk -- a caller that DOES want a
+ *   fresh import on image change must delete and recreate the row itself.
+ * ⛔ LAND RED TEAM (2026-09-26): OPTIONS DECLARED ALONGSIDE `import-from` MUST STILL BE ENFORCED, AND
+ *   MUST BE RECOGNIZED REGARDLESS OF WHERE `import-from` SITS IN THE LIST. The first cut matched
+ *   `import-from` only when it came immediately after `:0,`, via a regex whose `.+` then swallowed
+ *   every option after it uncompared (silently never written) while any option declared BEFORE it
+ *   (`cephtb4:0,iothread=1,import-from=...`) missed the regex entirely and fell to the `volume`
+ *   branch, comparing literal volname `"0"` against the live real one forever -- REFUSED, same
+ *   stranded-disk failure this file exists to fix, just for a different option order. Fixed by
+ *   folding the import check into the general `storage:volname,k=v,...` parse below: ANY declaration
+ *   whose volname is the literal `"0"` and whose options include an `import-from` key is `fresh`,
+ *   with `import-from` itself dropped and every other declared option carried through for
+ *   `judgeDisk` to enforce (see its `want.kind === 'fresh'` branch) -- independent of option order.
  * ⛔ NO RESIZE IS MADE HERE. lxc-volume.ts drives a second endpoint (`PUT .../resize`) this resource
  *   does not call — Talos's disks are declared once at their create size. A size difference between
  *   two already-adopted volume declarations is REFUSED with the `qm resize` to run by hand, never
  *   guessed at or silently written.
- * ⚠️ OPTIONS BEYOND `size` ARE COMPARED AS A WHOLE, NOT KEY BY KEY. Unlike lxc-volume.ts, this file
- *   does not model pve-qemu-server's per-option defaults (`ssd`, `discard`, `iothread`, …) — that
- *   table is unverified here. So an option difference is real drift and gets written, exactly as the
- *   whole-string comparison this replaces already did; only the three "new volume" spellings and the
- *   live volume id/size are special-cased, which is the minimum that fixes the measured bug.
+ * ⚠️ OPTIONS BEYOND `size` ARE COMPARED AS A WHOLE, NOT KEY BY KEY, FOR AN ADOPTED `volume` -- BUT AS
+ *   A SUBSET FOR A `fresh` IMPORT. Unlike lxc-volume.ts, this file does not model pve-qemu-server's
+ *   per-option defaults (`ssd`, `discard`, `iothread`, …) — that table is unverified here. For an
+ *   already-adopted volume, any options difference from live is real drift and gets written in full,
+ *   exactly as the whole-string comparison this replaces already did. An `import-from` disk cannot
+ *   use that same whole-map comparison: nobody declares PVE's post-import defaults, so comparing the
+ *   full map would treat every default PVE fills in as drift and rewrite the disk on every plan (the
+ *   builder's "second deploy" test below pins this). So a `fresh` import instead checks only the
+ *   options the caller actually declared against live, ignoring any live-only keys, and PUTs the
+ *   declared options (not merged with what live already has) when one of them disagrees.
  */
 import { sameMap } from './lxc-wire.ts';
 
@@ -38,16 +60,10 @@ import { sameMap } from './lxc-wire.ts';
 const NEW_DISK = /^([^:\s]+):(\d+(?:\.\d+)?)$/;
 /** The `ideN` cloud-init-drive spelling — QEMU only, no GiB, no LXC equivalent. */
 const NEW_CLOUDINIT = /^([^:\s]+):cloudinit$/;
-/**
- * The create-time import spelling: `<storage>:0,import-from=<volid>` (`<volid>` can itself contain
- * a colon, e.g. `cephfs-tb4:import/talos-factory.raw`, hence `.+` rather than a no-colon class).
- * `0` is PVE's literal placeholder size for "read the real size off the imported image" — never a
- * declared GiB figure, so it must not be compared against a live `size=`.
- */
-const NEW_IMPORT = /^([^:\s]+):0,import-from=.+$/;
 
 export type Disk = {
-  /** `fresh`: any of the three new-disk spellings above. `volume`: an existing volume, `storage:volname,...`. */
+  /** `fresh`: a new-disk spelling (`storage:GiB`, `storage:cloudinit`, or `storage:0,import-from=...`
+   *  possibly with more options). `volume`: an existing volume, `storage:volname,...`. */
   readonly kind: 'fresh' | 'volume';
   readonly source: string;
   readonly volname: string;
@@ -55,15 +71,24 @@ export type Disk = {
   readonly options: Map<string, string>;
 };
 
-/** `storage:volname,k=v,...` (or one of the three "fresh" spellings) into its comparable parts. */
+/**
+ * `storage:volname,k=v,...` (or one of the "fresh" spellings) into its comparable parts.
+ * ⚠️ THE IMPORT SPELLING IS DETECTED AFTER THE GENERAL SPLIT, NOT BY ITS OWN REGEX: `import-from`'s
+ *   value can itself contain a colon (e.g. `cephfs-tb4:import/talos-factory.raw`) and other options
+ *   can come before or after it, so a regex anchored on `:0,import-from=` right after the colon (as
+ *   the first cut had) misses that ordering and swallows everything after it into one opaque match.
+ *   Splitting on commas like any `volume` spelling first, THEN checking for a literal `"0"` volname
+ *   plus an `import-from` key among the parsed options, catches every ordering and keeps every other
+ *   declared option (`iothread=1`, `discard=on`, …) visible to `judgeDisk` instead of swallowed.
+ */
 export const parseDisk = (text: string): Disk => {
-  const fresh = NEW_DISK.exec(text) ?? NEW_CLOUDINIT.exec(text) ?? NEW_IMPORT.exec(text);
-  if (fresh !== null) {
+  const bare = NEW_DISK.exec(text) ?? NEW_CLOUDINIT.exec(text);
+  if (bare !== null) {
     return {
       kind: 'fresh',
       options: new Map(),
       size: undefined,
-      source: fresh[1] ?? '',
+      source: bare[1] ?? '',
       volname: '',
     };
   }
@@ -79,6 +104,10 @@ export const parseDisk = (text: string): Disk => {
   );
   const size = options.get('size');
   options.delete('size');
+  if (volname === '0' && options.has('import-from')) {
+    options.delete('import-from');
+    return { kind: 'fresh', options, size: undefined, source, volname: '' };
+  }
   return { kind: 'volume', options, size, source, volname };
 };
 
@@ -115,10 +144,20 @@ export const judgeDisk = (key: string, declared: string, live: string): DiskVerd
         'between storages is not an update this resource makes -- move it by hand, then declare it.',
     };
   }
-  // ⛔ A "fresh" declaration always matches an existing volume already in this slot: PVE holds one
-  //   there, and re-sending storage:GiB / storage:cloudinit would allocate a SECOND volume and park
-  //   the live one at unusedN (the header's ⛔, ported from lxc-volume.ts's own).
-  if (want.kind === 'fresh') return {};
+  // ⛔ A "fresh" declaration never re-triggers create: PVE holds a real volume in this slot already,
+  //   and re-sending storage:GiB / storage:cloudinit / storage:0,import-from=... as the PUT value
+  //   would allocate a SECOND volume and park the live one at unusedN (the header's ⛔, ported from
+  //   lxc-volume.ts's own). So a `fresh` PUT, when one is needed, is always built from the LIVE
+  //   volume id (`have.volname`/`have.size`), never the declared placeholder -- same as `volume`.
+  // ⚠️ ONLY THE OPTIONS THE CALLER ACTUALLY DECLARED ARE CHECKED (a subset, not `sameMap`): nobody
+  //   declares PVE's post-import defaults, so an empty `want.options` (plain import-from, nothing
+  //   else declared) is always a noop no matter what live has filled in, and a non-empty one is
+  //   compared key-by-key against live, ignoring any key live has that the caller never declared.
+  if (want.kind === 'fresh') {
+    if (want.options.size === 0) return {};
+    if ([...want.options].every(([k, v]) => have.options.get(k) === v)) return {};
+    return { put: printOptions(have.source, have.volname, want.options, have.size) };
+  }
   if (want.volname !== have.volname) {
     return {
       refuse:

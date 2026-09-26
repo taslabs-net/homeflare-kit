@@ -106,6 +106,59 @@ describe('the import-from create spelling converges (PR 84 red team)', () => {
   });
 });
 
+/**
+ * The LAND red team's Important finding on this same PR (2026-09-26): options declared alongside
+ * `import-from` were either silently dropped (declared after it -- `.+` swallowed them uncompared)
+ * or stranded the disk forever (declared before it -- missed the old regex, fell to the `volume`
+ * branch, and got refused against the real live volname just like the bug this file fixes). Fixed by
+ * detecting `import-from` after the general comma split instead of a position-anchored regex.
+ */
+describe('options declared alongside import-from are enforced, in either order (LAND red team)', () => {
+  const IMPORT = 'cephtb4:0,import-from=cephfs-tb4:import/talos-factory.raw';
+
+  test('an option after import-from that already matches live is a noop', () => {
+    const verdict = judgeDisk(
+      'scsi0',
+      `${IMPORT},iothread=1`,
+      'cephtb4:vm-150-disk-0,iothread=1,size=2G',
+    );
+    expect(verdict).toEqual({});
+  });
+
+  test('an option after import-from that disagrees with live is written, on the live volume id', () => {
+    // Scenario B from the red team: iothread was declared and honored at create; discard/ssd are
+    // added later. Before this fix, verify said `noop` and the deploy wrote nothing.
+    const verdict = judgeDisk(
+      'scsi0',
+      `${IMPORT},iothread=1,discard=on,ssd=1`,
+      'cephtb4:vm-150-disk-0,iothread=1,size=2G',
+    );
+    expect(verdict.put).toBe('cephtb4:vm-150-disk-0,iothread=1,discard=on,ssd=1,size=2G');
+  });
+
+  test('an option BEFORE import-from is still recognized as fresh, not a stranded volume', () => {
+    // Scenario C from the red team: `cephtb4:0,iothread=1,import-from=...` missed the old
+    // position-anchored regex entirely and was refused forever as a volname "0" vs the live one.
+    const verdict = judgeDisk(
+      'scsi0',
+      'cephtb4:0,iothread=1,import-from=cephfs-tb4:import/talos-factory.raw',
+      'cephtb4:vm-150-disk-0,iothread=1,size=2G',
+    );
+    expect(verdict).toEqual({});
+  });
+
+  test('a live-only default the caller never declared is not treated as drift', () => {
+    // Only iothread was declared; ssd/discard are PVE's own fill-in. A full-map compare (sameMap)
+    // would call this drift and rewrite the disk on every plan -- the subset check must not.
+    const verdict = judgeDisk(
+      'scsi0',
+      `${IMPORT},iothread=1`,
+      'cephtb4:vm-150-disk-0,iothread=1,size=2G,ssd=1,discard=on',
+    );
+    expect(verdict).toEqual({});
+  });
+});
+
 describe('an existing-volume declaration', () => {
   const live = 'cephtb4:vm-101-disk-0,size=32G,ssd=1';
 
