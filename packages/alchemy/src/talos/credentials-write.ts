@@ -42,10 +42,16 @@ export const reservedTempPath = (
  * Write one field of an OpenBao KV-v2 value from `value` — never argv, the mirror image of
  * `credentials.ts`'s `readKvValue`.
  *
- * ★ REASONED FROM THE PUBLISHED VAULT/OPENBAO CLI, NOT MEASURED — `field=@-` is the documented
- *   `@path` syntax with `-` as the conventional "read from stdin" path (the secrets-flow doc's own
- *   O-A: "values via `@file`/stdin, ⛔ never argv"). `bao kv put` takes only ONE such field per
- *   invocation here; a multi-field write would need one call per field.
+ * ⛔ C2 FIX (LAND red team, 2026-09-26) — `field=@-` IS WRONG AND WAS NEVER MEASURED. `@value` means
+ *   "read a file at this path"; a literal path of `-` is not the stdin convention for `@` — it is
+ *   just a file named `-`. MEASURED against the estate's OpenBao v2.6.2 binary (isolated in-memory
+ *   dev server, `env -i`, scratch HOME, no estate credentials involved; server removed after):
+ *   `field=@-` exits 1 with `invalid key/value pair "field=@-": error reading file: open -: no
+ *   such file or directory`, and if a file literally named `-` exists in the working directory it
+ *   silently stores THAT file's bytes instead. `field=-` (no `@`) is Vault/OpenBao's own stdin
+ *   convention and was confirmed against the same binary to read the piped bytes correctly. Every
+ *   `Talos.Kubeconfig` create failed here — AFTER `talosctl kubeconfig` had already issued a fresh
+ *   admin client certificate, which cannot be revoked.
  * ⛔ stderr ONLY ON FAILURE — same rule as `readKvValue`: never echo what was being written, on
  *   success or failure.
  */
@@ -57,17 +63,13 @@ export const writeKvValue = (
 ): Effect.Effect<void, Error, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const result = yield* ChildProcess.make(
-      'bao',
-      ['kv', 'put', `${mount}/${key}`, `${field}=@-`],
-      {
-        detached: false,
-        extendEnv: true,
-        stderr: 'pipe',
-        stdin: Stream.fromIterable([new TextEncoder().encode(value)]),
-        stdout: 'pipe',
-      },
-    ).pipe(
+    const result = yield* ChildProcess.make('bao', ['kv', 'put', `${mount}/${key}`, `${field}=-`], {
+      detached: false,
+      extendEnv: true,
+      stderr: 'pipe',
+      stdin: Stream.fromIterable([new TextEncoder().encode(value)]),
+      stdout: 'pipe',
+    }).pipe(
       spawner.spawn,
       Effect.flatMap((child) =>
         Effect.all(

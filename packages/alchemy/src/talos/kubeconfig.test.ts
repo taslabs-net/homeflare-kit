@@ -86,11 +86,17 @@ describe('reconcile — CREATE writes talosctl kubeconfig output into the vault,
     assert.equal(result.endpoint, 'https://192.0.2.50:6443');
     assert.equal(result.context, 'admin@hf-c1');
     assert.equal(result.connection.auth.kind, 'kubeconfig');
-    assert.equal((result.connection.auth as { path?: string }).path, undefined);
+    // ⛔ I2 (LAND red team): NEVER undefined — an undefined `path` here would let the stock
+    // KubeConfigAdapter fall back to $KUBECONFIG/~/.kube/config. It must be a path that can never
+    // resolve, so a consumer that isn't yet wired to mintKubeconfig fails loudly instead of quietly
+    // reaching the operator's own cluster.
+    const authPath = (result.connection.auth as { path?: string }).path;
+    assert.ok(typeof authPath === 'string' && authPath.length > 0);
 
     const put = calls.find((c) => c.command === 'bao' && c.args[1] === 'put');
     assert.ok(put);
-    assert.deepEqual(put.args, ['kv', 'put', 'talos-c1/kubeconfig', 'kubeconfig=@-']);
+    // ⛔ C2 (LAND red team): `=-`, never `=@-` — see credentials-write.ts's own header.
+    assert.deepEqual(put.args, ['kv', 'put', 'talos-c1/kubeconfig', 'kubeconfig=-']);
     assert.equal(put.stdin, fixtureKubeconfig('create'));
     assert.ok(!put.args.some((a) => a.includes('not a key')), 'never in argv');
 
@@ -133,11 +139,93 @@ describe('reconcile — write-once: a second reconcile never re-runs talosctl ku
   });
 });
 
-describe('read — tolerant of an unwritten key (cold start)', () => {
-  it('returns empty attrs rather than rejecting when the vault key does not exist yet', async () => {
-    const result = await run(read(props()), () => ({ exitCode: 1, stderr: 'no value found' }));
-    assert.equal(result.endpoint, '');
-    assert.equal(result.credentialGeneration, '');
+describe('read — C1 fix: undefined means genuinely absent, never "some read failed"', () => {
+  it('returns undefined (never a defined empty object) when the vault key was never written', async () => {
+    // ⛔ MEASURED against OpenBao v2.6.2: this exit code + stderr text is exactly what `bao kv get`
+    // prints for a genuinely unwritten KV-v2 key — see kubeconfig.ts's `isVaultKeyAbsent` header.
+    const result = await run(read(props()), () => ({
+      exitCode: 2,
+      stderr: 'No value found at talos-c1/data/kubeconfig',
+    }));
+    assert.equal(result, undefined);
+  });
+
+  it('propagates a genuine vault/transport failure instead of reading it as absence', async () => {
+    await assert.rejects(
+      run(read(props()), () => ({ exitCode: 2, stderr: 'permission denied' })),
+      (error: unknown) => error instanceof Error && error.message.includes('permission denied'),
+    );
+  });
+});
+
+describe('read → reconcile chained the way the Alchemy engine drives a cold start (C1 regression)', () => {
+  it('a cold-start read (undefined) followed by reconcile(undefined) actually creates', async () => {
+    // ⛔ Alchemy beta.79 Plan.ts:1303-1352 always calls `read` first when there is no state row; a
+    // DEFINED result there is adopted and forces `update`, so this is the exact sequence that made
+    // Talos.Kubeconfig un-creatable before the C1 fix — see kubeconfig.ts's own `readKubeconfig`
+    // header.
+    const calls: FakeCall[] = [];
+    const coldHandler = () => ({
+      exitCode: 2,
+      stderr: 'No value found at talos-c1/data/kubeconfig',
+    });
+    const readResult = await run(read(props()), coldHandler, calls);
+    assert.equal(
+      readResult,
+      undefined,
+      "the engine's adoption probe must see a genuine cold start",
+    );
+
+    const createHandler = (call: FakeCall) => {
+      if (call.command === 'bao' && call.args[1] === 'get') {
+        // ★ mintTalosconfig reads the `talosconfig` key first — only the `kubeconfig` key itself
+        // is genuinely absent at a cold start.
+        return call.args[3]?.endsWith('/kubeconfig')
+          ? coldHandler()
+          : { stdout: JSON.stringify({ data: { data: { talosconfig: 'fake-talosconfig' } } }) };
+      }
+      if (call.command === 'bao' && call.args[1] === 'put') return {};
+      if (call.command === 'talosctl' && call.args[0] === 'kubeconfig') {
+        writeFileSync(call.args[1] ?? '', fixtureKubeconfig('engine-order'));
+        return {};
+      }
+      throw new Error(`unexpected call ${JSON.stringify(call)}`);
+    };
+    const created = (await run(
+      reconcile(props(), readResult),
+      createHandler,
+    )) as KubeconfigAttributes;
+    assert.equal(created.endpoint, 'https://192.0.2.50:6443');
+    assert.notEqual(created.credentialGeneration, '');
+  });
+});
+
+describe('reconcile — belt-and-suspenders: a defined-but-empty output is treated as absent (C1)', () => {
+  it('a pre-fix-shaped empty output still runs CREATE instead of failing to confirm', async () => {
+    const staleEmptyOutput: KubeconfigAttributes = {
+      certificateAuthorityFingerprint: '',
+      clientCertificateFingerprint: '',
+      connection: { auth: { context: 'admin@hf-c1', kind: 'kubeconfig' } },
+      context: 'admin@hf-c1',
+      credentialGeneration: '',
+      endpoint: '',
+    };
+    const handler = (call: FakeCall) => {
+      if (call.command === 'bao' && call.args[1] === 'get') {
+        return { stdout: JSON.stringify({ data: { data: { talosconfig: 'x' } } }) };
+      }
+      if (call.command === 'bao' && call.args[1] === 'put') return {};
+      if (call.command === 'talosctl' && call.args[0] === 'kubeconfig') {
+        writeFileSync(call.args[1] ?? '', fixtureKubeconfig('stale-empty'));
+        return {};
+      }
+      throw new Error(`unexpected call ${JSON.stringify(call)}`);
+    };
+    const result = (await run(
+      reconcile(props(), staleEmptyOutput),
+      handler,
+    )) as KubeconfigAttributes;
+    assert.notEqual(result.credentialGeneration, '');
   });
 });
 

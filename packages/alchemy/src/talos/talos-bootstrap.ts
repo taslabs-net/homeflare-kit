@@ -30,12 +30,22 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { mintTalosconfig } from './credentials.ts';
 import type { TalosRequirements, WithTarget } from './resource.ts';
+import { assertNoLivePeers, isBootstrapped } from './talos-bootstrap-etcd.ts';
 import { TalosReBootstrapRefused } from './talos-errors.ts';
-import { talosctl, talosctlOrAlready } from './talosctl.ts';
+import { talosctlOrAlready } from './talosctl.ts';
 
 export interface BootstrapProps extends WithTarget {
   /** The ONE control-plane node that receives `talosctl bootstrap`. */
   node: string;
+  /**
+   * The OTHER declared control-plane nodes — never `node` itself. Optional, but a multi-control-
+   * plane cluster (decision 66: 3, one per TB4 node) SHOULD set it: `reconcileBootstrap`'s CREATE
+   * path (I4 fix, LAND red team, 2026-09-26) requires every one of these to show a successful,
+   * EMPTY etcd-members read before it will bootstrap `node` — the guard against re-bootstrapping a
+   * split-brain second cluster when this row's own state was lost. See talos-bootstrap-etcd.ts's
+   * `assertNoLivePeers`.
+   */
+  peers?: readonly string[];
   /** Machine configs for this node (and peers) must be applied first. */
   after?: readonly unknown[];
 }
@@ -57,19 +67,6 @@ export const TalosBootstrap = Resource<TalosBootstrap>('Talos.Bootstrap', {
   /** etcd data is irreplaceable — opt into destroy explicitly if Talos ever adds an undo. */
   defaultRemovalPolicy: 'retain',
 });
-
-/**
- * REASONED: `talosctl get etcdmembers -o json` should list members after bootstrap.
- * ⚠️ NOT MEASURED — first live deploy confirms the resource type name.
- * ⛔ NO SWALLOWING (K-talos-first-boot) — a transport failure propagates as its own error; only a
- *   SUCCESSFUL read may conclude presence or absence. Every caller decides for itself what a
- *   failure here means (see `read` and `reconcile` below), so it is not decided here.
- */
-const isBootstrapped = (props: BootstrapProps, talosconfigPath: string) =>
-  talosctl(['get', 'etcdmembers', '-o', 'json'], {
-    nodes: [props.node],
-    talosconfigPath,
-  }).pipe(Effect.map((text) => text.includes('"id"') || text.includes('"member"')));
 
 /**
  * ⛔ WRAPPED IN `Effect.scoped` (K-A3, 2026-09-26) — `mintTalosconfig` contributes `Scope.Scope`
@@ -96,10 +93,29 @@ export const readBootstrap = (props: BootstrapProps) =>
 
 /**
  * ⛔ TRUSTS STATE, NEVER TOUCHES THE LIVE CLUSTER (K-talos-first-boot) — once `output.bootstrapped`
- *   is `true` this always reports `noop`. Confirming the invariant against etcd is `reconcile`'s
- *   job (every deploy calls it); doing it here too would mean a single transient plan-time read
- *   failure could abort every future plan for an already-bootstrapped node, for no benefit — plan
- *   never needs to prove convergence, only to say whether reconcile has work to do.
+ *   is `true` this always reports `noop`, unconditionally, with zero live calls.
+ *
+ * ⛔ I3 CORRECTION (LAND red team, 2026-09-26) — THE OLD COMMENT HERE CLAIMED "confirming the
+ *   invariant against etcd is reconcile's job (every deploy calls it)". THAT IS FALSE, VERIFIED
+ *   against the pinned alchemy beta.79 source: Apply never reconciles a node whose diff came back
+ *   `noop` (`Apply.ts`'s `noop` branch just refreshes row metadata and signals ready — it does not
+ *   call `provider.reconcile` at all). This file's own `noop` above IS what skips it. So
+ *   `reconcileBootstrap`'s re-confirm branch (the one that raises `TalosReBootstrapRefused` on a
+ *   failed or empty read) never runs on an ordinary `plan`/`deploy` once `bootstrapped: true` is
+ *   recorded — only `--force` reaches it, by forcing a reconcile regardless of the plan action.
+ *   Safety still holds — `talosctl bootstrap` genuinely never re-runs while state exists — but a
+ *   reset control-plane node (etcd wiped, VM replaced) stays silently invisible to `plan` and
+ *   `deploy` alike until an operator runs `--force` or a verify pass.
+ *   ⚠️ NOT FIXED BY HAVING `diff` READ HERE TOO (the finding's other offered fix) — that would touch
+ *   the live cluster (and mint a talosconfig) on EVERY plan for an already-bootstrapped node, for a
+ *   scenario (a reset node) that a `configDigest`-style pinned check can't distinguish from a merely
+ *   slow/unreachable read; a single transient failure would then abort every future plan for a
+ *   healthy node, for no benefit — the exact cost the original (correct) half of this comment
+ *   already named. `MachineConfig`/`ClusterHealth`'s diffs DO mint and read live on every plan
+ *   (D2 puts that on the admin/operator lane, not agent), so this isn't a lane-access limit; it is
+ *   this resource's own choice to trust a `true` boolean forever rather than re-derive it from a
+ *   live signal that cannot yet tell "reset" apart from "briefly unreachable". Recorded as an open
+ *   gap for whoever builds the operator verify pass, not silently fixed here.
  */
 export const diffBootstrap = (
   news: Input<BootstrapProps>,
@@ -154,6 +170,9 @@ export const reconcileBootstrap = (
 
       const before = yield* isBootstrapped(props, credential.talosconfigPath);
       if (!before) {
+        // ⛔ I4 FIX (LAND red team) — see BootstrapProps.peers's own doc and
+        // talos-bootstrap-etcd.ts's assertNoLivePeers header.
+        yield* assertNoLivePeers(props, credential.talosconfigPath);
         yield* talosctlOrAlready(['bootstrap'], {
           nodes: [props.node],
           talosconfigPath: credential.talosconfigPath,

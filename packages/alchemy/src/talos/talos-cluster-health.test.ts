@@ -19,9 +19,14 @@ const props = () => ({ controlPlaneNodes: ['198.51.100.10'], target: TARGET });
 const run = <A, E>(
   effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,
   handler: (c: FakeCall) => { stdout?: string; stderr?: string; exitCode?: number },
+  calls: FakeCall[] = [],
 ) =>
   Effect.runPromise(
-    Effect.provideService(effect, ChildProcessSpawner.ChildProcessSpawner, fakeSpawner(handler)),
+    Effect.provideService(
+      effect,
+      ChildProcessSpawner.ChildProcessSpawner,
+      fakeSpawner(handler, calls),
+    ),
   );
 
 const baoOk = (call: FakeCall) =>
@@ -82,6 +87,38 @@ describe('diffClusterHealth', () => {
         }),
         vaultDown,
       ),
+    );
+  });
+});
+
+describe('check — I1 fix: --nodes names ONE contact node, not the whole cluster', () => {
+  it('targets only the first control-plane node with --nodes/--endpoints, but lists all of them under --control-plane-nodes', async () => {
+    const calls: FakeCall[] = [];
+    await run(
+      readClusterHealth({
+        controlPlaneNodes: ['198.51.100.10', '198.51.100.11', '198.51.100.12'],
+        target: TARGET,
+      }),
+      healthy,
+      calls,
+    );
+    const talosctlCall = calls.find((c) => c.command === 'talosctl');
+    assert.ok(talosctlCall);
+    // ⛔ talosctl v1.13.8, measured: `health --nodes <ip1>,<ip2>` exits with "command \"health\" is
+    // not supported with multiple nodes" — exactly one contact node may ever reach --nodes.
+    const nodesIdx = talosctlCall.args.indexOf('--nodes');
+    assert.equal(talosctlCall.args[nodesIdx + 1], '198.51.100.10');
+    const endpointsIdx = talosctlCall.args.indexOf('--endpoints');
+    assert.equal(talosctlCall.args[endpointsIdx + 1], '198.51.100.10');
+    const cpIdx = talosctlCall.args.indexOf('--control-plane-nodes');
+    assert.equal(talosctlCall.args[cpIdx + 1], '198.51.100.10,198.51.100.11,198.51.100.12');
+  });
+
+  it('fails closed instead of spawning talosctl when controlPlaneNodes is empty', async () => {
+    await assert.rejects(
+      run(readClusterHealth({ controlPlaneNodes: [], target: TARGET }), healthy),
+      (error: unknown) =>
+        error instanceof Error && error.message.includes('controlPlaneNodes is empty'),
     );
   });
 });

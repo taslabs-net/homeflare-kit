@@ -142,3 +142,77 @@ describe('reconcile — once means once (acceptance test 4)', () => {
     assert.ok(calls.every((c) => c.args[0] !== 'bootstrap'));
   });
 });
+
+describe('reconcile — I4 fix: split-brain peer guard (acceptance-adjacent, LAND red team)', () => {
+  const propsWithPeers = () => ({
+    node: '198.51.100.10',
+    peers: ['198.51.100.11', '198.51.100.12'],
+    target: TARGET,
+  });
+
+  const nodeArg = (call: FakeCall) => {
+    const idx = call.args.indexOf('--nodes');
+    return idx === -1 ? undefined : call.args[idx + 1];
+  };
+
+  it('bootstraps once every peer proves genuinely empty', async () => {
+    const calls: FakeCall[] = [];
+    const handler = (call: FakeCall) => {
+      if (call.command === 'bao')
+        return { stdout: JSON.stringify({ data: { data: { talosconfig: 'x' } } }) };
+      if (call.args[0] === 'bootstrap') return {};
+      if (call.args[0] === 'get') {
+        const target = nodeArg(call);
+        const ranBootstrap = calls.some((c) => c.args[0] === 'bootstrap');
+        return target === propsWithPeers().node
+          ? { stdout: ranBootstrap ? '{"id":"member-1"}' : '[]' }
+          : { stdout: '[]' }; // both peers stay empty the whole time
+      }
+      throw new Error(`unexpected call ${JSON.stringify(call)}`);
+    };
+    const result = await run(reconcile(propsWithPeers(), undefined), handler, calls);
+    assert.deepEqual(result, { bootstrapped: true, node: propsWithPeers().node });
+    assert.equal(calls.filter((c) => c.args[0] === 'bootstrap').length, 1);
+  });
+
+  it('refuses, and never spawns bootstrap, when a peer already reports etcd members', async () => {
+    const calls: FakeCall[] = [];
+    const handler = (call: FakeCall) => {
+      if (call.command === 'bao')
+        return { stdout: JSON.stringify({ data: { data: { talosconfig: 'x' } } }) };
+      if (call.args[0] === 'get') {
+        return nodeArg(call) === '198.51.100.11'
+          ? { stdout: '{"id":"member-1"}' }
+          : { stdout: '[]' };
+      }
+      throw new Error(`unexpected call ${JSON.stringify(call)}`);
+    };
+    await assert.rejects(
+      run(reconcile(propsWithPeers(), undefined), handler, calls),
+      (error: unknown) => (error as { _tag?: string } | null)?._tag === 'TalosReBootstrapRefused',
+    );
+    assert.ok(
+      calls.every((c) => c.args[0] !== 'bootstrap'),
+      'a peer that may already anchor a cluster must never see a second bootstrap',
+    );
+  });
+
+  it('refuses, and never spawns bootstrap, when a peer read fails', async () => {
+    const calls: FakeCall[] = [];
+    const handler = (call: FakeCall) => {
+      if (call.command === 'bao')
+        return { stdout: JSON.stringify({ data: { data: { talosconfig: 'x' } } }) };
+      if (call.args[0] === 'get') {
+        return nodeArg(call) === '198.51.100.11'
+          ? { exitCode: 1, stderr: 'dial tcp: connection refused' }
+          : { stdout: '[]' };
+      }
+      throw new Error(`unexpected call ${JSON.stringify(call)}`);
+    };
+    await assert.rejects(
+      run(reconcile(propsWithPeers(), undefined), handler, calls),
+      (error: unknown) => (error as { _tag?: string } | null)?._tag === 'TalosReBootstrapRefused',
+    );
+    assert.ok(calls.every((c) => c.args[0] !== 'bootstrap'));
+  });
+});

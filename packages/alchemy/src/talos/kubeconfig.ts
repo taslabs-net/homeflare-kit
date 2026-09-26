@@ -23,11 +23,14 @@
  *       (docs/plans/2026-09-26-talos-secrets-flow.md, O1). Once `output` is defined, reconcile only
  *       reads the vault copy back to confirm it — the same "once" shape `talos-bootstrap.ts` uses
  *       for a boolean, here for a value.
- *     - The persisted `connection` no longer carries a host path — a consumer materializes its own
+ *     - The persisted `connection` carries no usable host path — a consumer materializes its own
  *       temp file via `credentials.ts`'s `mintKubeconfig`, the same pattern `mintTalosconfig`
  *       already established. Wiring `Kubernetes.ClusterAdapter` to call it is separate, later work
  *       (named, not built, in the secrets-flow doc); this only makes the vault-backed read+mint
- *       step exist for it to call.
+ *       step exist for it to call. ⛔ Until that wiring lands, `connection.auth.path` is a sentinel
+ *       that can never resolve to a real file (LAND red team I2, `kubeconfig-attrs.ts`'s own
+ *       header) — an ABSENT path here would let the stock `Kubernetes.KubeConfigAdapter` silently
+ *       fall back to `$KUBECONFIG`/`~/.kube/config` instead of failing loudly.
  */
 import { chmodSync } from 'node:fs';
 import { Resource } from 'alchemy';
@@ -38,9 +41,9 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { DEFAULT_KUBECONFIG_KEY, mintTalosconfig, readKvValue } from './credentials.ts';
 import { reservedTempPath, writeKvValue } from './credentials-write.ts';
+import { buildAttrs } from './kubeconfig-attrs.ts';
 import type { TalosRequirements, WithTarget } from './resource.ts';
 import { talosctl } from './talosctl.ts';
-import { kubeconfigMetadata, sha256 } from './values.ts';
 
 export interface KubeconfigProps extends WithTarget {
   /** Node that serves `talosctl kubeconfig`. */
@@ -63,8 +66,11 @@ export interface KubeconfigAttributes {
    * Serializable `Kubernetes.Connection` for downstream workloads.
    *
    * ★ auth.kind `kubeconfig` is the stock ClusterAdapter — provider-roadmap.md names this seam.
-   *   `path` is deliberately absent: the content lives in OpenBao, not at a fixed host path. A
-   *   consumer materializes its own scoped temp file via `credentials.ts`'s `mintKubeconfig`.
+   *   `path` is a sentinel that can never resolve (LAND red team I2, `kubeconfig-attrs.ts`'s own
+   *   `toConnection` header): the content lives in OpenBao, not at a fixed host path, and a real
+   *   `Kubernetes.ClusterAdapter` wiring is later work, so this must fail rather than silently
+   *   reach the operator's own kubeconfig. A consumer materializes its own scoped temp file via
+   *   `credentials.ts`'s `mintKubeconfig` in the meantime.
    */
   connection: Connection;
 }
@@ -79,58 +85,51 @@ export interface TalosKubeconfig extends Resource<
 
 export const TalosKubeconfig = Resource<TalosKubeconfig>('Talos.Kubeconfig');
 
-const generation = (meta: {
-  endpoint: string;
-  caFingerprint: string;
-  clientFingerprint: string;
-  context: string;
-}) => sha256(`${meta.context}\n${meta.endpoint}\n${meta.caFingerprint}\n${meta.clientFingerprint}`);
-
-const toConnection = (props: KubeconfigProps): Connection => ({
-  auth: { context: props.context, kind: 'kubeconfig' },
-});
-
-const emptyAttrs = (props: KubeconfigProps): KubeconfigAttributes => ({
-  certificateAuthorityFingerprint: '',
-  clientCertificateFingerprint: '',
-  connection: toConnection(props),
-  context: props.context,
-  credentialGeneration: '',
-  endpoint: '',
-});
-
-const buildAttrs = (raw: string, props: KubeconfigProps): KubeconfigAttributes | undefined => {
-  const meta = kubeconfigMetadata(raw, props.context);
-  if (meta === undefined) return undefined;
-  return {
-    certificateAuthorityFingerprint: meta.caFingerprint,
-    clientCertificateFingerprint: meta.clientFingerprint,
-    connection: toConnection(props),
-    context: props.context,
-    credentialGeneration: generation({ ...meta, context: props.context }),
-    endpoint: meta.endpoint,
-  };
-};
-
 /**
- * ★ MIRRORS THE PRE-EXISTING FILE-READ TOLERANCE, KEPT RATHER THAN FIXED HERE — the shipped
- *   host-file `read` already treated "nothing there yet" the same as any other read failure
- *   (`Effect.orElseSucceed`); this vault-backed version keeps that same honesty level. Bootstrap's
- *   and ClusterHealth's swallowing fixes are this task's explicit scope; a vault-native
- *   absence-vs-transport-failure probe for Kubeconfig (there is no maintenance-mode-style signal
- *   for "is this KV key written yet") is real follow-up work, not a regression introduced here.
+ * ★ MEASURED AGAINST OPENBAO v2.6.2 (C1 fix, LAND red team, 2026-09-26 — isolated in-memory dev
+ *   server, `env -i`, scratch HOME, no estate credentials; server removed after): `bao kv get` on a
+ *   genuinely unwritten KV-v2 key exits 2 with stderr exactly `No value found at <mount>/data/<key>`
+ *   — `readKvValue`'s Error message embeds that text verbatim. This is the ONLY signal this file
+ *   trusts as "not written yet"; every other failure (a wrong exit code, a different stderr such as
+ *   a permission denial or a network failure) propagates as a real error instead of being read as
+ *   absence.
  */
+const isVaultKeyAbsent = (error: unknown): boolean =>
+  error instanceof Error && /no value found at/i.test(error.message);
+
 const readVaultMeta = (props: KubeconfigProps, key: string) =>
   readKvValue(props.target.mount, key, ['kubeconfig', 'config']).pipe(
-    Effect.map((raw) => buildAttrs(raw, props)),
-    Effect.orElseSucceed(() => undefined),
+    Effect.catchIf(isVaultKeyAbsent, () => Effect.succeed(undefined)),
   );
 
-/** ★ EXPORTED for kubeconfig.test.ts — see talos-bootstrap.ts's own note on the pattern. */
+/**
+ * ★ EXPORTED for kubeconfig.test.ts — see talos-bootstrap.ts's own note on the pattern.
+ *
+ * ⛔ C1 FIX (LAND red team, 2026-09-26) — `undefined` NOW MEANS ONLY "the key has never been
+ *   written", NEVER "some read failed". The shipped `Effect.orElseSucceed` folded EVERY failure —
+ *   including a vault outage or wrong mount — into a defined, empty-fingerprint object. Alchemy's
+ *   engine always adopts a defined cold-start `read` result and forces `update` (alchemy beta.79
+ *   `Plan.ts:1303-1352`), so `reconcileKubeconfig`'s write-once branch (`output !== undefined`)
+ *   then tried to CONFIRM a key that had never actually been written, and failed every time —
+ *   `Talos.Kubeconfig` could never be created. Vault content that EXISTS but does not parse as a
+ *   kubeconfig is a different, fail-closed case (below), never treated as absence.
+ */
 export const readKubeconfig = (props: KubeconfigProps) =>
   Effect.gen(function* () {
-    const meta = yield* readVaultMeta(props, props.kubeconfigKey ?? DEFAULT_KUBECONFIG_KEY);
-    return meta ?? emptyAttrs(props);
+    const key = props.kubeconfigKey ?? DEFAULT_KUBECONFIG_KEY;
+    const raw = yield* readVaultMeta(props, key);
+    if (raw === undefined) return undefined;
+    const meta = buildAttrs(raw, props);
+    if (meta === undefined) {
+      return yield* Effect.fail(
+        new Error(
+          `${props.target.mount}/${key}: vault content exists but does not parse as a kubeconfig ` +
+            `for context ${props.context} — not a cold start. Fix the KV entry or the pinned ` +
+            'context rather than trusting an empty read.',
+        ),
+      );
+    }
+    return meta;
   });
 
 export const diffKubeconfig = (
@@ -141,10 +140,10 @@ export const diffKubeconfig = (
     if (output === undefined || !isResolved(news)) return undefined;
     const live = yield* readKubeconfig(news);
     if (
-      live.credentialGeneration !== '' &&
-      output.credentialGeneration === live.credentialGeneration &&
-      output.context === live.context &&
-      output.endpoint === live.endpoint
+      live !== undefined &&
+      live.credentialGeneration === output.credentialGeneration &&
+      live.context === output.context &&
+      live.endpoint === output.endpoint
     ) {
       return { action: 'noop' } as const;
     }
@@ -155,8 +154,14 @@ export const diffKubeconfig = (
  * ⛔ WRAPPED IN `Effect.scoped` — same C1-lifetime reasoning as every other Talos resource file:
  *   `mintTalosconfig` and `reservedTempPath` both contribute `Scope.Scope`, and this is the caller
  *   that owns their lifetime for the whole reconcile.
- * ⛔ WRITE-ONCE — see this file's own header. `output !== undefined` means a bring-up already ran;
- *   this branch never spawns `talosctl kubeconfig` or writes to the vault again.
+ * ⛔ WRITE-ONCE — see this file's own header. A bring-up already ran; this branch never spawns
+ *   `talosctl kubeconfig` or writes to the vault again.
+ * ⛔ GATED ON `credentialGeneration`, NOT JUST `output !== undefined` (C1 fix, LAND red team,
+ *   belt-and-suspenders alongside the `read` fix above) — `output`'s own type still allows a
+ *   defined-but-empty value (state persisted by a pre-fix build's `emptyAttrs()`, or any future
+ *   caller that hands this function a stale row). Treat that exactly like `undefined` — mint and
+ *   write once — rather than take the confirm-only branch and fail trying to read back a key that
+ *   was never actually written.
  */
 export const reconcileKubeconfig = (
   props: KubeconfigProps,
@@ -166,7 +171,7 @@ export const reconcileKubeconfig = (
     Effect.gen(function* () {
       const key = props.kubeconfigKey ?? DEFAULT_KUBECONFIG_KEY;
 
-      if (output !== undefined) {
+      if (output !== undefined && output.credentialGeneration !== '') {
         const raw = yield* readKvValue(props.target.mount, key, ['kubeconfig', 'config']);
         const meta = buildAttrs(raw, props);
         if (meta === undefined) {

@@ -45,3 +45,25 @@ mini's vault + copy-list entry, agent plan lane denied, O-A all-in-vault-digest-
 `docs/plans/2026-09-26-ceph-mon-transport.md` records decision 65's `auth get` amendment (read
 directly, in-process, on every reconcile — no node-side shell filter for that call — key dropped
 before anything is logged/returned/stored).
+
+**LAND red team fixes, applied before merge (same PR, never shipped broken):**
+
+- `Talos.Kubeconfig` could never actually be created — `read` returned a defined, empty-fingerprint
+  object instead of `undefined` on a genuine cold start, so the engine always adopted it and forced
+  `update`, and `reconcile`'s write-once gate then tried to confirm a key that had never been
+  written. Fixed: `read` now distinguishes a measured OpenBao "key never written" response from
+  every other failure; `reconcile`'s write-once branch also gates on a non-empty
+  `credentialGeneration`, not just a defined `output`.
+- `credentials-write.ts`'s `writeKvValue` used `field=@-`, which is not the stdin convention (`@`
+  means "read a file at this literal path") — measured against OpenBao v2.6.2, it fails outright, or
+  silently reads a stray file literally named `-`. Fixed to `field=-`.
+- `Talos.ClusterHealth` could never pass with more than one control-plane node — `--nodes` took the
+  full node list, and `talosctl health` refuses more than one. Fixed: one contact node for
+  `--nodes`/`--endpoints`; the full lists still reach `--control-plane-nodes`/`--worker-nodes`.
+- The persisted `connection`'s `auth.path` was left `undefined`, which would let a consumer's stock
+  `Kubernetes.KubeConfigAdapter` silently fall back to `$KUBECONFIG`/`~/.kube/config` instead of
+  failing — exactly the exposure this feature removes elsewhere. Fixed to a sentinel path that can
+  never resolve, so an early consumer fails loudly instead of reaching a stranger's cluster.
+- `Talos.Bootstrap` gained an optional `peers` prop: before a CREATE bootstraps a node, every listed
+  peer must show a successful, empty etcd-members read, closing a split-brain path where a lost
+  state row plus a reset node would otherwise re-bootstrap a second cluster.

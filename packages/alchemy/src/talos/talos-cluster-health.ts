@@ -84,13 +84,33 @@ const healthArgs = (props: ClusterHealthProps, waitTimeout: string) => {
  *   to its own return type rather than closing its scope internally (the C1 fix, credentials.ts's
  *   own header); both `read` and `reconcile` call this one function, so wrapping it here covers
  *   both callers.
+ * ⛔ I1 FIX (LAND red team, 2026-09-26) — `--nodes` NAMES ONE CONTACT NODE, NOT THE WHOLE CLUSTER.
+ *   MEASURED against local talosctl v1.13.8 (unroutable TEST-NET addresses): `talosctl health
+ *   --nodes <ip1>,<ip2>` fails with `command "health" is not supported with multiple nodes` — the
+ *   shipped code passed EVERY control-plane node as `--nodes`, so with decision 66's 3-node layout
+ *   this command could never succeed even against a genuinely healthy cluster: `read` always
+ *   reported `healthy:false`, `diff` always planned `update`, and `reconcile` always failed with a
+ *   misleading "not healthy within Nm". Fixed: the first control-plane node is the sole `--nodes`/
+ *   `--endpoints` contact point (talosctl proxies the actual check through it); the FULL node lists
+ *   still go to `--control-plane-nodes`/`--worker-nodes` via `healthArgs`, which is what `talosctl
+ *   health` actually checks the health OF.
  */
 const check = (props: ClusterHealthProps, waitTimeout: string) =>
   Effect.scoped(
     Effect.gen(function* () {
       const credential = yield* mintTalosconfig(props.target);
+      const contact = props.controlPlaneNodes[0];
+      if (contact === undefined) {
+        return yield* Effect.fail(
+          new Error(
+            `Talos.ClusterHealth ${props.target.cluster}: controlPlaneNodes is empty — need at ` +
+              'least one node to contact.',
+          ),
+        );
+      }
       yield* talosctl(healthArgs(props, waitTimeout), {
-        nodes: [...props.controlPlaneNodes],
+        endpoints: [contact],
+        nodes: [contact],
         talosconfigPath: credential.talosconfigPath,
       });
       return {

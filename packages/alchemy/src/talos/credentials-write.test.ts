@@ -31,7 +31,9 @@ describe('writeKvValue', () => {
       calls,
     );
     assert.equal(calls.length, 1);
-    assert.deepEqual(calls[0]?.args, ['kv', 'put', 'talos-c1/kubeconfig', 'kubeconfig=@-']);
+    // ⛔ C2 (LAND red team): `=-`, never `=@-` — `@` means "read a file at this literal path",
+    // which OpenBao's own CLI rejects (or, worse, silently reads a file named `-` if one exists).
+    assert.deepEqual(calls[0]?.args, ['kv', 'put', 'talos-c1/kubeconfig', 'kubeconfig=-']);
     assert.equal(calls[0]?.stdin, 'super-secret-kubeconfig-body');
     // ⛔ THE POINT OF THE TEST: the value appears nowhere in argv.
     assert.ok(!calls[0]?.args.some((arg) => arg.includes('super-secret-kubeconfig-body')));
