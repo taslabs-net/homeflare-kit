@@ -18,6 +18,8 @@ import {
   attributesOf,
   normalizeDeviceFilter,
   normalizeFrequencies,
+  normalizeHotspot,
+  normalizeRef,
   normalizeSecurityConfiguration,
 } from './wifi-broadcast-form.ts';
 
@@ -25,7 +27,14 @@ const fieldDrift = makeDriftOf<WifiBroadcastAttributes, WifiBroadcastProps>([
   { field: 'name', live: (a) => a.name, declared: (p) => p.name },
   { field: 'enabled', live: (a) => a.enabled, declared: (p) => p.enabled },
   { field: 'type', live: (a) => a.type, declared: (p) => p.type },
-  { field: 'network', live: (a) => a.network, declared: (p) => p.network },
+  {
+    // IMPORTANT-1: `a.network` is already rebuilt field-by-field inside `attributesOf`; the
+    // declared side gets the same treatment so a hand-written declaration carrying a stray key
+    // cannot report phantom drift against a live side that never could.
+    field: 'network',
+    live: (a) => a.network,
+    declared: (p) => normalizeRef(p.network),
+  },
   {
     field: 'broadcastingDeviceFilter',
     live: (a) => a.broadcastingDeviceFilter,
@@ -39,7 +48,7 @@ const fieldDrift = makeDriftOf<WifiBroadcastAttributes, WifiBroadcastProps>([
   {
     field: 'hotspotConfiguration',
     live: (a) => a.hotspotConfiguration,
-    declared: (p) => p.hotspotConfiguration,
+    declared: (p) => normalizeHotspot(p.hotspotConfiguration),
   },
   {
     field: 'securityConfiguration',

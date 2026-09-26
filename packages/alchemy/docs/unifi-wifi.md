@@ -20,10 +20,19 @@ This family goes further and **never calls that shape at all.** The only SDK cal
 `wifi-broadcast.ts` makes is `getWifiBroadcastPage` — the LIST endpoint, which answers
 `WifiBroadcastOverview` rows. That type's own `securityConfiguration`
 (`WifiSecurityConfigurationOverview`) is `{type, presharedKeyNetworkIds}`: no passphrase field
-exists on it. `WifiBroadcastProps`/`WifiBroadcastAttributes` (`wifi-broadcast-form.ts`) type
-`securityConfiguration` as exactly that overview shape, so there is no field for
-`attributesOf`/`declareWifiBroadcast` to even assign a passphrase to — enforced by the type
-system, not by a convention someone could forget.
+exists on it, so there is no DECLARED field for `attributesOf`/`declareWifiBroadcast` to name a
+passphrase into. A static guard (`wifi-broadcast-details-call.test.ts`) additionally bans any
+source reference to `getWifiBroadcastDetails` itself under `src/unifi` (red team, IMPORTANT-2),
+with one named exception: `errors-and-secrets.test.ts` (A2) calls it directly on purpose, to prove
+the SDK's own redaction happens at the wire — a different, lower-layer claim than this family ever
+needing to make that call.
+
+⛔ **This is NOT enforced by the type system alone** (red team, IMPORTANT-1) — corrected from an
+earlier version of this doc that overclaimed it was. `@distilled.cloud/core`'s wire decode does not
+strip a key a schema doesn't declare, so a stray key nested inside `network`, `hotspotConfiguration`,
+`broadcastingDeviceFilter`, or one `presharedKeyNetworkIds` element could ride through a naive
+pass-through exactly like the top-level `securityConfiguration` object could. See "The stray-key
+defense" below — enumeration at runtime, not the TS annotation, is what actually stops it.
 
 ### No get-by-id call exists for the overview shape
 
@@ -32,9 +41,12 @@ Unlike every other family here (`getNetworkDetails`, `getFirewallZone`, `getDnsP
 the list (safe) and the details call (forbidden above). `wifi-broadcast.ts`'s `fetchLive` walks
 every page with B0b's `pageAll` (`paginate.ts`) and finds the row matching `wifiBroadcastId` — the
 first real resource-level consumer of that pager, previously exercised only in isolation by
-`paginate.test.ts`. A genuine site-not-found 404 folds to `undefined` like every other family; the
-target id simply not being among the collected rows folds to `undefined` too — there is no separate
-vendor signal to tell the two apart, and no other family's `fetchLive` has one either.
+`paginate.test.ts`. A genuine site-not-found 404 on ANY page of the walk — not only the first —
+folds to `undefined` like every other family, discarding whatever rows the walk had already
+collected (red team, MINOR-4: an earlier version of this doc said "on the first page call", which
+overstated how narrowly the catch is scoped); the target id simply not being among the collected
+rows folds to `undefined` too — there is no separate vendor signal to tell any of these cases apart,
+and no other family's `fetchLive` has one either.
 
 ### The stray-key defense (why `normalizeSecurityConfiguration` never spreads)
 
@@ -49,21 +61,36 @@ returns, even though `WifiBroadcastOverview`'s own TS type has no such field.
 `Unifi.*` tree that does **not** use `{...value}` (every sibling normalizer, `network-form.ts`'s
 included, spreads its input). It enumerates exactly `{type, presharedKeyNetworkIds}` instead —
 `attributesOf`/`declareWifiBroadcast` are built the same way, field by field, never `{...live}`.
-`wifi-broadcast-secrets.test.ts`'s sentinel test proves the pipeline: it injects a raw
-`passphrase: SENTINEL` key that genuinely does survive into `live` (asserted directly, not assumed
-away), then proves `attributesOf`, `declareWifiBroadcast`, and the literal string a later import
-script would render into `alchemy.run.ts` none of them carry it forward.
+
+⛔ **The same discipline applies to every OTHER nested object this family handles, not just
+`securityConfiguration`** (red team, IMPORTANT-1) — `normalizeRef` rebuilds `network` and each
+`presharedKeyNetworkIds` element as `{type, networkId?}`, `normalizeHotspot` rebuilds
+`hotspotConfiguration` as `{type}`, and `normalizeDeviceFilter` no longer spreads
+`broadcastingDeviceFilter` either. A `presharedKeyNetworkIds` element is the single most plausible
+leak site of the four: `IntegrationWifiPresharedKeyDto`, the details-call shape for a PPSK entry, is
+literally `{network: WifiNetworkReference, passphrase}` — the same reference shape this family's
+overview also uses, just with one more field the overview type doesn't declare.
+
+`wifi-broadcast-secrets.test.ts`'s sentinel tests prove the pipeline for all five locations
+(`securityConfiguration`, a `presharedKeyNetworkIds` element, `network`, `hotspotConfiguration`,
+`broadcastingDeviceFilter`): each plants a raw sentinel key that genuinely does survive into `live`
+(asserted directly, not assumed away), then proves `attributesOf`, `declareWifiBroadcast`, and the
+literal string a later import script would render into `alchemy.run.ts` none of them carry it
+forward.
 
 ### The forced decode-failure test
 
-`wifi-broadcast-secrets.test.ts`'s second test sends a non-JSON 200 body (a genuine decode failure
-— this SDK's REST decode has no schema-validating step to reject a malformed body with; see
+`wifi-broadcast-secrets.test.ts`'s decode-failure test sends a non-JSON 200 body (a genuine decode
+failure — this SDK's REST decode has no schema-validating step to reject a malformed body with; see
 `@distilled.cloud/core`'s `protocol-rest.ts`) that happens to contain a sentinel value, the way a
 garbled proxy or debug response might. `pageAll`'s own consistency check (`paginate.ts`) catches it
 — the malformed "page" has no `.offset`, so the walk refuses to trust it — and fails typed as
-`UnifiPaginationInconsistent`. That error's `reason`/`detail`/`message` are built entirely from
-offsets and counts, never from the raw response body, so none of them can ever echo the sentinel
-regardless of what garbled text the server sent.
+`UnifiPaginationInconsistent`. That error's `reason`/`detail`/`message` are built from `offset`/
+`totalCount` values run through `paginate.ts`'s `numOrPlaceholder` (red team, MINOR-3: an earlier
+version of this doc said these fields were "never from the raw response body", but `offset`/
+`totalCount` themselves ARE unvalidated wire values — `paginate.test.ts`'s own test proves a
+non-numeric one renders as a fixed placeholder, never as itself), so none of them can ever echo
+attacker- or vendor-controlled text regardless of what the server actually sent.
 
 ## Field-level drift
 

@@ -18,11 +18,18 @@
  *   `wifi_broadcasts.ts` only has `getWifiBroadcastPage` (list) and `getWifiBroadcastDetails`
  *   (single, passphrase-bearing — forbidden above). `fetchLive` below walks every page with B0b's
  *   `pageAll` and finds the one row matching `wifiBroadcastId` — the first real resource-level
- *   consumer of that pager (previously exercised only by `paginate.test.ts` in isolation). A
- *   genuine site-not-found 404 on the first page call folds to `undefined` like every other
- *   family; the broadcast simply not being among the collected rows folds to `undefined` too — the
- *   list has no separate "not found" signal to distinguish the two, and neither does any other
- *   family's `fetchLive`.
+ *   consumer of that pager (previously exercised only by `paginate.test.ts` in isolation).
+ *
+ * ⚠️ THE `NotFound` CATCH BELOW IS FOR THE WHOLE WALK, NOT JUST THE FIRST PAGE CALL (red team,
+ *   MINOR-4, 2026-09-26 — corrected from an earlier claim that it only applied to the first call).
+ *   `pageAll` makes its sequential page calls inside one Effect pipeline, and `catchTag` here wraps
+ *   that entire pipeline; a 404 on ANY page of the walk — not only the first — folds to `undefined`
+ *   and discards whatever rows the walk had already collected. In practice this means "the site
+ *   vanished partway through listing its broadcasts" is indistinguishable from "the site was never
+ *   there" and from "the target id just isn't among the collected rows" — none of these three cases
+ *   has a separate vendor signal, and no other family's `fetchLive` distinguishes its own analogous
+ *   cases either. Read-only reporting treats all three the same conservative way (absent, not an
+ *   error); a write path would need to tell them apart.
  */
 import { Resource } from 'alchemy';
 import { adopt } from 'alchemy/AdoptPolicy';

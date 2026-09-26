@@ -9,10 +9,22 @@
  *   `wifiBroadcasts.WifiSecurityConfigurationOverview` — the PAGE OVERVIEW's own type, `{type,
  *   presharedKeyNetworkIds}` — never `WifiSecurityConfigurationDetailObject` (the
  *   `getWifiBroadcastDetails`/create/update shape, which carries `passphrase` and
- *   `radiusConfiguration`). This is enforced BY THE TYPE SYSTEM: there is no field on
- *   `WifiSecurityConfigurationOverview` for `attributesOf`/`declareWifiBroadcast` below to even
- *   assign a passphrase to. See `wifi-broadcast.ts`'s header for why `fetchLive` can only ever
- *   produce a `WifiBroadcastOverview` in the first place (no get-by-id call exists for it).
+ *   `radiusConfiguration`). There is no DECLARED field on `WifiSecurityConfigurationOverview` for
+ *   `attributesOf`/`declareWifiBroadcast` below to name a passphrase into. See `wifi-broadcast.ts`'s
+ *   header for why `fetchLive` can only ever produce a `WifiBroadcastOverview` in the first place
+ *   (no get-by-id call exists for it).
+ *
+ * ⛔ THE TYPE SYSTEM ALONE DOES NOT ENFORCE THIS (red team, IMPORTANT-1, 2026-09-26). `@distilled
+ *   .cloud/core`'s wire decode does not strip a key a schema doesn't declare (this file's next
+ *   header block); the TS types above describe what a CORRECTLY-shaped response looks like, not
+ *   what the decoder actually returns at runtime, so a stray key nested inside `network`,
+ *   `hotspotConfiguration`, `broadcastingDeviceFilter`, or an element of `presharedKeyNetworkIds`
+ *   would ride along through a naive `{...live}`/pass-through copy exactly like the top-level
+ *   `securityConfiguration` object does. `normalizeRef`/`normalizeHotspot`/`normalizeDeviceFilter`
+ *   below rebuild EVERY nested object field-by-field for the same reason
+ *   `normalizeSecurityConfiguration` does — enumeration, not the type annotation, is what actually
+ *   stops it. `wifi-broadcast-secrets.test.ts` plants a sentinel inside each nested shape
+ *   (including one `presharedKeyNetworkIds` element) to prove it, not just the top level.
  *
  * ⚠️ EVERY OTHER FIELD REUSES THE SDK'S OWN OVERVIEW TYPES DIRECTLY (`WifiNetworkReference`,
  *   `BroadcastingDeviceFilter`, `IntegrationWifiHotspotConfigurationOverviewDto`) rather than
@@ -38,22 +50,58 @@ const sortedFrequencies = (values: readonly number[]): number[] =>
 const refKey = (ref: wifiBroadcasts.WifiNetworkReference): string =>
   `${ref.type}:${ref.networkId ?? ''}`;
 
+/**
+ * Rebuilds a reference field-by-field — never returns the object as received. IMPORTANT-1: this
+ * runs on EVERY reference this file handles (`network`, and each `presharedKeyNetworkIds`
+ * element) precisely because a reference is exactly the shape (`{network: WifiNetworkReference,
+ * passphrase}`) the details call uses to carry a PPSK passphrase (`IntegrationWifiPresharedKeyDto`,
+ * SDK `wifi_broadcasts.ts`); it is the most plausible place for a stray passphrase-shaped key to
+ * appear on the wire if the vendor ever leaked one onto the overview response.
+ */
+export const normalizeRef = (
+  ref: wifiBroadcasts.WifiNetworkReference | undefined,
+): wifiBroadcasts.WifiNetworkReference | undefined =>
+  ref === undefined
+    ? undefined
+    : { type: ref.type, ...(ref.networkId !== undefined ? { networkId: ref.networkId } : {}) };
+
 const sortedRefs = (
   values: readonly wifiBroadcasts.WifiNetworkReference[],
 ): wifiBroadcasts.WifiNetworkReference[] => {
-  const byKey = new Map(values.map((ref) => [refKey(ref), ref] as const));
+  const byKey = new Map(
+    values.map(
+      (ref) => [refKey(ref), normalizeRef(ref) as wifiBroadcasts.WifiNetworkReference] as const,
+    ),
+  );
   return [...byKey.values()].sort((a, b) => refKey(a).localeCompare(refKey(b)));
 };
 
-// ★ EXPORTED: `wifi-broadcast-drift.ts` reuses these exact normalizers so `matches`/`driftOf` can
-//   never quietly disagree about what counts as a change (MEDIUM-4, `network-drift.ts`'s header).
+/**
+ * Rebuilds the hotspot configuration field-by-field. `IntegrationWifiHotspotConfigurationOverviewDto`
+ * declares only `type` (SDK `wifi_broadcasts.ts:743-753`) — a PASSPOINT/RADIUS secret would live on
+ * a wire key this type doesn't name, exactly the IMPORTANT-1 risk `normalizeRef` guards against.
+ */
+export const normalizeHotspot = (
+  value: wifiBroadcasts.IntegrationWifiHotspotConfigurationOverviewDto | undefined,
+): wifiBroadcasts.IntegrationWifiHotspotConfigurationOverviewDto | undefined =>
+  value === undefined ? undefined : { type: value.type };
+
+/**
+ * ★ EXPORTED: `wifi-broadcast-drift.ts` reuses these exact normalizers so `matches`/`driftOf` can
+ *   never quietly disagree about what counts as a change (MEDIUM-4, `network-drift.ts`'s header).
+ *
+ * ⛔ NO `{...value}` SPREAD (red team, IMPORTANT-1) — `BroadcastingDeviceFilter` declares exactly
+ *   `type`/`deviceIds`/`deviceTagIds` (SDK `wifi_broadcasts.ts:125-129`); enumerating exactly those
+ *   three is what stops a stray wire key here, the same reason `normalizeSecurityConfiguration`
+ *   (below) never spreads its input.
+ */
 export const normalizeDeviceFilter = (
   value: wifiBroadcasts.BroadcastingDeviceFilter | undefined,
 ): wifiBroadcasts.BroadcastingDeviceFilter | undefined =>
   value == null
     ? value
     : {
-        ...value,
+        type: value.type,
         ...(value.deviceIds !== undefined ? { deviceIds: sortedStrings(value.deviceIds) } : {}),
         ...(value.deviceTagIds !== undefined
           ? { deviceTagIds: sortedStrings(value.deviceTagIds) }
@@ -128,10 +176,10 @@ export const attributesOf = (
   name: live.name,
   enabled: live.enabled,
   type: live.type,
-  network: live.network,
+  network: normalizeRef(live.network),
   broadcastingDeviceFilter: normalizeDeviceFilter(live.broadcastingDeviceFilter),
   broadcastingFrequenciesGHz: normalizeFrequencies(live.broadcastingFrequenciesGHz),
-  hotspotConfiguration: live.hotspotConfiguration,
+  hotspotConfiguration: normalizeHotspot(live.hotspotConfiguration),
   securityConfiguration: normalizeSecurityConfiguration(live.securityConfiguration),
   metadataOrigin: live.metadata.origin,
 });
@@ -155,9 +203,9 @@ export const declareWifiBroadcast = (
   name: live.name,
   enabled: live.enabled,
   type: live.type,
-  network: live.network,
+  network: normalizeRef(live.network),
   broadcastingDeviceFilter: normalizeDeviceFilter(live.broadcastingDeviceFilter),
   broadcastingFrequenciesGHz: normalizeFrequencies(live.broadcastingFrequenciesGHz),
-  hotspotConfiguration: live.hotspotConfiguration,
+  hotspotConfiguration: normalizeHotspot(live.hotspotConfiguration),
   securityConfiguration: normalizeSecurityConfiguration(live.securityConfiguration),
 });

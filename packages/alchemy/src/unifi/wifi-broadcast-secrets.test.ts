@@ -34,51 +34,95 @@ const PROPS: WifiBroadcastProps = {
   securityConfiguration: { type: 'WPA_PERSONAL' },
 };
 
+/**
+ * One base row per nested location a stray key could hide in — red team, IMPORTANT-1 (2026-09-26):
+ * the original version of this file only planted the sentinel on `securityConfiguration` itself
+ * and missed that `sortedRefs`/`network`/`hotspotConfiguration`/`broadcastingDeviceFilter` all
+ * passed their OWN object through unchanged (`network`/`hotspotConfiguration` assigned directly;
+ * `presharedKeyNetworkIds` elements returned as received; `broadcastingDeviceFilter` spread with
+ * `{...value}`). Each case below plants the SAME sentinel in a different one of those four spots —
+ * `IntegrationWifiPresharedKeyDto`'s own shape (`{network, passphrase}`, SDK `wifi_broadcasts.ts`)
+ * is exactly why a `presharedKeyNetworkIds` element is the most plausible leak site of the four.
+ */
+const baseRow = {
+  enabled: true,
+  id: 'wifi-1',
+  metadata: { origin: 'USER' },
+  name: 'Guest',
+  type: 'STANDARD',
+};
+
+const NESTED_SENTINEL_CASES: Record<string, unknown> = {
+  'top-level securityConfiguration': {
+    ...baseRow,
+    securityConfiguration: {
+      type: 'WPA_PERSONAL',
+      presharedKeyNetworkIds: [{ type: 'VLAN' }],
+      passphrase: SENTINEL,
+    },
+  },
+  'a presharedKeyNetworkIds element (IntegrationWifiPresharedKeyDto shape)': {
+    ...baseRow,
+    securityConfiguration: {
+      type: 'WPA_PERSONAL',
+      presharedKeyNetworkIds: [{ type: 'VLAN', networkId: 'net-1', passphrase: SENTINEL }],
+    },
+  },
+  network: {
+    ...baseRow,
+    network: { type: 'STANDARD', networkId: 'net-1', passphrase: SENTINEL },
+    securityConfiguration: { type: 'WPA_PERSONAL' },
+  },
+  hotspotConfiguration: {
+    ...baseRow,
+    hotspotConfiguration: { type: 'PASSPOINT', radiusSharedSecret: SENTINEL },
+    securityConfiguration: { type: 'WPA_PERSONAL' },
+  },
+  broadcastingDeviceFilter: {
+    ...baseRow,
+    broadcastingDeviceFilter: {
+      type: 'CUSTOM',
+      deviceIds: ['dev-1'],
+      radiusSharedSecret: SENTINEL,
+    },
+    securityConfiguration: { type: 'WPA_PERSONAL' },
+  },
+};
+
 describe('T23 — a stray passphrase-shaped key on the wire never survives fetch -> attrs -> declare -> render', () => {
-  test('sentinel-passphrase test', async () => {
-    // A raw wire row with an UNDECLARED `passphrase` key on `securityConfiguration` — not
-    // expressible through `WifiBroadcastOverview`'s own TS type (see this file's header).
-    const rawRow = {
-      enabled: true,
-      id: 'wifi-1',
-      metadata: { origin: 'USER' },
-      name: 'Guest',
-      type: 'STANDARD',
-      securityConfiguration: {
-        type: 'WPA_PERSONAL',
-        presharedKeyNetworkIds: [{ type: 'VLAN' }],
-        passphrase: SENTINEL,
-      },
-    };
-    const fake = fakeUnifi((method, url) =>
-      method === 'GET' && url.pathname === PAGE_PATH
-        ? Response.json({ count: 1, data: [rawRow], limit: 1, offset: 0, totalCount: 1 })
-        : new Response('unexpected request', { status: 400 }),
-    );
-    const live = await Effect.runPromise(
-      spec.fetchLive(PROPS).pipe(Effect.provide(fakeUnifiLayer(fake.fetch))),
-    );
+  for (const [label, rawRow] of Object.entries(NESTED_SENTINEL_CASES)) {
+    test(`sentinel-passphrase test: ${label}`, async () => {
+      const fake = fakeUnifi((method, url) =>
+        method === 'GET' && url.pathname === PAGE_PATH
+          ? Response.json({ count: 1, data: [rawRow], limit: 1, offset: 0, totalCount: 1 })
+          : new Response('unexpected request', { status: 400 }),
+      );
+      const live = await Effect.runPromise(
+        spec.fetchLive(PROPS).pipe(Effect.provide(fakeUnifiLayer(fake.fetch))),
+      );
 
-    // ⚠️ FETCH: documents the real risk, rather than assuming it away — nothing in
-    //   `@distilled.cloud/core`'s wire key-mapping strips a key the schema does not declare (see
-    //   `wifi-broadcast-form.ts`'s header). If this assertion ever starts failing because a future
-    //   core/SDK regen DOES start stripping unknown keys, that is a welcome, stronger guarantee —
-    //   not a reason this test needs to keep asserting the weaker one.
-    expect(JSON.stringify(live)).toContain(SENTINEL);
-    if (live === undefined) throw new Error('expected the fake page to decode a row');
+      // ⚠️ FETCH: documents the real risk, rather than assuming it away — nothing in
+      //   `@distilled.cloud/core`'s wire key-mapping strips a key the schema does not declare (see
+      //   `wifi-broadcast-form.ts`'s header). If this assertion ever starts failing because a future
+      //   core/SDK regen DOES start stripping unknown keys, that is a welcome, stronger guarantee —
+      //   not a reason this test needs to keep asserting the weaker one.
+      expect(JSON.stringify(live)).toContain(SENTINEL);
+      if (live === undefined) throw new Error('expected the fake page to decode a row');
 
-    // ATTRS: `attributesOf` builds a new object field by field (never `{...live}`).
-    const attrs = attributesOf(live, PROPS);
-    expect(JSON.stringify(attrs)).not.toContain(SENTINEL);
+      // ATTRS: `attributesOf` rebuilds every nested object field by field (never `{...live}`,
+      // never assigning a nested object through unchanged).
+      const attrs = attributesOf(live, PROPS);
+      expect(JSON.stringify(attrs)).not.toContain(SENTINEL);
 
-    // DECLARE: `declareWifiBroadcast` is the same discipline, independently.
-    const declared = declareWifiBroadcast(live, 'site-1');
-    expect(JSON.stringify(declared)).not.toContain(SENTINEL);
+      // DECLARE: `declareWifiBroadcast` is the same discipline, independently.
+      const declared = declareWifiBroadcast(live, 'site-1');
+      expect(JSON.stringify(declared)).not.toContain(SENTINEL);
 
-    // RENDER: the literal text a later import script would write into `alchemy.run.ts`.
-    const rendered = `wifiBroadcast(${JSON.stringify('wifi-1')}, ${JSON.stringify(declared)})`;
-    expect(rendered).not.toContain(SENTINEL);
-  });
+      // RENDER: the literal text a later import script would write into `alchemy.run.ts`.
+      const rendered = `wifiBroadcast(${JSON.stringify('wifi-1')}, ${JSON.stringify(declared)})`;
+      expect(rendered).not.toContain(SENTINEL);
+    });
+  }
 
   test('forced decode-failure test: a malformed page body fails typed, without echoing the sentinel', async () => {
     // A non-JSON 200 body (a genuine decode failure, not a mapped HTTP error) that happens to

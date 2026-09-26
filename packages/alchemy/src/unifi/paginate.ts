@@ -78,7 +78,19 @@ export class UnifiPaginationInconsistent extends Data.TaggedError('UnifiPaginati
  * a `totalCount` and final row count that agree by coincidence. What this closes is the SILENT
  * version of every case actually observed in review: an ignored `offset`, a `totalCount` that
  * drifts between calls, and an undercounted `totalCount` that truncates the walk early.
+ *
+ * ⛔ `numOrPlaceholder` (red team, MINOR-3, 2026-09-26): nothing in `@distilled.cloud/core` decodes
+ *   or validates a page response's shape (this file's own `wifi-broadcast.ts` neighbor documents
+ *   why), so `page.offset`/`page.totalCount` can be ANY JSON value, not just a number, if the wire
+ *   ever sends something malformed. Every `detail` string below prints these through
+ *   `numOrPlaceholder` rather than raw template interpolation, so a non-numeric value — however it
+ *   got there — can never inject arbitrary response text into an error message a caller might log.
  */
+/** A finite number renders as itself; anything else (a malformed wire value) renders as a fixed
+ *  placeholder, never as the value itself — see this file's header (MINOR-3). */
+const numOrPlaceholder = (value: unknown): string =>
+  typeof value === 'number' && Number.isFinite(value) ? String(value) : '<non-numeric>';
+
 export const pageAll = <Req extends OffsetPageRequest, T, E, R>(
   fetchPage: (request: Req) => Effect.Effect<OffsetPage<T>, E, R>,
   request: Req,
@@ -103,13 +115,13 @@ export const pageAll = <Req extends OffsetPageRequest, T, E, R>(
       if (page.offset !== offset) {
         return yield* new UnifiPaginationInconsistent({
           reason: 'offset-mismatch',
-          detail: `requested offset ${offset}, page echoed ${page.offset} -- rows may be duplicated or skipped`,
+          detail: `requested offset ${offset}, page echoed ${numOrPlaceholder(page.offset)} -- rows may be duplicated or skipped`,
         });
       }
       if (totalCount !== undefined && page.totalCount !== totalCount) {
         return yield* new UnifiPaginationInconsistent({
           reason: 'total-count-changed',
-          detail: `totalCount changed from ${totalCount} to ${page.totalCount} between page calls`,
+          detail: `totalCount changed from ${numOrPlaceholder(totalCount)} to ${numOrPlaceholder(page.totalCount)} between page calls`,
         });
       }
       totalCount = page.totalCount;
@@ -122,7 +134,7 @@ export const pageAll = <Req extends OffsetPageRequest, T, E, R>(
     if (rows.length !== expected) {
       return yield* new UnifiPaginationInconsistent({
         reason: 'row-count-mismatch',
-        detail: `collected ${rows.length} rows but totalCount(${totalCount}) - startOffset(${startOffset}) = ${expected}`,
+        detail: `collected ${rows.length} rows but totalCount(${numOrPlaceholder(totalCount)}) - startOffset(${startOffset}) = ${numOrPlaceholder(expected)}`,
       });
     }
     return rows;
