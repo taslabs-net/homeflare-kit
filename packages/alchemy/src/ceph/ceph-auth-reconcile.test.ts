@@ -37,7 +37,7 @@ const argvOf = (seen: readonly { readonly argv: readonly string[] }[]) =>
   seen.map((c) => c.argv.slice(1, 3));
 
 describe('create of absent', () => {
-  test('get-or-create once, one bao write, one quorum check, and the attributes never carry the key', async () => {
+  test('a preflight write, get-or-create, the real write, one quorum check, key never in the attributes', async () => {
     const fake = fakeCephDial({
       [MON]: [
         { kind: 'result', result: ABSENT },
@@ -53,10 +53,15 @@ describe('create of absent', () => {
       expect(attrs).toEqual(PRIOR);
       expect(JSON.stringify(attrs)).not.toContain(KEY);
 
+      // ⛔ The preflight (K-A4 finding 2) proves the path is writable BEFORE anything is minted —
+      //   see ceph-auth-reconcile.ts's header. Both writes land at the same path; only the second
+      //   carries the key.
       const writes = writesOf(bao.seen);
-      expect(writes).toHaveLength(1);
+      expect(writes).toHaveLength(2);
       expect(writes[0]?.path).toBe('/v1/talos-c1/data/ceph/client.k8s-rbd');
-      expect(writes[0]?.body).toContain(KEY);
+      expect(writes[0]?.body).not.toContain(KEY);
+      expect(writes[1]?.path).toBe('/v1/talos-c1/data/ceph/client.k8s-rbd');
+      expect(writes[1]?.body).toContain(KEY);
 
       expect(argvOf(fake.seen)).toEqual([
         ['auth', 'get'],
@@ -64,6 +69,21 @@ describe('create of absent', () => {
         ['quorum_status', '-f'],
       ]);
       for (const call of fake.seen) expect(JSON.stringify(call.argv)).not.toContain(KEY);
+    });
+  });
+
+  test('a vault write refused before anything is minted leaves the mon untouched', async () => {
+    const fake = fakeCephDial({ [MON]: [{ kind: 'result', result: ABSENT }] });
+    const refused = () => ({ json: { errors: ['permission denied'] }, status: 403 });
+    await withFake(refused, async (bao) => {
+      await expect(
+        run(
+          { BAO_ADDR: bao.address },
+          reconcileCephAuthEntity(PROPS, undefined, { dial: fake.dial, log: () => {} }),
+        ),
+      ).rejects.toThrow();
+      // Only `auth get` (the observe) reached the mon — the preflight failed before get-or-create.
+      expect(argvOf(fake.seen)).toEqual([['auth', 'get']]);
     });
   });
 });
@@ -133,6 +153,38 @@ describe('never adopted', () => {
       ).rejects.toThrow(/never adopted/);
       expect(writesOf(bao.seen)).toHaveLength(0);
       expect(fake.seen).toHaveLength(1);
+    });
+  });
+});
+
+describe('a moved identity (K-A4 finding 1)', () => {
+  test('an entity edited in place is refused before any ssh call, never re-capped as a takeover', async () => {
+    const moved: CephAuthEntityProps = { ...PROPS, entity: 'client.k8s-other' };
+    const fake = fakeCephDial({ [MON]: [fakeCephOk(keyring())] });
+    await withFake(okReply, async (bao) => {
+      await expect(
+        run(
+          { BAO_ADDR: bao.address },
+          reconcileCephAuthEntity(moved, PRIOR, { dial: fake.dial, log: () => {} }),
+        ),
+      ).rejects.toThrow(/identity moved/);
+      // Refused before the transport is ever touched — no `auth get`, no `auth caps`.
+      expect(fake.seen).toHaveLength(0);
+      expect(writesOf(bao.seen)).toHaveLength(0);
+    });
+  });
+
+  test('a mount change alone is the same identity move', async () => {
+    const moved: CephAuthEntityProps = { ...PROPS, mount: 'talos-c2' };
+    const fake = fakeCephDial({});
+    await withFake(okReply, async (bao) => {
+      await expect(
+        run(
+          { BAO_ADDR: bao.address },
+          reconcileCephAuthEntity(moved, PRIOR, { dial: fake.dial, log: () => {} }),
+        ),
+      ).rejects.toThrow(/identity moved/);
+      expect(fake.seen).toHaveLength(0);
     });
   });
 });

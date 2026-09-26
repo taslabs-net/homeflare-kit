@@ -11,6 +11,7 @@ import {
   authGetOrCreateArgv,
   boundedEntityProblem,
   cephCommandProblem,
+  configValueProblem,
   quorumStatusArgv,
 } from './ceph-argv.ts';
 
@@ -87,6 +88,26 @@ describe('shell metacharacters never reach the allowlist as data', () => {
     ],
   ])('refuses %s', (_name, argv) => {
     expect(cephCommandProblem(argv)).toBeString();
+  });
+});
+
+describe('K-A4 finding 3: caps are the design’s literal shape, not a general grammar', () => {
+  test.each([
+    ['plain rwx, no profile at all', 'osd', 'allow rwx'],
+    ['a non-rbd profile', 'osd', 'profile osd'],
+    ['bootstrap-osd', 'osd', 'profile bootstrap-osd'],
+    ['a comma-chained extra grant', 'osd', 'profile rbd pool=k8s-rbd, allow rwx'],
+    ['osd rbd with no pool — every pool, VM disks included', 'osd', 'profile rbd'],
+    ['mgr rbd with no pool', 'mgr', 'profile rbd'],
+    ['mon widened past the plain profile', 'mon', 'profile rbd pool=k8s-rbd'],
+  ])('refuses %s (%s cap %j)', (_name, daemon, value) => {
+    const caps = { ...CAPS, [daemon]: value };
+    expect(cephCommandProblem(authGetOrCreateArgv(ENTITY, caps))).toBeString();
+    expect(cephCommandProblem(authCapsArgv(ENTITY, caps))).toBeString();
+  });
+
+  test('the design’s own three caps are still accepted', () => {
+    expect(cephCommandProblem(authGetOrCreateArgv(ENTITY, CAPS))).toBeUndefined();
   });
 });
 
@@ -179,5 +200,27 @@ describe('config: the named list starts empty, so every shape is refused today',
   test('a config value with a shell metacharacter is refused', () => {
     const argv = [CEPH_BIN, 'config', 'set', 'global', 'x', 'true; rm -rf /', '-f', 'json'];
     expect(cephCommandProblem(argv)).toBeString();
+  });
+});
+
+describe('K-A4 finding 4: configValueProblem never accepts a flag-shaped value', () => {
+  test.each([
+    ['a short flag', '-n'],
+    ['a file-overwrite flag glued to its argument', '-o/etc/ceph/ceph.conf'],
+    ['a long flag with =', '--admin-daemon=/var/run/ceph/ceph-mon.a.asok'],
+    ['another long flag', '--conf=/tmp/x'],
+    ['the empty string', ''],
+    ['a bare dash', '-'],
+  ])('refuses %s (%j)', (_name, value) => {
+    expect(configValueProblem(value)).toBeString();
+  });
+
+  test('a negative integer is still a plain value, not a flag', () => {
+    expect(configValueProblem('-42')).toBeUndefined();
+  });
+
+  test('an ordinary value is accepted', () => {
+    expect(configValueProblem('true')).toBeUndefined();
+    expect(configValueProblem('3600')).toBeUndefined();
   });
 });

@@ -9,6 +9,7 @@ import {
   capsEqual,
   cephCliPath,
   cephDataPath,
+  identityMoved,
   planCephAuthEntity,
 } from './ceph-auth-form.ts';
 
@@ -43,6 +44,33 @@ describe('planCephAuthEntity', () => {
 
   test('caps changed plans update', () => {
     expect(planCephAuthEntity({ ...PROPS, caps: OTHER }, OUTPUT)).toEqual({ action: 'update' });
+  });
+
+  test('K-A4 finding 1: an entity edited in place plans replace, not update, even with caps changed too', () => {
+    expect(
+      planCephAuthEntity({ ...PROPS, caps: OTHER, entity: 'client.k8s-other' }, OUTPUT),
+    ).toEqual({ action: 'replace' });
+  });
+
+  test('a mount change alone is the same identity move', () => {
+    expect(planCephAuthEntity({ ...PROPS, mount: 'talos-c2' }, OUTPUT)).toEqual({
+      action: 'replace',
+    });
+  });
+});
+
+describe('identityMoved', () => {
+  test('undefined output is never a move — a brand-new row', () => {
+    expect(identityMoved(PROPS, undefined)).toBe(false);
+  });
+
+  test('the same entity and mount is not a move', () => {
+    expect(identityMoved(PROPS, OUTPUT)).toBe(false);
+  });
+
+  test('a different entity, or a different mount, is a move', () => {
+    expect(identityMoved({ ...PROPS, entity: 'client.k8s-other' }, OUTPUT)).toBe(true);
+    expect(identityMoved({ ...PROPS, mount: 'talos-c2' }, OUTPUT)).toBe(true);
   });
 });
 

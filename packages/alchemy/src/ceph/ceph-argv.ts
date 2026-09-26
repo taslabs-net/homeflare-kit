@@ -23,7 +23,9 @@
  *   trailing `-f json` the transport always appends — never a pre-transform version, so what is
  *   validated is exactly what reaches `sudo -n`.
  */
-import { NAMED_CONFIG_OPTIONS, isLockoutConfigOption } from './ceph-config-options.ts';
+import { configProblem } from './ceph-argv-config.ts';
+
+export { configValueProblem } from './ceph-argv-config.ts';
 
 /** ★ Absolute, so neither sudo nor `ceph` is looked up on the operator's PATH. */
 export const CEPH_BIN = '/usr/bin/ceph';
@@ -41,12 +43,31 @@ export const boundedEntityProblem = (entity: string): string | undefined =>
     : `entity must match \`${ENTITY_PREFIX}<name>\` (lowercase, digits, hyphens), got ${JSON.stringify(entity)}`;
 
 /**
- * A plain rbd-profile cap string (`profile rbd`, `profile rbd pool=k8s-rbd`). No shell
- * metacharacters can match this — no `$`, backtick, quote, `;`, `|`, `&`, `<`, `>`, parens.
+ * ⛔ THE DESIGN'S OWN CAPS, LITERALLY — NOT A GENERAL "LOOKS LIKE A CAP STRING" GRAMMAR. LAND red
+ *   team (2026-09-26), CONFIRMED: an earlier, wider pattern here (any of `[A-Za-z0-9 _.=,-]`, no
+ *   per-daemon shape) also matched `allow rwx`, bare `profile osd` / `profile bootstrap-osd`,
+ *   comma-chained grants (`profile rbd pool=k8s-rbd, allow rwx`), and — the sharpest one — an osd
+ *   `profile rbd` with NO pool, which grants rbd access to every pool on the cluster, the VM-disk
+ *   pool included. The design (2026-09-26-ceph-mon-transport.md, "Props") only ever declares
+ *   `mon: 'profile rbd'` and `osd`/`mgr: 'profile rbd pool=<name>'`; these are that shape, exactly,
+ *   pool name bounded the same way an entity name is.
  */
-const CAP_VALUE = /^[A-Za-z][A-Za-z0-9 _.=,-]{0,120}$/;
+const MON_CAP = /^profile rbd$/;
+const POOL_SCOPED_CAP = /^profile rbd pool=[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 
 const DAEMONS = ['mon', 'osd', 'mgr'] as const;
+
+/** `undefined` when `value` is `daemon`'s one allowed cap shape (the design's own caps map). */
+const capProblem = (
+  daemon: (typeof DAEMONS)[number],
+  value: string | undefined,
+): string | undefined => {
+  if (value === undefined) return `${daemon} cap is missing`;
+  const shape = daemon === 'mon' ? MON_CAP : POOL_SCOPED_CAP;
+  return shape.test(value)
+    ? undefined
+    : `${daemon} cap ${JSON.stringify(value)} is not the design's plain pool-scoped rbd profile`;
+};
 
 /** `auth get <entity>`: the read `Ceph.AuthEntity` uses to observe caps, never the key. */
 const authGetProblem = (ops: readonly string[]): string | undefined => {
@@ -75,9 +96,8 @@ const capsTripleProblem = (ops: readonly string[]): string | undefined => {
     const value = pairs[index * 2 + 1];
     if (key !== daemon)
       return `expected \`${daemon}\` in position ${String(index + 1)}, got ${JSON.stringify(key)}`;
-    if (value === undefined || !CAP_VALUE.test(value)) {
-      return `${daemon} cap ${JSON.stringify(value)} is not a plain rbd-profile cap`;
-    }
+    const problem = capProblem(daemon, value);
+    if (problem !== undefined) return problem;
   }
   return undefined;
 };
@@ -96,50 +116,6 @@ const authProblem = (rest: readonly string[]): string | undefined => {
   if (verb === 'get-or-create') return capsTripleProblem(ops);
   if (verb === 'caps') return capsTripleProblem(ops);
   return `ceph auth ${String(verb)} is not on the allowlist`;
-};
-
-/** `config`'s `<who>`: a daemon class, optionally `.id` — never a path, never free text. */
-const WHO = /^(global|mon|osd|mgr|mds|client)(\.[A-Za-z0-9_-]{1,32})?$/;
-/** A ceph option name's own shape — snake_case, lowercase. Independent of the named list below. */
-const OPTION_NAME = /^[a-z][a-z0-9_]{0,63}$/;
-/** No shell metacharacters; the named list (below) is what actually decides secrecy, not this. */
-const CONFIG_VALUE = /^[A-Za-z0-9 ._:/=,-]{0,256}$/;
-
-/**
- * `undefined` when `name` may be declared, adopted, read by value or written — see
- * ceph-config-options.ts's header for why the list starts empty and stays reviewed line by line.
- */
-const namedOptionProblem = (name: string): string | undefined => {
-  if (!OPTION_NAME.test(name)) return `${JSON.stringify(name)} is not a plain ceph option name`;
-  if (isLockoutConfigOption(name))
-    return `${name} is a lockout-class option and can never be declared`;
-  return NAMED_CONFIG_OPTIONS.has(name)
-    ? undefined
-    : `${name} is not on the named option list (it starts empty — see ceph-config-options.ts)`;
-};
-
-const configProblem = (rest: readonly string[]): string | undefined => {
-  const [verb, who, name, ...extra] = rest;
-  if (who === undefined || !WHO.test(who)) {
-    return 'config takes a bounded `<who>` (global/mon/osd/mgr/mds/client[.id])';
-  }
-  if (name === undefined) return 'config takes a `<name>` from the named option list';
-  if (verb === 'get' || verb === 'rm') {
-    return extra.length === 0
-      ? namedOptionProblem(name)
-      : `config ${String(verb)} takes exactly \`<who> <name>\``;
-  }
-  if (verb === 'set') {
-    const [value, ...more] = extra;
-    if (value === undefined || more.length !== 0)
-      return 'config set takes exactly `<who> <name> <value>`';
-    const named = namedOptionProblem(name);
-    if (named !== undefined) return named;
-    return CONFIG_VALUE.test(value)
-      ? undefined
-      : `config value ${JSON.stringify(value)} contains characters outside the safe set`;
-  }
-  return `ceph config ${String(verb)} is not on the allowlist`;
 };
 
 /** Every call this allowlist accepts ends in this — the transport appends it, never the caller. */
