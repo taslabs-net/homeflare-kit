@@ -1,19 +1,21 @@
 /**
- * `alias-form.ts`'s pure functions against literal `AliasItem` fixtures — no network, no fake
- * server. Mirrors `../discord/command-form.ts`'s own test file in spirit.
+ * `alias-form.ts`'s pure functions against literal `ModelAliasReadItem` fixtures (the WHOLE-MODEL
+ * `get()`'s read-shaped item, option maps and all — OPNSENSE-2) — no network, no fake server.
+ * Mirrors `../discord/command-form.ts`'s own test file in spirit.
  */
 import { describe, expect, test } from 'bun:test';
 import type * as alias from '@distilled.cloud/opnsense/firewall_alias';
 import { attributesOf, matches } from './alias-form.ts';
 import type { AliasProps } from './alias.ts';
+import { optionMap } from './wire.ts';
 
 const UUID = '11111111-1111-1111-1111-111111111111';
 
-const liveHost = (overrides: Partial<alias.AliasItem> = {}): alias.AliasItem => ({
-  content: '10.20.10.1',
+const liveHost = (overrides: Partial<alias.ModelAliasReadItem> = {}): alias.ModelAliasReadItem => ({
+  content: optionMap('10.20.10.1'),
   enabled: '1',
   name: 'homeflare_edge',
-  type: 'host',
+  type: optionMap('host'),
   ...overrides,
 });
 
@@ -38,9 +40,19 @@ describe('alias-form attributesOf', () => {
     expect(attributesOf(UUID, liveHost({ enabled: '0' })).enabled).toBe(false);
   });
 
-  test('categories are split, sorted and deduplicated', () => {
-    const live = liveHost({ categories: 'c-two,c-one,c-one' });
+  test('categories are the selected keys, sorted and deduplicated', () => {
+    const live = liveHost({ categories: optionMap('c-two', 'c-one') });
     expect(attributesOf(UUID, live).categories).toEqual(['c-one', 'c-two']);
+  });
+
+  test('an unselected option-map entry is not returned (single-select `type`)', () => {
+    const live = liveHost({
+      type: {
+        host: { value: 'Host(s)', selected: 1 },
+        network: { value: 'Network(s)', selected: 0 },
+      },
+    });
+    expect(attributesOf(UUID, live).type).toBe('host');
   });
 });
 
@@ -57,12 +69,12 @@ describe('alias-form matches', () => {
   });
 
   test('content drift is caught', () => {
-    const drifted = attributesOf(UUID, liveHost({ content: '10.20.10.2' }));
+    const drifted = attributesOf(UUID, liveHost({ content: optionMap('10.20.10.2') }));
     expect(matches(drifted, props)).toBe(false);
   });
 
   test('category order alone is not drift — both sides normalise through the same set', () => {
-    const live = attributesOf(UUID, liveHost({ categories: 'b,a' }));
+    const live = attributesOf(UUID, liveHost({ categories: optionMap('b', 'a') }));
     const declared: AliasProps = { ...props, categories: ['a', 'b'] };
     expect(matches(live, declared)).toBe(true);
   });
@@ -79,9 +91,9 @@ describe('propsFromLive round-trip — the declaration renderer whole contract',
     // alias.ts re-exports `attributesOf` itself as `propsFromLive`; tested directly here since
     // alias.ts also wires up the Resource machinery this file does not need to import.
     const live = liveHost({
-      categories: 'c-two,c-one',
-      content: '203.0.113.0/24',
-      type: 'network',
+      categories: optionMap('c-two', 'c-one'),
+      content: optionMap('203.0.113.0/24'),
+      type: optionMap('network'),
     });
     const rendered = attributesOf(UUID, live);
     expect(matches(attributesOf(UUID, live), rendered)).toBe(true);

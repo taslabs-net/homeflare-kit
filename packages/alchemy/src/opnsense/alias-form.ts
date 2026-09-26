@@ -18,24 +18,37 @@
  */
 import type { AliasAttributes, AliasProps } from './alias.ts';
 import type * as alias from '@distilled.cloud/opnsense/firewall_alias';
-import { bool01, csvSet, csvSetOf, numField } from './wire.ts';
+import { bool01, csvSetOf, numField, selectedOf, selectedOneOf } from './wire.ts';
 
 /**
  * ★ ATTRIBUTES AND THE DECLARATION RENDERER ARE ONE FUNCTION. Attributes ARE exactly the props a
  *   noop declaration needs — see the exported `propsFromLive` alias in alias.ts's barrel and
  *   `alias-form.test.ts`'s round-trip test (`matches(attributesOf(uuid, live), attributesOf(uuid,
  *   live))` is always true by construction, and so is the general case).
+ *
+ * `live` is `ModelAliasReadItem` (the WHOLE-MODEL `get()`'s read-shaped item), not `AliasItem` —
+ * `type`/`interface`/`proto`/`categories` decode as option maps, not strings (OPNSENSE-2; see
+ * wire.ts's module doc). `selectedOf`/`selectedOneOf` extract the selected key(s) back to the
+ * same plain-string/string[] shape `AliasAttributes` already declared.
+ *
+ * `content` is `.\AliasContentField`, which overrides `getNodeData()` independently of
+ * `BaseListField` (`Firewall/FieldTypes/AliasContentField.php:69-76`) — it still decodes as a map,
+ * but every entry is unconditionally `selected: 1` (it is a raw newline-separated list, not a
+ * real option set), and ITS wire separator is `\n`, not `,`. `Object.keys` preserves the
+ * insertion order OPNsense's own `explode()` built the map in, which matters for a host/URL list
+ * in a way `selectedOf`'s alphabetical sort does not preserve — so this one field is reconstructed
+ * directly rather than through `selectedOf`.
  */
-export const attributesOf = (uuid: string, live: alias.AliasItem): AliasAttributes => ({
-  categories: csvSet(live.categories),
-  content: live.content ?? '',
+export const attributesOf = (uuid: string, live: alias.ModelAliasReadItem): AliasAttributes => ({
+  categories: selectedOf(live.categories),
+  content: Object.keys(live.content ?? {}).join('\n'),
   counters: bool01(live.counters, false),
   description: live.description ?? '',
   enabled: bool01(live.enabled, true),
-  interface: live.interface ?? '',
+  interface: selectedOneOf(live.interface),
   name: live.name,
-  proto: live.proto ?? '',
-  type: live.type,
+  proto: selectedOf(live.proto).join(','),
+  type: selectedOneOf(live.type),
   updatefreq: numField(live.updatefreq, 0),
   uuid,
 });

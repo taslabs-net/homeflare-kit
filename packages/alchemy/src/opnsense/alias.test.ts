@@ -16,6 +16,7 @@ import { spec } from './alias.ts';
 import { fakeFailure, fakeOpnsense, fakeOpnsenseLayer, getOnlyOrFail } from './fake-opnsense.ts';
 import type { OpnsenseWriteRefused } from './policy.ts';
 import { opnsenseOperations } from './resource.ts';
+import { optionMap } from './wire.ts';
 
 /** `Effect.flip`'s promise resolves to the union of every error this spec can raise; every
  * refusal test below is asserting specifically on the `OpnsenseWriteRefused` member. */
@@ -30,15 +31,17 @@ const PROPS: AliasProps = {
   uuid: UUID,
 };
 
-const liveItem = (overrides: Partial<alias.AliasItem> = {}): alias.AliasItem => ({
-  content: '10.20.10.1',
+// `liveItem` builds a `ModelAliasReadItem` — the WHOLE-MODEL `get()`'s read-shaped item, whose
+// `content`/`type` decode as option maps, not strings (OPNSENSE-2 — see alias-form.ts).
+const liveItem = (overrides: Partial<alias.ModelAliasReadItem> = {}): alias.ModelAliasReadItem => ({
+  content: optionMap('10.20.10.1'),
   enabled: '1',
   name: 'homeflare_edge',
-  type: 'host',
+  type: optionMap('host'),
   ...overrides,
 });
 
-const getResponse = (items: Record<string, alias.AliasItem>) =>
+const getResponse = (items: Record<string, alias.ModelAliasReadItem>) =>
   Response.json({ alias: { aliases: { alias: items } } });
 
 describe('Opnsense.Firewall.Alias spec.fetchLive', () => {
@@ -126,7 +129,9 @@ describe('opnsenseOperations(spec).diff', () => {
   });
 
   test('update when live content drifted from the declaration — never from a read error', async () => {
-    const fake = getOnlyOrFail(() => getResponse({ [UUID]: liveItem({ content: '10.20.10.9' }) }));
+    const fake = getOnlyOrFail(() =>
+      getResponse({ [UUID]: liveItem({ content: optionMap('10.20.10.9') }) }),
+    );
     const result = await Effect.runPromise(
       opnsenseOperations(spec)
         .diff(PROPS, attributesOf(UUID, liveItem()))
@@ -138,7 +143,9 @@ describe('opnsenseOperations(spec).diff', () => {
 
 describe('opnsenseOperations(spec).reconcile and destroy — the read-only policy', () => {
   test('reconcile observes with one GET, then refuses — never a write', async () => {
-    const fake = getOnlyOrFail(() => getResponse({ [UUID]: liveItem({ content: 'drifted' }) }));
+    const fake = getOnlyOrFail(() =>
+      getResponse({ [UUID]: liveItem({ content: optionMap('drifted') }) }),
+    );
     const failure = asRefusal(
       await Effect.runPromise(
         Effect.flip(

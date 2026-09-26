@@ -104,48 +104,132 @@ export const GetRequest = /*@__PURE__*/ S.suspend(() =>
   ),
 ).annotate({ identifier: "GetRequest" }) as any as S.Schema<GetRequest>;
 
-export type ModelIfgroupentryItem = GroupItem;
-export const ModelIfgroupentryItem = GroupItem;
-
-export type ModelIfgroupentryItemMap = { [key: string]: GroupItem | undefined };
-export const ModelIfgroupentryItemMap = /*@__PURE__*/ S.Record(
-  S.String,
-  GroupItem,
-) as any as S.Schema<ModelIfgroupentryItemMap>;
-
-export interface Model {
-  ifgroupentry?: ModelIfgroupentryItemMap;
+export interface OptionEntry {
+  value: string;
+  selected: number;
 }
-export const Model = /*@__PURE__*/ S.suspend(() =>
+export const OptionEntry = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    ifgroupentry: S.optional(ModelIfgroupentryItemMap),
+    value: S.String,
+    selected: S.Number,
   }),
-).annotate({ identifier: "Model" }) as any as S.Schema<Model>;
+).annotate({ identifier: "OptionEntry" }) as any as S.Schema<OptionEntry>;
+
+export type ModelIfgroupentryReadItemMembersMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelIfgroupentryReadItemMembersMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelIfgroupentryReadItemMembersMap>;
+
+export interface ModelIfgroupentryReadItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: .\GroupNameField */
+  ifname: string;
+  /** OPNsense FieldType: .\InterfaceField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  members: ModelIfgroupentryReadItemMembersMap;
+  /** OPNsense FieldType: BooleanField */
+  nogroup?: string;
+  /** OPNsense FieldType: IntegerField; range 0..9999 (as text) */
+  sequence: string;
+  /** OPNsense FieldType: DescriptionField */
+  descr?: string;
+}
+export const ModelIfgroupentryReadItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    ifname: S.String,
+    members: ModelIfgroupentryReadItemMembersMap,
+    nogroup: S.optional(S.String),
+    sequence: S.String,
+    descr: S.optional(S.String),
+  }),
+).annotate({
+  identifier: "ModelIfgroupentryReadItem",
+}) as any as S.Schema<ModelIfgroupentryReadItem>;
+
+export type ModelIfgroupentryReadItemMap = {
+  [key: string]: ModelIfgroupentryReadItem | undefined;
+};
+export const ModelIfgroupentryReadItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  ModelIfgroupentryReadItem,
+) as any as S.Schema<ModelIfgroupentryReadItemMap>;
+
+export interface ModelRead {
+  ifgroupentry?: ModelIfgroupentryReadItemMap;
+}
+export const ModelRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    ifgroupentry: S.optional(ModelIfgroupentryReadItemMap),
+  }),
+).annotate({ identifier: "ModelRead" }) as any as S.Schema<ModelRead>;
 
 export interface GetResponse {
-  group?: Model;
+  group?: ModelRead;
 }
 export const GetResponse = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    group: S.optional(Model),
+    group: S.optional(ModelRead),
   }),
 ).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
 
-export interface GetGroupRequest {}
+export interface GetGroupRequest {
+  uuid: string;
+}
 export const GetGroupRequest = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({}).pipe(
-    T.Http({ method: "GET", uri: "/api/firewall/group/getItem", code: 200 }),
+  S.Struct({
+    uuid: S.String.pipe(T.Label()),
+  }).pipe(
+    T.Http({
+      method: "GET",
+      uri: "/api/firewall/group/getItem/{uuid}",
+      code: 200,
+    }),
   ),
 ).annotate({
   identifier: "GetGroupRequest",
 }) as any as S.Schema<GetGroupRequest>;
 
+export type GetGroupItemMembersMap = { [key: string]: OptionEntry | undefined };
+export const GetGroupItemMembersMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<GetGroupItemMembersMap>;
+
+export interface GetGroupItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: .\GroupNameField */
+  ifname: string;
+  /** OPNsense FieldType: .\InterfaceField; multi-select: wire value is a single comma-joined string, not a JSON array */
+  members: GetGroupItemMembersMap;
+  /** OPNsense FieldType: BooleanField */
+  nogroup?: string;
+  /** OPNsense FieldType: IntegerField; range 0..9999 (as text) */
+  sequence: string;
+  /** OPNsense FieldType: DescriptionField */
+  descr?: string;
+}
+export const GetGroupItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    ifname: S.String,
+    members: GetGroupItemMembersMap,
+    nogroup: S.optional(S.String),
+    sequence: S.String,
+    descr: S.optional(S.String),
+  }),
+).annotate({ identifier: "GetGroupItem" }) as any as S.Schema<GetGroupItem>;
+
 export interface GetGroupResponse {
-  group?: GroupItem;
+  group?: GetGroupItem;
 }
 export const GetGroupResponse = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
-    group: S.optional(GroupItem),
+    group: S.optional(GetGroupItem),
   }),
 ).annotate({
   identifier: "GetGroupResponse",
@@ -187,6 +271,24 @@ export const SearchGroupResponse = /*@__PURE__*/ S.suspend(() =>
 ).annotate({
   identifier: "SearchGroupResponse",
 }) as any as S.Schema<SearchGroupResponse>;
+
+export type ModelIfgroupentryItem = GroupItem;
+export const ModelIfgroupentryItem = GroupItem;
+
+export type ModelIfgroupentryItemMap = { [key: string]: GroupItem | undefined };
+export const ModelIfgroupentryItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  GroupItem,
+) as any as S.Schema<ModelIfgroupentryItemMap>;
+
+export interface Model {
+  ifgroupentry?: ModelIfgroupentryItemMap;
+}
+export const Model = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    ifgroupentry: S.optional(ModelIfgroupentryItemMap),
+  }),
+).annotate({ identifier: "Model" }) as any as S.Schema<Model>;
 
 export interface SetRequest {
   group?: Model;
