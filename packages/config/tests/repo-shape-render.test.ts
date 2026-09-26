@@ -203,3 +203,12 @@ describe('a step may carry an `if:` condition', () => {
     expect(steps.some((step) => 'if' in step && step['name'] !== 'Job summary')).toBe(false);
   });
 });
+
+describe('the workflow opts every job out of Alchemy telemetry (second guard)', () => {
+  test('DO_NOT_TRACK is set at workflow env level, on every runner', () => {
+    for (const shape of [PROXMOX, KIT]) {
+      const parsed = ci(shape) as { env?: Record<string, unknown> };
+      expect(parsed.env?.['DO_NOT_TRACK']).toBe('1');
+    }
+  });
+});
