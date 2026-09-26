@@ -1,7 +1,12 @@
 /**
  * `Unifi.FirewallPolicy`'s `spec` against a fake UniFi Network API — mirrors `acl-rule.test.ts`/
- * `dns-policy.test.ts`. `driftOf`/`matches` coverage lives here too, same reasoning as those files'
- * own headers (a flat-ish field list, no separate `*-drift.test.ts` needed to stay under the cap).
+ * `dns-policy.test.ts`.
+ *
+ * ⚠️ `driftOf`/`matches` coverage lives in `firewall-policy-drift.test.ts` (the field-level table
+ *   plus I2's per-field completeness check) and `firewall-policy-filter-roundtrip.test.ts` (I1's
+ *   filter-bearing round trip) — both split out to keep this file under the house 250-line cap once
+ *   that coverage grew, same split `network-drift.test.ts` is from `network.test.ts`, not a
+ *   different family. Red team, 2026-09-26.
  *
  * The last `describe` block is this family's own decode-proof of B0b's `pageAll` (T9) — not used by
  * `spec.fetchLive` itself (`getFirewallPolicy` reads one policy by id directly, same as
@@ -101,55 +106,6 @@ describe('declareFirewallPolicy -- the declaration renderer', () => {
     const attrs = attributesOf(live, declared);
     expect(matches(attrs, declared)).toBe(true);
     expect(driftOf(live, declared)).toEqual([]);
-  });
-});
-
-describe('driftOf -- B6 field-level drift, straight from one live read', () => {
-  test('a real name change reports its own field, live and declared', () => {
-    const live = liveFirewallPolicy({ name: 'Allow IoT outbound' });
-    expect(driftOf(live, PROPS)).toEqual([
-      { field: 'name', live: 'Allow IoT outbound', declared: 'Allow IoT to Internet' },
-    ]);
-  });
-
-  test('connectionStateFilter in a different order is a noop -- it is a SET, not a sequence', () => {
-    const live = liveFirewallPolicy({ connectionStateFilter: ['RELATED', 'ESTABLISHED'] });
-    expect(matches(attributesOf(live, PROPS), PROPS)).toBe(true);
-    expect(driftOf(live, PROPS)).toEqual([]);
-  });
-
-  test('the DECLARED side of connectionStateFilter is also normalized (MEDIUM-4 mutant)', () => {
-    const live = liveFirewallPolicy({ connectionStateFilter: ['ESTABLISHED', 'RELATED'] });
-    const props: FirewallPolicyProps = {
-      ...PROPS,
-      connectionStateFilter: ['RELATED', 'ESTABLISHED'],
-    };
-    expect(matches(attributesOf(live, props), props)).toBe(true);
-    expect(driftOf(live, props)).toEqual([]);
-  });
-
-  test('a genuine connectionStateFilter difference is caught', () => {
-    const live = liveFirewallPolicy({ connectionStateFilter: ['NEW'] });
-    expect(driftOf(live, PROPS)).toEqual([
-      { field: 'connectionStateFilter', live: ['NEW'], declared: ['ESTABLISHED', 'RELATED'] },
-    ]);
-  });
-
-  test('index is never compared -- it is attributes-only, owned by FirewallPolicyOrdering', () => {
-    const live = liveFirewallPolicy({ index: 41 });
-    expect(matches(attributesOf(live, PROPS), PROPS)).toBe(true);
-    expect(attributesOf(live, PROPS).index).toBe(41);
-  });
-
-  test('source/destination compare wholesale -- a real zone change is still caught', () => {
-    const live = liveFirewallPolicy({ destination: { zoneId: 'zone-guest' } });
-    expect(driftOf(live, PROPS)).toEqual([
-      {
-        field: 'destination',
-        live: { zoneId: 'zone-guest' },
-        declared: { zoneId: 'zone-external' },
-      },
-    ]);
   });
 });
 

@@ -2,6 +2,15 @@
  * `Unifi.TrafficMatchingList`'s `spec` against a fake UniFi Network API — mirrors
  * `dns-policy.test.ts`. `driftOf`/`matches` coverage lives here too, same reasoning as that file's
  * own header (a short field list, no separate need to split under the house cap).
+ *
+ * ⛔ I2 (red team, 2026-09-26, PR 309 LAND): `traffic-matching-list-drift.ts`'s field list is
+ *   untyped strings (`makeDriftOf`'s own contract) — dropping `type` from it left every test above
+ *   green. The last `describe` below closes that the same way `firewall-policy-drift.test.ts` does:
+ *   `DECLARABLE_FIELDS` is a `Record<..., true>` keyed by `Exclude<keyof TrafficMatchingListProps,
+ *   'siteId' | 'trafficMatchingListId'>` — a field added to or removed from
+ *   `TrafficMatchingListProps` without a matching edit there is a TYPE ERROR, so the list is
+ *   complete BY CONSTRUCTION; the per-field test then proves each one is actually wired into
+ *   `fieldDrift`, not merely present in the type.
  */
 import { describe, expect, test } from 'bun:test';
 import type * as trafficMatchingLists from '@distilled.cloud/unifi-network/traffic_matching_lists';
@@ -162,4 +171,32 @@ describe('Unifi.TrafficMatchingList write paths never reach the vendor API', () 
     expect(exit._tag).toBe('Failure');
     expect(fake.seen).toEqual([]);
   });
+});
+
+type DeclarableField = Exclude<keyof TrafficMatchingListProps, 'siteId' | 'trafficMatchingListId'>;
+
+const DECLARABLE_FIELDS: Record<DeclarableField, true> = {
+  name: true,
+  type: true,
+  items: true,
+};
+
+/** One changed value per field -- distinct enough from PROPS' own that `deepEqual` calls it drift. */
+const CHANGED_VALUE: { [K in DeclarableField]: TrafficMatchingListProps[K] } = {
+  name: 'a different name',
+  type: 'PORT',
+  items: [{ type: 'RANGE', start: 8000, stop: 8100 }],
+};
+
+describe('I2 -- every declarable field is wired into the drift field list', () => {
+  // `liveTrafficMatchingList()` (no overrides) matches PROPS field-for-field, so changing exactly
+  // one PROPS field per case isolates that field's own wire-up.
+  test.each(Object.keys(DECLARABLE_FIELDS) as DeclarableField[])(
+    'changing only %s reports exactly that field',
+    (field) => {
+      const live = liveTrafficMatchingList();
+      const changedProps: TrafficMatchingListProps = { ...PROPS, [field]: CHANGED_VALUE[field] };
+      expect(driftOf(live, changedProps).map((d) => d.field)).toEqual([field]);
+    },
+  );
 });
