@@ -9,7 +9,17 @@
  * mirroring `../discord/providers.ts`.
  */
 import * as Layer from 'effect/Layer';
+import { UnifiAclRuleProvider } from './acl-rule.ts';
+import { UnifiAclRuleOrderingProvider } from './acl-rule-ordering.ts';
+import { UnifiDnsPolicyProvider } from './dns-policy.ts';
 import { UnifiFirewallZoneProvider } from './firewall-zone.ts';
 import { UnifiNetworkProvider } from './network.ts';
 
-export const providers = () => Layer.mergeAll(UnifiNetworkProvider(), UnifiFirewallZoneProvider());
+export const providers = () =>
+  Layer.mergeAll(
+    UnifiNetworkProvider(),
+    UnifiFirewallZoneProvider(),
+    UnifiDnsPolicyProvider(),
+    UnifiAclRuleProvider(),
+    UnifiAclRuleOrderingProvider(),
+  );
