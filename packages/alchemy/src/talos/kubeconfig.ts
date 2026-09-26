@@ -126,31 +126,39 @@ const diff = (news: Input<KubeconfigProps>, output: KubeconfigAttributes | undef
     return { action: 'update' } as const;
   });
 
+/**
+ * ⛔ WRAPPED IN `Effect.scoped` (K-A3, 2026-09-26) — `mintTalosconfig` now contributes
+ *   `Scope.Scope` to its own return type rather than closing its scope internally (the C1 fix,
+ *   credentials.ts's own header). This is the caller that owns the temp talosconfig's lifetime:
+ *   without this wrap the file would be deleted before `talosctl kubeconfig` ever read it.
+ */
 const reconcile = (props: KubeconfigProps) =>
-  Effect.gen(function* () {
-    const credential = yield* mintTalosconfig(props.target);
-    yield* talosctl(
-      [
-        'kubeconfig',
-        props.runtimePath,
-        '--merge=false',
-        '--force',
-        '--force-context-name',
-        props.context,
-      ],
-      { nodes: [props.node], talosconfigPath: credential.talosconfigPath },
-    );
-    const meta = yield* readFileMeta(props);
-    if (meta === undefined) {
-      return yield* Effect.die(
-        new Error(
-          `${props.runtimePath}: talosctl kubeconfig returned no error but the file is missing ` +
-            'or unparsable. Read back rather than trusting the exit code alone.',
-        ),
+  Effect.scoped(
+    Effect.gen(function* () {
+      const credential = yield* mintTalosconfig(props.target);
+      yield* talosctl(
+        [
+          'kubeconfig',
+          props.runtimePath,
+          '--merge=false',
+          '--force',
+          '--force-context-name',
+          props.context,
+        ],
+        { nodes: [props.node], talosconfigPath: credential.talosconfigPath },
       );
-    }
-    return meta;
-  });
+      const meta = yield* readFileMeta(props);
+      if (meta === undefined) {
+        return yield* Effect.die(
+          new Error(
+            `${props.runtimePath}: talosctl kubeconfig returned no error but the file is missing ` +
+              'or unparsable. Read back rather than trusting the exit code alone.',
+          ),
+        );
+      }
+      return meta;
+    }),
+  );
 
 const handlers = {
   delete: () => Effect.void,

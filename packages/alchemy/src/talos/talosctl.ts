@@ -30,6 +30,13 @@ export type TalosRunOptions = {
   readonly talosconfigPath: string;
   readonly nodes?: readonly string[];
   readonly endpoints?: readonly string[];
+  /**
+   * `-i/--insecure` — a maintenance-mode node has no established PKI yet. Used by the CREATE apply
+   * (resource.ts's own header) and by talos-machine-config.ts's maintenance-mode probe (fix-first
+   * #1, PR 307 red team): `--talosconfig` is still passed alongside it, matching the CREATE path,
+   * since insecure mode ignores the file's certs rather than requiring their absence.
+   */
+  readonly insecure?: boolean;
 };
 
 /** Run `talosctl <args…>`. Returns trimmed stdout, or '' when empty. */
@@ -42,6 +49,7 @@ export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
       options.talosconfigPath,
       ...(options.nodes === undefined ? [] : ['--nodes', options.nodes.join(',')]),
       ...(options.endpoints === undefined ? [] : ['--endpoints', options.endpoints.join(',')]),
+      ...(options.insecure === true ? ['--insecure'] : []),
     ];
     const result = yield* ChildProcess.make('talosctl', argv, {
       detached: false,
