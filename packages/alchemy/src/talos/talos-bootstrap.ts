@@ -54,12 +54,19 @@ const isBootstrapped = (props: BootstrapProps, talosconfigPath: string) =>
     Effect.orElseSucceed(() => false),
   );
 
+/**
+ * ⛔ WRAPPED IN `Effect.scoped` (K-A3, 2026-09-26) — `mintTalosconfig` contributes `Scope.Scope`
+ *   to its own return type rather than closing its scope internally (the C1 fix, credentials.ts's
+ *   own header); this is the caller that owns the temp talosconfig's lifetime for the read.
+ */
 const read = (props: BootstrapProps) =>
-  Effect.gen(function* () {
-    const credential = yield* mintTalosconfig(props.target);
-    const bootstrapped = yield* isBootstrapped(props, credential.talosconfigPath);
-    return { bootstrapped, node: props.node };
-  });
+  Effect.scoped(
+    Effect.gen(function* () {
+      const credential = yield* mintTalosconfig(props.target);
+      const bootstrapped = yield* isBootstrapped(props, credential.talosconfigPath);
+      return { bootstrapped, node: props.node };
+    }),
+  );
 
 const diff = (news: Input<BootstrapProps>, output: BootstrapAttributes | undefined) =>
   Effect.gen(function* () {
@@ -70,26 +77,28 @@ const diff = (news: Input<BootstrapProps>, output: BootstrapAttributes | undefin
   });
 
 const reconcile = (props: BootstrapProps) =>
-  Effect.gen(function* () {
-    const credential = yield* mintTalosconfig(props.target);
-    const before = yield* isBootstrapped(props, credential.talosconfigPath);
-    if (!before) {
-      yield* talosctlOrAlready(['bootstrap'], {
-        nodes: [props.node],
-        talosconfigPath: credential.talosconfigPath,
-      });
-    }
-    const after = yield* isBootstrapped(props, credential.talosconfigPath);
-    if (!after) {
-      return yield* Effect.die(
-        new Error(
-          `${props.node}: bootstrap returned no error but etcd members are still absent. ` +
-            'Read back rather than trusting the exit code alone.',
-        ),
-      );
-    }
-    return { bootstrapped: true, node: props.node };
-  });
+  Effect.scoped(
+    Effect.gen(function* () {
+      const credential = yield* mintTalosconfig(props.target);
+      const before = yield* isBootstrapped(props, credential.talosconfigPath);
+      if (!before) {
+        yield* talosctlOrAlready(['bootstrap'], {
+          nodes: [props.node],
+          talosconfigPath: credential.talosconfigPath,
+        });
+      }
+      const after = yield* isBootstrapped(props, credential.talosconfigPath);
+      if (!after) {
+        return yield* Effect.die(
+          new Error(
+            `${props.node}: bootstrap returned no error but etcd members are still absent. ` +
+              'Read back rather than trusting the exit code alone.',
+          ),
+        );
+      }
+      return { bootstrapped: true, node: props.node };
+    }),
+  );
 
 const handlers = {
   delete: () => Effect.void,

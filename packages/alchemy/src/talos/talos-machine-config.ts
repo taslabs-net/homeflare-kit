@@ -2,38 +2,51 @@
  * `Talos.MachineConfig` — apply one machine configuration document to one node.
  *
  * ★ REASONED FROM talosctl apply-config (Talos v1.13 CLI reference): `-f/--file`, `-n/--nodes`,
- *   `-m/--mode`, `-i/--insecure` for maintenance mode, `--dry-run` for planning without a write.
+ *   `-m/--mode`, `-i/--insecure` for maintenance mode.
  *
- * ⛔ THE CONFIG BODY IS NEVER AN ATTRIBUTE. Machine configs can embed cluster tokens; only a digest
- *   of the repo file is persisted. Read `configFile` from disk at reconcile time.
+ * ⛔ THE CONFIG BODY IS NEVER AN ATTRIBUTE, A PROP, OR ARGV — ONLY ITS DIGEST. K-A3
+ *   (docs/plans/2026-09-26-talos-secrets-flow.md, option O-A) moved the source of truth from a
+ *   repo file (the shipped `configFile` + `STACK_DIR`, gone with this rewrite) to OpenBao: props
+ *   carry a `configKey` (a vault path) and a `configDigest` PINNED IN GIT, never the bytes. The
+ *   source is write-only from Alchemy's point of view — content is read once per reconcile,
+ *   verified against the pin, written to a session-temp file, and never returned from any
+ *   handler.
+ * ⛔ NEVER `--dry-run`. Talos's dry-run prints a full, unredacted old/new config diff — with an
+ *   empty old config (the first apply) that diff IS the whole config, CA private key and
+ *   bootstrap token included (REASONED, `internal/app/machined/.../v1alpha1_server.go:258-272` +
+ *   `configdiff.go`; docs/plans/2026-09-26-talos-stack-first-boot.md). This file never builds
+ *   that flag.
+ * ⛔ `insecure` IS NOT A PROP. A fixed value fails in both directions — `true` breaks every later
+ *   update, `false` breaks the very first apply against a node with no talosconfig auth yet — so
+ *   CREATE (`output === undefined`) applies `--insecure` and UPDATE never does (resource.ts).
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { mintTalosconfig } from './credentials.ts';
-import type { TalosRequirements, WithTarget } from './resource.ts';
+import { mintKvTempFile, mintTalosconfig, readKvValue } from './credentials.ts';
+import { type PollPolicy, confirmConverged } from './machine-config-poll.ts';
+import type { ApplyMode, TalosRequirements, WithTarget } from './resource.ts';
+import { TalosConfigDigestMismatch } from './talos-errors.ts';
 import { talosctl } from './talosctl.ts';
-import { configDigest, resolveConfigPath } from './values.ts';
+import { configDigest, extractMachineConfigSpec } from './values.ts';
 
-const STACK_DIR = new URL('..', import.meta.url).pathname;
-
-export type ApplyMode = 'auto' | 'no-reboot' | 'reboot' | 'staged' | 'try';
+export type { ApplyMode } from './resource.ts';
 
 export interface MachineConfigProps extends WithTarget {
   /** Node IP or hostname — the `-n` target. */
   node: string;
-  /** Repo-relative or absolute path to the YAML file passed to `-f`. */
-  configFile: string;
+  /** OpenBao KV path under `target.mount` holding this node's rendered config, e.g. `nodes/10001`. */
+  configKey: string;
+  /**
+   * sha256(canonicalText(content)) of the seeded KV value (values.ts `configDigest`), pinned in
+   * git by the operator. ⛔ Verified against the live KV content before ANY talosctl spawn — a
+   * mismatch fails closed (`TalosConfigDigestMismatch`), nothing is applied.
+   */
+  configDigest: string;
   /** talosctl `-m` mode. Default `auto` per published CLI. */
   mode?: ApplyMode;
-  /**
-   * Maintenance-mode apply only (`-i`). Default false — post-bootstrap applies use talosconfig auth.
-   *
-   * ⚠️ REASONED: docs describe `--insecure` for the first apply before talosconfig exists.
-   */
-  insecure?: boolean;
   /** Ordering edge — e.g. wait for Proxmox.Vm. */
   after?: readonly unknown[];
 }
@@ -42,8 +55,13 @@ export interface MachineConfigAttributes {
   node: string;
   configDigest: string;
   mode: ApplyMode;
-  /** True when the node's reported config digest matches the declared file. */
-  converged: boolean;
+  /**
+   * Which convergence claim was made. `'read-back'`/`'accepted'` only come from `reconcile` (see
+   * machine-config-poll.ts); `false` only comes from `read`, meaning a live digest was
+   * successfully fetched and genuinely differs — never a stand-in for a failed read, which
+   * propagates as its own error instead (docs/plans/2026-09-26-talos-stack-first-boot.md).
+   */
+  converged: 'read-back' | 'accepted' | false;
 }
 
 export interface TalosMachineConfig extends Resource<
@@ -56,77 +74,113 @@ export interface TalosMachineConfig extends Resource<
 
 export const TalosMachineConfig = Resource<TalosMachineConfig>('Talos.MachineConfig');
 
-const loadDigest = (props: MachineConfigProps) =>
-  Effect.gen(function* () {
-    const path = resolveConfigPath(STACK_DIR, props.configFile);
-    const text = yield* Effect.tryPromise({
-      try: () => Bun.file(path).text(),
-      catch: (cause) => new Error(`reading ${props.configFile}: ${String(cause)}`),
-    });
-    return configDigest(text);
-  });
-
-/** REASONED: `talosctl get machineconfig -o yaml` returns the live document. */
-const liveDigest = (props: MachineConfigProps, talosconfigPath: string) =>
+/** Single live read: `talosctl get machineconfig`, extract `spec`, hash it. No retry, no swallow. */
+const liveSpecDigest = (props: MachineConfigProps, talosconfigPath: string) =>
   talosctl(['get', 'machineconfig', '-o', 'yaml'], {
     nodes: [props.node],
     talosconfigPath,
   }).pipe(
-    Effect.map((yaml) => configDigest(yaml)),
-    Effect.orElseSucceed(() => undefined),
+    Effect.flatMap((wrapperYaml) => {
+      const spec = extractMachineConfigSpec(wrapperYaml);
+      return spec === undefined
+        ? Effect.fail(
+            new Error(
+              `${props.node}: get machineconfig returned no string 'spec' field — see values.ts ` +
+                'extractMachineConfigSpec for the expected shape.',
+            ),
+          )
+        : Effect.succeed(configDigest(spec));
+    }),
   );
 
-const read = (props: MachineConfigProps) =>
-  Effect.gen(function* () {
-    const wanted = yield* loadDigest(props);
-    const credential = yield* mintTalosconfig(props.target);
-    const live = yield* liveDigest(props, credential.talosconfigPath);
-    return {
-      configDigest: wanted,
-      converged: live === wanted,
-      mode: props.mode ?? 'auto',
-      node: props.node,
-    };
-  });
+/**
+ * ⛔ NO SWALLOWING. A transport failure here propagates as its own error (TalosError or the
+ *   shape error above) — never as `converged: false`. A false only means "read succeeded, and
+ *   genuinely differs" (docs/plans/2026-09-26-talos-stack-first-boot.md, acceptance test 3).
+ *
+ * ★ EXPORTED (like proxmox/ceph-daemon.ts's `reconcileDaemon`) so tests call it directly with a
+ *   fake `ChildProcessSpawner` instead of driving it through the full Alchemy engine.
+ */
+export const readMachineConfig = (props: MachineConfigProps) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const credential = yield* mintTalosconfig(props.target);
+      const live = yield* liveSpecDigest(props, credential.talosconfigPath);
+      return {
+        configDigest: props.configDigest,
+        converged: live === props.configDigest ? ('read-back' as const) : false,
+        mode: props.mode ?? 'auto',
+        node: props.node,
+      } satisfies MachineConfigAttributes;
+    }),
+  );
 
-const diff = (news: Input<MachineConfigProps>, output: MachineConfigAttributes | undefined) =>
+export const diffMachineConfig = (
+  news: Input<MachineConfigProps>,
+  output: MachineConfigAttributes | undefined,
+) =>
   Effect.gen(function* () {
     if (output === undefined || !isResolved(news)) return undefined;
-    const live = yield* read(news);
-    if (live.converged) return { action: 'noop' } as const;
+    const live = yield* readMachineConfig(news);
+    if (live.converged !== false) return { action: 'noop' } as const;
     return { action: 'update' } as const;
   });
 
-const reconcile = (props: MachineConfigProps) =>
-  Effect.gen(function* () {
-    const path = resolveConfigPath(STACK_DIR, props.configFile);
-    const wanted = yield* loadDigest(props);
-    const credential = yield* mintTalosconfig(props.target);
-    const args = [
-      'apply-config',
-      '--file',
-      path,
-      '--mode',
-      props.mode ?? 'auto',
-      ...(props.insecure === true ? ['--insecure'] : []),
-    ];
-    yield* talosctl(args, { nodes: [props.node], talosconfigPath: credential.talosconfigPath });
-    const live = yield* liveDigest(props, credential.talosconfigPath);
-    if (live !== wanted) {
-      return yield* Effect.die(
-        new Error(
-          `${props.node}: apply-config returned no error but machineconfig digest still differs. ` +
-            'Read back rather than trusting the exit code alone.',
+/** `pollPolicies` is a test seam only — see machine-config-poll.ts's `confirmConverged`. */
+export const reconcileMachineConfig = (
+  props: MachineConfigProps,
+  output: MachineConfigAttributes | undefined,
+  pollPolicies?: { readonly immediate: PollPolicy; readonly rebootish: PollPolicy },
+) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const mode = props.mode ?? 'auto';
+
+      // ⛔ VERIFY BEFORE ANY talosctl SPAWN. A mismatch fails closed — see talos-errors.ts.
+      const raw = yield* readKvValue(props.target.mount, props.configKey, ['config']);
+      const gotDigest = configDigest(raw);
+      if (gotDigest !== props.configDigest) {
+        return yield* Effect.fail(
+          new TalosConfigDigestMismatch({
+            expected: props.configDigest,
+            got: gotDigest,
+            key: props.configKey,
+            mount: props.target.mount,
+          }),
+        );
+      }
+
+      const credential = yield* mintTalosconfig(props.target);
+      const { path } = yield* mintKvTempFile(raw, `${props.target.cluster}-${props.node}-config`);
+
+      const isCreate = output === undefined;
+      const args = [
+        'apply-config',
+        '--file',
+        path,
+        '--mode',
+        mode,
+        ...(isCreate ? ['--insecure'] : []),
+      ];
+      yield* talosctl(args, { nodes: [props.node], talosconfigPath: credential.talosconfigPath });
+
+      const converged = yield* confirmConverged(
+        props.node,
+        mode,
+        liveSpecDigest(props, credential.talosconfigPath).pipe(
+          Effect.map((live) => live === props.configDigest),
         ),
+        pollPolicies,
       );
-    }
-    return {
-      configDigest: wanted,
-      converged: true,
-      mode: props.mode ?? 'auto',
-      node: props.node,
-    };
-  });
+
+      return {
+        configDigest: props.configDigest,
+        converged,
+        mode,
+        node: props.node,
+      } satisfies MachineConfigAttributes;
+    }),
+  );
 
 const handlers = {
   delete: () => Effect.void,
@@ -136,10 +190,16 @@ const handlers = {
   }: {
     news: Input<MachineConfigProps>;
     output: MachineConfigAttributes | undefined;
-  }) => diff(news, output),
+  }) => diffMachineConfig(news, output),
   list: () => Effect.succeed([]),
-  read: ({ olds }: { olds: MachineConfigProps }) => read(olds),
-  reconcile: ({ news }: { news: MachineConfigProps }) => reconcile(news),
+  read: ({ olds }: { olds: MachineConfigProps }) => readMachineConfig(olds),
+  reconcile: ({
+    news,
+    output,
+  }: {
+    news: MachineConfigProps;
+    output: MachineConfigAttributes | undefined;
+  }) => reconcileMachineConfig(news, output),
 };
 
 export const TalosMachineConfigProvider = () =>

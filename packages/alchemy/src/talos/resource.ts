@@ -29,3 +29,15 @@ export type TalosRequirements = ChildProcessSpawner.ChildProcessSpawner;
 
 /** Every resource names which cluster's OpenBao mount it uses. */
 export type WithTarget = { target: TalosTarget };
+
+/**
+ * `talosctl apply-config -m/--mode`. Lives here, not in talos-machine-config.ts, so
+ * talos-errors.ts can name it in `TalosConvergenceTimeout` without importing that file back
+ * (machine-config-poll.ts -> talos-errors.ts -> talos-machine-config.ts would cycle).
+ *
+ * ★ K-A3 DROPPED THE `insecure` PROP THAT USED TO SIT BESIDE THIS TYPE. A fixed `insecure` prop
+ *   fails in both directions (`true` breaks every later update, `false` breaks the very first
+ *   apply against a node with no talosconfig auth yet), so `Talos.MachineConfig` now derives it
+ *   itself: CREATE (`output === undefined`) applies `--insecure`, UPDATE never does.
+ */
+export type ApplyMode = 'auto' | 'no-reboot' | 'reboot' | 'staged' | 'try';

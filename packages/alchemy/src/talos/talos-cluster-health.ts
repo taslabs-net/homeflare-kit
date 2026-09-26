@@ -59,19 +59,27 @@ const healthArgs = (props: ClusterHealthProps, waitTimeout: string) => {
   return args;
 };
 
+/**
+ * ⛔ WRAPPED IN `Effect.scoped` (K-A3, 2026-09-26) — `mintTalosconfig` contributes `Scope.Scope`
+ *   to its own return type rather than closing its scope internally (the C1 fix, credentials.ts's
+ *   own header); both `read` and `reconcile` call this one function, so wrapping it here covers
+ *   both callers.
+ */
 const check = (props: ClusterHealthProps, waitTimeout: string) =>
-  Effect.gen(function* () {
-    const credential = yield* mintTalosconfig(props.target);
-    yield* talosctl(healthArgs(props, waitTimeout), {
-      nodes: [...props.controlPlaneNodes],
-      talosconfigPath: credential.talosconfigPath,
-    });
-    return {
-      controlPlaneNodes: nodeCsv(props.controlPlaneNodes),
-      healthy: true,
-      workerNodes: nodeCsv(props.workerNodes),
-    };
-  });
+  Effect.scoped(
+    Effect.gen(function* () {
+      const credential = yield* mintTalosconfig(props.target);
+      yield* talosctl(healthArgs(props, waitTimeout), {
+        nodes: [...props.controlPlaneNodes],
+        talosconfigPath: credential.talosconfigPath,
+      });
+      return {
+        controlPlaneNodes: nodeCsv(props.controlPlaneNodes),
+        healthy: true,
+        workerNodes: nodeCsv(props.workerNodes),
+      };
+    }),
+  );
 
 const read = (props: ClusterHealthProps) =>
   check(props, '5s').pipe(

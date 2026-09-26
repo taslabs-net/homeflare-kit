@@ -1,8 +1,9 @@
 /**
  * Coercions and digests for Talos resources — every function here exists because a trap does.
  *
- * ⚠️ NOTHING IN THIS FILE TOUCHES A LIVE CLUSTER. Digests are computed from repo files or from
- *   kubeconfig YAML already on disk at reconcile time; tests use fixtures only.
+ * ⚠️ NOTHING IN THIS FILE TOUCHES A LIVE CLUSTER OR OpenBao. Digests are computed from KV content
+ *   or talosctl output already fetched by the caller, and kubeconfig YAML already on disk at
+ *   reconcile time; tests use fixtures only.
  */
 import { createHash } from 'node:crypto';
 
@@ -13,8 +14,35 @@ export const canonicalText = (text: string) => text.trimEnd();
 export const sha256 = (text: string) =>
   createHash('sha256').update(canonicalText(text)).digest('hex');
 
-/** Digest of a machine config file read from the repo. ⛔ Never persist the file body itself. */
+/** Digest of a machine config's canonical text. ⛔ Never persist the text itself. */
 export const configDigest = (text: string) => sha256(text);
+
+/**
+ * Extract the raw config text under `spec` from `talosctl get machineconfig -o yaml`'s wrapper.
+ *
+ * ⛔ THE WHOLE WRAPPER CAN NEVER MATCH THE PINNED DIGEST, AND HASHING IT WAS THE SHIPPED BUG.
+ *   REASONED from talosctl source (`cmd/talosctl/.../output/yaml.go:63`,
+ *   `resources/config/machine_config.go:40-50`): the resource envelope nests a `node:` line and
+ *   resource metadata (version, timestamps) around the config, which is itself a raw YAML STRING
+ *   under `spec`. Metadata changes on every observation, so `configDigest(wrapper)` never equals
+ *   `configDigest(seededConfigText)` even when nothing changed — every reconcile would die, every
+ *   diff would plan `update`, verify would never go quiet (all three MEASURED against the shipped
+ *   code's shape, docs/plans/2026-09-26-talos-stack-first-boot.md).
+ * ⚠️ Returns `undefined` for any shape without a string `spec`, so a caller cannot mistake
+ *   "unparsable wrapper" for "empty config" — those must fail differently (the caller's job).
+ */
+export const extractMachineConfigSpec = (wrapperYaml: string): string | undefined => {
+  let doc: unknown;
+  try {
+    doc = Bun.YAML.parse(wrapperYaml);
+  } catch {
+    return undefined;
+  }
+  const first: unknown = Array.isArray(doc) ? doc[0] : doc;
+  if (first === null || typeof first !== 'object') return undefined;
+  const spec = (first as { spec?: unknown }).spec;
+  return typeof spec === 'string' ? spec : undefined;
+};
 
 type KubeconfigDoc = {
   clusters?: {
@@ -64,7 +92,3 @@ export const kubeconfigMetadata = (
     endpoint,
   };
 };
-
-/** Resolve a config file path relative to the declaring stack file. */
-export const resolveConfigPath = (stackDir: string, configFile: string) =>
-  configFile.startsWith('/') ? configFile : `${stackDir}/${configFile}`;
