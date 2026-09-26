@@ -74,6 +74,18 @@ permissions:
 concurrency:
   group: ci-\${{ github.ref }}
   cancel-in-progress: true
+
+# ⛔ SECOND GUARD, NOT THE FIRST ONE. The estate's primary Alchemy telemetry opt-out is the
+#   persisted \`~/.alchemy/telemetry-disabled\` file (Tim, 2026-09-26, memory
+#   alchemy-telemetry-opt-out), which a CI runner never has — a self-hosted job starts a fresh
+#   container per run and a GitHub-hosted one is a fresh VM every time, so neither has read the
+#   file even if this estate's account somehow wrote it there. This env applies to every job and
+#   step in this workflow, so it reaches an Alchemy CLI invocation whether or not \`check\` calls
+#   one today; no repository's \`check\` does, measured 2026-09-26 (grepped every ci/security/
+#   release workflow for \`alchemy\`/\`bin/cli.js\`, zero hits), so this is defense-in-depth for
+#   whichever job calls it first.
+env:
+  DO_NOT_TRACK: '1'
 `;
 
 const CHECK_NOTE = `  # ── One job, one install ────────────────────────────────────────────────────
