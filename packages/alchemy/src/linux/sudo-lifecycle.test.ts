@@ -1,15 +1,19 @@
 /**
- * `Systemd.Unit` and `Remote.File`'s own lifecycle functions, driven through sshSudoRunner over
- * the fake Linux host — proving the two families this runner exists for actually work end to end,
- * not just that the runner's own primitives do. No sudo runs anywhere but through the fake.
+ * `Systemd.Unit`, `Remote.File` and `Podman.Container`'s own lifecycle functions, driven through
+ * sshSudoRunner over the fake Linux host — proving the families this runner exists for actually
+ * work end to end, not just that the runner's own primitives do. No sudo runs anywhere but through
+ * the fake.
  */
 import { describe, expect, test } from 'bun:test';
+import { fakeQuadletHost } from './fake-quadlet.ts';
 import { fakeSudoHost } from './fake-sudo.ts';
 import { SudoRefusedError } from './sudo-runner.ts';
 import { deleteFile, reconcileFile } from './remote-file-lifecycle.ts';
 import type { RemoteFileProps } from './remote-file-form.ts';
 import { deleteUnit, diffUnit, reconcileUnit } from './unit-lifecycle.ts';
 import type { SystemdUnitProps } from './unit-form.ts';
+import { reconcileContainer } from './container-lifecycle.ts';
+import type { ContainerProps } from './container-form.ts';
 
 const UNIT: SystemdUnitProps = {
   name: 'hf-thing.service',
@@ -121,6 +125,63 @@ describe('Systemd.Unit through sshSudoRunner', () => {
     // root, not to pre-judge every unit name that might exist.
     await runner.exec(['systemctl', 'stop', '--', 'init.scope']);
     expect(privileged().some((c) => c[0] === '/usr/bin/systemctl' && c[1] === 'stop')).toBe(true);
+  });
+});
+
+// 🔴 REGRESSION, CT100 deploy 2026-09-26 00:11Z: `Podman.Container caddy`'s generated unit's
+//   FragmentPath (`/run/systemd/generator/…`) was refused outright by the ownership check above,
+//   even though its SourcePath (`/etc/containers/systemd/caddy.container`) was this runner's own
+//   `.container` file, under a declared prefix. `fakeQuadletHost` in place of the plain
+//   `fakeLinuxHost` (via `fakeSudoHost`'s `hostFactory`) reproduces the exact CT100 shape: a
+//   generated unit whose FragmentPath is the generator's own output directory.
+const CADDY_PREFIXES = ['/etc/containers/systemd', '/etc/systemd/system'];
+const CADDY: ContainerProps = {
+  container: { image: 'docker.io/library/caddy:2', network: 'host' },
+  install: { wantedBy: ['multi-user.target'] },
+  name: 'caddy',
+  service: { restart: 'always' },
+};
+
+describe('Podman.Container through sshSudoRunner', () => {
+  test(
+    'a full reconcile writes, reloads and starts — the generated unit’s FragmentPath under ' +
+      'the generator is reachable because its SourcePath is under a declared prefix',
+    async () => {
+      const { privileged, runner } = fakeSudoHost({}, undefined, {
+        hostFactory: fakeQuadletHost,
+        prefixes: CADDY_PREFIXES,
+      });
+      const attrs = await reconcileContainer(runner, CADDY, undefined);
+      expect(attrs.active).toBe(true);
+      expect(attrs.sourcePath).toBe('/etc/containers/systemd/caddy.container');
+      const verbs = privileged()
+        .filter((c) => c[0] === '/usr/bin/systemctl')
+        .map((c) => c[1]);
+      expect(verbs).toContain('daemon-reload');
+      expect(verbs).toContain('start');
+    },
+  );
+
+  test('a generated unit whose SourcePath is outside every declared prefix still refuses', async () => {
+    const { fake, privileged, runner } = fakeSudoHost({}, undefined, {
+      hostFactory: fakeQuadletHost,
+      prefixes: CADDY_PREFIXES,
+    });
+    // A `.container` file Quadlet's OWN search path would also read (podman-systemd.unit(5)), but
+    // not under any prefix THIS runner declared — a foreign Quadlet source, same idea as the
+    // vendor `pveproxy.service` test above for a plain unit.
+    fake.files.set('/run/containers/systemd/other.container', {
+      bytes: new TextEncoder().encode('[Container]\nImage=example/other:1\n'),
+      gid: 0,
+      kind: 'file',
+      mode: 0o644,
+      uid: 0,
+    });
+    await runner.exec(['systemctl', 'daemon-reload']);
+    await expect(runner.exec(['systemctl', 'restart', '--', 'other.service'])).rejects.toThrow(
+      /SourcePath .* is not under one either/,
+    );
+    expect(privileged().some((c) => c[1] === 'restart')).toBe(false);
   });
 });
 

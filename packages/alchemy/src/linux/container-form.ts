@@ -18,7 +18,7 @@
  *   or renders that file's contents.
  * ⛔ `[Install]` SUPPORTS ONLY `Alias=`/`WantedBy=`/`RequiredBy=` FOR A `.container` FILE (same doc,
  *   "Currently, only the Alias, WantedBy and RequiredBy keys are supported") — NOT `Also=`, which
- *   plain `systemd.unit(5)` allows and unit-form.ts's `INSTALL_KEYS` therefore lists. See
+ *   plain `systemd.unit(5)` allows and unit-text.ts's `INSTALL_KEYS` therefore lists. See
  *   container-generator.ts's header for why there is no `enabled` prop at all.
  */
 import { type UnitSection, configDigest, digestOf, renderUnit } from './unit-form.ts';

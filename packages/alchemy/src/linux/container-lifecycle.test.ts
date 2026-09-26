@@ -53,7 +53,7 @@ describe('create', () => {
     expect(fake.files.get(PATH)?.uid).toBe(0);
   });
 
-  test('a start that fails removes the file this deploy wrote and says the unit is down', async () => {
+  test('a start that fails removes the file this deploy wrote and reports the read-back state', async () => {
     const fake = host();
     const broken = {
       ...fake.runner,
@@ -62,8 +62,10 @@ describe('create', () => {
           ? { exitCode: 1, stderr: 'Job failed', stdout: '' }
           : fake.runner.exec(argv),
     };
+    // ★ Not a hardcoded "NOT running" claim (measured false for a refusal-before-sudo failure,
+    //   container-settle.ts's header) — a genuine read-back of what systemd now reports.
     await expect(reconcileContainer(broken, props('example/one:1'), undefined)).rejects.toThrow(
-      /NOT running/,
+      /unit is now inactive/,
     );
     expect(fake.files.has(PATH)).toBe(false);
   });

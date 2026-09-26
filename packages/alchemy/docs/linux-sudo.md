@@ -76,15 +76,26 @@ Each is `/usr/bin/sudo -n -- <argv>`, every program by absolute path.
 `enable`/`disable`/`start`/`stop`/`restart` elevate only when the unit is not
 **masked** (`LoadState`, read alongside `FragmentPath` in the same call —
 masking is someone's decision, never overridden here) and its **own
-`FragmentPath`** is either under a declared prefix, or empty AND the verb is
+`FragmentPath`** is either under a declared prefix, empty AND the verb is
 `stop`/`disable` — the only two `unit-lifecycle.ts` `deleteUnit` ever sends
 against a unit whose file it may just have removed, so a second, idempotent
-delete pass still works. `enable`/`start`/`restart` with an empty
-`FragmentPath` are refused, closing a kernel-generated pseudo-unit
-(`init.scope`, a `session-N.scope`) as a target. A vendor unit like
-`pveproxy.service`, whose `FragmentPath` is `/usr/lib/systemd/system/…`, is
-refused before sudo ever runs: this runner cannot touch what it did not
-declare. `--user`, `--global`, `-H`, `-M` and `--root` are refused outright,
+delete pass still works — **or a systemd GENERATOR's own output** (measured,
+CT100 deploy 2026-09-26: `/run/systemd/generator`, and `.late`) **whose
+`SourcePath` is under a declared prefix.** That is exactly `Podman.Container`:
+Quadlet's generator writes `caddy.service`'s `FragmentPath` under
+`/run/systemd/generator`, never a path this runner would declare, but stamps
+`SourcePath` with the `.container` file that produced it — the thing this
+runner actually wrote, under `/etc/containers/systemd`. `SourcePath` is read
+in the same `systemctl show` as `FragmentPath`/`LoadState`, so no extra host
+round trip. A generated unit with no `SourcePath`, or one outside every
+prefix (a `.container` file elsewhere in Quadlet's OWN search path this
+runner was never told to own), still refuses. `enable`/`start`/`restart`
+with an empty `FragmentPath` are refused, closing a kernel-generated
+pseudo-unit (`init.scope`, a `session-N.scope`) as a target. A vendor unit
+like `pveproxy.service`, whose `FragmentPath` is `/usr/lib/systemd/system/…`
+— not a generator directory — is refused before sudo ever runs: this runner
+cannot touch what it did not declare, directly or through a generator.
+`--user`, `--global`, `-H`, `-M` and `--root` are refused outright,
 anywhere in the argv. `directory-lifecycle.ts`'s own `chown` argv is bare
 (`0`, `:0`, `0:0`); `canonicalize()` rewrites it to the `+`-forced form above
 before the allowlist ever sees it, so the unprivileged caller never has to
