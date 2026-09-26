@@ -64,4 +64,13 @@ export {
   type AclRuleOrderingProps,
   driftOf as aclRuleOrderingDriftOf,
 } from './acl-rule-ordering.ts';
+export {
+  UnifiWifiBroadcast,
+  UnifiWifiBroadcastProvider,
+  declareWifiBroadcast,
+  wifiBroadcast,
+  type WifiBroadcastAttributes,
+  type WifiBroadcastProps,
+  driftOf as wifiBroadcastDriftOf,
+} from './wifi-broadcast.ts';
 export { providers } from './providers.ts';

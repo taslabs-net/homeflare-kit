@@ -14,6 +14,7 @@ import { UnifiAclRuleOrderingProvider } from './acl-rule-ordering.ts';
 import { UnifiDnsPolicyProvider } from './dns-policy.ts';
 import { UnifiFirewallZoneProvider } from './firewall-zone.ts';
 import { UnifiNetworkProvider } from './network.ts';
+import { UnifiWifiBroadcastProvider } from './wifi-broadcast.ts';
 
 export const providers = () =>
   Layer.mergeAll(
@@ -22,4 +23,5 @@ export const providers = () =>
     UnifiDnsPolicyProvider(),
     UnifiAclRuleProvider(),
     UnifiAclRuleOrderingProvider(),
+    UnifiWifiBroadcastProvider(),
   );
