@@ -11,6 +11,17 @@
  *   creates a fresh cloud-init seed drive; the live slot then reads back
  *   `<storage>:vm-<vmid>-cloudinit,media=cdrom`. Both spellings compare equal to an existing volume
  *   already in the slot, for the same reason `storage:GiB` does.
+ * ⛔ A THIRD NEW-VOLUME SPELLING, FOUND BY homeflare-proxmox PR 84's RED TEAM (2026-09-26, real
+ *   fake-PVE engine): `<storage>:0,import-from=<volid>` imports a disk from another volume or a
+ *   downloaded image at create time. Before this fix it fell through to the `volume` branch below
+ *   (it has a comma, so `NEW_DISK` never matched it), so `want.volname` stayed the literal `"0"`
+ *   forever while PVE's live read-back reported the real `vm-<vmid>-disk-<n>` it allocated on
+ *   import -- a volname mismatch, REFUSED. That refusal fired on the very deploy that created the
+ *   disk (post-write verification reads the config right back) and on every plan after, because
+ *   the declared value is `import-from=...` again each time (Talos's `declareTalos` recomputes it
+ *   from the download resource, never switches to the resolved volname). Fixed the same way as the
+ *   other two: `NEW_IMPORT` below also counts as `kind: 'fresh'`, which already matches whatever is
+ *   live unconditionally (line ~103) -- no special-casing of the live side needed.
  * ⛔ NO RESIZE IS MADE HERE. lxc-volume.ts drives a second endpoint (`PUT .../resize`) this resource
  *   does not call — Talos's disks are declared once at their create size. A size difference between
  *   two already-adopted volume declarations is REFUSED with the `qm resize` to run by hand, never
@@ -18,7 +29,7 @@
  * ⚠️ OPTIONS BEYOND `size` ARE COMPARED AS A WHOLE, NOT KEY BY KEY. Unlike lxc-volume.ts, this file
  *   does not model pve-qemu-server's per-option defaults (`ssd`, `discard`, `iothread`, …) — that
  *   table is unverified here. So an option difference is real drift and gets written, exactly as the
- *   whole-string comparison this replaces already did; only the two "new volume" spellings and the
+ *   whole-string comparison this replaces already did; only the three "new volume" spellings and the
  *   live volume id/size are special-cased, which is the minimum that fixes the measured bug.
  */
 import { sameMap } from './lxc-wire.ts';
@@ -27,9 +38,16 @@ import { sameMap } from './lxc-wire.ts';
 const NEW_DISK = /^([^:\s]+):(\d+(?:\.\d+)?)$/;
 /** The `ideN` cloud-init-drive spelling — QEMU only, no GiB, no LXC equivalent. */
 const NEW_CLOUDINIT = /^([^:\s]+):cloudinit$/;
+/**
+ * The create-time import spelling: `<storage>:0,import-from=<volid>` (`<volid>` can itself contain
+ * a colon, e.g. `cephfs-tb4:import/talos-factory.raw`, hence `.+` rather than a no-colon class).
+ * `0` is PVE's literal placeholder size for "read the real size off the imported image" — never a
+ * declared GiB figure, so it must not be compared against a live `size=`.
+ */
+const NEW_IMPORT = /^([^:\s]+):0,import-from=.+$/;
 
 export type Disk = {
-  /** `fresh`: either new-disk spelling above. `volume`: an existing volume, `storage:volname,...`. */
+  /** `fresh`: any of the three new-disk spellings above. `volume`: an existing volume, `storage:volname,...`. */
   readonly kind: 'fresh' | 'volume';
   readonly source: string;
   readonly volname: string;
@@ -37,9 +55,9 @@ export type Disk = {
   readonly options: Map<string, string>;
 };
 
-/** `storage:volname,k=v,...` (or one of the two "fresh" spellings) into its comparable parts. */
+/** `storage:volname,k=v,...` (or one of the three "fresh" spellings) into its comparable parts. */
 export const parseDisk = (text: string): Disk => {
-  const fresh = NEW_DISK.exec(text) ?? NEW_CLOUDINIT.exec(text);
+  const fresh = NEW_DISK.exec(text) ?? NEW_CLOUDINIT.exec(text) ?? NEW_IMPORT.exec(text);
   if (fresh !== null) {
     return {
       kind: 'fresh',
