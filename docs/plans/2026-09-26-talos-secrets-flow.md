@@ -2,14 +2,17 @@
 
 Status: active — design gate for K-A3 (Talos resource rework) + lane O1 (OpenBao
 mount/policy); retire when the K-A3 release lands built to the signed-off design
-Verified: 2026-09-26
+Verified: 2026-09-26 (red-team findings applied same date)
 
-Design 1 of the two docs gating Talos-on-PVE work (the PVE→Talos gate plan,
-2026-09-26; Tim's answers of the same date are the requirements below).
-Companion: [2026-09-26-ceph-mon-transport.md](./2026-09-26-ceph-mon-transport.md).
+Part of the design suite gating Talos-on-PVE work (the PVE→Talos gate plan,
+2026-09-26; Tim's answers of the same date are the requirements below). Suite:
+this doc · [stack + first boot](./2026-09-26-talos-stack-first-boot.md) ·
+[networking](./2026-09-26-talos-networking.md) ·
+[Ceph transport](./2026-09-26-ceph-mon-transport.md) ·
+[Ceph config options](./2026-09-26-ceph-config-options.md).
 Convention: landscape `docs/plans/README.md`. ⛔ This repo is public: no
-hostnames, addresses, token ids or secret values appear here — node names and
-repo names already appear in this repo's docs (`docs/linux-sudo.md`).
+hostnames, addresses, token ids or secret values appear here (node names
+already appear in this repo's `packages/alchemy/docs/linux-sudo.md`).
 
 ## Measured today (2026-09-26, read-only)
 
@@ -22,21 +25,39 @@ repo names already appear in this repo's docs (`docs/linux-sudo.md`).
   bootstrap token (REASONED from the `talosctl gen config` output shape, Talos
   v1.13 docs; the file's own header says so at `:7-8`). Today's design therefore
   puts CA key material on repo disk.
-- `talos/credentials.ts:50-136` already has the right shape **for the
-  talosconfig**: mint from OpenBao KV at reconcile (`bao kv get`), write a 0600
-  `wx` temp file, finalizer removes it, errors report stderr only. MEASURED.
-  ⚠️ Its header is REASONED-not-measured and names a Postgres state store; the
-  consuming stacks actually use the shared Cloudflare HTTP state store
-  (homeflare-proxmox `AGENTS.md`, "Alchemy"). The rule it derives is right for
-  the wrong store — Alchemy state is unencrypted either way (`Redacted`
-  persists as `{"@redacted": …}`) — so the header needs correcting, not the rule.
-- `talos/values.ts:38-66` already keeps kubeconfig material out of state
-  (endpoint + fingerprints only). MEASURED. Kubeconfig flow needs no redesign.
+- ⛔ `talos/credentials.ts` HAS THE RIGHT INGREDIENTS AND A BROKEN LIFETIME —
+  MEASURED (red-team scratch run of the exact shape on the pinned
+  effect 4.0.0-rc.115: the file is gone when the caller uses it).
+  Mint-at-reconcile, the 0600 `wx` create and stderr-only errors are all right.
+  But `mintTalosconfig` wraps its whole body in `Effect.scoped`
+  (`credentials.ts:51`) and registers the delete finalizer inside that scope
+  (`:127-132`), so the scope closes — and the temp file is deleted — the moment
+  the mint returns. Every current caller hands talosctl a path to a deleted
+  file, and the swallowing reads downstream (`orElseSucceed`) disguise that as
+  "not converged". K-A3 rebuilds the mint as `acquireRelease` with the file's
+  lifetime owned by the caller's own `Effect.scoped`. ⚠️ This defect ships on
+  kit main today, independent of every decision below.
+- ⚠️ The credentials header is REASONED-not-measured and wrong twice: the
+  consuming stacks use the shared Cloudflare HTTP state store, not the Postgres
+  it names (homeflare-proxmox `AGENTS.md`, "Alchemy"), and the pinned
+  alchemy 2.0.0-beta.79 persists `Redacted` under the marker `__redacted__`
+  (`alchemy/src/State/StateEncoding.ts:10`), not `{"@redacted": …}`. The rule
+  it derives — state is unencrypted, nothing secret in props, attributes or
+  logs — is right either way; K-A3 corrects the header, not the rule.
+- `talos/values.ts:38-66` keeps kubeconfig material out of state (endpoint +
+  fingerprints only). MEASURED. ⚠️ But `Talos.Kubeconfig` itself writes a
+  cluster-admin kubeconfig to `runtimePath` on host disk and never removes it
+  (`kubeconfig.ts` reconcile: `talosctl kubeconfig <runtimePath>`), and its
+  read depends on that file — verify from any other host plans `update`
+  forever, and the file is the same keys-on-disk class O-C below is rejected
+  for. K-A3's scope includes it: the kubeconfig lands in the vault (a
+  `kubeconfig` key on the mount) and consumers mint it the way the
+  talosconfig is minted.
 
 ## Requirements (Tim, 2026-09-26)
 
 - Separate stack `alchemy.talos.ts` with its own state; first VMs node-pinned,
-  HA off.
+  HA off (details: the [stack + first boot](./2026-09-26-talos-stack-first-boot.md) doc).
 - ⛔ Nothing secret in Alchemy state, props, argv or logs.
 - Talos VM and StorageDownload rows are creates through the first-create gate,
   **no `adopt()`**.
@@ -51,15 +72,24 @@ repo names already appear in this repo's docs (`docs/linux-sudo.md`).
   `talosctl gen config --with-secrets` on the operator's machine; write
   `secrets.yaml`, the talosconfig and each node's rendered config into the
   mount (values via `@file`/stdin, ⛔ never argv); delete the local files.
-- Props become `{ node, target: { mount, cluster }, configKey, configDigest }` —
-  the sha256 of the KV content, pinned in git. No `configFile`, no disk read;
+  The seeded config must already carry the CNI and kube-proxy settings the
+  first-boot doc requires — the seed checklist lives there.
+- Props become `{ node, target: { mount, cluster }, configKey, configDigest }`
+  — the sha256 of the KV content, pinned in git. No `configFile`, no disk read;
   `STACK_DIR` is deleted with it.
 - Reconcile: mint the KV value → verify `sha256(content) === configDigest`
   (mismatch = typed error, fail closed, nothing applied — a poisoned or
-  fat-fingered KV write cannot silently reach a node) → 0600 `wx` temp file +
-  finalizer (exactly `credentials.ts:102-132`) → `talosctl apply-config` →
-  read back the live digest (keep `talos-machine-config.ts:114-121`).
+  fat-fingered KV write cannot silently reach a node) → 0600 `wx` temp file
+  acquired with `acquireRelease` in the resource's own scope (the ingredients
+  of `credentials.ts:102-132` with the lifetime defect above fixed) →
+  `talosctl apply-config` → bounded read-back (the first-boot doc defines
+  `converged` per apply mode — the shipped whole-output hash can never match).
 - State carries digest, node, mode, converged — nothing else.
+- ★ The digest is `sha256(canonicalText(content))` — trailing whitespace
+  trimmed (`values.ts:10`) — so a plain `sha256sum` of a newline-terminated
+  file prints a DIFFERENT hash. K-A3 ships a kit command that reads the KV
+  value and prints only the digest; the operator pins what it prints and
+  computes nothing by hand.
 - ★ A config change is two artifacts on purpose: the operator writes a new KV
   version AND a PR bumps the pinned digest. Auditable in both places; neither
   alone can change a node.
@@ -75,69 +105,53 @@ pinned digest already gives. Viable fallback if Tim wants config diffs in git.
 bootstrap token stay on repo disk, in every checkout and backup.
 
 ⚠️ O-A's cost: `diff` needs KV reads too (it mints a talosconfig to read the
-live digest, `talos-machine-config.ts:79-90`), so _planning_ needs vault
-access — decision D2 below.
+live digest), so _planning_ needs vault access — decision D2 below.
 
 ## O1 — OpenBao mount + policy
 
 - New KV-v2 mount `talos-<cluster>` (D1 names the cluster; `credentials.ts`'s
-  example is `talos-c1`). Keys: `secrets` (secrets.yaml), `talosconfig`
-  (`talosconfigKey`'s default `data/talosconfig` already matches,
-  `credentials.ts:42`), `nodes/<node>` (rendered config), `ceph/<entity>`
-  (companion doc).
-- Policy `talos-provision`: read+list on that mount's `data/*` + `metadata/*`.
-  ⛔ Writes stay operator-only — the deploy lane must never be able to rotate
-  the cluster CA it authenticates with.
-- ★ Recommend creating the mount on the estate's **target-primary vault only**
-  (the consolidation plan's end state), not on the interim one: the mount is
-  new, so placing it there keeps it out of the migration copy-list entirely
-  (the measured trap: KV values present only on the interim vault read empty
-  after an agent re-points). If Tim wants it on the interim vault instead, it
-  joins that copy-list explicitly. Either way the grant lands in both policy
-  sets.
+  example is `talos-c1`). Keys, as CLI paths — `bao kv get` inserts the KV-v2
+  `data/` API segment itself: `secrets` (secrets.yaml), `talosconfig`,
+  `kubeconfig` (deploy-written once, per the measured kubeconfig note above),
+  `nodes/<node>` (rendered config), `ceph/<entity>` (companion doc).
+  ⚠️ `talosconfigKey`'s shipped default `data/talosconfig`
+  (`credentials.ts:42`) therefore reads `<mount>/data/data/talosconfig` — it
+  fails closed, but it would block the first deploy; K-A3 fixes the default
+  to `talosconfig`.
+- ⛔ WHERE THE MOUNT LIVES IS CONSTRAINED BY WHO DIALS IT. The Talos deploy
+  mints its PVE token from the `proxmox-tb4` engine, which lives on the mini's
+  vault (`homeflare-proxmox src/mini-bao.ts:4-6`), and `child-env.ts` hands
+  the deploy child exactly one vault address ("THE CHILD TALKS TO THE BAO THIS
+  WRAPPER CHOSE, AND NO OTHER" — inherited addresses are stripped on purpose);
+  `mintTalosconfig` inherits that env (`extendEnv: true`) and `TalosTarget`
+  carries no address. One process, one vault. So the draft's "target-primary
+  (VPS) only" recommendation was unreachable from the lane that deploys.
+  Options:
+  - **Mini's vault now, plus an explicit entry in the consolidation copy-list
+    (recommended).** Works with the wrapper exactly as it is. The copy-list
+    entry is the price — the trap the draft tried to dodge, now carried
+    openly instead of dodged into unreachability.
+  - Per-target vault address + a second login: rejected — it re-opens the
+    exact leak `child-env.ts` closes (a deploy token riding to a
+    shell-chosen address).
+  - Wait for the `proxmox-tb4` engine's own move to the VPS vault, then mount
+    there: couples Talos start to the vault-consolidation timeline. Tim may
+    choose that knowingly.
+- Policy `talos-provision`: read+list on the mount's `data/*` + `metadata/*`,
+  **plus write on `data/ceph/*` only** — the Ceph companion's deploy lane
+  lands entity keys there. ⛔ The carve never covers `secrets`, `talosconfig`,
+  `kubeconfig` or `nodes/*`: CA-material writes stay operator-only — the
+  deploy lane must never be able to rotate the cluster CA it authenticates
+  with. (Exception: the `kubeconfig` key is written by the deploy lane once
+  at cluster bring-up; its write grant is that one key, not the mount.)
+- Who holds `talos-provision`: the admin/deploy login only. With D2's
+  recommended answer, `plan:talos` and verify run on the admin lane too.
+- O1 also carries the vault half of K-A0: a new `proxmox-tb4` engine role for
+  `TalosProvisioner` (the PVE-side role is K-A0's kit half). Every grant edit
+  — mount, policy, engine role — lands in **both** live policy sets.
 - ⛔ Declaring the mount never writes a secret into it; seeding `secrets` is an
   operator step, the same split homeflare-openbao's proxmox engine mounts
   document for `<mount>/config`.
-
-## The separate stack — alchemy.talos.ts
-
-- Lives in homeflare-proxmox beside `alchemy.node.ts` (its `docs/stacks.md`:
-  one stack per system). Own stack name, own rows in the shared state store,
-  `plan:talos` / `deploy:talos`; deploys are operator-run on the admin lane.
-- PVE credential: minted from the TB4 engine role bound to the new
-  `TalosProvisioner` role/user (K-A0 — Tim: separate TB4-only role, least
-  privilege; the old apply token joins the retire list).
-- Rows, all creates through the first-create gate, no `adopt()`:
-  `Proxmox.StorageDownload` (checksum-pinned Talos image, K-A2, after the
-  storage-content `import` update), `Proxmox.Vm` ×N node-pinned with HA off
-  (kit `qemu-read` fails a plan whose vmid moved nodes — a migration is not an
-  update), then per node `Talos.MachineConfig` (O-A props, `after:` its VM
-  row), `Talos.Bootstrap` once, `Talos.ClusterHealth` as the gate row,
-  `Talos.Kubeconfig` (fingerprints only).
-- ⛔ No VM prop carries machine config bytes or `cipassword` (K-A1 rule).
-
-## Networking (coordinator default until Tim says otherwise)
-
-**Default: VLAN-aware vmbr bridges + Cilium BGP inside k8s, peering to the
-UniFi/OPNsense routers.** VM NICs attach to an existing bridge with a dedicated
-VLAN tag; PVE SDN stays measured-none, so no SDN apply ever runs — an apply
-reloads networking on every node and the Ceph fabric rides on it
-(homeflare-proxmox `docs/sdn.md`). Service VIPs are advertised by Cilium BGP
-via Helm + CRDs — the dogfood decision record
-([PR 253](https://github.com/taslabs-net/homeflare-kit/pull/253), open as of
-2026-09-26; `packages/alchemy/docs/talos-argocd-dogfood.md` once merged)
-already fixes Cilium as Helm+CRDs, no invented SDK, and carries the
-ASN/peer/VIP placeholder variables.
-⚠️ Before the first VM row: a coordinator read must confirm the target bridge
-is `bridge-vlan-aware` on the three TB4 nodes — that flag sits in the not-yet-
-adopted NodeNetwork rows and has not been measured. If it is off, enabling it
-is a node-network change that goes through the NodeNetwork lane, not this stack.
-
-**Alternative (SDN VNets), and what changes:** the SDN chain lands on the Talos
-path — SdnApply rebuilt with a member-node-changes refusal, fabric families
-declared first, every apply a cluster-wide network reload; the VLAN read above
-is replaced by VNet creates through the first-create gate; Cilium's BGP peers
-move to SDN fabric addresses. O-A and O1 are unchanged either way.
 
 ## Risks
 
@@ -145,8 +159,8 @@ move to SDN fabric addresses. O-A and O1 are unchanged either way.
   failing closed is the design, but a stuck mismatch blocks every Talos deploy
   until the pair reconciles. Mitigation: the typed error names both digests.
 - ⚠️ Everything talosctl is REASONED from v1.13 docs (`talos/resource.ts:15-16`);
-  the first maintenance-mode apply is the first measurement. First apply runs
-  `--dry-run` before the real one.
+  the first maintenance-mode apply is the first measurement — and ⛔ never a
+  `--dry-run` (it prints secrets; the first-boot doc owns that rule).
 - ⚠️ A SIGKILL strands a 0600 temp config on the deploy host —
   `credentials.ts:112-113` accepts the same for the talosconfig; same argument.
 - D2 = agent-lane read would put CA-carrying material within a compromised
@@ -154,35 +168,33 @@ move to SDN fabric addresses. O-A and O1 are unchanged either way.
 
 ## Tim must decide
 
-- **D1** Cluster name → mount name, and target-primary-only mount (recommended)
-  vs interim vault + explicit migration copy-list entry.
+- **D1** Cluster name → mount name, and placement: mini's vault + explicit
+  consolidation copy-list entry (recommended), vs waiting for the TB4 engine's
+  VPS move (see O1 — the draft's VPS-only option is unreachable today).
 - **D2** May the agent plan lane read the Talos mount (plans and verify need
   live digests), or do Talos plans run admin/operator-only? Recommended:
   admin-only until the k8s consumer path exists.
 - **D3** Confirm O-A (all-in-vault, digest pinned in git) over O-B (template in
   git, render at reconcile).
-- **D4** VLAN id + subnet for the Talos VLAN, and the BGP peer: UniFi,
-  OPNsense, or both.
-- **D5** vmid range for the Talos VMs (the gate plan's pre-create sweep covers
-  10000–19999 — confirm that range is theirs).
+
+(The VLAN/BGP and vmid decisions moved with their sections to the companions.)
 
 ## Acceptance tests
 
 1. Kit unit (fake `bao` spawner): digest mismatch → typed error, no talosctl
    spawn, no temp file left behind. Match → argv is exactly
-   `apply-config --file <tmp> --mode <m>`; temp file is 0600, created `wx`,
-   gone after scope exit.
+   `apply-config --file <tmp> --mode <m>`; the temp file **exists, is 0600 and
+   was created `wx` at the moment the fake talosctl spawns**, and is gone
+   after the caller's scope closes — the lifetime assertion today's build
+   fails (C1 above); "gone after scope exit" alone would pass the broken shape.
 2. Kit structural: `MachineConfigProps` has no `configFile`; no talos prop,
    attribute or argv carries config bytes; state fixtures contain no PEM or
    token strings (grep gate in the family's tests).
-3. O1: `bao policy read talos-provision` equals the repo join; with D2 = no,
-   an agent-lane token is denied on the mount's `data/secrets`; the KV-v2
-   mount exists where D1 placed it.
-4. Stack: `plan:talos` against the empty cluster plans exactly the declared
-   creates — zero adopts, zero updates; the first-create gate walkthrough is
-   recorded per row before the deploy.
-5. Coordinator (read-only): `bridge-vlan-aware` confirmed on the three TB4
-   nodes before the first VM deploy.
-6. Post-deploy: the provider's own read-back shows each node's live
-   machineconfig digest equal to the pinned digest, and the verify pass reads
-   every Talos row noop with zero refused-read warnings.
+3. O1: `bao policy read talos-provision` equals the repo join; an agent-lane
+   token is denied on the mount's `data/secrets` (D2 = no); the deploy login
+   **can** write `data/ceph/<entity>` and **cannot** write `data/secrets`,
+   `data/talosconfig` or `data/nodes/<node>`; the KV-v2 mount exists where D1
+   placed it, and its copy-list entry exists if D1 chose the mini.
+4. The digest read-back and first-boot ordering tests live in the
+   [stack + first boot](./2026-09-26-talos-stack-first-boot.md) doc (it owns
+   `converged`).
