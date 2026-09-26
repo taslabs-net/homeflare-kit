@@ -3,9 +3,8 @@
 ---
 
 Talos machine config, talosconfig and any future KV-backed Talos material now come from OpenBao
-instead of repo disk — the accepted secrets-flow design (docs/plans/2026-09-26-talos-secrets-flow.md
-
-- -talos-stack-first-boot.md).
+instead of repo disk — the accepted secrets-flow design
+(docs/plans/2026-09-26-talos-secrets-flow.md and -talos-stack-first-boot.md).
 
 Fixed the C1 temp-file-lifetime defect: `mintTalosconfig` used to wrap its own body in
 `Effect.scoped`, so its delete finalizer ran — deleting the file — the instant `mintTalosconfig`
