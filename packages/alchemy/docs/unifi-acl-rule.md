@@ -31,7 +31,13 @@ represent order.
   scripts/convert.ts"). This is the same converter-flattening trap (T10) `network-form.ts` already
   documents for `ipv4Configuration`; typing these per-discriminator (A3) is explicitly scoped OUT
   of this PR. Compared with plain `deepEqual` — honest about not being decoded, not a guess at a
-  narrower shape.
+  narrower shape. ⚠️ **Known gap until A3 (T15, red team, Minor finding 4)**: the vendor's own
+  filter variants (`IntegrationIpAclRuleNetworkEndpointFilterDto`'s `networkIds`,
+  `IntegrationIpAclRuleSubnetEndpointFilterDto`'s `ipAddressesOrSubnets`, both variants'
+  `portFilter`, `IntegrationMacAclRuleMacAddressEndpointFilterDto`'s `macAddresses`) are themselves
+  set-like arrays — `deepEqual` compares them order-sensitively, the same false-`update` risk
+  already fixed for `deviceIds`/`protocolFilter` below, just not fixable here without decoding the
+  filter first.
 - **`enforcingDeviceFilter.deviceIds` and `protocolFilter` are SETS**, normalized with the same
   `sortedSet` `firewall-zone-form.ts` uses for `networkIds`: neither field's own vendor description
   ("IDs of the Switch-capable devices used to enforce the ACL rule," "Protocols this ACL rule will
@@ -67,17 +73,35 @@ covering both families in this PR plus `Unifi.DnsPolicy` (`docs/unifi-dns-policy
   tag), 4 generic `filter`-query-syntax schemas (`FilterExpression` and its three siblings,
   matching the new `Filtering` tag), and one mDNS enum addition (`SHELLY`, `UniFi Devices` tag).
   Full per-schema breakdown: the distilled package's own `docs/spec-version-provenance.md`.
-- **Reachability**: resolved every `$ref` reachable from the 12 operations' full parameter/body/
-  response trees, recursively, in both versions. The closure is 17 schema names in both versions,
-  identical set (`ACL rule`, `ACL rule device filter`, `ACL rule ordering`, `ACL rule update`,
-  `ACL ruleObject`, `Create or update DNS policy`, `DNS policy`, `Entity metadata`,
-  `IntegrationAclRulePageDto`, `IntegrationDnsPolicyPageDto`, `Site-to-site VPN tunnel metadata`,
-  and five entity-metadata variants) — **zero overlap** with the 14 that changed.
+- **Reachability, corrected 2026-09-26 (red team, Important finding 1)**: the original pass
+  resolved only plain `$ref`s reachable from the 12 operations' full parameter/body/response trees
+  — 17 schema names. ⛔ **That walk is wrong for any discriminated schema**: both `DNS policy`
+  (`type`: `A_RECORD`…`TXT_RECORD`, `FORWARD_DOMAIN` — 7-way) and `ACL rule` (`type`: `IPV4`, `MAC`
+  — 2-way) are `discriminator`-typed, and a variant reachable only via `discriminator.mapping`
+  carries no `$ref` from its parent at all. Re-walked following `$ref` **and** `mapping` targets:
+  the closure is **46 schema names**, identical set in both versions. The 29 names the `$ref`-only
+  walk missed: all 7 DNS record variant DTOs (`IntegrationDnsARecordDto`,
+  `IntegrationDnsAaaaRecordDto`, `IntegrationDnsCnameRecordDto`, `IntegrationDnsForwardDomainPolicyDto`,
+  `IntegrationDnsMxRecordDto`, `IntegrationDnsSrvRecordDto`, `IntegrationDnsTxtRecordDto`) plus their
+  7 `*CreateUpdateDto` siblings; both ACL rule variant DTOs (`IntegrationIpAclRuleDto`,
+  `IntegrationMacAclRuleDto`) plus their 2 `*CreateUpdateDto` siblings; the IP/MAC endpoint-filter
+  DTOs (`IP ACL rule endpoint`, `MAC ACL rule endpoint`, `IntegrationIpAclRuleNetworkEndpointFilterDto`,
+  `IntegrationIpAclRulePortEndpointFilterDto`, `IntegrationIpAclRuleSubnetEndpointFilterDto`,
+  `IntegrationMacAclRuleMacAddressEndpointFilterDto`); `IntegrationAclRuleDevicesFilterDto`
+  (the device-filter's own `DEVICES` mapping target); and 2 more entity-metadata variants beyond the
+  five the original count already had. Re-diffed all 46 against the mirror with an order-independent
+  structural compare (not a byte/string compare — JSON key order differs between the pin and the
+  mirror file): **zero differ.** **Zero overlap** with the 14 schemas that changed elsewhere in the
+  document.
 
-**Answer: neither `DnsPolicy` nor `AclRule`/`AclRuleOrdering` would decode differently against
-10.6.97.** This does not generalize past 10.6.97 or to any other tag — re-run this same check
-before importing or declaring against `Clients`, `WiFi Broadcasts`, `Traffic Matching Lists`,
-`Switching`, or `Firewall` (`FirewallPolicy`).
+**Answer unchanged: neither `DnsPolicy` nor `AclRule`/`AclRuleOrdering` would decode differently
+against 10.6.97** — the conclusion survives the correction; only the closure method and the schema
+count were wrong. **This does not generalize past 10.6.97 or to any other tag — re-run this check,
+following BOTH `$ref` and `discriminator.mapping`, before importing or declaring against `Clients`,
+`WiFi Broadcasts`, `Traffic Matching Lists`, `Switching`, or `Firewall` (`FirewallPolicy`); a
+`$ref`-only walk on `WiFi Broadcasts` finds 15 schemas and would miss
+`IntegrationWifiMdnsProxyPredefinedServiceDto`, which DID change (10.6.97 added the `SHELLY` enum
+member) and is reachable only through a `mapping`.**
 
 ## The declaration renderers
 

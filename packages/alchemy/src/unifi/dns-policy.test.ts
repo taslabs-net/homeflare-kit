@@ -6,6 +6,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type * as dnsPolicies from '@distilled.cloud/unifi-network/dns_policies';
+import * as Retry from '@distilled.cloud/unifi-network/Retry';
 import * as Effect from 'effect/Effect';
 import { fakeFailure, fakeUnifi, fakeUnifiLayer } from './fake-unifi.ts';
 import { attributesOf } from './dns-policy-form.ts';
@@ -19,7 +20,7 @@ const liveDnsPolicy = (overrides: Partial<dnsPolicies.DNSPolicy> = {}): dnsPolic
   enabled: true,
   id: 'dns-1',
   metadata: { origin: 'USER' },
-  type: 'A',
+  type: 'A_RECORD',
   domain: 'cameras.example.test',
   ipv4Address: '192.0.2.10',
   ttlSeconds: 300,
@@ -30,7 +31,7 @@ const PROPS: DnsPolicyProps = {
   siteId: 'site-1',
   dnsPolicyId: 'dns-1',
   enabled: true,
-  type: 'A',
+  type: 'A_RECORD',
   domain: 'cameras.example.test',
   ipv4Address: '192.0.2.10',
   ttlSeconds: 300,
@@ -57,19 +58,34 @@ describe('Unifi.DnsPolicy spec.fetchLive', () => {
     );
     expect(live).toBeUndefined();
   });
+
+  test('a 500 fails loudly -- only a genuine not-found may mean absent (T14)', async () => {
+    // ⚠️ `Retry.none`: the default policy retries a 500 indefinitely with backoff -- this test
+    //   asserts the FAILURE, not the retry schedule. Regression for red-team Important finding 2:
+    //   a blanket `Effect.orElseSucceed(() => undefined)` fold would pass every test above too.
+    const fake = fakeUnifi(() => fakeFailure(500, 'boom'));
+    const failure = await Effect.runPromise(
+      Effect.flip(
+        spec.fetchLive(PROPS).pipe(Retry.none, Effect.provide(fakeUnifiLayer(fake.fetch))),
+      ),
+    );
+    expect(failure._tag).toBe('InternalServerError');
+  });
 });
 
 describe('declareDnsPolicy -- the declaration renderer', () => {
   test('its output matches attributesOf(live) by construction, for any live object', () => {
     // A record shape with a DIFFERENT set of fields present than `liveDnsPolicy`'s default (a
-    // TXT record has no `domain`/`ipv4Address`/`ttlSeconds`) -- a fresh literal, not the `A`
-    // record fixture's overrides, so no field is merely omitted from an override that would
-    // otherwise still carry the base fixture's value.
+    // TXT record has no `ipv4Address`/`ttlSeconds`, but DOES require its own `domain` --
+    // `IntegrationDnsTxtRecordDto` lists `domain` as required, unlike the A-record-only fields) --
+    // a fresh literal, not the `A_RECORD` fixture's overrides, so no field is merely omitted from
+    // an override that would otherwise still carry the base fixture's value.
     const live: dnsPolicies.DNSPolicy = {
       enabled: true,
       id: 'dns-2',
       metadata: { origin: 'USER' },
-      type: 'TXT',
+      type: 'TXT_RECORD',
+      domain: 'spf.example.test',
       text: '"v=spf1 -all"',
     };
     const declared = declareDnsPolicy(live, 'site-1');

@@ -12,6 +12,14 @@
  *   per-discriminator) is scoped OUT of this PR — see the plan's family inventory — so both stay
  *   opaque JSON, compared with plain `deepEqual`, honest about not being decoded.
  *
+ * ⚠️ KNOWN GAP UNTIL A3 (T15, red team, Minor finding 4): the vendor's own variant DTOs for these
+ *   filters carry SET-LIKE arrays too (`networkIds`, `ipAddressesOrSubnets`, `portFilter`,
+ *   `macAddresses` — `docs/unifi-acl-rule.md`'s own field notes). Because the filter stays opaque,
+ *   `deepEqual` compares those nested arrays order-sensitively, the same false-`update` risk this
+ *   file already removes for `deviceIds`/`protocolFilter` by normalizing them — but here there is
+ *   no decoded field to normalize. Accepted as a known gap, not fixed, until A3 types the filter
+ *   per-discriminator and can apply `sortedSet` to its own array fields.
+ *
  * ⛔ `index` IS ATTRIBUTES-ONLY, NEVER DECLARED. `CreateAclRuleRequest`'s own field comment:
  *   "ACL rule index. This property is deprecated and has no effect. Use the dedicated ACL rule
  *   reordering endpoint." The live object's current position is `acl-rule-ordering.ts`'s concern

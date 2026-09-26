@@ -1,16 +1,18 @@
 /**
  * `Unifi.DnsPolicy` — one DNS policy on a UniFi Network site, READ-ONLY (`policy.ts`).
  *
- * ★ T11 GATE, CHECKED 2026-09-26: `DNS Policies` is 5 operations, `Access Control (ACL Rules)`
- *   (`acl-rule.ts`) is 7 — 12 total. Diffed the pinned 10.4.57 spec against a 10.6.97 mirror
- *   (`beezly/unifi-apis`, diffing aid only, `docs/unifi-acl-rule.md` records the sha256 + mirror
- *   commit): all 12 full operation objects (parameters, request body, responses, unresolved
- *   `$ref`s included) are byte-identical across versions, and the 17-schema closure reachable from
- *   either tag (`DNS policy`, `ACL rule`, their metadata/page-DTO/ordering siblings) shares zero
- *   names with the 14 schemas that DID change between the two versions (all in `Switching`,
- *   `Filtering`, or one `UniFi Devices` enum — none of it DNS- or ACL-shaped). Same reachability
- *   method `spec-version-provenance.md` (distilled package) used for Networks/FirewallZones;
- *   full breakdown in `docs/unifi-acl-rule.md`, not repeated per family.
+ * ★ T11 GATE, CHECKED 2026-09-26, CORRECTED SAME DAY (red team, Important finding 1): `DNS
+ *   Policies` is 5 operations, `Access Control (ACL Rules)` (`acl-rule.ts`) is 7 — 12 total.
+ *   Diffed the pinned 10.4.57 spec against a 10.6.97 mirror (`beezly/unifi-apis`, diffing aid
+ *   only, `docs/unifi-acl-rule.md` records the sha256 + mirror commit): all 12 full operation
+ *   objects (parameters, request body, responses, unresolved `$ref`s included) are byte-identical
+ *   across versions. ⚠️ The schema closure is 46, not 17 — a `$ref`-only walk misses every schema
+ *   reachable only via a `discriminator.mapping` (both `DNS policy` and `ACL rule` discriminate on
+ *   `type`); the 46-schema closure, `$ref` + `mapping` together, shares zero names with the 14
+ *   schemas that DID change between the two versions (all in `Switching`, `Filtering`, or one
+ *   `UniFi Devices` enum — none of it DNS- or ACL-shaped). Same reachability method
+ *   `spec-version-provenance.md` (distilled package) used for Networks/FirewallZones, extended to
+ *   follow `mapping` too; full breakdown in `docs/unifi-acl-rule.md`, not repeated per family.
  */
 import { Resource } from 'alchemy';
 import { adopt } from 'alchemy/AdoptPolicy';

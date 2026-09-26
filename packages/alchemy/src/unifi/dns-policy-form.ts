@@ -2,12 +2,15 @@
  * `Unifi.DnsPolicy`'s wire shape — the declarable subset of `DNSPolicy`, and how a live read
  * becomes both plan attributes and a rendered declaration.
  *
- * ★ ONE FLAT DTO FOR EVERY DNS RECORD `type` (`A`/`AAAA`/`CNAME`/`MX`/`SRV`/`TXT`/`Forwarding`, …
- *   the vendor names them via the plain `type: string`, not an enum this spec declares). Unlike
+ * ★ ONE FLAT DTO FOR EVERY DNS RECORD `type` (`A_RECORD`/`AAAA_RECORD`/`CNAME_RECORD`/
+ *   `FORWARD_DOMAIN`/`MX_RECORD`/`SRV_RECORD`/`TXT_RECORD` — the pinned spec's `DNS policy` schema
+ *   DOES discriminate on `type`, via `discriminator.mapping` to 7 variant DTOs; see
+ *   `docs/unifi-dns-policy.md`'s "One flat DTO" section, corrected 2026-09-26). Unlike
  *   `access_control_acl_rules.ts`'s `sourceFilter`/`destinationFilter` or `firewall.ts`'s policy
  *   filters, NONE of `dns_policies.ts`'s fields were widened to `unknown` by the converter (T10) —
- *   every optional field decodes as a plain scalar already, so there is no discriminated-variant
- *   trap here to flag or defer past this PR.
+ *   `scripts/convert.ts` flattens the 7 variants into one struct instead, because no two variants
+ *   collide on a field name, so every optional field still decodes as a plain scalar and there is
+ *   no discriminated-variant trap here to flag or defer past this PR.
  *
  * ⚠️ PROPS MIRROR `UpdateDnsPolicyRequest`, NOT `DNSPolicy` — same split `network-form.ts` and
  *   `firewall-zone-form.ts` both use. `id` and `metadata` are server-derived (no writable field
@@ -31,7 +34,8 @@ export interface DnsPolicyProps {
   siteId: string;
   dnsPolicyId: string;
   enabled: boolean;
-  /** DNS record type, e.g. `A`, `AAAA`, `CNAME`, `MX`, `SRV`, `TXT`, `Forwarding`. */
+  /** DNS record type: `A_RECORD`, `AAAA_RECORD`, `CNAME_RECORD`, `FORWARD_DOMAIN`, `MX_RECORD`,
+   *  `SRV_RECORD` or `TXT_RECORD` (the discriminator's own mapping keys, see the header). */
   type: string;
   domain?: string | undefined;
   ipv6Address?: string | undefined;

@@ -5,6 +5,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type * as aclRules from '@distilled.cloud/unifi-network/access_control_acl_rules';
+import * as Retry from '@distilled.cloud/unifi-network/Retry';
 import * as Effect from 'effect/Effect';
 import { fakeFailure, fakeUnifi, fakeUnifiLayer } from './fake-unifi.ts';
 import { attributesOf } from './acl-rule-form.ts';
@@ -21,9 +22,14 @@ const liveAclRule = (overrides: Partial<aclRules.ACLRule> = {}): aclRules.ACLRul
   index: 3,
   metadata: { origin: 'USER' },
   name: 'Block IoT to WAN',
-  type: 'NETWORK_TO_INTERNET',
+  // ★ `IPV4` is the real `ACL rule` discriminator value (`type`: `IPV4`|`MAC`, `docs/unifi-acl-
+  //   rule.md`) -- a prior fixture used the invented `NETWORK_TO_INTERNET`, corrected 2026-09-26.
+  type: 'IPV4',
   protocolFilter: ['TCP', 'UDP'],
-  enforcingDeviceFilter: { type: 'ALL_SWITCHES' },
+  // ★ `DEVICES` is the real `ACL rule device filter` discriminator value; the vendor has no
+  //   "ALL_SWITCHES" variant -- omitting the field entirely means "all switches" per its own
+  //   description ("When null, the rule will be provisioned to all switches on the site").
+  enforcingDeviceFilter: { type: 'DEVICES', deviceIds: ['sw-1'] },
   ...overrides,
 });
 
@@ -33,9 +39,9 @@ const PROPS: AclRuleProps = {
   action: 'BLOCK',
   enabled: true,
   name: 'Block IoT to WAN',
-  type: 'NETWORK_TO_INTERNET',
+  type: 'IPV4',
   protocolFilter: ['TCP', 'UDP'],
-  enforcingDeviceFilter: { type: 'ALL_SWITCHES' },
+  enforcingDeviceFilter: { type: 'DEVICES', deviceIds: ['sw-1'] },
 };
 
 describe('Unifi.AclRule spec.fetchLive', () => {
@@ -58,6 +64,19 @@ describe('Unifi.AclRule spec.fetchLive', () => {
       spec.fetchLive(PROPS).pipe(Effect.provide(fakeUnifiLayer(fake.fetch))),
     );
     expect(live).toBeUndefined();
+  });
+
+  test('a 500 fails loudly -- only a genuine not-found may mean absent (T14)', async () => {
+    // ⚠️ `Retry.none`: the default policy retries a 500 indefinitely with backoff -- this test
+    //   asserts the FAILURE, not the retry schedule. Regression for red-team Important finding 2:
+    //   a blanket `Effect.orElseSucceed(() => undefined)` fold would pass every test above too.
+    const fake = fakeUnifi(() => fakeFailure(500, 'boom'));
+    const failure = await Effect.runPromise(
+      Effect.flip(
+        spec.fetchLive(PROPS).pipe(Retry.none, Effect.provide(fakeUnifiLayer(fake.fetch))),
+      ),
+    );
+    expect(failure._tag).toBe('InternalServerError');
   });
 });
 
@@ -118,11 +137,15 @@ describe('driftOf -- B6 field-level drift, straight from one live read', () => {
   });
 
   test('sourceFilter/destinationFilter stay opaque -- a real difference is still caught', () => {
-    const live = liveAclRule({ sourceFilter: { type: 'NETWORK', networkId: 'net-1' } });
+    // `NETWORKS` + `networkIds` (plural, an array) is the real `IntegrationIpAclRuleNetworkEndpoint
+    // FilterDto` shape -- a prior fixture used the invented singular `NETWORK`/`networkId`,
+    // corrected 2026-09-26. `sourceFilter` is `unknown` either way, so this is a fixture-realism fix
+    // only, not a behavior change.
+    const live = liveAclRule({ sourceFilter: { type: 'NETWORKS', networkIds: ['net-1'] } });
     expect(driftOf(live, PROPS)).toEqual([
       {
         field: 'sourceFilter',
-        live: { type: 'NETWORK', networkId: 'net-1' },
+        live: { type: 'NETWORKS', networkIds: ['net-1'] },
         declared: undefined,
       },
     ]);

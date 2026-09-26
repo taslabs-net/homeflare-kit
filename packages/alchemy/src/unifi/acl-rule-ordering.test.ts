@@ -5,6 +5,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type * as aclRules from '@distilled.cloud/unifi-network/access_control_acl_rules';
+import * as Retry from '@distilled.cloud/unifi-network/Retry';
 import * as Effect from 'effect/Effect';
 import { fakeFailure, fakeUnifi, fakeUnifiLayer } from './fake-unifi.ts';
 import { attributesOf, driftOf, matches } from './acl-rule-ordering-form.ts';
@@ -45,6 +46,19 @@ describe('Unifi.AclRuleOrdering spec.fetchLive', () => {
       spec.fetchLive(PROPS).pipe(Effect.provide(fakeUnifiLayer(fake.fetch))),
     );
     expect(live).toBeUndefined();
+  });
+
+  test('a 500 fails loudly -- only a genuine not-found may mean absent (T14)', async () => {
+    // ⚠️ `Retry.none`: the default policy retries a 500 indefinitely with backoff -- this test
+    //   asserts the FAILURE, not the retry schedule. Regression for red-team Important finding 2:
+    //   a blanket `Effect.orElseSucceed(() => undefined)` fold would pass every test above too.
+    const fake = fakeUnifi(() => fakeFailure(500, 'boom'));
+    const failure = await Effect.runPromise(
+      Effect.flip(
+        spec.fetchLive(PROPS).pipe(Retry.none, Effect.provide(fakeUnifiLayer(fake.fetch))),
+      ),
+    );
+    expect(failure._tag).toBe('InternalServerError');
   });
 });
 
