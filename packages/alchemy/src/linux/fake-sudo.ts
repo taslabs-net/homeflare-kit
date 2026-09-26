@@ -12,10 +12,15 @@
  *   `mktemp -d` registers a fresh 0700 directory the operator owns.
  * ★ SUDO REFUSES A CALL THAT WAS NOT LOGGED FIRST, so every test holds the runner to "logged
  *   before it runs", exactly as the Mac fake does.
+ * ★ `hostFactory`/`prefixes` (below) let sudo-lifecycle.test.ts drive `fakeQuadletHost` (not just
+ *   the plain `fakeLinuxHost`) through this SAME elevation wiring, for the Podman.Container-through
+ *   -sshSudoRunner regression tests — `fakeQuadletHost` returns the exact shape `fakeLinuxHost`
+ *   does (`FakeLinuxOptions` in, the same fields out), so every handler below that reads
+ *   `fake.dirs`/`fake.modes`/`fake.files` or calls `fake.runner.exec` works unchanged either way.
  */
 import type { ExecResult, FileStat, HostRunner } from '../launchd/runner.ts';
 import { SUDO_SAYS } from '../launchd/fake-sudo.ts';
-import { fakeLinuxHost } from './fake-linux-host.ts';
+import { type FakeLinuxOptions, fakeLinuxHost } from './fake-linux-host.ts';
 import { type RootState, asRoot } from './fake-sudo-root.ts';
 import { SUDO } from './sudo-allowlist.ts';
 import { makeSshSudoRunner } from './sudo-runner.ts';
@@ -49,17 +54,28 @@ const lsLine = (path: string, stat: FileStat, acl: boolean): string => {
   );
 };
 
+export type FakeSudoHostOptions = {
+  /** Swap `fakeLinuxHost` for a variant that models more than plain units — `fakeQuadletHost`. */
+  readonly hostFactory?: (options: FakeLinuxOptions) => ReturnType<typeof fakeLinuxHost>;
+  /** The runner's own declared prefixes. @default PREFIXES */
+  readonly prefixes?: readonly string[];
+};
+
 /**
  * `extraDirs` adds more directories to the fake filesystem (a pre-existing tree outside every
- * prefix, say); it never changes the runner's OWN prefixes, which stay `PREFIXES` throughout.
+ * prefix, say); it never changes the runner's OWN prefixes, which default to `PREFIXES`.
  * `acl` is the set of directory paths a test wants to carry the `+` (POSIX ACL) flag.
  */
 export const fakeSudoHost = (
   extraDirs: Record<string, number> = {},
   acl: ReadonlySet<string> = new Set(),
+  { hostFactory = fakeLinuxHost, prefixes = PREFIXES }: FakeSudoHostOptions = {},
 ) => {
-  const fake = fakeLinuxHost({
-    dirs: { '/etc/systemd/system': 0, '/usr/local/bin': 0, ...extraDirs },
+  const dirs: Record<string, number> = {};
+  for (const prefix of prefixes) dirs[prefix] = 0;
+  for (const [path, owner] of Object.entries(extraDirs)) dirs[path] = owner;
+  const fake = hostFactory({
+    dirs,
     euid: OPERATOR,
     users: { app: { gid: 60, home: '/opt/app', uid: 900 } },
   });
@@ -127,7 +143,7 @@ export const fakeSudoHost = (
     },
   };
 
-  const runner = makeSshSudoRunner(PREFIXES, {
+  const runner = makeSshSudoRunner(prefixes, {
     base,
     log: (line) => logs.push(line),
     // ★ The real stager, unmodified: it only ever calls `base.exec`/`base.writeFileAtomic`, both
