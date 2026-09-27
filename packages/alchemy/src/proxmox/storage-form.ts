@@ -4,7 +4,10 @@
  * both files under the 250-line cap — the api-token.ts/api-token-form.ts seam, same reasoning.
  */
 import type * as storage from '@distilled.cloud/proxmox/storage';
+import { sharedAccepted } from './storage-plugin-options.ts';
 import type { StorageProps } from './storage.ts';
+import { changedProps } from './storage-wire.ts';
+import type { StorageAttributes } from './storage-wire.ts';
 import { flag } from './values.ts';
 
 export const STORAGE_CREATE = 'pve:POST /storage';
@@ -76,6 +79,16 @@ const underscored = (form: Record<string, string>): Record<string, string> =>
   Object.fromEntries(Object.entries(form).map(([key, value]) => [key.replaceAll('-', '_'), value]));
 
 /**
+ * The 7 fields `mutable()` reads, narrowed out of `StorageProps` — not `StorageProps` itself, so
+ * a partial diff (storage-wire.ts's `changedProps`, which carries none of `storage`/`locator`/
+ * `target`) can satisfy this type directly.
+ */
+export type MutableFields = Pick<
+  StorageProps,
+  'comment' | 'content' | 'disable' | 'nodes' | 'preallocation' | 'prune-backups' | 'shared'
+>;
+
+/**
  * The mutable half, for create and update alike.
  *
  * ⚠️ AN UNDECLARED FIELD IS NEITHER SENT NOR COMPARED: undeclared means UNMANAGED here, unlike
@@ -93,15 +106,21 @@ const underscored = (form: Record<string, string>): Record<string, string> =>
  *   vendor-constraint table is keyed by PVE's own names (`underscored`'s own header has the
  *   measured evidence). `toDistilledCreate`/`toDistilledUpdate` translate a COPY for the actual
  *   SDK call; this function and its callers never see the underscored form.
+ *
+ * ⛔ `shared` IS GATED BY TYPE — `sharedAccepted` (storage-plugin-options.ts, vendor-cited): most
+ *   plugins refuse it outright ("unexpected property 'shared'", the measured bug this gate
+ *   fixes), so it is dropped here regardless of what the caller passed, for both create and
+ *   update alike — `type` is always required precisely so this gate can run on the FULL declared
+ *   set at create time too, not only on a partial update diff.
  */
-const mutable = (props: StorageProps) => ({
+const mutable = (type: string, props: MutableFields) => ({
   ...field('comment', props.comment),
   ...field('content', props.content),
   ...field('disable', flag(props.disable)),
   ...field('nodes', props.nodes),
   ...field('preallocation', props.preallocation),
   ...field('prune-backups', props['prune-backups']),
-  ...field('shared', flag(props.shared)),
+  ...(sharedAccepted(type) ? field('shared', flag(props.shared)) : {}),
 });
 
 /**
@@ -113,7 +132,7 @@ const mutable = (props: StorageProps) => ({
  */
 export const createForm = (props: StorageProps): Record<string, string> => ({
   ...locatorForm(props.locator),
-  ...mutable(props),
+  ...mutable(props.type, props),
   storage: props.storage,
   type: props.type,
 });
@@ -123,9 +142,23 @@ export const createForm = (props: StorageProps): Record<string, string> => ({
  *   (`PutStorageRequest` has no `type`, and the plugin locator fields it does carry are for a
  *   different purpose: moving an existing volume, not re-pointing the definition), and comparing
  *   either could only plan an update that no write can apply: a plan that reports work forever.
+ *
+ * ★ PARTIAL ON A KNOWN LIVE OBJECT — THE FIX FOR THE MEASURED BUG. `live === undefined` means
+ *   there is no live row to diff against yet (`diff()`'s own early sanity check, run before any
+ *   read; and the "about to create" branch in `reconcile()`) and this returns the FULL declared
+ *   set, same as before this change. Once `live` is a real read, only `changedProps`
+ *   (storage-wire.ts) — the declared fields that actually differ from what PVE just reported —
+ *   reach the wire. Before this, `reconcile` PUT the full declared set whenever ANYTHING
+ *   differed, so a declared `shared` that already MATCHED live still rode along on every update;
+ *   for `storage-cephfs-tb4` (`content` was the only real drift, measured 2026-09-27) that meant
+ *   sending `shared` to a plugin whose own `options()` never accepts it (storage-plugin-options.ts
+ *   has the vendor citation), and PVE answered `unexpected property 'shared'`.
  */
-export const updateForm = (props: StorageProps): Record<string, string> => ({
-  ...mutable(props),
+export const updateForm = (
+  props: StorageProps,
+  live: StorageAttributes | undefined,
+): Record<string, string> => ({
+  ...mutable(props.type, live === undefined ? props : changedProps(live, props)),
   storage: props.storage,
 });
 
@@ -139,6 +172,13 @@ export const updateForm = (props: StorageProps): Record<string, string> => ({
 export const toDistilledCreate = (props: StorageProps): storage.CreateStorageRequest =>
   underscored(createForm(props)) as unknown as storage.CreateStorageRequest;
 
-/** The actual `putStorage` call body — `updateForm`, translated once. See `toDistilledCreate`. */
-export const toDistilledUpdate = (props: StorageProps): storage.PutStorageRequest =>
-  underscored(updateForm(props)) as unknown as storage.PutStorageRequest;
+/**
+ * The actual `putStorage` call body — translated once. See `toDistilledCreate`.
+ * ⚠️ TAKES THE ALREADY-BUILT FORM, NOT `props`+`live` — storage.ts's `reconcile` computes
+ *   `updateForm(news, before)` exactly ONCE and passes that SAME object here and to `guardWrite`,
+ *   so the vendor-constraint check and the wire body can never diverge. Two independent calls to
+ *   `updateForm`, each running its own `changedProps`, would still agree today, but "the guard
+ *   checks what is actually sent" (the house rule this fix follows) should not depend on that.
+ */
+export const toDistilledUpdate = (form: Record<string, string>): storage.PutStorageRequest =>
+  underscored(form) as unknown as storage.PutStorageRequest;
