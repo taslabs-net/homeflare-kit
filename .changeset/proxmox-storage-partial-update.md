@@ -31,3 +31,17 @@ only drift is `content` PUTs `content` and nothing else; an
 already-matching storage sends no PUT at all; a `dir` storage (whose own
 `DirPlugin.pm` options() does list `shared`) sends it when it drifts —
 the accepted-type path, contrasted with cephfs's refused one.
+
+Second pass (same day, a red team on this PR before merge): a declared
+`shared` on a type outside `sharedAccepted` that genuinely disagrees
+with what PVE reports used to vanish into the same skip and plan `noop`
+forever, silently — the recorded attribute stayed whatever PVE already
+had, with no warning. `matches` now dies with a clear message on exactly
+that one case; a matching or undeclared `shared` is unaffected and still
+plans `noop`. Also, `btrfs` and `esxi` were re-checked against
+`github.com/proxmox/pve-storage` (master, 2026-09-27) and do accept
+`shared` in their own `options()` (`BTRFSPlugin.pm:69`,
+`ESXiPlugin.pm:52`) — moved from unverified into `sharedAccepted`, so a
+declared `shared` on one of those two types is sent again rather than
+silently dropped; `iscsi`, `iscsidirect` and the remote-ZFS `zfs` plugin
+are now verified absent rather than unverified.
