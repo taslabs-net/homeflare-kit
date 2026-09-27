@@ -11,6 +11,7 @@ import { describe, expect, test } from 'bun:test';
 import * as Layer from 'effect/Layer';
 import { engineOver } from '../verify/fake-engine.ts';
 import { FAKE_TARGET, type PveCall, fakePve, withoutBao } from './fake-pve.ts';
+import { createForm } from './storage-form.ts';
 import { ProxmoxStorage, ProxmoxStorageProvider } from './storage.ts';
 
 type Live = Record<string, string>;
@@ -112,5 +113,71 @@ describe('Proxmox.Storage update: a partial PUT, never a property the type refus
     });
     expect(fake.writes()).toEqual(['PUT storage/local-extra']);
     expect(fake.calls.find((call) => call.method === 'PUT')?.form).toEqual({ shared: '1' });
+  });
+});
+
+/**
+ * PR 314's own red team (2026-09-27, Important finding): `changedProps` above leaves `shared`
+ * out of its result for any type outside `sharedAccepted`, on purpose — but that means a
+ * genuinely disagreeing declared value would otherwise vanish into an empty diff and report
+ * `noop` forever, with the recorded attribute silently stuck on whatever PVE already has. These
+ * two tests prove `matches` (storage-wire.ts) catches exactly that one case and no other.
+ */
+describe('a declared `shared` a type can never apply dies the plan, never noops forever', () => {
+  test('zfspool (never accepts shared): a genuine disagreement dies rather than reporting noop', async () => {
+    const stores = new Map<string, Live>([
+      ['speed', { content: 'images', shared: '0', storage: 'speed', type: 'zfspool' }],
+    ]);
+    const fake = cluster(stores);
+    const declare = () =>
+      ProxmoxStorage('speed', {
+        content: 'images',
+        shared: true,
+        storage: 'speed',
+        target: FAKE_TARGET,
+        type: 'zfspool',
+      });
+    await withoutBao(async () => {
+      const engine = engineFor(fake);
+      await expect(engine.verify(declare())).rejects.toBeDefined();
+    });
+    expect(fake.writes()).toEqual([]);
+  });
+
+  test('zfspool: a declared shared that already agrees with live still plans noop, not a die', async () => {
+    const stores = new Map<string, Live>([
+      ['speed', { content: 'images', shared: '0', storage: 'speed', type: 'zfspool' }],
+    ]);
+    const fake = cluster(stores);
+    const declare = () =>
+      ProxmoxStorage('speed', {
+        content: 'images',
+        shared: false,
+        storage: 'speed',
+        target: FAKE_TARGET,
+        type: 'zfspool',
+      });
+    await withoutBao(async () => {
+      const engine = engineFor(fake);
+      const report = await engine.verify(declare());
+      expect(report.rows[0]).toMatchObject({ diff: 'noop' });
+    });
+    expect(fake.writes()).toEqual([]);
+  });
+});
+
+/** PR 314's own red team (Minor finding): the create path's own `shared` gate had no test. */
+describe('createForm: `shared` is gated by type on create too, not only on update', () => {
+  test('a declared shared is dropped for cephfs, rbd and pbs, kept for dir, lvm, btrfs and esxi', () => {
+    for (const type of ['dir', 'lvm', 'btrfs', 'esxi']) {
+      expect(createForm({ shared: true, storage: 's', target: FAKE_TARGET, type })).toMatchObject({
+        shared: '1',
+      });
+    }
+    for (const type of ['cephfs', 'rbd', 'pbs']) {
+      expect(
+        createForm({ shared: true, storage: 's', target: FAKE_TARGET, type }),
+      ).not.toHaveProperty('shared');
+    }
   });
 });

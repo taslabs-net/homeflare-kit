@@ -114,9 +114,9 @@ export interface StorageProps extends WithTarget {
   disable?: boolean;
   /**
    * Tells PVE the same volumes are visible from every node — a claim, not a mechanism.
-   * ⚠️ ONLY SENT/COMPARED WHEN THE TYPE'S OWN PLUGIN ACCEPTS IT (storage-plugin-options.ts,
-   *   vendor-cited: `dir`/`lvm` today) — cephfs/rbd/nfs/cifs/pbs/zfspool/lvmthin have it fixed or
-   *   implicit, so a declared value there is silently never sent rather than crashing the PUT.
+   * ⚠️ ONLY SENT WHEN THE TYPE'S OWN PLUGIN ACCEPTS IT (storage-plugin-options.ts, vendor-cited)
+   *   — elsewhere it is dropped from the wire, and a disagreeing declared value dies the plan
+   *   loud (storage-wire.ts's `matches`) rather than PUTting a field PVE would refuse outright.
    */
   shared?: boolean;
   /** `off` | `metadata` | `falloc` | `full`. File-based plugins only. */
@@ -189,7 +189,7 @@ export const ProxmoxStorageProvider = () =>
             yield* guardWrite(STORAGE_CREATE, createForm(news), true);
             return { action: 'update' } as const;
           }
-          return matches(live, news)
+          return (yield* matches(live, news))
             ? ({ action: 'noop' } as const)
             : ({ action: 'update' } as const);
         }),
@@ -212,7 +212,7 @@ export const ProxmoxStorageProvider = () =>
               true,
               storage.createStorage(toDistilledCreate(news)),
             );
-          } else if (!matches(before, news)) {
+          } else if (!(yield* matches(before, news))) {
             yield* runPve(
               news.target,
               'provision',

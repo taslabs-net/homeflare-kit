@@ -146,6 +146,25 @@ export const changedProps = (
 /**
  * ⚠️ `type` IS NEVER COMPARED — CREATE-ONLY (`storage.ts`'s own `StorageProps.type` doc), so a
  *   changed declaration plans `noop` on it, same as before the migration.
+ *
+ * ⛔ A DECLARED `shared` A TYPE CAN NEVER APPLY MUST FAIL LOUD, NOT NOOP FOREVER — PR 314's own
+ *   red team, 2026-09-27. `changedProps` above leaves `shared` out of its result whenever the
+ *   type is outside `sharedAccepted`, on purpose (PVE 500s on the PUT otherwise) — but that
+ *   means a genuinely disagreeing declared value would otherwise vanish into an empty diff and
+ *   report `noop` forever, with the recorded attribute silently stuck on whatever PVE already
+ *   has. `maxfiles` (storage.ts's header) refuses that same class of bug at compile time; this is
+ *   the update-time equivalent for a field that can't be typed away. So this checks the ONE case
+ *   `changedProps` deliberately can't see — declared and live actually differ, on a type that can
+ *   never carry the write — and dies with a message naming the fix, before `changedProps` runs.
  */
 export const matches = (attributes: StorageAttributes, props: StorageProps) =>
-  Object.keys(changedProps(attributes, props)).length === 0;
+  !sharedAccepted(props.type) && !same(props.shared, attributes.shared)
+    ? Effect.die(
+        new Error(
+          `storage/${props.storage}: declared shared: ${String(props.shared)}, but PVE reports ` +
+            `${String(attributes.shared)} and '${props.type}' storages never accept a 'shared' ` +
+            'write (storage-plugin-options.ts) -- remove the declared shared or set it to match ' +
+            'what PVE already reports; this value can never be applied.',
+        ),
+      )
+    : Effect.succeed(Object.keys(changedProps(attributes, props)).length === 0);
