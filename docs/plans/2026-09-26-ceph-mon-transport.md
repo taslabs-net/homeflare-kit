@@ -130,7 +130,10 @@ get-or-create` with the declared caps → capture the key **in memory only**
   above already uses (one fewer script to maintain per mon node). Error paths
   stay stderr-only (never echo stdout on failure, `talos/credentials.ts:83`'s
   rule), and the runner's per-call log line prints argv, never output; tests
-  prove the key never reaches a log line, a return value or a state fixture.
+  prove the key never reaches a log line, a return value or a state fixture
+  on the create, no-op, caps-drift or failure path
+  (ceph-auth-parse.test.ts, ceph-auth-reconcile.test.ts,
+  ceph-auth-reconcile-secrecy.test.ts).
 - Rows are creates through the first-create gate, no `adopt()`. The consuming
   side — the ceph-csi secret inside k8s reading the key from the vault — is
   its own design when the k8s consumer path exists; one line here on purpose.
@@ -138,9 +141,11 @@ get-or-create` with the declared caps → capture the key **in memory only**
 ## Risks
 
 - Key exposure is the whole game: one stray log line ships a cluster
-  credential into a transcript. The family gets a structural test over its own
-  source (no output-logging) plus fake-runner tests asserting the key never
-  reaches state, logs or argv.
+  credential into a transcript — including from `auth get`'s unfiltered
+  stdout, read on every reconcile since decision 65, not only on create. The
+  family gets a structural test over its own source (no output-logging) plus
+  fake-runner tests asserting the key never reaches state, logs or errors on
+  the create, no-op, caps-drift or failure path.
 - Ceph CLI output drifts across releases: every parsed literal is recorded
   with the measured Ceph version and date; parse `-f json` everywhere.
 - A down anchor node must read as a transport error, never as "absent →
