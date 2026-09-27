@@ -45,8 +45,14 @@ const parseKeyringEntry = (
   let parsed: unknown;
   try {
     parsed = JSON.parse(stdout);
-  } catch (cause) {
-    throw new Error(`ceph auth ${entity}: stdout did not parse as JSON (${String(cause)})`);
+  } catch {
+    // ⛔ NEVER INTERPOLATE THE CATCH VALUE. LAND red team (2026-09-26), CONFIRMED: both Bun's and
+    //   Node's `JSON.parse` errors quote a slice of the offending input — a bare (unquoted) or
+    //   comma-adjacent key in this stdout put a slice of a real cephx key straight into this
+    //   thrown error (measured: median 32/40 chars of a 1000-key sample). `stdout` carries the
+    //   key on every reconcile since decision 65, so this message names only what failed, never
+    //   any part of what it was reading.
+    throw new Error(`ceph auth ${entity}: stdout did not parse as JSON`);
   }
   const row = Array.isArray(parsed)
     ? parsed.find((entry) => isRecord(entry) && entry['entity'] === entity)

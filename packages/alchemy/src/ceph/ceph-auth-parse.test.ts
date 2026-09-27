@@ -3,6 +3,7 @@
  * are this PR's stand-in for a live cluster, not a measurement.
  */
 import { describe, expect, test } from 'bun:test';
+import { leaksSliceOf, trailingCommaKeyStdout, unquotedKeyStdout } from './ceph-key-leak-assert.ts';
 import { parseAuthGet, parseAuthGetOrCreate, parseQuorumStatus } from './ceph-auth-parse.ts';
 
 const ENTITY = 'client.k8s-rbd';
@@ -53,11 +54,13 @@ describe('parseAuthGet', () => {
   });
 
   // Decision 65 (LAND finding 5): `auth get` is read unfiltered on every reconcile, so every
-  // failure path below feeds it a sentinel key and proves the thrown error never echoes it.
-  const SENTINEL = 'sentinel-ceph-key-must-never-leak';
-
-  test('a malformed present entry never lets the key it carried leak into the thrown error', () => {
-    const bad = JSON.stringify([{ entity: ENTITY, key: SENTINEL }]); // no caps field
+  // failure path below feeds it a key-shaped sentinel and proves no 8-character SLICE of it ever
+  // reaches the thrown error — not just the whole string. LAND red team (2026-09-26), CONFIRMED:
+  // a hyphenated sentinel and a whole-string `.not.toContain` check both missed a real leak where
+  // `JSON.parse`'s own error message quoted a prefix of an unquoted or comma-adjacent key
+  // (ceph-key-leak-assert.ts has the measured detail).
+  test('a malformed present entry never lets even a slice of the key it carried leak', () => {
+    const bad = JSON.stringify([{ entity: ENTITY, key: 'sentinel-ceph-key-must-never-leak' }]); // no caps
     let caught: unknown;
     try {
       parseAuthGet({ exitCode: 0, stderr: '', stdout: bad }, ENTITY);
@@ -65,11 +68,11 @@ describe('parseAuthGet', () => {
       caught = cause;
     }
     expect(caught).toBeInstanceOf(Error);
-    expect(String(caught)).not.toContain(SENTINEL);
+    expect(leaksSliceOf(String(caught), 'sentinel-ceph-key-must-never-leak')).toBe(false);
   });
 
-  test('a nonzero exit never echoes stdout, even if stdout somehow carried the key', () => {
-    const stdout = JSON.stringify([{ caps: CAPS, entity: ENTITY, key: SENTINEL }]);
+  test('a nonzero exit never echoes stdout, even a slice of a key it somehow carried', () => {
+    const stdout = unquotedKeyStdout(ENTITY);
     let caught: unknown;
     try {
       parseAuthGet({ exitCode: 13, stderr: 'Error EPERM: refused', stdout }, ENTITY);
@@ -77,19 +80,35 @@ describe('parseAuthGet', () => {
       caught = cause;
     }
     expect(String(caught)).toContain('EPERM');
-    expect(String(caught)).not.toContain(SENTINEL);
+    expect(leaksSliceOf(String(caught))).toBe(false);
   });
 
-  test('unparseable stdout carrying what looks like a key never echoes it in the parse error', () => {
-    let caught: unknown;
-    try {
-      parseAuthGet({ exitCode: 0, stderr: '', stdout: `not json ${SENTINEL}` }, ENTITY);
-    } catch (cause) {
-      caught = cause;
-    }
-    expect(caught).toBeInstanceOf(Error);
-    expect(String(caught)).not.toContain(SENTINEL);
-  });
+  for (const [shape, stdout] of [
+    ['a bare (unquoted) key token', unquotedKeyStdout(ENTITY)],
+    ['a trailing comma after the entry', trailingCommaKeyStdout(ENTITY)],
+  ] as const) {
+    test(`unparseable stdout via ${shape} never leaks a slice of the key, from parseAuthGet`, () => {
+      let caught: unknown;
+      try {
+        parseAuthGet({ exitCode: 0, stderr: '', stdout }, ENTITY);
+      } catch (cause) {
+        caught = cause;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect(leaksSliceOf(String(caught))).toBe(false);
+    });
+
+    test(`unparseable stdout via ${shape} never leaks a slice of the key, from parseAuthGetOrCreate`, () => {
+      let caught: unknown;
+      try {
+        parseAuthGetOrCreate({ exitCode: 0, stderr: '', stdout }, ENTITY);
+      } catch (cause) {
+        caught = cause;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect(leaksSliceOf(String(caught))).toBe(false);
+    });
+  }
 });
 
 describe('parseAuthGetOrCreate', () => {

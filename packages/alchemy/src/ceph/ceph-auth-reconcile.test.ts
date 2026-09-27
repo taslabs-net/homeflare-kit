@@ -7,6 +7,7 @@
 import { describe, expect, test } from 'bun:test';
 import { sha256 } from '../openbao/digest.ts';
 import { type Reply, type Seen, run, withFake } from '../openbao/fake-bao.ts';
+import { leaksSliceOf } from './ceph-key-leak-assert.ts';
 import { reconcileCephAuthEntity } from './ceph-auth-reconcile.ts';
 import type { CephAuthEntityAttributes, CephAuthEntityProps } from './ceph-auth-form.ts';
 import { fakeCephDial, fakeCephOk } from './fake-ceph-dial.ts';
@@ -57,7 +58,7 @@ describe('create of absent', () => {
         }),
       );
       expect(attrs).toEqual(PRIOR);
-      expect(JSON.stringify(attrs)).not.toContain(KEY);
+      expect(leaksSliceOf(JSON.stringify(attrs), KEY)).toBe(false);
 
       // ⛔ The preflight (K-A4 finding 2) proves the path is writable BEFORE anything is minted —
       //   see ceph-auth-reconcile.ts's header. Both writes land at the same path; only the second
@@ -65,7 +66,7 @@ describe('create of absent', () => {
       const writes = writesOf(bao.seen);
       expect(writes).toHaveLength(2);
       expect(writes[0]?.path).toBe('/v1/talos-c1/data/ceph/client.k8s-rbd');
-      expect(writes[0]?.body).not.toContain(KEY);
+      expect(leaksSliceOf(writes[0]?.body ?? '', KEY)).toBe(false);
       expect(writes[1]?.path).toBe('/v1/talos-c1/data/ceph/client.k8s-rbd');
       expect(writes[1]?.body).toContain(KEY);
 
@@ -74,10 +75,11 @@ describe('create of absent', () => {
         ['auth', 'get-or-create'],
         ['quorum_status', '-f'],
       ]);
-      for (const call of fake.seen) expect(JSON.stringify(call.argv)).not.toContain(KEY);
+      for (const call of fake.seen)
+        expect(leaksSliceOf(JSON.stringify(call.argv), KEY)).toBe(false);
       // Decision 65 (LAND finding 5): the create path's own `auth get` observe also reads the
       // keyring's unfiltered stdout — this proves the runner's log line never carries it either.
-      expect(lines.join('\n')).not.toContain(KEY);
+      expect(leaksSliceOf(lines.join('\n'), KEY)).toBe(false);
     });
   });
 
@@ -109,10 +111,10 @@ describe('a second reconcile, caps unchanged', () => {
         reconcileCephAuthEntity(PROPS, PRIOR, { dial: fake.dial, log: (line) => lines.push(line) }),
       );
       expect(attrs).toEqual(PRIOR);
-      expect(JSON.stringify(attrs)).not.toContain(KEY);
+      expect(leaksSliceOf(JSON.stringify(attrs), KEY)).toBe(false);
       expect(writesOf(bao.seen)).toHaveLength(0);
       expect(fake.seen).toHaveLength(1);
-      expect(lines.join('\n')).not.toContain(KEY);
+      expect(leaksSliceOf(lines.join('\n'), KEY)).toBe(false);
     });
   });
 });
@@ -135,14 +137,14 @@ describe('caps drift', () => {
       );
       expect(attrs.caps).toEqual(CAPS);
       expect(attrs.fingerprint).toBe(PRIOR.fingerprint);
-      expect(JSON.stringify(attrs)).not.toContain(KEY);
+      expect(leaksSliceOf(JSON.stringify(attrs), KEY)).toBe(false);
       expect(writesOf(bao.seen)).toHaveLength(0);
       expect(argvOf(fake.seen)).toEqual([
         ['auth', 'get'],
         ['auth', 'caps'],
         ['quorum_status', '-f'],
       ]);
-      expect(lines.join('\n')).not.toContain(KEY);
+      expect(leaksSliceOf(lines.join('\n'), KEY)).toBe(false);
     });
   });
 });

@@ -15,9 +15,12 @@ every VM disk on it (D3, lockout safety — never auto-delete). The entity opera
 `client.k8s-` prefix, so nothing this allowlist accepts can touch `client.admin`, a mon/osd/mgr
 keyring, or the PVE storage client.
 
-The minted key is captured once, in memory, on the create path only, and written straight to
-OpenBao (`<mount>/ceph/<entity>`) — never to Alchemy props, state, argv, or a log line. Caps drift
-runs `auth caps` alone and never re-mints the key. After every write the transport re-checks
+The minted key is captured in memory only, never Alchemy props, state, argv, or a log line.
+`auth get-or-create` mints it once, on the create path, and writes it straight to OpenBao
+(`<mount>/ceph/<entity>`). `auth get`'s stdout, which also carries the key, is read unfiltered on
+every reconcile to compare caps — the key is parsed out and dropped before anything is logged,
+returned or stored, so it never survives past that one read. Caps drift runs `auth caps` alone and
+never re-mints the key. After every write the transport re-checks
 `quorum_status` on a fresh connection and fails the row on a degraded answer, rather than
 continuing past it. `read` and `diff` never ssh — this family's plan is props-against-state only,
 and reconcile is where the only live check happens. Rows are creates through the first-create
