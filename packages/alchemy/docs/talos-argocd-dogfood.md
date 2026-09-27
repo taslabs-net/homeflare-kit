@@ -19,15 +19,15 @@ can regenerate. ⛔ Do not add npm aliases for packages that do not exist.
 
 ## Per-vendor decision
 
-| vendor    | decision                                                                                                                   |
-| --------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Headlamp  | Skip Distilled / Alchemy vendor family — Argo Application / Helm                                                           |
-| Traefik   | No Distilled SDK (no official OpenAPI; do not invent)                                                                      |
-| Cilium    | No hand-written interim — Helm + CRDs                                                                                      |
-| CNPG      | `@distilled.cloud/kubernetes` CRDs (`postgresql.cnpg.io/v1`)                                                               |
-| Valkey    | `@distilled.cloud/kubernetes` (operator CRDs); Sentinel is RESP, not HTTP                                                  |
-| Argo CD   | `@distilled.cloud/argocd` — [PR 240](https://github.com/taslabs-net/homeflare-kit/pull/240) stays draft until Talos-on-PVE |
-| Talos CLI | Leave `@homeflare/alchemy/talos` alone (`talosctl`)                                                                        |
+| vendor    | decision                                                                                                                                                                                                                                     |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Headlamp  | Skip Distilled / Alchemy vendor family — Argo Application / Helm                                                                                                                                                                             |
+| Traefik   | No Distilled SDK (no official OpenAPI; do not invent)                                                                                                                                                                                        |
+| Cilium    | No hand-written interim — Helm + CRDs                                                                                                                                                                                                        |
+| CNPG      | `@distilled.cloud/kubernetes` CRDs (`postgresql.cnpg.io/v1`)                                                                                                                                                                                 |
+| Valkey    | `@distilled.cloud/kubernetes` (operator CRDs); Sentinel is RESP, not HTTP                                                                                                                                                                    |
+| Argo CD   | `Application`/`AppProject`/`ApplicationSet` — upstream Alchemy `Kubernetes.Manifest` (decision 49); `Repository`/`RepoCreds`/`Cluster` — `@distilled.cloud/argocd` ([PR 262](https://github.com/taslabs-net/homeflare-kit/pull/262), merged) |
+| Talos CLI | Leave `@homeflare/alchemy/talos` alone (`talosctl`)                                                                                                                                                                                          |
 
 Headlamp's `/config` and cluster proxy are not a vendor control plane.
 
@@ -41,16 +41,28 @@ Cilium install, BGP and policy go through Helm + CRDs (`@distilled.cloud/kuberne
 but the default transport is the unix socket `/var/run/cilium/cilium.sock`.
 Generate+copy later only if node-local agent health is needed.
 
-Argo CD's package is already on npm. No Distilled Talos API in this path.
+Argo CD's own storage — `Repository`, `RepoCreds` and `Cluster` — is a `Secret`
+labeled with Argo CD's own convention, not a published Kubernetes API type, so
+`@distilled.cloud/argocd` (already on npm) is the correct owner
+([PR 262](https://github.com/taslabs-net/homeflare-kit/pull/262), merged). The
+objects Argo CD reconciles — `Application`, `AppProject`, `ApplicationSet` —
+are genuine `argoproj.io/v1alpha1` CRDs, so upstream Alchemy's
+`Kubernetes.Manifest` owns those (decision 49, "upstream wins"), not a house
+wrapper — see [argocd.md](./argocd.md) and
+[argocd-kubernetes.md](./argocd-kubernetes.md). No Distilled Talos API in this
+path.
 
 ## Gates
 
 - ⛔ Do not publish an interim Distilled package until generate+copy from a
   real vendor schema ([distilled-interim.md](./distilled-interim.md) steps 1–2).
 - ⛔ Do not invent a Traefik Distilled SDK without an official schema.
-- ⛔ Alchemy Argo / Kubernetes work is gated on a live Talos-on-PVE cluster.
-  [#240](https://github.com/taslabs-net/homeflare-kit/pull/240) stays draft
-  until then.
+- `Argocd.Repository`/`RepoCreds`/`Cluster` were built ahead of a live
+  Talos-on-PVE cluster ([PR 262](https://github.com/taslabs-net/homeflare-kit/pull/262),
+  merged 2026-09-24; tested against a fake client, never a real Argo CD
+  instance) — Tim's build-ahead-of-need call. Declaring and applying
+  `Application`/`AppProject`/`ApplicationSet` objects in a real stack still
+  waits on that cluster existing.
 - Prefer upstream Alchemy Kubernetes resources when they exist (S1).
 
 ## Placeholder variables
