@@ -162,7 +162,9 @@ itself holds everywhere else.
 - ⛔ Don't hand-fix a bug inside `packages/distilled-<vendor>/src/`. Fix it
   upstream (the distilled clone), regenerate, copy again.
 - ⛔ Don't invent `src/` by hand so a `@distilled.cloud/<vendor>` name can
-  publish. Interim packages are generate+copy from a real vendor schema
-  (steps 1–2). A missing official schema means no package — not a stub.
-  Talos + Argo CD dogfood vendors that skip this route:
-  [talos-argocd-dogfood.md](./talos-argocd-dogfood.md).
+  publish. `src/` is generated, never hand-written — from a real vendor
+  schema (steps 1–2) when one exists, or from the blocked-`SpecRepos`-entry
+  plus hand-authored-model route (step 1's Caddy paragraph above) when it
+  doesn't. A missing schema is not a licence to stub the client; it is not a
+  reason to skip the vendor either. Talos + Argo CD dogfood vendors that skip
+  both routes: [talos-argocd-dogfood.md](./talos-argocd-dogfood.md).
