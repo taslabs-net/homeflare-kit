@@ -132,9 +132,7 @@ export const mint = (target: ApiTarget, role: PveRole, env: BaoEnvironment = pro
        *   so it is the one signal trusted here.
        */
       if (status === 403 && isOpenBaoBody) {
-        return yield* Effect.fail(
-          new PveCredentialDenied({ detail, mount: target.mount, role, tier }),
-        );
+        return yield* Effect.fail(new PveCredentialDenied({ detail, mount: target.mount, tier }));
       }
       return yield* Effect.fail(refuse(status, detail || '(no errors given)'));
     }

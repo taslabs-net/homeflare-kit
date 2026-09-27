@@ -139,24 +139,31 @@ export type ApiTarget = PbsTarget | PveTarget;
  * both to agree on — `lease-cache.ts`'s own header says why the cache needed this too, not just
  * the mint call.
  *
- * ⛔ AN EMPTY OR `/`-BEARING OVERRIDE THROWS RATHER THAN BUILDING A PATH (M5, red team on K-T1).
- *   `role` itself is a compile-time literal and never needs this check; only `target.roles`, a
- *   plain string a caller can set to anything, does. Left unchecked, `roles: { read: '' }` would
- *   silently mint `<mount>/creds/` — a 404 `mint.ts`'s own `refuse` reports as a mint failure, but
+ * ⛔ AN OVERRIDE THAT IS NOT A PLAIN TIER NAME THROWS RATHER THAN BUILDING A PATH (M5, red team on
+ *   K-T1; widened after a second red-team pass found the first fix incomplete). `role` itself is
+ *   a compile-time literal and never needs this check; only `target.roles`, a plain string a
+ *   caller can set to anything, does. This is an ALLOWLIST, not a denylist of `/` alone — the
+ *   value is concatenated straight into `${mount}/creds/${tier}` and then into a URL (`mint.ts`),
+ *   so `''`, `'..'`, `'?x'` and `'#x'` are each their own way to land on a DIFFERENT OpenBao path
+ *   (a dropped segment, a parent path, a querystring, a fragment) without containing `/` at all.
+ *   Every one of those produces a 404 `mint.ts`'s own `refuse` reports as a mint failure, and
  *   every `pveOperations` family folds a mint failure into "absent" (`unreadable-read.ts`'s ⛔),
  *   so the plan would say CREATE for an object that is plainly there instead of naming the bad
- *   config. A `/` in the value would instead interpolate a second path segment into the OpenBao
- *   URL. `role` is source-controlled and this fires at the first `mintTier` call, before any
- *   network request, so the fix cannot itself widen what an operator's config can reach.
+ *   config — the exact hazard the first version of this check believed it had closed. `role` is
+ *   source-controlled and this fires at the first `mintTier` call, before any network request, so
+ *   the fix cannot itself widen what an operator's config can reach.
  */
+const VALID_TIER = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
 export const mintTier = (target: ApiTarget, role: PveRole): string => {
   if (target.scheme !== 'pve') return role;
   const tier = target.roles?.[role];
-  if (tier === undefined || tier === '') return role;
-  if (tier.includes('/')) {
+  if (tier === undefined) return role;
+  if (!VALID_TIER.test(tier)) {
     throw new Error(
       `PveTarget.roles.${role} = ${JSON.stringify(tier)} is not a valid OpenBao tier name -- ` +
-        'it would be interpolated straight into "<mount>/creds/<tier>" and must not contain "/".',
+        'it would be interpolated straight into "<mount>/creds/<tier>" and must be a plain name ' +
+        '(letters, digits, ".", "_", "-", not starting with one of those and not "..").',
     );
   }
   return tier;

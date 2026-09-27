@@ -47,7 +47,13 @@ import * as Cache from 'effect/Cache';
 import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
-import { type ApiTarget, type PveCredential, type PveRole, mintTier } from './credentials.ts';
+import {
+  type ApiTarget,
+  type BaoEnvironment,
+  type PveCredential,
+  type PveRole,
+  mintTier,
+} from './credentials.ts';
 import { mint } from './mint.ts';
 
 /**
@@ -163,8 +169,20 @@ export const targetForKey = (key: LeaseKey): ApiTarget =>
     ? { api: 'https://pbs.invalid/api2/json', mount: key.mount, scheme: 'pbs' }
     : { members: [], mount: key.mount, roles: { read: key.tier }, scheme: 'pve' };
 
-const mintForKey = (key: LeaseKey) =>
-  mint(targetForKey(key), key.scheme === 'pbs' ? (key.tier as PveRole) : 'read');
+/**
+ * ⚠️ EXPORTED FOR THE TEST (second red-team pass on K-T1). `targetForKey`'s own tests call
+ *   `mintTier(targetForKey(key), 'read')` to check the round trip, which hand-reproduces this
+ *   function's fixed choice of `'read'` as the pve mint role rather than exercising it — change
+ *   that choice here and those tests keep passing while a live cache miss mints the wrong tier.
+ *   Testing this function directly (against a fake OpenBao) pins the choice itself.
+ *
+ * ⚠️ `env` DEFAULTS TO `process.env`, SAME AS `mint` ITSELF (credentials.ts) — the cache's real
+ *   caller below (`Effect.runSync(makeLeases(mintForKey))`) always calls this with one argument,
+ *   so the default is what production runs on. The parameter exists only so the test can pass a
+ *   fake OpenBao's address without touching the real environment.
+ */
+export const mintForKey = (key: LeaseKey, env: BaoEnvironment = process.env) =>
+  mint(targetForKey(key), key.scheme === 'pbs' ? (key.tier as PveRole) : 'read', env);
 
 const leases = Effect.runSync(makeLeases(mintForKey));
 

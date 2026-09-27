@@ -3,7 +3,6 @@
  * 250-line cap once this class grew a real header (2026-09-24, the cries-wolf fix).
  */
 import * as Data from 'effect/Data';
-import type { PveRole } from './credentials.ts';
 
 /**
  * OpenBao answered 403 to `GET /v1/<mount>/creds/<tier>`: this identity's AppRole has no grant
@@ -18,16 +17,23 @@ import type { PveRole } from './credentials.ts';
  *   BROKEN, not this identity being narrowly scoped — folding those into "unreadable, report
  *   noop" would hide a real outage behind a quiet, misleadingly reassuring plan. Only 403 is
  *   "this identity, this role, denied" and safe to read as "cannot see, not evidence of absence".
+ *
+ * ⛔ NO `role` FIELD (removed, K-T1 second red-team pass). `mint.ts` knows the semantic `PveRole`
+ *   it was asked for, but `lease-cache.ts`'s synthetic `mintForKey` reconstruction (after M3
+ *   dropped `role` from `LeaseKey`) cannot supply the ORIGINAL caller's role on a cache-path
+ *   mint — only the tier. A `role` field would then read as `'read'` on every pve cache miss
+ *   regardless of which role was actually denied, which is exactly the stale/misleading-field
+ *   trap M6 existed to close, one layer down. `tier` alone is what the message reads and what
+ *   `readOrUnreadable`'s callers act on; nothing needs the semantic role name.
  */
 export class PveCredentialDenied extends Data.TaggedError('PveCredentialDenied')<{
   readonly mount: string;
-  readonly role: PveRole;
   /**
-   * The OpenBao mint TIER actually requested (`credentials.ts`'s `mintTier`) — equal to `role`
-   * unless the target overrides it. ⛔ THE MESSAGE READS THIS, NOT `role`: printing `role` alone
-   * would spell a `talos-provision` 403 as `creds/read`, exactly the path that was never called —
-   * silently wrong at precisely the moment an operator is reading this string to decide whether a
-   * grant, a policy or a target config is wrong (K-T1's own PR discussion).
+   * The OpenBao mint TIER actually requested (`credentials.ts`'s `mintTier`). ⛔ THE MESSAGE
+   *   READS THIS, NOT A SEMANTIC ROLE NAME: printing `'read'` for a denied `talos-provision`
+   *   mint would spell it as `creds/read`, exactly the path that was never called — silently
+   *   wrong at precisely the moment an operator is reading this string to decide whether a
+   *   grant, a policy or a target config is wrong (K-T1's own PR discussion).
    */
   readonly tier: string;
   readonly detail: string;

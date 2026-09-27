@@ -219,4 +219,22 @@ describe('mintTier', () => {
     assert.equal(mintTier(pbs, 'read'), 'read');
     assert.equal(mintTier(pbs, 'provision'), 'provision');
   });
+
+  // K-T1/M5 (second red-team pass): an override that resolves to a DIFFERENT OpenBao path than
+  // the one it names must throw, not silently mint a wider or nonexistent tier. Each of these
+  // reaches a different path than `<mount>/creds/<tier>` while containing no literal `/`.
+  const invalidTiers: Array<[tier: string, reason: string]> = [
+    ['', 'an empty override falls back to the bare role rather than minting <mount>/creds/'],
+    ['..', 'a parent-path segment escapes the creds/ prefix entirely'],
+    ['.', 'a same-directory segment is not a real tier name'],
+    ['?x=y', 'a querystring is appended instead of naming a tier'],
+    ['#frag', 'a fragment is appended instead of naming a tier'],
+    ['a/b', 'a literal slash inserts a second path segment'],
+  ];
+  for (const [bad, reason] of invalidTiers) {
+    it(`rejects ${JSON.stringify(bad)} as a tier name: ${reason}`, () => {
+      const scoped: PveTarget = { ...C1, roles: { provision: bad } };
+      assert.throws(() => mintTier(scoped, 'provision'), /not a valid OpenBao tier name/);
+    });
+  }
 });
