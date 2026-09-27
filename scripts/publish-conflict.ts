@@ -17,6 +17,12 @@
  *   it. The old code threw on ANY non-zero exit and aborted the whole release before it
  *   reached @homeflare/config@0.11.0, even though nothing was actually wrong.
  *
+ * ⚠️ MEASURED 2026-09-25, run 36148440975. `bun pm view` said @homeflare/config@0.12.1
+ *   was absent. It is on npm. Node 24's npm then printed no error code and no E409:
+ *     npm error You cannot publish over the previously published versions: 0.12.1.
+ *   The 409 matcher returned false, the script threw, and @homeflare/alchemy@0.37.5
+ *   never published. That sentence names this version, so it is the same fact.
+ *
  * ⛔ NARROW ON PURPOSE. npm reuses 409 for unrelated registry conflicts — a CouchDB-style
  *   "Document update conflict" is a real, documented one (npm/npm#3320) — and those are
  *   NOT "already published"; they must still abort the release the way any other publish
@@ -35,11 +41,25 @@
  *   package as "⏳ not visible yet" rather than "✅ on npm" — that is where a genuinely
  *   stuck package would show up, the same as it would for ordinary lag.
  */
+
+/** Versions named by npm's republish refusal. The trailing period is the sentence. */
+function refusedVersions(out: string): readonly string[] {
+  const match = out.match(/cannot publish over the previously published versions:\s*([^\n]+)/i);
+  const listed = match?.[1];
+  if (listed === undefined) return [];
+  return listed
+    .replace(/\.\s*$/, '')
+    .split(',')
+    .map((item) => item.trim().replace(/^"|"$/g, ''))
+    .filter((item) => item !== '');
+}
+
 export function isAlreadyPublishedConflict(
   result: { readonly code: number; readonly out: string },
   version: string,
 ): boolean {
   if (result.code === 0) return false;
+  if (refusedVersions(result.out).includes(version)) return true;
 
   const looksLike409 = /\bE409\b/.test(result.out) || /\b409\s+Conflict\b/i.test(result.out);
   if (!looksLike409) return false;
@@ -77,7 +97,7 @@ export function summaryRow(
   wasConflictSkip: boolean,
 ): string {
   const status = wasConflictSkip
-    ? '⚠️ published via a 409 race — verify this is your content'
+    ? '⚠️ already on the registry — verify this is your content'
     : live
       ? '✅ on npm'
       : '⏳ not visible yet';

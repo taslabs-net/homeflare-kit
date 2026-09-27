@@ -1,0 +1,183 @@
+# Alchemy changelog archive 17
+
+[Current changelog](../../CHANGELOG.md) · [Archive index](./README.md)
+
+### Minor Changes
+
+- [#67](https://github.com/taslabs-net/homeflare-kit/pull/67) [`48163cf`](https://github.com/taslabs-net/homeflare-kit/commit/48163cfc83ad7deac8720be2e8fb7fe964ade7a3) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add to `@homeflare/alchemy/openbao`:
+
+  - **`BaoJwtRole`**: roles on `jwt` and `oidc` mounts.
+  - **`BaoKubernetesRole`**: roles on `kubernetes` mounts. `aliasNameSource` is required, because changing it on a live role moves every pod to a new entity.
+  - **`BaoJwtAuthConfig`**: the non-secret config of a JWT-validating mount. It deliberately has no OIDC client secret, and it refuses a mount that has one, because its full-replace write would erase it.
+  - **`BaoMfaTotpMethod`** and **`BaoMfaLoginEnforcement`**: login MFA. A TOTP method is found by name. Renaming one is refused, because a rename would strand every enrolled secret. A name already held by another MFA method type is refused too, because the write would convert that method. Deleting an enforcement is refused, because in OpenBao 2.6.2 the delete comes back after a restart (openbao/openbao#4030).
+  - **`assertBaoIdentity`** (with `assertBaoIdentityEffect` and `BaoIdentityError`): refuses to proceed unless unauthenticated `sys/health` reports the expected `cluster_name` and the namespace is the expected one.
+  - **`hostAppRoles`**: a pure generator that makes one AppRole per host, named `<class>--<host>`. It refuses a secret_id TTL of 0.
+
+  Behaviour changes:
+
+  - A changed `path` on `BaoMount` or `BaoAuthMethod` now **fails the plan** unless the new `remountFrom` prop names the old path. With `remountFrom`, the mount is moved with `sys/remount`, keeping its data (leases under it are revoked). Before, the plan answered `update` and enabled an empty mount at the new path.
+  - A changed `name` on `BaoAuthRole`, or a changed `name` on `BaoPkiRole`, now plans `replace`. Before, it answered `update` and left the old role live with no state record.
+  - `BaoPkiRole` now manages `requireCn`, `enforceHostnames`, `keyUsage`, `allowedDomainsTemplate`, `noStore` and `generateLease`, defaulting to OpenBao's own values. Its full-replace write already reset these fields silently, so a role whose live values differ from those defaults now plans `update` instead of being reset unseen. `noStore` together with `generateLease` is refused.
+
+  See `src/openbao/REPLACE.md` for what every family does on a rename.
+
+- [#68](https://github.com/taslabs-net/homeflare-kit/pull/68) [`b023bae`](https://github.com/taslabs-net/homeflare-kit/commit/b023bae8f20d6aa33239107dc0538750efc466ca) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add the `@homeflare/alchemy/launchd` subpath, so a Mac host can be declared with Alchemy.
+
+  - `LaunchdJob` / `LaunchdJobProvider` (`Launchd.Job`): one launchd job in the `system` domain or a `gui/<uid>` domain. The provider renders the plist itself, writes it atomically to the derived path (`/Library/LaunchDaemons` or the user's `LaunchAgents`) and drives `launchctl`. Create bootstraps; update writes, boots out and bootstraps (a restart); read uses `launchctl print`; diff compares the rendered plist's SHA-256 with the stored and on-disk digests. Replace happens only on a `label` or `domain` change, delete-first — so everything the new job would be refused for is refused at plan time, while the old job still runs, and a rename is seen even while other props are unresolved. A label another job already holds is never booted out or overwritten. A failed first bootstrap removes the plist it wrote. A disabled label is refused, not re-enabled. Labels under `org.nixos.`, `com.apple.` and `homebrew.mxcl.` are refused; `docs/launchd.md` describes the nix-darwin cutover.
+  - `HostFile` / `HostFileProvider` (`Host.File`): a text file with mode, owner and group. It is written atomically (temp file, then rename), diffed by SHA-256, mode and owner, and refused over a symlink, a directory, or a different file at a new path.
+  - `HostRunner`, `localRunner()`, `hostRunnerLayer()` and `launchdProviders()`: every filesystem and `launchctl` call goes through one injectable runner. The local runner never elevates. System-domain writes are refused unless the deploy runs as root or the runner is explicitly `privileged`.
+  - `renderPlist`: a small, deterministic XML plist serializer, round-tripped through `plutil` in the tests.
+
+  Props are stored unencrypted in Alchemy state, so `environment`, `programArguments` and file `content` must not hold secrets. A tripwire refuses the obvious cases; secret files stay rendered by openbao-agent, and the stack declares only their path. Anything already on the host is read as `Unowned`, so it is never adopted without `--adopt`.
+
+## 0.5.0
+
+### Minor Changes
+
+- [#64](https://github.com/taslabs-net/homeflare-kit/pull/64) [`3ed9771`](https://github.com/taslabs-net/homeflare-kit/commit/3ed977142ffe2fe6dd02359a3a87b1a0a84c9952) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `appRoleLogin` / `revokeSelf` (with `appRoleLoginEffect`, `revokeSelfEffect` and `BaoLoginError`) to `@homeflare/alchemy/openbao`, so wrapper scripts can log in with an AppRole and revoke on exit. They use the same address resolution and transport as the `Bao.*` families. The login never sends `BAO_TOKEN`, and error strings are redacted, because OpenBao 2.6.2 can echo a secret_id back in an error. `clientToken` is a getter over a private field, so printing or serialising the result does not show the token under Bun or Node.
+
+  Add `BaoPlugin` / `BaoPluginProvider` for the plugin catalog (`sys/plugins/catalog/<type>/<name>`). It has no `env` prop and retains on destroy. It refuses to shadow a builtin or overwrite a declarative entry, and it names the fix when an unversioned registration is filed under the binary's self-reported version.
+
+  Fix `BaoSshRole` writes. `default_extensions` and `default_critical_options` were sent as JSON strings. OpenBao's field validation rejects that with a 400, so every role write failed. They are now sent as objects.
+
+## 0.4.1
+
+### Patch Changes
+
+- [#62](https://github.com/taslabs-net/homeflare-kit/pull/62) [`93b7107`](https://github.com/taslabs-net/homeflare-kit/commit/93b71070b1a64701cadc1a547044a3ec4da26a50) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export TB4 control-plane Resource constructors from `@homeflare/alchemy/proxmox` (Storage, SDN, access, HA, backup, metrics, PBS). Guests and NIC apply stay Provider-only.
+
+## 0.4.0
+
+### Minor Changes
+
+- [#60](https://github.com/taslabs-net/homeflare-kit/pull/60) [`df34d27`](https://github.com/taslabs-net/homeflare-kit/commit/df34d2750fca4a2b6b86490ddb0a819c12f9ea39) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `BaoAuthMethod` so a stack can enable `approle` (or jwt/oidc) instead of running `configure-engines`. Metadata only — no role ids or OIDC secrets. File audit stays out: OpenBao 2.6 file audit is config-only.
+
+## 0.3.2
+
+### Patch Changes
+
+- [#58](https://github.com/taslabs-net/homeflare-kit/pull/58) [`e7c101f`](https://github.com/taslabs-net/homeflare-kit/commit/e7c101faada2b14466a1f0bbf1f93da46e5e06cb) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Bump Alchemy to 2.0.0-beta.79. Effect stays rc.115. 79 starts Bun with production JSX (the `jsxDEV` CLI crash on 78) and declares `mime` on cloudflare-runtime; the `mime` peer stays so existing consumer installs do not drop a required line.
+
+## 0.3.1
+
+### Patch Changes
+
+- [#56](https://github.com/taslabs-net/homeflare-kit/pull/56) [`5f41ad7`](https://github.com/taslabs-net/homeflare-kit/commit/5f41ad7ab59375e42bb4757dd5b4b81f4a7b6cd9) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `BaoPkiRole` and `BaoSshRole` from `@homeflare/alchemy/openbao`. The barrel already shipped both providers; stacks constructing either role had to import the resource from internals.
+
+## 0.3.0
+
+### Minor Changes
+
+- [#54](https://github.com/taslabs-net/homeflare-kit/pull/54) [`d526365`](https://github.com/taslabs-net/homeflare-kit/commit/d526365a51deac968e5b0076e88b2e68b866534f) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Bump Alchemy to 2.0.0-beta.78 and Effect to 4.0.0-rc.115. Consumers must move the override set with it — Alchemy 78's peer is `effect >= rc.115`. Effect rc.115 renamed `Config.redacted` to `Config.Redacted`. `mime@4.1.0` is now a required peer: Alchemy's cloudflare-runtime imports it and does not declare it.
+
+## 0.2.2
+
+### Patch Changes
+
+- [#46](https://github.com/taslabs-net/homeflare-kit/pull/46) [`9bc37f8`](https://github.com/taslabs-net/homeflare-kit/commit/9bc37f8bd7b9af1fd5c62cc4bc48597251ef61ab) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `BaoMount` and `BaoAuthRole` from `@homeflare/alchemy/openbao`.
+
+  The docs already showed `import { BaoMount } from '@homeflare/alchemy/openbao'`, but the barrel only shipped the providers. Stacks constructing those resources had to import from internals.
+
+- [#48](https://github.com/taslabs-net/homeflare-kit/pull/48) [`4967118`](https://github.com/taslabs-net/homeflare-kit/commit/4967118cc887faba34b17cd48588102736be49bb) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `BaoCloudflareRole` and the Cloudflare role catalog helpers from `@homeflare/alchemy/openbao`, and retry dropped OpenBao transports.
+
+  Stacks declaring mint roles need the resource constructor plus `parseRolesConfig` / `expandAll` / `permissionGroupsFromEngine`. The barrel previously shipped only `BaoCloudflareRoleProvider`. A 585-role plan against a Mesh-fronted vault died mid-diff with an empty transport error; status-0 calls now retry twice.
+
+## 0.2.1
+
+### Patch Changes
+
+- [#40](https://github.com/taslabs-net/homeflare-kit/pull/40) [`60c90eb`](https://github.com/taslabs-net/homeflare-kit/commit/60c90eb4682d0ded2597a79033159ab71cc7a649) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Pin `rolldown` in the consumer overrides so an unlocked install cannot float a missing tarball.
+
+  Alchemy's optional peer `vite@^8` depends on `rolldown: ~1.2.6`. A consumer `bun add`
+  (no lockfile) resolved that to 1.2.9; npm listed the version and 404'd
+  `rolldown-1.2.9.tgz`. Main CI failed on that fetch after [#39](https://github.com/taslabs-net/homeflare-kit/issues/39). The override holds 1.2.8 —
+  the last tarball a green smoke actually installed.
+
+## 0.2.0
+
+### Minor Changes
+
+- [#36](https://github.com/taslabs-net/homeflare-kit/pull/36) [`cff4111`](https://github.com/taslabs-net/homeflare-kit/commit/cff4111c2f4461a45be5811547125b1f5d98c6d2) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Ship the HTTP and Website SDK surfaces apps were hand-rolling.
+
+  **`@homeflare/kit/openapi`** — `createOpenApiApp()` is OpenAPIHono with one
+  readable validation hook. The document and the request share a Zod schema.
+  Subpath, not the main entry: a Node script that only wants `parseEnv` must not
+  resolve Hono. Peers: `hono`, `@hono/zod-openapi`, `zod` (optional). Import `z`
+  from `@hono/zod-openapi`.
+
+  **`astroWebsite` / `viteWebsite`** on `@homeflare/alchemy/cloudflare` — house
+  flags on Alchemy's own stacks. Astro gets `disable_nodejs_process_v2` (workerd
+  process-v2 returns `[object Object]`). Vite is TanStack Start / static Vite.
+  Not Nextjs: that helper hashes source and plans as create against a live Worker.
+
+  Catalog also pins `@tanstack/react-router` 1.170.35, `@tanstack/react-start`
+  1.168.52, `@tanstack/react-query` 5.102.8 — match these, do not wrap them.
+
+## 0.1.3
+
+### Patch Changes
+
+- [#32](https://github.com/taslabs-net/homeflare-kit/pull/32) [`5cc2cd6`](https://github.com/taslabs-net/homeflare-kit/commit/5cc2cd62241f926aace1646fd3a1e0057e96cddd) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `accessIdentity` (ctx.access) and RFC 9728 MCP discovery; fix three doc defects.
+
+  An app team reviewed the published packages before adopting and was right on every point.
+
+  **`accessIdentity(ctx)` — Access identity without parsing a JWT.** Cloudflare attaches the
+  authenticated identity to the execution context (shipped 2026-08-14), so a Worker behind
+  Access reads `ctx.access.getIdentity()` with no token handling. The kit only offered
+  `verifyAccessJwt`, which is the older path.
+
+  ⛔ Both stay, because they are not alternatives: `accessIdentity` for a Worker behind
+  Access, `verifyAccessJwt` for an origin that has no `ctx.access` — service-to-service, a
+  non-Worker origin, or a Worker reached by service binding, since **`ctx.access` does not
+  propagate through bindings**.
+
+  ⚠️ Read groups from `accessIdentity`, not from a token: Cloudflare trims the JWT's
+  `custom` claim at roughly 1 KB _silently_, so token-read group membership can be
+  incomplete — an authorization bug that only appears for users in many groups.
+
+  **`serveMcpMetadata` / `unauthorizedResponse` — RFC 9728.** The MCP spec requires a server
+  to publish Protected Resource Metadata _and_ a 401 naming it in `WWW-Authenticate`.
+  Publishing the document while answering a bare 401 leaves clients that follow the header
+  with nowhere to go.
+
+  **Three documentation defects, all reported and all real:**
+
+  - `@homeflare/alchemy`'s README documented `@homeflare/alchemy/providers`, which does not
+    exist. The real path is `/cloudflare`.
+  - `@homeflare/cloudflare`'s npm description advertised "typed bindings" — it exports none.
+  - `@homeflare/kit`'s advertised "logging" — `log` lives in `@homeflare/cloudflare`.
+
+  **Packing no longer edits a manifest on disk.** `packForPublish` stripped `scripts` and
+  `devDependencies` from the real `package.json`, packed, then restored it — which is a race
+  when two smoke tests pack the same workspace dependency in parallel. It destroyed
+  `@homeflare/kit`'s `scripts` block during this branch, _after_ `verify` had passed. The
+  strip now happens inside the packed tarball, so nothing in the repository is written to.
+
+## 0.1.2
+
+### Patch Changes
+
+- [#29](https://github.com/taslabs-net/homeflare-kit/pull/29) [`72f0787`](https://github.com/taslabs-net/homeflare-kit/commit/72f0787952b3a71bb6573476918e79117250409e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `cloudflare` is a required peer, not an optional one.
+
+  Measured 2026-09-16 against the published 0.1.1 in a clean consumer install: importing
+  `@homeflare/alchemy/cloudflare` without it throws `Cannot find package 'cloudflare'`.
+  Marking it optional claimed the subpath would degrade gracefully; it does not load at all.
+  An optional peer should mean a _feature_ is absent, not that an import fails.
+
+  ⛔ **Why this got through, and what now stops it.** The README's pinned install command and
+  the smoke test's install command disagreed — the smoke test installed `cloudflare`, the
+  README never mentioned it, and nothing compared the two. So the gate proved an install no
+  consumer would ever perform.
+
+  `tests/peers.test.ts` now asserts the manifest, the README and the smoke script agree:
+  every declared peer appears in all three, peers are pinned rather than ranged, and none is
+  marked optional.
+
+## 0.1.1
+
+### Patch Changes
+
+- [#27](https://github.com/taslabs-net/homeflare-kit/pull/27) [`5b73400`](https://github.com/taslabs-net/homeflare-kit/commit/5b73400e7fc2dd8e28a0368db3e5aa105ebdde9a) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix the peer contract: 0.1.0 installed cleanly and threw at import.
+
+  Measured 2026-09-16 against the published 0.1.0 in a clean consumer install — three
+  defects, none of which failed at install time:

@@ -1,5 +1,5 @@
 /**
- * Every Proxmox family that writes to the vendor names the endpoint it writes to. All 35 of them.
+ * Every Proxmox family that writes to the vendor names the endpoint it writes to. All 36 of them.
  *
  * ★ THE TARGET IS THE WHOLE SURFACE, NOT A SAMPLE (Tim, 2026-09-22): "we want 34 of 34 families
  *   I'd think right? no surprises on any of them since we have actual schemas". A family left
@@ -11,6 +11,10 @@
  *   `comment: maxLength 128` on all three of its creates, exactly as on `POST /config/verify`.
  *   It is wired with the rest; the count is stated here so the next reader does not inherit the
  *   older number.
+ *
+ * ⛔ THIRTY-SIX, NOT THIRTY-FIVE, AS OF 2026-09-26. `Proxmox.StorageDownload` joined for Talos
+ *   (storage-download.ts): its one non-DELETE write, `download-url`, is tabled in
+ *   `generated/constraints/pve-nodes-storage.ts`.
  *
  * ★ DERIVED FROM THE OWNERSHIP LEDGER RATHER THAN A SECOND HAND-WRITTEN LIST. `OWNERSHIP` already
  *   names every Resource and every endpoint it calls, and `api-coverage.test.ts` already holds it
@@ -59,8 +63,8 @@ const writes = OWNERSHIP.map((row) => {
 });
 
 describe('every family that writes to Proxmox is wired to the vendor tables', () => {
-  test('thirty-five families write, and none of them writes only DELETEs', () => {
-    expect(writes.length).toBe(35);
+  test('thirty-six families write, and none of them writes only DELETEs', () => {
+    expect(writes.length).toBe(36);
     for (const family of writes) {
       expect(family.keys.length, `${family.resource} (${family.file})`).toBeGreaterThan(0);
     }
@@ -94,11 +98,13 @@ describe('every family that writes to Proxmox is wired to the vendor tables', ()
   // ⛔ 74, NOT 75 — 2026-09-24: Proxmox.ApiToken's create was never reachable (reconcile refuses
   //   it, see api-token.ts's header), and the distilled migration stopped naming its POST
   //   endpoint at all rather than keeping a dead literal around. One fewer pve: key; pbs unchanged.
-  test('the tabled surface is 74 endpoints across both products', () => {
+  // ⛔ 75, NOT 74 — 2026-09-26: `pve:POST /nodes/{node}/storage/{storage}/download-url` joined
+  //   (Proxmox.StorageDownload). One more pve: key; pbs unchanged.
+  test('the tabled surface is 75 endpoints across both products', () => {
     const keys = Object.keys(PROXMOX_CONSTRAINTS);
-    expect(keys.length).toBe(74);
+    expect(keys.length).toBe(75);
     expect(keys.filter((key) => key.startsWith('pbs:')).length).toBe(16);
-    expect(keys.filter((key) => key.startsWith('pve:')).length).toBe(58);
+    expect(keys.filter((key) => key.startsWith('pve:')).length).toBe(59);
   });
 });
 

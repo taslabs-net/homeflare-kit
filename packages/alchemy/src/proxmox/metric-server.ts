@@ -29,17 +29,25 @@
  *   cluster-wide config write. A separate role for metric writes is the narrower answer.
  */
 import { Resource } from 'alchemy';
+import { isResolved } from 'alchemy/Diff';
+import * as cluster from '@distilled.cloud/proxmox/cluster';
+import { runPve } from './distilled-pve.ts';
+import { specGuards } from './resource-guard.ts';
+import { formToSend } from './update-guard.ts';
+import { metricServerSpec } from './metric-server-config.ts';
+import {
+  deleteMetricServer,
+  metricServerRequest,
+  readMetricServer,
+} from './metric-server-distilled.ts';
+
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { UNSET, createBody, update } from './metric-server-form.ts';
 import {
   type MetricServerOtelAttributes,
   type MetricServerOtelProps,
-  otelAttributes,
-  otelMatches,
 } from './metric-server-otel.ts';
-import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
-import { bool, int, text } from './values.ts';
+import type { PveRequirements, WithTarget } from './resource-spec.ts';
 
 /**
  * PVE's status plugins. Which one a server is decides which fields it will even accept.
@@ -130,88 +138,7 @@ export interface ProxmoxMetricServer extends Resource<
 export const ProxmoxMetricServer = Resource<ProxmoxMetricServer>('Proxmox.MetricServer');
 
 /**
- * The type-specific half of `matches`.
- *
- * ⛔ ONLY FIELDS THIS TYPE ACTUALLY SENDS ARE COMPARED. `verify-certificate` is not in graphite's
- *   option set and `path` is not in influxdb's, so neither is ever sent to the wrong plugin — and
- *   diffing one anyway would report an update that the PUT it triggers cannot satisfy, forever.
- *   `mtu` and `timeout` are compared for graphite and influxdb only, because the opentelemetry
- *   plugin has neither and `optional` never sends them to it.
- */
-const matchesType = (attributes: MetricServerAttributes, props: MetricServerProps): boolean => {
-  if (props.type === 'opentelemetry') return otelMatches(attributes, props);
-  const socket =
-    attributes.mtu === (props.mtu ?? UNSET) && attributes.timeout === (props.timeout ?? UNSET);
-  if (props.type === 'graphite') return socket && attributes.path === (props.path ?? '');
-  return (
-    socket &&
-    attributes.influxdbproto === (props.influxdbproto ?? '') &&
-    attributes.organization === (props.organization ?? '') &&
-    attributes.bucket === (props.bucket ?? '') &&
-    attributes['api-path-prefix'] === (props['api-path-prefix'] ?? '') &&
-    attributes['max-body-size'] === (props['max-body-size'] ?? UNSET) &&
-    attributes['verify-certificate'] === (props['verify-certificate'] !== false)
-  );
-};
-
-const handlers = pveHandlers<MetricServerProps, MetricServerAttributes>({
-  attributes: (live, props) => {
-    /**
-     * ⛔ A SERVER OF ANOTHER TYPE IS ANOTHER OBJECT, AND "ABSENT" IS THE HONEST ANSWER. `type`
-     *   cannot be changed by a PUT, so reporting the foreign section as missing makes reconcile
-     *   POST instead and PVE refuses because the id is taken — a loud, accurate error rather than a
-     *   PUT pushing influxdb fields at a graphite section. An older PVE that omits `type` from the
-     *   read falls through and is trusted.
-     */
-    const liveType = text(live['type']);
-    if (liveType !== '' && liveType !== props.type) return undefined;
-    return {
-      ...otelAttributes(live),
-      'api-path-prefix': text(live['api-path-prefix']),
-      bucket: text(live['bucket']),
-      disable: bool(live['disable'], false),
-      id: props.id,
-      influxdbproto: text(live['influxdbproto']),
-      'max-body-size': int(live['max-body-size'], UNSET),
-      mtu: int(live['mtu'], UNSET),
-      organization: text(live['organization']),
-      path: text(live['path']),
-      port: int(live['port'], 0),
-      server: text(live['server']),
-      timeout: int(live['timeout'], UNSET),
-      type: props.type,
-      'verify-certificate': bool(live['verify-certificate'], true),
-    };
-  },
-  /** ⛔ THE SAME STRING AS `path`, DELIBERATELY — see the ⛔ in the header. */
-  collection: (props) => `cluster/metrics/server/${props.id}`,
-  /** ⚠️ `type` IS REQUIRED ON CREATE; `id` IS NOT SENT, because the id is the path. */
-  createForm: createBody,
-  /**
-   * The vendor rules both forms are checked against at plan time — resource-spec.ts.
-   * ⚠️ POST AND PUT ARE THE SAME PATH HERE, and they are still two different tables: only the
-   *   POST marks `type` required, and only the PUT accepts `delete` and `digest`.
-   */
-  endpoint: {
-    create: 'pve:POST /cluster/metrics/server/{id}',
-    update: 'pve:PUT /cluster/metrics/server/{id}',
-  },
-  /**
-   * ⛔ `id` and `type` are absent: one is the key the object was read by, the other is refused
-   *   rather than updated. Everything type-specific is `matchesType`'s, above.
-   */
-  matches: (attributes, props) =>
-    attributes.server === props.server &&
-    attributes.port === props.port &&
-    attributes.disable === (props.disable === true) &&
-    matchesType(attributes, props),
-  path: (props) => `cluster/metrics/server/${props.id}`,
-  /** The form and its clear-list, from the one table in metric-server-form.ts. */
-  updateForm: update,
-});
-
-/**
- * ⛔ THE EMPTY `list` FROM `pveHandlers` EARNS ITS KEEP HERE. `GET cluster/metrics/server` answers
+ * ⛔ THE EMPTY `list` KEEPS ADOPTION EXPLICIT. `GET cluster/metrics/server` answers
  *   with every target the cluster already ships to, including the one somebody configured by hand
  *   years ago; adopting that is how a later `alchemy destroy` silences a graph nobody declared.
  * ⚠️ AND NOTHING BRAKES THIS DESTROY. A pool refuses while it holds guests, a container while it
@@ -219,5 +146,67 @@ const handlers = pveHandlers<MetricServerProps, MetricServerAttributes>({
  *   interval, and no guest or task is affected. The plan diff is the only warning anyone gets —
  *   the top of this file again, this time caused by a deploy.
  */
+const { guardCreate, guardUpdate } = specGuards(metricServerSpec);
+
+/** SDK lifecycle walked against pve-manager 9.2.11; failed reads never imply create. */
 export const ProxmoxMetricServerProvider = () =>
-  Provider.effect(ProxmoxMetricServer, Effect.succeed(ProxmoxMetricServer.Provider.of(handlers)));
+  Provider.effect(
+    ProxmoxMetricServer,
+    Effect.succeed(
+      ProxmoxMetricServer.Provider.of({
+        list: () => Effect.succeed([]),
+        read: ({ olds }) => readMetricServer(olds),
+        diff: Effect.fn(function* ({ news, output }) {
+          if (!isResolved(news)) return undefined;
+          yield* guardCreate(news, output === undefined);
+          yield* guardUpdate(news);
+          if (output === undefined) return undefined;
+          const live = yield* readMetricServer(news);
+          if (live === undefined) {
+            yield* guardCreate(news, true);
+            return { action: 'update' } as const;
+          }
+          return { action: metricServerSpec.matches(live, news) ? 'noop' : 'update' } as const;
+        }),
+        reconcile: Effect.fn(function* ({ news }) {
+          const live = yield* readMetricServer(news);
+          yield* guardCreate(news, live === undefined);
+          yield* guardUpdate(news);
+          if (live === undefined) {
+            yield* runPve(
+              news.target,
+              'provision',
+              true,
+              cluster.updateClusterMetricsServer({
+                ...metricServerRequest(news, metricServerSpec.createForm(news)),
+                type: news.type,
+              }),
+            );
+          } else {
+            const form = formToSend(
+              metricServerSpec.matches,
+              live,
+              news,
+              metricServerSpec.updateForm(news),
+            );
+            if (form !== undefined)
+              yield* runPve(
+                news.target,
+                'provision',
+                true,
+                cluster.putClusterMetricsServer(metricServerRequest(news, form)),
+              );
+          }
+          const after = yield* readMetricServer(news);
+          if (after === undefined)
+            return yield* Effect.fail(
+              new Error(
+                `${metricServerSpec.path(news)}: write returned success but the resource is still absent`,
+              ),
+            );
+          return after;
+        }),
+        delete: ({ olds }) => deleteMetricServer(olds),
+      }),
+    ),
+  );

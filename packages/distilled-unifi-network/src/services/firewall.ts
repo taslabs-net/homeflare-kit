@@ -593,16 +593,401 @@ export const FirewallPolicyDestination = /*@__PURE__*/ S.suspend(() =>
   identifier: "FirewallPolicyDestination",
 }) as any as S.Schema<FirewallPolicyDestination>;
 
+export type FirewallPolicyIPv4NamedProtocolName =
+  | "ah"
+  | "ax.25"
+  | "dccp"
+  | "ddp"
+  | "egp"
+  | "eigrp"
+  | "encap"
+  | "esp"
+  | "etherip"
+  | "fc"
+  | "ggp"
+  | "gre"
+  | "hip"
+  | "hmp"
+  | "icmp"
+  | "icmpv6"
+  | "idpr-cmtp"
+  | "idrp"
+  | "igmp"
+  | "igp"
+  | "ip"
+  | "ipcomp"
+  | "ipencap"
+  | "ipip"
+  | "ipv6"
+  | "ipv6-frag"
+  | "ipv6-nonxt"
+  | "ipv6-opts"
+  | "ipv6-route"
+  | "isis"
+  | "iso-tp4"
+  | "l2tp"
+  | "manet"
+  | "mobility-header"
+  | "mpls-in-ip"
+  | "ospf"
+  | "pim"
+  | "pup"
+  | "rdp"
+  | "rohc"
+  | "rspf"
+  | "rsvp"
+  | "sctp"
+  | "shim6"
+  | "skip"
+  | "st"
+  | "tcp"
+  | "tcp_udp"
+  | "udp"
+  | "udplite"
+  | "vmtp"
+  | "vrrp"
+  | "wesp"
+  | "xns-idp"
+  | "xtp";
+export const FirewallPolicyIPv4NamedProtocolName = S.String;
+
+/** Match specific type of ICMP traffic. If null, matches all types. */
+export type FirewallPolicyIPv4NamedProtocolTypenameFilter =
+  | "ADDRESS_MASK_REPLY"
+  | "ADDRESS_MASK_REQUEST"
+  | "COMMUNICATION_PROHIBITED"
+  | "DESTINATION_UNREACHABLE"
+  | "ECHO_REPLY"
+  | "ECHO_REQUEST"
+  | "FRAGMENTATION_NEEDED"
+  | "HOST_PRECEDENCE_VIOLATION"
+  | "HOST_PROHIBITED"
+  | "HOST_REDIRECT"
+  | "HOST_UNKNOWN"
+  | "HOST_UNREACHABLE"
+  | "IP_HEADER_BAD"
+  | "NETWORK_PROHIBITED"
+  | "NETWORK_REDIRECT"
+  | "NETWORK_UNKNOWN"
+  | "NETWORK_UNREACHABLE"
+  | "PARAMETER_PROBLEM"
+  | "PORT_UNREACHABLE"
+  | "PRECEDENCE_CUTOFF"
+  | "PROTOCOL_UNREACHABLE"
+  | "REDIRECT"
+  | "REQUIRED_OPTION_MISSING"
+  | "ROUTER_ADVERTISEMENT"
+  | "ROUTER_SOLICITATION"
+  | "SOURCE_QUENCH"
+  | "SOURCE_ROUTE_FAILED"
+  | "TIME_EXCEEDED"
+  | "TIMESTAMP_REPLY"
+  | "TIMESTAMP_REQUEST"
+  | "TOS_HOST_REDIRECT"
+  | "TOS_HOST_UNREACHABLE"
+  | "TOS_NETWORK_REDIRECT"
+  | "TOS_NETWORK_UNREACHABLE"
+  | "TTL_ZERO_DURING_REASSEMBLY"
+  | "TTL_ZERO_DURING_TRANSIT";
+export const FirewallPolicyIPv4NamedProtocolTypenameFilter = S.String;
+
+/** Defines rules for matching by protocol name. */
+export interface FirewallPolicyIPv4NamedProtocol {
+  name?: FirewallPolicyIPv4NamedProtocolName | (string & {});
+  /** Match specific type of ICMP traffic. If null, matches all types. */
+  typenameFilter?:
+    | FirewallPolicyIPv4NamedProtocolTypenameFilter
+    | (string & {});
+}
+export const FirewallPolicyIPv4NamedProtocol = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    name: S.optional(FirewallPolicyIPv4NamedProtocolName),
+    typenameFilter: S.optional(FirewallPolicyIPv4NamedProtocolTypenameFilter),
+  }),
+).annotate({
+  identifier: "FirewallPolicyIPv4NamedProtocol",
+}) as any as S.Schema<FirewallPolicyIPv4NamedProtocol>;
+
+/** Defines rules for matching by protocol preset. */
+export interface FirewallPolicyIPv4ProtocolPreset {
+  name: string;
+}
+export const FirewallPolicyIPv4ProtocolPreset = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    name: S.String,
+  }),
+).annotate({
+  identifier: "FirewallPolicyIPv4ProtocolPreset",
+}) as any as S.Schema<FirewallPolicyIPv4ProtocolPreset>;
+
+/** Defines protocol matching. If null, matches all protocols. */
+export interface FirewallPolicyIPv4Protocol {
+  type: string;
+  /** Match on all protocols except the specified protocol. */
+  matchOpposite?: boolean;
+  protocol?: FirewallPolicyIPv4NamedProtocol;
+  preset?: FirewallPolicyIPv4ProtocolPreset;
+  /** Protocol number as defined by IANA. */
+  protocolNumber?: number;
+}
+export const FirewallPolicyIPv4Protocol = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    type: S.String,
+    matchOpposite: S.optional(S.Boolean),
+    protocol: S.optional(FirewallPolicyIPv4NamedProtocol),
+    preset: S.optional(FirewallPolicyIPv4ProtocolPreset),
+    protocolNumber: S.optional(S.Number),
+  }),
+).annotate({
+  identifier: "FirewallPolicyIPv4Protocol",
+}) as any as S.Schema<FirewallPolicyIPv4Protocol>;
+
+export type FirewallPolicyIPv4AndIPv6NamedProtocolName =
+  | "ah"
+  | "ax.25"
+  | "dccp"
+  | "ddp"
+  | "egp"
+  | "eigrp"
+  | "encap"
+  | "esp"
+  | "etherip"
+  | "fc"
+  | "ggp"
+  | "gre"
+  | "hip"
+  | "hmp"
+  | "icmp"
+  | "icmpv6"
+  | "idpr-cmtp"
+  | "idrp"
+  | "igmp"
+  | "igp"
+  | "ip"
+  | "ipcomp"
+  | "ipencap"
+  | "ipip"
+  | "ipv6"
+  | "ipv6-frag"
+  | "ipv6-nonxt"
+  | "ipv6-opts"
+  | "ipv6-route"
+  | "isis"
+  | "iso-tp4"
+  | "l2tp"
+  | "manet"
+  | "mobility-header"
+  | "mpls-in-ip"
+  | "ospf"
+  | "pim"
+  | "pup"
+  | "rdp"
+  | "rohc"
+  | "rspf"
+  | "rsvp"
+  | "sctp"
+  | "shim6"
+  | "skip"
+  | "st"
+  | "tcp"
+  | "tcp_udp"
+  | "udp"
+  | "udplite"
+  | "vmtp"
+  | "vrrp"
+  | "wesp"
+  | "xns-idp"
+  | "xtp";
+export const FirewallPolicyIPv4AndIPv6NamedProtocolName = S.String;
+
+/** Defines rules for matching by protocol name. */
+export interface FirewallPolicyIPv4AndIPv6NamedProtocol {
+  name: FirewallPolicyIPv4AndIPv6NamedProtocolName | (string & {});
+}
+export const FirewallPolicyIPv4AndIPv6NamedProtocol = /*@__PURE__*/ S.suspend(
+  () =>
+    S.Struct({
+      name: FirewallPolicyIPv4AndIPv6NamedProtocolName,
+    }),
+).annotate({
+  identifier: "FirewallPolicyIPv4AndIPv6NamedProtocol",
+}) as any as S.Schema<FirewallPolicyIPv4AndIPv6NamedProtocol>;
+
+/** Defines rules for matching by protocol preset. */
+export type FirewallPolicyIPv4AndIPv6ProtocolPreset =
+  FirewallPolicyIPv4ProtocolPreset;
+export const FirewallPolicyIPv4AndIPv6ProtocolPreset =
+  FirewallPolicyIPv4ProtocolPreset;
+
+/** Defines protocol matching. If null, matches all protocols. */
+export interface FirewallPolicyIPv4AndIPv6Protocol {
+  type: string;
+  /** Match on all protocols except the specified protocol. */
+  matchOpposite?: boolean;
+  protocol?: FirewallPolicyIPv4AndIPv6NamedProtocol;
+  preset?: FirewallPolicyIPv4ProtocolPreset;
+  /** Protocol number as defined by IANA. */
+  protocolNumber?: number;
+}
+export const FirewallPolicyIPv4AndIPv6Protocol = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    type: S.String,
+    matchOpposite: S.optional(S.Boolean),
+    protocol: S.optional(FirewallPolicyIPv4AndIPv6NamedProtocol),
+    preset: S.optional(FirewallPolicyIPv4ProtocolPreset),
+    protocolNumber: S.optional(S.Number),
+  }),
+).annotate({
+  identifier: "FirewallPolicyIPv4AndIPv6Protocol",
+}) as any as S.Schema<FirewallPolicyIPv4AndIPv6Protocol>;
+
+export type FirewallPolicyIPv6NamedProtocolName =
+  | "ah"
+  | "ax.25"
+  | "dccp"
+  | "ddp"
+  | "egp"
+  | "eigrp"
+  | "encap"
+  | "esp"
+  | "etherip"
+  | "fc"
+  | "ggp"
+  | "gre"
+  | "hip"
+  | "hmp"
+  | "icmp"
+  | "icmpv6"
+  | "idpr-cmtp"
+  | "idrp"
+  | "igmp"
+  | "igp"
+  | "ip"
+  | "ipcomp"
+  | "ipencap"
+  | "ipip"
+  | "ipv6"
+  | "ipv6-frag"
+  | "ipv6-nonxt"
+  | "ipv6-opts"
+  | "ipv6-route"
+  | "isis"
+  | "iso-tp4"
+  | "l2tp"
+  | "manet"
+  | "mobility-header"
+  | "mpls-in-ip"
+  | "ospf"
+  | "pim"
+  | "pup"
+  | "rdp"
+  | "rohc"
+  | "rspf"
+  | "rsvp"
+  | "sctp"
+  | "shim6"
+  | "skip"
+  | "st"
+  | "tcp"
+  | "tcp_udp"
+  | "udp"
+  | "udplite"
+  | "vmtp"
+  | "vrrp"
+  | "wesp"
+  | "xns-idp"
+  | "xtp";
+export const FirewallPolicyIPv6NamedProtocolName = S.String;
+
+/** Match specific type of ICMPv6 traffic. If null, matches all types. */
+export type FirewallPolicyIPv6NamedProtocolTypenameFilter =
+  | "ADDRESS_UNREACHABLE"
+  | "BAD_HEADER"
+  | "BEYOND_SCOPE"
+  | "COMMUNICATION_PROHIBITED"
+  | "DESTINATION_UNREACHABLE"
+  | "ECHO_REPLY"
+  | "ECHO_REQUEST"
+  | "FAILED_POLICY"
+  | "NEIGHBOR_ADVERTISEMENT"
+  | "NEIGHBOR_SOLICITATION"
+  | "NO_ROUTE"
+  | "PACKET_TOO_BIG"
+  | "PARAMETER_PROBLEM"
+  | "PORT_UNREACHABLE"
+  | "REDIRECT"
+  | "REJECT_ROUTE"
+  | "ROUTER_ADVERTISEMENT"
+  | "ROUTER_SOLICITATION"
+  | "TIME_EXCEEDED"
+  | "TTL_ZERO_DURING_REASSEMBLY"
+  | "TTL_ZERO_DURING_TRANSIT"
+  | "UNKNOWN_HEADER_TYPE"
+  | "UNKNOWN_OPTION";
+export const FirewallPolicyIPv6NamedProtocolTypenameFilter = S.String;
+
+/** Defines rules for matching by protocol name. */
+export interface FirewallPolicyIPv6NamedProtocol {
+  name?: FirewallPolicyIPv6NamedProtocolName | (string & {});
+  /** Match specific type of ICMPv6 traffic. If null, matches all types. */
+  typenameFilter?:
+    | FirewallPolicyIPv6NamedProtocolTypenameFilter
+    | (string & {});
+}
+export const FirewallPolicyIPv6NamedProtocol = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    name: S.optional(FirewallPolicyIPv6NamedProtocolName),
+    typenameFilter: S.optional(FirewallPolicyIPv6NamedProtocolTypenameFilter),
+  }),
+).annotate({
+  identifier: "FirewallPolicyIPv6NamedProtocol",
+}) as any as S.Schema<FirewallPolicyIPv6NamedProtocol>;
+
+/** Defines rules for matching by protocol preset. */
+export type FirewallPolicyIPv6ProtocolPreset = FirewallPolicyIPv4ProtocolPreset;
+export const FirewallPolicyIPv6ProtocolPreset =
+  FirewallPolicyIPv4ProtocolPreset;
+
+/** Defines protocol matching. If null, matches all protocols. */
+export interface FirewallPolicyIPv6Protocol {
+  type: string;
+  /** Match on all protocols except the specified protocol. */
+  matchOpposite?: boolean;
+  protocol?: FirewallPolicyIPv6NamedProtocol;
+  preset?: FirewallPolicyIPv4ProtocolPreset;
+  /** Protocol number as defined by IANA. */
+  protocolNumber?: number;
+}
+export const FirewallPolicyIPv6Protocol = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    type: S.String,
+    matchOpposite: S.optional(S.Boolean),
+    protocol: S.optional(FirewallPolicyIPv6NamedProtocol),
+    preset: S.optional(FirewallPolicyIPv4ProtocolPreset),
+    protocolNumber: S.optional(S.Number),
+  }),
+).annotate({
+  identifier: "FirewallPolicyIPv6Protocol",
+}) as any as S.Schema<FirewallPolicyIPv6Protocol>;
+
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type FirewallPolicyIPProtocolScopeProtocolFilter =
+  | FirewallPolicyIPv4Protocol
+  | FirewallPolicyIPv4AndIPv6Protocol
+  | FirewallPolicyIPv6Protocol;
+export const FirewallPolicyIPProtocolScopeProtocolFilter =
+  S.Unknown as any as S.Schema<FirewallPolicyIPProtocolScopeProtocolFilter>;
+
 /** Defines rules for matching by IP version and protocol. */
 export interface FirewallPolicyIPProtocolScope {
   ipVersion: string;
-  /** Shape varies by variant — widened by scripts/convert.ts; see README. */
-  protocolFilter?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  protocolFilter?: FirewallPolicyIPProtocolScopeProtocolFilter;
 }
 export const FirewallPolicyIPProtocolScope = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     ipVersion: S.String,
-    protocolFilter: S.optional(S.Unknown),
+    protocolFilter: S.optional(FirewallPolicyIPProtocolScopeProtocolFilter),
   }),
 ).annotate({
   identifier: "FirewallPolicyIPProtocolScope",
@@ -672,12 +1057,38 @@ export const FirewallSchedule = /*@__PURE__*/ S.suspend(() =>
   identifier: "FirewallSchedule",
 }) as any as S.Schema<FirewallSchedule>;
 
+/** Array of MAC addresses to match. */
+export type FirewallPolicyMACAddressFilterMacAddressesList = Array<string>;
+export const FirewallPolicyMACAddressFilterMacAddressesList =
+  /*@__PURE__*/ S.Array(
+    S.String,
+  ) as any as S.Schema<FirewallPolicyMACAddressFilterMacAddressesList>;
+
+export interface FirewallPolicyMACAddressFilter {
+  /** Array of MAC addresses to match. */
+  macAddresses: FirewallPolicyMACAddressFilterMacAddressesList;
+}
+export const FirewallPolicyMACAddressFilter = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    macAddresses: FirewallPolicyMACAddressFilterMacAddressesList,
+  }),
+).annotate({
+  identifier: "FirewallPolicyMACAddressFilter",
+}) as any as S.Schema<FirewallPolicyMACAddressFilter>;
+
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type FirewallPolicySourceTrafficFilterMacAddressFilter =
+  | string
+  | FirewallPolicyMACAddressFilter;
+export const FirewallPolicySourceTrafficFilterMacAddressFilter =
+  S.Unknown as any as S.Schema<FirewallPolicySourceTrafficFilterMacAddressFilter>;
+
 export interface FirewallPolicySourceTrafficFilter {
   type: string;
   /** Match source traffic by IPv6 interface identifier */
   ipv6IidFilter?: FirewallPolicyIPv6InterfaceIdentifierFilter;
-  /** Shape varies by variant — widened by scripts/convert.ts; see README. */
-  macAddressFilter?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  macAddressFilter?: FirewallPolicySourceTrafficFilterMacAddressFilter;
   /** Match source traffic additionally by ports. If null, match all ports. */
   portFilter?: FirewallPolicyPortFilter;
   /** Match source traffic by IP addresses */
@@ -695,7 +1106,9 @@ export const FirewallPolicySourceTrafficFilter = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     type: S.String,
     ipv6IidFilter: S.optional(FirewallPolicyIPv6InterfaceIdentifierFilter),
-    macAddressFilter: S.optional(S.Unknown),
+    macAddressFilter: S.optional(
+      FirewallPolicySourceTrafficFilterMacAddressFilter,
+    ),
     portFilter: S.optional(FirewallPolicyPortFilter),
     ipAddressFilter: S.optional(FirewallPolicyIPAddressFilter),
     networkFilter: S.optional(FirewallPolicyNetworkFilter),

@@ -56,9 +56,10 @@
  *   maintenance — the churn-that-reads-like-drift that keeps `digest` out of storage.ts.
  *
  */
+import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
 import type { CephOsdProps } from './ceph-osd.ts';
-import { pve } from './client.ts';
+import { runPve } from './distilled-pve.ts';
 import { bool, int, num, text } from './values.ts';
 
 /** A CRUSH node. Buckets carry `children`; an OSD leaf carries `type: 'osd'`. */
@@ -181,13 +182,21 @@ export const osdAttributes = (leaf: CrushNode, props: CephOsdProps): CephOsdAttr
  * ★ IT LIVES HERE RATHER THAN IN ceph-osd.ts BECAUSE THE READ SIDE IS THIS FILE'S WHOLE JOB —
  *   `findOsd` and `osdAttributes` are the two halves it composes, and keeping the caller beside
  *   them is what let ceph-osd.ts come back under the 250-line cap when create and delete were
- *   added. ⚠️ A 404 or a 403 both arrive here as `undefined`: see the ⛔ on `readRole` in
- *   resource.ts for why that distinction is invisible and what it costs.
+ *   added.
+ *
+ * ★ MIGRATED OFF `client.ts`'s `pve()` ONTO `@distilled.cloud/proxmox`'s typed `nodes.
+ *   getNodeCephOsd` (2026-09-24, decision 43, 2c) — the tree endpoint, confirmed against
+ *   distilled's own schema to still answer `{flags?, root: unknown}`, matching the shape
+ *   `osdLeaves` already walks. ⛔ STILL NO `Effect.orElseSucceed` — the ⛔ on `handlers.read` in
+ *   ceph-osd.ts is unchanged and is still the reason: this path is a collection that always
+ *   exists while Ceph is installed, so a failure here is never "the OSD is gone" and must
+ *   propagate rather than fold. This is the one migrated Ceph family that does NOT match
+ *   ceph-pool-wire.ts's/ceph-fs-distilled.ts's single-fold shape, because it never had it.
  */
 export const readOsd = (props: CephOsdProps) =>
-  pve<Record<string, unknown>>(props.target, 'read', 'GET', `nodes/${props.node}/ceph/osd`).pipe(
+  runPve(props.target, 'read', false, nodes.getNodeCephOsd({ node: props.node })).pipe(
     Effect.map((t) => {
-      const leaf = t === undefined ? undefined : findOsd(t, props.osdid);
+      const leaf = findOsd(t as unknown as CrushNode, props.osdid);
       return leaf === undefined ? undefined : osdAttributes(leaf, props);
     }),
   );

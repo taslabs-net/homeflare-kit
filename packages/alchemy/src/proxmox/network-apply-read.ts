@@ -17,13 +17,8 @@
  *   of `data`, set only when the diff is non-empty. `client.ts`'s `pve()` returns `body.data` and
  *   drops the envelope, so the one readable pending signal is invisible to every other resource in
  *   this package. Without the fetch below, `Proxmox.NetworkApply` could not diff honestly at all.
- *   ★ `pveEnvelopeWith` in client.ts now carries the same member failover as every other call.
- *   ⛔ WHY THIS FAMILY DID NOT MOVE TO DISTILLED WITH `Proxmox.NodeNetwork` (2026-09-24, decision
- *     43's walk-down): CONFIRMED against `@distilled.cloud/proxmox`'s own `protocol.ts` that its
- *     `transformResponse` unconditionally returns `body.data ?? {}` for every operation, before a
- *     generated call's typed output is even built — no typed call, current or future, could see
- *     `changes` without a protocol-level change upstream. `pveEnvelopeWith` stays because nothing
- *     else preserves the sibling this function needs.
+ *   ★ `listNodeNetwork` keeps a string `changes` sibling. The protocol unwraps every other
+ *     envelope. The diff string is counted here and then dropped.
  *
  * ⛔ AND THE INTERFACE ROWS CANNOT TELL YOU EITHER. MEASURED in PVE/INotify.pm `read_file`: when
  *   `/etc/network/interfaces.new` exists, THAT is the file that gets parsed, so
@@ -41,20 +36,13 @@
  *   there waiting for the next reload anybody triggers. The file's existence is not exposed by the
  *   API in any other form, so the alternative is not a better read — it is SSH.
  */
+import * as cluster from '@distilled.cloud/proxmox/cluster';
+import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
-import { pve, pveEnvelopeWith, pveWith } from './client.ts';
+import { runPve, runPveWith } from './distilled-pve.ts';
 import { type PveCredential, type PveTarget } from './credentials.ts';
 import { leased } from './lease-cache.ts';
 import { bool, text } from './values.ts';
-
-/** The `GET /nodes/{node}/network` envelope. ⛔ `changes` is beside `data`, never inside it. */
-type NetworkEnvelope = { changes?: string };
-
-/** One row of `GET /cluster/status` — a `cluster` row, or one `node` row per member. */
-type StatusRow = { type?: string; name?: string; quorate?: unknown; online?: unknown };
-
-/** One `GET /nodes/{node}/tasks/{upid}/status` answer. `status` is `running` or `stopped`. */
-type TaskStatus = { status?: string; exitstatus?: string };
 
 /** What the cluster looked like the moment it was asked. Never persisted — see network-apply.ts. */
 export type ClusterHealth = { quorate: boolean; offline: readonly string[] };
@@ -70,7 +58,6 @@ export type ClusterHealth = { quorate: boolean; offline: readonly string[] };
  */
 const stagedDiff = (target: PveTarget, node: string) =>
   Effect.gen(function* () {
-    const path = `nodes/${node}/network`;
     // ⚠️ THE `read` ROLE IS ENOUGH, AND DELIBERATELY SO. The schema's permission for this GET is
     //   `"user": "all"` — no privilege check at all — so the pending read never needs the
     //   provisioning lease, and a plan stays a plan even if the write role is missing entirely.
@@ -79,8 +66,9 @@ const stagedDiff = (target: PveTarget, node: string) =>
     //   SIX extra `hf-read@pve` tokens on node-b per C1 plan (one per node, for read and for diff),
     //   MEASURED 2026-09-14 while the cache itself made one read mint for the whole run.
     const credential = yield* leased(target, 'read');
-    const envelope = (yield* pveEnvelopeWith(target, credential, 'GET', path)) as NetworkEnvelope;
-    return text(envelope.changes);
+    const live = yield* runPveWith(target, credential, false, nodes.listNodeNetwork({ node }));
+    // ⛔ The diff string is not returned from pendingCount and is not an attribute.
+    return Array.isArray(live) ? '' : live.changes;
   });
 
 /**
@@ -128,7 +116,7 @@ export const pendingCount = (target: PveTarget, node: string) =>
  *   It is asked of the `read` role, which is auditor-shaped, rather than of `provision`.
  */
 const clusterHealth = (target: PveTarget) =>
-  pve<StatusRow[]>(target, 'read', 'GET', 'cluster/status').pipe(
+  runPve(target, 'read', false, cluster.listClusterStatus({})).pipe(
     Effect.map((rows) => {
       const all = rows ?? [];
       const cluster = all.find((row) => row.type === 'cluster');
@@ -195,11 +183,8 @@ const ATTEMPTS = 30;
  *   is not the owner — which is why this takes a `PveCredential` and the caller keeps one lease
  *   across both calls, instead of widening the provisioning role to read its own tasks.
  *
- * ⛔ THE OTHER REASON THIS FAMILY DID NOT MOVE TO DISTILLED (2026-09-24): CHECKED against
- *   `@distilled.cloud/proxmox`'s own `Task.awaitTask` (`src/task.ts`) before deciding — it
- *   propagates a poll failure as a genuine typed `GetNodeTaskStatusError` rather than collapsing
- *   it to `UNREACHABLE` the way this function does, which would turn the ⛔ two paragraphs above
- *   into a failed `reconcile` on exactly the poll a mid-reload connection drop is expected to hit.
+ * ★ A poll failure stays `UNREACHABLE`. `getNodeTaskStatus` would otherwise fail the reload
+ *   on the connection drop this function exists to survive.
  */
 export const awaitTask = (
   target: PveTarget,
@@ -210,16 +195,7 @@ export const awaitTask = (
   attempts: number = ATTEMPTS,
 ) =>
   Effect.gen(function* () {
-    /**
-     * ⚠️ THE UPID GOES IN RAW, NOT PERCENT-ENCODED, AND THE CHOICE IS DELIBERATE. A UPID is
-     *   `UPID:<node>:<hex>:<hex>:<hex>:<type>:<id>:<user>:` — its only punctuation is `:`, `@`, `!`
-     *   and `-`, every one of which is a legal path character, so raw needs nothing from the
-     *   router. Encoding them instead RELIES on PVE unescaping each path segment, which is
-     *   plausible and was NOT measured here (measuring it means starting a task, i.e. writing). If
-     *   that assumption were wrong the poll would 404, this would report the outcome as unknown,
-     *   and a perfectly good reload would stop the deploy. Raw removes the assumption.
-     */
-    const path = `nodes/${node}/tasks/${upid}/status`;
+    // ★ The SDK percent-encodes the UPID label. PVE APIServer unescapes it before routing.
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       /**
        * ⛔ A FAILED POLL IS NOT A FAILED RELOAD, AND CALLING IT ONE WOULD BE THE WORST KIND OF
@@ -231,9 +207,12 @@ export const awaitTask = (
        *   task's owner, the endpoint wants `Sys.Audit` on the node and this sees only "no answer" —
        *   which is why `UNREACHABLE` names both possibilities rather than blaming the network.
        */
-      const status = yield* pveWith<TaskStatus>(target, credential, 'GET', path).pipe(
-        Effect.orElseSucceed(() => undefined),
-      );
+      const status = yield* runPveWith(
+        target,
+        credential,
+        false,
+        nodes.getNodeTaskStatus({ node, upid }),
+      ).pipe(Effect.orElseSucceed(() => undefined));
       if (status === undefined) return UNREACHABLE;
       if (status.status === 'stopped') return text(status.exitstatus, 'stopped with no exitstatus');
       yield* Effect.sleep('1 second');

@@ -106,7 +106,7 @@ export const comment = (value: unknown) => {
  *   this form would be a second, invisible identity for the object, set from a field the resource
  *   does not have.
  */
-export const body = (props: FirewallAliasProps): Record<string, string> => {
+export const body = (props: FirewallAliasProps): Record<string, string> & { cidr: string } => {
   const note = comment(props.comment);
   return { cidr: cidr(props.cidr), ...(note === '' ? {} : { comment: note }) };
 };

@@ -189,14 +189,9 @@ export const DeleteAccessTfaRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     userid: S.String.pipe(T.Label()),
     id: S.String.pipe(T.Label()),
-    password: S.optional(S.String),
+    password: S.optional(S.String.pipe(T.Query())),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/access/tfa/{userid}/{id}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/access/tfa/{userid}/{id}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteAccessTfaRequest",
@@ -233,14 +228,9 @@ export interface DeleteAccessUserRequest {
 export const DeleteAccessUserRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     userid: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
-    T.Http({
-      method: "DELETE",
-      uri: "/access/users/{userid}",
-      code: 200,
-      contentType: "form-urlencoded",
-    }),
+    T.Http({ method: "DELETE", uri: "/access/users/{userid}", code: 200 }),
   ),
 ).annotate({
   identifier: "DeleteAccessUserRequest",
@@ -263,13 +253,12 @@ export const DeleteAccessUserTokenRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     userid: S.String.pipe(T.Label()),
     token_name: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/access/users/{userid}/token/{token-name}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({

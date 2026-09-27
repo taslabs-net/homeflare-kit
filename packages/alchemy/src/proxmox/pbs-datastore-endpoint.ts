@@ -2,7 +2,7 @@
  * `Pbs.Datastore`'s two vendor endpoints, and the plan-time check over its two forms.
  *
  * ★ A FILE OF ITS OWN BECAUSE THIS FAMILY DOES NOT USE `pveHandlers`. It writes its own `diff` and
- *   `reconcile` (a create answers with a task id, so it settles rather than reading back once), so
+ *   `reconcile` (bounded readback handles settling after a write; create returns no task id), so
  *   it cannot inherit the guard from resource.ts — and a copy of the two calls inside that already
  *   long file is exactly the per-resource copy-paste the shared handler exists to prevent.
  *

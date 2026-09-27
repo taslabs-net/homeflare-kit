@@ -34,6 +34,7 @@ import type { LitellmOpContext } from '@distilled.cloud/litellm/Protocol';
 import type { ConfigError } from '@distilled.cloud/litellm/Errors';
 import * as Effect from 'effect/Effect';
 import * as Semaphore from 'effect/Semaphore';
+import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 
 export type { LitellmOpContext } from '@distilled.cloud/litellm/Protocol';
 export type LitellmRequirements = LitellmOpContext;
@@ -58,11 +59,27 @@ const semaphoreFor = (baseUrl: string): Effect.Effect<Semaphore.Semaphore> =>
 /**
  * Serialises a write against this call's own base URL — see the file header.
  *
- * Resolving `Credentials` can itself fail typed (`ConfigError` — S20/S24, credentials.ts), so
- * the return type carries that alongside the wrapped operation's own error `E`; every call
- * site's declared error type already includes `ConfigError` as a member of the SDK's shared
- * `LitellmOpError` (protocol.ts), so this widening is a no-op for callers.
+ * ⚠️ `Credentials` itself ends in `Effect.orDie` on a missing/misspelled env var (Q6, decision
+ *   49 "upstream wins", 2026-09-24, matching distilled's own convention — 73 of 80 packages'
+ *   `credentials.ts` do the same at `homeflare/base`), so resolving it here can no longer fail
+ *   typed. The `| ConfigError` this function still adds to its return type stays only because
+ *   `@distilled.cloud/litellm`'s own `LitellmOpError` (protocol.ts) unconditionally declares
+ *   `ConfigError` as a member of every generated operation's error union regardless of
+ *   `Credentials`'s own type — so `E` (the wrapped operation's error) already contains it, and
+ *   this widening is a genuine no-op for callers, not dead type-state left over from the revert.
  */
+/**
+ * ⛔ THE STACK'S AMBIENT `HttpClient` MAY BE CADDY'S. `caddyProviders()` provideMerges a client
+ *   that dials the admin listener and ignores the request host (`caddy-http-client.ts`). Measured
+ *   2026-09-25: that client answers `GET /config/pass_through_endpoint` with HTTP 200 `null`
+ *   (Caddy's empty-config body). The decoded value then has no `endpoints`, and `locate` throws
+ *   `rows.find` of undefined. FetchHttpClient uses the URL the LiteLLM protocol built. An outer
+ *   `Fetch` service still wins inside that client, which is how the fake proxy stays the test
+ *   transport.
+ */
+const throughFetch = <A, E, R>(io: Effect.Effect<A, E, R>) =>
+  io.pipe(Effect.provide(FetchHttpClient.layer));
+
 const mutate = <A, E>(
   io: Effect.Effect<A, E, LitellmOpContext>,
 ): Effect.Effect<A, E | ConfigError, LitellmOpContext> =>
@@ -70,8 +87,22 @@ const mutate = <A, E>(
     const resolve = yield* Credentials;
     const creds = yield* resolve;
     const semaphore = yield* semaphoreFor(creds.apiBaseUrl);
-    return yield* semaphore.withPermits(1)(io);
+    return yield* semaphore.withPermits(1)(throughFetch(io));
   });
+
+const endpointsOf = (
+  response: misc.PassThroughEndpointResponse,
+): Effect.Effect<readonly misc.PassThroughGenericEndpoint[]> => {
+  const rows = response.endpoints;
+  if (!Array.isArray(rows)) {
+    return Effect.die(
+      new Error(
+        'GET /config/pass_through_endpoint decoded no endpoints array. The call reached something other than the LiteLLM proxy.',
+      ),
+    );
+  }
+  return Effect.succeed(rows);
+};
 
 /** GET /config/pass_through_endpoint — every row, config-file and DB alike. Not under the semaphore: reads don't race the field. */
 export const listPassThroughEndpoints = (): Effect.Effect<
@@ -79,9 +110,9 @@ export const listPassThroughEndpoints = (): Effect.Effect<
   misc.GetPassThroughEndpointsConfigPassThroughEndpointGetError,
   LitellmOpContext
 > =>
-  misc
-    .getPassThroughEndpointsConfigPassThroughEndpointGet({})
-    .pipe(Effect.map((response) => response.endpoints));
+  throughFetch(misc.getPassThroughEndpointsConfigPassThroughEndpointGet({})).pipe(
+    Effect.flatMap(endpointsOf),
+  );
 
 /** POST /config/pass_through_endpoint. `body` carries `id` — see pass-through-form.ts. */
 export const createPassThroughEndpoint = (

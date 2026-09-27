@@ -6,6 +6,11 @@ with a typed `UnifiWriteRefused` naming the policy rather than calling any SDK w
 Lifting the rule is a kit change — a PR that adds a write path, reviewed as one — not a flag a
 stack can pass. See `packages/alchemy/src/unifi/policy.ts`.
 
+This page covers `Unifi.Network`/`Unifi.FirewallZone` only. Every other read-only family has its
+own doc, per family (`docs/unifi.md` would breach the 200-line cap otherwise): [`Unifi.DnsPolicy`](./unifi-dns-policy.md), [`Unifi.AclRule`/`Unifi.AclRuleOrdering`](./unifi-acl-rule.md),
+[`Unifi.WifiBroadcast`](./unifi-wifi.md), [`Unifi.FirewallPolicy`/`Unifi.FirewallPolicyOrdering`](./unifi-firewall-policy.md),
+and [`Unifi.TrafficMatchingList`](./unifi-traffic-matching-list.md).
+
 ## What's declared, and why these two first
 
 `Unifi.Network` (`getNetworkDetails`/`getNetworksOverviewPage`) and `Unifi.FirewallZone`
@@ -13,9 +18,8 @@ stack can pass. See `packages/alchemy/src/unifi/policy.ts`.
 not runtime state (a connected client, a device statistic, a hotspot voucher, a switch stack).
 `Site` was the SDK README's other first suggestion; it has no `getSite`, only the list operation,
 so it fails this house's own "both a list and a get" bar for a first import. `FirewallPolicy` is
-also a list+get config object, but its `source`/`destination`/`ipProtocolScope` fields carry
-several of the vendor's converter-flattened discriminator variants each, and its ordering
-endpoint replaces the whole rule list — modelling that correctly is a bigger, separate PR.
+also a list+get config object; modelling it correctly needed its own PR (now shipped — [`docs/unifi-firewall-policy.md`](./unifi-firewall-policy.md)) because its ordering endpoint replaces the whole
+rule list per zone pair, and it was gated on A3 typing its filter fields' discriminator variants first.
 
 ## Credentials
 
@@ -74,6 +78,57 @@ need a write); an exact match returns the live attributes and calls nothing.
 `GET /v1/sites/{siteId}/networks` answers every network on the site. Adoption stays explicit —
 the same reasoning `Proxmox.User`'s and NetBox's own `list` give.
 
+## Defense in depth: GET-only at the wire (2026-09-26)
+
+`policy.ts`'s `UnifiWriteRefused` stops write INTENT at `reconcile`/`delete` — this family calls
+no SDK write op anywhere today. `GetOnlyHttpClient` (`resource.ts`, barrel-exported so
+`homeflare-network`'s own import-layer guard can reuse it instead of re-implementing the same
+wrap), installed in `unifiHandlers`'s `withCredentials`, stops the same thing one layer lower, AT
+THE WIRE: it wraps whatever `HttpClient` the caller provides so ANY non-`GET` method dies with
+`UnifiNonGetRequest` (its message carries the request PATH only, never the host — a cloud
+connector's base URL embeds the account's Console ID) before the request reaches the transport —
+a backstop for a future resource file that, by mistake, called an SDK write operation directly.
+`write-op-reference.test.ts` is the matching static check: it harvests the SDK's real write-op
+export names straight from its own service modules (every name starting
+`create`/`update`/`delete`/`patch`/`execute`/`remove`/`adopt`) and fails any file that mentions
+the SDK's package specifier and contains one of those names as a token anywhere — an identifier, a
+bracket key, a destructured binding, a re-export or a dynamic-import property access all read the
+same way, so one scan catches every syntax form without parsing which one it is.
+`get-only-guard.test.ts` proves the wire guard's mechanism directly against a fake `HttpClient`,
+AND that `unifiHandlers` actually installs it (a handler-level probe, not just the mechanism in
+isolation — `network.test.ts`/`firewall-zone.test.ts` call the lower-level `unifiOperations(spec)`
+directly and never exercise `withCredentials` at all).
+
+## Pagination helper
+
+`paginate.ts`'s `pageAll` is a CONSUMER-SIDE sequential offset pager for the SDK's list
+operations (`getNetworksOverviewPage`, `getFirewallZones`, …), none of which paginate on their
+own — no `smithy.api#paginated` trait exists in the pinned spec, and neither the SDK nor
+`@distilled.cloud/core` gained one for this. It stops on the response's `totalCount`, never on
+`data.length < limit` (a page can legitimately come back short of the requested limit without
+being the last page). `Unifi.WifiBroadcast` (`docs/unifi-wifi.md`) is its first resource-level
+consumer, walking every page because that family has no get-by-id call at all; `docs/unifi-firewall-policy.md`'s own decode-proof test exercises the same page shape for `getFirewallPolicies`
+(hundreds of rows on a real console — T9), though `Unifi.FirewallPolicy` itself still reads by id.
+
+It also fails with a typed `UnifiPaginationInconsistent` — never silently returns a wrong row
+set — the moment a paged response contradicts itself: a page's echoed `offset` doesn't match what
+was requested, `totalCount` changes between calls, the final row count disagrees with
+`totalCount - startOffset`, or the walk exceeds a hard page ceiling without ever converging. Each
+is a vendor-data condition, not a defect (distilled-doctrine): the caller may legitimately want to
+retry or report on one, so it is an `Effect.fail`, not an `Effect.die`.
+
+## Field-level drift
+
+`network.ts`/`firewall-zone.ts` each export a pure `driftOf(live, props)` (`network-drift.ts`,
+`firewall-zone-form.ts`). Both `driftOf` and `matches` are now built on the SAME `fieldDrift` list
+(`drift.ts`'s `makeDriftOf` framework) — `matches` is exactly `fieldDrift(...).length === 0`, not
+a second hand-written comparison kept in sync by hand, so the two cannot quietly disagree (a
+red-team mutant that deleted a `fieldDrift` entry outright, 2026-09-26, is what found the previous
+version's gap). Where `matches` collapses a comparison to one boolean, `driftOf` returns one entry
+per field that actually differs, each carrying its own live and declared value — the shape a
+future pre-import drift check (`homeflare-network`) needs to show WHICH fields changed before
+overwriting a committed declaration.
+
 ## The declaration renderer
 
 `declareNetwork(live, siteId)` and `declareFirewallZone(live, siteId)` are pure functions: given
@@ -91,3 +146,54 @@ trigger but a future write path must respect — whole-object `PUT`, ordering en
 replace the whole list, `removeDevice` unadopting and factory-resetting hardware — are recorded
 in the distilled package's own `README.md` and in the estate's `docs/unifi-api-notes.md`
 (outside this repo).
+
+## Spec-version check against the live-measured console (2026-09-24)
+
+`homeflare-network`'s `src/unifi/imported.ts` was generated 2026-09-24 against a live console
+self-reporting **10.6.97** (`GET /v1/info`, recorded in that file's own header) — two minor
+versions past this SDK's 10.4.57 pin. Checked whether any of the 11 imported networks or 14
+imported firewall zones could decode differently on a newer controller than this SDK's
+10.4.57-pinned types expect: diffed a 10.6.97 copy of Ubiquiti's OpenAPI document (a third-party
+mirror, used only as a diffing aid — never as this SDK's spec of record; see the distilled
+package's own `docs/spec-version-provenance.md`) against the pinned 10.4.57 document. Zero
+operations added or removed anywhere in the API; every full raw operation object (parameters,
+request body, responses, `$ref`s included) for every `Networks`-tagged operation and every
+`*FirewallZone*` operation is identical, byte for byte, not just its named schemas (11 operations
+on each side, same set — a named-schema diff alone would miss an inline, untagged parameter
+changing shape, so this checks the operations directly).
+
+**14 of the document's 379/380 component schemas do differ somewhere** — the switch-stack/LAG
+family (`Switching` tag, matching Ubiquiti's own 10.6 release notes on LAG support), the generic
+`filter`-query-syntax family (`FilterExpression`/`CompoundFilterExpression`/`NotFilterExpression`/
+`PropertyFilterExpression`), and one mDNS enum addition (`SHELLY`, `UniFi Devices` tag) — but
+**none of the 14 is reachable from a Networks or FirewallZone operation, even transitively**:
+resolved every `$ref` reachable from each of the 11 operations' full parameter/body/response
+trees, recursively, in both versions, and none of the 14 changed schema names appears in either
+closure. Full breakdown of the 14 (which changed vs. added/removed, and why the reachability check
+had to go beyond the direct operation-object diff above) is in the distilled package's own
+`docs/spec-version-provenance.md`, not this repo.
+
+**Answer: none of the imported rows would change shape against 10.6.97.** This does not
+generalize past 10.6.97, and it says nothing about any tag besides Networks/FirewallZones —
+re-check before importing or declaring against `Clients`, `WiFi Broadcasts`, `ACL Rules`, or any
+other tag.
+
+## 2026-09-24 doctrine walkdown
+
+Read directly against `origin/main`'s `src/unifi/{resource,network,network-form,firewall-zone,
+firewall-zone-form,policy}.ts`: `fetchLive` in `network.ts`/`firewall-zone.ts` folds only
+`catchTag('NotFound', …)`, never a blanket catch. `destroy` always refuses via the typed
+`UnifiWriteRefused` regardless of live state — correct here, not a departure from delete's usual
+idempotency rule: this family will never issue a real DELETE by policy, so idempotency of a
+delete it cannot perform is moot. No `Effect.orDie`/`Effect.die` anywhere in the family.
+`sortedSet` normalizes every measured unordered array (`dhcpGuarding.trustedDhcpServerIpAddresses`,
+`ipv6Configuration`'s two override lists, `firewall-zone-form.ts`'s `networkIds`) before it is
+attributed, declared or compared. Both declaration renderers and both `matches` use
+`value == null` / `deepEqual(..., { stripNullish: true })` consistently, per `network-form.ts`'s
+own header. No departure found — nothing in this family needed changing.
+
+⚠️ **Correction (2026-09-26):** the line above is no longer true as written. `resource.ts` now
+has exactly one `Effect.die` — `GetOnlyHttpClient`'s guard (see "Defense in depth" above) —
+classified in its own comment per distilled-doctrine's "classify every die/orDie": it raises a
+NEW defect for a failure mode outside every generated SDK operation's declared error union, never
+converts an existing typed failure the way `orDie` would. Still no `Effect.orDie` anywhere.

@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { BaoError } from './bao-status.ts';
+import { Forbidden } from '@distilled.cloud/openbao/Errors';
 import { sha256 } from './digest.ts';
 import { run, runFailure, withFake } from './fake-bao.ts';
 import { aclPolicies } from './fake-engines.ts';
@@ -19,7 +19,7 @@ const ASSEMBLED = 'path "kv/data/a" {\n  capabilities = ["read"]\n}\n' + 'path "
 describe('policy wire', () => {
   it('reads a policy that was never written as absent', async () => {
     await withFake(aclPolicies(), async (bao) => {
-      assert.equal(await run({ BAO_ADDR: bao.address }, readPolicy('zz-new-policy')), '');
+      assert.equal(await run({ BAO_ADDR: bao.address }, readPolicy('zz-new-policy')), undefined);
     });
   });
 
@@ -29,10 +29,11 @@ describe('policy wire', () => {
     await withFake(aclPolicies(), async (bao) => {
       const env = { BAO_ADDR: bao.address };
       await run(env, writePolicy('app-llm', ASSEMBLED));
-      assert.equal(bao.seen[0]?.method, 'PUT');
+      assert.equal(bao.seen[0]?.method, 'POST');
       assert.equal(bao.seen[0]?.path, `${PREFIX}app-llm`);
       assert.deepEqual(JSON.parse(bao.seen[0]?.body ?? ''), { policy: ASSEMBLED });
       const live = await run(env, readPolicy('app-llm'));
+      assert.ok(live !== undefined);
       assert.notEqual(live, ASSEMBLED, 'the fake strips the newline, as OpenBao does');
       assert.equal(sha256(live), sha256(ASSEMBLED));
     });
@@ -43,8 +44,7 @@ describe('policy wire', () => {
       () => ({ json: { errors: ['permission denied'] }, status: 403 }),
       async (bao) => {
         const error = await runFailure({ BAO_ADDR: bao.address }, readPolicy('homeflare-admin'));
-        assert.ok(error instanceof BaoError);
-        assert.equal(error.status, 403);
+        assert.ok(error instanceof Forbidden);
       },
     );
   });

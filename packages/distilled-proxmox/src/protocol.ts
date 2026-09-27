@@ -24,13 +24,15 @@
  * (a) **Async POST/PUT/DELETE answer 200 with a UPID and can fail later.**
  *     PVE hands back a bare task id string (`"UPID:node:...);"`) for any
  *     long-running action — a VM start, a backup, a storage scan — and the
- *     200 means "the task was QUEUED", not "the task succeeded". Handled
- *     with real code: `src/task.ts`'s `awaitTask`, which polls
- *     `GetNodeTaskStatus` (this package's own generated operation) until
- *     `exitstatus` is present, then fails with the typed
- *     `ProxmoxTaskFailed` unless it is EXACTLY `"OK"` — PVE also answers
- *     `"OK (warnings)"`, which is not a bare-prefix match on purpose (see
- *     that file).
+ *     200 means "the task was QUEUED", not "the task succeeded". A caller
+ *     must poll `GetNodeTaskStatus` (this package's own generated
+ *     operation) until `exitstatus` is present, then treat anything other
+ *     than EXACTLY `"OK"` as a failure — PVE also answers `"OK
+ *     (warnings)"`, so a bare-prefix match is wrong. This package ships
+ *     the typed `ProxmoxTaskFailed` for that comparison but not the poll
+ *     loop itself: polling is provider-side (P13 of the 2026-09-24
+ *     walk-down; no distilled precedent for a package-level poll helper —
+ *     see `errors.ts`'s `ProxmoxTaskFailed` doc for the removal note).
  *
  * (b) **Some PUTs answer 200 `{"data":null}` even when nothing changed.**
  *     PVE's update handlers commonly return `null` unconditionally on
@@ -79,6 +81,7 @@ import {
   type RestErrorEnvelope,
 } from "@distilled.cloud/core/protocol-rest";
 import { Credentials, type Config } from "./credentials.ts";
+import { withPveFormArrays } from "./protocol-form.ts";
 import {
   ParameterVerificationFailed,
   UnknownProxmoxError,
@@ -110,6 +113,32 @@ export type ProxmoxOpContext = Credentials | HttpClient.HttpClient;
 const errorEnvelope = (body: unknown): RestErrorEnvelope | undefined => {
   if (body === null || typeof body !== "object") return undefined;
   const b = body as Record<string, unknown>;
+  // PVE missing backup/interface/alias exceptions carry the useful message in one
+  // field (Backup.pm:406,458; Network.pm:852; Firewall/Aliases.pm:203). Expose
+  // ONLY those exact sole-field details to the operation's typed matcher.
+  // Multiple errors, other fields, and unrelated validation stay unchanged.
+  const errors = b.errors;
+  if (
+    (b.message === "Parameter verification failed." ||
+      b.message === "Parameter verification failed.\n") &&
+    errors !== null &&
+    typeof errors === "object" &&
+    !Array.isArray(errors) &&
+    Object.keys(errors).length === 1
+  ) {
+    if (
+      "id" in errors &&
+      typeof errors.id === "string" &&
+      /^No such job '[^']+'$/.test(errors.id)
+    )
+      return { message: errors.id };
+    if ("name" in errors && errors.name === "no such alias") {
+      return { message: errors.name };
+    }
+    if ("iface" in errors && errors.iface === "interface does not exist") {
+      return { message: errors.iface };
+    }
+  }
   return { message: typeof b.message === "string" ? b.message : undefined };
 };
 
@@ -126,7 +155,7 @@ const PROXMOX_STATUS_MAP: Record<number, new (args: any) => unknown> = {
 };
 delete (PROXMOX_STATUS_MAP as Record<number, unknown>)[400];
 
-export const ProxmoxProtocol: Layer.Layer<API.Protocol> =
+export const ProxmoxProtocol: Layer.Layer<API.Protocol> = withPveFormArrays(
   makeRestProtocol<Config>({
     // Resolved on the CALLING fiber per request (the layer is memoized per
     // process); the Credentials service holds an effect, so a token rotated
@@ -145,13 +174,22 @@ export const ProxmoxProtocol: Layer.Layer<API.Protocol> =
     // Unwrap PVE's `{"data": …}` envelope BEFORE the schema-driven decode —
     // see the module header. `data` is `null`/absent for a Unit-output
     // operation; `?? {}` is core's own convention for "no body".
+    // ⛔ `changes` is a sibling, not a field of `data`. PVE/HTTPServer.pm copies
+    //   `$rpcenv->get_result_attrib('changes')` beside `data`. Network.pm sets
+    //   that attrib to the interfaces diff. Dropping it makes a pending reload
+    //   invisible. Only a string sibling is preserved; every other envelope
+    //   still unwraps. The network list schema is the union that can decode it.
     transformResponse: (body) => {
       if (
         body !== null &&
         typeof body === "object" &&
         "data" in (body as Record<string, unknown>)
       ) {
-        return (body as Record<string, unknown>).data ?? {};
+        const record = body as Record<string, unknown>;
+        if (typeof record.changes === "string") {
+          return { changes: record.changes, data: record.data ?? [] };
+        }
+        return record.data ?? {};
       }
       return body;
     },
@@ -201,4 +239,5 @@ export const ProxmoxProtocol: Layer.Layer<API.Protocol> =
       }
       return new UnknownProxmoxError({ status, message, body });
     },
-  });
+  }),
+);

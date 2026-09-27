@@ -2,10 +2,9 @@
  * Adopting an object that already matches must be read-only — measured per reconcile SHAPE, through
  * Alchemy's own Plan and Apply over a fake cluster (fake-pve.ts, ../verify/fake-engine.ts).
  *
- * ★ ONE ROW PER WAY A FAMILY REACHES ITS WRITE, not one per family. Every family built on
- *   `pveHandlers` shares resource.ts's reconcile, so `Proxmox.Pool` stands for all of them; `Acl`
- *   wraps that reconcile; `PbsDatastore` and `SdnApply` write their own. CephPool, the one that got
- *   it wrong, has its own file. docs/adopt-verify.md carries the full per-family table.
+ * ★ ONE ROW PER WAY A FAMILY REACHES ITS WRITE, not one per family. Pool now has its own distilled
+ *   lifecycle; `Acl` wraps resource.ts's shared reconcile; `PbsDatastore` and `SdnApply` write their
+ *   own. CephPool, the one that got it wrong, has its own file. docs/adopt-verify.md carries the full per-family table.
  * ⚠️ A FIXTURE THAT DOES NOT MATCH TURNS A ROW INTO A DRIFT TEST, and the assertion on the
  *   verifier's `noop` is what catches that: a wrong fixture fails loudly instead of passing for
  *   the wrong reason. The Pool drift row proves the harness can see a write at all.
@@ -36,7 +35,7 @@ const cases: readonly Case[] = [
   {
     declare: () => ProxmoxPool('lab', { comment: 'x', poolid: 'lab', target: FAKE_TARGET }),
     live: { 'pools/lab': { comment: 'x', members: [] } },
-    name: 'Proxmox.Pool (pveHandlers: every factory family)',
+    name: 'Proxmox.Pool (direct distilled lifecycle)',
     provider: ProxmoxPoolProvider as never,
   },
   {

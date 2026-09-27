@@ -20,6 +20,10 @@
  * ⛔ NO CREDENTIAL IS A PROP (S25). `LITELLM_PROXY_URL`/`LITELLM_PROXY_API_KEY` are read at call
  *   time by `@distilled.cloud/litellm`'s own `CredentialsFromEnv` (providers.ts) — the same two
  *   variable names the retired hand-rolled `credentials.ts` read.
+ * ⛔ CREDENTIALS ARE NOT A RESOURCE REQUIREMENT. `LitellmOpContext` (`Credentials | HttpClient`)
+ *   belongs to the handlers at Apply, on `litellmProviders`'s layer. The 5th `Resource` parameter
+ *   used to be `LitellmRequirements | Stack | Stage`, so a stack body required `Credentials`, and
+ *   `Alchemy.Stack` rejects that (`"LitellmCredentials"` is not `"Stack"`). Measured 2026-09-24.
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
@@ -27,13 +31,10 @@ import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import { createPhysicalName } from 'alchemy/PhysicalName';
 import * as Provider from 'alchemy/Provider';
-import type { Stack } from 'alchemy/Stack';
-import type { Stage } from 'alchemy/Stage';
 import type * as misc from '@distilled.cloud/litellm/misc';
 import * as Effect from 'effect/Effect';
 import * as Predicate from 'effect/Predicate';
 import {
-  type LitellmRequirements,
   createPassThroughEndpoint,
   deletePassThroughEndpoint,
   listPassThroughEndpoints,
@@ -65,9 +66,7 @@ export {
 export interface LiteLLMPassThroughEndpoint extends Resource<
   'LiteLLM.PassThroughEndpoint',
   PassThroughEndpointProps,
-  PassThroughEndpointAttributes,
-  never,
-  LitellmRequirements | Stack | Stage
+  PassThroughEndpointAttributes
 > {}
 
 export const LiteLLMPassThroughEndpoint = Resource<LiteLLMPassThroughEndpoint>(

@@ -16,14 +16,17 @@
  *   reconcile needs, so widening stays a deliberate act rather than a reaction to a 403.
  */
 import { Resource } from 'alchemy';
+import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
+import * as pools from '@distilled.cloud/proxmox/pools';
+import { ProxmoxParseError } from '@distilled.cloud/proxmox/Errors';
+import * as Schema from 'effect/Schema';
 import * as Effect from 'effect/Effect';
-import type {
-  PoolsPoolidGetReturn,
-  PoolsPoolidPutParams,
-  PoolsPostParams,
-} from './generated/pve.ts';
-import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
+import type { PoolsPoolidPutParams, PoolsPostParams } from './generated/pve.ts';
+import type { PveRequirements, PveSpec, WithTarget } from './resource-spec.ts';
+import { runPve } from './distilled-pve.ts';
+import { specGuards } from './resource-guard.ts';
+import { formToSend } from './update-guard.ts';
 
 export interface PoolProps extends WithTarget {
   /** PVE's primary key for a pool. Changing it is a replace, not an update. */
@@ -60,9 +63,9 @@ export const poolUpdateForm = (props: PoolProps): Pick<PoolsPoolidPutParams, 'co
   comment: props.comment ?? '',
 });
 
-const handlers = pveHandlers<PoolProps, PoolAttributes>({
+const spec = {
   attributes: (live, props) => {
-    const row = live as PoolsPoolidGetReturn;
+    const row = live;
     return {
       comment: typeof row.comment === 'string' ? row.comment : '',
       members: Array.isArray(row.members) ? row.members.length : 0,
@@ -76,7 +79,86 @@ const handlers = pveHandlers<PoolProps, PoolAttributes>({
   matches: (attributes, props) => attributes.comment === (props.comment ?? ''),
   path: (props) => `pools/${props.poolid}`,
   updateForm: poolUpdateForm,
-});
+} satisfies PveSpec<PoolProps, PoolAttributes>;
+
+const { guardCreate, guardUpdate } = specGuards(spec);
+
+/** Pool absence is PVE's typed 500, not a catch-all; pve-manager 9.2.11. */
+export const readPool = (props: PoolProps) =>
+  runPve(props.target, 'read', false, pools.getPool({ poolid: props.poolid })).pipe(
+    Effect.flatMap((live) =>
+      Schema.decodeUnknownEffect(Schema.toType(pools.GetPoolResponse))(live).pipe(
+        Effect.mapError(
+          () =>
+            new ProxmoxParseError({
+              body: undefined,
+              cause: 'Pool response does not match its vendor schema',
+            }),
+        ),
+        Effect.as(live),
+      ),
+    ),
+    Effect.map((live) => spec.attributes({ ...live }, props)),
+    Effect.catchTag('PoolNotFound', () => Effect.succeed(undefined)),
+    Effect.catchTag('NotFound', () => Effect.succeed(undefined)),
+  );
+
+export const deletePool = (props: PoolProps) =>
+  runPve(props.target, 'provision', true, pools.deletePool({ poolid: props.poolid })).pipe(
+    Effect.catchTag('PoolNotFound', () => Effect.void),
+    Effect.catchTag('NotFound', () => Effect.void),
+  );
 
 export const ProxmoxPoolProvider = () =>
-  Provider.effect(ProxmoxPool, Effect.succeed(ProxmoxPool.Provider.of(handlers)));
+  Provider.effect(
+    ProxmoxPool,
+    Effect.succeed(
+      ProxmoxPool.Provider.of({
+        /** Pools are adopted explicitly; an index must not silently claim every existing pool. */
+        list: () => Effect.succeed([]),
+        read: ({ olds }) => readPool(olds),
+        diff: Effect.fn(function* ({ news, output }) {
+          if (!isResolved(news)) return undefined;
+          yield* guardCreate(news, output === undefined);
+          yield* guardUpdate(news);
+          if (output === undefined) return undefined;
+          const live = yield* readPool(news);
+          if (live === undefined) {
+            yield* guardCreate(news, true);
+            return { action: 'update' } as const;
+          }
+          return { action: spec.matches(live, news) ? 'noop' : 'update' } as const;
+        }),
+        reconcile: Effect.fn(function* ({ news }) {
+          const live = yield* readPool(news);
+          yield* guardCreate(news, live === undefined);
+          yield* guardUpdate(news);
+          if (live === undefined) {
+            yield* runPve(news.target, 'provision', true, pools.createPool(poolCreateForm(news)));
+          } else {
+            const form = formToSend(spec.matches, live, news, poolUpdateForm(news));
+            if (form !== undefined)
+              yield* runPve(
+                news.target,
+                'provision',
+                true,
+                pools.putPool({
+                  ...form,
+                  poolid: news.poolid,
+                }),
+              );
+          }
+          const after = yield* readPool(news);
+          if (after === undefined)
+            return yield* Effect.fail(
+              new Error(
+                `pools/${news.poolid}: write returned success but the pool is still absent`,
+              ),
+            );
+          return after;
+        }),
+        /** A nonempty-pool refusal still propagates; there is no force-delete fallback. */
+        delete: ({ olds }) => deletePool(olds),
+      }),
+    ),
+  );

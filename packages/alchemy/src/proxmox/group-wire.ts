@@ -97,20 +97,15 @@ export const readGroupOrFail = (props: GroupProps) =>
   );
 
 /**
- * ⛔ FOLDS A GENUINE READ FAILURE TO `undefined` TOO, AND ONLY `read`/`reconcile` MAY USE IT.
- *   PVE's OWN missing-group answer is a thrown 500 (the ⛔ above), so `reconcile`'s create branch
- *   NEEDS "absent" from a failure to ever run at all — without this fold, a brand-new group could
- *   never be created, because its very-first read would always fail loudly. Safe here because a
- *   wrongful fold costs at most a redundant `createAccessGroup` POST, which PVE refuses loudly
- *   ("group already exists") rather than silently corrupting anything.
- * ⛔ `group.ts`'s `diff` does **NOT** use this — found 2026-09-24, the SAME bug class as the
- *   credential denial fix: folding a TRANSIENT failure (a `PveClusterExhausted`, the encoding bug
- *   above) into "absent" at PLAN TIME is exactly what forced a false `update` with nothing
- *   compared. `diff` calls `readGroupOrFail` directly instead, so a genuine failure there
- *   propagates and fails the whole plan loudly — never silently misreports one row.
+ * ⛔ ONLY `GroupNotFound` MEANS ABSENT. The initial distilled transport swap preserved a
+ *   catch-all fold because PVE reports missing objects as HTTP 500. SDK PR 265 now types that
+ *   measured message, so permission errors, unrelated 500s and exhausted transports propagate
+ *   instead of triggering a speculative create (decision 49 follow-up, 2026-09-24).
+ * ★ `readGroupOrFail` remains the strict path used for an already-confirmed state row. This
+ *   change narrows cold reads/reconcile without changing that existing drift/diff contract.
  */
 export const readGroup = (props: GroupProps) =>
-  readGroupOrFail(props).pipe(Effect.orElseSucceed(() => undefined));
+  readGroupOrFail(props).pipe(Effect.catchTag('GroupNotFound', () => Effect.succeed(undefined)));
 
 /** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
 export const dropUnreadable = (live: GroupAttributes | Unreadable | undefined) =>

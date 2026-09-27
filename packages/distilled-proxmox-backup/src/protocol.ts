@@ -89,6 +89,7 @@ import {
   type RestErrorEnvelope,
 } from "@distilled.cloud/core/protocol-rest";
 import { Credentials, type Config } from "./credentials.ts";
+import { withPbsCodecs } from "./protocol-codecs.ts";
 import {
   ParameterVerificationFailed,
   UnknownProxmoxBackupError,
@@ -132,65 +133,68 @@ const PROXMOX_BACKUP_STATUS_MAP: Record<number, new (args: any) => unknown> = {
 };
 delete (PROXMOX_BACKUP_STATUS_MAP as Record<number, unknown>)[400];
 
-export const ProxmoxBackupProtocol: Layer.Layer<API.Protocol> =
-  makeRestProtocol<Config>({
-    credentials: Effect.gen(function* () {
-      const resolve = yield* Credentials;
-      return yield* resolve;
-    }),
-    baseUrl: (creds) => creds.apiBaseUrl,
-    headers: (creds) => ({
-      // ⛔ COLON, NOT `=` — see the module header's Authentication section.
-      Authorization: `PBSAPIToken=${creds.tokenId}:${Redacted.value(creds.secret)}`,
-      Accept: "application/json",
-    }),
-    errorEnvelope,
-    statusMap: PROXMOX_BACKUP_STATUS_MAP,
-    // Unwrap PBS's `{"data": …}` envelope BEFORE the schema-driven decode —
-    // see the module header. `data` is `null`/absent for a Unit-output
-    // operation; `?? {}` is core's own convention for "no body".
-    transformResponse: (body) => {
+const baseProtocol: Layer.Layer<API.Protocol> = makeRestProtocol<Config>({
+  credentials: Effect.gen(function* () {
+    const resolve = yield* Credentials;
+    return yield* resolve;
+  }),
+  baseUrl: (creds) => creds.apiBaseUrl,
+  headers: (creds) => ({
+    // ⛔ COLON, NOT `=` — see the module header's Authentication section.
+    Authorization: `PBSAPIToken=${creds.tokenId}:${Redacted.value(creds.secret)}`,
+    Accept: "application/json",
+  }),
+  errorEnvelope,
+  statusMap: PROXMOX_BACKUP_STATUS_MAP,
+  // Unwrap PBS's `{"data": …}` envelope BEFORE the schema-driven decode —
+  // see the module header. `data` is `null`/absent for a Unit-output
+  // operation; `?? {}` is core's own convention for "no body".
+  transformResponse: (body) => {
+    if (
+      body !== null &&
+      typeof body === "object" &&
+      "data" in (body as Record<string, unknown>)
+    ) {
+      return (body as Record<string, unknown>).data ?? {};
+    }
+    return body;
+  },
+  // Reached for a 400 (see PROXMOX_BACKUP_STATUS_MAP above) or a status
+  // with no core mapping at all. `body` is the FULL parsed failure
+  // envelope, so this is where PBS's per-field `errors` object is read.
+  //
+  // ⛔ A BARE 400 WITHOUT THE `errors` OBJECT MUST NOT FALL INTO
+  //   `UnknownProxmoxBackupError` — same retry-amplification hazard
+  //   PVE's identical comment explains (`ServerError` is retried
+  //   automatically; a malformed request is permanent). `BadRequest`
+  //   (`Category.withBadRequestError`, not retryable) is the honest
+  //   answer for "PBS said 400 and gave no further structure".
+  unknownError: ({ status, message, body }) => {
+    const b =
+      body !== null && typeof body === "object"
+        ? (body as Record<string, unknown>)
+        : undefined;
+    const fieldErrors = b?.errors;
+    if (status === 400) {
       if (
-        body !== null &&
-        typeof body === "object" &&
-        "data" in (body as Record<string, unknown>)
+        fieldErrors !== null &&
+        typeof fieldErrors === "object" &&
+        !Array.isArray(fieldErrors)
       ) {
-        return (body as Record<string, unknown>).data ?? {};
-      }
-      return body;
-    },
-    // Reached for a 400 (see PROXMOX_BACKUP_STATUS_MAP above) or a status
-    // with no core mapping at all. `body` is the FULL parsed failure
-    // envelope, so this is where PBS's per-field `errors` object is read.
-    //
-    // ⛔ A BARE 400 WITHOUT THE `errors` OBJECT MUST NOT FALL INTO
-    //   `UnknownProxmoxBackupError` — same retry-amplification hazard
-    //   PVE's identical comment explains (`ServerError` is retried
-    //   automatically; a malformed request is permanent). `BadRequest`
-    //   (`Category.withBadRequestError`, not retryable) is the honest
-    //   answer for "PBS said 400 and gave no further structure".
-    unknownError: ({ status, message, body }) => {
-      const b =
-        body !== null && typeof body === "object"
-          ? (body as Record<string, unknown>)
-          : undefined;
-      const fieldErrors = b?.errors;
-      if (status === 400) {
-        if (
-          fieldErrors !== null &&
-          typeof fieldErrors === "object" &&
-          !Array.isArray(fieldErrors)
-        ) {
-          const errors: Record<string, string> = {};
-          for (const [k, v] of Object.entries(
-            fieldErrors as Record<string, unknown>,
-          )) {
-            if (typeof v === "string") errors[k] = v;
-          }
-          return new ParameterVerificationFailed({ message, errors });
+        const errors: Record<string, string> = {};
+        for (const [k, v] of Object.entries(
+          fieldErrors as Record<string, unknown>,
+        )) {
+          if (typeof v === "string") errors[k] = v;
         }
-        return new BadRequest({ message });
+        return new ParameterVerificationFailed({ message, errors });
       }
-      return new UnknownProxmoxBackupError({ status, message, body });
-    },
-  });
+      return new BadRequest({ message });
+    }
+    return new UnknownProxmoxBackupError({ status, message, body });
+  },
+});
+
+/** PBS-specific form encoding and schema validation wrap core without changing other vendors. */
+export const ProxmoxBackupProtocol: Layer.Layer<API.Protocol> =
+  withPbsCodecs(baseProtocol);

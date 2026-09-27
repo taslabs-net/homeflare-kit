@@ -7,6 +7,7 @@ bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
         @effect/platform-node@4.0.0-rc.115 mime@4.1.0 \
         @distilled.cloud/cloudflare@1.0.0-rc.12 @distilled.cloud/forgejo@1.0.0-rc.12 \
         @distilled.cloud/discord@1.0.0-rc.12 @distilled.cloud/google-workspace@1.0.0-rc.12 \
+        @distilled.cloud/argocd@1.0.0-rc.12 \
         @effect/sql-pg@4.0.0-rc.115
 ```
 
@@ -288,16 +289,31 @@ export const help =
   });
 ```
 
+## Argo CD — `@homeflare/alchemy/argocd`
+
+`Argocd.Repository`, `Argocd.RepoCreds` and `Argocd.Cluster` declare Argo CD's own REST-managed
+objects (backed by labeled `Secret`s, not CRDs), generated from `@distilled.cloud/argocd`. Built
+2026-09-24, **ahead of need** — no Talos-on-PVE cluster or Argo CD instance exists yet; every test
+runs against a fake. `Application`/`AppProject` are genuinely Kubernetes CRDs and are deliberately
+NOT here — declare them with upstream Alchemy's own `Kubernetes.Manifest` instead:
+[docs/argocd.md](./docs/argocd.md) and [docs/argocd-kubernetes.md](./docs/argocd-kubernetes.md).
+
+```ts
+import { ArgocdRepository, providers } from '@homeflare/alchemy/argocd';
+```
+
 ## UniFi Network — `@homeflare/alchemy/unifi`
 
-`Unifi.Network` and `Unifi.FirewallZone`, generated from Ubiquiti's own UniFi Network
-Integration API 10.4.57 via `@distilled.cloud/unifi-network`. ⛔ **READ-ONLY, by Tim's rule
-(2026-09-24):** `reconcile`/`delete` both fail with a typed `UnifiWriteRefused` naming the
-policy — this family never calls a write operation, only `getNetworkDetails`/`getFirewallZone`
-and their list counterparts. ⛔ `read` answers `Unowned` on every match (never a silent adopt —
-`adopt(true)` is on by default via the `network`/`firewallZone` constructors), and a UniFi
-**Console ID** (part of a cloud-connector base URL) is never logged, committed or written to
-state: [docs/unifi.md](./docs/unifi.md).
+`Unifi.Network`, `Unifi.FirewallZone`, `Unifi.DnsPolicy`, `Unifi.AclRule` and
+`Unifi.AclRuleOrdering`, generated from Ubiquiti's own UniFi Network Integration API 10.4.57 via
+`@distilled.cloud/unifi-network`. ⛔ **READ-ONLY, by Tim's rule (2026-09-24):** `reconcile`/`delete`
+both fail with a typed `UnifiWriteRefused` naming the policy — no family here calls a write
+operation, only each object's own `get*` and its list counterpart. ⛔ `read` answers `Unowned` on
+every match (never a silent adopt — `adopt(true)` is on by default via each convenience
+constructor), and a UniFi **Console ID** (part of a cloud-connector base URL) is never logged,
+committed or written to state: [docs/unifi.md](./docs/unifi.md) (Network/FirewallZone),
+[docs/unifi-dns-policy.md](./docs/unifi-dns-policy.md) and
+[docs/unifi-acl-rule.md](./docs/unifi-acl-rule.md).
 
 ```ts
 import { declareNetwork, network, providers } from '@homeflare/alchemy/unifi';
@@ -336,6 +352,28 @@ checks you name required. ⛔ Auto-merge with nothing required merges **immediat
 ⛔ A plan prints `adopted` for a match and for a drift alike. Before a gated deploy run
 `bunx --bun hf-adopt-verify --config alchemy.run.ts --stage live`: Alchemy's planner, no writes,
 each row's own diff, exit 0 only when all are no-ops. [docs/adopt-verify.md](./docs/adopt-verify.md)
+
+## Telemetry — `@homeflare/alchemy/telemetry`
+
+`telemetryLayer` builds an OTLP tracing/logging/metrics `Layer` for a stack's own `providers` —
+off unless you give it real endpoints, no default collector anywhere in it.
+
+```ts
+import { telemetryLayer } from '@homeflare/alchemy/telemetry';
+
+export const providers = Layer.mergeAll(
+  myProviders(),
+  telemetryLayer({
+    endpoints: { traces: 'http://<your-collector>/v1/traces' },
+    serviceName: 'my-stack',
+  }),
+);
+```
+
+Every span — a provider's own, `HttpClient`'s, and alchemy's own plan/apply engine — is redacted
+before export: every header dropped, every query string stripped, a denylisted host or path segment
+blanked. Options, the redaction policy and what a spike measured actually arriving at a collector:
+[docs/telemetry.md](./docs/telemetry.md) · [docs/telemetry-spike.md](./docs/telemetry-spike.md).
 
 ## Credentials
 

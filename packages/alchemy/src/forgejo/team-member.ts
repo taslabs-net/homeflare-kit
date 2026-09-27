@@ -22,6 +22,31 @@
  *   cannot create a team.
  *
  * ⛔ TOKEN NEEDS `write:organization` TO ADD OR REMOVE, and an identity allowed to manage the team.
+ *
+ * ⛔ `defaultRemovalPolicy: 'retain'` — FOUND 2026-09-25 by reading the source, not by measuring
+ *   anything (mini PR 82's red team, `homeflare-mini` 970e8be): before this, `ForgejoRepository`/
+ *   `ForgejoOrgLabel` defaulted to retain in the kit itself but this family did not, so alchemy's
+ *   own engine fallback (`destroy`) applied to it — every caller had to remember its own
+ *   `.pipe(RemovalPolicy.retain())`, the way mini's `src/forgejo/declare.ts` did for
+ *   `forgejo-provision`'s row. Dropping a `TeamMember` declaration — toggling a feature gate off,
+ *   renaming the resource id — must not silently call `organization.orgRemoveTeamMember` and
+ *   revoke a real membership; that is the same "removal from the stack is not removal from
+ *   Forgejo" posture `ForgejoOrgLabel` and `ForgejoBranchProtection` already take, this family
+ *   exists to attach a stack's identity to a team it never creates or destroys (`teamIdOf` below
+ *   only ever locates the team, never manages it), and the same trade-off alchemy's own
+ *   `GitHub.Collaborator` and `GitHub.TeamAccess` make for the identical reason — "preventing
+ *   accidental lockout" (`GitHub/Collaborator.ts:127`, `GitHub/TeamAccess.ts:145` in the pinned
+ *   alchemy source). The trade-off, stated plainly: removing a declaration no longer revokes
+ *   access on its own — the plan shows that row as `orphaned`, not `delete`. Opt into a real
+ *   revoke with `.pipe(RemovalPolicy.destroy())`; `destroy` below is fully implemented.
+ *
+ * ⚠️ THE DEFAULT ONLY PROTECTS A ROW ALREADY IN STATE ONCE THIS RELEASE IS DEPLOYED. Alchemy's
+ *   plan reads `removalPolicy` off the *persisted row* (`Plan.ts`'s delete-node builder), not off
+ *   this default; the default only reaches an existing row's state on a deploy where the resource
+ *   plans as a no-op (`Apply.ts`'s noop path rewrites it and logs "removal policy destroy →
+ *   retain"). A consumer that bumps to this release and drops a `TeamMember` declaration in the
+ *   SAME deploy still gets `delete`, not `orphaned` — see the changeset for the two-deploy shape
+ *   this implies for both adopting retain and opting back into destroy.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
@@ -52,7 +77,9 @@ export interface ForgejoTeamMember extends Resource<
   ForgejoRequirements
 > {}
 
-export const ForgejoTeamMember = Resource<ForgejoTeamMember>('Forgejo.TeamMember');
+export const ForgejoTeamMember = Resource<ForgejoTeamMember>('Forgejo.TeamMember', {
+  defaultRemovalPolicy: 'retain',
+});
 
 export class ForgejoTeamNotFoundError extends Data.TaggedError('ForgejoTeamNotFoundError')<{
   readonly message: string;

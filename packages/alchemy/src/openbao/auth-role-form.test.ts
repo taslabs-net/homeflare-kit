@@ -1,15 +1,17 @@
 /**
  * Bao.AuthRole's secret_id TTL at the 90-day length the per-host AppRoles use.
  *
- * ★ `2160h` IS WHAT GOES ON THE WIRE, AND OPENBAO ACCEPTS IT. MEASURED 2026-09-21 with a Go probe of
+ * ★ OPENBAO ACCEPTS `2160h`. MEASURED 2026-09-21 with a Go probe of
  *   sdk v2.6.2 framework.FieldData.Validate on the approle role fields (path_role.go:166-167,
  *   TypeDurationSecond): `secret_id_ttl: "2160h"` validates and parses to 7776000 seconds. A role
  *   read hands back that integer, which attributesOf renders as `90d` — the same role.
+ * The SDK now sends the equivalent seconds directly instead of the former CLI duration string.
  * (What the diff calls a rename is pinned in rename-families.test.ts, `foldName`.)
  */
-import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
-import { type BaoAuthRoleProps, attributesOf, matches, writeBody } from './auth-role-form.ts';
+import { describe, expect, it } from 'bun:test';
+import * as Effect from 'effect/Effect';
+import { type BaoAuthRoleProps, attributesOf, matches } from './auth-role-form.ts';
+import { authRoleRequest } from './auth-role-wire.ts';
 
 const PROPS: BaoAuthRoleProps = {
   bindSecretId: true,
@@ -22,8 +24,8 @@ const PROPS: BaoAuthRoleProps = {
 };
 
 describe('auth role secret_id TTL', () => {
-  it('writes 2160h as given', () => {
-    assert.equal(writeBody(PROPS)['secret_id_ttl'], '2160h');
+  it('writes 2160h as the equivalent SDK seconds', async () => {
+    expect((await Effect.runPromise(authRoleRequest(PROPS))).secret_id_ttl).toBe(7776000);
   });
 
   it('reads 7776000 seconds back as the same role', () => {
@@ -36,8 +38,8 @@ describe('auth role secret_id TTL', () => {
       token_ttl: 900,
     };
     const attributes = attributesOf(PROPS, live);
-    assert.equal(attributes.secretIdTtl, '90d');
-    assert.equal(matches(attributes, PROPS), true);
-    assert.equal(matches(attributesOf(PROPS, { ...live, secret_id_ttl: 0 }), PROPS), false);
+    expect(attributes.secretIdTtl).toBe('90d');
+    expect(matches(attributes, PROPS)).toBe(true);
+    expect(matches(attributesOf(PROPS, { ...live, secret_id_ttl: 0 }), PROPS)).toBe(false);
   });
 });

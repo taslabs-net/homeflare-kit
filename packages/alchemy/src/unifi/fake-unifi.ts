@@ -19,7 +19,11 @@ export const FAKE_KEY = 'placeholder-unifi-key';
 
 export type Seen = { readonly method: string; readonly path: string };
 
-/** No documented failure envelope (see `protocol.ts`) — plain text is all a failure needs. */
+/**
+ * Plain-text failure. `protocol.ts`'s `errorEnvelope` also decodes a documented JSON shape
+ * (`components.schemas["Error Message"]`, A1/T8) when a scenario needs that instead — see
+ * `errors-and-secrets.test.ts`'s `envelopeBody` helper for a fixture in that shape.
+ */
 export const fakeFailure = (status: number, detail: string) => new Response(detail, { status });
 
 /**

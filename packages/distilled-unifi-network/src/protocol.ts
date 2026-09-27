@@ -14,12 +14,21 @@
  * return the object directly; mutations return the created/updated object
  * (`200`/`201`), never `204`.
  *
- * FAILURE ENVELOPE IS UNKNOWN: no operation in the spec documents an error
- * response, so there is no field to read a machine-readable code or message
- * from (`errorEnvelope` below always returns undefined, meaning every
- * failure falls through to the protocol's raw-text / `HTTP <status>`
- * default and `unknownError`). Replace this the first time a real console
- * failure is captured and its body shape is known.
+ * FAILURE ENVELOPE (T8): no OPERATION documents an error response, but the
+ * pinned spec's own `components.schemas["Error Message"]` — `{code,
+ * message, requestId, requestPath, statusCode, statusName, timestamp}`,
+ * referenced by zero operations — is the vendor's real failure shape.
+ * `errorEnvelope` below decodes `code`/`message` from it, which the shared
+ * REST protocol folds into every status-mapped error's `message` (so a
+ * `NotFound`, say, carries the vendor's own text instead of a bare `HTTP
+ * 404`); `unknownError` additionally reads `requestId`/`statusCode`/
+ * `statusName`/`timestamp` straight off the parsed body for the fallback
+ * `UnknownUnifiNetworkError`. `requestPath` is READ NOWHERE below — it is
+ * deliberately excluded from both the envelope and the error's fields (T3;
+ * see `src/errors.ts`'s doc comment) — never let it reach a `message`. This
+ * is derived from the spec, not yet confirmed against a real captured
+ * failure (no live call has been made for this work); the shape may need a
+ * correction once one is.
  */
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
@@ -50,12 +59,50 @@ export type UnifiNetworkOpError =
 export type UnifiNetworkOpContext = Credentials | HttpClient.HttpClient;
 
 /**
- * No documented failure envelope to parse (see module docs) — every failure
- * falls through to the protocol's status-derived default and
- * {@link UnknownUnifiNetworkError}.
+ * Decode the spec's `Error Message` schema (see module docs, T8): `code` is
+ * a dotted string (e.g. `"api.authentication.missing-credentials"`, never
+ * numeric in this spec — {@link RestErrorEnvelope}'s `code` allows both
+ * because other providers' envelopes use numeric codes), `message` a plain
+ * string. Anything else — a non-JSON body, or JSON that isn't this shape —
+ * returns `undefined` and the shared protocol falls back to its own
+ * `HTTP <status>` default. `requestPath` is READ HERE ON PURPOSE ONLY TO
+ * SKIP IT: it is never assigned to `code`/`message`, so it can never reach
+ * the `message` string every status-mapped error surfaces (T3).
  */
-const errorEnvelope = (_body: unknown): RestErrorEnvelope | undefined =>
-  undefined;
+const errorEnvelope = (body: unknown): RestErrorEnvelope | undefined => {
+  if (body === null || typeof body !== "object") return undefined;
+  const b = body as Record<string, unknown>;
+  const code = typeof b.code === "string" ? b.code : undefined;
+  const message = typeof b.message === "string" ? b.message : undefined;
+  if (code === undefined && message === undefined) return undefined;
+  return { code, message };
+};
+
+/**
+ * The rest of the `Error Message` envelope beyond `code`/`message` —
+ * {@link RestErrorEnvelope} has no room for it, so `unknownError` below
+ * reads it straight off the parsed body it already receives. Never reads
+ * `requestPath` (T3).
+ */
+const restEnvelopeFields = (
+  body: unknown,
+): {
+  readonly requestId: string | undefined;
+  readonly statusCode: number | undefined;
+  readonly statusName: string | undefined;
+  readonly timestamp: string | undefined;
+} => {
+  const b =
+    body !== null && typeof body === "object"
+      ? (body as Record<string, unknown>)
+      : undefined;
+  return {
+    requestId: typeof b?.requestId === "string" ? b.requestId : undefined,
+    statusCode: typeof b?.statusCode === "number" ? b.statusCode : undefined,
+    statusName: typeof b?.statusName === "string" ? b.statusName : undefined,
+    timestamp: typeof b?.timestamp === "string" ? b.timestamp : undefined,
+  };
+};
 
 export const UnifiNetworkProtocol: Layer.Layer<API.Protocol> =
   makeRestProtocol<Config>({
@@ -81,6 +128,7 @@ export const UnifiNetworkProtocol: Layer.Layer<API.Protocol> =
               ? String(code)
               : undefined,
         message,
+        ...restEnvelopeFields(body),
         body,
       }),
   });

@@ -12,8 +12,11 @@
  * ⛔ `content` IS NEVER A SECRET. Props sit unencrypted in Alchemy state and the unit file is
  *   world-readable at 0644; a unit that needs a secret takes `EnvironmentFile=` pointing at a file
  *   a secret renderer maintains.
+ * ★ THE TEXT-SHAPE CHECKS (comments/blank lines before [Section], [Install] key lookup) live in
+ *   `unit-text.ts`, split out to keep this file under the house line cap.
  */
 import { sha256Hex } from '../launchd/job-form.ts';
+import { hasInstallSection, textProblems } from './unit-text.ts';
 
 export type UnitSection = {
   /** `Unit`, `Service`, `Timer`, `Install`, … — verbatim, including its capitalisation. */
@@ -172,8 +175,6 @@ const TYPES = new Set([
   'timer',
 ]);
 
-const INSTALL_KEYS = new Set(['WantedBy', 'RequiredBy', 'UpsertedBy', 'Also', 'Alias']);
-
 /**
  * Every refusal at once, so one plan shows the whole list.
  * ⛔ THE TWO STRUCTURAL RULES, both proven by systemd's own output rather than assumed:
@@ -206,7 +207,7 @@ export const unitProblems = (props: SystemdUnitProps, expect?: string): string[]
         `${directory} is not one of them. Move it, or declare enabled: false.`,
     );
   }
-  if (props.enabled !== false && !hasInstall(props)) {
+  if (props.enabled !== false && !hasInstallSection(unitText(props))) {
     found.push(
       'enabled units need an [Install] section with WantedBy/RequiredBy/Also/Alias; without one ' +
         'systemd calls the unit "static" and `systemctl enable` has nothing to link. Add one, or ' +
@@ -216,20 +217,5 @@ export const unitProblems = (props: SystemdUnitProps, expect?: string): string[]
   if (type === 'timer' && !unitText(props).includes('[Timer]')) {
     found.push('a .timer needs a [Timer] section');
   }
-  return found;
-};
-
-const hasInstall = (props: SystemdUnitProps): boolean => {
-  const text = unitText(props);
-  if (!text.includes('[Install]')) return false;
-  const after = text.slice(text.indexOf('[Install]'));
-  return [...INSTALL_KEYS].some((key) => new RegExp(`^${key}=`, 'm').test(after));
-};
-
-const textProblems = (text: string): string[] => {
-  const found: string[] = [];
-  if (text.trim() === '') found.push('the unit file is empty');
-  if (text.includes('\u0000')) found.push('the unit file contains NUL');
-  if (!/^\s*\[[A-Za-z]+]/.test(text)) found.push('a unit file must begin with a [Section]');
   return found;
 };

@@ -29,7 +29,7 @@
  *
  */
 import type { CephDaemonAttributes, CephDaemonKind, CephDaemonProps } from './ceph-daemon.ts';
-import type { EndpointPair } from './resource-spec.ts';
+import type { EndpointKey } from './constraints.ts';
 import { bool, flag, num, text } from './values.ts';
 
 /**
@@ -38,19 +38,18 @@ import { bool, flag, num, text } from './values.ts';
  * ⛔ ONE PER KIND, NOT A `{type}` PATH. PVE registers `mds`, `mgr` and `mon` as three separate
  *   nodes with three separate parameter schemas — `hotstandby` belongs to the first and
  *   `mon-address` to the third — so a single key would enforce one kind's rules on all three.
- *   That is why `PveSpec['endpoint']` admits a function of props at all.
+ *   `ceph-daemon.ts` indexes this by `props.kind` for exactly that reason, on every `guardWrite`.
  * ⛔ THE STRINGS MUST STAY LITERALS. `codegen/constraints.ts` finds the endpoints to table by
  *   SCANNING THIS PACKAGE'S TEXT, so a key assembled from `props.kind` would be tabled by
  *   nothing and `constraintsFor` would throw on the first deploy that reached it.
  * ⚠️ THE PARAMETER NAMES DIFFER AND ARE THE VENDOR'S OWN — `{name}`, `{id}`, `{monid}`. The
  *   generator resolves each against the schema, so a tidied-up spelling stops the build.
- * ⚠️ NO `update` ON ANY OF THEM: none of the three has a PUT, which is why the spec declares no
- *   `updateForm` either.
+ * ⚠️ NO `update` HERE: none of the three kinds has a PUT — ceph-daemon-wire.ts's own header.
  */
-export const DAEMON_ENDPOINTS: Readonly<Record<CephDaemonKind, EndpointPair>> = {
-  mds: { create: 'pve:POST /nodes/{node}/ceph/mds/{name}' },
-  mgr: { create: 'pve:POST /nodes/{node}/ceph/mgr/{id}' },
-  mon: { create: 'pve:POST /nodes/{node}/ceph/mon/{monid}' },
+export const DAEMON_ENDPOINTS: Readonly<Record<CephDaemonKind, EndpointKey>> = {
+  mds: 'pve:POST /nodes/{node}/ceph/mds/{name}',
+  mgr: 'pve:POST /nodes/{node}/ceph/mgr/{id}',
+  mon: 'pve:POST /nodes/{node}/ceph/mon/{monid}',
 };
 
 /**

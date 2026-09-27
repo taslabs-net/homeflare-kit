@@ -3,9 +3,11 @@
  *
  * ⚠️ NOTHING IS ADOPTED WITHOUT `--adopt`: a directory already at the path reads as `Unowned`, and
  *   where the plan never asked, reconcile honours the same flag (docs/ownership.md).
- * ★ IT IS NOT LINUX-ONLY. `mkdir`, `chmod`, `chown` and `rmdir` are the same argv on macOS, so this
- *   resource works through any HostRunner; it lives in the linux subpath because the gap it closes
- *   was found there (a first deploy into a new tree, which every file resource refuses to create).
+ * ★ IT IS NOT LINUX-ONLY. It lives in the linux subpath because the gap it closes was found
+ *   there (a first deploy into a new tree, which every file resource refuses to create).
+ * ⚠️ mkdir AND rmdir TAKE `--` ON macOS. chmod AND chown DO NOT: measured 2026-09-24,
+ *   `/bin/chmod` and `/usr/sbin/chown` treat `--` as a filename and exit 1. The lifecycle
+ *   omits that token for those two on Darwin.
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
@@ -16,13 +18,10 @@ import { lift, resolvedString } from '../launchd/host-effect.ts';
 import { HostRunnerService } from '../launchd/runner.ts';
 import { adoptsAtApply } from '../ownership/adopt.ts';
 import { noteUnfinished } from '../ownership/resume.ts';
+import { recordedGeneration } from '../ownership/rows.ts';
 import type { HostDirectoryAttributes, HostDirectoryProps } from './directory-lifecycle.ts';
-import {
-  deleteDirectory,
-  diffDirectory,
-  readDirectory,
-  reconcileDirectory,
-} from './directory-lifecycle.ts';
+import { deleteDirectory, diffDirectory, reconcileDirectory } from './directory-lifecycle.ts';
+import { readInterruptedDirectory } from './directory-read.ts';
 
 export type { HostDirectoryAttributes, HostDirectoryProps } from './directory-lifecycle.ts';
 
@@ -42,11 +41,24 @@ export const HostDirectoryProvider = () =>
       return HostDirectory.Provider.of({
         list: () => Effect.succeed([]),
 
-        read: ({ olds, output }) =>
-          lift(async () => {
-            const found = await readDirectory(runner, olds.path);
-            if (found === undefined) return undefined;
-            return output === undefined ? Unowned(found) : found;
+        // ⛔ Recovery of a `creating` row whose path was still an Output never stats (directory-read.ts).
+        read: ({ fqn, instanceId, olds, output }) =>
+          Effect.gen(function* () {
+            const recovering =
+              typeof olds.path === 'string'
+                ? false
+                : (yield* recordedGeneration(fqn, instanceId)) !== undefined;
+            if (recovering) {
+              yield* Effect.logWarning(
+                `${fqn}: the interrupted create's row has no directory path; nothing is recovered, ` +
+                  'and the create is re-driven with the declaration as it is now',
+              );
+            }
+            return yield* lift(async () => {
+              const found = await readInterruptedDirectory(runner, olds.path, recovering);
+              if (found === undefined) return undefined;
+              return output === undefined ? Unowned(found) : found;
+            });
           }),
 
         diff: ({ instanceId, news, output }) => {

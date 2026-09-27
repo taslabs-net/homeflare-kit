@@ -156,14 +156,17 @@ const attributesOf = (
  *   `{"errors":{"iface":"interface does not exist"},"data":null,"message":"Parameter verification
  *   failed.\n"}` at HTTP 400 — a THIRD shape, different from every other migrated family's
  *   measured 500. `@distilled.cloud/proxmox` types this as a genuine typed error,
- *   `ParameterVerificationFailed` (`errors.ts`), carrying the per-field `errors` object rather
- *   than collapsing it to an opaque `BadRequest` — PVE's OWN 400 is never one shape (it is
- *   whatever the endpoint's parameter verification rejected), so `errors.ts`'s own header spells
- *   out why this ONE typed error is global rather than per-operation.
- * ⛔ ONLY THIS EXACT SIGNAL MEANS ABSENT, EVEN WITH THE FOLD BELOW. A different 400 reason, a
- *   permission gap, a network blip, or ANY OTHER `ParameterVerificationFailed` reason is never
- *   read as "this interface is not there" — `diff` calls this directly and propagates every one
- *   of them loudly.
+ *   `NetworkInterfaceNotFound` (`nodes.ts`, generated from `patches/nodes/network-errors.json`),
+ *   attached ONLY to `getNodeNetwork`'s error union and matched by the SDK's own
+ *   `errorEnvelope`/`matchTypedError` against the EXACT sole-field body `errors.iface ===
+ *   "interface does not exist"` — the precision the code here used to check by hand
+ *   (`error.errors['iface'] === '…'`) is now the SDK's own matcher contract, not this file's.
+ *   Any 400 that fails that exact match (a different field, a different message, more than one
+ *   field) decodes as the generic `ParameterVerificationFailed` instead, never this tag.
+ * ⛔ ONLY THIS EXACT SIGNAL MEANS ABSENT, EVEN WITH THE FOLD BELOW. A different 400 reason
+ *   (`ParameterVerificationFailed`), a permission gap, a network blip, or any other failure is
+ *   never read as "this interface is not there" — `diff` calls this directly and propagates
+ *   every one of them loudly.
  */
 export const readInterfaceOrFail = (props: NodeNetworkProps) =>
   readOrUnreadable(
@@ -172,13 +175,7 @@ export const readInterfaceOrFail = (props: NodeNetworkProps) =>
       'read',
       false,
       nodes.getNodeNetwork({ iface: props.iface, node: props.node }),
-    ).pipe(
-      Effect.catchTag('ParameterVerificationFailed', (error) =>
-        error.errors['iface'] === 'interface does not exist'
-          ? Effect.succeed(undefined)
-          : Effect.fail(error),
-      ),
-    ),
+    ).pipe(Effect.catchTag('NetworkInterfaceNotFound', () => Effect.succeed(undefined))),
   ).pipe(
     Effect.map((live) => {
       if (live === UNREADABLE) return UNREADABLE;
@@ -198,8 +195,9 @@ export const readInterfaceOrFail = (props: NodeNetworkProps) =>
  *   interrupted-create recovery, and Apply.ts's delete recovery, all call `read` with
  *   `output: undefined` and NO catch of their own (`Plan.ts` v2.0.0-beta.79 ~line 1308) — and
  *   Plan.ts fails the WHOLE PLAN, every other resource included, if that call throws. A malformed
- *   `iface` in ONE brand-new declaration (a DIFFERENT `ParameterVerificationFailed` than the
- *   absence one) would abort `bun run plan` for the entire stack under the precise-only design,
+ *   `iface` in ONE brand-new declaration (a `ParameterVerificationFailed`, DIFFERENT from the
+ *   `NetworkInterfaceNotFound` absence tag) would abort `bun run plan` for the entire stack under
+ *   the precise-only design,
  *   where every other migrated family instead defers that same malformed declaration to a scoped,
  *   loud refusal at apply. This restores that same fold for those three call sites.
  */

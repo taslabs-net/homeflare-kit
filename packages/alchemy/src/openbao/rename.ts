@@ -128,11 +128,27 @@ export const judgeMove = (
   pathOf: (identity: string) => string,
   key: (identity: string) => string = exact,
 ) =>
+  judgeMoveWith(
+    family,
+    tried,
+    declared,
+    (identity) => Effect.map(baoRead(pathOf(identity)), (value) => value !== undefined),
+    key,
+  );
+
+/** SDK families supply their own typed read so a rename cannot fall back to raw HTTP. */
+export const judgeMoveWith = <E, R>(
+  family: string,
+  tried: string | undefined,
+  declared: string | undefined,
+  occupied: (identity: string) => Effect.Effect<boolean, E, R>,
+  key: (identity: string) => string = exact,
+) =>
   Effect.gen(function* () {
     if (tried === undefined || declared === undefined || key(tried) === key(declared)) {
       return undefined;
     }
-    if ((yield* baoRead(pathOf(declared))) === undefined) return { from: tried, to: declared };
+    if (!(yield* occupied(declared))) return { from: tried, to: declared };
     return yield* Effect.die(
       new Error(
         `${family}: ${tried} → ${declared} would land on an object that already exists at ` +

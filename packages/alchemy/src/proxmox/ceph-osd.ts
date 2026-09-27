@@ -33,6 +33,12 @@
  *   `hf-provision@pve!…` token would likely be answered 403 however wide its role. That is a
  *   reason to leave the write lane closed, not something to confirm by trying: if the reasoning
  *   is wrong, the confirmation costs a disk.
+ *
+ * ★ MIGRATED OFF `client.ts` ONTO `@distilled.cloud/proxmox` (2026-09-24, decision 43, 2c) — this
+ *   file itself never called `pve()` directly, so nothing here changed; ceph-osd-tree.ts's own
+ *   header has the read side (still no `Effect.orElseSucceed`, unlike every other migrated Ceph
+ *   family), ceph-osd-write.ts's has the write side and the one pre-existing, out-of-scope gap
+ *   this migration carries forward rather than fixes.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';

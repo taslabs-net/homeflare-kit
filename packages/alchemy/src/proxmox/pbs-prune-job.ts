@@ -1,6 +1,6 @@
 /**
  * `Pbs.PruneJob` — a Proxmox Backup Server retention schedule, declared. PBS is a SIBLING of PVE,
- * so this family reuses `pveHandlers` wholesale rather than growing a second factory.
+ * and this family uses its own distilled SDK's typed config operations (PBS 4.2.6-1).
  *
  * ⛔ THIS IS THE ONE RESOURCE IN THIS PACKAGE THAT DESTROYS DATA ON AN ORDINARY *UPDATE*. CephPool,
  *   ZfsPool and Storage can destroy data too — which is exactly why they default to `retain` and
@@ -26,8 +26,9 @@
  *   `-1` in the attributes means "absent from prune.cfg", the sentinel storage.ts uses for
  *   `maxfiles`, because `0` here is a real and very different setting.
  *
- * ⛔ THE CREDENTIAL DOES NOT EXIST YET, SO NOTHING BELOW HAS EVER MADE A CALL. PBS is a different
- *   host and a different auth realm from PVE. MEASURED 2026-09-13: pbs.example.com:8007 answers
+ * ⚠️ HISTORICAL BOOTSTRAP BLOCKER, 2026-09-13: PBS was a different
+ *   host and auth realm from PVE. The later PBS credential lane and SDK resolved this blocker.
+ *   MEASURED 2026-09-13: pbs.example.com:8007 answers
  *   HTTP 401 under STRICT TLS behind a real Let's Encrypt certificate (CN=pbs.example.com, issuer
  *   YR1, valid 2026-09-02 to 2026-12-01) — so there is no `-k` to reach for and `client.ts` needs
  *   no TLS escape hatch, exactly as on PVE. What it does need is a header it cannot build today.
@@ -47,7 +48,7 @@
  * ★ WHAT A `PbsTarget` NEEDS, AND WHY IT IS ALMOST `PveTarget`. Structurally `PveTarget` already
  *   fits a PBS host: a credential mount name and an `/api2/json` base are the whole of it, and PBS
  *   shares the `{"data": …}` envelope, the four-operation shape and the read-back discipline —
- *   which is exactly why this file declares a spec and stops. The single thing `PveTarget` cannot
+ *   which is why the pure spec survives the SDK transport migration. The single thing `PveTarget` cannot
  *   carry is WHICH AUTHORIZATION SCHEME the host at the other end speaks, so `PbsTarget` below adds
  *   that and nothing else rather than bending the PVE type in silence.
  *
@@ -55,9 +56,9 @@
  *   below are MEASURED from the PBS API as published at pbs.proxmox.com/docs/api-viewer, fetched
  *   2026-09-13 — current PBS 4.x. Before PBS 2.2 there was no `/config/prune` at all: retention
  *   lived on the datastore section itself, as `keep-*` plus `prune-schedule` under
- *   `/config/datastore/{name}`. Against anything older every path here 404s, `pveOperations.read`
- *   folds that into "absent", and the plan says create forever. Check `GET /api2/json/version`
- *   before the first plan.
+ *   `/config/datastore/{name}`. The old `pveOperations.read` folded those 404s into "absent",
+ *   producing a create forever. The SDK path now propagates an unknown route's 404; only the
+ *   vendor's typed missing-prune response means absent. Check the PBS version before planning.
  *
  * ★ THE READ LANE NEEDS NOTHING EXTRA, UNLIKE THREE PVE FAMILIES — so there is no `readRole:
  *   'provision'` below and there should not be one. MEASURED: `GET /config/prune/{id}` requires
@@ -79,10 +80,9 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
+import { handlers } from './pbs-prune-job-lifecycle.ts';
 import type { PbsTarget } from './credentials.ts';
-import { createBody, keepAttributes, keepsMatch, updateBody } from './pbs-prune-job-form.ts';
-import { type PveRequirements, type WithPbsTarget, pveHandlers } from './resource.ts';
-import { bool, int, text } from './values.ts';
+import type { PveRequirements, WithPbsTarget } from './resource-spec.ts';
 
 /**
  * ⚠️ THE PROPS ARE PBS'S OWN KEY NAMES, HYPHENS INCLUDED, for backup-job.ts's reason: the form
@@ -159,54 +159,6 @@ export interface PbsPruneJob extends Resource<
  *   The archives it would have trimmed are not touched by the DELETE — see the ⚠️ on the provider.
  */
 export const PbsPruneJob = Resource<PbsPruneJob>('Pbs.PruneJob');
-
-/** "Not declared, or equal" — the single shape every unmanaged field is compared with. */
-const same = <T>(declared: T | undefined, live: T) => declared === undefined || declared === live;
-
-const handlers = pveHandlers<PruneJobProps, PruneJobAttributes>({
-  /**
-   * ⚠️ EVERY OPTIONAL FIELD FALLS BACK TO ITS ABSENT SENTINEL RATHER THAN TO PBS'S DEFAULT, because
-   *   for this family the two are different questions. `keep-daily` absent does not mean "keep zero
-   *   dailies", it means "this window is not part of the policy", and `matches` must not compare a
-   *   window the declaration never mentioned against an invented value.
-   * ⛔ NO "IS IT REALLY THERE" GUARD, for backup-job.ts's reason: returning undefined for a job
-   *   whose JSON is missing a key would be a guess about which keys PBS echoes, and a wrong guess
-   *   sends reconcile down the POST branch — which creates ANOTHER prune job rather than failing.
-   */
-  attributes: (live, props) => ({
-    comment: text(live['comment'], ''),
-    disable: bool(live['disable'], false),
-    id: props.id,
-    ...keepAttributes(live),
-    'max-depth': int(live['max-depth'], -1),
-    ns: text(live['ns'], ''),
-    schedule: text(live['schedule'], ''),
-    store: text(live['store'], props.store),
-  }),
-  collection: () => 'config/prune',
-  createForm: createBody,
-  /**
-   * ⚠️ THE UNDECLARED HALF IS NOT COMPARED, AND THAT IS THE WHOLE SAFETY MODEL. `same` reads "not
-   *   declared, or equal", so a field set by hand on an adopted job survives adoption untouched and
-   *   never appears as drift. `keepsMatch` applies the identical rule to the six windows, from the
-   *   file that also writes and reads them — see the ★ at the top of pbs-prune-job-form.ts.
-   * ⚠️ `store` AND `schedule` HAVE NO UNDECLARED CASE because both are required props, so both are
-   *   compared unconditionally. A changed `store` is an update, not a replace: PBS accepts `store`
-   *   on PUT, so the job is re-pointed in place.
-   */
-  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
-  endpoint: { create: 'pbs:POST /config/prune', update: 'pbs:PUT /config/prune/{id}' },
-  matches: (attributes, props) =>
-    attributes.schedule === props.schedule &&
-    attributes.store === props.store &&
-    same(props.ns, attributes.ns) &&
-    same(props['max-depth'], attributes['max-depth']) &&
-    same(props.disable, attributes.disable) &&
-    same(props.comment, attributes.comment) &&
-    keepsMatch(attributes, props),
-  path: (props) => `config/prune/${props.id}`,
-  updateForm: updateBody,
-});
 
 /**
  * ⛔ `list` IS EMPTY like every other family here, and the stakes are the usual ones read backwards.

@@ -7,7 +7,6 @@ import * as Output from 'alchemy/Output';
 import { Stack } from 'alchemy/Stack';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import type * as Caddy from '@distilled.cloud/caddy';
 import { type CaddyAdminService, caddyAdminLayer } from './admin.ts';
 import { CaddyConfig, CaddyConfigProvider } from './config.ts';
 import { type FakeCaddy, fakeCaddy } from './fake-caddy.ts';
@@ -31,9 +30,11 @@ const handler = <F>(name: string, fn: F | undefined): F => {
 };
 
 const withProvider = <A>(
+  // ★ `CaddyAdminService` ONLY — `read`/`diff`/`reconcile` no longer need the admin transport from
+  //   OUTSIDE post-fix: config.ts's handlers `Effect.provide` it locally now (admin.ts's own ⛔).
   use: (
     p: Effect.Success<typeof CaddyConfig.Provider>,
-  ) => Effect.Effect<A, unknown, CaddyAdminService | Caddy.CaddyOpContext>,
+  ) => Effect.Effect<A, unknown, CaddyAdminService>,
   address?: string,
 ) => {
   // ★ A Caddy on its default :2019 behind a forward, as in config-lifecycle.test.ts.

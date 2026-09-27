@@ -36,21 +36,30 @@
  * ★ WHAT THIS NEEDS, READ OFF THE SERVER'S SCHEMA (generated/pbs.ts source):
  *     read      GET                 Sys.Audit  on /system/notifications
  *     write     POST, PUT, DELETE   Sys.Modify on /system/notifications
- *   ⚠️ NOT A DATASTORE PRIVILEGE. A PBS credential scoped to `/datastore/...` reads every matcher
- *     as absent — the "absent, then already exists" signature notification-target.ts describes.
+ *   ⚠️ NOT A DATASTORE PRIVILEGE. A credential scoped to `/datastore/...` cannot read matchers;
+ *     the old client treated that refusal as absent — notification-target.ts describes the
+ *     resulting "absent, then already exists" signature.
  */
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
+import { isResolved } from 'alchemy/Diff';
+import type { Input } from 'alchemy/Input';
 import * as Effect from 'effect/Effect';
 import {
   type NotificationMatcherAttributes,
   type NotificationMatcherFields,
-  matcherAttributes,
   matcherCreateForm,
   matcherMatches,
   matcherUpdateForm,
 } from './notification-matcher-form.ts';
-import { type PveRequirements, type WithPbsTarget, pveHandlers } from './resource.ts';
+import type { PveRequirements, WithPbsTarget } from './resource.ts';
+import { guardForm } from './constraint-guard.ts';
+import {
+  createMatcher,
+  deleteMatcher,
+  readMatcher,
+  updateMatcher,
+} from './pbs-notification-matcher-distilled.ts';
 
 export interface PbsNotificationMatcherProps extends NotificationMatcherFields, WithPbsTarget {}
 
@@ -65,19 +74,63 @@ export interface PbsNotificationMatcher extends Resource<
 /** ⚠️ No `retain`, for notification-matcher.ts's reason; a built-in REVERTS on delete. */
 export const PbsNotificationMatcher = Resource<PbsNotificationMatcher>('Pbs.NotificationMatcher');
 
-const handlers = pveHandlers<PbsNotificationMatcherProps, NotificationMatcherAttributes>({
-  attributes: (live, props) => matcherAttributes(live, props.name),
-  collection: () => 'config/notifications/matchers',
-  createForm: matcherCreateForm,
-  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
-  endpoint: {
-    create: 'pbs:POST /config/notifications/matchers',
-    update: 'pbs:PUT /config/notifications/matchers/{name}',
-  },
-  matches: matcherMatches,
-  path: (props) => `config/notifications/matchers/${props.name}`,
-  updateForm: matcherUpdateForm,
-});
+type Props = PbsNotificationMatcherProps;
+type Attributes = NotificationMatcherAttributes;
+
+const guardCreate = (props: Props, requirePresence: boolean) =>
+  guardForm('pbs:POST /config/notifications/matchers', matcherCreateForm(props), requirePresence);
+const guardUpdate = (props: Props) =>
+  guardForm('pbs:PUT /config/notifications/matchers/{name}', matcherUpdateForm(props), false);
+
+/**
+ * SDK-backed lifecycle: read before writing and compare the entire rule so adoption is free.
+ * ⛔ A 401, 403, malformed response or failed credential mint must fail the plan. Only the
+ *   SDK's typed NotFound means absent; the old factory turned all of these into false creates.
+ */
+const handlers = {
+  /** Built-ins belong to the host; adopting them must stay an explicit declaration. */
+  list: () => Effect.succeed([]),
+  read: ({ olds }: { olds: Props }) => readMatcher(olds),
+  diff: ({
+    news,
+    olds,
+    output,
+  }: {
+    news: Input<Props>;
+    olds: Props;
+    output: Attributes | undefined;
+  }) =>
+    Effect.gen(function* () {
+      if (!isResolved(news)) return undefined;
+      yield* guardCreate(news, output === undefined);
+      yield* guardUpdate(news);
+      if (output === undefined) return undefined;
+      if (olds.name !== news.name) return { action: 'replace' } as const;
+      const live = yield* readMatcher(news);
+      if (live === undefined) {
+        yield* guardCreate(news, true);
+        return { action: 'update' } as const;
+      }
+      return { action: matcherMatches(live, news) ? 'noop' : 'update' } as const;
+    }),
+  reconcile: ({ news }: { news: Props }) =>
+    Effect.gen(function* () {
+      const live = yield* readMatcher(news);
+      yield* guardCreate(news, live === undefined);
+      yield* guardUpdate(news);
+      if (live === undefined) yield* createMatcher(news, matcherCreateForm(news));
+      else if (!matcherMatches(live, news)) yield* updateMatcher(news, matcherUpdateForm(news));
+      const after = yield* readMatcher(news);
+      if (after === undefined)
+        return yield* Effect.fail(
+          new Error(
+            `config/notifications/matchers/${news.name}: the write returned no error but the matcher is still absent.`,
+          ),
+        );
+      return after;
+    }),
+  delete: ({ olds }: { olds: Props }) => deleteMatcher(olds),
+};
 
 export const PbsNotificationMatcherProvider = () =>
   Provider.effect(

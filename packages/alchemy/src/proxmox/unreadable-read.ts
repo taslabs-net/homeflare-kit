@@ -18,10 +18,10 @@
  *   on a lane that cannot prove one is needed and (b) never takes the rest of the plan down with
  *   it — the "noop-with-warning" reading of the fix, over the alternative of a typed plan error.
  *
- * ⛔ ONLY THE CREDENTIAL DENIAL IS CAUGHT HERE. Every other read failure (a genuine
- *   `Cause.TimeoutError`, `PveClusterExhausted`, a network error) keeps folding into `undefined`
- *   exactly as it always has — this narrows ONE typed tag out of that fold, via `catchTag`, and
- *   changes nothing else about it. See credential-errors.ts's own ⛔ for why 403 alone qualifies.
+ * ⛔ ONLY THE CREDENTIAL DENIAL IS CAUGHT HERE. Other errors propagate to the caller.
+ *   Legacy callers may still fold them, but the typed-absence follow-up makes User/Group/
+ *   Storage catch only their SDK missing-object tag. Never infer a resource is absent from
+ *   this sentinel. See credential-errors.ts's own ⛔ for why the OpenBao mint's 403 qualifies.
  */
 import * as Effect from 'effect/Effect';
 import type { PveCredentialDenied } from './credential-errors.ts';
@@ -31,9 +31,9 @@ export const UNREADABLE = Symbol('pve-unreadable');
 export type Unreadable = typeof UNREADABLE;
 
 /**
- * Catches ONLY `PveCredentialDenied` and turns it into the sentinel, so a caller that also
- * `.pipe(Effect.orElseSucceed(() => undefined))` for every OTHER failure never conflates a
- * refusal with a genuine absence. Compose this INSIDE that fold, never after it.
+ * Catches ONLY `PveCredentialDenied` and returns the sentinel. Compose this BEFORE the
+ * caller's absence handling so a credential refusal cannot become a genuine absence.
+ * This helper itself classifies neither SDK missing-object tags nor transport failures.
  *
  * ⚠️ `E | PveCredentialDenied` IN, `E` OUT — not a generic `E` narrowed by `Exclude`. `catchTag`
  *   needs the tag to be STATICALLY present in the error union to typecheck at all; a bare

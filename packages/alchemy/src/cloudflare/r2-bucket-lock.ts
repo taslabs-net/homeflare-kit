@@ -103,7 +103,9 @@ export const R2BucketLock: ResourceClass<R2BucketLock> = Resource<R2BucketLock>(
  *   same case the status check used to cover — but by the vendor's own error identity, not by
  *   reading a number off the response. Letting it propagate would make the resource impossible to
  *   plan; swallowing every failure would also hide a 403 from a mis-scoped token, which is the
- *   failure this estate spends the most time on. So: `NoSuchBucket` → absent, everything else dies.
+ *   failure this estate spends the most time on. So: `NoSuchBucket` → absent, everything else
+ *   propagates with its SDK tag. Upstream `Cloudflare/R2/BucketSippy.ts` at beta.79 uses this
+ *   same catch-and-propagate shape; a blanket remap would hide those typed identities (S20/S21).
  *
  * ⛔ AN EMPTY LIVE RULE SET IS "NO LOCK", NOT "A LOCK WITH NOTHING IN IT", so it reads as absent
  *   and the resource CREATES. The API answers `{}` for a bucket that has never been locked and
@@ -117,15 +119,16 @@ export const R2BucketLock: ResourceClass<R2BucketLock> = Resource<R2BucketLock>(
 export const readLock = (
   props: { accountId: string; bucketName: string; jurisdiction?: Jurisdiction },
   written: boolean,
-): Effect.Effect<R2BucketLockAttributes | undefined, never, CloudflareOpContext> =>
+): Effect.Effect<
+  R2BucketLockAttributes | undefined,
+  Exclude<r2.GetBucketLockError, { _tag: 'NoSuchBucket' }>,
+  CloudflareOpContext
+> =>
   Effect.gen(function* () {
     const jurisdiction = jurisdictionOf(props);
     const live = yield* r2
       .getBucketLock({ accountId: props.accountId, bucketName: props.bucketName, jurisdiction })
-      .pipe(
-        Effect.catchTag('NoSuchBucket', () => Effect.succeed(undefined)),
-        Effect.orDie,
-      );
+      .pipe(Effect.catchTag('NoSuchBucket', () => Effect.succeed(undefined)));
     if (live === undefined) return undefined;
     const rules = (live.rules ?? []) as readonly R2LockRule[];
     if (rules.length === 0) return undefined;
@@ -144,23 +147,21 @@ export const readLock = (
  *   persisted (or what `read` just adopted), so the comparison costs nothing either.
  * ⛔ `NoSuchBucket` IS NOT CAUGHT HERE. Unlike `read`, a `reconcile` that hits it means the bucket
  *   this declaration names is genuinely gone — that is a real failure to surface, not a case to
- *   paper over, so it dies like every other tagged error `putBucketLock` can raise.
+ *   paper over, so it propagates like every other typed SDK error `putBucketLock` can raise.
  */
 export const reconcileLock = (
   news: R2BucketLockProps,
   output: R2BucketLockAttributes | undefined,
-): Effect.Effect<R2BucketLockAttributes, never, CloudflareOpContext> =>
+): Effect.Effect<R2BucketLockAttributes, r2.PutBucketLockError, CloudflareOpContext> =>
   Effect.gen(function* () {
     const jurisdiction = jurisdictionOf(news);
     if (output !== undefined && rulesEqual(output.rules, news.rules)) return output;
-    yield* r2
-      .putBucketLock({
-        accountId: news.accountId,
-        bucketName: news.bucketName,
-        jurisdiction,
-        ...toBody(news.rules),
-      })
-      .pipe(Effect.orDie);
+    yield* r2.putBucketLock({
+      accountId: news.accountId,
+      bucketName: news.bucketName,
+      jurisdiction,
+      ...toBody(news.rules),
+    });
     return { bucketName: news.bucketName, jurisdiction, rules: news.rules };
   });
 
@@ -170,11 +171,17 @@ export const reconcileLock = (
  *   rule is configured, so retiring the repository has to start here — and it is behind
  *   `defaultRemovalPolicy: 'retain'` and the estate CLI's refusal of `destroy` precisely because
  *   no ordinary deploy should ever reach it.
+ * ⛔ IDEMPOTENT (S11): a missing bucket has nothing left to unlock. Catch only `NoSuchBucket`;
+ *   every other SDK error propagates, like upstream `R2/BucketSippy.ts` at beta.79.
  */
 export const deleteLock = (
   output: R2BucketLockAttributes,
   accountId: string,
-): Effect.Effect<void, never, CloudflareOpContext> =>
+): Effect.Effect<
+  void,
+  Exclude<r2.PutBucketLockError, { _tag: 'NoSuchBucket' }>,
+  CloudflareOpContext
+> =>
   Effect.gen(function* () {
     yield* r2
       .putBucketLock({
@@ -183,7 +190,7 @@ export const deleteLock = (
         jurisdiction: output.jurisdiction,
         rules: [],
       })
-      .pipe(Effect.orDie);
+      .pipe(Effect.catchTag('NoSuchBucket', () => Effect.void));
   });
 
 export const R2BucketLockProvider = () =>

@@ -558,13 +558,12 @@ export interface DeleteNodeCertificateCustomRequest {
 export const DeleteNodeCertificateCustomRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     node: S.String.pipe(T.Label()),
-    restart: S.optional(S.String),
+    restart: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/certificates/custom",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -634,13 +633,12 @@ export const DeleteNodeNetwork2Request = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     node: S.String.pipe(T.Label()),
     iface: S.String.pipe(T.Label()),
-    digest: S.optional(S.String),
+    digest: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/nodes/{node}/network/{iface}",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({

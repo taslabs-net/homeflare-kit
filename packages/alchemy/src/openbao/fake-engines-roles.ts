@@ -48,10 +48,17 @@ const typed = (body: Stored): Stored => {
   return out;
 };
 
-/** Every role engine, JWT auth config and MFA login enforcement. A write replaces the object. */
+/**
+ * Every role engine, JWT auth config and MFA login enforcement.
+ * ★ AppRole preserves omitted knobs and supplies defaults on create (OpenBao 2.6.2
+ * path_role.go:1688-1721); this fixture must not turn a correct omitted SDK field into drift.
+ */
 export const wireRoles = (): Store =>
   store<Stored>(
-    (_path, body) => typed(body),
+    (path, body, before) =>
+      path.startsWith('auth/approle/role/')
+        ? { bind_secret_id: true, secret_id_num_uses: 0, ...before, ...typed(body) }
+        : typed(body),
     (path) => keyOf(path),
   );
 

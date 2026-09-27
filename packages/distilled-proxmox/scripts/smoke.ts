@@ -50,6 +50,7 @@ try {
   await Bun.write(
     join(scratch, 'consumer.ts'),
     `import * as Proxmox from '@homeflare/distilled-proxmox';
+import * as Category from '@distilled.cloud/core/category';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
@@ -100,6 +101,71 @@ if ((result as Record<string, unknown>)['version'] !== '9.2.11') {
 }
 
 console.log('request built:', captured.method, captured.url);
+
+// WI-3: a canned PVE 500 for a missing user decodes to the typed, resource-specific
+// UserNotFound — never a bare InternalServerError — and its category is NOT transient
+// (a caller must not retry a permanent "does not exist" as if it were a server hiccup).
+const notFoundClient = HttpClient.make((request) =>
+  Effect.succeed(
+    HttpClientResponse.fromWeb(
+      request,
+      new Response(JSON.stringify({ message: "no such user ('smoke@pve')" }), { status: 500 }),
+    ),
+  ),
+);
+const notFoundProgram = Proxmox.Services.access.getAccessUser({ userid: 'smoke@pve' }).pipe(
+  Effect.provide(Layer.succeed(HttpClient.HttpClient, notFoundClient)),
+  Effect.provide(
+    Proxmox.credentials({
+      tokenId: 'root@pam!smoke',
+      secret: 'smoke-secret',
+      baseUrl: 'https://pve.example.test:8006',
+    }),
+  ),
+  Effect.flip,
+);
+const notFoundError = await Effect.runPromise(notFoundProgram as Effect.Effect<unknown, never, never>);
+if (!(notFoundError instanceof Proxmox.Services.access.UserNotFound)) {
+  throw new Error(\`expected UserNotFound, got: \${JSON.stringify(notFoundError)}\`);
+}
+if (Category.isTransientError(notFoundError)) {
+  throw new Error('UserNotFound must not be classified as a transient error');
+}
+console.log('UserNotFound decode + non-transient category: ok');
+
+// WI-1: a DELETE's non-label parameters (\`remove_pools\`/\`remove_storages\`) must land in the
+// query string, never the body — PVE's server silently discards a DELETE body, so a body member
+// here would be a parameter that reaches the wire and is then thrown away unread.
+let deleteCaptured: { url: string; bodyTag: string } | undefined;
+const deleteClient = HttpClient.make((request) => {
+  deleteCaptured = { url: request.url, bodyTag: request.body._tag };
+  return Effect.succeed(
+    HttpClientResponse.fromWeb(request, new Response(JSON.stringify({ data: 'UPID:smoke:task' }))),
+  );
+});
+await Effect.runPromise(
+  Proxmox.Services.nodes
+    .deleteNodeCephFs({ node: 'smoke-node', name: 'smoke-fs', remove_pools: '1' })
+    .pipe(
+      Effect.provide(Layer.succeed(HttpClient.HttpClient, deleteClient)),
+      Effect.provide(
+        Proxmox.credentials({
+          tokenId: 'root@pam!smoke',
+          secret: 'smoke-secret',
+          baseUrl: 'https://pve.example.test:8006',
+        }),
+      ),
+    ) as Effect.Effect<unknown, never, never>,
+);
+if (deleteCaptured === undefined) throw new Error('no DELETE request was built');
+if (!new URL(deleteCaptured.url).searchParams.get('remove-pools')) {
+  throw new Error(\`expected ?remove-pools=1 in the URL, got: \${deleteCaptured.url}\`);
+}
+if (deleteCaptured.bodyTag !== 'Empty') {
+  throw new Error(\`expected an empty DELETE body, got body tag: \${deleteCaptured.bodyTag}\`);
+}
+console.log('DeleteNodeCephFs: ?remove-pools=1, empty body: ok');
+
 console.log('consumer ok');
 `,
   );

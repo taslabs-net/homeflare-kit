@@ -6,7 +6,16 @@
  *   not depend on — mirrors `../netbox/index.ts`.
  */
 export { UNIFI_READ_ONLY_POLICY, UnifiWriteRefused, type UnifiWriteAction } from './policy.ts';
-export type { UnifiRequirements, UnifiSpec } from './resource.ts';
+export {
+  // Barrel-exported (not just internal to `unifiHandlers`) so `homeflare-network`'s own
+  // import-layer guard (plan item C0) can reuse this instead of re-implementing the same
+  // `HttpClient` wrap against a second copy of the SDK's `HttpClient.HttpClient` service.
+  GetOnlyHttpClient,
+  UnifiNonGetRequest,
+  type UnifiRequirements,
+  type UnifiSpec,
+} from './resource.ts';
+export type { FieldDrift } from './drift.ts';
 export {
   UnifiNetwork,
   UnifiNetworkProvider,
@@ -14,6 +23,10 @@ export {
   network,
   type NetworkAttributes,
   type NetworkProps,
+  // B6: renamed here, not in `network.ts` — `network-form.ts`'s `matches`/`attributesOf` name the
+  // same function identically per family (never barrel-exported); `driftOf` IS barrel-exported, so
+  // it needs a name unique across both families the moment it leaves `network.ts`.
+  driftOf as networkDriftOf,
 } from './network.ts';
 export {
   UnifiFirewallZone,
@@ -22,5 +35,69 @@ export {
   firewallZone,
   type FirewallZoneAttributes,
   type FirewallZoneProps,
+  driftOf as firewallZoneDriftOf,
 } from './firewall-zone.ts';
+export {
+  UnifiDnsPolicy,
+  UnifiDnsPolicyProvider,
+  declareDnsPolicy,
+  dnsPolicy,
+  type DnsPolicyAttributes,
+  type DnsPolicyProps,
+  driftOf as dnsPolicyDriftOf,
+} from './dns-policy.ts';
+export {
+  UnifiAclRule,
+  UnifiAclRuleProvider,
+  aclRule,
+  declareAclRule,
+  type AclRuleAttributes,
+  type AclRuleProps,
+  driftOf as aclRuleDriftOf,
+} from './acl-rule.ts';
+export {
+  UnifiAclRuleOrdering,
+  UnifiAclRuleOrderingProvider,
+  aclRuleOrdering,
+  declareAclRuleOrdering,
+  type AclRuleOrderingAttributes,
+  type AclRuleOrderingProps,
+  driftOf as aclRuleOrderingDriftOf,
+} from './acl-rule-ordering.ts';
+export {
+  UnifiWifiBroadcast,
+  UnifiWifiBroadcastProvider,
+  declareWifiBroadcast,
+  wifiBroadcast,
+  type WifiBroadcastAttributes,
+  type WifiBroadcastProps,
+  driftOf as wifiBroadcastDriftOf,
+} from './wifi-broadcast.ts';
+export {
+  UnifiFirewallPolicy,
+  UnifiFirewallPolicyProvider,
+  declareFirewallPolicy,
+  firewallPolicy,
+  type FirewallPolicyAttributes,
+  type FirewallPolicyProps,
+  driftOf as firewallPolicyDriftOf,
+} from './firewall-policy.ts';
+export {
+  UnifiFirewallPolicyOrdering,
+  UnifiFirewallPolicyOrderingProvider,
+  declareFirewallPolicyOrdering,
+  firewallPolicyOrdering,
+  type FirewallPolicyOrderingAttributes,
+  type FirewallPolicyOrderingProps,
+  driftOf as firewallPolicyOrderingDriftOf,
+} from './firewall-policy-ordering.ts';
+export {
+  UnifiTrafficMatchingList,
+  UnifiTrafficMatchingListProvider,
+  declareTrafficMatchingList,
+  trafficMatchingList,
+  type TrafficMatchingListAttributes,
+  type TrafficMatchingListProps,
+  driftOf as trafficMatchingListDriftOf,
+} from './traffic-matching-list.ts';
 export { providers } from './providers.ts';

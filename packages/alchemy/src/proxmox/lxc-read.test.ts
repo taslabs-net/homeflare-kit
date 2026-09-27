@@ -1,9 +1,9 @@
 /**
  * When a container read counts as "absent" — the question that decides between adopt and create.
  *
- * ⛔ WHAT THESE PIN: only a 500 whose vmid the cluster does not list anywhere is absent, whatever
- *   the message says; a 403 or a 500 for a guest the cluster lists on the declared node FAILS the
- *   plan with PVE's own error; nothing is written in any case. resource.ts's fold of every error
+ * ⛔ WHAT THESE PIN: only the SDK's exact missing-config tag may consult the same credential's
+ *   cluster index for absence. A 403 or any other 500 FAILS the plan with PVE's own error;
+ *   nothing is written in any case. resource.ts's fold of every error
  *   into "absent" is exactly what this resource must not inherit — under it, a lease without
  *   VM.Audit plans a CREATE over a running guest.
  */
@@ -31,11 +31,14 @@ const declared = (vmid: number) =>
   }).pipe(adopt(true));
 
 describe('absent means the cluster does not list the vmid', () => {
-  test('a 500 with no message, for a vmid nowhere in the cluster, plans a create', async () => {
+  test('a 500 with no message never uses a filtered empty index to authorize creation', async () => {
     fake = fakePve();
     fake.configErrors.set(`${NODE}/150`, { body: { data: null }, status: 500 });
     const run = await lxcEngine(fake).plan(declared(150));
-    expect(run).toMatchObject({ actions: { ct: 'create' }, failure: '' });
+    expect(run.failure).toContain('InternalServerError');
+    expect(run.actions).toEqual({});
+    expect(writesOf(fake)).toEqual([]);
+    expect(fake.seen.some((call) => call.path.endsWith('/cluster/resources'))).toBe(false);
   });
 
   test('a 500 for a guest the cluster lists on this node fails with PVE’s error', async () => {
@@ -54,7 +57,27 @@ describe('absent means the cluster does not list the vmid', () => {
     const message = 'Permission check failed (/vms/150, VM.Audit)\n';
     fake.configErrors.set(`${NODE}/150`, { body: { data: null, message }, status: 403 });
     const run = await lxcEngine(fake).plan(declared(150));
-    expect(run.failure).toContain('-> 403');
+    expect(run.failure).toContain('Forbidden');
     expect(run.actions).toEqual({});
+    expect(writesOf(fake)).toEqual([]);
+    expect(fake.seen.some((call) => call.path.endsWith('/cluster/resources'))).toBe(false);
   });
+
+  test('exact missing config plus an empty index permits the existing create plan', async () => {
+    fake = fakePve();
+    const run = await lxcEngine(fake).plan(declared(150));
+    expect(run).toMatchObject({ actions: { ct: 'create' }, failure: '' });
+    expect(writesOf(fake)).toEqual([]);
+  });
+
+  for (const data of [null, {}, { hostname: 'example' }]) {
+    test(`malformed config success ${JSON.stringify(data)} is not absence`, async () => {
+      fake = fakePve();
+      fake.configErrors.set(`${NODE}/150`, { body: { data }, status: 200 });
+      const run = await lxcEngine(fake).plan(declared(150));
+      expect(run.failure).toContain('digest-bearing config');
+      expect(run.actions).toEqual({});
+      expect(writesOf(fake)).toEqual([]);
+    });
+  }
 });

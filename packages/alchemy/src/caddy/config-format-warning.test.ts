@@ -13,7 +13,7 @@ import { AdoptPolicy } from 'alchemy/AdoptPolicy';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Logger from 'effect/Logger';
-import { caddyAdminLayer } from './admin.ts';
+import { type CaddyTransport, caddyAdminLayer } from './admin.ts';
 import { CaddyConfig, CaddyConfigProvider } from './config.ts';
 import { diffConfig } from './config-reconcile.ts';
 import { type FakeCaddy, fakeDefaultCaddy } from './fake-caddy.ts';
@@ -34,6 +34,12 @@ const setup = () => {
   return made;
 };
 
+/** `diffConfig` still needs the raw `Credentials`/`HttpClient` directly — `caddyAdminLayer` alone
+ * (admin.ts's own scoping fix) only carries `CaddyAdminService`/`CaddyAdminTransport`; merge
+ * `admin.layer` in too, the same fix `fake-caddy.ts`'s `runCaddy` makes for this exact shape. */
+const withTransport = (admin: CaddyTransport) =>
+  Layer.mergeAll(caddyAdminLayer(admin), admin.layer);
+
 /** Runs `effect` and returns its result plus every `Effect.logWarning` line it emitted. */
 const withWarnings = async <A>(effect: Effect.Effect<A, unknown, never>) => {
   const warnings: string[] = [];
@@ -49,7 +55,7 @@ describe('the formatting warning is surfaced distinctly', () => {
     const { admin } = setup();
     const output = { configSha256: 'stub', endpoint: admin.endpoint };
     const { value, warnings } = await withWarnings(
-      diffConfig({ caddyfile: UNFORMATTED }, output).pipe(Effect.provide(caddyAdminLayer(admin))),
+      diffConfig({ caddyfile: UNFORMATTED }, output).pipe(Effect.provide(withTransport(admin))),
     );
     expect(value).toEqual({ action: 'update' });
     expect(warnings).toHaveLength(1);
@@ -61,7 +67,7 @@ describe('the formatting warning is surfaced distinctly', () => {
     const { admin } = setup();
     const output = { configSha256: 'stub', endpoint: admin.endpoint };
     const { warnings } = await withWarnings(
-      diffConfig({ caddyfile: SITE }, output).pipe(Effect.provide(caddyAdminLayer(admin))),
+      diffConfig({ caddyfile: SITE }, output).pipe(Effect.provide(withTransport(admin))),
     );
     expect(warnings).toEqual([]);
   });

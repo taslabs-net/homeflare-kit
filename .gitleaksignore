@@ -37,3 +37,12 @@ packages/distilled-litellm/src/services/key_management.ts:curl-auth-header:3982
 packages/distilled-litellm/src/services/team_management.ts:curl-auth-header:3672
 packages/distilled-litellm/src/services/team_management.ts:curl-auth-header:3689
 packages/distilled-litellm/src/services/model_management.ts:curl-auth-header:4018
+
+# ceph-key-leak-assert.ts's KEY_SHAPED_SENTINEL is a fake cephx-shaped key, deliberately built to
+# look like a real minted key (base64, no hyphen) so ceph-auth-parse.test.ts,
+# ceph-auth-reconcile-secrecy.test.ts and ceph-auth-reconcile.test.ts can prove a real one would
+# never leak (LAND red team, 2026-09-26, K-A4 finding: a hyphenated sentinel let a truncated leak
+# slip past a `.not.toContain` check). It is a fixture, never sent anywhere, never a real Ceph
+# entity's key. Regenerating this file can shift the line number; re-run `gitleaks protect
+# --staged --redact --no-banner` and update it below rather than reaching for --no-verify.
+packages/alchemy/src/ceph/ceph-key-leak-assert.ts:generic-api-key:19

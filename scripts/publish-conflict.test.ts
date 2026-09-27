@@ -76,6 +76,13 @@ describe('isAlreadyPublishedConflict', () => {
   test('a successful publish (exit 0) is never classified as a conflict', () => {
     expect(isAlreadyPublishedConflict({ code: 0, out: '' }, '0.5.0')).toBe(false);
   });
+
+  test('npm 11 republish refusal with no E409 is this version already on the registry', () => {
+    // Measured 2026-09-25, run 36148440975. No error code. The period is the sentence.
+    const out = 'npm error You cannot publish over the previously published versions: 0.12.1.\n';
+    expect(isAlreadyPublishedConflict({ code: 1, out }, '0.12.1')).toBe(true);
+    expect(isAlreadyPublishedConflict({ code: 1, out }, '0.12.2')).toBe(false);
+  });
 });
 
 describe('summaryRow', () => {

@@ -21,7 +21,13 @@
  *   engine skips that probe, reconcile refuses the same takeover (config-lifecycle.ts).
  * ⛔ `caddyfile` IS NEVER A SECRET — see config-form.ts; refused before anything is sent.
  * ⚠️ WHICH CADDY is the transport's (providers.ts): `CaddyAdminService` plus the `Credentials`/
- *   `HttpClient` layers `caddyAdminLayer` merges — one per stack, not a prop.
+ *   `HttpClient` layer `CaddyAdminTransport` carries — one per stack, not a prop.
+ * ⚠️ `transportLayer` IS `Effect.provide`D LOCALLY IN EACH HANDLER BELOW, NEVER MERGED AHEAD OF
+ *   TIME. `caddyAdminLayer` (admin.ts) stores it under `CaddyAdminTransport` rather than merging its
+ *   `Credentials`/`HttpClient.HttpClient` into the ambient context precisely so this file is the ONE
+ *   place that discharges them — scoped to the handful of effects that actually call
+ *   `@distilled.cloud/caddy`'s operations, never leaking into a sibling fetch-based provider merged
+ *   into the same stack (admin.ts's own ⛔; MEASURED 2026-09-26, admin-transport-scope.test.ts).
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
@@ -30,7 +36,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { resolvedString } from '../launchd/host-effect.ts';
 import { adoptEnabled } from '../ownership/adopt.ts';
-import { CaddyAdminService } from './admin.ts';
+import { CaddyAdminService, CaddyAdminTransport } from './admin.ts';
 import { isUnreachable } from './caddy-http-client.ts';
 import type { CaddyConfigAttributes, CaddyConfigProps } from './config-form.ts';
 import { probeLive, readLive } from './config-lifecycle.ts';
@@ -72,6 +78,7 @@ export const CaddyConfigProvider = () =>
     CaddyConfig,
     Effect.gen(function* () {
       const admin = yield* CaddyAdminService;
+      const transportLayer = yield* CaddyAdminTransport;
       /** The probe, branded for the engine: plain when ours, `Unowned` otherwise. */
       const probe = (caddyfile: string | undefined, sourceFile: string | undefined) =>
         Effect.flatMap(probeLive(caddyfile, sourceFile), (found) => {
@@ -104,6 +111,9 @@ export const CaddyConfigProvider = () =>
               ? yield* probe(resolvedString(olds, 'caddyfile'), resolvedString(olds, 'sourceFile'))
               : yield* readLive(resolvedString(olds, 'sourceFile'));
           }).pipe(
+            // ★ Scoped to Caddy's own transport — see the file header's ⚠️ — before the catch below,
+            //   so `isUnreachable` still narrows the SAME raw error this always raised.
+            Effect.provide(transportLayer),
             // ★ Nothing to adopt from a Caddy that is down: plan a create, which is the same load.
             Effect.catchIf(isUnreachable, planWithoutCaddy(admin, undefined)),
           ),
@@ -112,7 +122,10 @@ export const CaddyConfigProvider = () =>
           if (output === undefined) return Effect.succeed(undefined);
           const update = planWithoutCaddy(admin, { action: 'update' as const });
           if (isResolved(news)) {
-            return diffConfig(news, output).pipe(Effect.catchIf(isUnreachable, update));
+            return diffConfig(news, output).pipe(
+              Effect.provide(transportLayer),
+              Effect.catchIf(isUnreachable, update),
+            );
           }
           /**
            * ⚠️ `sourceFile` is an Output while its HostFile changes in the same deploy
@@ -123,6 +136,7 @@ export const CaddyConfigProvider = () =>
           const caddyfile = resolvedString(news, 'caddyfile');
           if (caddyfile === undefined) return Effect.succeed(undefined);
           return Effect.as(diffConfig({ caddyfile }, output), { action: 'update' as const }).pipe(
+            Effect.provide(transportLayer),
             Effect.catchIf(isUnreachable, update),
           );
         },
@@ -136,7 +150,9 @@ export const CaddyConfigProvider = () =>
             const sameCaddy = output !== undefined && output.endpoint === admin.endpoint;
             const takeOver = sameCaddy || (yield* adoptEnabled(fqn));
             const stored = output === undefined ? {} : { stored: output.configSha256 };
-            const applied = yield* reconcileConfig(news, { takeOver, ...stored });
+            const applied = yield* reconcileConfig(news, { takeOver, ...stored }).pipe(
+              Effect.provide(transportLayer),
+            );
             // ★ THE FORMATTING WARNING GETS ITS OWN LINE, NAMING THE FIX — separate from the rest,
             //   which keep logging exactly as before (format-warnings.ts).
             const { formatting, rest } = splitFormattingWarning(applied.warnings);

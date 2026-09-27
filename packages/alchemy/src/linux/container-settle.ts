@@ -79,7 +79,18 @@ export const settle = async (
       await runner.removeFile(step.path).catch(() => undefined);
       await daemonReload(runner).catch(() => undefined);
     }
-    throw refuseContainer(props.name, `${detail} The container's unit is NOT running.`);
+    // 🔴 MEASURED FALSE, CT100 deploy 2026-09-26 00:11Z: this suffix used to assert "is NOT
+    //   running" unconditionally — even for a `detail` that was a REFUSAL before sudo ever ran
+    //   (the sudo ownership check on a Quadlet unit, say), where nothing about the running
+    //   container was touched. `caddy` stayed active/running through the whole failed deploy.
+    //   State only what this call actually knows: read the live state back, best-effort, rather
+    //   than assert either way.
+    const after = await showUnit(runner, step.serviceName).catch(() => undefined);
+    const stateNote =
+      after === undefined
+        ? 'Its running state was not re-checked.'
+        : `Its unit is now ${after.activeState}.`;
+    throw refuseContainer(props.name, `${detail} ${stateNote}`);
   };
   try {
     if (!wantStarted) {

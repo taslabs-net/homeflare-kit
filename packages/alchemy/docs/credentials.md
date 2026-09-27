@@ -65,3 +65,12 @@ this one variable. `Authorization: Bearer <value>` is still built by the package
 `GoogleWorkspaceKeyRef`/`describeKeyRef` (this subpath's own `credentials.ts`) are a typed,
 key-free REFERENCE to where that service-account key lives, for a stack file to keep alongside its
 declarations — full setup: [google-workspace.md](./google-workspace.md).
+
+The Argo CD subpath (new 2026-09-24, `@distilled.cloud/argocd`, built ahead of any live instance)
+resolves credentials the same way, through the SDK's own `CredentialsFromEnv` layer, which reads
+`ARGOCD_TOKEN` (required) and `ARGOCD_SERVER` (optional instance origin, default
+`https://localhost:8080`) — the package's own names, unchanged. `Authorization: Bearer <value>` is
+built by the package's protocol layer. The repository/cluster CREDENTIALS this subpath's three
+resources declare (a repo's password/SSH key, a cluster's bearer token/TLS key) are a separate,
+per-object concern from the instance's own API token above — write-only `FromEnv` references, never
+a prop or attribute either: see [argocd.md](./argocd.md#secrets-never-in-state).

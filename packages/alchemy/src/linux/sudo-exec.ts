@@ -23,12 +23,43 @@
  *   is a valid type in `unit-form.ts`'s `TYPES` set) would also have elevated. Grepped: no code
  *   in this package ever calls `enable`/`start`/`restart` on a unit it has not itself just
  *   written a file for, so narrowing the exemption to `stop`/`disable` costs nothing legitimate.
+ * 🔴 MEASURED, CT100 deploy 2026-09-26 00:11Z: a THIRD gap, this one refusing a call that should
+ *   have been allowed. `Podman.Container caddy`'s generated `caddy.service` has
+ *   `FragmentPath=/run/systemd/generator/caddy.service` — Quadlet's generator output, never a
+ *   path this runner would ever declare as a prefix (nothing writes there directly) — so `restart`
+ *   was refused outright, even though the `.container` FILE THAT GENERATED IT lives at
+ *   `/etc/containers/systemd/caddy.container`, squarely under this runner's own
+ *   `/etc/containers/systemd` prefix, and this SAME runner had just written it. `SourcePath` is
+ *   the generator's own record of that file (systemctl.ts's header, MEASURED on CT100). So a
+ *   generated unit is now also reachable when its `FragmentPath` is the generator's OWN output
+ *   directory (`GENERATOR_DIRECTORIES` below) AND its `SourcePath` is under a declared prefix —
+ *   the thing this runner actually owns is the `.container` file, and the generated unit is
+ *   systemd's own derivative of it, not a foreign unit. Everything the check refused before still
+ *   refuses: a vendor unit's `FragmentPath` (`/usr/lib/systemd/system/...`) is not under a
+ *   generator directory at all; a generated unit with no `SourcePath`, or one outside every
+ *   prefix (a `.container` file elsewhere in Quadlet's OWN search path —
+ *   `podman-systemd.unit(5)` — that this runner was never told to own), still refuses.
  */
 import type { ExecResult, HostRunner } from '../launchd/runner.ts';
+import { GENERATED_UNIT_DIRECTORY } from './container-generator.ts';
 import { SYSTEMCTL_ABS, SudoRefusedError, canonicalize, prefixOf } from './sudo-allowlist.ts';
 import { type ChainExpect, assertGuardedChain } from './sudo-guard.ts';
 import type { Elevate } from './sudo-write.ts';
 import { parseShow } from './systemctl.ts';
+
+/**
+ * ★ ONLY THE `.late` VARIANT ADDED — `container-generator.ts`'s own header names it as part of
+ *   systemd's real Unit File Load Path; `.early` is not named anywhere in this repo and no
+ *   generator this family drives (Quadlet writes only the base directory) uses it, so it stays
+ *   out rather than widen the check on an unmeasured guess.
+ */
+const GENERATOR_DIRECTORIES: readonly string[] = [
+  GENERATED_UNIT_DIRECTORY,
+  `${GENERATED_UNIT_DIRECTORY}.late`,
+];
+
+const isUnderGeneratorDirectory = (fragmentPath: string): boolean =>
+  GENERATOR_DIRECTORIES.some((dir) => fragmentPath.startsWith(`${dir}/`));
 
 const DIR_EXPECT: Readonly<Record<string, ChainExpect>> = {
   chmod: 'directory',
@@ -43,26 +74,33 @@ const EMPTY_FRAGMENT_OK: ReadonlySet<string> = new Set(['stop', 'disable']);
 const unitStatusOf = async (
   base: HostRunner,
   unit: string,
-): Promise<{ readonly fragmentPath: string; readonly loadState: string }> => {
+): Promise<{
+  readonly fragmentPath: string;
+  readonly loadState: string;
+  readonly sourcePath: string;
+}> => {
   const result = await base.exec([
     SYSTEMCTL_ABS,
     'show',
     '--no-pager',
     '-p',
-    'FragmentPath,LoadState',
+    // ★ SourcePath added for the Quadlet-generated-unit exception below — same property
+    //   systemctl.ts's own `showUnit` already reads for `Podman.Container`.
+    'FragmentPath,LoadState,SourcePath',
     '--',
     unit,
   ]);
   if (result.exitCode !== 0) {
     throw new SudoRefusedError(
-      `sshSudoRunner ${unit}: could not read FragmentPath/LoadState (systemctl show exit ` +
-        `${String(result.exitCode)}). Nothing ran as root.`,
+      `sshSudoRunner ${unit}: could not read FragmentPath/LoadState/SourcePath (systemctl show ` +
+        `exit ${String(result.exitCode)}). Nothing ran as root.`,
     );
   }
   const fields = parseShow(result.stdout);
   return {
     fragmentPath: fields.get('FragmentPath') ?? '',
     loadState: fields.get('LoadState') ?? '',
+    sourcePath: fields.get('SourcePath') ?? '',
   };
 };
 
@@ -93,7 +131,7 @@ export const elevatedExec = (
   const verb = canonical[1] ?? '';
   const unit = canonical[3] ?? '';
   return elevate(canonical, {}, async () => {
-    const { fragmentPath, loadState } = await unitStatusOf(base, unit);
+    const { fragmentPath, loadState, sourcePath } = await unitStatusOf(base, unit);
     if (loadState === 'masked') {
       throw new SudoRefusedError(
         `sshSudoRunner ${unit}: is masked. Masking is someone's decision, not drift; unmask it ` +
@@ -108,11 +146,23 @@ export const elevatedExec = (
           `${unit} is (a kernel-generated unit, say). Nothing ran as root.`,
       );
     }
-    if (prefixOf(fragmentPath, prefixes) === undefined) {
-      throw new SudoRefusedError(
-        `sshSudoRunner ${unit}: FragmentPath ${fragmentPath} is outside every declared prefix ` +
-          `(${prefixes.join(', ')}); refusing to touch a unit this runner does not own. Nothing ran as root.`,
-      );
+    if (prefixOf(fragmentPath, prefixes) !== undefined) return;
+    // ⛔ THE QUADLET CASE — see this file's header. A generator's OWN output directory is never a
+    //   prefix, so this is not "found it under a prefix, done" — it is "found it under the
+    //   generator, so check what GENERATED it instead."
+    if (
+      isUnderGeneratorDirectory(fragmentPath) &&
+      sourcePath !== '' &&
+      prefixOf(sourcePath, prefixes) !== undefined
+    ) {
+      return;
     }
+    const sourceNote =
+      sourcePath === '' ? '' : `, and its SourcePath ${sourcePath} is not under one either`;
+    throw new SudoRefusedError(
+      `sshSudoRunner ${unit}: FragmentPath ${fragmentPath} is outside every declared prefix ` +
+        `(${prefixes.join(', ')})${sourceNote}; refusing to touch a unit this runner does not ` +
+        'own. Nothing ran as root.',
+    );
   });
 };

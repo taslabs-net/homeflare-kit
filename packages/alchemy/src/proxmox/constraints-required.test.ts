@@ -80,6 +80,7 @@ describe('every create this package makes, and what the vendor requires of it', 
       'pve:POST /nodes/{node}/lxc': ['ostemplate', 'vmid'],
       'pve:POST /nodes/{node}/network': ['iface', 'type'],
       'pve:POST /nodes/{node}/qemu': ['vmid'],
+      'pve:POST /nodes/{node}/storage/{storage}/download-url': ['content', 'filename', 'url'],
       'pve:POST /pools': ['poolid'],
       'pve:POST /storage': ['storage', 'type'],
     });

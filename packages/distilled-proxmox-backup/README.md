@@ -18,13 +18,10 @@ here.
 
 ⚠️ **License.** Apache-2.0, not the kit's usual MIT — see `LICENSE`.
 
-⚠️ **No live PBS call has ever exercised this package.** The estate has no
-PBS host or credential yet. Every trap and header format documented below
-is either confirmed against the pinned static schema (cited inline in the
-distilled clone's source) or carried forward from the same-vendor PVE
-package's measured behavior — never from a live PBS response. Re-verify the
-auth header and envelope shape against the first real PBS token this estate
-gets, before trusting this package in anything that writes.
+Read-only verification on 2026-09-24 exercised the regenerated SDK against PBS
+4.2.3: version, datastore, matcher and sendmail reads succeeded through its
+Credentials layer. No infrastructure write was used to test the transport.
+Protocol fixtures cover writes, repeated array fields and malformed responses.
 
 ## What's in it
 
@@ -33,6 +30,9 @@ segment — `access`, `admin`, `backup`, `config`, `nodes`, `ping`, `pull`,
 `push`, `reader`, `root`, `status`, `tape`, `version` — 0 skipped. Typed
 errors: the shared HTTP status classes and PBS's global
 `ParameterVerificationFailed`/non-retryable `BadRequest` fallback for a 400.
+Missing datastore, prune, sync and verification GETs carry precise typed tags:
+PBS returns these as plain-text 400s, measured read-only on 2026-09-24. Other
+400s and sibling write errors keep their original failure semantics.
 
 **No `ClusterNodeUnreachable`.** PVE's sibling package adds a typed 595 for
 cluster-forwarded requests; PBS is not a cluster product and the pinned
@@ -66,7 +66,7 @@ const program = ProxmoxBackup.Services.version.getVersion({}).pipe(
 PVE's `PVEAPIToken` uses.** `credentials()` builds this correctly; the risk
 is a caller who copy-pastes PVE integration code and expects the same
 separator. See `src/credentials.ts`'s header for the two independent,
-doc-based (not live-measured) citations this was built from.
+original documentation citations; the read-only SDK probe above now confirms it.
 
 Kit code never imports `@homeflare/distilled-proxmox-backup` directly —
 always `@distilled.cloud/proxmox-backup`, aliased in the consuming
@@ -79,19 +79,21 @@ From the distilled clone's `homeflare/proxmox-backup` worktree:
 ```sh
 DISTILLED_SPECS_LOCAL=1 pnpm --filter @distilled.cloud/proxmox-backup run convert
 DISTILLED_SPECS_LOCAL=1 pnpm --filter @distilled.cloud/proxmox-backup run generate
-pnpm --filter @distilled.cloud/proxmox-backup run typecheck
+pnpm typecheck:ci
 pnpm format
 ```
 
-`pnpm specs:check` currently FAILS for this package — see
-`packages/proxmox-backup/specs/.local/readme.md` in the distilled clone:
-PBS has no public docs mirror the way PVE does, and there is no PBS host
-in the estate yet to fetch a live schema from. Regenerating today means
-re-copying the same pinned file; a real refresh needs one of those two
-gaps closed first.
+`pnpm specs:check` now passes the 81-mirror coherence gate. The generation above
+uses the pinned local schema; refreshing that schema is a separate operation.
 
-Then copy `src/` here verbatim, bump this package's own `version`, add a
-changeset, and let the kit's normal release flow publish it.
+Form arrays use repeated keys rather than the generic REST encoder's indexed
+keys. Successful responses are validated against the generated output schema;
+Unit `data:null` responses remain valid, and extra response fields are preserved.
+Malformed payloads raise `ProxmoxBackupParseError` without copying response data
+into diagnostics, because notification fields can contain secrets.
+
+Then copy `src/` here verbatim and add a changeset. The normal release flow
+versions and publishes the package.
 
 ## License
 

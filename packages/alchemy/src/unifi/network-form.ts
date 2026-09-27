@@ -30,7 +30,6 @@
  *   before any of the three is attributed, declared, or compared. Every OTHER array field in this
  *   family (there are none today besides these three) would stay declaration-order as written.
  */
-import { deepEqual } from 'alchemy/Diff';
 import type * as networks from '@distilled.cloud/unifi-network/networks';
 
 const sortedSet = (values: readonly string[]): string[] => [...new Set(values)].sort();
@@ -44,7 +43,10 @@ const sortedSet = (values: readonly string[]): string[] => [...new Set(values)].
 //   `TypeError: Cannot read properties of null` the first time a console omits either field —
 //   `== null` catches both and returns the value through untouched, matching what the rest of
 //   this file already does for every other optional field.
-const normalizeDhcpGuarding = (
+// ★ EXPORTED (not just used below): `network-drift.ts`'s `driftOf` reuses these exact two
+//   normalizers so it can never quietly disagree with `matches` about what counts as a change —
+//   see that file's own header.
+export const normalizeDhcpGuarding = (
   value: networks.NetworkDHCPGuarding | undefined,
 ): networks.NetworkDHCPGuarding | undefined =>
   value == null
@@ -56,7 +58,7 @@ const normalizeDhcpGuarding = (
 //   `NetworkIPv6Configuration` types them `field?: T`, not `field?: T | undefined`. Conditional
 //   spread (rather than `field: value.field === undefined ? undefined : sortedSet(...)`) is what
 //   keeps an absent key absent.
-const normalizeIpv6Configuration = (
+export const normalizeIpv6Configuration = (
   value: networks.NetworkIPv6Configuration | undefined,
 ): networks.NetworkIPv6Configuration | undefined =>
   value == null
@@ -142,43 +144,13 @@ export const attributesOf = (
 });
 
 /**
- * ⚠️ `stripNullish: true` ON EVERY COMPARISON. UniFi's JSON answers `null` for an unset optional
- *   field; a declaration that omits the same prop carries `undefined`. Without this option every
- *   plan against an object with one unset optional field would report `update` forever — the
- *   exact "read and write are different shapes" trap `netbox/values.ts` and `proxmox/user-wire.ts`
- *   both work around, here solved once with the engine's own `deepEqual` instead of a per-field
- *   coercion, because nothing here needs PVE's or NetBox's extra wire-format translation.
+ * MEDIUM-4 (red team, 2026-09-26): `matches` used to be a hand-written boolean expression here,
+ * kept in sync BY HAND with `network-drift.ts`'s separately-maintained field list — two comparisons
+ * that could (and, per a red-team mutant, silently did) drift apart. `matches` now lives in
+ * `network-drift.ts`, defined as `fieldDrift(...).length === 0` — the SAME comparison `driftOf`
+ * runs, not a second one. See that file's own header for the `stripNullish`/normalizer reasoning
+ * this expression used to carry.
  */
-export const matches = (attributes: NetworkAttributes, props: NetworkProps): boolean =>
-  attributes.name === props.name &&
-  attributes.enabled === props.enabled &&
-  attributes.management === props.management &&
-  attributes.vlanId === props.vlanId &&
-  deepEqual(
-    normalizeDhcpGuarding(attributes.dhcpGuarding),
-    normalizeDhcpGuarding(props.dhcpGuarding),
-    {
-      stripNullish: true,
-    },
-  ) &&
-  deepEqual(attributes.cellularBackupEnabled, props.cellularBackupEnabled, {
-    stripNullish: true,
-  }) &&
-  deepEqual(attributes.internetAccessEnabled, props.internetAccessEnabled, {
-    stripNullish: true,
-  }) &&
-  deepEqual(attributes.ipv4Configuration, props.ipv4Configuration, { stripNullish: true }) &&
-  deepEqual(
-    normalizeIpv6Configuration(attributes.ipv6Configuration),
-    normalizeIpv6Configuration(props.ipv6Configuration),
-    { stripNullish: true },
-  ) &&
-  deepEqual(attributes.isolationEnabled, props.isolationEnabled, { stripNullish: true }) &&
-  deepEqual(attributes.mdnsForwardingEnabled, props.mdnsForwardingEnabled, {
-    stripNullish: true,
-  }) &&
-  deepEqual(attributes.zoneId, props.zoneId, { stripNullish: true }) &&
-  deepEqual(attributes.deviceId, props.deviceId, { stripNullish: true });
 
 /**
  * The declaration renderer (task spec: "given one live object, return the props a declaration

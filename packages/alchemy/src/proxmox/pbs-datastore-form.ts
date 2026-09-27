@@ -1,42 +1,41 @@
 /**
- * A PBS datastore on the wire: the transport that reaches PBS, the form it wants, and the coercion
- * back to something comparable.
+ * A PBS datastore's pure vendor forms and coercion back to comparable state. SDK transport is
+ * in pbs-datastore-wire.ts; lifecycle behavior is in pbs-datastore-lifecycle.ts.
  *
  * ★ SPLIT OUT OF pbs-datastore.ts FOR THE 250-LINE CAP, the seam notification-target-form.ts uses:
- *   this file is everything that touches PBS's encoding, and the resource file is the declaration
- *   and the five handlers. The `import type` back is erased, so it is a cycle on paper only.
+ *   this file originally held PBS encoding beside forms, while the resource held its declaration
+ *   and five handlers. The `import type` back is erased, so it is a cycle on paper only.
  *
- * ⛔ THIS FILE IS OVER THE 250-LINE CAP AND THE EXTRACTION IS NAMED RATHER THAN FUDGED. `PbsTarget`,
+ * ⛔ HISTORICAL EXTRACTION NOTE: THIS FILE EXCEEDED THE 250-LINE CAP IN THE ORIGINAL DRAFT. `PbsTarget`,
  *   `PbsRole`, `PbsError`, `pbsAuthorization`, `PveForm`, `encode`, `pbs` and `settle` — about 150
  *   lines — are a PBS CLIENT, not a datastore form, and belong in `pbs-client.ts`. Lifting them
  *   leaves this file near 200 and costs nothing but a move. It was not done here only because the
  *   family was commissioned as a two-file split; ceph-pool is the in-package precedent for three
  *   (ceph-pool.ts + ceph-pool-form.ts + ceph-pool-settle.ts, 532 lines for one family). Everything
  *   in that list is also what Pbs.SyncJob, Pbs.PruneJob and Pbs.Remote will each need unchanged,
- *   so the second PBS family forces the move anyway. ⛔ DO NOT MEET THE CAP BY CUTTING COMMENTS.
+ *   so the second PBS family forced that move. The SDK and focused siblings now own these seams.
+ *   ⛔ DO NOT MEET THE CAP BY CUTTING COMMENTS.
  */
-import * as Effect from 'effect/Effect';
-import { type PveForm, pve } from './client.ts';
 import type { PbsTarget as ApiPbsTarget } from './credentials.ts';
 import type { PbsDatastoreProps } from './pbs-datastore.ts';
 import { bool, flag, int, propertyString, text } from './values.ts';
 
 /**
- * ★ PBS REUSES THE PVE CLIENT RATHER THAN OWNING ONE. An earlier draft of this file carried its
- *   own `PbsTarget`, `PbsError`, `pbsAuthorization`, form encoder and `pve()` — a near-copy of
- *   client.ts differing in one header. They are gone: `PveTarget` now carries a `scheme`, and
- *   `authorization()` spells the header `PBSAPIToken=<id>:<secret>` when it is `'pbs'`. The
- *   insight that survived is the FORM TYPE — PBS decodes a multi-valued field from repeated keys
- *   where PVE wants a comma string — and that now lives on `PveForm` in client.ts, so both
- *   products share one encoder and neither can reach for the other's convention by accident.
+ * ★ PBS ORIGINALLY REUSED THE PVE CLIENT RATHER THAN OWNING ANOTHER. An earlier draft carried
+ *   its own `PbsTarget`, `PbsError`, `pbsAuthorization`, form encoder and `pve()` — a near-copy of
+ *   client.ts differing in one header. The shared target's `scheme` replaced that copy. This
+ *   family now uses the distilled PBS SDK through `distilled-pbs.ts`, retaining the same leased
+ *   credentials and PBS authorization scheme. The important encoding distinction survives:
+ *   PBS decodes a multi-valued field from repeated keys where PVE wants a comma string. The SDK
+ *   protocol owns that behavior; these pure forms describe only this datastore's scalar fields.
  *
  * 🔴 THIS ALIAS SAID `= PveTarget` AND IT WAS WRONG — Pbs.Datastore REQUIRED A PVE TARGET. When
  *   `credentials.ts` grew a real `PbsTarget` with `scheme: 'pbs'`, this line was left pointing at
  *   the PVE type, which pins `scheme: 'pve'`. So the one family that most needs the discriminant
  *   was the one family that refused the correct value: declaring a datastore against the PBS host
  *   failed to compile with `Type '"pbs"' is not assignable to type 'Input<"pve">'`, and passing a
- *   PVE target compiled fine and would have 401'd every call — which `read` folds into "absent",
- *   so the plan would say CREATE for a datastore holding the estate's backups.
+ *   PVE target compiled fine and would have 401'd every call — which the old `read` folded into
+ *   "absent", so the plan would say CREATE for a datastore holding the estate's backups.
  *   ⛔ IT SURVIVED BECAUSE NOTHING EVER DECLARED ONE. The provider was registered in
  *   alchemy.run.ts from the day it was written and `pveHandlers`' `list` answers empty, so
  *   registration exercises no call site at all. Three sibling families import `PbsTarget` from
@@ -183,7 +182,7 @@ const mutable = (props: PbsDatastoreProps): Record<string, string> => ({
  *   slot, not of the declaration; one that could re-point it is one that can send backups to the
  *   wrong drive.
  */
-export const createForm = (props: PbsDatastoreProps): PveForm => ({
+export const createForm = (props: PbsDatastoreProps): Record<string, string> => ({
   ...mutable(props),
   name: props.name,
   path: props.path,
@@ -213,36 +212,6 @@ export const createForm = (props: PbsDatastoreProps): PveForm => ({
  *     element that fails the enum check. `PveForm` and `encode` already carry arrays for exactly
  *     this. ⚠️ REASONED FROM THE PUBLISHED SCHEMA, NOT PROVEN ON A WIRE.
  */
-export const updateForm = (props: PbsDatastoreProps): PveForm => mutable(props);
+export const updateForm = (props: PbsDatastoreProps): Record<string, string> => mutable(props);
 
 export const object = (props: PbsDatastoreProps) => `config/datastore/${props.name}`;
-
-/**
- * The live datastore, or undefined.
- *
- * ⛔ `name` IS THE PRESENCE TEST, NOT THE STATUS CODE — PBS does not answer 404 for a section that
- *   is missing from `datastore.cfg`, it answers a generic error, so there is no code to key off.
- * ⛔ A MISSING READ PRIVILEGE THEREFORE LOOKS EXACTLY LIKE ABSENCE, because the fold below cannot
- *   tell them apart. The signature is a plan that says CREATE followed by PBS answering
- *   "datastore '<name>' already exists." — that pair means Datastore.Audit, not a missing
- *   datastore. It is loud and non-destructive, which is the only reason the fold is tolerable here;
- *   see the ⛔ on `readRole` in resource.ts for the PVE families where it is not.
- * ⛔ ON THE DELETE PATH THE SAME FOLD IS A LIE, AND THIS IS THE ONE HAZARD IN THIS FAMILY I COULD
- *   NOT CLOSE. `delete` settles by polling this read until it answers `undefined` — and a `read`
- *   role that lacks `Datastore.Audit` answers `undefined` from the very first poll, so EVERY delete
- *   would report success while the datastore stood. Worse, the two lanes are different leases: the
- *   DELETE goes out under `provision` and may genuinely fail, and this read cannot see that it did.
- *   ★ THE SHAPE OF THE FIX IS ALREADY IN THIS PACKAGE: `confirmAbsent` in ceph-pool-settle.ts asks
- *     a SECOND, DIFFERENT question — does the collection LIST this object? — and lets a failure
- *     PROPAGATE rather than folding it, so "I could not ask" fails the deploy instead of passing
- *     it. Add the same over `GET /config/datastore` before anyone relies on a reported deletion.
- *   ⚠️ UNTIL THEN THE PRECONDITION IS EXPLICIT: the `read` role MUST hold `Datastore.Audit` on the
- *     datastore, or this provider cannot tell a deletion from a refusal.
- */
-export const readOne = (props: PbsDatastoreProps) =>
-  pve<Record<string, unknown>>(props.target, 'read', 'GET', object(props)).pipe(
-    Effect.map((live) =>
-      live === undefined || typeof live['name'] !== 'string' ? undefined : attributes(live, props),
-    ),
-    Effect.orElseSucceed(() => undefined),
-  );

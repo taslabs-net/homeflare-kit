@@ -116,6 +116,7 @@ try {
       '@distilled.cloud/forgejo@1.0.0-rc.12',
       '@distilled.cloud/discord@1.0.0-rc.12',
       '@distilled.cloud/google-workspace@1.0.0-rc.12',
+      '@distilled.cloud/argocd@1.0.0-rc.12',
       '@effect/sql-pg@4.0.0-rc.115',
     ],
     scratch,
@@ -144,6 +145,7 @@ import { GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders } from 
 import { parseVerifyArgs, verifySession, verifyStack } from '@homeflare/alchemy/verify';
 import { DiscordApplicationCommand, DiscordGuildApplicationCommand, isDiscordApplicationCommand, isDiscordGuildApplicationCommand, providers as discordProviders } from '@homeflare/alchemy/discord';
 import { OpnsenseWriteRefused, isOpnsenseFirewallAlias, providers as opnsenseProviders } from '@homeflare/alchemy/opnsense';
+import { ArgocdCluster, ArgocdRepoCreds, ArgocdRepository, providers as argocdProviders } from '@homeflare/alchemy/argocd';
 
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
@@ -160,6 +162,7 @@ for (const [name, value] of Object.entries({
   GrafanaDatasource, GrafanaSecretRefUnsetError, grafanaProviders,
   DiscordApplicationCommand, DiscordGuildApplicationCommand, discordProviders,
   opnsenseProviders,
+  ArgocdCluster, ArgocdRepoCreds, ArgocdRepository, argocdProviders,
 })) {
   if (value === undefined) throw new Error(name + ' is undefined');
 }
@@ -192,6 +195,16 @@ if (!refusal.message.includes('read-only by')) {
 }
 if (typeof opnsenseProviders !== 'function') {
   throw new Error('opnsense providers() from dist is not callable');
+}
+
+// ★ THE ARGO CD SUBPATH THROUGH THE PUBLISHED FILE. Pure checks only — no Argo CD instance
+//   exists to reach (docs/argocd.md): the three resource constructors resolve, and the bundled
+//   providers() factory is still callable from dist.
+for (const [name, ctor] of Object.entries({ ArgocdCluster, ArgocdRepoCreds, ArgocdRepository })) {
+  if (typeof ctor !== 'function') throw new Error(name + ' from dist is not a resource constructor');
+}
+if (typeof argocdProviders !== 'function') {
+  throw new Error('argocd providers() from dist is not callable');
 }
 
 // ★ Render once through the PUBLISHED file, so a launchd subpath that imports but cannot run

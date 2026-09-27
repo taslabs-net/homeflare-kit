@@ -23,10 +23,10 @@ import {
   attributesOf,
   matches,
   readPath,
-  writeBody,
 } from './auth-role-form.ts';
-import { baoDelete, baoRead, baoWrite } from './bao-http.ts';
-import { foldName, guardRename, judgeRename, nameIdentity } from './rename-identity.ts';
+import { authRoleIdentity, judgeAuthRoleRename } from './auth-role-identity.ts';
+import { deleteAuthRole, readAuthRole, writeAuthRole } from './auth-role-wire.ts';
+import { guardRename } from './rename-identity.ts';
 
 export type { BaoAuthRoleAttributes, BaoAuthRoleProps };
 
@@ -48,13 +48,13 @@ export const BaoAuthRole = Resource<BaoAuthRole>('Bao.AuthRole', {
  *   :1537), so `Host` → `host` is the SAME role: a `replace` there would write it, then — under
  *   `destroy` — delete the old generation, which is that same role.
  */
-const IDENTITY = nameIdentity<BaoAuthRoleAttributes>('Bao.AuthRole', readPath, foldName);
+const IDENTITY = authRoleIdentity;
 
 const readRole = (props: BaoAuthRoleProps) =>
   Effect.gen(function* () {
-    const live = yield* baoRead(readPath(props.name));
+    const live = yield* readAuthRole(props.name);
     if (live === undefined) return undefined;
-    return attributesOf(props, live);
+    return attributesOf(props, { ...live });
   });
 
 export const BaoAuthRoleProvider = () =>
@@ -92,7 +92,7 @@ export const BaoAuthRoleProvider = () =>
            *   generation of a replace (Apply.ts:2164-2173). For per-host roles (host-approles.ts),
            *   opt into `RemovalPolicy.destroy()` or destroy the old role's accessors by hand.
            */
-          const move = yield* judgeRename(IDENTITY, olds, news, output);
+          const move = yield* judgeAuthRoleRename(olds, news, output);
           // ★ No attributes: an unfinished generation, proven ours or not by provingResumes.
           if (output === undefined) return undefined;
           if (move !== undefined) return { action: 'replace' } as const;
@@ -111,7 +111,7 @@ export const BaoAuthRoleProvider = () =>
           if (live !== undefined)
             yield* refuseTakeover({ fqn, instanceId, output }, `Bao.AuthRole ${path}`);
           if (live === undefined || !matches(live, news)) {
-            yield* baoWrite('PUT', readPath(news.name), writeBody(news));
+            yield* writeAuthRole(news);
           }
           const after = yield* readRole(news);
           if (after === undefined) {
@@ -136,7 +136,7 @@ export const BaoAuthRoleProvider = () =>
          *   because every host logging in with the role is locked out at the delete.
          */
         delete: Effect.fn(function* ({ output }) {
-          yield* baoDelete(readPath(output.name));
+          yield* deleteAuthRole(output.name);
           return undefined;
         }),
       }),

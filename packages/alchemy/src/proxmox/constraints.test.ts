@@ -18,7 +18,8 @@ import { engineOver } from '../verify/fake-engine.ts';
 import { constraintsFor, formViolations } from './constraint-guard.ts';
 import { type EndpointConstraints, refusal, violations } from './constraints.ts';
 import type { PbsTarget } from './credentials.ts';
-import { fakePve, withoutBao } from './fake-pve.ts';
+import { withoutBao } from './fake-pve.ts';
+import { fakePbsJobs } from './fake-pbs-jobs.ts';
 import { PROXMOX_CONSTRAINTS, PROXMOX_CONSTRAINTS_DIGEST } from './generated/constraints/index.ts';
 import { PbsVerifyJob, PbsVerifyJobProvider } from './pbs-verify-job.ts';
 
@@ -46,12 +47,8 @@ describe('the v-r2-offsite failure, refused at plan instead of by the server', (
      * skip entirely (`output === undefined` returned before any check). It remembers the POST so
      * the read-back in `reconcile` can succeed, which is what the 128-character case needs.
      */
-    const live = new Map<string, Record<string, unknown>>();
-    const fake = fakePve((call) => {
-      if (call.method === 'GET') return live.get(call.path);
-      if (call.method === 'POST') live.set(`config/verify/${String(call.form['id'])}`, call.form);
-      return undefined;
-    });
+    // Missing PBS sections are measured plain-text HTTP400, not HTTP200 data:null.
+    const fake = fakePbsJobs();
     const engine = engineOver(PbsVerifyJobProvider().pipe(Layer.provideMerge(fake.layer)));
     const outcome = await withoutBao(() =>
       engine.deploy(job(comment)).then(
@@ -59,7 +56,11 @@ describe('the v-r2-offsite failure, refused at plan instead of by the server', (
         (error: unknown) => ({ error }),
       ),
     );
-    return { ...outcome, calls: fake.calls, writes: fake.writes() };
+    return {
+      ...outcome,
+      calls: fake.calls,
+      writes: fake.writes.map((row) => `${row.method} ${row.path}`),
+    };
   };
 
   test('129 characters is refused, and NOTHING is written', async () => {

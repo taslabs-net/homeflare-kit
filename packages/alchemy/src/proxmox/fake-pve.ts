@@ -35,7 +35,7 @@ export interface PveCall {
   readonly pairs: readonly (readonly [string, string])[];
 }
 
-/** Answers one call with its `data`; `undefined` is PVE's `{"data": null}`. */
+/** Answers with `data`, or an explicit Response for SDK error fixtures; undefined is data:null. */
 export type PveAnswer = (call: PveCall) => unknown;
 
 export interface FakePve {
@@ -69,7 +69,8 @@ export const fakePve = (answer: PveAnswer): FakePve => {
       path,
     };
     calls.push(call);
-    return Response.json({ data: answer(call) ?? null });
+    const value = answer(call);
+    return value instanceof Response ? value : Response.json({ data: value ?? null });
   };
   // ⚠️ `typeof fetch` carries `preconnect` on bun's lib — client.test.ts has the note.
   const fetchStub = Object.assign(stub, { preconnect: globalThis.fetch.preconnect });

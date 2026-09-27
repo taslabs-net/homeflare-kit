@@ -56,13 +56,12 @@
  *     checks `VM.Audit` on `/vms/<guest>`, `hf-read@pve` holds the built-in `PVEAuditor` at `/`
  *     with propagate — both MEASURED — and `PVEAuditor` carries `VM.Audit`. This family is not a
  *     fourth one that must borrow the provision lease.
- *   ⚠️ A MISSING JOB IS A 500, NOT A 404 — "no such replication job '100-0'" — and the factory
- *     folds any failed read into "absent", so a 403 reads as absent too. A plan insisting on
- *     creating a job that plainly exists is a credential problem; the honest error arrives one step
- *     later, from the create.
+ *   ⚠️ A MISSING JOB IS A 500, NOT A 404 — "no such replication job '100-0'" — and distilled now
+ *     exposes a precise missing-job tag. Permission failures and unrelated server errors propagate
+ *     before any write; only the vendor missing-job signal means absent.
  *
  * ⛔ DELETE DOES NOT DELETE, AND A DESTROY IS NOT FREE. MEASURED: with neither `force` nor `keep` —
- *   and the factory's `destroy` sends no form at all — the handler only sets `remove_job = 'full'`
+ *   and the named SDK delete sends neither option — the handler only sets `remove_job = 'full'`
  *   on the job and writes the config back. The job stays in replication.cfg until the SOURCE node's
  *   `pvesr` timer next runs it, at which point it removes the local replication snapshots, removes
  *   the replicated volumes on the target, and finally removes itself. So a destroy costs the
@@ -86,9 +85,8 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { DEFAULT_SCHEDULE, createBody, jobId, updateBody } from './replication-job-form.ts';
-import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
-import { bool, int, text } from './values.ts';
+import type { PveRequirements, WithTarget } from './resource-spec.ts';
+import { replicationJobHandlers } from './replication-job-lifecycle.ts';
 
 export interface ReplicationJobProps extends WithTarget {
   /** ⛔ The guest being replicated. 100 or above — PVE reserves everything below. Identity. */
@@ -165,81 +163,6 @@ export interface ProxmoxReplicationJob extends Resource<
 export const ProxmoxReplicationJob = Resource<ProxmoxReplicationJob>('Proxmox.ReplicationJob');
 
 /**
- * ⚠️ `rate` IS THE ONLY FLOAT IN THIS PACKAGE, so it gets a coercion of its own rather than a sixth
- *   entry in `values.ts` — the rule that module states for itself: a coercion only one PVE object
- *   needs belongs in that object's file, next to the field it serves. `int` cannot serve it, since
- *   `Number.parseInt('10.5')` is 10 and a rate silently rounded down is both a limit nobody chose
- *   and a comparison that never settles. It accepts a string for the reason `int` does: these are
- *   SectionConfig sections, and whether `10` arrives as a number is a property of the release.
- * ⚠️ 0 MEANS UNSET, and is safe as the marker because PVE's schema gives `rate` a minimum of 1 —
- *   the same trick as `metric-server.ts`'s `UNSET = -1`, for the same reason.
- */
-const rateOf = (value: unknown): number => {
-  if (typeof value === 'number') return value;
-  const parsed = Number.parseFloat(text(value));
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const handlers = pveHandlers<ReplicationJobProps, ReplicationJobAttributes>({
-  /**
-   * ⚠️ EVERY FALLBACK IS PVE'S DOCUMENTED DEFAULT, NOT `false`/`''` PICKED FOR CONVENIENCE, so the
-   *   answer does not depend on whether a given release echoes back a key it never wrote.
-   *   SectionConfig stores what it was handed; a job created in the UI without a schedule has no
-   *   schedule line, and reading that absence as anything but `DEFAULT_SCHEDULE` would report
-   *   drift on a job nobody touched and then WRITE the reading back.
-   * ⛔ NO "IS IT REALLY THERE" GUARD, for `backup-job.ts`'s reason: absence is the API declining to
-   *   answer, which `pveOperations.read` already handles, not a key missing from an answer that did
-   *   arrive. `digest` is deliberately absent too — it changes when ANY job in the file changes,
-   *   including one somebody else declared (`ha-resource.ts` hit exactly that).
-   */
-  attributes: (live, props) => ({
-    comment: text(live['comment'], ''),
-    disable: bool(live['disable'], false),
-    guest: int(live['guest'], props.guest),
-    id: text(live['id'], jobId(props)),
-    jobnum: int(live['jobnum'], props.jobnum),
-    rate: rateOf(live['rate']),
-    remove_job: text(live['remove_job'], ''),
-    schedule: text(live['schedule'], DEFAULT_SCHEDULE),
-    source: text(live['source'], ''),
-    targetNode: text(live['target'], props.targetNode),
-    type: text(live['type'], 'local'),
-  }),
-  collection: () => 'cluster/replication',
-  createForm: createBody,
-  /**
-   * ⚠️ `targetNode` AND `source` ARE OUT OF THIS COMPARISON FOR TWO REASONS EACH, AND EITHER ALONE
-   *   WOULD BE ENOUGH. They are create-only — `target` is a `fixed` option, `source` has no honest
-   *   declared value — AND PVE REWRITES BOTH BEHIND YOUR BACK. MEASURED in
-   *   `switch_replication_job_target_nolock`: when a guest migrates, PVE sets
-   *   `$jobcfg->{target} = $new_target` and `$jobcfg->{source} = $old_target`, so the job follows
-   *   the guest. Compared, a single migration would make every later plan report an update that the
-   *   PUT cannot perform, forever. The cost of leaving them out is stated on the `targetNode` prop:
-   *   a changed target plans as noop, and a migrated job is not dragged back.
-   * ⚠️ `guest`, `jobnum`, `type` AND `id` ARE NOT COMPARED EITHER: the first two are the id in
-   *   integer form, `type` has one legal value, and `id` is the path — a change there is a
-   *   different object, which reads as absent and is created.
-   * ⛔ `remove_job` IS COMPARED, AND IT IS THE ONE FIELD HERE THAT LOOKS LIKE A FOREVER-UPDATE AND
-   *   IS NOT. A DELETE marks the job rather than removing it, so a re-declared id can name a job
-   *   that is busy deleting itself, and matching that would be a noop over a vanishing object. It
-   *   settles because `updateBody` actually clears the marker — see there.
-   */
-  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
-  endpoint: {
-    create: 'pve:POST /cluster/replication',
-    update: 'pve:PUT /cluster/replication/{id}',
-  },
-  matches: (attributes, props) =>
-    attributes.remove_job === '' &&
-    attributes.schedule === (props.schedule ?? DEFAULT_SCHEDULE) &&
-    attributes.disable === (props.disable === true) &&
-    attributes.comment === (props.comment ?? '') &&
-    (props.rate === undefined || attributes.rate === props.rate),
-  path: (props) => `cluster/replication/${jobId(props)}`,
-  updateForm: updateBody,
-});
-
-/**
  * ⛔ Empty `list` like every other resource here: `GET /cluster/replication` hands back every job an
  *   operator ever made, and adopting one is how a later `alchemy destroy` takes away a standby copy
  *   nobody declared. Adoption is an explicit act — declare the `guest` and `jobnum` you mean.
@@ -250,5 +173,5 @@ const handlers = pveHandlers<ReplicationJobProps, ReplicationJobAttributes>({
 export const ProxmoxReplicationJobProvider = () =>
   Provider.effect(
     ProxmoxReplicationJob,
-    Effect.succeed(ProxmoxReplicationJob.Provider.of(handlers)),
+    Effect.succeed(ProxmoxReplicationJob.Provider.of(replicationJobHandlers)),
   );

@@ -11,6 +11,7 @@
  * ⚠️ THE STACK MUST PROVIDE `FetchHttpClient.layer`. alchemy.run.ts does, the way
  *   <estate>/proxmox/alchemy.run.ts does.
  */
+import * as Cause from 'effect/Cause';
 import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
@@ -65,7 +66,7 @@ export const BaoGate = Context.Reference<Semaphore.Semaphore>('homeflare/openbao
  * ⚠️ THE CLI's DEFAULT CLIENT TIMEOUT (openbao v2.6.2 api/client.go:324). A hung agent or a server
  *   that accepts and never answers would otherwise hang the plan with no line saying why.
  */
-const TIMEOUT = '60 seconds';
+export const BAO_TIMEOUT = '60 seconds';
 
 /**
  * Mesh in front of a remote OpenBao drops connections under Alchemy's unbounded
@@ -73,11 +74,12 @@ const TIMEOUT = '60 seconds';
  * 2026-09-16 against bao.example.internal: a 585-role plan died mid-diff with
  * `no response: (no errors given)` while the vault stayed unsealed.
  */
-const retryTransport = <A, R>(effect: Effect.Effect<A, BaoError, R>) =>
+export const retryTransport = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.retry(effect, {
     schedule: Schedule.spaced('750 millis'),
     times: 2,
-    while: (error: BaoError) => error.status === 0,
+    while: (error) =>
+      (error instanceof BaoError && error.status === 0) || Cause.isTimeoutError(error),
   });
 
 /**
@@ -87,7 +89,7 @@ const retryTransport = <A, R>(effect: Effect.Effect<A, BaoError, R>) =>
  *   true). `X-Vault-Token` is not on that list, so under any tracer the token would be exported as
  *   a span attribute. It is added for every call made here.
  */
-const redactingToken = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+export const redactingToken = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
     const names = yield* Headers.CurrentRedactedNames;
     return yield* Effect.provideService(effect, Headers.CurrentRedactedNames, [
@@ -109,9 +111,9 @@ const redactingToken = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
  *   the request to http://localhost:80 — a silent wrong server, which is the one outcome this
  *   package exists to prevent. It also assumes the provided `HttpClient` is the fetch one.
  */
-const overSocket =
+export const overSocket =
   (socket: string | undefined, method: string, path: string) =>
-  <A, R>(effect: Effect.Effect<A, BaoError, R>): Effect.Effect<A, BaoError, R> => {
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | BaoError, R> => {
     if (socket === undefined) return effect;
     if (typeof Bun === 'undefined') {
       return Effect.fail(
@@ -148,7 +150,7 @@ export const baoCall = (
       Effect.flatMap((response) =>
         Effect.map(response.text, (text) => ({ status: response.status, text })),
       ),
-      Effect.timeout(TIMEOUT),
+      Effect.timeout(BAO_TIMEOUT),
       // ⛔ `.message` ONLY: the HttpClientError message is the reason, method and URL. The error
       //   object itself holds the request, whose headers hold the token.
       Effect.mapError((cause) => new BaoError(0, method, path, [cause.message])),

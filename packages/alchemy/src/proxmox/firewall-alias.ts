@@ -93,12 +93,10 @@
  *   confirm the SECOND plan says noop before trusting this file.
  */
 import { Resource } from 'alchemy';
-import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { body, cidr, comment, fold } from './firewall-alias-form.ts';
-import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
-import { int, text } from './values.ts';
+import type { PveRequirements, WithTarget } from './resource-spec.ts';
+import { firewallAliasHandlers } from './firewall-alias-lifecycle.ts';
 
 export interface FirewallAliasProps extends WithTarget {
   /**
@@ -144,70 +142,9 @@ export interface ProxmoxFirewallAlias extends Resource<
 
 export const ProxmoxFirewallAlias = Resource<ProxmoxFirewallAlias>('Proxmox.FirewallAlias');
 
-const handlers = pveHandlers<FirewallAliasProps, FirewallAliasAttributes>({
-  /**
-   * ⚠️ AN ENTRY WITH NO CIDR IS NOT AN ALIAS. `read_alias` raises for a name it does not hold, so
-   *   absence normally arrives as a failed call the factory folds into `undefined`; this guard
-   *   covers the other shape — a 200 carrying something that is not an alias — rather than
-   *   recording state for an object with an empty address. The next reconcile then POSTs and PVE
-   *   answers "alias already exists", which is loud and points at the read.
-   */
-  attributes: (live, props) => {
-    const address = cidr(live['cidr']);
-    return address === ''
-      ? undefined
-      : {
-          cidr: address,
-          comment: comment(live['comment']),
-          ipversion: int(live['ipversion'], 0),
-          /** ⚠️ FROM THE CLUSTER, falling back to props: the stored spelling is the interesting one. */
-          name: text(live['name'], props.name),
-        };
-  },
-  collection: () => 'cluster/firewall/aliases',
-  createForm: (props) => ({ ...body(props), name: props.name }),
-  /**
-   * ⚠️ EXACTLY THE TWO FIELDS A PUT CAN PUT BACK, both sides through the same normalisers. `name`
-   *   is identity and case-only drift (see the header); `ipversion` is derived and unwritable.
-   *   Comparing either would report an update that no update can settle.
-   */
-  /** The vendor rules these forms are checked against at plan time — resource-spec.ts. */
-  endpoint: {
-    create: 'pve:POST /cluster/firewall/aliases',
-    update: 'pve:PUT /cluster/firewall/aliases/{name}',
-  },
-  matches: (attributes, props) =>
-    attributes.cidr === cidr(props.cidr) && attributes.comment === comment(props.comment),
-  /**
-   * ⚠️ UNESCAPED ON PURPOSE: `pve-fw-alias` admits only `[A-Za-z][A-Za-z0-9\-\_]+`, so there is no
-   *   character here that a URL would need to encode, and PVE lowercases the segment on arrival.
-   */
-  path: (props) => `cluster/firewall/aliases/${props.name}`,
-  updateForm: body,
-});
-
-/**
- * ⛔ ONE HANDLER IS OVERRIDDEN AND THE REST COME FROM THE FACTORY, for the reason `acl.ts` spells
- *   out at length: the factory answers `replace` only for an object with no update path, and this
- *   one has a PUT. Left to delegate, a changed `name` would read absent at the new path, plan as an
- *   update, and quietly leave the old alias behind. Everything else — the empty `list`, the read,
- *   the read-back-guarded reconcile, the delete — is the factory's, unchanged.
- */
+/** Named distilled operations preserve create-first identity replacement and explicit adoption. */
 export const ProxmoxFirewallAliasProvider = () =>
   Provider.effect(
     ProxmoxFirewallAlias,
-    Effect.succeed(
-      ProxmoxFirewallAlias.Provider.of({
-        ...handlers,
-        diff: Effect.fn(function* ({ news, output }) {
-          // ⚠️ `isResolved` FIRST: at plan time `news.name` can still be an unresolved Output, and
-          //   folding a placeholder would report a replace nobody asked for — the worst possible
-          //   false positive on this family, since a replace here DELETES an alias.
-          if (output !== undefined && isResolved(news) && fold(news.name) !== fold(output.name)) {
-            return { action: 'replace' } as const;
-          }
-          return yield* handlers.diff({ news, output });
-        }),
-      }),
-    ),
+    Effect.succeed(ProxmoxFirewallAlias.Provider.of(firewallAliasHandlers)),
   );

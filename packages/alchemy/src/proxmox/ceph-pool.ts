@@ -5,11 +5,16 @@
  * ⛔ IT DOES NOT USE `pveHandlers`, AND THE REASON IS MEASURED RATHER THAN STYLISTIC: THE READ AND
  *   THE WRITES SIT AT DIFFERENT PATHS. `GET /nodes/{node}/ceph/pool/{name}` is `poolindex` and
  *   answers `[{"name":"status"}]` — an INDEX OF CHILDREN, not the pool. The pool is one level
- *   further down, at `.../status` (`getpool`), which accepts no PUT and no DELETE. A `PveSpec`
- *   carries ONE `path` for read, update and delete, so this family cannot be spelled in it. `path`
- *   below is therefore the READ path and nothing else consumes it: `ops.reconcile` and
- *   `ops.destroy` go unused and the two write handlers name their own path. acl.ts is the
- *   precedent for hand-writing the five handlers over `pveOperations`.
+ *   further down, at `.../status` (`getpool`), which accepts no PUT and no DELETE. Every handler
+ *   below is hand-written for that reason, on `client.ts` and now on distilled alike — acl.ts is
+ *   the precedent for hand-writing over the factory.
+ *
+ * ★ MIGRATED OFF `client.ts`'s generic `pve()` ONTO `@distilled.cloud/proxmox`'s typed
+ *   `nodes.getNodeCephPoolStatus`/`createNodeCephPool`/`putNodeCephPool`/`deleteNodeCephPool`/
+ *   `listNodeCephPool` (2026-09-24, decision 43's walk-down, 2c). `distilled-pve.ts`'s `runPve`
+ *   replaces `pve()`; `readPoolStatus` (ceph-pool-wire.ts) keeps the SAME single-fold shape this
+ *   family always had — see that file's own header for why this migration does not also add the
+ *   newer dual-path pattern `Proxmox.NodeNetwork` carries.
  *
  * ⛔ A CREATE FIRED AT A POOL THAT ALREADY EXISTS IS NOT A NO-OP, IT IS A PG MERGE — the second ⛔
  *   in ceph-pool-form.ts has the evidence, and `confirmAbsent` below is the guard that stops it.
@@ -36,14 +41,13 @@
  *   deliberately, the way `Pool.Allocate` was widened for `Proxmox.Pool`.
  */
 import { Resource } from 'alchemy';
+import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
+import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
 import {
   type CephPoolAttributes,
   type CephPoolProps,
-  UNSET,
-  applications,
-  collection,
   createBody,
   hint,
   object,
@@ -51,10 +55,17 @@ import {
   updateBody,
 } from './ceph-pool-form.ts';
 import { confirmAbsent, settle } from './ceph-pool-settle.ts';
-import { pve } from './client.ts';
-import { type PveRequirements, type PveSpec, pveOperations } from './resource.ts';
+import {
+  CEPH_POOL_CREATE,
+  CEPH_POOL_UPDATE,
+  readPoolStatus,
+  toDistilledCreate,
+  toDistilledUpdate,
+} from './ceph-pool-wire.ts';
+import { guardWrite } from './distilled-guard.ts';
+import { runPve } from './distilled-pve.ts';
+import { type PveRequirements } from './resource.ts';
 import { formToSend } from './update-guard.ts';
-import { bool, int, num, text } from './values.ts';
 
 export type { CephPoolAttributes, CephPoolProps };
 
@@ -71,73 +82,24 @@ export const ProxmoxCephPool = Resource<ProxmoxCephPool>('Proxmox.CephPool', {
   defaultRemovalPolicy: 'retain',
 });
 
-const spec: PveSpec<CephPoolProps, CephPoolAttributes> = {
-  /**
-   * ⛔ `name` IS THE PRESENCE TEST, AND IT IS ALSO HOW THE INDEX TRAP FAILS SAFE. Pointed at
-   *   `.../pool/{name}` rather than `.../status`, the factory would hand this function an ARRAY:
-   *   every field would read absent and the plan would report an update no write can satisfy.
-   *   `getpool` always returns `name` for a real pool, so that shape answers "not there" instead
-   *   — and "not there" cannot reach a create unless `confirmAbsent` agrees.
-   */
-  attributes: (live, props) => {
-    if (typeof live['name'] !== 'string') return undefined;
-    return {
-      applications: applications(live['application_list']),
-      crush_rule: text(live['crush_rule']),
-      id: int(live['id'], UNSET),
-      min_size: int(live['min_size'], UNSET),
-      name: props.name,
-      node: props.node,
-      nodelete: bool(live['nodelete']),
-      nopgchange: bool(live['nopgchange']),
-      nosizechange: bool(live['nosizechange']),
-      pg_autoscale_mode: text(live['pg_autoscale_mode']),
-      pg_num: int(live['pg_num'], UNSET),
-      pg_num_min: int(live['pg_num_min'], UNSET),
-      size: int(live['size'], UNSET),
-      target_size: int(live['target_size'], UNSET),
-      target_size_ratio: num(live['target_size_ratio'], UNSET),
-    };
-  },
-  collection,
-  createForm: createBody,
-  /** The vendor rules both forms are checked against at plan time — resource-spec.ts. */
-  endpoint: {
-    create: 'pve:POST /nodes/{node}/ceph/pool',
-    update: 'pve:PUT /nodes/{node}/ceph/pool/{name}',
-  },
-  /**
-   * ⛔ DECLARING WHAT IS LIVE MUST PLAN noop, AND EVERY OMISSION HERE IS WHY. Out, each with its
-   *   reason on the prop it belongs to: `pg_num` (the autoscaler rewrites it), `application` (the
-   *   write only ever ADDS to a list), `target_size_ratio` (float equality), `id`, `applications`
-   *   and the three `no*` flags (PVE returns them and accepts none of them on write), `node` and
-   *   `name` (the address the read was made at — true by construction, never a diff). In, and each
-   *   measured to round-trip unchanged against C1's four pools on 2026-09-13: size 3, min_size 2,
-   *   pg_autoscale_mode `on`, crush_rule `replicated_rule`, pg_num_min where it is set (16 on
-   *   cephfs-c1_metadata, absent on rbd-c1), target_size in bytes — and each of the last two
-   *   through `hint`, which drops a declared zero for the reason given on it.
-   */
-  matches: (attributes, props) =>
-    same(props.size, attributes.size, attributes.nosizechange) &&
-    same(props.min_size, attributes.min_size, attributes.nosizechange) &&
-    same(props.pg_autoscale_mode, attributes.pg_autoscale_mode) &&
-    same(hint(props.pg_num_min), attributes.pg_num_min, attributes.nopgchange) &&
-    same(props.crush_rule, attributes.crush_rule, attributes.crush_rule === '') &&
-    same(hint(props.target_size), attributes.target_size),
-  /**
-   * ⛔ THE READ PATH, AND ONLY THE READ PATH.
-   * ⚠️ `?verbose=1` IS WHAT MAKES `applications` VISIBLE AT ALL — without it PVE omits the tags
-   *   entirely (MEASURED across all four pools; there is no `application` key either way, only
-   *   `application_list`, and only when verbose). The cost is that verbose adds two unguarded mon
-   *   commands, `df` and `osd pool application get`, so a degraded mgr can fail the read. That is
-   *   safe here rather than merely unlucky: a failed read is "absent", and "absent" cannot reach a
-   *   create unless `confirmAbsent` agrees.
-   */
-  path: (props) => `${object(props)}/status?verbose=1`,
-  updateForm: updateBody,
-};
-
-const ops = pveOperations(spec);
+/**
+ * ⛔ DECLARING WHAT IS LIVE MUST PLAN noop, AND EVERY OMISSION HERE IS WHY. Out, each with its
+ *   reason on the prop it belongs to: `pg_num` (the autoscaler rewrites it), `application` (the
+ *   write only ever ADDS to a list), `target_size_ratio` (float equality), `id`, `applications`
+ *   and the three `no*` flags (PVE returns them and accepts none of them on write), `node` and
+ *   `name` (the address the read was made at — true by construction, never a diff). In, and each
+ *   measured to round-trip unchanged against C1's four pools on 2026-09-13: size 3, min_size 2,
+ *   pg_autoscale_mode `on`, crush_rule `replicated_rule`, pg_num_min where it is set (16 on
+ *   cephfs-c1_metadata, absent on rbd-c1), target_size in bytes — and each of the last two
+ *   through `hint`, which drops a declared zero for the reason given on it.
+ */
+const matches = (attributes: CephPoolAttributes, props: CephPoolProps) =>
+  same(props.size, attributes.size, attributes.nosizechange) &&
+  same(props.min_size, attributes.min_size, attributes.nosizechange) &&
+  same(props.pg_autoscale_mode, attributes.pg_autoscale_mode) &&
+  same(hint(props.pg_num_min), attributes.pg_num_min, attributes.nopgchange) &&
+  same(props.crush_rule, attributes.crush_rule, attributes.crush_rule === '') &&
+  same(hint(props.target_size), attributes.target_size);
 
 export const ProxmoxCephPoolProvider = () =>
   Provider.effect(
@@ -146,28 +108,45 @@ export const ProxmoxCephPoolProvider = () =>
       ProxmoxCephPool.Provider.of({
         /** ⛔ Empty, and here it is what keeps `.mgr` and the two cephfs pools out — see the header. */
         list: () => Effect.succeed([]),
-        read: ({ olds }) => ops.read(olds),
-        diff: ({ news, output }) => ops.diff(news, output),
+        read: ({ olds }) => readPoolStatus(olds),
         /**
-         * ⚠️ NOT `ops.reconcile`: it POSTs the moment a read comes back empty, and reads back once,
-         *   immediately. Both are wrong for a family whose writes are forked workers and whose
+         * ★ HAND-WRITTEN, matching the pre-migration `ops.diff` shape exactly (resource.ts) — this
+         *   family never used the factory's own `diff`/`reconcile` (only its `read`), and the
+         *   factory itself cannot run a distilled operation, so both are inlined here now.
+         */
+        diff: Effect.fn(function* ({ news, output }) {
+          if (!isResolved(news)) return undefined;
+          yield* guardWrite(CEPH_POOL_CREATE, createBody(news), output === undefined);
+          yield* guardWrite(CEPH_POOL_UPDATE, updateBody(news), false);
+          if (output === undefined) return undefined;
+          const live = yield* readPoolStatus(news);
+          if (live === undefined) {
+            yield* guardWrite(CEPH_POOL_CREATE, createBody(news), true);
+            return { action: 'update' } as const;
+          }
+          return matches(live, news)
+            ? ({ action: 'noop' } as const)
+            : ({ action: 'update' } as const);
+        }),
+        /**
+         * ⚠️ NOT A GENERIC reconcile: it POSTs the moment a read comes back empty, and reads back
+         *   once, immediately. Both are wrong for a family whose writes are forked workers and whose
          *   create is destructive against a pool that is already there.
          */
         reconcile: Effect.fn(function* ({ news }) {
-          const live = yield* ops.read(news);
+          const live = yield* readPoolStatus(news);
           let upid: string | undefined;
           if (live === undefined) {
-            // ⛔ THE GUARD `ops.reconcile` WOULD HAVE RUN, RESTORED. This handler replaces it
+            // ⛔ THE GUARD A GENERIC reconcile WOULD HAVE RUN, RESTORED. This handler replaces it
             //   wholesale, so without these two calls an ADOPTED pool — whose diff answer Alchemy
             //   discards — would reach the cluster with nothing having checked its body.
-            yield* ops.guardCreate(news, true);
-            yield* confirmAbsent(news, spec.collection(news), object(news));
-            upid = yield* pve<string>(
+            yield* guardWrite(CEPH_POOL_CREATE, createBody(news), true);
+            yield* confirmAbsent(news, object(news));
+            upid = yield* runPve(
               news.target,
               'provision',
-              'POST',
-              collection(news),
-              createBody(news),
+              true,
+              nodes.createNodeCephPool(toDistilledCreate(news)),
             );
           } else {
             /**
@@ -177,18 +156,23 @@ export const ProxmoxCephPoolProvider = () =>
              *   settings (ceph-pool-form.ts) made it harmless to Ceph, not free: it is still a
              *   provision-lease write and a task in the cluster's list. update-guard.ts has the rest.
              */
-            const form = formToSend(spec.matches, live, news, updateBody(news));
+            const form = formToSend(matches, live, news, updateBody(news));
             if (form !== undefined) {
-              yield* ops.guardUpdate(news);
-              upid = yield* pve<string>(news.target, 'provision', 'PUT', object(news), form);
+              yield* guardWrite(CEPH_POOL_UPDATE, updateBody(news), false);
+              upid = yield* runPve(
+                news.target,
+                'provision',
+                true,
+                nodes.putNodeCephPool(toDistilledUpdate(news)),
+              );
             }
           }
           const after = yield* settle(
             news,
-            ops.read,
-            (row) => row !== undefined && spec.matches(row, news),
+            readPoolStatus,
+            (row) => row !== undefined && matches(row, news),
           );
-          if (after === undefined || !spec.matches(after, news)) {
+          if (after === undefined || !matches(after, news)) {
             return yield* Effect.die(
               new Error(
                 `${object(news)}: the write returned no error but the pool still does not match ` +
@@ -212,8 +196,13 @@ export const ProxmoxCephPoolProvider = () =>
          *   set in ceph.conf and the two sources disagree by design.
          */
         delete: Effect.fn(function* ({ olds }) {
-          yield* pve<string>(olds.target, 'provision', 'DELETE', object(olds));
-          const left = yield* settle(olds, ops.read, (row) => row === undefined);
+          yield* runPve(
+            olds.target,
+            'provision',
+            true,
+            nodes.deleteNodeCephPool({ name: olds.name, node: olds.node }),
+          );
+          const left = yield* settle(olds, readPoolStatus, (row) => row === undefined);
           if (left !== undefined) {
             return yield* Effect.die(
               new Error(

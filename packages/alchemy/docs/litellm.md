@@ -33,6 +33,23 @@ another `PROXY_ADMIN` key: `update_config_general_settings`, the function every 
 through, is `PROXY_ADMIN` only. Never a prop — see [docs/credentials.md](./credentials.md) for the
 house rule.
 
+`CredentialsFromEnv` ends in `Effect.orDie` on a missing/misspelled env var — matching distilled's
+own convention (73 of 80 `packages/*/src/credentials.ts` end this way at `homeflare/base`, 78 of 80
+at `origin/main`), not the house's own S20/S24 numbering. A worktree commit briefly changed this to
+a typed `ConfigError` (`LitellmOpError` already declares one, and `makeRestProtocol`'s `encode` step
+does thread a real credentials failure into the operation's own error channel — the plumbing for a
+typed refusal is genuinely there); Tim's answer to Q6 (2026-09-24 walk-down, decision 49 "upstream
+wins") reverted it, because that divergence was the house going stricter than distilled's own
+convention on a point distilled is not silent on, and decision 49 says match exactly, not stricter.
+
+★ **HELD upstream proposal, not raised.** If distilled's own convention changes — typed
+`ConfigError` in place of `orDie` on a missing credential — this package (and the other 72) would
+be one line each to update: `Credentials`'s `Context.Service` value type gains `ConfigError`, and
+the layer drops its trailing `Effect.orDie` in favor of the `Effect.mapError` it already has to
+build the error. LiteLLM would make a reasonable pilot, since its protocol layer already declares
+and threads `ConfigError`. Nobody has proposed this to `alchemy-run/distilled`; it stays here as an
+idea for Tim to raise, or not, later.
+
 ## Refusals
 
 This resource refuses a plan rather than writing something it cannot safely undo:

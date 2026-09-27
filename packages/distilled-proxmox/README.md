@@ -34,12 +34,27 @@ every failed write can carry) and non-retryable `BadRequest` fallback, and
 request that couldn't reach its target node) on the task-management
 operations the vendor schema itself marks `proxyto: "node"`.
 
-Also ships `awaitTask` (`./Task`), because a PVE POST/PUT/DELETE that
-queues a long-running action answers 200 with a bare task id the moment it
-is QUEUED, not once it finishes — `awaitTask` polls the generated
-`getNodeTaskStatus` operation until an `exitstatus` appears, and fails
-unless it is EXACTLY `"OK"` (PVE also answers `"OK (warnings)"`, which is
-not success).
+Task polling belongs in the Alchemy provider: the SDK exports the generated
+`getNodeTaskStatus` operation, and the caller owns its bound and failure policy.
+
+Pool, backup-job, metric-server and network-interface missing reads expose precise typed tags
+from vendor source at pve-manager 9.2.11. Backup-job absence uses a sole nested
+`errors.id`; network-interface absence uses the exact sole `errors.iface` — on both its
+detail GET and its PUT (both call the same vendor check; DELETE raises it too but is
+deliberately left untyped, tracked separately). Both use the parameter-verification
+envelope; other validation errors retain their structured failure. PVE form arrays use
+repeated keys, preserving commas within a rule/property value. Scalar comma lists and
+query binding are unchanged. Protocol fixtures exercise both the accepted and rejected
+shapes.
+
+`PoolNotFound` keeps a non-retryable client-error category despite PVE's wire
+status 500; the patch matcher records the actual status independently.
+
+Container config GET, PUT and DELETE also expose `LxcConfigNotFound`, backed by
+installed pve-container 6.1.13 and libpve-guest-common-perl 6.0.5 source — all three
+call the same `load_config` and raise byte-identical text. This proves only the
+node-local config is missing: providers must still check the cluster-wide vmid
+with the same credential before considering creation.
 
 ```ts
 import * as Proxmox from '@distilled.cloud/proxmox'; // aliased onto this package — see docs/distilled-interim.md
@@ -63,6 +78,19 @@ Kit code never imports `@homeflare/distilled-proxmox` directly — always
 so the eventual cutover to the real published package is a one-line alias
 swap with no import changes anywhere in the kit.
 
+## Source provenance
+
+This SDK source matches local distilled commit
+`07d587885b198e85bdd5b37ce3c7406c7b29c0ba` byte for byte. Its patch chain adds
+precise interface, container-config, replication-job and firewall-alias absence
+without treating unrelated validation or server failures as missing resources.
+The patch files record pinned PVE 9.2.11 and installed package versions/hashes.
+
+`ReplicationJobNotFound` covers the vendor's read/update/delete exceptions;
+ordinary DELETE still marks asynchronous cleanup without force or keep.
+`FirewallAliasNotFound` covers only the exact sole-field validation error on
+GET/PUT. Alias DELETE is already idempotent, so other failures propagate.
+
 ## Updating it
 
 From the distilled clone's `homeflare/proxmox` worktree:
@@ -70,13 +98,12 @@ From the distilled clone's `homeflare/proxmox` worktree:
 ```sh
 DISTILLED_SPECS_LOCAL=1 pnpm --filter @distilled.cloud/proxmox run convert
 DISTILLED_SPECS_LOCAL=1 pnpm --filter @distilled.cloud/proxmox run generate
-pnpm --filter @distilled.cloud/proxmox run typecheck
+pnpm typecheck:ci
 pnpm format && pnpm specs:check
 ```
 
-Then copy `src/` here verbatim, bump this package's own `version` (a patch
-release — the generated content changed, not this package's own shape), add
-a changeset, and let the kit's normal release flow publish it.
+Then copy `src/` here verbatim and add a changeset. The normal release flow
+versions and publishes the package.
 
 ## License
 

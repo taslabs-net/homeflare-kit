@@ -324,18 +324,19 @@ export interface DeleteAdminDatastoreGroupsRequest {
 export const DeleteAdminDatastoreGroupsRequest = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     store: S.String.pipe(T.Label()),
-    backup_id: S.String.pipe(T.Body("backup-id")),
+    backup_id: S.String.pipe(T.Query("backup-id")),
     backup_type: DeleteAdminDatastoreGroupsRequestBackupType.pipe(
-      T.Body("backup-type"),
+      T.Query("backup-type"),
     ),
-    error_on_protected: S.optional(S.String.pipe(T.Body("error-on-protected"))),
-    ns: S.optional(S.String),
+    error_on_protected: S.optional(
+      S.String.pipe(T.Query("error-on-protected")),
+    ),
+    ns: S.optional(S.String.pipe(T.Query())),
   }).pipe(
     T.Http({
       method: "DELETE",
       uri: "/admin/datastore/{store}/groups",
       code: 200,
-      contentType: "form-urlencoded",
     }),
   ),
 ).annotate({
@@ -372,17 +373,16 @@ export const DeleteAdminDatastoreNamespaceRequest = /*@__PURE__*/ S.suspend(
   () =>
     S.Struct({
       store: S.String.pipe(T.Label()),
-      delete_groups: S.optional(S.String.pipe(T.Body("delete-groups"))),
+      delete_groups: S.optional(S.String.pipe(T.Query("delete-groups"))),
       error_on_protected: S.optional(
-        S.String.pipe(T.Body("error-on-protected")),
+        S.String.pipe(T.Query("error-on-protected")),
       ),
-      ns: S.String,
+      ns: S.String.pipe(T.Query()),
     }).pipe(
       T.Http({
         method: "DELETE",
         uri: "/admin/datastore/{store}/namespace",
         code: 200,
-        contentType: "form-urlencoded",
       }),
     ),
 ).annotate({
@@ -417,18 +417,17 @@ export const DeleteAdminDatastoreSnapshotsRequest = /*@__PURE__*/ S.suspend(
   () =>
     S.Struct({
       store: S.String.pipe(T.Label()),
-      backup_id: S.String.pipe(T.Body("backup-id")),
-      backup_time: S.String.pipe(T.Body("backup-time")),
+      backup_id: S.String.pipe(T.Query("backup-id")),
+      backup_time: S.String.pipe(T.Query("backup-time")),
       backup_type: DeleteAdminDatastoreSnapshotsRequestBackupType.pipe(
-        T.Body("backup-type"),
+        T.Query("backup-type"),
       ),
-      ns: S.optional(S.String),
+      ns: S.optional(S.String.pipe(T.Query())),
     }).pipe(
       T.Http({
         method: "DELETE",
         uri: "/admin/datastore/{store}/snapshots",
         code: 200,
-        contentType: "form-urlencoded",
       }),
     ),
 ).annotate({

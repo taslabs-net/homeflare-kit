@@ -37,12 +37,8 @@ export {
   API_ERRORS,
 } from "@distilled.cloud/core/errors";
 // `export { X } from "mod"` (above) is a RE-EXPORT ONLY — it creates no local
-// binding for `X`, so `BadRequest` needs its own `import type` to be usable
-// in this file's own `DefaultErrors` union below.
-import type {
-  BadRequest,
-  DefaultErrors as CoreDefaultErrors,
-} from "@distilled.cloud/core/errors";
+// binding for `X`, so the API error tuple needs a type import for its union below.
+import type { API_ERRORS } from "@distilled.cloud/core/errors";
 
 import * as Schema from "effect/Schema";
 import * as Category from "@distilled.cloud/core/category";
@@ -115,12 +111,12 @@ export class ProxmoxBackupTaskFailed extends Schema.TaggedError<ProxmoxBackupTas
 export type ClientErrors = UnknownProxmoxBackupError | ProxmoxBackupParseError;
 
 /**
- * Default Proxmox Backup Server operation errors: the shared HTTP status
- * errors from core, PBS's global parameter-verification failure, plus the
- * client-level fallback/decode errors.
+ * Every status class the protocol's HTTP_STATUS_MAP may return, plus PBS failures.
+ * Core's DefaultErrors is only its infrastructure subset; using that here hid mapped
+ * NotFound/Forbidden/Conflict from the typed operation union, so a legitimate catchTag
+ * could not compile even though that exact error was returned at runtime.
  */
 export type DefaultErrors =
-  | CoreDefaultErrors
-  | BadRequest
+  | InstanceType<(typeof API_ERRORS)[number]>
   | ParameterVerificationFailed
   | ClientErrors;

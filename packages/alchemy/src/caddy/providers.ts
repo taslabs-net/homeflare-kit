@@ -12,17 +12,24 @@
  *   and `HttpClient.HttpClient`.
  *
  * ⚠️ `Layer.provideMerge`, NEVER PLAIN `Layer.provide`, for `caddyAdminLayer`. `CaddyConfigProvider()`'s
- *   `read`/`diff`/`reconcile` handlers each still need `CaddyAdminService` and
- *   `@distilled.cloud/caddy`'s `Credentials`/`HttpClient` — Alchemy's own `Provider.effect` types
- *   those as part of the LAYER's overall requirement (`ProviderService`'s per-handler `Req` type
- *   parameters, `alchemy/Provider.ts`), for exactly this reason. Plain `Layer.provide` SEALS a
- *   layer — it satisfies `CaddyConfigProvider()`'s requirement only for BUILDING the `Provider`
- *   value (the `admin` in its outer `Effect.gen`), then hides those services from anything that
- *   runs LATER, when the returned `read`/`diff`/`reconcile` FUNCTIONS actually execute. MEASURED
- *   2026-09-23: with plain `Layer.provide`, `caddyProviders()`'s own `reconcile` handler dies with
- *   "Service not found: homeflare/caddy/CaddyAdmin" the moment the ENGINE calls it. `provideMerge`
- *   feeds `caddyAdminLayer`'s output into `CaddyConfigProvider()`'s requirement AND keeps that same
- *   output live in the result, so every later handler call still runs with it in context.
+ *   `read`/`diff`/`reconcile` handlers each still need `CaddyAdminService` and `CaddyAdminTransport`
+ *   — Alchemy's own `Provider.effect` types those as part of the LAYER's overall requirement
+ *   (`ProviderService`'s per-handler `Req` type parameters, `alchemy/Provider.ts`), for exactly this
+ *   reason. Plain `Layer.provide` SEALS a layer — it satisfies `CaddyConfigProvider()`'s requirement
+ *   only for BUILDING the `Provider` value (the `admin`/`transportLayer` in its outer `Effect.gen`),
+ *   then hides those services from anything that runs LATER, when the returned `read`/`diff`/
+ *   `reconcile` FUNCTIONS actually execute. MEASURED 2026-09-23: with plain `Layer.provide`,
+ *   `caddyProviders()`'s own `reconcile` handler dies with "Service not found: homeflare/caddy/
+ *   CaddyAdmin" the moment the ENGINE calls it. `provideMerge` feeds `caddyAdminLayer`'s output into
+ *   `CaddyConfigProvider()`'s requirement AND keeps that same output live in the result, so every
+ *   later handler call still runs with it in context.
+ * ⛔ THIS `caddyProviders()` LAYER NEVER CARRIES `Credentials`/`HttpClient.HttpClient` ITSELF (fixed
+ *   2026-09-26 — admin.ts's own ⛔ has the mechanism and the measured leak). `caddyAdminLayer`'s
+ *   output is `CaddyAdminService | CaddyAdminTransport`, both house-only tags safe to `provideMerge`
+ *   into any host stack; the SDK's own `Credentials`/`HttpClient.HttpClient` stay inside
+ *   `CaddyAdminTransport`'s stored value, `Effect.provide`d locally by config.ts around exactly the
+ *   effects that need them. A stack merging `caddyProviders()` with any other fetch-based provider
+ *   (`forgejoProviders()`, `litellmProviders()`, …) is safe from this file's own composition alone.
  */
 import * as Layer from 'effect/Layer';
 import { type CaddyTransport, caddyAdminLayer } from './admin.ts';

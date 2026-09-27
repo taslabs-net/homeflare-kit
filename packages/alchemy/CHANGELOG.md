@@ -1,2574 +1,462 @@
 # @homeflare/alchemy
 
-## 0.34.0
+Earlier releases: [changelog archive](./docs/changelog/README.md).
+
+## 0.40.0
 
 ### Minor Changes
 
-- [#250](https://github.com/taslabs-net/homeflare-kit/pull/250) [`0e9c010`](https://github.com/taslabs-net/homeflare-kit/commit/0e9c0109ea21ffaf142db35f6a19bd424b23b9c2) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `grafana/*` ships `Grafana.ContactPoint`, `Grafana.MuteTiming` and `Grafana.MessageTemplate` — the
-  first of three stacked PRs bringing Grafana alerting provisioning under Alchemy (decision 40: every
-  internal alert lands in one place), on the same `@distilled.cloud/grafana@0.2.0` operations that
-  unblocked `Grafana.Folder`/`Grafana.Dashboard`. `Grafana.AlertRuleGroup` and
-  `Grafana.NotificationPolicy` follow in two later PRs. Full detail, including what was measured
-  against the SDK's generated types versus Grafana's own docs (no live call was made in this PR):
-  `docs/grafana-alerting.md`.
+- [#306](https://github.com/taslabs-net/homeflare-kit/pull/306) [`d11352c`](https://github.com/taslabs-net/homeflare-kit/commit/d11352c29cb39ea9f1abba5464662b26ee9c4e1b) Thanks [@taslabs-net](https://github.com/taslabs-net)! - New `@homeflare/alchemy/ceph`: `Ceph.AuthEntity` (K-A4), plus the ssh mon-command transport it
+  runs on — built for the Talos-on-PVE ceph-csi entity, per the accepted design
+  (`docs/plans/2026-09-26-ceph-mon-transport.md`).
 
-  **Shared across the family:** a foreign-provenance refusal (`alerting-provenance.ts`) — every
-  resource reads Grafana's own `provenance` field and refuses a write when it names an owner other
-  than this API (an allowlist of `""`/`"api"`, not a denylist of the known foreign values, so an
-  unnamed future provenance source refuses by default). This is defense in depth: Grafana's alerting
-  provisioning API also enforces it server-side, unlike the classic folder/dashboard write API. No
-  resource in this family ever sets `X-Disable-Provenance` — an object this family declares stays
-  owned by the declaration.
+  The PVE API has no `ceph auth` endpoint at all (measured against the pinned schema); this family
+  closes that gap over ssh + `sudo -n /usr/bin/ceph`, tried against the declared mon nodes in order,
+  behind a client-side argv allowlist of exact shapes — `auth get`, `auth get-or-create`, `auth
+caps`, and `config get`/`set`/`rm` against a named option list that starts empty. `auth ls` and
+  `auth del` are refused outright: `ls` prints every key on the cluster, and a wrong delete cuts
+  every VM disk on it (D3, lockout safety — never auto-delete). The entity operand is bounded to the
+  `client.k8s-` prefix, so nothing this allowlist accepts can touch `client.admin`, a mon/osd/mgr
+  keyring, or the PVE storage client.
 
-  ⛔ **Fixed after an adversarial review of this PR: the guard failed OPEN.** The first version
-  mapped `live.provenance ?? ''`, so a response that simply omitted the field was indistinguishable
-  from an explicit `""` (`ProvenanceNone`, writable) — a real risk for `Grafana.MuteTiming`
-  specifically, whose `provenance` isn't even in the SDK's declared type and survives only through an
-  unmodeled-key passthrough this house has never observed against a live response. `undefined` is now
-  kept as its own value all the way through `isForeignProvenance`/`refuseIfForeignProvenance`: ONLY a
-  field Grafana explicitly reports as `""` or `"api"` is writable; a missing field refuses, with a
-  message that says so. Every resource has a test pinning all three cases (missing refuses, explicit
-  `""` is writable, `"file"` refuses).
+  The minted key is captured in memory only, never Alchemy props, state, argv, or a log line.
+  `auth get-or-create` mints it once, on the create path, and writes it straight to OpenBao
+  (`<mount>/ceph/<entity>`). `auth get`'s stdout, which also carries the key, is read unfiltered on
+  every reconcile to compare caps — the key is parsed out and dropped before anything is logged,
+  returned or stored, so it never survives past that one read. Caps drift runs `auth caps` alone and
+  never re-mints the key. After every write the transport re-checks
+  `quorum_status` on a fresh connection and fails the row on a degraded answer, rather than
+  continuing past it. `read` and `diff` never ssh — this family's plan is props-against-state only,
+  and reconcile is where the only live check happens. Rows are creates through the first-create
+  gate: a live entity found with no prior state is refused, not adopted, even under `--adopt`.
 
-  **`Grafana.ContactPoint`:** no by-uid GET route exists (measured), so `fetchLive` lists every
-  contact point and matches `uid` client-side rather than narrowing by the renameable `name` label. A
-  secure `settings` key is never a literal prop — `secureSettingsRefs` names it, resolved from an env
-  var fresh at write time and merged into `settings` only there (`secret-refs.ts`, extracted from
-  `Grafana.Datasource`'s identical `secureJsonDataRefs` seam so both share one implementation).
-  `matches` excludes every `secureSettingsRefs` key from comparison entirely, since Grafana's plain
-  GET always redacts a secure field.
+  Tested entirely offline against a fake dial — no ssh, no spawned process, ever, in this package's
+  own test suite. `Ceph.AuthEntity` itself is not yet consumed by a stack; that lands with the
+  Talos-on-PVE work this design gates.
 
-  **`Grafana.MuteTiming`:** a genuine SDK finding worth restating here — the generated
-  `MuteTimeInterval` type has no `provenance`/`version` fields, and its `TimeInterval` type is
-  missing the real Alertmanager time-interval fields (`weekdays`/`times`/`months`/etc.) entirely, even
-  though Grafana's real API sends and accepts all of them. Proven NOT to be a data-loss gap:
-  `@distilled.cloud/core`'s response decoding never runs a strict schema decode, only `JSON.parse`
-  plus a key-rename pass that leaves any key a type doesn't model verbatim — confirmed by driving the
-  real operation through this family's own fake-Grafana test harness. `mute-timing.ts` reads/writes
-  through a small locally-widened type instead of the SDK's own. Tracked in
-  `docs/upstream-conformance.md` as a real SDK type-generation gap (the same fix route as the other
-  named gaps there) — not attempted here, since `packages/distilled-grafana/src/` is vendored code
-  this kit never hand-edits.
+- [#311](https://github.com/taslabs-net/homeflare-kit/pull/311) [`0047c69`](https://github.com/taslabs-net/homeflare-kit/commit/0047c693f0a7259f52492ca1e545adb9c3ae5bad) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Closes the three `Talos.*` follow-ups PR 307 named but did not fix
+  (docs/plans/2026-09-26-talos-stack-first-boot.md), and exports their Resource constructors now
+  that the fixes land:
 
-  **`Grafana.MessageTemplate`:** create and update are the same `PUT` wire call — measured, no
-  `routePostTemplate` exists — kept as two spec functions anyway so the shared engine's `diff` reports
-  a content change as `update`, not the `replace` it shows for any resource whose `spec.update` is
-  undefined.
+  `Talos.Bootstrap` — "once means once". The shipped `isBootstrapped` turned every read failure into
+  `false` (`Effect.orElseSucceed`), so `reconcile` could re-run `talosctl bootstrap` against an
+  already-bootstrapped cluster after a merely transient read failure — Talos's only server-side guard
+  is a non-empty etcd data directory, so this forms a second, isolated single-member cluster (split
+  brain) rather than rejoining the existing one. Fixed: `read` now answers presence/absence correctly
+  (`undefined` only from a successful read that finds no members; a failing read propagates instead of
+  being read as absence); `diff` trusts `output.bootstrapped` once it is `true` and never touches the
+  live cluster; `reconcile` checks `output?.bootstrapped` first and, once true, never spawns `talosctl
+bootstrap` again — a failing or empty confirmation read both raise the new `TalosReBootstrapRefused`
+  instead. Re-bootstrap is now a human decision, never an automatic one.
 
-  Tests (`contact-point.test.ts` + `contact-point-secrets.test.ts` + `contact-point-provenance.test.ts`,
-  `mute-timing.test.ts`, `message-template.test.ts` — `ContactPoint`'s split three ways to stay under
-  the house's 250-line file cap) use the family's existing `fake-grafana.ts` harness and prove: a GET
-  never carries a body; a foreign-provenance object (explicit `"file"` or a MISSING field) refuses
-  update/destroy with no write sent, and an explicit `""` is writable; a transient failure (401/403)
-  propagates rather than folding to absent; an unchanged declaration is a noop despite an injected
-  field the declaration never mentioned; and, for `Grafana.ContactPoint`, that a secret value never
-  appears in a real `reconcile`'s returned attributes (not just in the declaration, which never held
-  it to begin with) — driven end to end through create, then the read-back `resource.ts` always does.
-  `subset-match.ts`'s array-length rule is flagged as unverified against a live mute timing and pinned
-  by its own test, per the same review.
+  `Talos.ClusterHealth` — no more swallowed transport errors. The shipped `read` caught EVERY error
+  from its health check, including a `mintTalosconfig`/`bao` failure, into a plain `healthy: false` —
+  a vault outage read exactly like "cluster not healthy yet". `read` and `reconcile` now only catch
+  `TalosError` (a completed `talosctl health` run that itself exited non-zero); anything else
+  propagates. The type's own doc comments also now say explicitly that a consuming stack's `after`
+  must reach past `Talos.Bootstrap`/`Talos.Kubeconfig` through the Cilium CNI install — the default
+  health checks (kube-proxy, CoreDNS) wait on a CNI that does not exist yet at bootstrap.
+
+  `Talos.Kubeconfig` — lands in OpenBao instead of an un-vaulted host `runtimePath` that was never
+  cleaned up. CREATE now runs `talosctl kubeconfig` into a throwaway unguessable temp path, reads it
+  back, and writes its bytes into the vault via stdin (`credentials-write.ts`'s new `writeKvValue` —
+  never argv), then deletes the temp file. Written ONCE at bring-up, not re-minted every deploy (a
+  fresh admin cert every reconcile would rotate credentials for no reason): once `output` is defined,
+  reconcile only reads the vault copy back to confirm it. The `runtimePath` prop is gone, replaced by
+  an optional `kubeconfigKey` (default `'kubeconfig'`); the persisted `connection` no longer carries a
+  host path — a consumer materializes its own temp file via the new `mintKubeconfig` (the same pattern
+  `mintTalosconfig` already established for the talosconfig itself). Wiring `Kubernetes.ClusterAdapter`
+  to call it is separate, later work.
+
+  `TalosBootstrap`, `TalosClusterHealth` and `TalosKubeconfig` (plus their `*Attributes`/`*Props` types)
+  now export from the package barrel alongside their `*Provider` factories, so a consuming stack can
+  actually declare these rows — PR 307's red team held them back specifically for the defects above.
+
+  Docs: `docs/plans/2026-09-26-talos-secrets-flow.md` records Tim's D1/D2/D3 answers (decision 61 —
+  mini's vault + copy-list entry, agent plan lane denied, O-A all-in-vault-digest-pinned confirmed) and
+  `docs/plans/2026-09-26-ceph-mon-transport.md` records decision 65's `auth get` amendment (read
+  directly, in-process, on every reconcile — no node-side shell filter for that call — key dropped
+  before anything is logged/returned/stored).
+
+  **LAND red team fixes, applied before merge (same PR, never shipped broken):**
+
+  - `Talos.Kubeconfig` could never actually be created — `read` returned a defined, empty-fingerprint
+    object instead of `undefined` on a genuine cold start, so the engine always adopted it and forced
+    `update`, and `reconcile`'s write-once gate then tried to confirm a key that had never been
+    written. Fixed: `read` now distinguishes a measured OpenBao "key never written" response from
+    every other failure; `reconcile`'s write-once branch also gates on a non-empty
+    `credentialGeneration`, not just a defined `output`.
+  - `credentials-write.ts`'s `writeKvValue` used `field=@-`, which is not the stdin convention (`@`
+    means "read a file at this literal path") — measured against OpenBao v2.6.2, it fails outright, or
+    silently reads a stray file literally named `-`. Fixed to `field=-`.
+  - `Talos.ClusterHealth` could never pass with more than one control-plane node — `--nodes` took the
+    full node list, and `talosctl health` refuses more than one. Fixed: one contact node for
+    `--nodes`/`--endpoints`; the full lists still reach `--control-plane-nodes`/`--worker-nodes`.
+  - The persisted `connection`'s `auth.path` was left `undefined`, which would let a consumer's stock
+    `Kubernetes.KubeConfigAdapter` silently fall back to `$KUBECONFIG`/`~/.kube/config` instead of
+    failing — exactly the exposure this feature removes elsewhere. Fixed to a sentinel path that can
+    never resolve, so an early consumer fails loudly instead of reaching a stranger's cluster.
+  - `Talos.Bootstrap` gained an optional `peers` prop: before a CREATE bootstraps a node, every listed
+    peer must show a successful, empty etcd-members read, closing a split-brain path where a lost
+    state row plus a reset node would otherwise re-bootstrap a second cluster.
+
+- [#307](https://github.com/taslabs-net/homeflare-kit/pull/307) [`cf17df3`](https://github.com/taslabs-net/homeflare-kit/commit/cf17df313c12357de18fc937ede093708dd15963) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Talos machine config, talosconfig and any future KV-backed Talos material now come from OpenBao
+  instead of repo disk — the accepted secrets-flow design
+  (docs/plans/2026-09-26-talos-secrets-flow.md and -talos-stack-first-boot.md).
+
+  Fixed the C1 temp-file-lifetime defect: `mintTalosconfig` used to wrap its own body in
+  `Effect.scoped`, so its delete finalizer ran — deleting the file — the instant `mintTalosconfig`
+  returned, before any caller ever passed the path to `talosctl`. It is now built on
+  `Effect.acquireRelease` and contributes `Scope.Scope` to its own return type, so the file survives
+  until the CALLER's own `Effect.scoped` closes; every Talos resource file (`kubeconfig.ts`,
+  `talos-bootstrap.ts`, `talos-cluster-health.ts`, `talos-machine-config.ts`) now wraps its
+  `read`/`reconcile` bodies accordingly. Also fixed `talosconfigKey`'s default, which read
+  `<mount>/data/data/talosconfig` (now `<mount>/talosconfig`) — `bao kv get` inserts the KV-v2
+  `data/` segment itself.
+
+  `Talos.MachineConfig`'s props changed: `configFile` (a repo-relative path) and `insecure` are gone.
+  Props now carry `configKey` (an OpenBao KV path under `target.mount`, e.g. `nodes/10001`) and a
+  required `configDigest` — sha256 of the canonical config text, pinned in git by the operator after
+  seeding the KV value. The digest is verified against the live KV content before ANY talosctl spawn;
+  a mismatch fails closed with a typed `TalosConfigDigestMismatch`, applying nothing. `insecure` is no
+  longer a prop: the CREATE path (`output === undefined`) applies `--insecure` and UPDATE never does,
+  since a fixed value broke in both directions. No code path ever builds `--dry-run` (it prints the
+  cluster CA key and bootstrap token on an otherwise-empty node).
+
+  The live convergence check now hashes only the `spec` payload extracted from
+  `talosctl get machineconfig v1alpha1 -o yaml`'s wrapper (`values.ts`'s new `extractMachineConfigSpec`)
+  instead of the whole wrapper, which carries a version/timestamp that changes on every observation and
+  could never match the pinned digest. The resource id is never omitted: an unfiltered `get
+machineconfig` also lists a `persistent` resource sorted ahead of `v1alpha1`, so a bare `doc[0]` (the
+  shipped shape) silently read the wrong one — `extractMachineConfigSpec` now also refuses more than one
+  document rather than guessing. `MachineConfigAttributes.converged` is `'read-back' | 'accepted' |
+false` instead of a boolean: `reconcile` proves convergence with a bounded, short-interval poll
+  (`machine-config-poll.ts`) — `'read-back'` for `no-reboot` (the API never drops), `'accepted'` for
+  `reboot`/`auto` (tolerates the API dropping for a reboot) — and raises a typed
+  `TalosConvergenceTimeout` rather than a silent pass if the cap expires. `ApplyMode` drops `'staged'`
+  and `'try'`: `try` reverts itself after its own timeout, so a poll "confirming" it would be watching a
+  change already undone, and `staged` defers to a reboot this package never drives — both need design
+  work this change does not do, not a policy guess.
+
+  `read` now answers three ways instead of two (`machine-config-read.ts`), because Alchemy calls it with
+  no prior state both as its cold-start adoption probe and to recover an interrupted create: an
+  authenticated read that fails but an inserted `--insecure` maintenance-mode probe succeeds means "not
+  created yet" (`undefined`); an authenticated read that succeeds and matches the pin is ours (plain
+  attributes); one that succeeds and differs is `Unowned` — exists, not proven ours — so the engine
+  fails closed behind `--adopt` instead of silently running `apply-config` onto a mistyped or foreign
+  node; both reads failing propagates the authenticated error, never a disguised "not created". A
+  transport failure was always meant to propagate rather than read as `converged: false` — this was the
+  gap that broke it for the cold-start case specifically.
+
+  `TalosMachineConfig` and its `*Provider` now export from the package barrel, so a consuming stack can
+  declare `Talos.MachineConfig` rows — it fails closed on a digest mismatch and never adopts silently.
+  `Talos.Bootstrap`, `Talos.ClusterHealth` and `Talos.Kubeconfig` stay provider-only: exporting their
+  Resource constructors would let a stack declare them, and that is not safe yet — Bootstrap can plan a
+  second `talosctl bootstrap` after a failing plan-time read (etcd split-brain risk), and Kubeconfig
+  still writes a cluster-admin kubeconfig to un-vaulted host disk. `TalosTarget`/`TalosCredential`/
+  `ApplyMode` export unconditionally since they carry no such risk.
+
+  Not in this change, flagged rather than fixed: `Talos.Kubeconfig`'s host-disk kubeconfig (above);
+  `Talos.Bootstrap`'s re-bootstrap risk and `Talos.ClusterHealth`'s CNI-ordering swallow-on-failure
+  (docs/plans/2026-09-26-talos-stack-first-boot.md's "Bootstrap" and "CNI ordering" sections); no kit
+  command yet prints only a KV value's digest, so an operator computes `sha256(canonicalText(content))`
+  by hand to pin it.
+
+- [#303](https://github.com/taslabs-net/homeflare-kit/pull/303) [`ca3f3bb`](https://github.com/taslabs-net/homeflare-kit/commit/ca3f3bbfe6659f1e265f2924dd33de8c124ac62c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Added three more read-only `Unifi.*` families, mirroring `Unifi.Network`/`Unifi.FirewallZone`'s existing shape: `Unifi.DnsPolicy`, `Unifi.AclRule`, and `Unifi.AclRuleOrdering` (one ordered, order-preserving resource per site — never `sortedSet` — for the site's ACL rule priority list, kept separate from `Unifi.AclRule` itself). Each is gated on a per-tag OpenAPI closure diff (10.4.57 vs a 10.6.97 mirror, diffing aid only) confirming its tag decodes the same on both versions; full breakdown in `docs/unifi-dns-policy.md` and `docs/unifi-acl-rule.md`. No write path exists for either family — `reconcile`/`delete` refuse via the existing typed `UnifiWriteRefused`, and the existing `GetOnlyHttpClient` wire guard and static write-op-reference test cover them without any change to either mechanism.
+
+- [#309](https://github.com/taslabs-net/homeflare-kit/pull/309) [`1b24ce7`](https://github.com/taslabs-net/homeflare-kit/commit/1b24ce7d92dc0c3a92ad83f1cf43a44c70e2b59c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Added three more read-only `Unifi.*` families: `Unifi.FirewallPolicy`, `Unifi.FirewallPolicyOrdering`, and `Unifi.TrafficMatchingList`. `Unifi.FirewallPolicyOrdering` is keyed per `(sourceFirewallZoneId, destinationFirewallZoneId)` zone pair — one resource per pair, not site-wide like `Unifi.AclRuleOrdering` — comparing its `before`/`afterSystemDefined` policy-id lists independently and order-preservingly (T5; never `sortedSet`, since a policy moving between the two halves is real drift on both fields, not one reorder). `Unifi.FirewallPolicy` compares its post-A3-typed `action`/`source`/`destination`/`ipProtocolScope`/`schedule` fields wholesale, normalizing only the one genuinely top-level set-shaped array (`connectionStateFilter`); its own decode-proof test walks B0b's `pageAll` against this family's page shape (T9's 424-live-policy scale) even though `fetchLive` itself reads by id, same as `Unifi.AclRule`. `Unifi.TrafficMatchingList` is the simplest object shape in the directory (no `metadata` at all) and keeps its post-A3-typed `items` union compared wholesale, same known-gap posture ACL rule's own nested filters already carry (a membership-preserving reorder of object-shaped match entries has no cheap canonical sort key).
+
+  Each family is gated on its own per-tag OpenAPI closure diff (10.4.57 vs the same `beezly/unifi-apis` 10.6.97 mirror every other family doc cites, diffing aid only): `Firewall`'s 13 operations (106-schema closure) and `Traffic Matching Lists`' 5 operations (19-schema closure) are both byte-identical between versions and share zero schemas with the 14 that changed elsewhere in the document — corroborated independently by the A3 changeset's own broader 25-operation/139-schema re-check. Full breakdown in `docs/unifi-firewall-policy.md` and `docs/unifi-traffic-matching-list.md`; `docs/unifi.md`'s own family index and its now-outdated "FirewallPolicy is a bigger, separate PR" note are updated to point at them.
+
+  No write path exists for any of the three — `reconcile`/`delete` refuse via the existing typed `UnifiWriteRefused`, and the existing `GetOnlyHttpClient` wire guard and static write-op-reference test cover them without any change to either mechanism.
+
+- [#308](https://github.com/taslabs-net/homeflare-kit/pull/308) [`9e2ccd9`](https://github.com/taslabs-net/homeflare-kit/commit/9e2ccd9a88c1d57fecb7d94c9a4929d1f9017d2c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Added a fifth read-only `Unifi.*` family, `Unifi.WifiBroadcast` (one WiFi network/SSID broadcast on a site). Unlike every other family here, its declarable shape is built entirely from the LIST endpoint's overview response (`getWifiBroadcastPage`) — the single-object details call (`getWifiBroadcastDetails`) is never called, because that shape carries the WPA/PPSK passphrase (T23; the spec has no `writeOnly` flag on it), and a static guard now bans any source reference to that call under `src/unifi`. `WifiBroadcastProps`/`WifiBroadcastAttributes` type `securityConfiguration` as the overview's own `{type, presharedKeyNetworkIds}` shape, so no passphrase field is DECLARED for them to carry; because the SDK's wire decode does not strip a key a schema doesn't declare, every nested object this family touches (`network`, `hotspotConfiguration`, `broadcastingDeviceFilter`, and each `presharedKeyNetworkIds` element) is rebuilt field-by-field at runtime too, not just typed narrowly — `wifi-broadcast-secrets.test.ts` proves a stray passphrase-shaped key on the wire never survives into attributes, the declaration renderer, or a forced decode-failure error, for all five of those locations. With no get-by-id call for the overview shape, `fetchLive` is also the first resource-level consumer of the existing `pageAll` pager, whose own error messages now render a non-numeric wire value as a fixed placeholder rather than interpolating it directly. No write path exists — `reconcile`/`delete` refuse via the existing typed `UnifiWriteRefused`, and the existing `GetOnlyHttpClient` wire guard and static write-op-reference test cover it without any change to either mechanism.
 
 ### Patch Changes
 
-- [#248](https://github.com/taslabs-net/homeflare-kit/pull/248) [`4681702`](https://github.com/taslabs-net/homeflare-kit/commit/46817022ef49186139287d8706be30cb57dbd742) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `@homeflare/alchemy/linux` now re-exports `renderContainerFile` and `containerPathFor` from
-  `Podman.Container`'s pure `.container` file renderer — the same kind of pure helper `renderUnit`/
-  `DEFAULT_UNIT_DIRECTORY` already are for `Systemd.Unit`. A consumer proving its own declared
-  props render into the directive set it expects (an equivalence/fixture test against a live host)
-  previously had no import path to the real renderer and had to reimplement the render contract by
-  hand to write that test at all (found: homeflare-ct100 PR [#1](https://github.com/taslabs-net/homeflare-kit/issues/1)).
+- [#310](https://github.com/taslabs-net/homeflare-kit/pull/310) [`77edfec`](https://github.com/taslabs-net/homeflare-kit/commit/77edfec37d0f48c98c0d9d8e047b690db6388ee5) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fixed `Proxmox.Vm`'s disk-drift check (`qemu-volume.ts`'s `judgeDisk`): it never recognized
+  `<storage>:0,import-from=<volid>` (PVE's create-time spelling for importing a disk from another
+  volume or a downloaded image) as a new-disk spelling, so it compared the declared literal volname
+  `"0"` against PVE's live read-back of the real `vm-<vmid>-disk-<n>` it allocated on import and
+  refused the update -- on the very deploy that created the disk (post-write verification reads the
+  config right back) and on every plan after, since the declared value stays `import-from=...` for
+  as long as the caller keeps declaring it that way.
 
-## 0.33.0
+  Found by homeflare-proxmox PR 84's red team against a real fake-PVE engine; tracked there as the
+  `kit-disk-import-bug` blocker on `declareTalos`. `<storage>:0,import-from=<volid>` is now treated
+  the same as the existing `<storage>:GiB` and `<storage>:cloudinit` new-disk spellings: it always
+  matches whatever volume is already live in that slot, and no resize is ever attempted for it.
+
+  Also fixes a LAND-stage red-team finding on this same change: options declared alongside
+  `import-from` (e.g. `<storage>:0,import-from=<volid>,iothread=1`) are now recognized and enforced
+  regardless of where they sit relative to `import-from`, instead of being silently dropped (declared
+  after it) or stranding the disk with a forever-refused volname mismatch (declared before it).
+
+## 0.39.0
 
 ### Minor Changes
 
-- [#245](https://github.com/taslabs-net/homeflare-kit/pull/245) [`672f60f`](https://github.com/taslabs-net/homeflare-kit/commit/672f60f8ad43b02b1dd151540a2d5f13e716e4f9) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `grafana/*` ships `Grafana.Folder` and `Grafana.Dashboard`, on top of the same
-  `@distilled.cloud/grafana@0.2.0` (aliased onto `@homeflare/distilled-grafana`) operations that
-  fixed the family's SDK gap: `createFolder`/`getFolderByUID`/`updateFolder`/`deleteFolder` and
-  `postDashboard`/`getDashboard`/`deleteDashboard`, plus the typed `PreconditionFailed` (412) for
-  dashboard version conflicts. Same file shape and uid-required doctrine as the existing
-  `Grafana.Datasource` (`resource.ts`'s shared `GrafanaSpec`/`grafanaOperations`/`grafanaHandlers`,
-  `grafanaProviders(target)` for credentials). Full detail, including which claims were measured
-  against the SDK's generated types versus inferred (no live call was made in this PR):
-  `docs/grafana-folder-dashboard.md`.
+- [#302](https://github.com/taslabs-net/homeflare-kit/pull/302) [`3f8a8af`](https://github.com/taslabs-net/homeflare-kit/commit/3f8a8af9df4dcdb0dd54be0f50f15d62e815b434) Thanks [@taslabs-net](https://github.com/taslabs-net)! - New `@homeflare/alchemy/telemetry`: `telemetryLayer`, an OTLP tracing/logging/metrics `Layer` a
+  stack merges into its own `providers` — off unless given explicit `{ traces?, logs?, metrics? }`
+  endpoints, no default collector anywhere in it. This is not alchemy's own CLI-wide telemetry
+  (`otel.alchemy.run`, hard-coded, opted out via `~/.alchemy/telemetry-disabled`): it is a per-stack
+  layer a consumer opts into with its own endpoints (the estate's Victoria stack, in homeflare-mini's
+  case — this package names no estate host).
 
-  **`Grafana.Folder`:** `description` is write-only — MEASURED against the SDK's generated types,
-  `Folder`'s GET response has no `description` field at all though create/update both accept one —
-  so it is sent on every write that declares it but never diffed, the same treatment
-  `Grafana.Datasource` gives `secureJsonDataRefs`. Nesting (`parentUid`) is create-only — MEASURED,
-  `UpdateFolderRequest` has no `parentUid` field — so a declaration whose `parentUid` no longer
-  matches the live folder REFUSES with `GrafanaFolderReparentError` instead of silently doing
-  nothing or deleting-and-recreating under the new parent. `update` sends `version` for optimistic
-  concurrency, but the SDK's own doc comment on `UpdateFolderRequest.version` says "only used by the
-  legacy folder implementation" — unverified whether Grafana's newer unified-storage folder backend
-  honors it at all, flagged rather than presented as a verified 412-style guard. Delete defaults to
-  `defaultRemovalPolicy: 'retain'`: `deleteFolder` takes every dashboard and alert rule in the
-  folder with it, the same multi-object-cascade class `openbao/mount.ts` already guards this way
-  (verified there against Alchemy's own `Apply.ts`, not re-verified here — same engine, same
-  option). A stack that wants the cascade opts in with `.pipe(RemovalPolicy.destroy())`.
+  Every span — a provider's own, effect's `HttpClient` client spans, and alchemy's own plan/apply
+  engine spans — is redacted before export in two passes: `Tracer.Tracer` itself drops every HTTP
+  header outright, strips every query string and blanks a consumer-supplied denylist of host/path
+  segments (e.g. a UniFi console id) to `<redacted>`; a second pass at `OtlpSerialization` catches what
+  that first pass cannot reach — a failed span's `exception.message`/`status.message` (built from the
+  exit's `Cause` at export time) and a log line turned into a span event — by matching the denylist as
+  a substring in that free text, and covers logs the same way. Bodies are protobuf-encoded, not
+  JSON — VictoriaLogs/Metrics both reject the OTLP JSON encoding, silently, so the wire format is not
+  a style choice. The transport is sealed — merging this layer into a stack's `providers` alongside a
+  fetch-based provider (Caddy, LiteLLM, Forgejo) never lets its own `FetchHttpClient` leak into that
+  provider's requirements, the same leak PR 293 fixed for Caddy's admin transport.
 
-  **`Grafana.Dashboard`:** the declared content is the dashboard JSON model, the same shape
-  Grafana's "Export as JSON" produces. `dashboard-model.ts`'s `normalizeModel` strips
-  `id`/`version`/`iteration` and forces `uid` to the resource's own value before any comparison, so
-  a pasted export and a freshly-read live model compare equal and an unchanged dashboard plans as a
-  true noop despite those fields moving on every live save. `panels` and each panel's `targets` are
-  array-order-significant and compared positionally; nothing in a dashboard model needed UniFi's
-  `sortedSet` treatment. **`matches` compares "declaration is a subset of live", not plain
-  equality** (`declaredContentMatches`) — an adversarial review of this PR found plain structural
-  equality made an ordinary, never-edited dashboard show `update` forever, because Grafana's own
-  schema migration on save decorates any panel/target whose `datasource` is absent with an explicit
-  reference; a declaration silent about a field is now tolerated rather than compared, while a field
-  it DOES mention is still caught exactly as before (traded off: an omitted field can no longer
-  force-clear one Grafana or a prior declaration set — see the doc for the full reasoning). Version
-  conflicts (412) fail loudly and are never overwritten blindly: `update` injects the version this
-  resource just read into the model it sends and never sets `overwrite`; a genuine conflict
-  propagates `PreconditionFailed` uncaught and fails the whole reconcile, with the next
-  plan/deploy's own `fetchLive` serving as the re-read. Delete does **not** default to retain — a
-  single-object blast radius, the same class `Grafana.Datasource` already accepts.
+  See [docs/telemetry.md](../packages/alchemy/docs/telemetry.md) for how a consumer stack wires real
+  endpoints in, and [docs/telemetry-spike.md](../packages/alchemy/docs/telemetry-spike.md) for what an
+  offline spike against alchemy 2.0.0-beta.79's own engine measured actually arriving at a collector.
 
-  **Both refuse writes to a provisioned (file-managed) object** — `Folder.managedBy` (non-empty) and
-  `DashboardMeta.provisioned`/`provisionedExternalId`, checked in `update`/`destroy` before any SDK
-  call, naming the owning file when Grafana reports one. `matches` still compares structurally
-  regardless, so a mismatched declaration against a provisioned object shows `update` in a plan
-  rather than a silently-hidden noop, and only fails at the point reconcile would actually write;
-  adopting a provisioned object read-only (a declaration matching what is live) never reaches the
-  refusal. ⚠️ `Folder.managedBy`'s exact values are INFERRED from the SDK's schema, not measured —
-  no live instance in this house currently has a file-provisioned folder to read (`teslamate-grafana`
-  has none at all).
+- [#296](https://github.com/taslabs-net/homeflare-kit/pull/296) [`4bdcc4f`](https://github.com/taslabs-net/homeflare-kit/commit/4bdcc4fc2340bea9696156b7b4ff4ef19eadfeff) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Forgejo.TeamMember` now declares `defaultRemovalPolicy: 'retain'`, matching `Forgejo.Repository`
+  and `Forgejo.OrgLabel`. Previously the family had no default, so alchemy's own engine fallback
+  (`destroy`) applied: dropping a `TeamMember` declaration from a stack — a feature gate toggled off,
+  a resource id renamed — called `organization.orgRemoveTeamMember` and revoked a real membership on
+  live Forgejo, with no way to tell from the declaration alone that this would happen. Found in
+  `homeflare-mini` PR 82's red team (970e8be), which had to pipe every `ForgejoTeamMember(...)` call
+  through `.pipe(RemovalPolicy.retain())` by hand to avoid dropping `forgejo-provision` from `Owners`.
 
-  Tests (`folder.test.ts`, `dashboard.test.ts`, `dashboard-model.test.ts`) use the family's existing
-  `fake-grafana.ts` harness — the real distilled protocol, only wire responses faked — and prove:
-  every request carries only its own declared fields (a GET's body is asserted `undefined`, the
-  exact "distilled JSON-encodes unknown keys as a body" trap this family's shared memory names);
-  provisioned objects refuse update/destroy with no write sent; a transient failure (401/403)
-  propagates rather than folding to absent; an unchanged declaration is a noop despite volatile
-  fields differing; and a 412 propagates uncaught.
+  A stack that means to remove a real membership still can, with `.pipe(RemovalPolicy.destroy())` —
+  `destroy` was, and stays, fully implemented. A stack already piping `RemovalPolicy.retain()` by hand
+  (homeflare-mini) is unaffected; the pipe is now redundant, not wrong. Bumped as `minor`, not `patch`:
+  this changes what removing a declaration does, not just an internal detail.
+
+  ⚠️ **The new default does not protect an existing row until you deploy once first.** Alchemy plans
+  a removal from the policy saved on that resource's state row, not from this default — the default
+  only reaches an already-existing row's state on a deploy where the resource is otherwise a no-op
+  (alchemy rewrites the row and logs `removal policy destroy → retain`). Concretely:
+
+  - **To adopt retain for a `TeamMember` declared before this bump:** deploy the version bump first,
+    with the declaration left in place (a no-op plan updates the saved policy). Only remove the
+    declaration in a later deploy.
+  - **Dropping the bump and the declaration in the SAME deploy still deletes the live membership** —
+    the plan reads the row's old `destroy` policy, not this new default.
+  - **To revoke a membership on purpose**, the sequence is unchanged: deploy with
+    `.pipe(RemovalPolicy.destroy())` first, then remove the declaration in a later deploy.
+
+- [#297](https://github.com/taslabs-net/homeflare-kit/pull/297) [`a821575`](https://github.com/taslabs-net/homeflare-kit/commit/a82157562aeea6fe06a2dd9382e131451411691e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `Proxmox.Vm` (`ProxmoxVm`) from the public barrel for Talos VMs: cpu/cores/sockets/memory,
+  scsi disks on any storage (including `cephtb4`), `net0`/indexed NICs as a VLAN-aware bridge+tag,
+  the cloud-init drive and `ipconfig0`, boot order, the guest agent and a serial console. Every field
+  is managed only when declared (`qemu-props.ts`'s declared-keys model) — the fix for the
+  "5-default PUT", where an update used to resend `cores`/`memory`/`name`/`onboot`/`sockets` with a
+  hard default for whichever field the declaration left out, silently resetting it on an adopted VM.
+  `cipassword` and `machine` can never be props (typed `never`, and refused at runtime if smuggled
+  past the types). `ProxmoxVm` defaults to `RemovalPolicy.retain()`. Node-pinned semantics are
+  unchanged: a VM found on another node still fails the plan ("A migration is not an update").
+
+  Add `Proxmox.StorageDownload` (`ProxmoxStorageDownload`): a checksum-pinned `download-url` fetch
+  onto a storage's `import` content, for staging a Talos boot image before a `Proxmox.Vm` references
+  it as a disk source. `checksum`/`checksumAlgorithm` are required props (narrower than the vendor's
+  own optional pair) and refused at runtime if left blank. There is no update path — PVE does not
+  remember the `url`/`checksum` a volume was created from, so `filename` (with `storage`) is the
+  identity: changing it plans a `replace` (the old file is deleted, the new one downloaded under its
+  own name); a changed `checksum`/`url`/etc on the SAME `filename` is refused at plan time rather than
+  silently accepted, since there is nothing left to verify it against. A failed download task (a
+  checksum mismatch included) refuses the plan rather than reporting success. Delete is idempotent
+  (a volume already gone is success) and not retained by default, since the file is reproducible from
+  its own declaration.
+
+  Both families are wired into the vendor constraint tables (`download-url`'s own
+  `generated/constraints/pve-nodes-storage.ts`) and the ownership ledger, so a value the vendor would
+  reject is refused at plan time. A live VM or file this stack holds no state for is never adopted or
+  written without `--adopt` / `adopt(true)` (`ownership/probe.ts`'s `ownedRead`, `ownership/adopt.ts`'s
+  `refuseTakeover`) — for `Proxmox.StorageDownload` this also guards its delete, since the family is
+  not retained by default. A changed `vmid` on an already-managed `Proxmox.Vm` is refused as a
+  different machine rather than planned as an update. Disk (`scsiN`/`ideN`) and NIC (`netN`) drift is
+  now judged per key against the live volume id and live MAC (`qemu-volume.ts`/`qemu-net.ts`), so a
+  declared "new disk" or MAC-less NIC no longer re-drifts (and gets rewritten) on every deploy after
+  PVE allocates the real volume or generates the real MAC. Fixed a codegen gap surfaced by
+  `download-url`'s `compression` parameter: an explicit vendor `"enum": null` (as opposed to an absent
+  `enum`) was copied verbatim into the emitted table instead of being treated as no constraint.
 
 ### Patch Changes
 
-- [#246](https://github.com/taslabs-net/homeflare-kit/pull/246) [`953c361`](https://github.com/taslabs-net/homeflare-kit/commit/953c3617ac5b1cbd06d1c91f6562d2b4f3db346f) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The `proxmox/*` family's `nodes/storage` sub-area, second resource (decision 43's serial proxmox
-  walk-down, after `access` in PR 231/239 and `storage` in PR 243): migrates `Proxmox.ZfsPool` off
-  `client.ts`'s hand-rolled `pve()`/`pveOperations` onto `@distilled.cloud/proxmox`'s typed
-  `nodes.getNodeDiskZfs`/`createNodeDiskZfs`/`deleteNodeDiskZfs`. Split into `zfs-pool.ts`
-  (resource + props), `zfs-pool-wire.ts` (the read side) and `zfs-pool-form.ts` (the write side) —
-  the api-token.ts/api-token-form.ts seam.
+- [#301](https://github.com/taslabs-net/homeflare-kit/pull/301) [`413f62b`](https://github.com/taslabs-net/homeflare-kit/commit/413f62b01ddb7e3fafb1f39f4b0153aa9ddadf5b) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Unifi.*` providers now refuse any non-`GET` request at the wire (`GetOnlyHttpClient`, installed in `unifiHandlers`), defense in depth alongside the existing per-operation write refusal, backed by a static test that bans any create/update/delete/patch/execute/remove/adopt SDK reference under `src/unifi`. Added `src/unifi/paginate.ts`'s consumer-side offset pager for the SDK's un-paginated list operations, and a pure `driftOf(live, props)` per family (`Unifi.Network`, `Unifi.FirewallZone`) reporting field-level drift for a future pre-import check.
 
-  **Clears this family's own cries-wolf false updates.** `Proxmox.ZfsPool` reads with the `read`
-  role (`Sys.Audit` on `/` — unlike `Proxmox.Storage`/`Proxmox.Acl`, it never needed `provision` for
-  a GET), and the pre-migration `pveOperations.read` folded any REFUSED mint into "absent" the same
-  way every family did before its own fix — this family just hadn't been measured failing on the
-  agent lane yet, since its privilege requirement is looser. Now wired the same dual-path pattern
-  PR 239/243 established: `readPoolOrFail` (non-folding, used by `diff`, so a genuine transient
-  failure propagates and fails the plan loudly) and `readPool` (folding, used by `createPool`'s
-  settle-poll and by `read`/`reconcile`'s create-detection) — `read`'s own provider hook branches on
-  `output` from the start, so `alchemy drift` never reports a transient failure as a silent
-  `{action: 'missing'}` either.
-
-  **A missing pool is a 500, not a 404** — MEASURED against the live cluster (TB4 `n2`, read-role,
-  read-only probe): `GET /nodes/n2/disks/zfs/<missing>` answers a generic shelled-out `zpool status`
-  command failure at HTTP 500, the same class of measured 500 every other migrated family has.
-
-  **Decision 9's adopt-only mode is preserved exactly**, including the one nuance new to this
-  family: distilled's generated `CreateNodeDiskZfsRequest` marks `devices` and `raidlevel` as
-  REQUIRED fields (no `?`), unlike PVE's own runtime behaviour, which this resource's adopt-only
-  declarations depend on being able to omit. `createForm` stays a loosely-typed `Record<string,
-string>` that can omit both — used for the vendor-constraint check (now `guardForm`, called
-  directly rather than through `guardWrite`, since this is the first migrated family whose
-  create-guard is CONDITIONAL: `guardWrite`'s own signature requires a real `EndpointKey`, but an
-  adopt-only declaration needs `undefined` some of the time) — and a separate `as unknown as` cast
-  builds the distilled-shaped request only at the point `createPool`'s own runtime guard has already
-  confirmed both fields are genuinely present, exactly preserving the pre-migration behaviour.
-
-  **One field needed distilled's hyphen-to-underscore rename** (`draid-config` -> `draid_config`,
-  the property `T.Body("draid-config")` maps back to the wire on the way out) — `storage.ts`/
-  `storage-form.ts`'s own measured finding from PR 243, here for a single field rather than a
-  free-form locator bag.
-
-  **`createPool`'s settle-poll (30 reads, 2s apart) is unchanged in behaviour** — still polling
-  `readPool`, not `@distilled.cloud/proxmox`'s own `Task.awaitTask`, which exists and would remove
-  the "not yet vs. forbidden" ambiguity the settle-poll's own comment already names as a known
-  weakness. Left as a documented follow-up rather than folded into this migration silently: swapping
-  it changes this resource's OBSERVABLE behaviour on a slow create (what a caller sees, and how),
-  which is an improvement to weigh on its own, not a transport swap.
-
-  **Two findings from adversarial review, both pre-existing (unchanged in shape from before this
-  migration, per `git blame`) but newly documented or fixed here:**
-
-  1. A re-run of `deploy` after `createPool`'s give-up `die` can, in a narrow window, POST a SECOND
-     `zpool create` at the same devices while the first worker is still writing them — the same
-     "not yet vs. forbidden" ambiguity the settle-poll already has, just for a retry rather than the
-     first attempt. Not fixed (a real fix needs task-status tracking, not a transport swap); the
-     give-up message and `createPool`'s own header now say so explicitly, where before they only
-     described the ambiguity as a slow-create observability gap.
-  2. `diff` (and its vendor-constraint check) never runs for a genuinely first-ever declaration —
-     upstream `Plan.ts` routes a brand-new resource straight to `create` without ever calling
-     `provider.diff` — so THIS WAS THE ONLY WRITE PATH IN THE FAMILY WITH NO VENDOR CHECK AT ALL,
-     before or after the migration started. Fixed: `createPool` now re-runs `guardForm` immediately
-     before its own POST, the same pattern `ceph-pool.ts`'s hand-written `reconcile` already uses
-     for the same reason.
-
-  **Also found and fixed while responding to that review** (not a finding from the review itself,
-  caught by re-running the full test suite after the changes above): an edit made to drop a dead
-  `matches()` export accidentally deleted the entire `live === undefined` branch of `diff` alongside
-  it, which would have made a genuinely-vanished pool plan `noop` forever instead of `update` —
-  caught immediately by `zfs-pool-adopt.test.ts`'s own pre-existing "an adopted pool that vanishes"
-  test failing, restored before this PR opened, left here for the record rather than silently
-  squashed into the diff.
-
-  `zfs-pool-adopt.test.ts` (the existing coverage — adopt-only noop/adopted, retain-vs-destroy, the
-  `ZfsRaidLevel` compile-time refusal) passes unchanged against the migrated code — `fake-pve.ts`'s
-  stub is transport-agnostic — plus one new case for finding 2 above (confirmed to reach a live
-  `POST` on the fake cluster without the fix, before timing out at the settle-poll). `zfs-pool-read-
-failure.test.ts` (new) pins the cries-wolf fix, the transient-failure propagation, and the
-  `alchemy drift` fix, mirroring PR 243's `storage-read-failure.test.ts` — each assertion confirmed
-  to fail against the pre-fix code before landing.
-
-  **Scope note, not fixed by this PR:** `Proxmox.NodeNetwork` and `Proxmox.NetworkApply` (the rest
-  of the "ZFS pools + node network" sub-area) are deferred to a follow-up PR — see that PR's own
-  description for why they don't travel with this one.
-
-  **Expected after this releases and the consumer bumps:** no live plan change is expected — no
-  `Proxmox.ZfsPool` row was among the false-update rows PR 239/243 already fixed (this family's
-  `read`-role lease could always read it), so this PR is a transport migration plus a defensive fix
-  for a bug class not yet measured live for this specific family.
-
-## 0.32.0
+## 0.38.0
 
 ### Minor Changes
 
-- [#236](https://github.com/taslabs-net/homeflare-kit/pull/236) [`3b4a5eb`](https://github.com/taslabs-net/homeflare-kit/commit/3b4a5eb37b1d136d1f899c48bccf50824c13f9bc) Thanks [@taslabs-net](https://github.com/taslabs-net)! - New `@homeflare/alchemy/opnsense` subpath, built on `@distilled.cloud/opnsense` (aliased onto
-  `@homeflare/distilled-opnsense@0.2.0`, generated against `opnsense/core`/`opnsense/plugins`
-  `26.7.2` — **measured live 2026-09-24** over the HTTPS API only, no SSH: the edge reports
-  `26.7.2_2`, one patch ahead of the generation tag, same series; see `docs/opnsense.md`).
-  `Opnsense.Firewall.Alias`, `.Category` and `.Group` (interface groups) are **READ-ONLY BY
-  DESIGN**: `reconcile` and `delete` always fail with a typed `OpnsenseWriteRefused`, naming the
-  policy ("read-only by Tim's rule, 2026-09-24; lifting it is a kit change") — neither handler
-  imports an `add`/`set`/`del`/`toggle` operation from the SDK, and `write-refusal.test.ts` proves
-  no write is reachable from any handler against a fake that fails on any non-GET request.
+- [#293](https://github.com/taslabs-net/homeflare-kit/pull/293) [`f11e6a6`](https://github.com/taslabs-net/homeflare-kit/commit/f11e6a6cae2ee4ca0a4604f4f23ecf1924351958) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `caddyProviders()` no longer merges Caddy's admin `HttpClient.HttpClient` (and `Credentials`) into
+  the stack's own ambient context. Previously `caddyAdminLayer` `provideMerge`d Caddy's admin transport
+  straight into `caddyProviders()`'s own Layer output; any other fetch-based provider merged into the
+  same stack — `Layer.mergeAll(…, caddyProviders(), …, forgejoProviders())`, for example — could then
+  resolve Caddy's admin `HttpClient.HttpClient` instead of the stack's real ambient one for its own
+  `read`/`diff`/`reconcile` calls, misrouting its requests to Caddy's admin API. Affected: any stack
+  that loads `caddyProviders()` alongside another fetch-based provider (homeflare-mini's `Forgejo.*`
+  and `LiteLLM.PassThroughEndpoint` rows measured reading against Caddy's admin API instead of their
+  own targets — verify's `read` came back absent/failed; writes were not exercised, so they are
+  inferred from the same misrouted client, not separately measured).
 
-  `read` follows upstream's `Snippet.ts` reference for a marker-less API exactly: a cold match is
-  `Unowned`, never a silent adopt, and each resource's convenience constructor
-  (`firewallAlias`/`firewallCategory`/`firewallGroup`) pipes `adopt(true)` on by default. All three
-  read through `get()` (the whole model tree, keyed by uuid) rather than a per-item endpoint —
-  `firewall_alias` has none, and `firewall_category`/`firewall_group`'s own `getCategory`/`getGroup`
-  carry no `uuid` in their generated request schema, a measured SDK generation gap this family works
-  around uniformly rather than relies on. Each resource also exports a pure declaration renderer
-  (`aliasPropsFromLive`/`categoryPropsFromLive`/`groupPropsFromLive`): given one live item, it
-  returns exactly the props a declaration needs to plan noop against it — what a later import
-  script will use to generate `alchemy.run.ts` rows from a live read.
+  The admin transport's `Credentials`/`HttpClient.HttpClient` are now carried under a new house-only
+  `CaddyAdminTransport` tag (never a generic platform service), and `CaddyConfigProvider()` provides
+  them locally, scoped to exactly the effects that call `@distilled.cloud/caddy`'s operations. Caddy's
+  own behaviour (unix socket and TCP admin, retries, timeouts, the admin guard) is unchanged.
 
-  This first import pass covers the three SDK modules that export both a `get` and a `search<Item>`
-  operation and are stable configuration (not runtime state): `firewall_alias`, `firewall_category`,
-  `firewall_group`. Skipped, and why, in `docs/opnsense.md`: `firewall_filter` (rules) and
-  `routing_settings` (gateways) have `get` but no `search*`; `quagga_general` is a settings
-  singleton with no uuid; `quagga_bgp` mixes several item types with no `search*` for any of them;
-  `quagga_service` is pure runtime control (start/stop/restart/status).
+  Public API narrowed: `caddyAdminLayer` now returns `Layer<CaddyAdminService | CaddyAdminTransport>`
+  (previously it also carried `Credentials | HttpClient.HttpClient`), and `CaddyConfigProvider()` now
+  requires `CaddyAdminTransport` instead of those SDK services directly. `caddyProviders()` and
+  `localCaddyAdmin()` are unaffected; only code that wired `caddyAdminLayer`'s output by hand, or ran
+  `@distilled.cloud/caddy` operations directly against it outside `caddyProviders()`, would need to
+  change — no tray repo does this today. Bumped minor rather than patch because the package is 0.x and
+  this narrows a public contract.
 
-  Credentials are `OPNSENSE_URL`/`OPNSENSE_API_KEY`/`OPNSENSE_API_SECRET`, read at call time through
-  the SDK's own `CredentialsFromEnv` (HTTP Basic, the vendor's own scheme), never a prop — today the
-  only key that exists is ROOT-level, one more reason writes stay refused unconditionally. This
-  family's own test suite makes no live call — every test runs against `fake-opnsense.ts`, a
-  loopback fake; the SDK's `26.7.2` version pin was measured separately, live and read-only
-  (`docs/opnsense.md`).
-
-- [#238](https://github.com/taslabs-net/homeflare-kit/pull/238) [`d28861f`](https://github.com/taslabs-net/homeflare-kit/commit/d28861f00dce0d9dd17e5857e95332f8d009fa2c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - New `Podman.Container` resource in `@homeflare/alchemy/linux` — one Podman Quadlet `.container`
-  file, declared, plus the systemd unit Podman's own generator turns it into. Built for Tim's
-  2026-09-24 decision that CT100's containers (the two Grafanas, shared Postgres, shared Valkey,
-  later TeslaMate and NetBox) are owned by Alchemy through Quadlet rather than upstream Alchemy's
-  `Docker.Container`, which was measured and rejected: no host-network prop (every container here
-  runs `--network host`), `environment` puts `Redacted` secrets in Alchemy state, and systemd
-  already supervises the containers.
-
-  Reuses the `Systemd.Unit` family's lifecycle machinery directly (`renderUnit`, `isUnitRunning`,
-  `UNIT_WRITE`, `daemonReload`/`showUnit`/`startUnit`/`stopUnit`/`restartUnit` from `systemctl.ts`,
-  which also gains `SourcePath` to `SHOW_PROPERTIES` — additive for `Systemd.Unit`). `[Container]`
-  is typed and checked against `podman-systemd.unit(5)`, Podman 5.4 (CT100 runs 5.4.2): `Image`,
-  `ContainerName`, `Network` (supports `'host'`), `Volume`, `EnvironmentFile`, `Environment`
-  (never a secret — refused by name and value shape if it looks like one, `container-secrets.ts`),
-  `PublishPort`, `Exec`, `User`, `AutoUpdate`, `PodmanArgs`; `[Unit]`/`[Service]`/`[Install]` mirror
-  `Systemd.Unit`'s verbatim-lines approach with typed conveniences for `Description`/`Documentation`,
-  `Restart`/`RestartSec` and `WantedBy`/`RequiredBy`/`Alias` (the only three `[Install]` keys
-  Quadlet honours for a `.container` file, doc-confirmed).
-
-  The lifecycle differs from `Systemd.Unit` in the one place the generator forces it to: there is
-  no `enabled` prop and the resource never calls `systemctl enable`/`disable` — MEASURED on CT100
-  (`caddy.container`) that a generated unit is transient and doc-confirmed
-  (`podman-systemd.unit(5)`) that `systemctl enable` does not work on one; Quadlet applies
-  `[Install]` itself at every `daemon-reload`. A generator failure (a `.container` file Quadlet
-  refuses) surfaces as a typed `QuadletGeneratorError`, never "absent" — reasoned from
-  `systemd.generator(7)` (`daemon-reload` deletes and regenerates ALL generator output): an UPDATE
-  that fails verification restores the LAST-KNOWN-GOOD file and reloads again, so a container this
-  resource already promised running never loses its systemd unit to a bad update, rather than
-  leaving the new file for the next deploy to retry the way `Systemd.Unit` does.
-
-  `container-fixture.test.ts` renders the same directives as CT100's live `caddy.container`
-  (read read-only over `ssh ct100`), and documents why byte-for-byte is not the right bar for a
-  typed `[Container]` section (CT100's file interleaves prose comments between directives, which a
-  typed prop has nowhere to attach). Full guide: `docs/quadlet-container.md`.
-
-  Two rounds of review before opening/landing this PR — one foreground Sonnet adversarial pass
-  before opening it, aimed at restart-safety and secret leakage, and one inline coordinator
-  review after. All three findings were real and are fixed:
-
-  - **Restart-safety, interrupted UPDATE (high).** `reconcileContainer`'s reload gate (`wrote ||
-preStatus.needDaemonReload`) could not see that the SOURCE `.container` file had already been
-    written by an apply that crashed before its `daemon-reload` ran: on retry, the file already held
-    the new content (`wrote: false`) and the still-stale GENERATED unit hadn't changed either
-    (`needDaemonReload: false`), so no reload ever happened, `settle` restarted the container onto
-    its OLD definition, and state recorded the new digest as if it had taken effect — permanently and
-    silently. Fixed by gating the reload on `stale` (state's digest disagreeing with what was just
-    rendered) too, the same signal `changed` already used to gate the restart.
-  - **Restart-safety, interrupted CREATE (high, found on the coordinator's inline re-review).** The
-    same bug for a resource with NO prior state: a create whose write landed but crashed before
-    `daemon-reload` retried with `wrote: false` and no `stale` to disagree with either, so
-    `verifyGenerated` threw on the still-missing generated unit forever — loud, but permanently
-    stuck, since nothing about a plain retry ever changed any of those signals. Fixed with
-    `needsVerificationReload` (`container-generator.ts`), sharing its predicate with
-    `verifyGenerated` itself so the reload gate and the check it is gating can never disagree; an
-    ordinary adoption whose generation was already proven fine still skips the extra reload.
-  - **Secret leakage (high).** `containerProblems` only ran `secretLikeEnvironment` over
-    `container.environment`; `exec`, `podmanArgs` (rendered verbatim) and the `unit.lines`/
-    `service.lines` escape hatches (which can spell a raw systemd `Environment=` outside the typed
-    map entirely) were unchecked. Fixed with `secretLikeLines` (the same value-shape and embedded
-    `KEY=VALUE` heuristics, run over every other rendered line) and an outright refusal of `-e`/
-    `--env` in `podmanArgs` (`podmanArgsProblems`), both in container-secrets.ts and wired into
-    `containerProblems`.
-
-  Regression tests for all three live in container-generator.test.ts ("an interrupted apply that
-  crashed before daemon-reload", "an interrupted CREATE that crashed before daemon-reload") and
-  container-secrets.test.ts (one per affected field); each was confirmed to fail without its fix.
-
-- [#237](https://github.com/taslabs-net/homeflare-kit/pull/237) [`1c90063`](https://github.com/taslabs-net/homeflare-kit/commit/1c9006369dd623c522a0a1c0e747582800a4d981) Thanks [@taslabs-net](https://github.com/taslabs-net)! - New `@homeflare/alchemy/unifi` subpath: `Unifi.Network` and `Unifi.FirewallZone`,
-  generated from Ubiquiti's own UniFi Network Integration API **10.4.57** (OpenAPI 3.1.0)
-  via `@distilled.cloud/unifi-network` (aliased onto `@homeflare/distilled-unifi-network@0.2.0`,
-  `docs/distilled-interim.md`).
-
-  ⛔ **READ-ONLY, by Tim's rule (2026-09-24).** Neither resource has a create, an update body
-  or a working delete — `reconcile` and `delete` both fail with a typed `UnifiWriteRefused`
-  naming the policy, and no handler ever calls an SDK write operation (proved by fakes in
-  `resource.test.ts`, `network.test.ts` and `firewall-zone.test.ts` that record every request
-  sent and assert none is anything but `GET`). `read` answers `Unowned` on every match — never
-  a silent adopt — with `adopt(true)` piped on by default via the `network`/`firewallZone`
-  convenience constructors, so a first deploy against an existing object binds without a stack
-  needing `--adopt`. `list` answers `[]`; adoption stays explicit.
-
-  `declareNetwork(live, siteId)` and `declareFirewallZone(live, siteId)` are the declaration
-  renderers this PR ships alongside the resources: pure functions from one live read
-  (`getNetworkDetails`/`getFirewallZone`'s own response shape) to the `Props` a declaration
-  needs so its plan is a no-op — what a later import script will call to generate
-  `alchemy.run.ts` rows from a live site.
-
-  `Unifi.Network`/`Unifi.FirewallZone` were chosen as the first import set because both have a
-  list+get pair over genuine, stable configuration (not runtime state like a connected client,
-  a device statistic or a hotspot voucher) and a simple, non-discriminated wire shape. `Site`
-  (list-only, no `getSite`) and `Unifi.FirewallPolicy` (several converter-flattened
-  discriminator variants, and an ordering endpoint that replaces the whole rule list) are
-  deliberately out of scope for this PR — see `docs/unifi.md`.
-
-  `Unifi.Network`'s `matches` now normalizes the three fields the vendor document never says are
-  ordered — `dhcpGuarding.trustedDhcpServerIpAddresses`, `ipv6Configuration.additionalHostIpSubnets`,
-  `ipv6Configuration.dnsServerIpAddressesOverride` — before comparing, the same `sortedSet`
-  (dedupe + sort) fix `Unifi.FirewallZone` already applied to `networkIds`: alchemy's `deepEqual`
-  sorts object keys but not array elements, so an unchanged network whose console answered the same
-  set in a different order would otherwise plan a spurious `update` that the read-only reconcile
-  then refuses.
-
-  Auth was measured live, read-only, on 2026-09-24: `X-API-KEY` against the estate's local console
-  returns HTTP 200 on `GET /v1/info` and `GET /v1/sites`; the same key against the `api.ui.com`
-  cloud connector returns 401 (the wrong door, not a broken header) — see `docs/unifi.md`'s
-  "Credentials" section. This PR's own code still never calls the vendor API live.
+## 0.37.8
 
 ### Patch Changes
 
-- [#243](https://github.com/taslabs-net/homeflare-kit/pull/243) [`823c1a8`](https://github.com/taslabs-net/homeflare-kit/commit/823c1a88fe1f8d34b90acb576231a18b7b04f0c3) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The `proxmox/*` family's `nodes/storage` sub-area (decision 43's serial proxmox walk-down, PR 3
-  after `access` in PR 231/239) migrates `Proxmox.Storage` off `client.ts`'s hand-rolled `pve()`
-  (`resource.ts`'s `pveHandlers`) onto `@distilled.cloud/proxmox`'s typed `storage.getStorage`/
-  `createStorage`/`putStorage`/`deleteStorage` — the first resource of this sub-area; the rest of
-  `nodes`/`storage` (ZFS pools, Ceph, node network) follows in later PRs, split out because each is
-  independently substantial (see this PR's own description for why). `storage-wire.ts` (the read
-  side) and `storage-form.ts` (the write side) hold the pure wire-shape functions, the
-  api-token.ts/api-token-form.ts seam.
+- [#290](https://github.com/taslabs-net/homeflare-kit/pull/290) [`6ddbff3`](https://github.com/taslabs-net/homeflare-kit/commit/6ddbff38096feecb36d3f0efe6efc0418e938145) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Podman.Container` no longer reads as an existing (and therefore "adopted") resource when its
+  `.container` file is absent but a PLAIN unit that genuinely outranks Quadlet's generator in
+  systemd's unit load path — `/etc/systemd/system` chief among them, never a vendor directory like
+  `/usr/lib/systemd/system`, which is lower precedence than the generator and not a real shadow —
+  already answers to the same service name. The read now refuses at plan time, naming the shadowing
+  unit file and the fix (move it aside before declaring the container), instead of a create silently
+  becoming an "adopted" plan whose eventual apply would leave the pre-existing plain unit running
+  untouched while state recorded attributes read back from it. `verifyGenerated` is also hardened to
+  check the same fact as a backstop at apply time, for the case this plan-time check does not cover.
 
-  **Clears this family's own cries-wolf false updates**, MEASURED live 2026-09-24: on the agent
-  (`read`-role) lane, `bun run plan` showed all 5 storages (`cephfs-tb4`, `cephtb4`, `local`,
-  `local-zfs`, `pbs`) as `update` with no warning, because this family reads with `provision`
-  (`Datastore.Allocate` on `/storage` — `Datastore.Audit` is not enough) and the pre-migration
-  `pveOperations.read` folded a REFUSED `provision` mint into "absent" exactly like every family
-  before PR 231/239's fix — `unreadable-read.ts`'s own header already named this family as one of
-  the two the fix was written for. Now wired the same way: a refused mint reports `noop` with a
-  logged warning.
+- [#292](https://github.com/taslabs-net/homeflare-kit/pull/292) [`4225c4c`](https://github.com/taslabs-net/homeflare-kit/commit/4225c4c95dbf3e7e763c83565481487ef1a88212) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `sshSudoRunner` now lets `Podman.Container` reach its own Quadlet-generated unit: a generated
+  unit's `FragmentPath` sits under a systemd generator's own output directory (`/run/systemd/generator`,
+  never a declared prefix), but its `SourcePath` names the `.container` file that produced it — when
+  that `SourcePath` is under a declared prefix, the runner elevates. Previously every generated unit
+  was refused outright, so `Podman.Container` could never be restarted through this runner at all.
 
-  **A missing storage is a 500, not a 404** — MEASURED against the live cluster (TB4, admin lane,
-  read-only `GET /storage/hf-measure-nonexistent-probe`): `{"message":"storage '...' does not
-exist\n"}` at HTTP 500, the same shape user.ts/group.ts measured for a missing user/group. So
-  `storage-wire.ts` carries the same dual-path read PR 239 established for those two families:
-  `readStorageOrFail` (non-folding, used by `diff`, so a genuine transient failure propagates and
-  fails the plan loudly) and `readStorage` (folding, used by `read`/`reconcile`'s create-detection).
-  `read`'s own provider hook also branches on `output` from the start (PR 239's own follow-up
-  finding, applied here proactively): `output === undefined` (Plan.ts's adoption probe, Apply.ts's
-  delete recovery — nothing confirmed exists yet) keeps the fold; `output !== undefined`
-  (`Drift.ts`'s already-confirmed row) uses the non-folding read instead, so `alchemy drift` never
-  reports a transient failure as a silent `{action: 'missing'}` either.
+  `Systemd.Unit`'s validation now accepts leading blank lines and `#`/`;` comments before the first
+  `[Section]`, per `systemd.syntax(7)` — a unit file systemd already loads could still fail
+  `assertValid` if its first lines were comments. A genuine `key=value` line with no section still
+  refuses.
 
-  **Two measured gaps in `@distilled.cloud/proxmox`'s generated schema, handled rather than
-  papered over:**
+  `Podman.Container`'s "the container's unit is NOT running" refusal message no longer asserts a
+  running state it does not actually know (measured false for a refusal that ran before sudo did
+  anything at all); it reads the unit's live state back and reports that instead.
 
-  - No `maxfiles` field at all (grepped across the whole package). Silently dropping a declared
-    value would be the exact class of bug this migration exists to close, so `StorageProps.maxfiles`
-    is now `never` — a compile error, the same treatment `StorageLocator`'s `password`/`keyring`/
-    `encryption-key` already get — rather than a silent no-op. None of this cluster's 5 live
-    storages set it; a consumer that genuinely needs it should file the gap upstream in the SDK's
-    generator, not work around it here.
-  - Every hyphenated PVE field name becomes an underscore in distilled's generated TypeScript
-    (`prune-backups` -> `prune_backups`, `fs-name` -> `fs_name`, and so on for every plugin field
-    `StorageLocator`'s free-form bag can carry — `cephfs-tb4`'s own live locator uses `fs-name`).
-    No other migrated family has a hyphenated field, so this is new here. `storage-form.ts`'s
-    `underscored` translates a form built with PVE's own names into distilled's shape before the
-    actual SDK call, never before the form the generated vendor-constraint tables check
-    (`guardWrite`, keyed by PVE's own hyphenated names), which would otherwise silently stop
-    inspecting the very fields it exists to catch. MEASURED both ways (a `storage-read-failure.test.ts`
-    case run once with the translation and once without it): the wire itself carries PVE's own
-    hyphenated name either way — distilled's own "unknown key" passthrough happens to re-encode an
-    untranslated key correctly for a body-bearing POST/PUT (unlike the GET case that caused PR 239's
-    regression, where no body should exist at all). The translation is still the right call: it
-    routes every field through distilled's own declared, typed property rather than its passthrough
-    fallback, so whatever per-field wire logic a future plugin field carries beyond a plain rename
-    runs correctly rather than silently not running.
-
-  `storage-read-failure.test.ts` pins all of this against real-shaped fixtures (live TB4 response
-  bodies, measured 2026-09-24, nothing secret): the cries-wolf fix, `diff`/`verify()` rejecting on a
-  transient failure instead of a false `update`, `alchemy drift` rejecting instead of a silent
-  `missing`, and — added after an adversarial review found every test above only ever adopted an
-  EXISTING storage, never exercising `reconcile`'s actual create path — a brand-new storage's create
-  translating a hyphenated locator field for the real SDK call, and a vendor-constraint violation on
-  a hyphenated locator field refused before any write. Each assertion confirmed to fail against the
-  pre-fix code (or, for the translation claim, against the untranslated code) before landing.
-  `verify/fake-engine.ts` gained a `drift` capability (driving the real `Alchemy.Drift.detect`) in
-  PR 239, reused here; that PR's `read-failure-propagation.test.ts` already established the
-  transient-failure/drift test pattern for User/Group.
-
-  **Expected after this releases and the consumer bumps:** on the agent lane, `bun run plan`'s
-  5 storage rows return to `noop`; ACLs and users/groups (PR 231/239) stay unaffected.
-
-## 0.31.2
+## 0.37.7
 
 ### Patch Changes
 
-- [#239](https://github.com/taslabs-net/homeflare-kit/pull/239) [`1e8985f`](https://github.com/taslabs-net/homeflare-kit/commit/1e8985fc8359304b2c6d03df0fba00781e5e32a0) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fixes a live regression from kit 0.31.1 (PR 231, the `proxmox/access`
-  distilled migration): on the agent (`read`-role) lane, `bun run plan` showed
-  every `Proxmox.User`/`Proxmox.Group` row as `update` with no warning — a
-  silent false diff, not the loud "read was refused" case that migration was
-  meant to fix.
+- [#278](https://github.com/taslabs-net/homeflare-kit/pull/278) [`4b3c9eb`](https://github.com/taslabs-net/homeflare-kit/commit/4b3c9ebc0792386e797b2e1293b3c41cce4ddac7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Move Lxc reads, writes and task polling to named distilled operations. Preserve task
+  credentials, ownership, digests, no-shrink checks and retention; prove absence with
+  the exact SDK missing-config tag and the same credential's cluster-wide vmid check.
 
-  **Root cause, measured against the live cluster.** `user.ts`/`group.ts`
-  called `access.getAccessUser(props)`/`access.getAccessGroup(props)` with the
-  whole declared props object, not just the schema's own `{userid}`/
-  `{groupid}` label field. distilled's `buildRequest` treats any OTHER key on
-  that object (`target`, `comment`, every other prop this family carries) as
-  an "unknown key" and JSON-encodes it onto the request as a body — on what
-  must stay a bodyless GET. A permissive client tolerates this; Node/Bun's own
-  `fetch` refuses it outright
-  (`TypeError [ERR_INVALID_ARG_VALUE]: fetch() request with GET/HEAD method
-cannot have body`), which `runPveWith` retried across every cluster member
-  and exhausted identically (`PveClusterExhausted`). The old
-  `Effect.orElseSucceed(() => undefined)` then folded that failure into
-  "absent", forcing a false `update` on every account and every group — the
-  same cries-wolf bug PR 231 had just fixed for a refused credential, now
-  triggered by a genuine transport failure instead. Fixed by calling both
-  operations with only their declared label field.
+- [#283](https://github.com/taslabs-net/homeflare-kit/pull/283) [`a19c663`](https://github.com/taslabs-net/homeflare-kit/commit/a19c6632e3654c73fb3bf03dd9e2869b9ed65fdd) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Keep the PVE network `changes` sibling through the distilled protocol, and move NetworkApply onto named operations without storing the diff.
 
-  **The fold itself was too broad, independent of the request-shape bug.**
-  `orElseSucceed` turning ANY read failure into "absent" is unsound at `diff`
-  time: only a genuine not-found may mean absent, every other failure must
-  fail the plan loudly rather than silently forcing a write. `acl.ts` (already
-  migrated pre-231) and `role.ts` never needed a fold at all — an ACL/role's
-  absence is always a successful list read that just doesn't contain the row,
-  so any thrown failure was already a bug; the fold there is now removed
-  outright. `api-token.ts`'s absence signal is likewise a measured
-  success-path check (`expire`/`privsep` both undefined on a 200), so its
-  fold is also removed outright.
+- [#278](https://github.com/taslabs-net/homeflare-kit/pull/278) [`4b3c9eb`](https://github.com/taslabs-net/homeflare-kit/commit/4b3c9ebc0792386e797b2e1293b3c41cce4ddac7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Move ReplicationJob and FirewallAlias lifecycle transport to named distilled SDK operations. Preserve no-write adoption, existing form and deletion semantics, and fail closed on unrelated errors or malformed reads.
 
-  `user.ts`/`group.ts` are different: a genuinely missing user or group is a
-  thrown 500 on this cluster (`"no such user"`/`"no such group"`, not a clean
-  404), MEASURED live — so `reconcile`'s create workflow still needs "absent"
-  derived from exactly that failure, or a brand-new declaration could never be
-  created. Each now has a dual-path read in its `*-wire.ts` sibling: a
-  non-folding `read...OrFail` (used by `diff`, so a genuine transient failure
-  propagates and fails the plan loudly) and a folding wrapper kept only for
-  `read`/`reconcile` (where folding costs at most a redundant, loudly-refused
-  create, never a silent wrong write).
+- [#278](https://github.com/taslabs-net/homeflare-kit/pull/278) [`4b3c9eb`](https://github.com/taslabs-net/homeflare-kit/commit/4b3c9ebc0792386e797b2e1293b3c41cce4ddac7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix two regressions from the distilled transport migration: ReplicationJob reads no
+  longer fail closed when a SectionConfig release echoes guest/jobnum as text instead
+  of a JSON number, and lxcTask's poll loop no longer aborts a still-running task on a
+  status word other than exactly "running"/"stopped".
 
-  **A second, deeper instance of the same bug class, found by adversarial
-  review of this fix rather than measured live.** The engine calls a
-  provider's `read` hook from four places — an adoption probe and
-  interrupted-create recovery in `Plan.ts`, delete recovery in `Apply.ts`, and
-  `Drift.ts` (`alchemy drift`/`sync`/`deploy --detect-drift`) — and only the
-  first three are "nothing confirmed exists yet" cases where `read`'s own
-  fold is safe. `Drift.ts` calls `read` on an ALREADY-CONFIRMED row (its own
-  persisted `output`), the same situation `diff` handles, and a folded
-  failure there is reported as `{action: 'missing'}` with no error anywhere —
-  worse than the original bug, since nothing even logs a warning. Fixed by
-  having `user.ts`/`group.ts`'s `read` hook branch on the input's own
-  `output` field (documented on `Provider.read`'s own type as "current state
-  -> synced state"): `output === undefined` still uses the folding read
-  (unchanged, for the three recovery/adoption cases), `output !== undefined`
-  now uses the same non-folding `read...OrFail` `diff` already calls.
+- [#282](https://github.com/taslabs-net/homeflare-kit/pull/282) [`08b1789`](https://github.com/taslabs-net/homeflare-kit/commit/08b1789cf835af177960aba5e4fbf16d007b087e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Move Proxmox.Vm onto named QEMU operations. Guest deletion uses the destroy route, and only the vendor missing-config error is absence.
 
-  `read-failure-propagation.test.ts` pins all three fixes end to end against
-  real-shaped PVE fixtures (live response bodies, nothing secret): a GET that
-  would carry a body now fails the assertion outright; a transient 500 on an
-  already-adopted `Proxmox.User`/`Proxmox.Group` now rejects `verify()`
-  instead of resolving with a false `update`; and (a new `drift` capability
-  on the shared `fake-engine.ts` test harness, driving the real
-  `Alchemy.Drift.detect`) the same transient failure now rejects `alchemy
-drift` instead of silently reporting the resource missing — each of the
-  three new/changed tests was confirmed to fail against the pre-fix code
-  before this change landed.
+- [#282](https://github.com/taslabs-net/homeflare-kit/pull/282) [`08b1789`](https://github.com/taslabs-net/homeflare-kit/commit/08b1789cf835af177960aba5e4fbf16d007b087e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix a regression in the QEMU distilled transport migration: qemuTask's poll loop no
+  longer aborts a still-running VM create/destroy on a status word other than exactly
+  "running"/"stopped" (the same class of fix already shipped for lxcTask).
 
-  **Expected after this releases and the consumer bumps:** on the agent
-  lane, `bun run plan`'s users/groups return to `noop`, ACLs stay
-  `noop`-with-warning, and the five pre-existing storage rows (a separate,
-  not-yet-migrated family) are unaffected.
-
-- [#234](https://github.com/taslabs-net/homeflare-kit/pull/234) [`3357caa`](https://github.com/taslabs-net/homeflare-kit/commit/3357caa7c9a412365d3959bbb306628329eba4f8) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `@distilled.cloud/grafana` is not published upstream yet, so this package
-  now aliases it onto `@homeflare/distilled-grafana` (0.1.0 pre-release,
-  built the distilled way and shipped from this monorepo — see
-  `docs/distilled-interim.md`) as a plain `dependencies` entry instead of a
-  `1.0.0-rc.12` peer — nothing changes for a consumer's install (the peer
-  line is simply gone from the README and the smoke install, the same way
-  `/netbox` and `/litellm` already read). `Grafana.Datasource`'s props,
-  attributes and generated calls are unchanged — its existing tests pass
-  unmodified.
-
-  The alias also picks up `@distilled.cloud/grafana`'s newly-added folder,
-  dashboard and alerting-provisioning operations (see the
-  `@homeflare/distilled-grafana` changeset), which fixes the SDK-level gap
-  `docs/grafana.md` and `docs/upstream-conformance.md` recorded. No new house
-  `Resource` is added here — `Grafana.Folder`/`Dashboard`/`AlertRule`/etc. on
-  top of these operations is follow-up work, not part of this change.
-
-  ⚠️ **Deliberate deviation from `docs/distilled-interim.md`'s step 5.** That
-  doc has the interim package publish and get confirmed live
-  (`npm view @homeflare/distilled-grafana version`) in its own PR _before_ a
-  second PR adds the alias — exactly to dodge the propagation window
-  `scripts/publish.ts`'s own comments document twice (2026-09-15,
-  `kit@0.1.1`/`cloudflare@0.1.1`: "Your package is being processed and may
-  take a few minutes to become available"). This PR does both at once, on
-  purpose, so the next teams building `Grafana.Folder`/`Dashboard`/`AlertRule`
-  aren't blocked on a second release cycle. `scripts/publish.ts` has no
-  dependency-aware ordering, so **after this releases, confirm
-  `npm view @homeflare/distilled-grafana version` resolves before anyone
-  depends on the new `@homeflare/alchemy` version** — a few minutes' wait,
-  not a code change, and self-healing either way (the publish script is
-  idempotent and a stuck install just needs a retry).
-
-## 0.31.1
+## 0.37.6
 
 ### Patch Changes
 
-- [#231](https://github.com/taslabs-net/homeflare-kit/pull/231) [`11705f2`](https://github.com/taslabs-net/homeflare-kit/commit/11705f2b88d19335be5a115e06f7f6ca883b63b3) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The `proxmox/*` family's `access` sub-area (decision 43's serial proxmox
-  walk-down, PR 2 after `Proxmox.Acl` in PR 209/220) now calls
-  `@distilled.cloud/proxmox`'s typed `access.*` operations instead of
-  `client.ts`'s hand-rolled, generic `pve()` call: `Proxmox.User`, `Proxmox.Group`,
-  `Proxmox.Role` and `Proxmox.ApiToken`. Each gets its own hand-written
-  reconcile (read/diff/reconcile/delete), the way `acl.ts` established, rather
-  than the shared `pveHandlers`/`pveOperations` factory — a `*-wire.ts` sibling
-  per family holds the pure wire-shape functions (create/update forms,
-  attributes, `matches`), keeping every file under the house's 250-line cap.
-  `client.ts`/`pveOperations` are untouched and still serve every other PVE
-  family; nothing in `nodes`, `storage`, `notifications` or PBS has moved yet.
+- [#276](https://github.com/taslabs-net/homeflare-kit/pull/276) [`0d9175d`](https://github.com/taslabs-net/homeflare-kit/commit/0d9175d89f5b05eea64da731affb4a5edc9b4e25) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Use the distilled OpenBao SDK for AppRole metadata reads, writes, deletes and rename
+  collision checks. Preserve omitted role settings and existing no-op, ownership and deletion
+  guards; permission and malformed-response failures never become absence. Reads and the
+  metadata write retain the existing bounded transport retry — the write sends every managed
+  field every time, so replaying it after a transport failure converges on the same role;
+  delete makes one attempt. Checked against the OpenBao 2.6.2 generated AppRole schema and
+  pinned vendor source. No login or credential issuance operations change.
 
-  `Proxmox.Role` reads via `GET /access/roles` (the list), not the item
-  `GET /access/roles/{roleid}` this family used before: distilled's generated
-  schema for the item response enumerates a FIXED set of ~47 known privilege
-  field names, and a privilege outside that set would silently vanish from
-  state on every read. The list's `privs` field is the same plain comma string
-  PVE's item read also disagreed with the index about pre-migration, with no
-  fixed enumeration to fall behind — `role-wire.ts`'s `find` does the item
-  read's old client-side job. Every other family in this PR still reads the
-  item it read before.
+- [#276](https://github.com/taslabs-net/homeflare-kit/pull/276) [`0d9175d`](https://github.com/taslabs-net/homeflare-kit/commit/0d9175d89f5b05eea64da731affb4a5edc9b4e25) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Run every OpenBao ACL policy lifecycle call, including rename collision reads, through
+  the distilled OpenBao SDK. Preserve shared concurrency limits, agent sockets, runtime
+  credentials, namespace selection, and token trace redaction. Only typed missing-policy
+  errors mean absence; refused and malformed reads fail. Reads retain bounded transport
+  retries; a policy write sends the full policy text every time, so it retries a transport
+  failure the same bounded way; a delete makes one attempt after an uncertain response.
+  Checked against the OpenBao 2.6.2 generated schema and pinned vendor policy handlers.
 
-  A `distilled-guard.ts` module (`asForm`/`guardWrite`) is the generalized
-  form of `acl.ts`'s own local `guardWrite`, needed because distilled's
-  generated request interfaces have no index signature and TypeScript refuses
-  `Record<string, string | undefined>` for them directly — `body: object`
-  plus one internal cast is the fix, applied once here rather than at every
-  call site.
-
-  **The cries-wolf fix** (measured 2026-09-24: `bun run plan` on the agent lane
-  showed "19 to update" — 14 ACLs and 5 storages — because a REFUSED read
-  folded into "absent" and `diff` forced `update` without comparing a field).
-  `credentials.ts`'s `mint` now fails a 403 from OpenBao (a denied
-  role — "this identity's AppRole has no grant") with a new typed
-  `PveCredentialDenied` (`credential-errors.ts`), split out from the newly
-  `mint.ts`-housed `mint`/`authorization` to keep `credentials.ts` under the
-  line cap. A new `unreadable-read.ts` module's `readOrUnreadable` `catchTag`s
-  exactly that one tag — never any other read failure — turning it into an
-  `UNREADABLE` sentinel `diff` can tell apart from a genuine absence. Upstream's
-  `Diff` type is exactly `NoopDiff | UpdateDiff | ReplaceDiff`
-  (`packages/alchemy/src/Diff.ts@v2.0.0-beta.79`) with no fourth action, and
-  `Plan.ts`'s resource pass fails the WHOLE plan if even one resource's `diff`
-  throws — so `diff` now reports `{action: 'noop'}` plus a logged warning for
-  an unreadable row, never a failed plan and never a forced write. Wired into
-  `acl.ts` (the already-migrated family) and every family in this PR;
-  `unreadable-read.test.ts` proves it end to end through Alchemy's real Plan
-  and Apply, with a fake OpenBao that denies `provision` mid-test. `storage.ts`
-  and the other five false updates stay open until `nodes`/`storage` migrates.
-
-  Distilled's `{userid}`/`{tokenid}` label substitution percent-encodes them
-  (`iac@pve` -> `iac%40pve`), where `client.ts`'s plain string concatenation
-  sent the `@` literally — a real PVE decodes both the same way, so this is
-  not a behaviour change a stack observes, but every fake cluster with an `@`
-  in a userid (`user.test.ts`, `api-token-adopt.test.ts`,
-  `provision-declare.test.ts`) now decodes the path before matching it.
-
-  State did not move: every Props/Attributes interface is unchanged, and the
-  existing cross-family `adopt-noop.test.ts` cases (now extended with `Group`
-  and `User` rows for the new hand-written reconciles) and
-  `api-token-adopt.test.ts` pass with the same assertions the pre-migration
-  code made. New tests (`group.test.ts`, `user.test.ts`, `role.test.ts`)
-  drive a fake PVE server through the real distilled protocol, covering
-  create, drift-correction, delete, retain-by-default and the read-back guard.
-
-  `codegen/constraints.ts` regenerated: `Proxmox.ApiToken` no longer names its
-  (always-unreachable) create endpoint anywhere in source, so the generated
-  tables and the hand-written ownership ledger
-  (`scripts/proxmox-ownership-pve.ts`) both drop that one claim — 74 tabled
-  endpoints, not 75.
-
-## 0.31.0
-
-### Minor Changes
-
-- [#228](https://github.com/taslabs-net/homeflare-kit/pull/228) [`25610e8`](https://github.com/taslabs-net/homeflare-kit/commit/25610e890ac360456c318dd8dbefd0d54ccf0d3e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - New `@homeflare/alchemy/discord` subpath, built directly on `@distilled.cloud/discord`
-  (1.0.0-rc.12) — no hand-rolled client ever existed for this vendor to retire.
-  `Discord.ApplicationCommand` (global) and `Discord.GuildApplicationCommand` (guild-scoped)
-  declare a slash/user/message command; `reconcile` is one upsert call, matching Discord's own
-  create-endpoint semantics (a command with the same name overwrites the old one), the same shape
-  `Cloudflare.Snippets.Snippet`'s `putSnippet` uses upstream. `read` follows that same upstream
-  reference for a marker-less API exactly: a cold match is `Unowned`, never a silent adopt, and
-  both convenience constructors (`applicationCommand`, `guildApplicationCommand`) pipe `adopt(true)`
-  by default. Rate limits are handled entirely by the SDK's own bounded default retry policy
-  (`Schedule.recurs(8)`, honoring a `429`'s `Retry-After`); this family adds no retry logic of its
-  own. Credentials are `DISCORD_BOT_TOKEN`/`DISCORD_TOKEN`, read at call time through the SDK's own
-  `CredentialsFromEnv`, never a prop.
-
-  Walked read-only against the live target, `hf-discord-halibut.service` on CT100: the bot
-  self-registers nine guild-scoped commands at every startup (Sapphire's `BulkOverwrite`), so
-  `docs/discord.md` documents the ownership conflict and the handover sequence rather than
-  declaring `Discord.GuildApplicationCommand` against Halibut's own guilds — that would fight the
-  bot's own registration, not replace it. Guild roles, channels and webhooks are not built: Halibut
-  uses none of them (measured on CT100), and the engine in `resource.ts` generalizes cleanly to a
-  future spec file if a stack ever needs one.
-
-  SDK gaps recorded in `docs/discord.md`: every generated operation's typed error union is narrower
-  than the protocol's own status map (`Forbidden`/`NotFound`/`BadRequest`/`Conflict` are built at
-  runtime but not in the exported type — measured via `tsc`, not assumed); `options` is passed
-  through opaquely rather than re-modeled from the ~40-type generated union; there is no vendor
-  constraint table (unlike NetBox/Paperless); global command propagation (up to an hour, Discord's
-  own docs) is not polled.
-
-## 0.30.0
-
-### Minor Changes
-
-- [#229](https://github.com/taslabs-net/homeflare-kit/pull/229) [`b4d714e`](https://github.com/taslabs-net/homeflare-kit/commit/b4d714eff527c8c875afca2cb529d5f312bd1efa) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Added `caddy/formatCaddyfile(text)`: pipes a Caddyfile through the LOCAL
-  `caddy fmt -` binary (stdin in, formatted text out) — the same formatter the
-  `caddy fmt` CLI command runs. There is no admin API endpoint for this
-  (`cmd/commandfuncs.go` is CLI-only), so it shells out with
-  `ChildProcessSpawner` (S19) rather than going through `@distilled.cloud/caddy`,
-  and it never reimplements the formatter in TypeScript: a missing or failing
-  binary fails the Effect with a typed `CaddyFmtNotFound` / `CaddyFmtFailed`,
-  it never silently returns the input unformatted.
-
-  Also: `Caddy.Config`'s plan (`diffConfig`) and deploy (`CaddyConfigProvider`'s
-  `reconcile`) now surface the adapter's "Caddyfile input is not formatted"
-  warning as its own clear line naming the fix, separately from any other
-  adapter warnings — it used to be silent at plan time, and just another line
-  in the pile at deploy time. Nothing here changes what gets loaded onto Caddy:
-  formatting should never change the adapted JSON digest.ts compares (reasoned
-  from the Caddyfile grammar; not measured against a real Caddy in this
-  package — see docs/caddy-fmt.md).
-
-- [#226](https://github.com/taslabs-net/homeflare-kit/pull/226) [`bfc71a3`](https://github.com/taslabs-net/homeflare-kit/commit/bfc71a31e811aab0ccdbbc5ce82ee6803c7ad277) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add the Google Workspace provider family (`@homeflare/alchemy/google-workspace`): `Group`,
-  `GroupMember`, `DomainAlias` and `OrgUnit` over the Admin SDK Directory API, built on
-  `@distilled.cloud/google-workspace@1.0.0-rc.12`'s typed `admin_directory_v1` operations
-  (S23 — no hand-rolled client). Adopt-first by get-by-key, `retain` on removal for everything
-  but membership, and no `User` resource (Google's own `User` schema carries a `password` field).
-  Credential setup — domain-wide delegation, the least OAuth scopes each resource needs, and
-  where the service-account key lives in OpenBao — is in
-  `packages/alchemy/docs/google-workspace.md`.
-
-- [#225](https://github.com/taslabs-net/homeflare-kit/pull/225) [`a68c021`](https://github.com/taslabs-net/homeflare-kit/commit/a68c0212f951d3492e5fde981f7f334f777d21fe) Thanks [@taslabs-net](https://github.com/taslabs-net)! - New family: `@homeflare/alchemy/grafana`. `Grafana.Datasource` declares one data source, keyed by
-  `uid`, calling `@distilled.cloud/grafana`'s typed `addDataSource`/`getDataSourceByUID`/
-  `updateDataSourceByUID`/`deleteDataSourceByUID` operations, `catchTag('NotFound', ...)` in place of
-  a status check. Credentials are a `GrafanaTarget` (instance origin + a token env var NAME, never a
-  literal value) resolved lazily per call, parameterized per instance rather than fixed like
-  Forgejo's — this estate runs more than one Grafana. `grafanaProviders(target)` composes the
-  provider with its credentials, mirroring `litellmProviders`.
-
-  Only `Datasource` ships: `@distilled.cloud/grafana@1.0.0-rc.12` has no create/update/delete
-  operations for folders, dashboards, alert rules or contact points, measured against its published
-  types — recorded in `docs/grafana.md` and `docs/upstream-conformance.md` rather than worked
-  around with a hand-rolled client for the missing pieces.
-
-  Built and measured, read-only, against the live target `teslamate-grafana.service` on CT100
-  (Grafana 13.1.3, `teslamate/grafana:4.2.0`): one file-provisioned datasource, image-baked
-  dashboards, no folders, alert rules or contact points. No stack yet imports this subpath.
-
-## 0.29.1
+## 0.37.5
 
 ### Patch Changes
 
-- [#223](https://github.com/taslabs-net/homeflare-kit/pull/223) [`dc37600`](https://github.com/taslabs-net/homeflare-kit/commit/dc37600d0bb1c72ed2711351e498949af81271c6) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `declareRepoBaseline` and `declareRepoPolicy` declared `GitHub.Repository` and their
-  `RepositoryRuleset` as two independent resources with no dependency edge between them (K5,
-  kit PR 216). `repoBaselineSettings`/`repoPolicy` already gate `allowAutoMerge` on
-  `checks.length > 0`, but with nothing ordering the two resources, a deploy that moves a repo
-  from `checks: []` to a non-empty list could apply the repository (turning auto-merge on) before
-  the ruleset (adding the required check) — or the ruleset apply could fail outright, leaving
-  auto-merge on with nothing required. `gh pr merge --auto` merges a CLEAN pull request the instant
-  nothing is outstanding, so that window is exactly the fail-open state K5 exists to prevent.
+- [#285](https://github.com/taslabs-net/homeflare-kit/pull/285) [`e62f8e9`](https://github.com/taslabs-net/homeflare-kit/commit/e62f8e975b3c9a110a7e94c9c02644539e459600) Thanks [@taslabs-net](https://github.com/taslabs-net)! - LiteLLM pass-through calls use the fetch HTTP client, so a stack that also provides Caddy's admin client still reaches the proxy. Host.Directory recovers an interrupted create whose path was still an Output instead of crashing the next plan.
 
-  Both callers now thread the ruleset's `rulesetId` through `allowAutoMerge`'s own value
-  (`repo-auto-merge-gate.ts`'s `gateAutoMergeOnRuleset`, via `alchemy/Output`'s `map`) whenever a
-  declaration turns auto-merge on, instead of writing it as a literal. Alchemy orders resources by
-  Output references in props (`Plan.ts`'s `Output.upstreamAny`, `Apply.ts`'s `waitForDeps` —
-  see the kit's own `alchemy-output-refs-order-resources` memory), so this makes the engine apply
-  the ruleset first, with no change to the value actually sent (`allowAutoMerge` is still exactly
-  `true`). A ruleset apply failure now leaves the repository's `reconcile` — and `allowAutoMerge`
-  — untouched, proved by a new engine-level ordering test and failure test for each caller.
-
-  The reverse transition (checks/approvals removed) needs no matching edge: neither caller ever
-  declares a rule's removal explicitly, only omits it, and `repository-ruleset-guards.ts`'s
-  `requiredChecksOmissionRefusal`/`undeclaredLiveRuleRefusal` already refuse — regardless of apply
-  order — to drop a still-live required rule by omission.
-
-  Known trade-off (found by adversarial review, 2026-09-24): forcing the ruleset first only helps
-  once the repository already exists. A repo and its ruleset created together for the FIRST time,
-  with `checks` non-empty from day one, now fails clearly instead of racing — GitHub's own ruleset
-  API 404s on a repository that does not exist yet, and the engine now guarantees that order rather
-  than leaving it to chance. Both `declareRepoBaseline` and `declareRepoPolicy` document this and a
-  new test proves the failure is explicit, not a silent fail-open; the fix is for an ALREADY-LIVE
-  repo moving from no checks to some, which is K5's own scenario and the documented use of both
-  functions.
-
-## 0.29.0
-
-### Minor Changes
-
-- [#222](https://github.com/taslabs-net/homeflare-kit/pull/222) [`1e6285f`](https://github.com/taslabs-net/homeflare-kit/commit/1e6285fb229dca7455afa5b52e1c79ca3286dc26) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Declare `@distilled.cloud/discord`, `@distilled.cloud/google-workspace` and `@distilled.cloud/grafana` (1.0.0-rc.12) as exact-pinned peers, ahead of the Discord, Google Workspace and Grafana provider families. Per the peer contract they are required, and they appear in the README install line and the smoke install.
-
-- [#208](https://github.com/taslabs-net/homeflare-kit/pull/208) [`2d28264`](https://github.com/taslabs-net/homeflare-kit/commit/2d28264e71d9f141ff0771f57dab49d6daa79904) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `GitHub.RepositoryRuleset`'s `rules.pullRequest.extraApprovalForUnattributedChanges` now accepts
-  `true`, not only `false`. Re-read live 2026-09-23, 8 rulesets carry
-  `require_extra_approval_for_unattributed_changes: true` (aop, cloudflareforms,
-  doesthishelp-workeropen, homeflare-anyauth, homeflare-desktop, loggarr, magictransit,
-  proxmox-tb4), so this resource could not declare their exact shape before: it would either omit
-  the field (leaving it unmanaged, refused once a caller also carries a `bypassActors`/rule
-  declaration for the same ruleset) or send `false`, which is real drift against a live `true` on
-  every plan.
-
-  The wire builder now sends whatever is declared instead of hardcoding `false`; `undefined` still
-  means "no opinion" (GitHub defaults an absent key to `true`). `repoBaselineRuleset()` in
-  repo-baseline-data.ts is unchanged — the house baseline still pins `false` for the repos that
-  fit it; a caller with a live `true` declares `RepositoryRuleset` directly with the live value,
-  the same pattern kit PR 205 established for `bypassActors` and rule presence.
-
-  Tested against aop's full live shape (`gh api repos/taslabs-net/aop/rulesets/14572279`,
-  re-read 2026-09-23): declaring the live value (including `true`) is now a genuine zero-write
-  adopt, and declaring `false` against a live `true` is still real drift, never a silent noop.
-
-- [#214](https://github.com/taslabs-net/homeflare-kit/pull/214) [`9af4441`](https://github.com/taslabs-net/homeflare-kit/commit/9af4441462743476da58ee06af877ec0b346aa1f) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `GitHub.RepositoryRuleset`'s "never-reported context" guard (`refuseUnreportedContexts` /
-  `hasContextReportedSuccess`) checked only the default branch's current tip. The house's rendered
-  CI (`packages/config/src/repo-shape/ci.ts`) triggers on `pull_request` only, deliberately (no
-  `push: [main]` — a squash-merged commit re-testing an already-green PR was ~41% of the mini's CI
-  load, measured 2026-09-15..22), so `ci`, `secret scan` and `CodeQL` never report on the tip
-  itself. The guard refused adding any of them everywhere, including homeflare-builds' pending
-  first ruleset.
-
-  `hasContextReportedSuccess` now falls back to up to `RECENT_MERGED_PR_LIMIT` (10) recent merged
-  pull requests' head SHAs — one bounded list call, never the repo's full PR history — checked only
-  if the tip itself has no reported success. A context that has never reported success ANYWHERE
-  (not the tip, not any recent merged head) is still refused: the guard's whole purpose is
-  unchanged, only where it is willing to look for evidence widened.
-
-  The core logic (`contextReportedSuccess`, `hasRefReportedSuccess`, `recentMergedHeadShas`) is now
-  exported as plain functions over a real `OctokitClient`, not only reachable through the
-  `GitHubCredentials`-gated `RulesetOctokit` — the same pure-function seam `desiredWireRuleset`
-  already uses — so `repository-ruleset-octokit.test.ts` measures it against a real `@octokit/rest`
-  instance with a fetch shim (no network), mirroring the H15 wire test: accepting a context that
-  reports only on a recent merged head, refusing one that reports nowhere, and refusing one whose
-  only success is older than the bound (the limit is real, not decorative).
+## 0.37.4
 
 ### Patch Changes
 
-- [#219](https://github.com/taslabs-net/homeflare-kit/pull/219) [`40c08eb`](https://github.com/taslabs-net/homeflare-kit/commit/40c08ebfc3ca04de7338deb95b217fbdce6c50d7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The `caddy/*` family (`Caddy.Config`, `caddyWithFile`, `localCaddyAdmin`) now calls
-  `@distilled.cloud/caddy`'s typed `admin` operations (`adaptConfig`, `loadConfig`,
-  `getConfig`) instead of a hand-rolled promise-based `CaddyAdmin.request()` interface.
-  Every operation's error channel is `catchTag`-able (`Caddy.CaddyOpError`); `isUnreachable`
-  (caddy-http-client.ts) is a type guard over the SDK's own `HttpClientError`, replacing the
-  old `CaddyUnreachableError` class, and gates the same "plan without Caddy" escape hatch
-  config.ts always had.
+- [#280](https://github.com/taslabs-net/homeflare-kit/pull/280) [`2c8556e`](https://github.com/taslabs-net/homeflare-kit/commit/2c8556e7625d2596f41f238f2018c65df555bbc9) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Host.Directory on macOS no longer passes `--` to chmod and chown. Those BSD tools treat that token as a filename, so a first deploy created the directory and then failed the resource. Linux still passes `--`, which the sudo allowlist requires. mkdir and rmdir are unchanged.
 
-  The measured local transport survives unchanged in shape: loopback TCP or a unix socket,
-  Host/Origin headers as the Caddy CLI sends them, retrying only a connection nothing
-  accepted (`ECONNREFUSED`/`ENOENT`) — now built as an Effect `HttpClient.HttpClient` layer
-  (`caddy-http-client.ts`) the SDK's protocol runs over, over `node:http` (not
-  `FetchHttpClient`: only `node:http` dials a unix socket on both Bun and Node). The
-  `LoadRefused` 200-trap (a refused `/load` that still answers 200 with the error appended
-  after the adapter's warnings) is first-class in the SDK's own `protocol.ts`, not
-  re-detected here.
+  The archive inflater's source stream is typed as the chunk type DecompressionStream accepts, so the package typechecks under TypeScript 7. The bytes are unchanged.
 
-  Two real gaps this migration found and fixed at the source, never worked around in the
-  resource:
+- [#281](https://github.com/taslabs-net/homeflare-kit/pull/281) [`b0c9fc9`](https://github.com/taslabs-net/homeflare-kit/commit/b0c9fc9580463cff30c94efebe498b8cef7c9ddd) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `LiteLLM.PassThroughEndpoint` can be yielded from an Alchemy stack body. The proxy credentials stay on the provider layer, and that layer keeps them available when the engine calls the handlers.
 
-  - `@distilled.cloud/caddy`'s `AdaptConfig`/`LoadConfig` JSON-encoded the Caddyfile TEXT and
-    overwrote the caller's `Content-Type` — fixed in the distilled clone's `protocol.ts` and
-    shipped as `@homeflare/distilled-caddy@0.2.1` (sibling changeset).
-  - The SDK's own default retry policy treats any transport-level `HttpClientError` as
-    retryable, including a `POST /load` that was already accepted before the connection
-    reset — `local-admin.ts` now disables it (`Caddy.Retry.Retry`) so caddy-http-client.ts's
-    own narrower ECONNREFUSED/ENOENT-only retry is the only one in play.
-
-  `providers.ts`'s `caddyProviders()` (and this family's own tests) also fix a wiring bug the
-  migration surfaced: `CaddyConfigProvider().pipe(Layer.provide(caddyAdminLayer(...)))`
-  seals `caddyAdminLayer`'s services away from the provider's `read`/`diff`/`reconcile`
-  handlers once they are built, so the engine's later call to any of them died with "Service
-  not found". `Layer.provideMerge` keeps those services live for every later call.
-
-  State did not move: props and attributes stay byte-identical (`configSha256`, `endpoint`,
-  `sourceFile`) — proven by the family's existing tests (updated only where the typed-error
-  message text itself changed, from the old ad hoc `method path -> status` strings to the
-  SDK's own tagged errors) plus fake-caddy.ts, a real HTTP server, so every test already
-  drives the real distilled wire protocol, not a re-implementation of it.
-
-- [#209](https://github.com/taslabs-net/homeflare-kit/pull/209) [`1eaf80f`](https://github.com/taslabs-net/homeflare-kit/commit/1eaf80f9ef2ad5e616f1a459ed6396819be15e6c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The `proxmox/*` family's `Proxmox.Acl` (the first resource in the PVE
-  `access/ACL` sub-area, per decision 43's serial proxmox walk-down) now calls
-  `@distilled.cloud/proxmox`'s typed `access.listAccessAcl`/`access.putAccessAcl`
-  operations instead of `client.ts`'s hand-rolled, generic `pve()` call. A new
-  `distilled-pve.ts` module (`runPve`/`runPveWith`) replaces `pve()`/`pveWith`
-  for a migrated family: the same OpenBao lease reuse (`lease-cache.ts`,
-  unchanged) and the same cluster-member failover safety rule (`members.ts`,
-  unchanged — a write may repeat only on a provably pre-send transport
-  failure, never on an HTTP answer or a post-connect timeout), now re-running
-  the whole typed operation per member instead of retrying one already-built
-  request. `client.ts`/`pveOperations` are untouched and still serve every
-  other PVE family; `Proxmox.Acl` is the first to move off them, chosen
-  because it was already the one family that didn't fit the generic
-  path+form shape (no create/delete verb — PVE has only GET/PUT on
-  `/access/acl`).
-
-  One dead branch is removed, not preserved: the old code's generic factory
-  POSTed on a "live read undefined" case that its own comments called
-  unreachable on a healthy cluster and documented as actively misleading (PVE
-  has no POST here, so the 501 it got back said nothing about the real
-  failure). `@distilled.cloud/proxmox` has no `createAccessAcl` at all — the
-  vendor schema has no POST for the generator to make one from — so there is
-  nothing to call that way any more. `reconcile` now always PUTs, the only
-  write PVE actually implements for this path, so a read that genuinely fails
-  surfaces its real cause instead of a confusing 501.
-
-  A trap found while writing the member-failover test: `@distilled.cloud/core`'s
-  default retry policy retries transport failures automatically (not just
-  5xx answers), which could have resent a write to the same member several
-  times before this file's own cluster failover ever saw a result to
-  classify — the hand-rolled client never auto-retried anything. `distilled-pve.ts`
-  disables the SDK's retry (`Retry.none`) on every attempt, keeping
-  member failover the only place a request repeats, matching the original
-  behavior exactly.
-
-  State did not move: `AclProps`/`AclAttributes` are unchanged, and the
-  existing cross-family `adopt-noop.test.ts` case for `Proxmox.Acl` (an
-  already-matching grant is read-only) passes unmodified against the new
-  code. New tests (`acl.test.ts`, `distilled-pve.test.ts`) drive a fake PVE
-  server through the real distilled protocol — real path assembly, real
-  form-urlencoded PUT bodies, real `{"data": ...}` envelope — covering
-  create, drift-correction, delete, identity-replace, the read-back guard,
-  and cluster-member failover for both a read and a write.
-
-  This is PR 1 of a serial, sub-area-by-sub-area migration
-  (access/ACL, then nodes/storage, then notifications, then PBS, …) of the
-  ~98-resource PVE family plus the PBS resources onto
-  `@distilled.cloud/proxmox`/`@distilled.cloud/proxmox-backup`. The other PVE
-  and PBS resources still call `client.ts`'s `pve()`, unchanged; `client.ts`
-  is deleted only once nothing imports it.
-
-- [#215](https://github.com/taslabs-net/homeflare-kit/pull/215) [`72c448d`](https://github.com/taslabs-net/homeflare-kit/commit/72c448dbaec8f2acb7b5109aa7387a4409185fe8) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix a review finding on the `litellm/*` distilled migration (`@homeflare/distilled-litellm`'s
-  `CredentialsFromEnv`, S20): a missing or misspelled `LITELLM_PROXY_URL`/`LITELLM_PROXY_API_KEY`
-  used to die as an unrecoverable Effect defect and crash the whole engine, instead of the typed
-  `ConfigError` `LitellmOpError` already declared — a regression this migration made newly
-  reachable from `LiteLLM.PassThroughEndpoint`'s `read`/`reconcile`/`delete` (the retired
-  hand-rolled `credentials.ts` failed typed). Fixed at the source, per house rule: the distilled
-  `litellm` package's own `credentials.ts` no longer ends in `Effect.orDie`, copied forward into
-  `@homeflare/distilled-litellm` unchanged. No prop, attribute or public API changed.
-
-  `netbox/*`'s `CredentialsFromEnv` has the identical shape and is not fixed by this changeset —
-  tracked separately (`docs/upstream-conformance.md` finding 9).
-
-- [#210](https://github.com/taslabs-net/homeflare-kit/pull/210) [`2002713`](https://github.com/taslabs-net/homeflare-kit/commit/20027131b716058de035bd1d8423054f3e9dbff0) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The `litellm/*` family (`LiteLLM.PassThroughEndpoint`) now calls `@distilled.cloud/litellm`'s
-  typed `misc` operations instead of a hand-rolled `Effect HttpClient` client. The old
-  status-carrying `LitellmBadRequestError`/`LitellmUnauthorizedError`/`LitellmHttpError`/
-  `LitellmTransportError` are gone: every failure the SDK's four operations declare (`BadRequest`,
-  `NotFound` on update, `UnprocessableEntity`, plus the shared default HTTP errors) is the SDK's own
-  typed error, `catchTag`'d. `deletePassThroughEndpoint`'s re-list-on-ambiguous-delete trick is
-  unchanged, now keyed on the `BadRequest` tag instead of a status code. The per-base-URL write
-  semaphore LiteLLM's whole-list storage forces is unchanged, moved into the new `operations.ts`.
-  `client.ts` and the kit's own hand-generated `generated/pass-through.ts` are both deleted — the
-  SDK's `misc.PassThroughGenericEndpoint` is the same shape, generated from the same LiteLLM 1.100.0
-  OpenAPI document. The `codegen/litellm.ts` generator and `tests/litellm-manifest.test.ts` that
-  kept that file current are retired with it; the `litellm-openapi` manifest entry stays, recorded
-  as consumed by nothing, the same pattern the two UniFi entries already establish.
-
-  Not published upstream yet, so aliased onto `@homeflare/distilled-litellm@0.2.0` as a plain
-  `dependencies` entry, not a peer — see `docs/distilled-interim.md`. Credentials still resolve
-  from `LITELLM_PROXY_URL` / `LITELLM_PROXY_API_KEY` at call time, now through the package's own
-  `CredentialsFromEnv` layer. Props and attributes are unchanged — an adopted pass-through endpoint
-  still plans noop.
-
-- [#212](https://github.com/taslabs-net/homeflare-kit/pull/212) [`e419a44`](https://github.com/taslabs-net/homeflare-kit/commit/e419a44f45e3332eb9ae7c3b196d203309668f26) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The `paperless/*` family (`Tag`, `DocumentType`, `StoragePath`, `CustomField`) now calls
-  `@distilled.cloud/paperless-ngx`'s typed operations instead of a hand-rolled `Effect HttpClient`
-  client. `client.ts`, `errors.ts` and `credentials.ts` are gone; every status check
-  (`statusToError`, the status-carrying `PaperlessError` union) is replaced by
-  `Effect.catchTag('NotFound', …)` at each resource file's own `getById` call, the same rule
-  `forgejo/*` and `netbox/*` follow — a LIST call is never folded to absent at all, since an empty
-  page is a normal 200 (measured live, kit PR 194). The shared `matching.ts`/`matching-locate.ts`
-  engine (locate-by-name before there is state, by the stored `output.id` after — PR 163) is
-  unchanged in shape, generalized only over the SDK's typed `Live` row and each family's own
-  distilled error union instead of an untyped `PaperlessRow`.
-
-  `@distilled.cloud/paperless-ngx` is not published upstream yet, so this package was already
-  aliased onto `@homeflare/distilled-paperless-ngx@0.3.0` (kit PR 188/194/206 — built the distilled
-  way and shipped from this monorepo, see `docs/distilled-interim.md`); this PR is the first thing
-  that actually imports it. `packages/alchemy`'s own `build:interim-deps` now builds it too, and
-  picks up a pre-existing bug in the same line while doing so: `bun --cwd <dir> run <script>`
-  (space-separated) silently no-ops instead of building — `bun --cwd=<dir> run <script>` is the form
-  that actually works. Fixed for all three interim deps this script already named (netbox, proxmox,
-  paperless-ngx); the root-level `scripts/build-interim-packages.ts` was never affected, since it
-  spawns `bun run build` with an explicit `cwd` option rather than a shell string.
-
-  Credentials still resolve from `PAPERLESS_URL` / `PAPERLESS_TOKEN` at call time, now through the
-  SDK's own `CredentialsFromEnv`, baked directly into each of the four `xxxProvider()`s the same way
-  `netboxHandlers`/`forgejoHandlers` do — `providers.ts`'s `paperlessProviders()` no longer takes a
-  credentials-layer override (nothing in this estate called it with one: measured 2026-09-24, no
-  tray repo under `homeflare-landscape` declares a Paperless resource at all). Props and attributes
-  are unchanged — an adopted tag, document type, storage path or custom field still plans noop.
-
-- [#220](https://github.com/taslabs-net/homeflare-kit/pull/220) [`4da7ecc`](https://github.com/taslabs-net/homeflare-kit/commit/4da7ecc7d5dd59e0c9aab3a4a13dee148f9a14a9) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `client.ts`'s `executeOnCluster` and `distilled-pve.ts`'s `runPveWith`
-  (`members.ts`, shared by both) now bound a single cluster-member attempt with
-  a new `MEMBER_TIMEOUT` (20 seconds). Previously nothing did: a PVE member
-  that accepted the TCP connection but never answered hung the whole call
-  forever, because the cluster-failover loop never got a failure to classify
-  and so never reached a healthy member — this affected every PVE resource,
-  migrated or not, since both codepaths funnel through `executeOnCluster`. A
-  bounded timeout now fails a read over to the next member (no side effect to
-  duplicate) and fails a write outright without resending it, matching the
-  existing rule that a post-connect failure is never pre-send. Found on review
-  of `Proxmox.Acl`'s migration (PR 209); fixed once, shared by every PVE
-  family.
-
-- [#216](https://github.com/taslabs-net/homeflare-kit/pull/216) [`eaa12e5`](https://github.com/taslabs-net/homeflare-kit/commit/eaa12e532fc420a74efd8df717e1fe080f1e3840) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `repoBaselineSettings` (repo-baseline-data.ts) no longer turns `allowAutoMerge` on
-  unconditionally — it now follows `checks.length > 0`, the same as the sibling `repoPolicy` path
-  already refuses to do (`repo-policy-guards.ts`'s `assertAutoMergeWaits`). With zero required
-  status checks, `gh pr merge --auto` (and the ruleset's own auto-merge) has nothing to wait for:
-  GitHub merges a CLEAN pull request on the spot, with no review and no green run required. A repo
-  declared through `declareRepoBaseline` with an empty `checks` list (homeflare-anyauth today, for
-  example — no workflows, so no checks to name) would otherwise get auto-merge turned on with
-  nothing gating it.
-
-  This baseline has no `autoMerge` opt-out prop the way `repoPolicy` does, so the fix is
-  unconditional rather than a thrown refusal: a repo with checks keeps `allowAutoMerge: true`
-  exactly as before; one without simply never gets it turned on by this baseline.
-
-- [#217](https://github.com/taslabs-net/homeflare-kit/pull/217) [`ad397ea`](https://github.com/taslabs-net/homeflare-kit/commit/ad397eadbff8c20fef5c9634980b99ce65203758) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `GitHub.RepositoryRuleset`'s `Resource<>` declaration put `GitHubCredentials` in its 5th
-  (`Providers`) type parameter, which puts that credential requirement on every `yield*
-RepositoryRuleset(...)` call site — including inside `declareRepoPolicy`/`declareRepoBaseline`.
-  A stack body cannot supply `GitHubCredentials` itself (`Alchemy.Stack`'s own `ProviderServices`
-  type is a closed union `GitHubCredentials` does not structurally match), so any consumer whose
-  stack body calls `declareRepoPolicy`/`declareRepoBaseline` — or declares `RepositoryRuleset`
-  directly — failed `tsc` (measured 2026-09-24: homeflare-builds bumping to 0.27.4, TS2345).
-
-  Verified against upstream `alchemy@2.0.0-beta.79`'s own `GitHub.Ruleset`
-  (`node_modules/alchemy/src/GitHub/Ruleset.ts`): its 5th slot is `GitHub.Providers`, the
-  `ProviderCollection` tag `GitHub.providers()` outputs — never the raw `GitHubCredentials`
-  service its own provider handlers pull in via `octokitFor`. `RepositoryRuleset` now omits the
-  5th parameter, defaulting its declaration requirement to `Provider<RepositoryRuleset>` instead —
-  a real `ProviderServices` member, matching the pattern a standalone (non-collection) resource
-  needs.
-
-  Fixing only the declaration was not enough on its own: `GitHub.providers()` and
-  `RepositoryRulesetProvider()` written side by side as a stack's `providers` still fails to
-  typecheck, because `RepositoryRulesetProvider()`'s handlers need `GitHubCredentials` fed in, and
-  merging two layers does not thread one's output into the other's requirement. New export
-  `repoPolicyProviders()` (`repository-ruleset-providers.ts`) composes the two correctly —
-  `RepositoryRulesetProvider().pipe(Layer.provideMerge(GitHub.providers()))` merged with
-  `GitHub.providers()` itself — and is now the documented wiring in `docs/repo-policy.md`,
-  `docs/repository-ruleset.md`, `repo-policy.ts` and `declare-repo-baseline.ts`.
-
-  Added a type-level test (`repo-policy-stack.test.ts`): a real `Alchemy.Stack(...)` whose body
-  calls `declareRepoPolicy` and `declareRepoBaseline` with `repoPolicyProviders()`, built (never
-  run) so `tsc` checks it on every `bun run check` — the test that would have caught this before
-  it reached a consumer's bump PR.
-
-  No runtime behavior changes: every CRUD handler (`read`/`diff`/`reconcile`/`delete`) and its own
-  `GitHubCredentials` requirement is unchanged — only the type surface a stack body sees when
-  declaring the resource, and how the two providers compose, is fixed.
-
-## 0.28.0
-
-### Minor Changes
-
-- [#206](https://github.com/taslabs-net/homeflare-kit/pull/206) [`06591c9`](https://github.com/taslabs-net/homeflare-kit/commit/06591c91d622178fdf1b09d8ac2f455bafa70107) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Aliases four more distilled interim SDKs onto `@homeflare/alchemy`'s
-  `dependencies`, following `docs/distilled-interim.md`'s step 5:
-  `@distilled.cloud/proxmox-backup`, `@distilled.cloud/paperless-ngx`,
-  `@distilled.cloud/litellm` and `@distilled.cloud/caddy`, each aliased onto
-  its published `@homeflare/distilled-<vendor>` interim copy (kit PRs [#200](https://github.com/taslabs-net/homeflare-kit/issues/200),
-  [#194](https://github.com/taslabs-net/homeflare-kit/issues/194)/[#195](https://github.com/taslabs-net/homeflare-kit/issues/195), [#201](https://github.com/taslabs-net/homeflare-kit/issues/201), [#202](https://github.com/taslabs-net/homeflare-kit/issues/202)) at its current workspace version — not opnsense or
-  unifi-network, neither of which is aliased anywhere yet. No resource in this
-  package imports any of the four yet; that migration is each family's own
-  later PR, per `distilled-interim.md`'s "what NOT to do".
-
-  The root `build:interim-packages` script (kept root-level and non-nested,
-  the CI-race fix from kit PR [#193](https://github.com/taslabs-net/homeflare-kit/issues/193)) is now generic: it discovers which
-  `packages/distilled-*` copies to build by scanning every workspace
-  manifest's `dependencies` for a `"@distilled.cloud/<vendor>":
-"npm:@homeflare/distilled-<vendor>@<version>"` alias, instead of a
-  hard-coded netbox/proxmox list — a new alias needs no edit to this script.
-  `tests/catalog.test.ts`'s `EXACT_PEERS` table is now derived the same way
-  for every `distilled-*` interim copy (`effect` alone, one reasoning comment
-  kept in one place) instead of one hand-added entry and comment per vendor,
-  which had become a recurring merge-conflict hot spot across concurrent
-  interim-package PRs landing the same night.
-
-  This is a `minor`, not a `patch`: `@homeflare/alchemy`'s own `dependencies`
-  gained four new runtime entries, even though no exported code changed.
-
-- [#205](https://github.com/taslabs-net/homeflare-kit/pull/205) [`3ab881e`](https://github.com/taslabs-net/homeflare-kit/commit/3ab881ecd53108050b1d23db39d955e82a07c322) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `GitHub.RepositoryRuleset` now expresses a live ruleset's exact shape when that shape is
-  narrower than the house baseline: a `rules.pullRequest: false` declares its deliberate absence
-  (matching the `requiredStatusChecks: false` pattern that already existed), and `bypassActors`
-  already carried an arbitrary `actor_id`/`actor_type`/`bypass_mode` list — the gap was never the
-  prop shape, it was that nothing stopped a declaration from silently narrowing what is live.
-
-  Two new guards close that: `bypassNarrowingRefusal` refuses a declared `bypassActors` that drops
-  a live actor, and `ruleNarrowingRefusal` refuses a declared `false` (any modeled rule) that drops
-  a rule the live ruleset still has — both unless the declaration also carries the matching new
-  prop, `acknowledgeBypassNarrowing: { reason: string }` or `acknowledgeRuleNarrowing: { reason:
-string }`, a reasoned, explicit sign-off. The two acknowledgements are deliberately separate
-  props, not one shared flag: an adversarial review found that a single shared
-  `acknowledgeNarrowing` let a reason worded for one kind of drop silently also excuse the other
-  kind in the same declaration, so each guard now reads only the prop scoped to what it checks.
-  Widening bypass stays refused unconditionally, as before — this only ever loosens the NARROWING
-  side, and only with a recorded, correctly-scoped reason.
-
-  Prompted by a red-team finding against a design for declaring ~88 `taslabs-net` repos' GitHub
-  settings in Alchemy: 5 live repos (`taslabs-net`, `aop`, `magictransit`, `loggarr`,
-  `doesthishelp-workeropen`) carry a non-empty live `bypass_actors`, and `taslabs-net` itself has
-  no live `pull_request` rule — the exact combination `repoBaselineRuleset()`'s hardcoded
-  `bypassActors: []` and always-on `pullRequest` rule could not adopt without silently stripping
-  protection. `repoBaselineRuleset()` itself is unchanged — it keeps its baseline defaults, for
-  repos the baseline shape actually fits; a caller with a narrower live ruleset now declares
-  `RepositoryRuleset` directly with the live shape instead.
-
-  Tested against all 5 live shapes, re-read via `gh api repos/taslabs-net/<repo>/rulesets/<id>`
-  2026-09-23 (not copied from an earlier paraphrase — `doesthishelp-workeropen`'s two bypass
-  actors' `bypass_mode`s differ from how an earlier design doc described them).
-
-## 0.27.4
+## 0.37.3
 
 ### Patch Changes
 
-- [#193](https://github.com/taslabs-net/homeflare-kit/pull/193) [`41bdc5d`](https://github.com/taslabs-net/homeflare-kit/commit/41bdc5d8f32fca92d60ee667b85306c77cea2442) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The `netbox/*` family (`Netbox.Prefix`) now calls `@distilled.cloud/netbox`'s
-  typed `ipam` operations instead of a hand-rolled `Effect HttpClient` client.
-  The old status-carrying `NetboxError` and its `cause.status === 404` check
-  are gone: `Netbox.Prefix` locates by a server-side list filter, which
-  `@distilled.cloud/netbox` never answers with a 404 (an empty page is a
-  normal 200), so nothing here checks a status code at all — a stronger
-  version of the same rule `catchTag('NotFound', …)` enforces for a
-  distilled-backed family that reads by direct key, like `forgejo/*`.
-  `client.ts` is gone; nothing else in this package imported it. The real
-  `@distilled.cloud/netbox` is not published upstream yet, so this package
-  aliases it onto `@homeflare/distilled-netbox@0.2.0` (built the distilled way
-  and shipped from this monorepo — see `docs/distilled-interim.md`) as a plain
-  `dependencies` entry, not a peer — nothing changes for a consumer's install.
-  Credentials still resolve from `NETBOX_URL` / `NETBOX_TOKEN` at call time,
-  now through the package's own `CredentialsFromEnv` layer. Props and
-  attributes are unchanged — an adopted prefix still plans noop.
+- [#274](https://github.com/taslabs-net/homeflare-kit/pull/274) [`a740b7f`](https://github.com/taslabs-net/homeflare-kit/commit/a740b7fc64cf4f7ca7e60445fa9f2393b4aee664) - Run PBS notification matchers and sendmail, SMTP and webhook targets through the distilled
+  Proxmox Backup Server SDK. Read failures now preserve their typed errors instead of planning
+  false creates; only typed NotFound means absence or an already completed delete. Keep leased
+  credentials, bounded requests, secret seals and no-op adoption. Vendor schema: PBS 4.2.6-1,
+  SDK 0.3.1.
 
-## 0.27.3
+  Preflight replacement destinations, required write-only values and vendor/SDK input constraints
+  before deleting a working target. Typed destination read failures stop replacement; existing
+  renamed targets remain adoptable without requiring secret values the plan cannot observe.
 
-### Patch Changes
+- [#274](https://github.com/taslabs-net/homeflare-kit/pull/274) [`a740b7f`](https://github.com/taslabs-net/homeflare-kit/commit/a740b7fc64cf4f7ca7e60445fa9f2393b4aee664) - Run PBS datastore, prune, sync and verification providers through the distilled PBS SDK,
+  using the proxmox-backup-server 4.2.6-1 schema. Preserve existing retention, parked-job,
+  create-only and state semantics while allowing only typed missing-section errors to mean
+  absence. Permission, transport and malformed-response failures now stop planning instead
+  of suggesting a create or confirming a deletion.
 
-- [#191](https://github.com/taslabs-net/homeflare-kit/pull/191) [`e991225`](https://github.com/taslabs-net/homeflare-kit/commit/e9912254041b1f15195f8a4cf2917e00a1194d43) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `packages/alchemy` now depends on `@distilled.cloud/proxmox`, aliased per
-  `packages/alchemy/docs/distilled-interim.md`'s interim-package route onto
-  the published `@homeflare/distilled-proxmox@0.2.0`
-  (`"npm:@homeflare/distilled-proxmox@0.2.0"` in `dependencies`, not
-  `peerDependencies` — the package needs it resolved, not left to whoever
-  installs it). This is the follow-up PR `distilled-proxmox-interim.md`
-  called out: the alias, plus `src/proxmox/distilled-task-await.test.ts`
-  (ported off draft PR 182's dev-only `link:` dependency onto the real alias,
-  assertions unchanged) proving `awaitTask`'s poll-until-exitstatus loop
-  against a fake PVE — success only on `exitstatus` exactly `"OK"`,
-  `"OK (warnings)"` fails, and a bare 400 is the non-retryable `BadRequest`
-  (that last case already lives in `packages/distilled-proxmox/src/protocol.test.ts`,
-  merged with the package itself).
+- [#274](https://github.com/taslabs-net/homeflare-kit/pull/274) [`a740b7f`](https://github.com/taslabs-net/homeflare-kit/commit/a740b7fc64cf4f7ca7e60445fa9f2393b4aee664) - Use direct distilled SDK operations for PVE Pool, BackupJob and MetricServer lifecycle calls,
+  walked against pve-manager 9.2.11. Only typed missing-object errors permit creation or idempotent
+  deletion; authentication, permission and unrelated server failures propagate. Preserve existing
+  adoption no-ops, retention normalization, omitted backup settings and metric-server secret fields.
 
-  No existing `packages/alchemy/src/proxmox/*` resource is touched or moved
-  onto the distilled package — that migration is still a separate, later PR.
-  Because `@homeflare/distilled-proxmox` is also a sibling workspace package,
-  bun resolves the alias to the local workspace copy rather than fetching the
-  npm tarball (same unmodified code either way); that local copy has no
-  prebuilt `dist` by default, and `tsc`'s `moduleResolution: "bundler"`
-  follows the alias's `exports["."].types` straight to `dist/index.d.ts` when
-  typechecking the new test file — `bun test` itself needs no such build
-  (it resolves the package's own `bun` export condition straight to `src`).
-  `packages/alchemy/package.json` gets a `pretypes` script
-  (`bun run --filter '@homeflare/distilled-proxmox' build`) so `bun run
-types` — and therefore `bun run check` — builds that one dependency first;
-  nothing else changes.
+- [#274](https://github.com/taslabs-net/homeflare-kit/pull/274) [`a740b7f`](https://github.com/taslabs-net/homeflare-kit/commit/a740b7fc64cf4f7ca7e60445fa9f2393b4aee664) - Move PVE notification targets and matchers onto generated distilled SDK operations.
+  Failed reads now stop the plan; only typed NotFound means absence. Keep matching
+  adoption write-free, preserve list items and explicit clearing, and validate read
+  payloads without exposing server values. Identity changes replace the old resource;
+  a same-name endpoint type change deletes first because names are shared across types.
+  Preflight the destination and its vendor/SDK input constraints before replacement can
+  delete a working target. Typed destination read failures stop replacement, while existing
+  renamed targets remain adoptable without create-only secrets.
 
-## 0.27.2
+  Vendor schema: pve-manager 9.2.11. Read-only probes confirmed missing notification
+  GETs return 404; write behavior is exercised through the real SDK and Alchemy engine
+  against isolated fixtures, with no live notification changes.
+
+## 0.37.2
 
 ### Patch Changes
 
-- [#180](https://github.com/taslabs-net/homeflare-kit/pull/180) [`1a85198`](https://github.com/taslabs-net/homeflare-kit/commit/1a85198349981e04f475c0e08b0aa2a995719ef4) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The `forgejo/*` family (`Forgejo.Repository`, `Forgejo.BranchProtection`,
-  `Forgejo.OrgLabel`, `Forgejo.OrgTeam`, `Forgejo.RepoWebhook`,
-  `Forgejo.OrgSecret`, `Forgejo.TeamMember`) now calls
-  `@distilled.cloud/forgejo@1.0.0-rc.12`'s typed operations instead of a
-  hand-rolled `Effect HttpClient` client — `catchTag('NotFound', …)` in place
-  of a status-carrying `ForgejoError`. `client.ts` is gone; nothing else in
-  this package imported it. Credentials still resolve from `FORGEJO_URL` /
-  `FORGEJO_TOKEN` at call time, now through the package's own
-  `CredentialsFromEnv` layer. Every operation this family calls exists in the
-  package and every error it handles carries a tag, so no distilled patch was
-  needed. Props and attributes are unchanged — an adopted repository, label,
-  team, webhook, branch protection rule, org secret or team membership still
-  plans noop.
+- [#270](https://github.com/taslabs-net/homeflare-kit/pull/270) [`7710691`](https://github.com/taslabs-net/homeflare-kit/commit/77106917f0781d53bfedde224f71e7a7ad9b62bc) - Complete the CephFS transport migration to distilled Proxmox 0.3.0 (vendor schema
+  pve-manager 9.2.11): send destructive DELETE flags through its corrected query binding
+  and fold only the typed CephFsNotFound error. Preserve bounded task polling, safe
+  omitted-flag defaults and the final live index read that proves deletion.
 
-- [#179](https://github.com/taslabs-net/homeflare-kit/pull/179) [`0419d30`](https://github.com/taslabs-net/homeflare-kit/commit/0419d30860e4f6ffbf42e0e1257bd5845a00a418) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Cloudflare.R2BucketLock` now calls `@distilled.cloud/cloudflare/r2`
-  (`getBucketLock`/`putBucketLock`) instead of the `cloudflare` npm SDK, the same
-  distilled package `MeshNode` already used — `catchTag('NoSuchBucket', …)` in
-  place of an `instanceof NotFoundError` status check. The `cloudflare` peer
-  dependency and `client.ts` are gone; nothing else in this package imported
-  them. Props, attributes and the wire body are unchanged — an adopted lock
-  still plans noop.
-
-## 0.27.1
+## 0.37.1
 
 ### Patch Changes
 
-- [#177](https://github.com/taslabs-net/homeflare-kit/pull/177) [`615d7f0`](https://github.com/taslabs-net/homeflare-kit/commit/615d7f0f081828a64f2c334ce423324f10e13921) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `launchd-ports.md` and `port-claims.ts`'s header comment no longer cite the
-  house monorepo's path and a pinned commit as the source of the port-collision
-  rule; both now state it as the kit's own rule, matching the estate's existing
-  port-collision strictness on its own terms. No behavior change.
-
-## 0.27.0
-
-### Minor Changes
-
-- [#175](https://github.com/taslabs-net/homeflare-kit/pull/175) [`7767e82`](https://github.com/taslabs-net/homeflare-kit/commit/7767e82d18e74af203ccae108b8e4f3de99be724) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `GitHub.RepositoryRuleset`, a bridge resource under `@homeflare/alchemy/github` that
-  probes for an existing same-named ruleset by name before creating one (closing the
-  duplicate-ruleset hazard in upstream `alchemy@2.0.0-beta.79`'s `GitHub.Ruleset`) and
-  normalizes before comparing so a matching live ruleset is a true noop. Also adds
-  `declareRepoBaseline`, and rewires `declareRepoPolicy`'s ruleset half onto the new
-  resource — `builds` is the only caller, and its ruleset has never been created, so this
-  changes no live resource's identity.
-
-  Versions this was walked against: `alchemy@2.0.0-beta.79`, `@octokit/rest@22.0.1`,
-  `@octokit/openapi-types@27.0.0` (the version the REST method parameter types actually
-  resolve through — see `repository-ruleset-constraints.ts` for the version-chain note).
-
-## 0.26.0
-
-### Minor Changes
-
-- [#171](https://github.com/taslabs-net/homeflare-kit/pull/171) [`66e6e03`](https://github.com/taslabs-net/homeflare-kit/commit/66e6e03060b0cebbf0e326e6f2880f196735fba7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `sshSudoRunner()` to `@homeflare/alchemy/linux` — the Linux twin of the launchd subpath's
-  `sudoRunner()`, for a host stack whose ssh user is not root but has passwordless sudo
-  (`(ALL) NOPASSWD: ALL`). The deploy runs as the operator, and only a fixed allowlist of absolute
-  `sudo -n` calls elevates: `install`→`mv` (GNU `install` writes through its destination, so this
-  runner stages, installs into a derived temp file, then `mv`s it into place — a rename(2), atomic
-  by construction), `rm`, `mkdir`/`chmod`/`chown`/`rmdir` for `Host.Directory`, and
-  `daemon-reload`/`enable`/`disable`/`start`/`stop`/`restart` for `Systemd.Unit` and
-  `Systemd.Timer` (gated by each unit's own `FragmentPath`, so a vendor unit like
-  `pveproxy.service` stays unreachable). Every privileged argv is logged before it runs; a plan
-  never elevates (`checkWrite` and every read stay on the operator); the host guard reads the whole
-  directory chain from `/` down to the target in one `ls -ldn` call, refusing anything not
-  root-owned, group/other-writable, ACL-flagged, or the wrong kind. See
-  `packages/alchemy/docs/linux-sudo.md` for the full argv table and what is measured versus
-  reasoned — write paths are reasoned, not run live; construction and `checkWrite` were exercised
-  read-only against a real Debian 13 / trixie host (systemd 257.13-1~deb13u1, coreutils 9.7-3),
-  confirming nothing is elevated by a plan.
-
-  homeflare-proxmox's first consumer: a script, systemd service and timer declared per Proxmox
-  node with `sshSudoRunner({ host, prefixes: ['/usr/local/bin', '/etc/systemd/system'] })`.
-  Groundwork from PR 132 (`src/linux/sudo-listing.ts`, the `ls -ldn` chain reader) is now used
-  directly by the new guard rather than left unreferenced.
-
-## 0.25.1
-
-### Patch Changes
-
-- [#168](https://github.com/taslabs-net/homeflare-kit/pull/168) [`f5b8dcf`](https://github.com/taslabs-net/homeflare-kit/commit/f5b8dcf7e5875f1f5f589a73139fa58d8d886a43) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix `Systemd.Unit`: for a unit declared `started: false`, `ActiveState=activating` no longer
-  reads as drift. A timer-driven `Type=oneshot` service (no `[Install]`; its `.timer` starts it)
-  reports `activating` for the whole duration of its run, not an instant — so a plan taken
-  mid-run used to show `update`, and a deploy would `systemctl stop` a check that was already
-  running. Now only `ActiveState=active` counts as drift for `started: false`; `started: true`
-  (the default) is unchanged. `activating` with `SubState=auto-restart`/`auto-restart-queued` —
-  systemd's crash-restart backoff, not a fresh start — is excluded from that exemption and still
-  counts as drift, so a crash-looping unit declared `started: false` is still stopped. Both
-  `diffUnit` (unit-lifecycle.ts) and `settle` (unit-settle.ts) now share one predicate,
-  `isUnitRunning` (unit-form.ts), so they can never disagree about it.
-
-## 0.25.0
-
-### Minor Changes
-
-- [#163](https://github.com/taslabs-net/homeflare-kit/pull/163) [`cf301fb`](https://github.com/taslabs-net/homeflare-kit/commit/cf301fba5196056938419140e80754dc7bf34991) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `@homeflare/alchemy/paperless`: `Tag`, `DocumentType`, `StoragePath` and `CustomField` —
-  Paperless-ngx's taxonomy, create-or-update and never deleted by default — generated from
-  Paperless-ngx **3.1.1**'s own served OpenAPI document (API version **10**, sha256 `d0fe550d…`).
-  Types (`generated/types/*.ts`) and constraint tables (`generated/constraints/*.ts`) are both
-  generated by the new `bun codegen/paperless.ts`, which also introduces
-  `codegen/openapi-types.ts` (a component-to-TypeScript emitter over `openapi.ts`'s `JsonSchema`)
-  and `codegen/dialects.ts` (the regex-dialect-plus-anchoring table `codegen/netbox.ts` now reads
-  too, unchanged).
-
-  Every create sends `owner` (null when undeclared) — Paperless-ngx's `OwnedObjectSerializer`
-  defaults an absent `owner` to the token user, so omitting it the way an undeclared NetBox
-  foreign key is omitted would create a second, invisible row on every deploy. `read` answers
-  `Unowned` on every match rather than adopting silently (H1). A `CustomField.dataType` change is
-  refused at plan time — never a PATCH, never a replace — because either one deletes that field's
-  value on every document.
-
-## 0.24.0
-
-### Minor Changes
-
-- [#157](https://github.com/taslabs-net/homeflare-kit/pull/157) [`2a69523`](https://github.com/taslabs-net/homeflare-kit/commit/2a69523410521f8373d2c216070f788df0ca2a64) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `LiteLLM.PassThroughEndpoint` to `@homeflare/alchemy/litellm`, the kit's first LiteLLM
-  resource: one row of LiteLLM's `/config/pass_through_endpoint` family, a route on the proxy that
-  forwards requests to an upstream target. Types are generated from LiteLLM **1.100.0**'s own
-  OpenAPI document (tag `v1.100.0`, commit `e4f25265704e2b2c6cf6e81be2e4c5cffff896f4`), dumped the
-  way the vendor's own CI dumps it — `prisma generate` against `litellm/proxy/schema.prisma`, then
-  the `dumpSpec` program embedded in `ui/litellm-dashboard/scripts/gen-api-types.mjs`, run with
-  `app.routes`' `include_in_schema` forced `True` the way the dashboard's generator does — because
-  the reference proxy's `/openapi.json` could not be reached when this was walked (jetsam restart
-  loop). Cross-checked byte-identically: regenerating with `openapi-typescript@7.13.0` reproduces
-  the tag's committed `ui/litellm-dashboard/src/lib/http/schema.d.ts` exactly, sha256
-  `8bc5d9c9…40b83f9`, 2,334,248 bytes on both sides. The dump itself is sha256
-  `1b3e4d23…4b006399f` (`codegen/manifest.json`'s `litellm-openapi` entry).
-
-  Every pass-through endpoint lives in one `general_settings.pass_through_endpoints` field — every
-  create, update and delete is a read-modify-write of the whole list — so every mutating call is
-  wrapped in a per-base-URL `Effect` semaphore, and `reconcile` reads back after writing rather
-  than trusting the call that just returned. A path already held by a `config.yaml` entry
-  (`is_from_config: true`) is refused at plan rather than silently overridden; a foreign DB row on
-  the same path is `Unowned` and needs `--adopt`; a literal secret in a forwarded `Authorization`,
-  `x-api-key` or `cf-aig-authorization` header is refused unless it carries LiteLLM's own
-  `os.environ/NAME` reference form. Clearing `timeout`, `methods` or `guardrails` is planned as a
-  replace (delete then create), because LiteLLM's update route merges with `exclude_none` and can
-  never clear an already-set field. Credentials (`LITELLM_PROXY_URL`, `LITELLM_PROXY_API_KEY` —
-  LiteLLM's own variable names) are read fresh from the environment on every call, never a prop.
-
-  Deferred: the Claude OAuth model, key and team slice, which needs estate answers only Tim can
-  give. See `docs/litellm.md`.
-
-- [#156](https://github.com/taslabs-net/homeflare-kit/pull/156) [`6b4b58c`](https://github.com/taslabs-net/homeflare-kit/commit/6b4b58c9a207dd4351d80e514ee4b7d09cc74ea0) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Create-and-assert a database on a self-hosted cluster: `Postgres.Database` in the new
-  `@homeflare/alchemy/postgres` subpath. Walked against PostgreSQL 18.6 (`REL_18_6`, commit
-  `724edf9b`) — upstream `alchemy@2.0.0-beta.79` has vendor-API Postgres resources (Planetscale,
-  Neon, Prisma, Fly, Railway) and a runtime binding over `@effect/sql-pg`, but nothing for a
-  database you run yourself, so this builds on that same `@effect/sql-pg` `PgClient` upstream's
-  own `alchemy/SQL/Postgres` uses (new optional peer, `@effect/sql-pg@4.0.0-rc.115`).
-
-  Create-and-assert only: every optional prop (`encoding`, `localeProvider`, `lcCollate`,
-  `lcCtype`, `allowConnections`, `connectionLimit`, `isTemplate`, `tablespace`) is asserted once
-  at create and compared against the live row on every later plan — a mismatch is a typed
-  `PostgresDatabaseDrift` refusal, never an `ALTER DATABASE`. `name` is refused at plan past 63
-  UTF-8 bytes (`NAMEDATALEN`), because the server would otherwise silently truncate it with only
-  a `NOTICE`. A rename is refused at plan; `diff` never answers `replace` (a replace here is DROP
-  then CREATE, on data). `delete` always refuses with a typed tag and `defaultRemovalPolicy` is
-  `retain` — dropping a database stays a human act on the host. `CREATE DATABASE` takes no bind
-  parameters at all (measured at `gram.y`), so every value is quoted by hand: a single-token
-  identifier quoter for the name (deliberately NOT `alchemy`'s own `sql(value)`, which
-  dot-splits a qualified name and would break on a name containing `.`), and a string-literal
-  quoter for the rest. `read` always answers `Unowned` for a match — a database carries no
-  ownership mark, so an adopting stack needs `adopt(true)`.
-
-  Measured path (2026-09-23): only a Unix socket reaches the maintenance database on the mini —
-  no `pg_hba` rule opens it over TCP. A JS client reaches that socket: `@effect/sql-pg` under
-  Bun, live-checked from scratch space, connected and read all 24 live databases.
-
-- [#160](https://github.com/taslabs-net/homeflare-kit/pull/160) [`26f45bd`](https://github.com/taslabs-net/homeflare-kit/commit/26f45bda0108744994c63b611ca27492aef715fe) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Release.Binary` can now install from a directory-wrapped vendor archive. `tarReader(wanted, root)`
-  (`packages/alchemy/src/release/tar.ts`) accepts an optional `root`: exactly one declared leading
-  directory (typeflag `5`, size 0) is stripped from every entry name before it is matched, listed or
-  checked for a duplicate. Every entry outside that declared root, a second directory entry, a
-  `<root>-evil/x` sibling (a segment match, not a string prefix), and a `<root>/` entry that is not
-  an empty directory are refused whole, same as every existing refusal (PAX, GNU long-name, `..`,
-  links, devices). Without `root`, behaviour is unchanged: a directory entry — the wrapper included —
-  is still refused exactly as it always was.
-
-  `ReleaseArchive.root?: string` (`binary-form.ts`) carries the pin; `pinProblems` (split out to the
-  new `binary-pins.ts` to stay under the file's 250-line cap, re-exported so no importer moves)
-  refuses a root that is not one safe path segment. `catalogBinary` (`catalog.ts`) carries
-  `archive.root` through when a catalog entry has one. A state row from before this change has no
-  `root`, and `undefined === undefined`, so it is not treated as a moved pin; declaring or changing a
-  root is.
-
-  Measured 2026-09-23 by downloading each vendor's own GitHub release asset into a scratch directory
-  (never executed) and re-hashing: all four Prometheus-family darwin-arm64 archives —
-  `alertmanager` v0.33.1 (37,247,168 B), `blackbox_exporter` v0.28.0 (15,705,022 B), `node_exporter`
-  v1.12.1 (5,368,643 B), `prometheus-community/postgres_exporter` v0.20.1 (10,072,235 B) — recompute
-  to GitHub's own asset `digest`, wrap every entry in exactly one directory named
-  `<binary>-<version>.darwin-arm64/`, and carry no PAX or GNU long-name entries. The worktree's own
-  `tarReader(wanted, root)` was re-run against those same downloaded bytes and now parses each to
-  completion, returning the named member at its full pinned size (`docs/release-binary-catalogs.md`
-  has the full table and commands; `tar-root.test.ts` and `binary-root.test.ts` hold the same proof
-  as committed fixtures).
-
-  This unit adds the reader capability and its tests only. `VICTORIA_RELEASES` and
-  `OPENBAO_RELEASES` are unchanged — no catalog entry for alertmanager, blackbox_exporter,
-  node_exporter or postgres_exporter exists yet; that is its own data-set walk-down and PR.
-
-### Patch Changes
-
-- [#161](https://github.com/taslabs-net/homeflare-kit/pull/161) [`5500f3e`](https://github.com/taslabs-net/homeflare-kit/commit/5500f3e83e90b9e7a0bbad457527f994a741d0d2) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Correct the last stale claim in `Proxmox.ZfsPool`'s docs, per Tim's decision 28 (2026-09-23).
-
-  PR 154 already corrected `zfs-pool.ts`'s header, which previously said destroy was refused and
-  `delete` made no API call — false, since `destroyPool` sends a real `DELETE` under
-  `.pipe(RemovalPolicy.destroy())`, guarded only by the resource's default `retain` removal policy.
-  That fix missed one line: the file's "PRIVILEGES, FROM THE SCHEMA" paragraph still said `delete`
-  "needs nothing at all, since it calls nothing" — the same mistake, left uncorrected in a second
-  place. It now says `delete` needs `Sys.Modify` on `/`, the same as `reconcile`'s POST, per
-  `ceph-osd.ts`'s own privilege comparison (measured against the same 2026-09-13 apidoc read),
-  which names `disks/zfs` as one of the sibling families whose write verbs — not only the create —
-  carry a `Sys.Modify` check.
-
-  No behaviour change. `RemovalPolicy.destroy()` reaching a single `DELETE`, and `retain` sending
-  none, are already pinned in `zfs-pool-adopt.test.ts` (added by PR 154); this PR touches docs only.
-
-## 0.23.0
-
-### Minor Changes
-
-- [#154](https://github.com/taslabs-net/homeflare-kit/pull/154) [`2044487`](https://github.com/taslabs-net/homeflare-kit/commit/2044487b81fecb635da785b0b2637daf2c5b20fe) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `ProxmoxApiToken` and `ProxmoxZfsPool` from `@homeflare/alchemy/proxmox`, per Tim's
-  decision 9 (2026-09-23): the kit builds an ApiToken export that is metadata-only and a ZfsPool
-  export that is adopt-only. Neither can create what it does not already have to adopt.
-
-  `ProxmoxApiToken` adopts and manages `comment`, `expire` and `privsep` — the whole of a token's
-  policy that PVE will report back — and refuses to mint a new one: the secret exists for one HTTP
-  response and then nowhere (measured from the vendor schema), and this estate's state store
-  persists attributes unencrypted, so a token created here would be a live credential nobody holds.
-  `reconcile` dies by name when the token is absent, naming the two ways to get a usable one
-  (`pveum user token add`, or OpenBao's `proxmox-c1` mount) instead. `shape()` is now typed against
-  the generated `AccessUsersUseridTokenTokenidPutParams` and `PostParams`, so a schema drift fails
-  `tsc` here rather than surfacing as a 400 on a live cluster.
-
-  `ProxmoxZfsPool`'s `devices` and `raidlevel` are now optional: omitting both declares an
-  adopt-only pool, for one PVE's own POST schema cannot fully describe — a stripe layout has no
-  `raidlevel` to declare. `ZfsRaidLevel` and `ZfsCompression` are now generated aliases of
-  `NodesNodeDisksZfsPostParams`'s fields rather than hand-typed, so PVE adding or removing a
-  `raidlevel` value is caught by `tsc`, not discovered on a live cluster. `createPool` refuses
-  before any POST when an adopt-only declaration's pool is not already there. `zfs-pool.ts`'s
-  header previously said destroy was refused and `delete` made no API call — that was false
-  (`destroyPool` sends a real `DELETE`, guarded only by the resource's default `retain` removal
-  policy); the header is corrected, and `delete` is unchanged.
-
-  Walked down against the manifest-verified `pve-apidoc` cache, pve-manager 9.2.11/f6997e698c7933ea,
-  sha256 `9def8f13611184ee1c7d0399713130dfc4a065701d0d91a69b9c03df929344e9` — re-sliced for this
-  change with `codegen/apidoc.ts`'s own parser (2026-09-23), rather than assumed from the header's
-  2026-09-13 measurement. The four endpoint definitions this change touches (`POST`/`GET`/`DELETE`
-  `/nodes/{node}/disks/zfs[/{name}]`, `GET`/`POST`/`PUT`/`DELETE`
-  `/access/users/{userid}/token/{tokenid}`) are byte-identical against the cached 9.2.4 apidoc, so
-  nothing here is pinned to a version drift between them.
-
-### Patch Changes
-
-- [#152](https://github.com/taslabs-net/homeflare-kit/pull/152) [`0a19365`](https://github.com/taslabs-net/homeflare-kit/commit/0a19365c9370f315e0fa0dba6700934e4a7022fc) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix the Proxmox type generator (`codegen/`) to read a property's own `oneOf`, not just its outer `optional`. Measured 2026-09-23 against pve-manager 9.2.11: six PVE SDN fabric request parameters and seven return fields under `/cluster/sdn/fabrics/*` (`delete`, `redistribute`, `interfaces`) are spelled `{oneOf: […], type: 'array'}` with no outer `optional`, one branch per routing protocol, every branch `optional: 1` — a property that is optional in every case the vendor states, which the generator previously read as required. `isOptional` (exported from `codegen/tsmap.ts`) now treats a property as optional when it says so itself or when every `oneOf` branch does (one branch without `optional` still keeps it required), and an array property with no `items` of its own but a `oneOf` gets its element type from the deduplicated union of each branch's own mapped `items`. `codegen/emit.ts`'s constraint-table required flag routes through the same helper, so a future fabric Resource is not refused at plan time for omitting a key the vendor never requires. Regeneration touches only `packages/alchemy/src/proxmox/generated/pve/cluster-sdn-fabrics.ts` (+23/−13); nothing in `packages/` imports its types yet. `codegen/TYPES.md` records what stays unclaimed: the branches' own per-protocol `instance-types` are not read, so the element type is a superset across protocols rather than a discriminated union — that decision belongs to the `SdnFabric`/`SdnFabricNode` family this unblocks.
-
-## 0.22.0
-
-### Minor Changes
-
-- [#148](https://github.com/taslabs-net/homeflare-kit/pull/148) [`2a8fc6e`](https://github.com/taslabs-net/homeflare-kit/commit/2a8fc6ef5f634c52a7dfa59f3f0e3464d83aea7c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Refuse two of a stack's own launchd jobs sharing one port, before either is declared: `@homeflare/alchemy/launchd` now exports `claimPorts(claims)` and the pure `portClaimProblems(claims)` it runs on. Like `catalogBinary()`, this is a plain function the stack program calls itself (a provider never sees its sibling resources, and never diffs a first create whose props still hold an unresolved `Output` — every mini job's does), so a colliding declaration fails the plan before anything is fetched, written or `launchctl`'d. It keys on the port number alone, mirroring `lib-ports.nix`'s `assertNoCollision` in the house repo, the check it replaces for a job once that job moves off Nix — address and protocol are not part of the key, matched against that registry's own strictness rather than a new, looser rule. Walked against Darwin 27.2.0 (macOS 27.2): a wildcard bind and a specific-address bind on the same port both succeed at the OS level (measured with SO_REUSEADDR, which Go sets on every darwin listener unconditionally), so `claimPorts` refuses that pairing deliberately rather than relying on the OS to catch it. It sees only the claims a stack passes it — a forgotten job, or a daemon still on Nix, stays invisible until its port is added as a claim.
-
-- [#149](https://github.com/taslabs-net/homeflare-kit/pull/149) [`6b8d88f`](https://github.com/taslabs-net/homeflare-kit/commit/6b8d88f9d3b68286f2d83a64358ecb1e84909629) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `@homeflare/alchemy/release` gets its second vendor data set, `OPENBAO_RELEASES`: OpenBao 2.6.2 for darwin_arm64, walked down 2026-09-23 (`docs/release-binary-openbao.md` has every command). OpenBao's `checksums.txt` lists archives and SBOMs only, never the `bao` binary inside the archive — the first vendor the kit has pinned where the member digest is not a vendor fact. `catalog.ts` gains an optional `computed` record per archive for exactly that case (hashed from an archive whose own SHA-256 already matched the pin, filed separately from `members` and never both at once — a member pinned in both is refused) and an optional `checksums.signature` record for a vendor that publishes a detached signature over its checksum file; `catalogProblems`, `catalogBinary` and `identifyBinary` all read vendor digests first, then computed ones. Both fields are optional and `VICTORIA_RELEASES` is unchanged, so nothing that already builds against this package needs to change. The `checksums.txt` signature was checked once with `gpgv` against the key published at openbao.org; the accompanying Sigstore bundle was read but not verified (`cosign` is not installed where this was walked down), and is recorded as an unverified identity rather than a passing check. `docs/release-binary.md`'s "Declaring one" example also gets a real bug fixed: `ReleaseBinary('vmalert')` followed by `LaunchdJob('vmalert')` shares one alchemy@2.0.0-beta.79 FQN, so the second declaration silently returns the first resource instead of registering a job — the example now uses distinct ids and says why.
-
-## 0.21.0
-
-### Minor Changes
-
-- [#138](https://github.com/taslabs-net/homeflare-kit/pull/138) [`ef4108a`](https://github.com/taslabs-net/homeflare-kit/commit/ef4108a54c3700485cedb102833f16da54f02d3e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Install vendor binaries from pinned release archives: `@homeflare/alchemy/release`. `ReleaseBinary` puts one binary out of a GitHub release archive into a directory the stack declares, and installs nothing else. The pinned archive is its props — repository, tag, exact asset name, size, the archive's SHA-256, the archive member and the member's own SHA-256 — so the resource knows no vendor. Each vendor's pinned versions are data kept beside it; `VICTORIA_RELEASES` is the first set, covering `victoria-metrics`, `victoria-logs`, `victoria-traces` and the `vmutils` tools (`vmagent`, `vmalert`, …) at the versions the Mac host runs, each digest copied from the vendor's checksum file with its URL and date. `catalogBinary(VICTORIA_RELEASES, { package, version, platform, binary })` turns an entry into props, and refuses a version the data set does not pin — in the stack program, so the plan fails before anything is fetched. Every pin must be a plain value in the stack program: one wired from another resource's Output (a checksum file read during the deploy) is refused before any request, on a first deploy too. Every download is checked twice: the archive before anything is unpacked, then the binary before it is written. Asset names are matched exactly, so the `-enterprise` and `-cluster` archives next to them are never picked. Only the declared member is extracted, and an archive holding any link, `..` or absolute entry is refused whole. The bytes reach the host only through the existing `HostRunner` write. A new pin at the same path is refused rather than overwriting a running binary; give each version its own directory (`catalogDirectory`). A binary someone already placed is recognised by its SHA-256, never by running it, and is taken over only under `--adopt`, without a download — at apply too, where the plan could not ask. A file with other bytes at the path is never taken over, `--adopt` or not, so a plan never prints `adopted` for a binary it would overwrite. A renamed declaration keeps its binary: declare the rename with `renamedFrom()`, and under `--adopt` the old name's delete leaves a path the new name installed in the same deploy. It never starts anything: the stack's job puts the binary's `path` in its argv. `HostFile` now shares its whole-file convergence with it, with no change in behaviour.
-
-### Patch Changes
-
-- [#138](https://github.com/taslabs-net/homeflare-kit/pull/138) [`ef4108a`](https://github.com/taslabs-net/homeflare-kit/commit/ef4108a54c3700485cedb102833f16da54f02d3e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - A `HostFile` or `ReleaseBinary` whose path is respelled to the same file — through a symlinked parent such as `/etc` and `/private/etc`, or by case alone on case-insensitive APFS — is now planned as an `update` that keeps the file. Before, it was planned as a `replace` whose cleanup deleted the old path, which was the same file: the deploy succeeded and the file was gone until the next one. `HostRunner.stat` may now report `dev` and `ino` (the local runner does); a runner that does not gets a check after the move, so a lost file fails the deploy instead. A create whose read-back throws (not only one that mismatches) is now removed. `ReleaseBinary` also refuses a mode its owner cannot read, and a directory that group or other may write. It refuses, too, a second resource installing the same path in one deploy: two owners of one file meant that dropping either one deleted the file the other still declared.
-
-## 0.20.0
-
-### Minor Changes
-
-- [#139](https://github.com/taslabs-net/homeflare-kit/pull/139) [`70e8899`](https://github.com/taslabs-net/homeflare-kit/commit/70e8899fe70cf5426bcbf11b498a658b60f9488b) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `ProxmoxCephDaemon`, `ProxmoxCephFs` and `ProxmoxCephOsd` from `@homeflare/alchemy/proxmox`, so a stack can adopt a live cluster's Ceph monitors, managers, metadata servers, CephFS and OSDs. Each is adopt-only by shape: none has an update path, the daemon and filesystem compare nothing so they can never plan a replace, and an OSD is created only when `dev` is declared. All three retain on destroy, so removing a declaration drops its state row and never sends a DELETE. `ProxmoxCephFlag` stays Provider-only on purpose: a declared flag reasserts a maintenance toggle such as `noout` on every deploy.
-
-### Patch Changes
-
-- [#135](https://github.com/taslabs-net/homeflare-kit/pull/135) [`925454b`](https://github.com/taslabs-net/homeflare-kit/commit/925454b5d9fbefea061a3a204e4b0093a79c0bdc) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Two ways a `Remote.File` managed region could break its own promise, and a systemd rename that
-  refused too late. All three found by reviewing the merged diff and reproduced against the fake
-  Linux host before anything was changed.
-
-  🔴 **A REGION RENAME LEFT THE OLD BLOCK IN THE FILE FOREVER.** Only `path` was identity, so changing
-  `region.name` — or its `comment` token, which is part of the marker line — planned a routine
-  `update`: the new markers were spliced in, the old ones were never touched, and `delete` could only
-  ever look for the name in state, which was now the new one. Reproduced: a vendor file ended up
-  carrying two `BEGIN` blocks and destroying the resource removed one of them. For the named
-  consumers that is two `anchor` lines in a packet filter and a duplicate entry in a host table, with
-  nothing in the stack able to take either back. A rename is now a MOVE: the new block is written and
-  verified, then the old one is removed, and the stored digest is re-read afterwards so it describes
-  the file that is actually there.
-
-  🔴 **DROPPING `region` TOOK OVER A FILE THIS RESOURCE DID NOT OWN.** Same cause, worse effect: the
-  plan said `update` and the apply replaced every byte of the other owner's file with this resource's
-  few lines. That is the one thing the managed-region design exists to make impossible. A flip between
-  owning the whole file and owning a block — in either direction, at the same path — is now a
-  PLAN-TIME REFUSAL, because neither order is safe: writing the whole file first destroys the other
-  owner's bytes before anything can be undone, and removing the block first destroys our own claim and
-  then refuses. Destroy the resource and declare a new one.
-
-  🔴 **A `Systemd.Unit` RENAME WHOSE `content` WAS STILL AN OUTPUT WAS NOT CHECKED AT ALL.** The
-  resolved rename is checked in the plan since the systemd preflight; the branch `diffHandler` takes
-  while `content` is unresolved — exactly the deploy that templates a rendered config's digest into
-  the unit — still returned `{ action: 'replace', deleteFirst: true }` with no check, and Alchemy
-  deletes the old unit BEFORE reconciling the new one. A rename onto a masked name therefore took the
-  service down and only then refused. The half of the check that needs only the new name — the old
-  unit deletable, the new one writable and not masked — now runs there too. ⛔ This forbids nothing
-  that used to work: the identical refusal was always going to fire in reconcile, just later and with
-  nothing running.
-
-- [#142](https://github.com/taslabs-net/homeflare-kit/pull/142) [`1905f18`](https://github.com/taslabs-net/homeflare-kit/commit/1905f18c30f7ae2a6d7294d588bf18396b64f4ed) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Two new docs, and no code change.
-
-  `docs/provider-standard.md` is the kit-side statement of the house standard for a custom
-  Alchemy provider. It keeps the standard's rule numbers, and each rule is cited upstream at
-  `alchemy@2.0.0-beta.79`. It covers four things. First, use upstream's resource when one
-  exists. Second, route every vendor call through `@distilled.cloud/<vendor>` when that
-  package exists. Third, use Alchemy's own helpers (`alchemy/Util/sha256`, `Util/poll`,
-  `Util/AtomicFile`, `Diff`, `Tags`, `PhysicalName`, `AdoptPolicy`, `Auth` and `Test/Bun`)
-  rather than house copies. Fourth, keep `src/**` provider code runtime-portable, because
-  this package builds with `--target node`, while tests, fakes, scripts and codegen stay
-  Bun-native. The page also records, per family, the vendor version each one was walked
-  against and where that record lives. Six families record it only in prose.
-
-  `docs/upstream-conformance.md` is the audit of every family against that standard, as a
-  ranked ledger. It was measured read-only on `925454b`. The findings, in rank order:
-
-  1. `R2BucketLock` uses `Effect.orDie` and `Effect.promise`. Its reconcile trusts `output`
-     rather than the live lock, and it sits on a second Cloudflare SDK where
-     `@distilled.cloud/cloudflare/r2` already has the lock operations.
-  2. `forgejo/client.ts` is hand-rolled, while `@distilled.cloud/forgejo@1.0.0-rc.12` is
-     generated against Forgejo 16.0.3.
-  3. `MeshNode` is a deliberate twin of `Cloudflare.Tunnel.WarpConnector`.
-  4. Shipped provider code calls `Bun.*` or the `node:*` modules upstream bans (14 of 17
-     listed files; the other 3 use only synchronous `node:crypto` or `Buffer`, which upstream
-     allows inside `Effect.sync`), and 51 test files run on `node:test` instead of
-     `bun:test`.
-
-  What the ledger records is the gap for each finding. It changes nothing.
-
-## 0.19.1
-
-### Patch Changes
-
-- [#128](https://github.com/taslabs-net/homeflare-kit/pull/128) [`ba55148`](https://github.com/taslabs-net/homeflare-kit/commit/ba5514820e32f9d546f1a5eb0f92c7f156f2a978) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Estate topology out of the constraint proofs. PR [#118](https://github.com/taslabs-net/homeflare-kit/issues/118)'s create-form proofs used the real
-  declarations verbatim, which put a metrics hostname, a cluster's `api-path-prefix` and three Ceph
-  pool names into `src` — and `src` ships in the npm tarball of a public repository, so they would
-  have stayed in the git history forever. `lxc-harness.ts` states the rule and these tests did not
-  follow it: a production-SHAPED declaration with placeholder values, because the proof is about
-  which keys the create form sends and which bounds they face, never about the strings.
-
-  No behaviour changes; the same forms are checked against the same tables.
-
-- [#136](https://github.com/taslabs-net/homeflare-kit/pull/136) [`64d4c36`](https://github.com/taslabs-net/homeflare-kit/commit/64d4c36091054fa05b716f1d4029c1feea955289) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Check a systemd rename at plan time. A unit's name or directory change is a delete-first replace, and Alchemy deletes the old unit before reconciling the new one, so a masked name, a unit file someone else owns, or a runner that will not write the new path used to be noticed only after the old unit was already stopped. Those checks now run while planning, and again at apply when the new name was still an Output and the diff could not see the rename. A file byte-identical to this declaration's render stays exempt: it is a deploy that died between write and reload.
-
-## 0.19.0
-
-### Minor Changes
-
-- [#120](https://github.com/taslabs-net/homeflare-kit/pull/120) [`512bf1a`](https://github.com/taslabs-net/homeflare-kit/commit/512bf1a6a973bdbd1c9688d295dcf8a067820a36) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Linux hosts on the existing HostRunner seam: `@homeflare/alchemy/linux`.
-
-  The kit could declare a guest and nothing inside it. This adds the families that gap
-  was missing, on the same seam the launchd subpath already drives a Mac through — so
-  `HostFile`'s ownership rules, `checkWrite` and the adoption doctrine come along unchanged.
-
-  - `sshRunner({ host })` — a Linux `HostRunner` over the operator's own ssh config.
-    ⛔ `BatchMode=yes` and host verification untouched; ⛔ every remote script reports its
-    status behind a per-runner nonce, so a dropped connection is an Error and never a
-    "nothing is there"; ⛔ `privileged: false` — nothing calls sudo.
-  - `HostDirectory` — because no file resource creates a parent. One directory, never a
-    chain; delete is `rmdir`, never recursive.
-  - `RemoteFile` — a whole file, or one MANAGED REGION (`BEGIN`/`END` markers) inside a
-    file this resource does not own. ⛔ Every byte outside the markers stays identical, the
-    file's own mode and owner are copied back, and a delete removes only the block.
-  - `SystemdUnit` / `SystemdTimer` — unit file, `daemon-reload`, enable/disable,
-    start/stop. ⛔ A deploy NEVER mass-restarts: a unit restarts only when its own file
-    changed, when state or systemd says the loaded copy is stale, or when a digest the
-    declaration listed in `restartOn` changed. An adopted unit that already matches is not
-    restarted, reloaded or started.
-
-  `systemctl` and `stat` shapes measured read-only on Debian 13 / systemd 257, 2026-09-22;
-  the write subcommands are reasoned and read back rather than assumed. Unit files render
-  verbatim — there is no machine-readable directive schema to generate from, so the kit
-  invents none. Guide: `docs/linux-host.md`.
-
-## 0.18.0
-
-### Minor Changes
-
-- [#118](https://github.com/taslabs-net/homeflare-kit/pull/118) [`5ae4e91`](https://github.com/taslabs-net/homeflare-kit/commit/5ae4e91919a101da3d8605a069c65e0301d0cccc) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Every Proxmox family that writes to the vendor is now checked against the vendor's own schema —
-  35 of 35, up from 19, covering 75 endpoints instead of 37. A family left unwired was a write this
-  package made with nothing between the declaration and the server's 400, which is the shape of the
-  2026-09-22 `deploy:pbs` incident this feature exists for.
-
-  Newly wired: `Proxmox.ApiToken`, `CephDaemon`, `CephFlag`, `CephFs`, `CephOsd`, `CephPool`, `Lxc`,
-  `MetricServer`, `NetworkApply`, `NodeNetwork`, `NotificationTarget`, `SdnApply`, `SdnSubnet`, `Vm`,
-  `ZfsPool`, and `Pbs.NotificationTarget` — which was missing from the sweep list and carries the
-  incident's own rule, `comment: maxLength 128`, on all three of its creates. Families that write
-  their own handlers (`CephOsd`, `Lxc`, the two applies, `Pbs.NotificationTarget`) reach the same
-  check by name through `guardForm`, as `Pbs.Datastore` already did; families with a spec declare
-  `endpoint`. `tests/constraint-wiring.test.ts` derives the census from the ownership ledger, so a
-  family added without an endpoint fails there rather than on a deploy, and each newly wired family
-  has a proof test that runs its REAL create form through the vendor's create table and requires no
-  violations.
-
-  🔴 **A live bug this found.** `Proxmox.NodeNetwork`'s create form never sent `iface`, which PVE
-  marks required on `POST /nodes/{node}/network` while `{node}` is its only path parameter. Every
-  interface create this package could have made would have 400ed; nothing caught it because the
-  estate's interfaces were all adopted, which takes the PUT path. `createBody` now sends it, and the
-  PUT still does not — there `iface` is the path.
-
-  ⛔ **Presence of a vendor-required parameter is now demanded only when a create is really about to
-  happen**, not whenever the create form is built. `Proxmox.NotificationTarget` cannot send gotify's
-  `token` or smtp's `password` — they are write-only secrets and props are persisted unencrypted — so
-  the documented workflow is to create the target out of band and then declare it. Under the old
-  unconditional check that adopt-then-update would have been refused forever; now it plans clean,
-  while asking to CREATE a gotify target fails at plan with PVE's own `token: required`. The guards
-  move into `resource-guard.ts` and are exported from `pveOperations`, so `CephPool`'s hand-written
-  reconcile gets them too.
-
-  An **action** endpoint with no form is wired as well (`PUT /cluster/sdn`, `PUT /nodes/{node}/network`):
-  the table is empty, but the key is resolved against the vendor schema at generation time, so a PVE
-  that moves or withdraws an apply fails `bun run check` instead of an `ifreload -a` on three nodes.
-
-  `PveSpec['endpoint']` now also admits a function of props, for the two families whose endpoint is
-  chosen by a prop — `NotificationTarget`'s four PVE types and `CephDaemon`'s mds/mgr/mon, each with
-  its own parameter schema. Every key it can return is still a literal in this package's source,
-  because the generator finds endpoints by scanning text.
-
-  Generator changes that came with the volume: `/cluster` and `/nodes/{node}` are split one level
-  further down, because they are routes rather than areas — PVE's own viewer expands them — so the
-  tables are now 18 files (`pve-cluster-sdn.ts`, `pve-nodes-ceph.ts`, …), all inside the 250-line
-  house cap. The generator deletes a file it no longer produces, `tests/schema-manifest.test.ts`
-  enumerates the directory instead of a hand-written list and checks every table is claimed by the
-  manifest entry it came from, and two PVE bounds published as JSON strings (`bwlimit`'s
-  `minimum: "0"`, `count`'s `maximum: "16777216"`) are parsed to numbers — a faithful reading of a
-  stated value; a bound that is not a number at all is still dropped rather than guessed at.
-
-## 0.17.0
-
-### Minor Changes
-
-- [#114](https://github.com/taslabs-net/homeflare-kit/pull/114) [`3316006`](https://github.com/taslabs-net/homeflare-kit/commit/3316006513196622551d4cc041986089dc28ffc4) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The Proxmox API type generator, written from the vendor schemas, and the widening it removes.
-  `packages/alchemy/src/proxmox/generated/{pve,pbs}.ts` carried the header
-  `Run: bun codegen/generate.ts` from the day they were committed, and
-  `git log --oneline --all -- 'codegen/generate*'` is empty at every commit: that file existed
-  nowhere. The mapping was therefore readable only as its own 8,196 lines of output — nobody could
-  reproduce it, correct it, or say which schema version it described. Because nobody could read it,
-  nobody noticed what it did: it kept `type`, `enum` and `optional`, dropped every `maxLength`,
-  `minLength`, `minimum`, `maximum`, `pattern`, `format`, `typetext`, `default` and description, and
-  covered 407 of PVE's 678 endpoints and 46 of PBS's 367 with no record of which 407 or why.
-
-  `bun codegen/types.ts` is that generator, with `--check`, the same manifest and the same
-  sha256-as-identity rule as `codegen/constraints.ts`. It emits every endpoint both products
-  document — 678 PVE and 367 PBS, 1,619 exported types — split across 89 files by the vendor's own
-  path and packed back up so the split is no deeper than the 250-line house cap requires. Every file
-  names its manifest entry, the product version the host reported and the sha256 of the bytes it was
-  read from. `generated/pve.ts` and `generated/pbs.ts` stay as `export *` barrels, so no import in
-  this package or any consumer moves.
-
-  ⛔ **An integer request parameter is `` `${number}` ``, not `string`.** `pbs:POST /config/verify`'s
-  `max-depth` is `integer, minimum 0, maximum 7` in PBS's schema and was `'max-depth'?: string` in
-  the type, which accepts `'banana'`; 480 PVE and 151 PBS parameters were widened that way. They are
-  now the wire spelling of a number: still assignable to `PveForm`, still carried unchanged through
-  `violations`' bound check, and no longer satisfied by an arbitrary string. It is deliberately NOT
-  `number`: `client.ts` sends `application/x-www-form-urlencoded` and types the body
-  `Record<string, readonly string[] | string>`, so a `number` could not be handed to `pve()` at all,
-  and `constraints.ts` iterates a form value on `typeof value === 'string'`. ⚠️ `String(n)` does not
-  typecheck against it — write `` `${n}` ``. A boolean parameter stays `'0' | '1'`, which is the
-  encoding `values.ts`'s `flag()` already produces rather than a widening. Responses are JSON and
-  keep their real `number` and `boolean | 0 | 1`.
-
-  The old output is reproduced before it is changed, which is what makes the diff reviewable: run
-  against the same two schemas with integers left widened, the pipeline re-emits all 646 PVE and 69
-  PBS declarations identically, with two recorded exceptions — `NodesNodeLxcVmidConfigGetReturn`'s
-  `lxc` becomes `readonly (readonly string[])[]` rather than a readonly array of mutable ones, and 21
-  declarations break lines differently because `oxfmt` had reformatted the committed files before
-  every `generated` directory reached its ignore list. The naming is the old generator's, reproduced
-  rather than improved: `ClusterBackupIdIncluded_volumesGetReturn` keeps its underscore, because
-  renaming sixty exported types in the commit that changes what the types mean would hide the second
-  change inside the first.
-
-  ⛔ Parameter schemas wrapped in `allOf`/`oneOf` are read through `codegen/parameters.ts` (PR [#113](https://github.com/taslabs-net/homeflare-kit/issues/113)),
-  not asked for as `parameters.properties`. `POST /cluster/ha/rules` and `PUT /cluster/ha/rules/{rule}`
-  are the two PVE endpoints that need it; a reader that misses them emits a type with no fields, which
-  is indistinguishable from an endpoint that takes nothing. An unresolvable schema gets a doc comment
-  naming the construct and **no** `Params` type — neither product needs that on these versions.
-
-  ⛔ "Closed object" is spelled differently by the two products, and a test for one lies about the
-  other. Measured over both whole schemas: PVE writes numbers (`additionalProperties: 0` on 617
-  objects, `1` on 21, absent on 352), PBS writes booleans (`false` on 560, `true` on 36). An absent
-  `additionalProperties` is open — the vendor never promised the list was exhaustive.
-
-  ⛔ Eight PVE files are over the house cap and cannot be split. Each holds the endpoints of one
-  vendor path whose parameters carry enums of hundreds of members — `rootfs`, `mp0`…`mp255`,
-  `unused0`…`unused255` for the volume moves, the ACME DNS provider list, the QEMU CPU model list. A
-  single type declaration is the smallest unit there is; dropping the enum would widen the parameter
-  back to `string`. Each says so in its own header and `tests/schema-types.test.ts` pins the list.
-
-  `tests/schema-type-mapping.test.ts` holds the mapping to shapes lifted from the committed files and
-  needs no schema cache, so it runs on CI. `tests/schema-types.test.ts` checks provenance, the
-  barrel against the files on disk, the cap, the coverage counts and five endpoints the old generator
-  omitted, and runs `bun codegen/types.ts --check` when the cache is present — skipping with the
-  refresh command when it is not. `codegen/TYPES.md` carries the reasoning.
-
-## 0.16.1
-
-### Patch Changes
-
-- [#113](https://github.com/taslabs-net/homeflare-kit/pull/113) [`4fe8cef`](https://github.com/taslabs-net/homeflare-kit/commit/4fe8cef3154ad0f373b291f413dcbd570602e6fa) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Proxmox.HaRule`'s constraint table was empty and nothing said so.
-
-  MEASURED 2026-09-22: PVE spells `POST /cluster/ha/rules` as `parameters: {allOf: [{properties:
-{rule}}, {oneOf: [node-affinity, resource-affinity]}]}` — a discriminated union. The apidoc reader
-  asked for `parameters.properties`, got `undefined`, and emitted `{}`. A wired family's plan-time
-  guard therefore checked **nothing**, and an empty table is indistinguishable from an endpoint whose
-  parameters happen to carry no rules. `comment` there has a `maxLength` of 4096 and `affinity` an
-  enum of two.
-
-  `codegen/parameters.ts` reads both combinators, and their logic is their meaning. `allOf` branches
-  all apply, so their properties MERGE — a key claimed by two branches would have to satisfy both,
-  which this does not compute, so it stops rather than picking one. `oneOf` branches are
-  ALTERNATIVES, so they INTERSECT: only what every branch states identically survives, because
-  enforcing a rule from one branch would refuse a legal declaration of the other kind. `nodes` and
-  `strict` exist only on node-affinity and are therefore not enforced. ⚠️ `optional` is intersected
-  toward optional rather than field-by-field: its ABSENCE means required, so dropping a disagreeing
-  `optional` would have read as required and refused every legal node-affinity rule, whose `affinity`
-  is optional where resource-affinity's is not.
-
-  ⛔ And a parameter schema this file cannot read is now recorded as `unresolved` and **stops the
-  generator** for any endpoint this package writes to, rather than producing the empty table that hid
-  the problem. `tests/schema-manifest.test.ts` covers the reader directly.
-
-  ⛔ `docs/api-coverage.*` had the identical blind spot from its own parser: it reported
-  `/cluster/ha/rules` as having **zero** parameters and zero gaps. `scripts/api-schema.ts` now reads
-  the combinators through the same resolver — 5 parameters, 2 unenforced, both `format` names.
-  ⚠️ Two parsers for one file format is the deeper defect; merging them is its own change.
-
-- [#116](https://github.com/taslabs-net/homeflare-kit/pull/116) [`54479fc`](https://github.com/taslabs-net/homeflare-kit/commit/54479fc7792076fb0e718b55588cc815823818c2) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Netbox.Prefix` no longer erases prose it did not declare.
-
-  🔴 **The bug, found by review rather than by an incident.** The resource sent `description: ''`
-  whenever the prop was absent. On a create that is invisible — the field was empty anyway. ⛔ On an
-  **adopt** it is data loss: NetBox is the estate's record of DECISIONS, so a prefix's description is
-  usually the only written trace of why that range exists. The first deploy that adopted one would
-  have PATCHed it to empty, `matches` would have reported drift, the plan would have said `update`,
-  and the diff would have read as converging a declaration rather than deleting a sentence.
-
-  ★ **The tell was an inconsistency inside the same file, not a failure.** Optional foreign keys were
-  already omitted when undeclared, with a comment explaining that sending `null` would clear a tenant
-  somebody set in the UI. Free text had the identical hazard and the opposite treatment. Two fields,
-  one hazard, two answers — that gap is the defect.
-
-  ★ **The line is now drawn at what the vendor itself defaults.** `status`, `is_pool` and
-  `mark_utilized` have defaults in NetBox's schema, so omitting one genuinely means "the default" and
-  settling it says what NetBox would have done anyway. `description`, `comments` and the optional
-  foreign keys have no such default — the schema's `''` is the absence of a value, not a decision —
-  so they are omitted from the body and left uncompared until declared.
-
-  ⛔ **Whatever `matches` compares, `body` must send**, or the plan says `update` forever: the PATCH
-  omits the field, so the next read is unchanged. The two moved together here and
-  `prefix-form.test.ts` asserts the invariant.
-
-  ⚠️ **The cost, stated:** prose can no longer be cleared by omission. Clearing it is
-  `description: ''`, written on purpose — the readable way to say a destructive thing.
-
-  `body` and `matches` are extracted to `prefix-form.ts` so both are pure functions a test can call
-  with a literal, the way the Proxmox families keep their `*-form.ts` beside the resource.
-
-## 0.16.0
-
-### Minor Changes
-
-- [#110](https://github.com/taslabs-net/homeflare-kit/pull/110) [`9fa5800`](https://github.com/taslabs-net/homeflare-kit/commit/9fa5800c8a1d2d3fb831d29ae64e9145e82fe48f) Thanks [@taslabs-net](https://github.com/taslabs-net)! - A NetBox provider, generated from NetBox's own OpenAPI document — `@homeflare/alchemy/netbox`.
-
-  `Netbox.Prefix` declares one IP prefix and the decision recorded against it. It is the first object
-  class for three measurable reasons: `WritablePrefixRequest.required` is exactly `["prefix"]`, so it
-  is the only interesting NetBox object with **no foreign-key prerequisite** (a VLAN needs `vid` and
-  a group; a Device needs a role, a type and a site — four more Resources before the first one can be
-  declared); a prefix is the atom of what NetBox is for, the record of what the network was DECIDED
-  to be; and `status: 'deprecated'` is how a retired range stops being folklore in an SSH config
-  comment and becomes a line with a reviewable diff.
-
-  ⛔ **The constraint tables are generated, never hand-typed.** `bun codegen/netbox.ts` reads NetBox
-  4.7.0's OpenAPI 3.0.3 document, verifies its sha256 against `codegen/manifest.json`, and emits the
-  committed tables plus `docs/netbox-coverage.md`. A key naming an endpoint the vendor does not have
-  stops the generator. This is the same pipeline that exists because a PBS deploy adopted ten objects
-  and then failed its one create on a `maxLength: 128` the generated type did not carry — NetBox gets
-  it **before** its first write rather than after.
-
-  ⛔ **Two of NetBox's seven regexes are not JavaScript in meaning, and both compile cleanly.**
-  Measured over the whole document: `^[-\w]+$` (`slug`) and `^[\w.@+-]+$` (`username`). Python's `\w`
-  is Unicode on a `str`, so Django accepts `zürich-core` and a verbatim JavaScript copy refuses it —
-  a plan blaming the operator for a legal value, which is worse than the server-side 400 the table
-  replaces. ⚠️ The `u` flag does not fix it. Both are dropped, recorded as `patternSource` with no
-  `pattern`, and the generated header says nothing enforces them.
-
-  ⚠️ **The document was pinned to the vendor's release tag, not read from an instance, and the
-  manifest says why.** The reference instance could not answer `/api/schema/`. The published document
-  was then cross-checked against a snapshot the estate took from its own instance while it was up:
-  1256 operations on each side, `(method, path)` sets identical with zero difference. ⛔ That verifies
-  the path surface only — the snapshot discards request bodies, which is the half this generates —
-  so every constraint rests on the vendor document alone.
-
-  Also here:
-
-  - Adopt-first by construction: `reconcile` locates before it writes, and ⛔ an ambiguous identity
-    **fails** rather than binding to whichever row NetBox ordered first.
-  - 🔴 **One guessed filter shape was caught before it shipped, and the fix is structural.** The
-    prefix locate first narrowed server-side with `vrf_id=null`, the sentinel NetBox uses for "no
-    foreign key" — `FILTERS_NULL_CHOICE_VALUE = 'null'` is real. ⛔ But in the vendor's own source
-    at v4.7.0, `PrefixFilterSet.vrf_id` is a plain `ModelMultipleChoiceFilter` with no `null_value`:
-    it never opted in, so `'null'` fails queryset validation and NetBox answers **400 on every plan
-    for every global-table prefix**. `locate` now sends only filters the document declares and a new
-    `identifies` picks the row in this process, where the rule is readable and testable offline.
-  - `retain` on removal for every family, because deleting a NetBox row reparents children and
-    detaches IP assignments; the `delete` handler is fully implemented anyway.
-  - Read/write shape asymmetry handled in `values.ts` — `status` is written as `"active"` and read
-    back as `{value, label}`; a foreign key is written as `4` and read back as `{id, url, display}`.
-    Comparing those directly reports drift on every plan, forever.
-  - ⛔ No credential is ever a prop. `NETBOX_URL` and `NETBOX_TOKEN` are read at call time, and
-    `Authorization: Token`, not `Bearer` — a wrong scheme and a wrong credential look identical in
-    the response.
-  - ★ **`codegen/param-rules.ts` gains a dialect table, and `emit.ts` is untouched.** There are
-    exactly two vendor facts about a pattern — which dialect it is written in, and whether the
-    vendor anchors it — so they live together per product rather than as a string every function
-    switches on. ⛔ NetBox gets the Django translator and no anchoring: its own 7 patterns already
-    carry `^…$` and Django validates with `re.search`, so re-anchoring would invent a rule. PVE is
-    the opposite case and keeps its measured anchoring. Every existing Proxmox table regenerates
-    byte-identical.
-
-### Patch Changes
-
-- [#108](https://github.com/taslabs-net/homeflare-kit/pull/108) [`6586b0d`](https://github.com/taslabs-net/homeflare-kit/commit/6586b0decb5201e57f9e086619d1f658e5bce94d) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Adversarial review of the vendor-constraint guard, same day it shipped: two rule kinds were passing
-  through it unchecked, and the coverage report did not know the guard existed.
-
-  ⛔ **PVE anchors every pattern and the tables did not.** MEASURED read-only on a cluster node,
-  `/usr/share/perl5/PVE/JSONSchema.pm:1636`: `if ($value !~ m/^$pattern$/)`. The published pattern is
-  the INSIDE of an anchored match — PVE ships `[A-Za-z][A-Za-z0-9\-\_]+` for a firewall alias name —
-  and `RegExp.test` is a search, so `ok name!` matched on its `ok`, planned clean and was rejected by
-  PVE with the 400 the guard exists to prevent. All eleven PVE patterns in the tables were toothless
-  this way. The anchoring is textual rather than `(?:…)`, because Perl's is: three of PVE's 72
-  patterns carry a top-level `|`, and `^a|b$` is not `^(?:a|b)$`. `\n?` before the `$` is Perl's `$`,
-  which matches before a final newline where JavaScript's does not — without it the guard would refuse
-  values PVE accepts, which is worse than the 400. PBS is untouched: all 37 of its patterns already
-  carry their own `^…$` and Rust's `is_match` is a search.
-
-  ⛔ **An array states its rules on `items`, and the emitter read only the parameter.** 30 tabled
-  parameters are arrays and 11 state real limits one level down — PBS `target` (2–32 chars, a name
-  pattern), `associated-key`, the `delete` enums, PVE `secondary-controllers` (max 64). `violations`
-  was already checking every element of a repeated key against a row that had no rules in it. Those
-  rules now merge into the row, which says `each: true`; `required` is never taken from `items`.
-
-  ⛔ **`patternFlags` is emitted instead of discarded.** `translatePattern` lifts PBS's leading `(?m)`
-  to a flag and the first generation returned it and threw it away, so a multi-line rule would have
-  been enforced with single-line semantics. No tabled endpoint uses one today; this is the guard for
-  the day one does.
-
-  ⛔ **`docs/api-coverage.md` called the 128-character comment unenforced.** It was generated from the
-  vendor schema alone, hours after the tables started enforcing 321 rows of it, so the gap column
-  counted every rule the guard had just closed — including the one the report opens by describing.
-  `POST /config/verify` now reads `unenforced: []`, PBS's owned gap falls 144 → 62 and PVE's 545 →
-  490, and a `format` is still never subtracted because the tables record the name and check nothing.
-
-  ⛔ **The two manifests named two different PVE schemas.** `codegen/manifest.json` said 9.2.11 and
-  `schemas/manifest.json` said 9.2.4 — both true of this genuinely mixed-version cluster, differing by
-  two write endpoints, and nothing said so. Both now name the same bytes and the same versioned cache
-  filename, and `tests/schema-manifest.test.ts` fails if they ever diverge again.
-
-  New tests: `constraints-dialect.test.ts` holds a mutant for each newly enforced kind, and
-  `constraints-live.test.ts` runs all ten objects of the live PBS inventory — the real ids, stores,
-  schedules and retention values, comment text replaced by same-length filler because this package is
-  public — through their create AND update tables expecting zero violations, which is the false
-  positive this feature could itself cause. `constraints.test.ts` is split at the 250-line house cap.
-
-## 0.15.0
-
-### Minor Changes
-
-- [#106](https://github.com/taslabs-net/homeflare-kit/pull/106) [`fc026e7`](https://github.com/taslabs-net/homeflare-kit/commit/fc026e7b81d937f614515abe8b2a2d7bb2a2d019) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Forward every `Bao.*` family's `Props` and `Attributes` types from `@homeflare/alchemy/openbao`.
-
-  Each family already re-exported its own types from its module, but the barrel forwarded only the
-  VALUES for seven of them — `BaoAuthMethod`, `BaoCloudflareRole`, `BaoMount`, `BaoPkiRole`,
-  `BaoPolicy`, `BaoProxmoxRole` and `BaoSshRole` — plus `BaoAuthRoleAttributes`,
-  `BaoPluginAttributes`, `BaoJwtRoleAttributes` and `BaoJwtCallbackMode`.
-
-  ⛔ This is a bug only a consumer could see, and only one that obeys the rules. A stack may use
-  Resources the package entry exports and must not deep-import, so it could be handed
-  `BaoProxmoxRole` and still be unable to name its props — leaving it to write the shape out and
-  hope it stayed in step. MEASURED 2026-09-22 in homeflare-openbao, which did exactly that for
-  `BaoProxmoxRole` while declaring the VPS proxmox engine. For that family the cost is highest:
-  `mount` + `name` + `mintUser` + `ttl` + `maxTtl` IS the whole role, so a hand-written copy
-  duplicates the entire server-side state of a family whose `mintUser` is its security boundary.
-
-  Additive and type-only: no value, signature or runtime behaviour changes, and nothing that was
-  importable stops being importable. `src/openbao/index-types.test.ts` pins the surface with a
-  type-only test — `tsc --noEmit` is the assertion, so a family whose props stop being reachable
-  from the package entry fails here instead of in another repo's next consumer.
-
-- [#107](https://github.com/taslabs-net/homeflare-kit/pull/107) [`734ef60`](https://github.com/taslabs-net/homeflare-kit/commit/734ef6067e504be20c65ce7ec9c221c54554d7e7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The provisioning baseline takes a comment per object, so it can describe a cluster that
-  already exists.
-
-  `provisionBaseline` and `provisionBootstrap` carried ONE `comment` for the mint group and
-  both mint users. That can only describe a cluster this baseline made. The common case is
-  the other one: a cluster that already has its mint group and its read user, each with its
-  own live comment, both of them already declared at those values by the stack that adopted
-  them. A single comment made the generated script modify all three, and the next deploy of
-  that stack wrote them back — a loop that reads like drift and is not. Measured on an
-  estate cluster on 2026-09-22, where the mint group had no comment at all and the read user
-  named its own mount.
-
-  `ProvisionNames` now adds `groupComment`, `provisionComment` and `readComment`, each
-  defaulting to `comment`, so the generic case is still one string and an override changes
-  exactly one object:
-
-  ```ts
-  provisionBootstrap({
-    role: 'LXCProvisioner',
-    groupComment: '', // live: no comment at all
-    readComment: 'mint target: read (ops)', // live: its own wording
-    provisionComment: 'mint target: provision (ops)', // the one new object
-  });
-  ```
-
-  The script then prints `group hf-mint: ok` and `user hf-read@pve: ok` and its only writes
-  are the role, the new user and its grant. A test runs exactly that against the CLI fake,
-  with the one-shared-comment run beside it as a negative control.
-
-  Also:
-
-  - Each comment is checked like `comment` was, and a problem is **named by where the value
-    came from** — a bad shared `comment` is still one problem called `comment`, not three
-    called after overrides the caller never passed.
-  - `readComment` goes with its lane: a `null` `readUser` drops the user, so the field is
-    neither used nor checked.
-  - `:` joins the characters a comment may hold. It is special in neither `sh` nor a Perl
-    `q{}`, and it is how real mint-user comments are written (`mint target: read`).
-  - `CoreProvisionNames` is the six names `PROVISION_DEFAULTS` resolves, split out so that
-    type keeps its exact shape; `ProvisionNames` extends it. `ProvisionComments` is the
-    resolved comment per object. Both are exported.
-
-- [#102](https://github.com/taslabs-net/homeflare-kit/pull/102) [`4fb005e`](https://github.com/taslabs-net/homeflare-kit/commit/4fb005e4892f34bbcef01c5227d464ae36e80299) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Vendor schema constraints, generated and enforced at plan time. `homeflare-proxmox`'s first
-  `deploy:pbs` adopted ten objects and then failed its one create on `PVE POST config/verify -> 400:
-parameter verification failed - comment: value may only be 128 characters long`. Nothing local
-  caught it, because the only place the number 128 existed was PBS's published schema: the generated
-  types keep `type`, `enum` and `optional` and drop every `maxLength`, `minLength`, `minimum`,
-  `maximum` and `pattern` the vendor states.
-
-  A new `codegen/` reads the cluster's own `apidoc.js` and emits machine-readable constraint tables
-  (`packages/alchemy/src/proxmox/generated/constraints/`, one file per vendor area, all inside the
-  250-line house cap). `constraints.ts` is a pure validator over a form and its endpoint's table, and
-  `resource.ts`'s shared `pveHandlers` runs it on both the create form and the update form — so every
-  family that declares an `endpoint` gets it, with no per-resource copy. `Pbs.Datastore`, which writes
-  its own handlers, gets the same check through `pbs-datastore-endpoint.ts`. Nineteen families are
-  wired, covering 37 endpoints: PBS datastore/prune/sync/verify/matchers, PVE acl, groups, roles,
-  users, backup, firewall aliases, HA resources and rules, matchers, replication, SDN vnets and zones,
-  pools and storage. Presence of a vendor-required parameter is checked on CREATE only — an update
-  form is partial by design.
-
-  Provenance is committed with it. `codegen/manifest.json` records each schema's vendor, product,
-  version as the host reports it (pve-manager 9.2.11, proxmox-backup-server 4.2.6-1), source host
-  ROLE and absolute path, sha256, byte size and fetch time; every generated header names its manifest
-  entry, version and sha256 prefix. The raw 5.8 MB blobs stay out of git in a documented cache
-  directory, and the generator refuses to run when a cached file's sha256 does not match.
-  `tests/schema-manifest.test.ts` recomputes the tables' digest on every run and, when the cache is
-  present, runs `bun codegen/constraints.ts --check` so a stale generation fails with the exact
-  refresh command. The two UniFi OpenAPI documents (Network 10.4.57, Site Manager 1.0.0) are recorded
-  as available and consumed by nothing — there is no UniFi provider family yet.
-
-  ⛔ Patterns are translated through a whitelist, not copied. Measured over both whole schemas: PBS
-  prints its Rust regex through `Display`, so every PBS pattern arrives wrapped in slashes, and it
-  uses POSIX classes — `new RegExp` accepts `/^[[:^cntrl:]]*$/` and `[[:^cntrl:]]` SILENTLY and means
-  something else in both cases, which would have refused every legal comment. PVE's `(?^:…)` throws.
-  Anything the whitelist cannot carry over faithfully is recorded verbatim as `patternSource` and left
-  unenforced, including PVE's 216 server-side `format` validators and PBS `schedule`, which publishes
-  no pattern at all.
-
-  `resource.ts` is split: the `PveSpec` shape and its argument move to `resource-spec.ts` (re-exported,
-  so no importer changes) to keep both files inside the house cap.
-
-### Patch Changes
-
-- [#103](https://github.com/taslabs-net/homeflare-kit/pull/103) [`173b736`](https://github.com/taslabs-net/homeflare-kit/commit/173b7365742921bfde6f3a3114fca22ff7978c46) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Proxmox.Lxc`'s guide now says what a container's **inside** is, and pins it with a test.
-
-  `Proxmox.Lxc` declares the keys in `/nodes/{node}/lxc/{vmid}/config` and nothing within the guest's
-  filesystem. Every consumer that meets that limit goes looking for the resource that must surely
-  exist — an exec, a file write, a cloud-init. **For containers it does not exist in PVE's API at
-  all.** QEMU VMs have `POST …/qemu/{vmid}/agent/exec`, `…/agent/file-write`, `…/agent/file-read` and
-  a `cloudinit` subtree; the complete `/nodes/{node}/lxc/{vmid}/…` endpoint set has no counterpart.
-  The only reach inside is `termproxy` / `vncwebsocket`, an interactive console for a person.
-
-  - `docs/proxmox-lxc.md` gains that table under **Gaps**, and says plainly that a generic,
-    vendor-API-based Resource for a container's interior cannot be written: there is nothing to
-    wrap. What is left, in the order that keeps a change declarative — bake it into the template
-    (⚠️ `ostemplate` is create-only, so changing it REPLACES the guest), a first-boot artifact, or a
-    recorded one-time human step named as undeclared.
-  - ⛔ It also says why an exec-over-SSH resource is not option zero: it needs a credential and a
-    network path _to the guest_, so when the guest is what provides credentials, naming or reach to
-    others, it inverts the bootstrap — the new system's first boot depends on its own output. The
-    `HostRunner` seam in `@homeflare/alchemy/launchd` is where such a runner plugs in, and the kit
-    ships only `localRunner()` and `sudoRunner()` on purpose.
-  - ⚠️ **Sibling families are not at parity.** QEMU and LXC sit under the same `/nodes/{node}/…` tree
-    with completely different reach; the guide now says not to infer one from the other.
-  - `src/proxmox/lxc-interior.test.ts` checks this against the generated schema on every run, so it
-    fails the day PVE adds such an endpoint — which is exactly when the kit would want to wrap it.
-    Its positive control asserts QEMU's three are present, so a change to the generated file's shape
-    fails the test instead of making every absence assertion pass for free.
-
-  Docs and a test only. No resource, type or behaviour changed.
-
-- [#105](https://github.com/taslabs-net/homeflare-kit/pull/105) [`b1e4af3`](https://github.com/taslabs-net/homeflare-kit/commit/b1e4af38b2bf71986bb8b85974aa432e3b30ec99) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Generated Proxmox API coverage report, with provenance.
-
-  `docs/api-coverage.md` and `docs/api-coverage.json` map every PVE and PBS endpoint that can
-  create, update or delete state to the Resource that owns it, or to nothing — derived from the
-  vendor schemas named in `schemas/manifest.json` (product version, source host role, sha256, size,
-  fetch time), not hand-counted. PVE `pve-manager/9.2.4/5e5ae681198514d4`: 88 of 335 write
-  endpoints owned. PBS `proxmox-backup-server 4.2.6-1`: 27 of 182.
-
-  Each row also names the parameters carrying a vendor `maxLength`, `minLength`, `minimum`,
-  `maximum`, `pattern` or `format` that nothing local enforces — 545 on the PVE endpoints we own and
-  144 on the PBS ones, including the `comment` on `POST /config/verify` whose 128-character limit
-  failed a `Pbs.VerifyJob` create at apply time.
-
-  Regenerate with `bun run api:coverage`; `--check` exits 1 when the committed report is stale.
-  `tests/api-coverage.test.ts` fails if a Resource claims an endpoint the schema no longer has, if a
-  path the source calls unreachable turns out to exist, or if the report has been hand-edited. No
-  package code changed.
-
-## 0.14.0
-
-### Minor Changes
-
-- [#98](https://github.com/taslabs-net/homeflare-kit/pull/98) [`89ce4fd`](https://github.com/taslabs-net/homeflare-kit/commit/89ce4fdf606d6cc6e635164f0413b4ca6187379f) Thanks [@taslabs-net](https://github.com/taslabs-net)! - **New subpath: `@homeflare/alchemy/github` — one repository's merge policy in one call.**
-
-  - `declareRepoPolicy(id, options)` declares a `GitHub.Repository` and a `GitHub.Ruleset` over its
-    default branch: squash-only merges, auto-merge, head branches deleted on merge, no branch
-    deletion, no force pushes, and the status-check contexts you name required with
-    `strict_required_status_checks_policy` off. Both resources retain; `adopt` is piped only when
-    asked. Generic and parameterized — `rulesetName`, `include`/`exclude`, `bypassActors`,
-    `enforcement`, `baseUrl` (applied to both resources or to neither), and a `settings` bag for
-    everything that is not merge policy, merged underneath so it cannot re-open a merge method.
-  - `repoPolicy(options)` is the same policy as two plain prop objects, pure and type-only, for a
-    test or a stack that wants to declare the resources itself.
-
-  What it refuses, because each of these failures is silent:
-
-  - ⛔ **Auto-merge with nothing to wait for merges the pull request immediately.** Auto-merge is
-    a queue only while something is outstanding, and three inputs produce "nothing
-    outstanding": no `checks` and no `requiredApprovals`; an `enforcement` that is not `active`
-    (the rules are listed and none of them block); and an explicitly empty `include` (the ruleset
-    matches no ref while GitHub still shows it as active). A required review counts as outstanding,
-    so `requiredApprovals` with an empty `checks` is allowed. `checks: []` alone is accepted only
-    alongside `autoMerge: false` — the honest description of a repo with no green run to require yet.
-  - ⛔ **A blank check context** is refused: GitHub stores it and no job ever reports it, so every
-    pull request waits on a check that cannot come.
-  - ⛔ **`requiredApprovals: 0` is refused rather than treated as "no reviews".** Zero approvals is
-    the solo-maintainer shape and needs `require_extra_approval_for_unattributed_changes: false`,
-    which `alchemy@2.0.0-beta.79`'s `Ruleset` cannot send and GitHub defaults to `true`. Omitting
-    `requiredApprovals` declares no `pull_request` rule at all, which is a different and honest
-    thing.
-
-  ⚠️ **The ruleset half cannot adopt.** Alchemy's `Ruleset` reports nothing without prior state and
-  creates unconditionally, and GitHub allows two rulesets with one name — so a first deploy onto a
-  repository that already has one adds a second, both enforcing. `GitHub.Repository` does not share
-  the problem. Check `gh api repos/<owner>/<repo>/rulesets` first, or pass your own `rulesetName`.
-  See `docs/repo-policy.md`.
-
-### Patch Changes
-
-- [#101](https://github.com/taslabs-net/homeflare-kit/pull/101) [`2e43257`](https://github.com/taslabs-net/homeflare-kit/commit/2e4325741b1264feb4069712e2da1dc28c7f9ac3) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `repoPolicy` refuses two more ways to build a ruleset that matches no ref: a blank ref
-  pattern (`include: ['   ']` has length 1, so the empty-array guard passed it) and an
-  `exclude` that cancels every `include` (exclusions win in a GitHub ruleset, so it reads
-  as a narrowing and acts as an off switch). Both produced an `active` ruleset over nothing
-  with `allowAutoMerge: true` — the end state the auto-merge guard exists to prevent.
-  Include and exclude patterns are now trimmed, de-duplicated and sorted like `checks`.
-
-  `docs/repo-policy.md` also records, measured against live GitHub rather than inferred,
-  that the ruleset half never plans a no-op, and that its `rules` and `bypass_actors` are
-  replaced wholesale rather than merged.
-
-## 0.13.0
-
-### Minor Changes
-
-- [#95](https://github.com/taslabs-net/homeflare-kit/pull/95) [`4fc9a38`](https://github.com/taslabs-net/homeflare-kit/commit/4fc9a38d5f2f9513d75edad99edaf8b9005afc30) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Proxmox notifications that page. `@homeflare/alchemy/proxmox` adds three adopt-capable families and
-  a webhook body:
-
-  - **`PbsNotificationTarget`** — PBS `webhook`, `smtp` and `sendmail` targets. Secret fields are
-    **write-only**: a webhook `secret`, the smtp `password` and any credential-bearing `header` are
-    declared as `{ fromEnv: 'VARIABLE' }` and read by the deploying process at call time. No value
-    reaches Alchemy state — the store keeps names, a fixed-salt scrypt digest of the live headers, and
-    a random-salt seal of what the provider last wrote. A plan diffs on those (hash or presence), a
-    plan without the variables is presence-only, a rotated value is PUT alone, and a write that needs
-    a missing variable fails by the variable's name before any request.
-  - **`PbsNotificationMatcher`** and **`ProxmoxNotificationMatcher`** — `match-severity`,
-    `match-field`, `match-calendar`, `targets`, `mode`, `invert-match`, `comment`, `disable`. A matcher
-    is compared as its whole rule; both built-in `default-matcher`s adopt as-is with no write.
-  - **`alertmanagerAlertBody()`** — a PBS webhook body template that posts one Alertmanager v2 alert
-    (`/api/v2/alerts`; labels `alertname`, `severity`, `source`, `job_type`, `job_id`, `datastore`,
-    `hostname`; annotations `summary`, `description`). Every value goes through `json`, and every
-    optional field is guarded, so a GC failure (no `job-id`) and the UI's field-less Test notification
-    both render valid JSON.
-  - `FromEnv` is exported. The PVE and PBS generated API types now cover the notification endpoints
-    and matchers, and the shared PVE read treats a `{"data": null}` answer as absent instead of
-    throwing.
-
-  Guide: `docs/pbs-notifications.md`.
-
-### Patch Changes
-
-- [#97](https://github.com/taslabs-net/homeflare-kit/pull/97) [`1c746d2`](https://github.com/taslabs-net/homeflare-kit/commit/1c746d26334444d8ef8270fcba857035391b11e0) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Pbs.NotificationTarget` now refuses a literal credential in a plain prop, and does so at plan,
-  before anything is stored.
-
-  - The target refuses an `Authorization`, `Proxy-Authorization` or `Cookie` header, a header or URL
-    query parameter named like `token`, `key`, `secret`, `password` or `signature`, and a password in
-    the URL's userinfo. Each must be declared `{ fromEnv }` or read `{{ secrets.<name> }}`. Before
-    this change, such a value planned, deployed, and stayed in the state store. A target already
-    deployed that way now fails its plan until the literal is moved; the next deploy then replaces
-    the stored props.
-  - Refusals now run in Alchemy's adoption probe as well as in `diff`. A new target used to be
-    refused only in `reconcile`, after Alchemy had already committed its props to state.
-  - `alertmanagerAlertBody()` refuses a `generatorURL` that is not an absolute http(s) URL.
-    Alertmanager rejects the whole post for one.
-  - Docs: `docs/pbs-alertmanager-body.md` shows the exact template text. The old block had been
-    reflowed by the formatter. PVE's per-matcher read needs `Mapping.Audit` or `Mapping.Modify`;
-    `Mapping.Use` is not enough.
-
-## 0.12.0
-
-### Minor Changes
-
-- [#90](https://github.com/taslabs-net/homeflare-kit/pull/90) [`de65267`](https://github.com/taslabs-net/homeflare-kit/commit/de652677804581b1dd431d3930d6656ac760037f) Thanks [@taslabs-net](https://github.com/taslabs-net)! - **New: the provisioning baseline, one description for every cluster and node.**
-  `@homeflare/alchemy/proxmox` now exports:
-
-  - `PROVISION_PRIVILEGES`: the provision role's 27 privileges as one sorted, frozen constant. It is
-    the union of what every family's reconcile needs, including what the lane needs to manage the
-    baseline itself.
-  - `PROVISION_DEFAULTS` and `provisionBaseline(names)`: generic names (role `HfProvisioner`, users
-    `hf-provision@pve` and `hf-read@pve`, group `hf-mint`, read role `PVEAuditor`), overridable per
-    site. Names that are not PVE-shaped or would need shell quoting are refused.
-  - `declareProvisionBaseline(id, target, names?, { adopt? })`: declares the role, the mint group,
-    one user per lane (its group membership included) and the grant for each lane on `/`. Every
-    resource retains, and `adopt` is piped only when asked.
-  - `provisionBootstrap(names?)`: a pure generator of the one-time root commands for a new cluster
-    or node, as a POSIX `sh` script. It checks each object before changing it, so it is idempotent,
-    and it never creates a token or sets a password.
-
-  The provision lane cannot create itself, so root bootstraps it once, then the stack adopts it and
-  keeps it. After the bootstrap, the declaration is a clean adoption that writes nothing. See
-  `docs/provision-baseline.md`.
-
-### Patch Changes
-
-- [#89](https://github.com/taslabs-net/homeflare-kit/pull/89) [`94fbc2f`](https://github.com/taslabs-net/homeflare-kit/commit/94fbc2f0f8471e64164b4c77418140c0fcf28cce) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The adopt verifier's guide now says what `alchemy drift` does in alchemy 2.0.0-beta.79. It has no dry run and no `--yes`, although its docs page lists one: `alchemy drift --yes` fails with `Unrecognized flag`. A non-interactive run prints the repair plan and exits `0` even when something drifted, so it cannot gate a deploy. `--repair` restores the props saved at the last deploy, not what the code declares now, and it writes without a prompt, outside the deploy gate. The ownership guide now says that recovering from a wiped state store, or from `alchemy state delete`, needs `--adopt` for every family that follows the ownership rule, and for `MeshNode` and `R2BucketLock`. Alchemy's docs say objects with no ownership marker re-import without the flag, but many of Alchemy's own marker-less providers refuse them too, as the kit does. The exceptions are a `CaddyConfig` running the declared config, and the families whose `read` never answers `Unowned`: the `pveHandlers`, `forgejoHandlers` and Talos resources.
-
-- [#94](https://github.com/taslabs-net/homeflare-kit/pull/94) [`745d941`](https://github.com/taslabs-net/homeflare-kit/commit/745d94161b5cdd63c8d8ebd40a730c8b8b931ff7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Docs only. The changelog marks 0.9.0 as never published (no npm version, no git tag): its changes first shipped in 0.10.0, and the README, the openbao README and the ownership guide now say so where they cite 0.9.0. The `Proxmox.Storage` header no longer says the estate's provision role lacks `Datastore.Allocate`: it was widened, and the provisioning baseline carries it.
-
-- [#93](https://github.com/taslabs-net/homeflare-kit/pull/93) [`d3c332b`](https://github.com/taslabs-net/homeflare-kit/commit/d3c332bd4f175cc3510b7ae06ff98f4b426f0c52) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The published sources, docs and examples no longer name the maintainer's own infrastructure.
-  Node names, cluster and pool names, NICs, VLANs, addresses, hostnames, guest ids, principals and
-  policy names in comments, fixtures and examples are now neutral placeholders: nodes `node-a`…
-  `node-d`, a reference cluster `C1`, documentation addresses (RFC 5737), `bao.example.internal`.
-  Measured facts are unchanged; only the names are. `site.example.json` names its hosts `node-a`…
-  `node-c`. One runtime message changed: `forgejo-bootstrap` now says to run on "the host where
-  Forgejo runs". The historical CHANGELOG entries are unchanged.
-
-## 0.11.0
-
-### Minor Changes
-
-- [#87](https://github.com/taslabs-net/homeflare-kit/pull/87) [`520926f`](https://github.com/taslabs-net/homeflare-kit/commit/520926fd81230025bb5337a2b0ea72992c0ccf7f) Thanks [@taslabs-net](https://github.com/taslabs-net)! - **Breaking: a `ProxmoxLxc` adoption never changes a guest.** When a guest is adopted — found by
-  the adoption probe with no state, or an interrupted create resumed under `--adopt` that the plan
-  could not prove its own — any key the declaration says otherwise now FAILS the plan, naming the
-  keys and never their values:
-
-  ```
-  CT 100 on pve1: adopting it would change memory, net1. An adoption never changes a guest, so
-  nothing is written. …
-  ```
-
-  Only an exact match adopts, and its deploy writes nothing. Before, such a plan said `adopted`,
-  only logged the keys as a warning, and `deploy --adopt --yes` wrote them. The deploy asks again
-  against a fresh read, so a hand edit between plan and deploy is refused rather than written back.
-  To change a guest, adopt it as it runs first; the change is then an ordinary `update`. The
-  ownership rules are unchanged: nothing is adopted without `--adopt` or `adopt(true)`, and an
-  interrupted create proven its own still resumes and writes. See `docs/proxmox-lxc-adopt.md`.
-
-## 0.10.1
-
-### Patch Changes
-
-- [#85](https://github.com/taslabs-net/homeflare-kit/pull/85) [`61249dc`](https://github.com/taslabs-net/homeflare-kit/commit/61249dce57ec7a3ba319246074ba7e431a9927fc) Thanks [@taslabs-net](https://github.com/taslabs-net)! - **Fix: `hf-adopt-verify` no longer passes a drifted adoption whose provider's `diff` never looks at
-  the live object.** Alchemy gives an adopted row's `diff` the declaration as its recorded props, so
-  a diff that compares recorded props with the declaration says `noop` whatever the cloud holds.
-  Alchemy's own `Cloudflare.R2Bucket` diff works that way. The verifier printed `ok` and exited `0`
-  while listing the drift under `changed`, and the deploy then wrote it. Now an adopted `noop` with
-  something under `changed` gets its `diff` run a second time, with the live values of those fields
-  passed as the recorded props (still read-only, and write paths are still refused). A second
-  `noop` passes with a note that the family does not manage those fields. Any other answer fails
-  the row. The answer appears as `recheck` in the JSON report. No kit PVE/PBS family is affected:
-  each one's `diff` re-reads the cluster.
-
-  **Fix: the default report no longer hides a `create` when a rename hands its old id to a new
-  resource.** A row now counts as stateful only when it plans from the state row it reads, rather
-  than any row that happens to sit at its FQN.
-
-## 0.10.0
-
-### Minor Changes
-
-- [#84](https://github.com/taslabs-net/homeflare-kit/pull/84) [`eb2fd8b`](https://github.com/taslabs-net/homeflare-kit/commit/eb2fd8b0a7f332731316ceedfa9af3a619616e95) Thanks [@taslabs-net](https://github.com/taslabs-net)! - ⚠️ **BEHAVIOUR CHANGE — three silent takeovers in 0.9.0's ownership rule closed, and `sudoRunner()`
-  refuses more.** Found by an adversarial review of 0.9.0, each measured through Alchemy's own plan
-  and apply before the fix, and each now refused, writing nothing. It narrows two 0.9.0 notes: crash
-  recovery without `--adopt` needs a row that can prove the object ours, and `--adopt` at apply
-  never covers a fresh replace's new generation.
-
-  - **A `Bao.*` create killed before its ownership check no longer resumes onto someone else's object.**
-    Apply writes the `creating` row before `reconcile` runs, and drops any prop still an `Output`
-    from it. With the name an Output, the next deploy "resumed" that create and wrote over another
-    owner's role (all nine role and MFA families, and `Bao.Mount` by path). With a knob an Output,
-    `Bao.Mount` and `Bao.AuthMethod` read the missing prop as "not managed", adopted another owner's
-    mount and tuned it. A state row now proves an object ours only when it carries every value the
-    declaration names, and a resume is let through only when the family's own `read` proves the
-    object that generation's — for every `Bao.*` family and `ProxmoxLxc`. **So a create killed
-    while a prop was still an Output now needs `--adopt` to resume.**
-  - **An interrupted `Bao.*` replace no longer writes over what another owner put at its new
-    identity since**, unless `--adopt`.
-  - **`--adopt` at apply now covers a create or an interrupted generation, never a fresh replace's
-    new generation**, for every `Bao.*` family, `HostFile` and `LaunchdJob`. The planner never
-    offers adoption there, yet a deploy-wide `--adopt` let a `HostFile` whose path changed overwrite
-    a file it did not own at the new path.
-  - **`sudoRunner()` also refuses** (⚠️ a prefix 0.9.0 accepted can now fail): a directory _above_ the
-    prefix, from `/` down, that root does not own alone (whoever may write the prefix's parent can
-    swap the prefix itself; a root-owned symlink such as `/etc` is still followed), and any ACL entry
-    from `/` down to the file that grants a write right (read with `ls -lden`, as the operator; deny
-    entries pass; unreadable ACLs refuse). Both run before sudo and, through `checkWrite`, at plan
-    time.
-
-  `docs/ownership.md` and `docs/launchd-sudo.md` carry the details and the limits.
-
-- [#83](https://github.com/taslabs-net/homeflare-kit/pull/83) [`01c54cf`](https://github.com/taslabs-net/homeflare-kit/commit/01c54cfcf3892388369e4c01765ca5f69d843e8b) Thanks [@taslabs-net](https://github.com/taslabs-net)! - **New: `hf-adopt-verify` and `@homeflare/alchemy/verify` — prove a deploy's adoptions are no-ops
-  before it runs.** Alchemy prints `adopted` for an object that already matches and for one that
-  drifts alike (beta.79 `Plan.ts` turns the diff's `noop` into an update after the adoption probe),
-  and the deploy reconciles both. The verifier plans the stack with Alchemy's own planner, with
-  every provider watched and every write path refused. For each row without a state row it reports
-  the provider's `read`, its own `diff` before the engine forced it, and the declared fields that
-  differ (names only). It exits `0` only when all are no-ops, `1` when any is not, `2` when the plan
-  could not be computed.
-
-  ```sh
-  bunx --bun hf-adopt-verify --config alchemy.run.ts --stage live [--all] [--json]
-  ```
-
-  `verifyStack(target)` and `verifySession({ stack, context })` are the same thing as functions.
-
-  **Fix: adopting a `Proxmox.CephPool` that already matches no longer writes.** Its reconcile PUT
-  `setpool` whenever the pool existed, so every adoption forked a `cephsetpool` worker under the
-  provision token. On TB4 that was six tasks, one per pool, on 2026-09-13 and 2026-09-20. It now
-  skips the PUT when its own `matches` holds, like every other PVE/PBS family. The predicate is
-  shared in one place (`update-guard.ts`). `docs/adopted-deploys.md` traces what a deploy of an
-  adopted row does for every family the Proxmox and PBS stacks use.
-
-- [#80](https://github.com/taslabs-net/homeflare-kit/pull/80) [`66d9374`](https://github.com/taslabs-net/homeflare-kit/commit/66d937416287b8b657da4091eecdd3824666087a) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `@homeflare/alchemy/proxmox` now exports `ProxmoxLxc` as a Resource. It declares a Proxmox VE container: you can adopt one that runs today, or create one from a template.
-
-  - **The props are PVE's own keys and spellings**, taken from `/nodes/{node}/lxc/{vmid}/config`: `hostname`, `cores`, `memory`, `swap`, `rootfs`, `mpN`, `netN`, `devN`, `features`, `unprivileged`, `onboot`, `startup`, `description`, `tags`, and the rest. To adopt a guest, paste its `pvesh get` output. An undeclared key is unmanaged. A key declared as `''` is removed, where PVE allows that. `password`, `ssh-public-keys` and `env` are typed `never`.
-  - **Values are compared as PVE stores them.** Key order and written-out defaults are ignored. A MAC PVE generated is ignored, and a NIC write keeps the live MAC. `storage:GiB` equals the volume it allocated. An existing volume is always written back with its live volume id.
-  - **Changes are made in place.** Config changes use one `PUT …/config` carrying the config `digest`. A larger disk uses `PUT …/resize`. Create, resize and delete wait for their PVE task. If nothing differs, nothing is written, including on the first deploy after an adoption.
-  - **Nothing plans a replace.** These changes fail the plan with a sentence, and nothing is written: a new `vmid`, a `node` the guest is not on, another `ostemplate`, an `unprivileged` flip, a smaller disk, another storage, or detaching a mount point.
-  - **Keys only root@pam can write are refused at plan.** These are `devN`, bind or device mounts, features other than `nesting`, and any feature on a privileged guest. PVE never treats an API token as `root@pam`, so the refusal prints the `pct set` to run on the node instead.
-  - **A read failure is not "absent".** A config read counts as absent only when it answers 500 and the cluster lists the vmid nowhere. Any other failure fails the plan. A vmid held by another node, or by a QEMU VM, fails the plan and says where it is. After HA or `pct migrate` has moved a guest, setting `node` to where it is now is an update that writes nothing.
-  - **Nothing is adopted without `adopt(true)` or `--adopt`, not even a guest that matches the declaration.** This is the rule of `docs/ownership.md`, which every `Bao.*` family, `HostFile` and `LaunchdJob` follow. Matching is not proof of ownership: once state claims a guest, `RemovalPolicy.destroy()` deletes it and its volumes. Without adoption on, the plan fails with "Cannot adopt". A create interrupted after its POST still resumes without `--adopt` when the guest matches what it declared.
-  - **An adoption's plan always says `adopted`.** Alchemy prints no diff for it, so a warning names each key a deploy would write.
-  - **A create only ever allocates.** A create naming an existing volume id (rather than `storage:GiB`) is refused, because PVE would unpack the template onto that volume; so is any key the resource does not manage. A deploy that planned a create never takes over a guest it then finds at that vmid. Without adoption on, it fails and forgets its `creating` row. With it on, a matching guest is recorded with no write and any other is refused. A guest the cluster lost while state still holds it plans `update` with a warning that the deploy creates it again, or fails the plan when it cannot be created.
-  - **State keeps managed keys only.** The `config` attribute is an allowlist, so a key a newer PVE adds (such as `entrypoint`) is not stored.
-  - **It retains by default.** Dropping the declaration leaves the guest running. Only `RemovalPolicy.destroy()` deletes it, only while the guest still matches its last declaration, and it never forces the delete or stops the guest first.
-
-  Breaking, for anyone who deep-imported the old provider-only version: `storage` is gone (declare `rootfs: 'storage:GiB'`), `ostemplate` is optional, the attributes are now `{ node, vmid, config, rawKeys }`, and `hostname` no longer defaults to `ct<vmid>`. The guide is `docs/proxmox-lxc.md`.
-
-### Patch Changes
-
-- [#82](https://github.com/taslabs-net/homeflare-kit/pull/82) [`462368f`](https://github.com/taslabs-net/homeflare-kit/commit/462368fa263ef541bac7c0e70070fb656b4fcda7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - The ownership and `ProxmoxLxc` guides now say how to read an adoption's plan before it writes. `alchemy plan` has no `--adopt` flag in alchemy 2.0.0-beta.79, so without adoption on it stops at "Cannot adopt" before any resource can warn what taking the object over would write. Run `alchemy deploy --adopt --dry-run` instead, or declare `.pipe(adopt(true))` and run `alchemy plan`. The LXC guide also warns that a drift warning does not stop the deploy: `deploy --adopt --yes` writes a `net0` declared without the live `tag=` without it, and the guest leaves its VLAN.
-
-## 0.9.0
-
-> ⚠️ Never published: no npm version and no git tag. These changes first shipped in 0.10.0.
-
-### Minor Changes
-
-- [#78](https://github.com/taslabs-net/homeflare-kit/pull/78) [`8de1015`](https://github.com/taslabs-net/homeflare-kit/commit/8de1015993f147ffb2f88116204cba6efb449268) Thanks [@taslabs-net](https://github.com/taslabs-net)! - ⚠️ **BEHAVIOUR CHANGE — `@homeflare/alchemy/openbao` no longer adopts anything silently.** Until
-  0.8.0, every `Bao.*` family adopted a live object it had no state for: a new declaration of a
-  policy, role, mount, auth method, plugin or MFA object that already existed was taken over, and
-  rewritten, without being asked. **A stack that relied on that must now add `adopt(true)` to those
-  resources, or deploy once with `--adopt`.** Otherwise its next plan fails with
-  `OwnedBySomeoneElse` ("Cannot adopt resource … Re-run with `--adopt`").
-
-  - **Every `Bao.*` family (all 14).** With no state row, a live object reads as `Unowned`, even when it
-    is identical to the declaration. Identical is not proof of ownership: under `destroy`, the old
-    owner's delete would remove the object the new declaration had just claimed. The plan fails
-    unless adoption is on. This is the rule `HostFile`, `LaunchdJob` and `CaddyConfig` already
-    follow. The 0.8.0 swap (a new logical id for a live name, then the old id's delete) now fails the
-    plan and writes nothing.
-  - **Crash recovery still works without `--adopt`.** Alchemy's recovery read for an interrupted
-    create carries that row's own instance id, and the object is ours when it also matches the row's
-    props. An interrupted replace resumes through a note that its `diff` leaves for the apply. A
-    create interrupted between two writes (a mount enabled but not tuned) is not proven ours, so it
-    needs `--adopt`.
-  - **The same check at apply.** Alchemy skips the probe while a prop is still an Output, and never
-    probes the new generation of a replace. Each family's `reconcile` now reads the object first and
-    refuses the takeover before any write, unless `--adopt` or the resource's own `adopt(…)` allows
-    it, resolved as the planner resolves it. A refused create also forgets the `creating` row Apply
-    wrote, so the next plan does not adopt what the apply refused. A `BaoMount` / `BaoAuthMethod`
-    create with `remountFrom` refuses to move a live mount the stack holds no state for.
-  - **`HostFile` and `LaunchdJob`: `--adopt` now works at apply.** Their `reconcile` refused a
-    foreign file or job even under `--adopt`, where the probe had been skipped. A create now takes it
-    over when adoption is on. `adopt(false)` still wins over the flag. A rename onto an occupied
-    path or label stays refused.
-  - **`sudoRunner()` refuses more, before sudo** (⚠️ a declaration that 0.8.0 accepted can now fail):
-    - a root-owned file under a prefix that would be group- or world-writable, setuid or setgid
-      (`mode & 0o6022`; an omitted owner is root);
-    - any directory between the prefix and the file that root does not own, or that group or other
-      may write. Before, only the prefix itself was checked.
-    - A `HostFile` or `LaunchdJob` plan that will write now runs these checks too, through the new
-      optional `HostRunner.checkWrite`, so the refusal fails the plan instead of the apply. It only
-      reads, as the operator: a plan still never calls sudo.
-
-  New: `docs/ownership.md` (the rule, where it is checked, recovery, limits). `docs/launchd-sudo.md`,
-  `docs/launchd.md` and the openbao README and REPLACE.md are updated.
-
-## 0.8.0
-
-### Minor Changes
-
-- [#74](https://github.com/taslabs-net/homeflare-kit/pull/74) [`cd6d437`](https://github.com/taslabs-net/homeflare-kit/commit/cd6d437c134ca726a6d6ca5b28053ed01a2762e6) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Rename safety for the other nine name- or catalog-keyed families in `@homeflare/alchemy/openbao`: `BaoAuthRole`, `BaoPkiRole`, `BaoJwtRole`, `BaoKubernetesRole`, `BaoJwtAuthConfig`, `BaoMfaTotpMethod`, `BaoMfaLoginEnforcement`, `BaoSshRole` and `BaoPlugin`. They now get the same checks as `BaoPolicy`, `BaoCloudflareRole` and `BaoProxmoxRole`, through one shared helper.
-
-  Behaviour changes:
-
-  - A rename or move onto a name, path or catalog entry that already exists now fails the plan, before anything is written. Before, two roles that swapped names under `RemovalPolicy.destroy()` both planned `replace`, and a green deploy deleted both of them. This happened for `BaoAuthRole`, `BaoPkiRole`, `BaoJwtRole`, `BaoKubernetesRole`, `BaoSshRole` and `BaoPlugin`. It also applies under `retain`: a swap now takes two deploys through a free name. For `BaoPlugin` it includes a version bump onto a version already registered by hand. For `BaoJwtAuthConfig` it includes a move onto a mount whose config is already set.
-  - The name or mount is now checked while other props are still pending Outputs. Before, a rename in the same deploy as any pending Output planned `update`, and the old object stayed live with no state record. For `BaoMfaTotpMethod` that wrote a second method. Its rename is now refused at plan in that case too.
-  - When the name itself is an Output not known until apply, reconcile now refuses the `update` before writing anything. The next deploy plans `replace`, or, for `BaoMfaTotpMethod`, refuses the rename.
-  - `BaoKubernetesRole` and `BaoJwtRole` compare names lowercased, as OpenBao keys them, so a change of case is not a move. Both still refuse an upper-case name.
-  - `hostAppRoles` now lets a host sit in several classes, with one role per class. It only refuses the same host listed twice in one class. Before, any host listed twice was refused.
-  - `hostAppRoles` refuses a host whose class names an inherited object key such as `constructor`. Before, that host passed as a class with no policies and no `secretIdTtl`, and got a role whose secret_id never expires.
-
-  Documentation: a new logical id for a name that is already live adopts it, and under `RemovalPolicy.destroy()` the old id's delete then removes it, in a green deploy. Change a logical id with Alchemy's `renamedFrom`, and take a name another resource is leaving in the deploy after the move (REPLACE.md). Also: deleting an AppRole role does not revoke the tokens it issued. OpenBao 2.6.2 deletes the role's secret_ids and role_id, so no new login succeeds, but issued tokens live to their TTL and only fail to renew. The `BaoAuthRole` comments said the delete revoked every token.
-
-- [#75](https://github.com/taslabs-net/homeflare-kit/pull/75) [`85dd10c`](https://github.com/taslabs-net/homeflare-kit/commit/85dd10cd3fb16e9daf48592d21340449fb381b56) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `CaddyConfig` in `@homeflare/alchemy/caddy` no longer adopts a running Caddy silently. In 0.7.0, the first read adopted whatever config a Caddy was running, and the next apply loaded over it.
-
-  Behaviour changes:
-
-  - With no state, the first read is Alchemy's adoption probe. A Caddy whose running config is the declared one is adopted as-is, and nothing is loaded. A Caddy serving nothing (`null`, or no apps) plans a create. Any other config reads as `Unowned`, so the plan refuses it unless the deploy runs with `--adopt`. A Caddyfile that cannot be compared at probe time also reads as `Unowned`, with a warning saying why, never an error: the engine replays this read to recover an interrupted create, and an error would fail every later plan.
-  - Where Alchemy skips that probe (props holding an Output, as on `caddyWithFile()`'s first deploy), the apply refuses the same takeover before any `/load` (the HostFile is written by then). It resolves adoption as the planner does: the resource's own `adopt(…)`, else `--adopt`. So `.pipe(adopt(false))` still refuses under `--adopt`, and `.pipe(adopt(true))` takes over without it.
-  - The state vouches only for the Caddy it was applied to. When the transport now reaches a Caddy at another endpoint, the apply needs adoption (`--adopt`, or the resource's `adopt(true)`) unless that Caddy runs the config the state last stored, the declared one, or nothing.
-
-  Docs: `docs/caddy.md` has the adoption table, and records that managed Caddies run `caddy run --resume` with their own `XDG_CONFIG_HOME`, set in the launchd job rather than the envfile. A restart then runs the last config Caddy accepted, and after a resumed start SIGUSR1 has no file to reload. The admin endpoint section moves to `docs/caddy-admin.md`, and the README's reasons for each peer and override pin move to `docs/peers.md`.
-
-- [#77](https://github.com/taslabs-net/homeflare-kit/pull/77) [`9ec684c`](https://github.com/taslabs-net/homeflare-kit/commit/9ec684c612c5d9c0987b4e9ca462e1f683bf954e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `sudoRunner()` to `@homeflare/alchemy/launchd`, so a host stack can deploy as the operator
-  instead of as root.
-
-  - **Only the calls that need root use `sudo -n`, in fixed argv shapes.** These are
-    `launchctl bootstrap | bootout | kickstart` in the system domain, and `install` / `rm` of a file
-    under a prefix the stack declares. A file is written as the operator to a private `0600` temp
-    file, then copied into place with `install -S -m <mode> -o <uid> -g <gid>`. Nothing else runs
-    as root, and a plan never calls sudo.
-  - **It is opt-in:** `launchdProviders(sudoRunner({ prefixes }))`. `localRunner()` stays the
-    default and never elevates, and nothing falls back to sudo.
-  - **It never prompts.** A password-required `sudo -n` fails at once with `SudoRefusedError`, and
-    the message says to run `sudo -v` or to grant exactly these commands `NOPASSWD`.
-  - **Each privileged argv is logged before it runs.** The log holds the argv only, never file
-    content.
-  - **These are refused before sudo is asked, with `SudoRefusedError`:** any argv outside the
-    allowlist (such as a bare `bootout system`, a directory `bootstrap`, or a plist anywhere but
-    `/Library/LaunchDaemons/<label>.plist`), a system `bootstrap` / `bootout` without
-    `/Library/LaunchDaemons` among the prefixes, a prefix that is not a real directory only root may
-    write, a path outside every prefix that needs root, a symlink between the prefix and the file, a
-    file the operator could not read back, and another user's `gui/<uid>` domain.
-
-  `docs/launchd-sudo.md` has the full list, the sudoers cautions, and the limits.
-
-## 0.7.0
-
-### Minor Changes
-
-- [#72](https://github.com/taslabs-net/homeflare-kit/pull/72) [`294518d`](https://github.com/taslabs-net/homeflare-kit/commit/294518dc205c1981bf8f48aaf087bdb3869d4123) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Rename safety for `BaoPolicy`, `BaoCloudflareRole` and `BaoProxmoxRole` in `@homeflare/alchemy/openbao`.
-
-  Behaviour changes:
-
-  - A changed `name` on `BaoPolicy`, or a changed `mount` or `name` on `BaoCloudflareRole` or `BaoProxmoxRole`, now plans `replace`. Before, it planned `update`: the new object was written and the old one stayed live with no state record, even under `RemovalPolicy.destroy()`. Now the old one is deleted after the new one is written, or kept under the default `retain`, and the apply says so.
-  - `BaoPolicy` compares names the way OpenBao stores them, trimmed and lowercased, so a change of case is not a rename.
-  - A `BaoProxmoxRole` rename that also changes `mintUser` now fails the plan unless `allowMintUserChange` names the old mint user, the same rule an in-place re-scope already had.
-  - A rename or move onto a name or path that already exists live now fails the plan, before anything is written. Without this, two policies or roles that swapped names under `RemovalPolicy.destroy()` both planned `replace` and ended with both deleted. The check also applies under `retain`, because a diff cannot see the removal policy: a swap, or a move back onto a retained old generation, now takes two deploys through a free name, or removing the target by hand.
-  - When the new name is an Output that is not known until apply, reconcile now refuses the `update` before writing anything. The next deploy plans `replace`. A `BaoProxmoxRole` rename whose `allowMintUserChange` is still an Output defers the same way instead of failing the plan.
-
-  The rename is checked even while other props are still pending Outputs. `src/openbao/REPLACE.md` has the measured engine behaviour and what `retain` leaves live for each of the three.
-
-- [#70](https://github.com/taslabs-net/homeflare-kit/pull/70) [`8cafb48`](https://github.com/taslabs-net/homeflare-kit/commit/8cafb48d84a9734997d7562311801025f2fa4236) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add the `@homeflare/alchemy/caddy` subpath: a running Caddy's config, declared as Caddyfile text and applied through Caddy's own admin API.
-
-  - `CaddyConfig` / `CaddyConfigProvider` (`Caddy.Config`): the whole Caddyfile as one prop. Apply is `POST /adapt` (validate), `POST /load` with `text/caddyfile` (graceful reload), then `GET /config/`, which must hash to the adapted config, or the deploy fails. When Caddy refuses a config, it keeps the old one, and the error gives Caddy's reason and confirms whether the old config is still running. This includes Caddy's refusal that arrives in a 200 response after adapter warnings. Drift compares SHA-256 digests of canonical adapted JSON: declared, live and stored. A hand edit or a restart with a different file plans an update. A plan-time `/adapt` fails the plan on a bad Caddyfile. With no state, a running Caddy is adopted. `replace` is never planned. Delete never unloads or stops Caddy, and `retain` is the default.
-  - `caddyWithFile()`: the same Caddyfile is also written with launchd's `HostFile` to the file Caddy starts from, so a restart keeps it. The file is written first, then `/load`, and both are retained. `sourceFile` is sent as `Caddy-Config-Source-File` so SIGUSR1 reload-from-file keeps working. `docs/caddy.md` covers the order, `--resume`/autosave and the refused-config window.
-  - `CaddyAdmin`, `localCaddyAdmin()`, `caddyAdminLayer()` and `caddyProviders()`: every admin call goes through one injectable transport. The local transport uses `node:http` on both Bun and Node, accepts only loopback `http://` or `unix://`, and sends `Host`/`Origin` the way the Caddy CLI does. `hostHeader` covers narrowed `origins` and SSH-forwarded ports. It retries only refused connections and then rejects with `CaddyUnreachableError`. A stopped Caddy does not fail the plan, because its launchd job may be the fix: read and diff plan the load with a warning, and the apply fails until Caddy answers.
-  - Refused before anything is sent: an empty Caddyfile or one that adapts to no apps; literal secrets (a PEM key, a literal after `dns <provider>`, secret-named subdirectives, literal `Authorization` headers, token and password-hash shapes, and a `{$NAME:default}` whose default is one of these); and an adapted `admin` block that would turn the API off, move it off loopback or away from the transport (another port, socket or loopback address, or no address at all when the transport is not at Caddy's default), allow no Host the transport sends, set `enforce_origin` over a unix socket, enable `remote`, or pull config. Secrets go in `{env.NAME}` or `{file./path}` placeholders.
-
-- [#71](https://github.com/taslabs-net/homeflare-kit/pull/71) [`73736ae`](https://github.com/taslabs-net/homeflare-kit/commit/73736aec0a686af36cb4ef7ecfba42d40e543fc7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `MeshNode` (`Cloudflare.MeshNode`) and `fetchMeshNodeToken` to `@homeflare/alchemy/cloudflare`.
-
-  - **`MeshNode`** declares a Cloudflare Mesh node (a `warp_connector`) with `name` and `ha`. It never reads the node token, so the token never reaches Alchemy state. Alchemy's `Cloudflare.Tunnel.WarpConnector` fetches it on every read and stores it, and it has no `ha`. The attributes are `id`, `accountId`, `name`, `status` and `ha`.
-    - A `name` change renames the node in place (`PATCH`), keeping its id, token and enrolled replicas.
-    - `ha` is required and create-only (Cloudflare: "cannot be changed afterward"). A change replaces the node: delete-first while the name stays (names are unique per account), create-first when the name changes too. An account change is a create-first replace.
-    - **It defaults to `RemovalPolicy.retain`**, like the kit's other resources whose deletion breaks their consumers: deleting a node cuts every enrolled replica off the Mesh, and a new one means a new token and Mesh IPs. Dropping the declaration or `alchemy destroy` leaves the node live. Opt in with `.pipe(RemovalPolicy.destroy())`.
-    - Under that default a same-name `ha` change **refuses and writes nothing**: the engine keeps the old node, which still holds the name, and a create never reuses a node it did not create (that would record the wrong `ha`). The sentence names the ways on: deploy once with `.pipe(RemovalPolicy.destroy())` (delete-first), delete the old node by hand, or keep it (`alchemy state rm` the row, then `adopt(true)`; reverting `ha` alone refuses again). A create-first replace leaves the old node live. When a create-first replace's new name is already held by another node, the sentence does not call it the old node and says not to delete it. Every way back from inside a replace starts with `alchemy state rm`, because `adopt(true)` alone does not act on a `replacing` row; the 1013-retry sentence says so too. All measured through Alchemy's real plan/apply against the fake.
-    - A door (a node with no routes) is documented as `ha: false`: HA fails over routes, and each replica has its own Mesh IP. A second door is a second `MeshNode`.
-    - An existing node is adopted by exact name and returned `Unowned`. A create answered code 1013 after a clean lookup (distilled retries a create whose response was lost) names the node that appeared rather than blaming another tunnel type.
-    - `list` is empty and `nuke` skips the type, because Alchemy's WarpConnector already lists every `warp_connector`.
-  - **`fetchMeshNodeToken({ accountId, id | name })`** returns the node token `Redacted`, on demand, for a one-off enrolment step. Callers write it to a root-owned `0600` file on the node and nowhere else. An empty token fails, and a 403 names the Write permission the endpoint needs. Before any request it refuses the Global API Key, an empty API token, and a set `DISTILLED_DEBUG_HTTP` (distilled would print the token to stderr).
-  - Built on `@distilled.cloud/cloudflare`, the SDK Alchemy's own Cloudflare providers use. The `cloudflare@4.5.0` SDK cannot create an HA node. It is a new **required peer**, pinned to the version alchemy pins (`1.0.0-rc.12`): add it to your install line.
-  - `providers()` now also resolves Alchemy's Cloudflare credentials and account for `MeshNode`, the same way `Cloudflare.providers()` does (a profile, or `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`).
-
-  Guide: `docs/mesh-node.md`.
-
-## 0.6.0
-
-### Minor Changes
-
-- [#67](https://github.com/taslabs-net/homeflare-kit/pull/67) [`48163cf`](https://github.com/taslabs-net/homeflare-kit/commit/48163cfc83ad7deac8720be2e8fb7fe964ade7a3) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add to `@homeflare/alchemy/openbao`:
-
-  - **`BaoJwtRole`**: roles on `jwt` and `oidc` mounts.
-  - **`BaoKubernetesRole`**: roles on `kubernetes` mounts. `aliasNameSource` is required, because changing it on a live role moves every pod to a new entity.
-  - **`BaoJwtAuthConfig`**: the non-secret config of a JWT-validating mount. It deliberately has no OIDC client secret, and it refuses a mount that has one, because its full-replace write would erase it.
-  - **`BaoMfaTotpMethod`** and **`BaoMfaLoginEnforcement`**: login MFA. A TOTP method is found by name. Renaming one is refused, because a rename would strand every enrolled secret. A name already held by another MFA method type is refused too, because the write would convert that method. Deleting an enforcement is refused, because in OpenBao 2.6.2 the delete comes back after a restart (openbao/openbao#4030).
-  - **`assertBaoIdentity`** (with `assertBaoIdentityEffect` and `BaoIdentityError`): refuses to proceed unless unauthenticated `sys/health` reports the expected `cluster_name` and the namespace is the expected one.
-  - **`hostAppRoles`**: a pure generator that makes one AppRole per host, named `<class>--<host>`. It refuses a secret_id TTL of 0.
-
-  Behaviour changes:
-
-  - A changed `path` on `BaoMount` or `BaoAuthMethod` now **fails the plan** unless the new `remountFrom` prop names the old path. With `remountFrom`, the mount is moved with `sys/remount`, keeping its data (leases under it are revoked). Before, the plan answered `update` and enabled an empty mount at the new path.
-  - A changed `name` on `BaoAuthRole`, or a changed `name` on `BaoPkiRole`, now plans `replace`. Before, it answered `update` and left the old role live with no state record.
-  - `BaoPkiRole` now manages `requireCn`, `enforceHostnames`, `keyUsage`, `allowedDomainsTemplate`, `noStore` and `generateLease`, defaulting to OpenBao's own values. Its full-replace write already reset these fields silently, so a role whose live values differ from those defaults now plans `update` instead of being reset unseen. `noStore` together with `generateLease` is refused.
-
-  See `src/openbao/REPLACE.md` for what every family does on a rename.
-
-- [#68](https://github.com/taslabs-net/homeflare-kit/pull/68) [`b023bae`](https://github.com/taslabs-net/homeflare-kit/commit/b023bae8f20d6aa33239107dc0538750efc466ca) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add the `@homeflare/alchemy/launchd` subpath, so a Mac host can be declared with Alchemy.
-
-  - `LaunchdJob` / `LaunchdJobProvider` (`Launchd.Job`): one launchd job in the `system` domain or a `gui/<uid>` domain. The provider renders the plist itself, writes it atomically to the derived path (`/Library/LaunchDaemons` or the user's `LaunchAgents`) and drives `launchctl`. Create bootstraps; update writes, boots out and bootstraps (a restart); read uses `launchctl print`; diff compares the rendered plist's SHA-256 with the stored and on-disk digests. Replace happens only on a `label` or `domain` change, delete-first — so everything the new job would be refused for is refused at plan time, while the old job still runs, and a rename is seen even while other props are unresolved. A label another job already holds is never booted out or overwritten. A failed first bootstrap removes the plist it wrote. A disabled label is refused, not re-enabled. Labels under `org.nixos.`, `com.apple.` and `homebrew.mxcl.` are refused; `docs/launchd.md` describes the nix-darwin cutover.
-  - `HostFile` / `HostFileProvider` (`Host.File`): a text file with mode, owner and group. It is written atomically (temp file, then rename), diffed by SHA-256, mode and owner, and refused over a symlink, a directory, or a different file at a new path.
-  - `HostRunner`, `localRunner()`, `hostRunnerLayer()` and `launchdProviders()`: every filesystem and `launchctl` call goes through one injectable runner. The local runner never elevates. System-domain writes are refused unless the deploy runs as root or the runner is explicitly `privileged`.
-  - `renderPlist`: a small, deterministic XML plist serializer, round-tripped through `plutil` in the tests.
-
-  Props are stored unencrypted in Alchemy state, so `environment`, `programArguments` and file `content` must not hold secrets. A tripwire refuses the obvious cases; secret files stay rendered by openbao-agent, and the stack declares only their path. Anything already on the host is read as `Unowned`, so it is never adopted without `--adopt`.
-
-## 0.5.0
-
-### Minor Changes
-
-- [#64](https://github.com/taslabs-net/homeflare-kit/pull/64) [`3ed9771`](https://github.com/taslabs-net/homeflare-kit/commit/3ed977142ffe2fe6dd02359a3a87b1a0a84c9952) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `appRoleLogin` / `revokeSelf` (with `appRoleLoginEffect`, `revokeSelfEffect` and `BaoLoginError`) to `@homeflare/alchemy/openbao`, so wrapper scripts can log in with an AppRole and revoke on exit. They use the same address resolution and transport as the `Bao.*` families. The login never sends `BAO_TOKEN`, and error strings are redacted, because OpenBao 2.6.2 can echo a secret_id back in an error. `clientToken` is a getter over a private field, so printing or serialising the result does not show the token under Bun or Node.
-
-  Add `BaoPlugin` / `BaoPluginProvider` for the plugin catalog (`sys/plugins/catalog/<type>/<name>`). It has no `env` prop and retains on destroy. It refuses to shadow a builtin or overwrite a declarative entry, and it names the fix when an unversioned registration is filed under the binary's self-reported version.
-
-  Fix `BaoSshRole` writes. `default_extensions` and `default_critical_options` were sent as JSON strings. OpenBao's field validation rejects that with a 400, so every role write failed. They are now sent as objects.
-
-## 0.4.1
-
-### Patch Changes
-
-- [#62](https://github.com/taslabs-net/homeflare-kit/pull/62) [`93b7107`](https://github.com/taslabs-net/homeflare-kit/commit/93b71070b1a64701cadc1a547044a3ec4da26a50) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export TB4 control-plane Resource constructors from `@homeflare/alchemy/proxmox` (Storage, SDN, access, HA, backup, metrics, PBS). Guests and NIC apply stay Provider-only.
-
-## 0.4.0
-
-### Minor Changes
-
-- [#60](https://github.com/taslabs-net/homeflare-kit/pull/60) [`df34d27`](https://github.com/taslabs-net/homeflare-kit/commit/df34d2750fca4a2b6b86490ddb0a819c12f9ea39) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `BaoAuthMethod` so a stack can enable `approle` (or jwt/oidc) instead of running `configure-engines`. Metadata only — no role ids or OIDC secrets. File audit stays out: OpenBao 2.6 file audit is config-only.
-
-## 0.3.2
-
-### Patch Changes
-
-- [#58](https://github.com/taslabs-net/homeflare-kit/pull/58) [`e7c101f`](https://github.com/taslabs-net/homeflare-kit/commit/e7c101faada2b14466a1f0bbf1f93da46e5e06cb) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Bump Alchemy to 2.0.0-beta.79. Effect stays rc.115. 79 starts Bun with production JSX (the `jsxDEV` CLI crash on 78) and declares `mime` on cloudflare-runtime; the `mime` peer stays so existing consumer installs do not drop a required line.
-
-## 0.3.1
-
-### Patch Changes
-
-- [#56](https://github.com/taslabs-net/homeflare-kit/pull/56) [`5f41ad7`](https://github.com/taslabs-net/homeflare-kit/commit/5f41ad7ab59375e42bb4757dd5b4b81f4a7b6cd9) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `BaoPkiRole` and `BaoSshRole` from `@homeflare/alchemy/openbao`. The barrel already shipped both providers; stacks constructing either role had to import the resource from internals.
-
-## 0.3.0
-
-### Minor Changes
-
-- [#54](https://github.com/taslabs-net/homeflare-kit/pull/54) [`d526365`](https://github.com/taslabs-net/homeflare-kit/commit/d526365a51deac968e5b0076e88b2e68b866534f) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Bump Alchemy to 2.0.0-beta.78 and Effect to 4.0.0-rc.115. Consumers must move the override set with it — Alchemy 78's peer is `effect >= rc.115`. Effect rc.115 renamed `Config.redacted` to `Config.Redacted`. `mime@4.1.0` is now a required peer: Alchemy's cloudflare-runtime imports it and does not declare it.
-
-## 0.2.2
-
-### Patch Changes
-
-- [#46](https://github.com/taslabs-net/homeflare-kit/pull/46) [`9bc37f8`](https://github.com/taslabs-net/homeflare-kit/commit/9bc37f8bd7b9af1fd5c62cc4bc48597251ef61ab) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `BaoMount` and `BaoAuthRole` from `@homeflare/alchemy/openbao`.
-
-  The docs already showed `import { BaoMount } from '@homeflare/alchemy/openbao'`, but the barrel only shipped the providers. Stacks constructing those resources had to import from internals.
-
-- [#48](https://github.com/taslabs-net/homeflare-kit/pull/48) [`4967118`](https://github.com/taslabs-net/homeflare-kit/commit/4967118cc887faba34b17cd48588102736be49bb) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Export `BaoCloudflareRole` and the Cloudflare role catalog helpers from `@homeflare/alchemy/openbao`, and retry dropped OpenBao transports.
-
-  Stacks declaring mint roles need the resource constructor plus `parseRolesConfig` / `expandAll` / `permissionGroupsFromEngine`. The barrel previously shipped only `BaoCloudflareRoleProvider`. A 585-role plan against a Mesh-fronted vault died mid-diff with an empty transport error; status-0 calls now retry twice.
-
-## 0.2.1
-
-### Patch Changes
-
-- [#40](https://github.com/taslabs-net/homeflare-kit/pull/40) [`60c90eb`](https://github.com/taslabs-net/homeflare-kit/commit/60c90eb4682d0ded2597a79033159ab71cc7a649) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Pin `rolldown` in the consumer overrides so an unlocked install cannot float a missing tarball.
-
-  Alchemy's optional peer `vite@^8` depends on `rolldown: ~1.2.6`. A consumer `bun add`
-  (no lockfile) resolved that to 1.2.9; npm listed the version and 404'd
-  `rolldown-1.2.9.tgz`. Main CI failed on that fetch after [#39](https://github.com/taslabs-net/homeflare-kit/issues/39). The override holds 1.2.8 —
-  the last tarball a green smoke actually installed.
-
-## 0.2.0
-
-### Minor Changes
-
-- [#36](https://github.com/taslabs-net/homeflare-kit/pull/36) [`cff4111`](https://github.com/taslabs-net/homeflare-kit/commit/cff4111c2f4461a45be5811547125b1f5d98c6d2) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Ship the HTTP and Website SDK surfaces apps were hand-rolling.
-
-  **`@homeflare/kit/openapi`** — `createOpenApiApp()` is OpenAPIHono with one
-  readable validation hook. The document and the request share a Zod schema.
-  Subpath, not the main entry: a Node script that only wants `parseEnv` must not
-  resolve Hono. Peers: `hono`, `@hono/zod-openapi`, `zod` (optional). Import `z`
-  from `@hono/zod-openapi`.
-
-  **`astroWebsite` / `viteWebsite`** on `@homeflare/alchemy/cloudflare` — house
-  flags on Alchemy's own stacks. Astro gets `disable_nodejs_process_v2` (workerd
-  process-v2 returns `[object Object]`). Vite is TanStack Start / static Vite.
-  Not Nextjs: that helper hashes source and plans as create against a live Worker.
-
-  Catalog also pins `@tanstack/react-router` 1.170.35, `@tanstack/react-start`
-  1.168.52, `@tanstack/react-query` 5.102.8 — match these, do not wrap them.
-
-## 0.1.3
-
-### Patch Changes
-
-- [#32](https://github.com/taslabs-net/homeflare-kit/pull/32) [`5cc2cd6`](https://github.com/taslabs-net/homeflare-kit/commit/5cc2cd62241f926aace1646fd3a1e0057e96cddd) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `accessIdentity` (ctx.access) and RFC 9728 MCP discovery; fix three doc defects.
-
-  An app team reviewed the published packages before adopting and was right on every point.
-
-  **`accessIdentity(ctx)` — Access identity without parsing a JWT.** Cloudflare attaches the
-  authenticated identity to the execution context (shipped 2026-08-14), so a Worker behind
-  Access reads `ctx.access.getIdentity()` with no token handling. The kit only offered
-  `verifyAccessJwt`, which is the older path.
-
-  ⛔ Both stay, because they are not alternatives: `accessIdentity` for a Worker behind
-  Access, `verifyAccessJwt` for an origin that has no `ctx.access` — service-to-service, a
-  non-Worker origin, or a Worker reached by service binding, since **`ctx.access` does not
-  propagate through bindings**.
-
-  ⚠️ Read groups from `accessIdentity`, not from a token: Cloudflare trims the JWT's
-  `custom` claim at roughly 1 KB _silently_, so token-read group membership can be
-  incomplete — an authorization bug that only appears for users in many groups.
-
-  **`serveMcpMetadata` / `unauthorizedResponse` — RFC 9728.** The MCP spec requires a server
-  to publish Protected Resource Metadata _and_ a 401 naming it in `WWW-Authenticate`.
-  Publishing the document while answering a bare 401 leaves clients that follow the header
-  with nowhere to go.
-
-  **Three documentation defects, all reported and all real:**
-
-  - `@homeflare/alchemy`'s README documented `@homeflare/alchemy/providers`, which does not
-    exist. The real path is `/cloudflare`.
-  - `@homeflare/cloudflare`'s npm description advertised "typed bindings" — it exports none.
-  - `@homeflare/kit`'s advertised "logging" — `log` lives in `@homeflare/cloudflare`.
-
-  **Packing no longer edits a manifest on disk.** `packForPublish` stripped `scripts` and
-  `devDependencies` from the real `package.json`, packed, then restored it — which is a race
-  when two smoke tests pack the same workspace dependency in parallel. It destroyed
-  `@homeflare/kit`'s `scripts` block during this branch, _after_ `verify` had passed. The
-  strip now happens inside the packed tarball, so nothing in the repository is written to.
-
-## 0.1.2
-
-### Patch Changes
-
-- [#29](https://github.com/taslabs-net/homeflare-kit/pull/29) [`72f0787`](https://github.com/taslabs-net/homeflare-kit/commit/72f0787952b3a71bb6573476918e79117250409e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `cloudflare` is a required peer, not an optional one.
-
-  Measured 2026-09-16 against the published 0.1.1 in a clean consumer install: importing
-  `@homeflare/alchemy/cloudflare` without it throws `Cannot find package 'cloudflare'`.
-  Marking it optional claimed the subpath would degrade gracefully; it does not load at all.
-  An optional peer should mean a _feature_ is absent, not that an import fails.
-
-  ⛔ **Why this got through, and what now stops it.** The README's pinned install command and
-  the smoke test's install command disagreed — the smoke test installed `cloudflare`, the
-  README never mentioned it, and nothing compared the two. So the gate proved an install no
-  consumer would ever perform.
-
-  `tests/peers.test.ts` now asserts the manifest, the README and the smoke script agree:
-  every declared peer appears in all three, peers are pinned rather than ranged, and none is
-  marked optional.
-
-## 0.1.1
-
-### Patch Changes
-
-- [#27](https://github.com/taslabs-net/homeflare-kit/pull/27) [`5b73400`](https://github.com/taslabs-net/homeflare-kit/commit/5b73400e7fc2dd8e28a0368db3e5aa105ebdde9a) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix the peer contract: 0.1.0 installed cleanly and threw at import.
-
-  Measured 2026-09-16 against the published 0.1.0 in a clean consumer install — three
-  defects, none of which failed at install time:
-
-  1. **`@effect/platform-node` was a devDependency**, so a consumer got
-     `Cannot find module '@effect/platform-node/NodeServices'`. Alchemy's module graph
-     reaches `Cloudflare/Workers/WorkerBridge` even when you only import `/proxmox`, so it
-     is a required peer, not an optional one.
-  2. **The `effect` peer was ranged** `>=4.0.0-rc.112`, which resolves to rc.115 —
-     `TypeError: Config.string is not a function`. Effect's rc line is not
-     semver-compatible with itself, so a range is a promise this package cannot keep. Peers
-     are pinned exactly now.
-  3. **`@effect/platform-node-shared` still resolves up** to rc.115 against effect rc.112
-     (`Cannot find module 'effect/ByteSize'`), because `platform-bun@rc.112` asks for
-     `^4.0.0-rc.112`. Only a consumer-side `overrides` block holds the set together, and the
-     README now says so with the exact block to paste.
-
-  ⛔ The smoke script was `echo '…exercised by the consuming stack'` — a check that cannot
-  fail, which is how all three shipped. It now packs the tarball, installs it the way the
-  README says, and **imports every subpath**, because each of these threw at import rather
-  than at install.
-
-## 0.1.0
-
-### Minor Changes
-
-- [#25](https://github.com/taslabs-net/homeflare-kit/pull/25) [`309c644`](https://github.com/taslabs-net/homeflare-kit/commit/309c644d83c7149571f4caada135d1b8d141a484) Thanks [@taslabs-net](https://github.com/taslabs-net)! - New package: custom Alchemy providers for five systems the vendor has none for.
-
-  **`R2BucketLock`** — an R2 bucket's lock rules, declared rather than applied by hand. A
-  lock rule is a retention floor: while a rule covers an object, no API call, no lifecycle
-  rule and no credential can delete it.
-
-  ★ Alchemy 2.0.0-beta.77 has no lock property anywhere in its R2 namespace, so the
-  alternative was a runbook step a human runs once — and a plan can never show a missing
-  runbook step. Covering the gap with a resource makes the drift visible in `plan`.
-
-  ⛔ Deletion is refused by design: removing a lock removes a retention floor, which is the
-  one operation this resource exists to make hard.
-
-  ⚠️ `alchemy`, `cloudflare` and `effect` are **peers**, not dependencies — Alchemy's
-  resource registry and Effect's context both break if two copies load in one process.
-
-  **Also in this release** — the same treatment for four more systems, 140 files in all:
-
-  - **`/proxmox`** (61 source files) — ACLs, API tokens, backup jobs, Ceph, SDN, storage.
-  - **`/openbao`** (33) — mounts, policies, PKI/SSH/auth roles, Cloudflare role expansion.
-  - **`/forgejo`** (12) — branch protection, org secrets, labels, webhooks.
-  - **`/talos`** (8) — cluster bootstrap, machine config, health.
-
-  ⛔ **Import a subpath, never the root.** Each system carries its own client, so a root
-  barrel would pull Proxmox into a stack that only wanted Forgejo.
-
-  ★ **The barrels are deliberately smaller than the directories** — 70 exported symbols out
-  of 606 defined, chosen from what a real stack actually consumes. An `export *` would
-  publish every helper as API and make the next refactor a breaking change.
+- [#268](https://github.com/taslabs-net/homeflare-kit/pull/268) [`7c9e674`](https://github.com/taslabs-net/homeflare-kit/commit/7c9e674545829191a560730924e557d5ccbb2bd2) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Use the distilled Proxmox SDK's typed missing-user, group, storage and Ceph-pool errors
+  for absence. Propagate other cold-read/reconcile failures, and propagate failed Ceph
+  filesystem and daemon index reads instead of treating them as missing resources.
+
+  This prevents speculative creates after failed reads and prevents a CephFS delete
+  from claiming success when its preflight or read-back cannot observe the filesystem.
+  Existing confirmed-row User/Group/Storage checks and credential-denial reporting remain.
+  Real-protocol fixtures cover expected absence and unrelated 401/403/500 errors; engine
+  tests prove a failed cold read sends no create and a failed delete read is not success.

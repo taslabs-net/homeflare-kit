@@ -23,7 +23,11 @@
  *   - `ClusterNodeUnreachable` is added via an ACTUAL RFC-6902 patch —
  *     `patches/nodes/task-polling.json` — to the four `/nodes/{node}/
  *     tasks/…` operations the vendor schema itself marks `proxyto: "node"`
- *     (this package's own `src/task.ts` polls one of them). It is NOT
+ *     (a caller polling `GetNodeTaskStatus` — this package's own generated
+ *     operation — can hit any of the four; task polling itself is
+ *     provider-side, not this package's, per P13/Q3 of the 2026-09-24
+ *     walk-down: no distilled precedent for a package-level poll helper).
+ *     It is NOT
  *     global: most PVE calls are answered by the node you connected to
  *     directly and never proxy at all, so declaring a 595 possible on
  *     every operation would be a claim the schema does not support for
@@ -48,16 +52,9 @@ export {
   DEFAULT_ERRORS,
   API_ERRORS,
 } from "@distilled.cloud/core/errors";
-// `export { X } from "mod"` (above) is a RE-EXPORT ONLY — it creates no local
-// binding for `X`, so `BadRequest` needs its own `import type` to be usable
-// in this file's own `DefaultErrors` union below. Caught by the kit's copy
-// of this package typechecking under `verbatimModuleSyntax`, not by this
-// package's own `tsc -b` — see `docs/distilled-interim.md`'s "prove it in
-// both places" step for why that gap exists at all.
-import type {
-  BadRequest,
-  DefaultErrors as CoreDefaultErrors,
-} from "@distilled.cloud/core/errors";
+// Re-exports do not bind names locally. The operation union must cover every
+// class the package protocol can return through core's HTTP_STATUS_MAP.
+import type { API_ERRORS } from "@distilled.cloud/core/errors";
 
 import * as Schema from "effect/Schema";
 import * as Category from "@distilled.cloud/core/category";
@@ -118,10 +115,13 @@ export class ProxmoxParseError extends Schema.TaggedError<ProxmoxParseError>()(
 ).pipe(Category.withParseError) {}
 
 /**
- * A polled task ended with an `exitstatus` other than exactly `"OK"` — see
- * `src/task.ts`. `exitstatus` carries PVE's own failure text verbatim
- * (e.g. `"job errors"`, `"OK (warnings)"` — the latter is why the compare
- * is exact-equality against `"OK"`, never a prefix/substring check).
+ * A polled task ended with an `exitstatus` other than exactly `"OK"`.
+ * `exitstatus` carries PVE's own failure text verbatim (e.g. `"job
+ * errors"`, `"OK (warnings)"` — the latter is why a caller's compare must
+ * be exact-equality against `"OK"`, never a prefix/substring check).
+ * Exported for a provider-side poll to construct: this package no longer
+ * ships its own `awaitTask` helper (removed 2026-09-24 — polling belongs
+ * in the provider, P13; no distilled precedent for a package-level poll).
  */
 export class ProxmoxTaskFailed extends Schema.TaggedError<ProxmoxTaskFailed>()(
   "ProxmoxTaskFailed",
@@ -146,7 +146,6 @@ export type ClientErrors = UnknownProxmoxError | ProxmoxParseError;
  * task-polling.json` adds it to.
  */
 export type DefaultErrors =
-  | CoreDefaultErrors
-  | BadRequest
+  | InstanceType<(typeof API_ERRORS)[number]>
   | ParameterVerificationFailed
   | ClientErrors;

@@ -93,18 +93,17 @@ export const readStorageOrFail = (props: StorageProps) =>
   ).pipe(Effect.map((live) => (live === UNREADABLE ? UNREADABLE : attributesOf(live, props))));
 
 /**
- * ⛔ FOLDS A GENUINE READ FAILURE TO `undefined` TOO, AND ONLY `read`/`reconcile` MAY USE IT —
- *   user.ts's `readUser` has the full reasoning. Safe here because a wrongful fold costs at most a
- *   redundant `createStorage` POST, which PVE refuses loudly ("storage ID already exists") rather
- *   than silently corrupting anything.
- * ⛔ `storage.ts`'s `diff` does **NOT** use this — the SAME bug class as the credential denial fix:
- *   folding a TRANSIENT failure into "absent" at PLAN TIME is what forced a false `update` with
- *   nothing compared (the ORIGINAL cries-wolf bug this family shipped with, per unreadable-read.ts's
- *   own header). `diff` calls `readStorageOrFail` directly, so a genuine failure there propagates
- *   and fails the whole plan loudly instead.
+ * ⛔ ONLY `StorageNotFound` MEANS ABSENT. The initial distilled transport swap preserved a
+ *   catch-all fold because PVE reports missing objects as HTTP 500. SDK PR 265 now types that
+ *   measured message, so permission errors, unrelated 500s and exhausted transports propagate
+ *   instead of triggering a speculative create (decision 49 follow-up, 2026-09-24).
+ * ★ `readStorageOrFail` remains the strict path used for an already-confirmed state row. This
+ *   change narrows cold reads/reconcile without changing that existing drift/diff contract.
  */
 export const readStorage = (props: StorageProps) =>
-  readStorageOrFail(props).pipe(Effect.orElseSucceed(() => undefined));
+  readStorageOrFail(props).pipe(
+    Effect.catchTag('StorageNotFound', () => Effect.succeed(undefined)),
+  );
 
 /** `read`/`reconcile` return `Attributes | undefined`; only `diff` tells `UNREADABLE` apart. */
 export const dropUnreadable = (live: StorageAttributes | Unreadable | undefined) =>

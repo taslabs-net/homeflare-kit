@@ -37,8 +37,8 @@ import type { Input } from 'alchemy/Input';
 import { CredentialsFromEnv } from '@distilled.cloud/unifi-network/Credentials';
 import type { UnifiNetworkOpContext } from '@distilled.cloud/unifi-network/Protocol';
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
-import { refuseWrite } from './policy.ts';
+import * as HttpClient from 'effect/unstable/http/HttpClient';
+import { UNIFI_READ_ONLY_POLICY, refuseWrite } from './policy.ts';
 
 /** What every handler needs from the caller's runtime once `CredentialsFromEnv` is baked in. */
 export type UnifiRequirements = HttpClient.HttpClient;
@@ -108,6 +108,76 @@ export const unifiOperations = <Props extends object, Live, Attributes extends o
 };
 
 /**
+ * B0a / T12 DEFENSE IN DEPTH. `policy.ts`'s `UnifiWriteRefused` stops write INTENT at
+ * `reconcile`/`destroy` — every path this engine exposes already returns that refusal instead of
+ * calling an SDK write op. This guard stops the same thing one layer lower, AT THE WIRE: it wraps
+ * whatever `HttpClient` the caller already provides (the stack's `FetchHttpClient.layer` in
+ * production, `fakeUnifiLayer` in tests — `openbao/bao-http.ts`'s header names this same
+ * "wrap, don't replace" seam) so a future resource file that, by mistake, called an SDK write
+ * operation directly — bypassing `unifiOperations` entirely — would still never reach the vendor
+ * API. `write-op-reference.test.ts` proves no such call exists today; this is what stops one from
+ * ever taking effect if one is ever added.
+ *
+ * ⚠️ `Effect.die`, NOT A TYPED FAILURE — classified per distilled-doctrine's "classify every
+ *   die/orDie". Every generated SDK operation (`networks.getNetworkDetails`, …) declares its OWN
+ *   closed error union from the pinned OpenAPI spec, and generated files are never hand-edited to
+ *   add a member to it. A typed `Effect.fail` here would be a failure mode absent from every op's
+ *   declared type the moment it occurred — a type-system lie. A defect is the sound way to add a
+ *   NEW "this must be structurally impossible" failure underneath types this package does not
+ *   own, exactly like `openbao`'s `refuse()` helpers' `Effect.die(new Error(...))` for a
+ *   configuration move that should never be reachable.
+ */
+export class UnifiNonGetRequest extends Error {
+  constructor(
+    readonly method: string,
+    /** PATH ONLY, never the full URL — see `requestPath` below. */
+    readonly path: string,
+  ) {
+    super(
+      `UniFi HttpClient guard: refused ${method} ${path} -- ${UNIFI_READ_ONLY_POLICY}. This is a ` +
+        'defect, not a recoverable condition: something under src/unifi tried to send a non-GET ' +
+        "request, which policy.ts's per-operation refusal should already have made impossible. " +
+        'Fix the kit code that produced this request.',
+    );
+    this.name = 'UnifiNonGetRequest';
+  }
+}
+
+/**
+ * ⛔ PATH ONLY, NEVER THE HOST. A cloud connector's base URL embeds the account's Console ID
+ *   (`docs/unifi.md`'s Credentials section, T3) — a defect message is still a message that can
+ *   reach a log, a CI failure body or a pasted error report, so it gets the same treatment as
+ *   `redactUrls` gives the import layer's own error text. Falls back to a fixed placeholder rather
+ *   than the raw string on a parse failure, so a malformed URL can never leak through unredacted.
+ */
+const requestPath = (url: string): string => {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return '<unparseable request url>';
+  }
+};
+
+const guardGetOnly = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
+  client.pipe(
+    HttpClient.mapRequestEffect((request) =>
+      request.method === 'GET'
+        ? Effect.succeed(request)
+        : Effect.die(new UnifiNonGetRequest(request.method, requestPath(request.url))),
+    ),
+  );
+
+/**
+ * A `Layer` that reads whatever `HttpClient` is already in the calling context and replaces it,
+ * for everything downstream, with `guardGetOnly`'s wrapped version (`HttpClient.layerMergedContext`
+ * — see the guard above). Exported so `get-only-guard.test.ts` can prove the mechanism directly,
+ * against a bare `HttpClient` service, without needing `CredentialsFromEnv` or any env var at all.
+ */
+export const GetOnlyHttpClient = HttpClient.layerMergedContext(
+  Effect.map(HttpClient.HttpClient, guardGetOnly),
+);
+
+/**
  * The four provider handlers for a spec'd read-only UniFi object, wired once.
  *
  * ⛔ `list` ANSWERS EMPTY. `GET /v1/sites/{siteId}/networks` answers every network on the site;
@@ -118,7 +188,7 @@ export const unifiHandlers = <Props extends object, Live, Attributes extends obj
 ) => {
   const ops = unifiOperations(spec);
   const withCredentials = <A, Err>(effect: Effect.Effect<A, Err, UnifiNetworkOpContext>) =>
-    Effect.provide(effect, CredentialsFromEnv);
+    effect.pipe(Effect.provide(GetOnlyHttpClient), Effect.provide(CredentialsFromEnv));
   return {
     list: () => Effect.succeed([]),
     read: (args: { olds: Props; output: Attributes | undefined }) =>

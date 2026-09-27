@@ -18,6 +18,7 @@
  *   fake really listens on an ephemeral one: a Caddy on its default :2019 behind a forward.
  */
 import * as Effect from 'effect/Effect';
+import * as Layer from 'effect/Layer';
 import type * as Caddy from '@distilled.cloud/caddy';
 import { type CaddyAdminService, type CaddyTransport, caddyAdminLayer } from './admin.ts';
 import { localCaddyAdmin } from './local-admin.ts';
@@ -190,8 +191,16 @@ export const fakeDefaultCaddy = (
  * Runs an Effect that needs `CaddyAdminService` and `@distilled.cloud/caddy`'s own `Credentials`/
  * `HttpClient` against one transport — the one line every test in this directory used to spend on
  * `Effect.provide(caddyAdminLayer(admin))` before this helper existed.
+ * ⚠️ TWO LAYERS, NOT ONE: `caddyAdminLayer(admin)` only carries `CaddyAdminService` and the
+ *   `CaddyAdminTransport`-wrapped VALUE of `admin.layer` (admin.ts's own scoping fix) — the
+ *   lifecycle functions this helper drives (`probeLive`, `reconcileConfig`, …) still need the raw
+ *   `Credentials`/`HttpClient.HttpClient` directly in context, so `admin.layer` is provided again,
+ *   built this time, alongside it.
  */
 export const runCaddy = <A, E>(
   effect: Effect.Effect<A, E, CaddyAdminService | Caddy.CaddyOpContext>,
   admin: CaddyTransport,
-): Promise<A> => Effect.runPromise(effect.pipe(Effect.provide(caddyAdminLayer(admin))));
+): Promise<A> =>
+  Effect.runPromise(
+    effect.pipe(Effect.provide(Layer.mergeAll(caddyAdminLayer(admin), admin.layer))),
+  );

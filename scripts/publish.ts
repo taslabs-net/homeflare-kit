@@ -70,11 +70,15 @@ async function run(
  *   `--provenance` flag (checked on 1.4.0), so npm is what signs the attestation.
  */
 async function isPublished(pkg: Pkg): Promise<boolean> {
-  const { code } = await run(
+  const seen = await run(
     ['bun', 'pm', 'view', `${pkg.name}@${pkg.version}`, 'version'],
     root.pathname,
   );
-  return code === 0;
+  // ⚠️ Run 36148440975: this view missed @homeflare/config@0.12.1 and the
+  //   output was discarded, so the next failure had no registry answer to read.
+  if (seen.code !== 0)
+    console.log(`? ${pkg.name}@${pkg.version} view exit ${seen.code} ${seen.out.slice(0, 160)}`);
+  return seen.code === 0;
 }
 
 if (process.env['GITHUB_ACTIONS'] !== 'true') {
@@ -150,14 +154,14 @@ for (const pkg of packages) {
     //   The old code threw on ANY non-zero exit here and aborted the release before it
     //   reached @homeflare/config@0.11.0 — see publish-conflict.ts for the full story,
     //   the exact npm text, and why the match stays narrow (a 409 is not always this).
-    // ⛔ A DIFFERENT reason to fail must still abort. Only a 409 whose text says THIS
-    //   version was already staged or published is safe to treat as a no-op; anything
+    // ⛔ A DIFFERENT reason to fail must still abort. Only a 409, or the republish
+    //   sentence, whose text names THIS version is safe to treat as a no-op. Anything
     //   else — permissions, a missing package, the network, an unrelated 409 — throws
     //   exactly as before.
     if (!isAlreadyPublishedConflict(result, pkg.version)) {
       throw new Error(`publish failed for ${pkg.name}`);
     }
-    console.log(`~ ${pkg.name}@${pkg.version} already published (npm 409 after the fact)`);
+    console.log(`~ ${pkg.name}@${pkg.version} already published (npm refused a second publish)`);
     conflictSkipped.add(pkg.name);
     // ★ No ndjson entry, deliberately. The run that actually got this version onto npm
     //   already wrote its git-tag event and changesets/action already created the tag and
