@@ -16,6 +16,74 @@ export type { UnifiNetworkOpError, UnifiNetworkOpContext };
 export type CreateAclRuleRequestAction = "ALLOW" | "BLOCK";
 export const CreateAclRuleRequestAction = S.String;
 
+/** IP addresses or subnets */
+export type IPACLRuleEndpointIpAddressesOrSubnetsList = Array<string>;
+export const IPACLRuleEndpointIpAddressesOrSubnetsList = /*@__PURE__*/ S.Array(
+  S.String,
+) as any as S.Schema<IPACLRuleEndpointIpAddressesOrSubnetsList>;
+
+/** Ports this ACL rule will be applied to. If null, all the rule will be applied to all ports. */
+export type IPACLRuleEndpointPortFilterList = Array<number>;
+export const IPACLRuleEndpointPortFilterList = /*@__PURE__*/ S.Array(
+  S.Number,
+) as any as S.Schema<IPACLRuleEndpointPortFilterList>;
+
+/** Network IDs */
+export type IPACLRuleEndpointNetworkIdsList = Array<string>;
+export const IPACLRuleEndpointNetworkIdsList = /*@__PURE__*/ S.Array(
+  S.String,
+) as any as S.Schema<IPACLRuleEndpointNetworkIdsList>;
+
+export interface IPACLRuleEndpoint {
+  type: string;
+  /** IP addresses or subnets */
+  ipAddressesOrSubnets?: IPACLRuleEndpointIpAddressesOrSubnetsList;
+  /** Ports this ACL rule will be applied to. If null, all the rule will be applied to all ports. */
+  portFilter?: IPACLRuleEndpointPortFilterList;
+  /** Network IDs */
+  networkIds?: IPACLRuleEndpointNetworkIdsList;
+}
+export const IPACLRuleEndpoint = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    type: S.String,
+    ipAddressesOrSubnets: S.optional(IPACLRuleEndpointIpAddressesOrSubnetsList),
+    portFilter: S.optional(IPACLRuleEndpointPortFilterList),
+    networkIds: S.optional(IPACLRuleEndpointNetworkIdsList),
+  }),
+).annotate({
+  identifier: "IPACLRuleEndpoint",
+}) as any as S.Schema<IPACLRuleEndpoint>;
+
+/** Source/destination MAC addresses this ACL rule will apply to. */
+export type MACACLRuleEndpointMacAddressesList = Array<string>;
+export const MACACLRuleEndpointMacAddressesList = /*@__PURE__*/ S.Array(
+  S.String,
+) as any as S.Schema<MACACLRuleEndpointMacAddressesList>;
+
+export interface MACACLRuleEndpoint {
+  type: string;
+  /** Source/destination MAC addresses this ACL rule will apply to. */
+  macAddresses?: MACACLRuleEndpointMacAddressesList;
+  /** MAC address prefix length. When null, full MAC address(-es) will be used. */
+  prefixLength?: number;
+}
+export const MACACLRuleEndpoint = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    type: S.String,
+    macAddresses: S.optional(MACACLRuleEndpointMacAddressesList),
+    prefixLength: S.optional(S.Number),
+  }),
+).annotate({
+  identifier: "MACACLRuleEndpoint",
+}) as any as S.Schema<MACACLRuleEndpoint>;
+
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type CreateAclRuleRequestDestinationFilter =
+  | IPACLRuleEndpoint
+  | MACACLRuleEndpoint;
+export const CreateAclRuleRequestDestinationFilter =
+  S.Unknown as any as S.Schema<CreateAclRuleRequestDestinationFilter>;
+
 /** List of Switch capable device IDs to which the ACL rule will be provisioned. */
 export type ACLRuleDeviceFilterDeviceIdsList = Array<string>;
 export const ACLRuleDeviceFilterDeviceIdsList = /*@__PURE__*/ S.Array(
@@ -36,6 +104,13 @@ export const ACLRuleDeviceFilter = /*@__PURE__*/ S.suspend(() =>
   identifier: "ACLRuleDeviceFilter",
 }) as any as S.Schema<ACLRuleDeviceFilter>;
 
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type CreateAclRuleRequestSourceFilter =
+  | IPACLRuleEndpoint
+  | MACACLRuleEndpoint;
+export const CreateAclRuleRequestSourceFilter =
+  S.Unknown as any as S.Schema<CreateAclRuleRequestSourceFilter>;
+
 export type CreateAclRuleRequestProtocolFilterItem = "TCP" | "UDP";
 export const CreateAclRuleRequestProtocolFilterItem = S.String;
 
@@ -53,8 +128,8 @@ export interface CreateAclRuleRequest {
   action: CreateAclRuleRequestAction | (string & {});
   /** ACL rule description */
   description?: string;
-  /** Shape varies by variant — widened by scripts/convert.ts; see README. */
-  destinationFilter?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  destinationFilter?: CreateAclRuleRequestDestinationFilter;
   enabled: boolean;
   /** IDs of the Switch-capable devices used to enforce the ACL rule. When null, the rule will be provisioned to all switches on the site. */
   enforcingDeviceFilter?: ACLRuleDeviceFilter;
@@ -62,8 +137,8 @@ export interface CreateAclRuleRequest {
   index?: number;
   /** ACL rule name */
   name: string;
-  /** Shape varies by variant — widened by scripts/convert.ts; see README. */
-  sourceFilter?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  sourceFilter?: CreateAclRuleRequestSourceFilter;
   type: string;
   /** Protocols this ACL rule will be applied to. When null, the rule will be applied to all protocols. */
   protocolFilter?: CreateAclRuleRequestProtocolFilterList;
@@ -75,12 +150,12 @@ export const CreateAclRuleRequest = /*@__PURE__*/ S.suspend(() =>
     siteId: S.String.pipe(T.Label()),
     action: CreateAclRuleRequestAction,
     description: S.optional(S.String),
-    destinationFilter: S.optional(S.Unknown),
+    destinationFilter: S.optional(CreateAclRuleRequestDestinationFilter),
     enabled: S.Boolean,
     enforcingDeviceFilter: S.optional(ACLRuleDeviceFilter),
     index: S.optional(S.Number),
     name: S.String,
-    sourceFilter: S.optional(S.Unknown),
+    sourceFilter: S.optional(CreateAclRuleRequestSourceFilter),
     type: S.String,
     protocolFilter: S.optional(CreateAclRuleRequestProtocolFilterList),
     networkIdFilter: S.optional(S.String),
@@ -94,6 +169,11 @@ export const CreateAclRuleRequest = /*@__PURE__*/ S.suspend(() =>
 /** ACL rule action */
 export type ACLRuleAction = "ALLOW" | "BLOCK";
 export const ACLRuleAction = S.String;
+
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type ACLRuleDestinationFilter = IPACLRuleEndpoint | MACACLRuleEndpoint;
+export const ACLRuleDestinationFilter =
+  S.Unknown as any as S.Schema<ACLRuleDestinationFilter>;
 
 export type UserDefinedOrDerivedEntityMetadataSource = "SDWAN";
 export const UserDefinedOrDerivedEntityMetadataSource = S.String;
@@ -111,6 +191,11 @@ export const UserDefinedOrDerivedEntityMetadata = /*@__PURE__*/ S.suspend(() =>
   identifier: "UserDefinedOrDerivedEntityMetadata",
 }) as any as S.Schema<UserDefinedOrDerivedEntityMetadata>;
 
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type ACLRuleSourceFilter = IPACLRuleEndpoint | MACACLRuleEndpoint;
+export const ACLRuleSourceFilter =
+  S.Unknown as any as S.Schema<ACLRuleSourceFilter>;
+
 export type ACLRuleProtocolFilterItem = "TCP" | "UDP";
 export const ACLRuleProtocolFilterItem = S.String;
 
@@ -125,8 +210,8 @@ export interface ACLRule {
   action: ACLRuleAction;
   /** ACL rule description */
   description?: string;
-  /** Traffic destination filter */
-  destinationFilter?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  destinationFilter?: ACLRuleDestinationFilter;
   enabled: boolean;
   /** IDs of the Switch-capable devices used to enforce the ACL rule. When null, the rule will be provisioned to all switches on the site. */
   enforcingDeviceFilter?: ACLRuleDeviceFilter;
@@ -137,8 +222,8 @@ export interface ACLRule {
   metadata: UserDefinedOrDerivedEntityMetadata;
   /** ACL rule name */
   name: string;
-  /** Traffic source filter */
-  sourceFilter?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  sourceFilter?: ACLRuleSourceFilter;
   type: string;
   /** Protocols this ACL rule will be applied to. When null, the rule will be applied to all protocols. */
   protocolFilter?: ACLRuleProtocolFilterList;
@@ -149,14 +234,14 @@ export const ACLRule = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     action: ACLRuleAction,
     description: S.optional(S.String),
-    destinationFilter: S.optional(S.Unknown),
+    destinationFilter: S.optional(ACLRuleDestinationFilter),
     enabled: S.Boolean,
     enforcingDeviceFilter: S.optional(ACLRuleDeviceFilter),
     id: S.String,
     index: S.Number,
     metadata: UserDefinedOrDerivedEntityMetadata,
     name: S.String,
-    sourceFilter: S.optional(S.Unknown),
+    sourceFilter: S.optional(ACLRuleSourceFilter),
     type: S.String,
     protocolFilter: S.optional(ACLRuleProtocolFilterList),
     networkIdFilter: S.optional(S.String),
@@ -264,6 +349,18 @@ export const GetAclRulePageRequest = /*@__PURE__*/ S.suspend(() =>
 export type ACLRuleObjectAction = "ALLOW" | "BLOCK";
 export const ACLRuleObjectAction = S.String;
 
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type ACLRuleObjectDestinationFilter =
+  | IPACLRuleEndpoint
+  | MACACLRuleEndpoint;
+export const ACLRuleObjectDestinationFilter =
+  S.Unknown as any as S.Schema<ACLRuleObjectDestinationFilter>;
+
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type ACLRuleObjectSourceFilter = IPACLRuleEndpoint | MACACLRuleEndpoint;
+export const ACLRuleObjectSourceFilter =
+  S.Unknown as any as S.Schema<ACLRuleObjectSourceFilter>;
+
 export type ACLRuleObjectProtocolFilterItem = "TCP" | "UDP";
 export const ACLRuleObjectProtocolFilterItem = S.String;
 
@@ -279,8 +376,8 @@ export interface ACLRuleObject {
   action: ACLRuleObjectAction;
   /** ACL rule description */
   description?: string;
-  /** Traffic destination filter */
-  destinationFilter?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  destinationFilter?: ACLRuleObjectDestinationFilter;
   enabled: boolean;
   /** IDs of the Switch-capable devices used to enforce the ACL rule. When null, the rule will be provisioned to all switches on the site. */
   enforcingDeviceFilter?: ACLRuleDeviceFilter;
@@ -291,8 +388,8 @@ export interface ACLRuleObject {
   metadata: UserDefinedOrDerivedEntityMetadata;
   /** ACL rule name */
   name: string;
-  /** Traffic source filter */
-  sourceFilter?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  sourceFilter?: ACLRuleObjectSourceFilter;
   type: string;
   /** Protocols this ACL rule will be applied to. When null, the rule will be applied to all protocols. */
   protocolFilter?: ACLRuleObjectProtocolFilterList;
@@ -303,14 +400,14 @@ export const ACLRuleObject = /*@__PURE__*/ S.suspend(() =>
   S.Struct({
     action: ACLRuleObjectAction,
     description: S.optional(S.String),
-    destinationFilter: S.optional(S.Unknown),
+    destinationFilter: S.optional(ACLRuleObjectDestinationFilter),
     enabled: S.Boolean,
     enforcingDeviceFilter: S.optional(ACLRuleDeviceFilter),
     id: S.String,
     index: S.Number,
     metadata: UserDefinedOrDerivedEntityMetadata,
     name: S.String,
-    sourceFilter: S.optional(S.Unknown),
+    sourceFilter: S.optional(ACLRuleObjectSourceFilter),
     type: S.String,
     protocolFilter: S.optional(ACLRuleObjectProtocolFilterList),
     networkIdFilter: S.optional(S.String),
@@ -345,6 +442,20 @@ export const IntegrationAclRulePageDto = /*@__PURE__*/ S.suspend(() =>
 export type UpdateAclRuleRequestAction = "ALLOW" | "BLOCK";
 export const UpdateAclRuleRequestAction = S.String;
 
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type UpdateAclRuleRequestDestinationFilter =
+  | IPACLRuleEndpoint
+  | MACACLRuleEndpoint;
+export const UpdateAclRuleRequestDestinationFilter =
+  S.Unknown as any as S.Schema<UpdateAclRuleRequestDestinationFilter>;
+
+/** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+export type UpdateAclRuleRequestSourceFilter =
+  | IPACLRuleEndpoint
+  | MACACLRuleEndpoint;
+export const UpdateAclRuleRequestSourceFilter =
+  S.Unknown as any as S.Schema<UpdateAclRuleRequestSourceFilter>;
+
 export type UpdateAclRuleRequestProtocolFilterItem = "TCP" | "UDP";
 export const UpdateAclRuleRequestProtocolFilterItem = S.String;
 
@@ -363,8 +474,8 @@ export interface UpdateAclRuleRequest {
   action: UpdateAclRuleRequestAction | (string & {});
   /** ACL rule description */
   description?: string;
-  /** Shape varies by variant — widened by scripts/convert.ts; see README. */
-  destinationFilter?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  destinationFilter?: UpdateAclRuleRequestDestinationFilter;
   enabled: boolean;
   /** IDs of the Switch-capable devices used to enforce the ACL rule. When null, the rule will be provisioned to all switches on the site. */
   enforcingDeviceFilter?: ACLRuleDeviceFilter;
@@ -372,8 +483,8 @@ export interface UpdateAclRuleRequest {
   index?: number;
   /** ACL rule name */
   name: string;
-  /** Shape varies by variant — widened by scripts/convert.ts; see README. */
-  sourceFilter?: unknown;
+  /** Shape depends on the sibling discriminator value — see docs/codegen-notes.md. */
+  sourceFilter?: UpdateAclRuleRequestSourceFilter;
   type: string;
   /** Protocols this ACL rule will be applied to. When null, the rule will be applied to all protocols. */
   protocolFilter?: UpdateAclRuleRequestProtocolFilterList;
@@ -386,12 +497,12 @@ export const UpdateAclRuleRequest = /*@__PURE__*/ S.suspend(() =>
     aclRuleId: S.String.pipe(T.Label()),
     action: UpdateAclRuleRequestAction,
     description: S.optional(S.String),
-    destinationFilter: S.optional(S.Unknown),
+    destinationFilter: S.optional(UpdateAclRuleRequestDestinationFilter),
     enabled: S.Boolean,
     enforcingDeviceFilter: S.optional(ACLRuleDeviceFilter),
     index: S.optional(S.Number),
     name: S.String,
-    sourceFilter: S.optional(S.Unknown),
+    sourceFilter: S.optional(UpdateAclRuleRequestSourceFilter),
     type: S.String,
     protocolFilter: S.optional(UpdateAclRuleRequestProtocolFilterList),
     networkIdFilter: S.optional(S.String),

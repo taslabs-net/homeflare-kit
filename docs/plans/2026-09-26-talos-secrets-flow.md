@@ -166,16 +166,15 @@ live digest), so _planning_ needs vault access — decision D2 below.
 - D2 = agent-lane read would put CA-carrying material within a compromised
   plan lane's reach; that is why D2 is a decision, not a default.
 
-## Tim must decide
+## Decided (Tim, 2026-09-26 — decision 61: kit PR 295's recommendations, ALL accepted)
 
-- **D1** Cluster name → mount name, and placement: mini's vault + explicit
-  consolidation copy-list entry (recommended), vs waiting for the TB4 engine's
-  VPS move (see O1 — the draft's VPS-only option is unreachable today).
-- **D2** May the agent plan lane read the Talos mount (plans and verify need
-  live digests), or do Talos plans run admin/operator-only? Recommended:
-  admin-only until the k8s consumer path exists.
-- **D3** Confirm O-A (all-in-vault, digest pinned in git) over O-B (template in
-  git, render at reconcile).
+- **D1** Mount placement: mini's vault, `talos-c1`, with an explicit
+  consolidation copy-list entry — decision 64 names the first grants this
+  unlocks: the mount, `talos-provision` policy and a `TalosProvisioner` mint
+  tier on `proxmox-tb4`.
+- **D2** The agent plan lane is DENIED on the Talos mount — plans and verify
+  run admin/operator-only, exactly the recommended default.
+- **D3** O-A confirmed: all-in-vault, digest pinned in git. O-B not built.
 
 (The VLAN/BGP and vmid decisions moved with their sections to the companions.)
 

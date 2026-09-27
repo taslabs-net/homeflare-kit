@@ -12,7 +12,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { configDigest, kubeconfigMetadata, resolveConfigPath, sha256 } from './values.ts';
+import { configDigest, extractMachineConfigSpec, kubeconfigMetadata, sha256 } from './values.ts';
 
 /** Plain words, base64-encoded here rather than in the source. See the ⛔ above. */
 const b64 = (words: string) => Buffer.from(words).toString('base64');
@@ -69,12 +69,40 @@ describe('kubeconfigMetadata', () => {
   });
 });
 
-describe('resolveConfigPath', () => {
-  it('passes absolute paths through', () => {
-    assert.equal(resolveConfigPath('/stack', '/etc/talos/cp.yaml'), '/etc/talos/cp.yaml');
+describe('extractMachineConfigSpec', () => {
+  /** Shape REASONED from talosctl's `get machineconfig -o yaml` — see values.ts's own header. */
+  const wrapper = (version: string) =>
+    `node: 192.0.2.10\nmetadata:\n  version: "${version}"\nspec: "machine:\\n  type: worker\\n"\n`;
+
+  it('hashes only the spec text, not the wrapper metadata', () => {
+    const specA = extractMachineConfigSpec(wrapper('7'));
+    const specB = extractMachineConfigSpec(wrapper('9')); // metadata differs, spec does not
+    assert.ok(specA !== undefined && specB !== undefined);
+    assert.equal(specA, specB);
+    assert.equal(configDigest(specA), configDigest(specB));
   });
 
-  it('joins relative paths to the stack directory', () => {
-    assert.equal(resolveConfigPath('/stack', 'configs/cp.yaml'), '/stack/configs/cp.yaml');
+  it('unwraps a single-element array response the same way', () => {
+    const asArrayYaml =
+      '- node: 192.0.2.10\n  metadata:\n    version: "7"\n  spec: "machine:\\n  type: worker\\n"\n';
+    const asDoc = extractMachineConfigSpec(wrapper('7'));
+    const asArray = extractMachineConfigSpec(asArrayYaml);
+    assert.ok(asDoc !== undefined && asArray !== undefined);
+    assert.equal(asDoc, asArray);
+  });
+
+  it('returns undefined for unparsable YAML or a missing/non-string spec', () => {
+    assert.equal(extractMachineConfigSpec(':::not yaml:::'), undefined);
+    assert.equal(extractMachineConfigSpec('node: 192.0.2.10\n'), undefined);
+    assert.equal(extractMachineConfigSpec('spec:\n  nested: true\n'), undefined);
+  });
+
+  it('refuses more than one document rather than guessing which one (fix-first #2)', () => {
+    // Shape of an unfiltered `get machineconfig`: `persistent` then `v1alpha1`, sorted by id — a
+    // bare `doc[0]` here would silently pick `persistent`, the shipped bug this guard replaces.
+    const twoDocs =
+      '- node: 192.0.2.10\n  metadata:\n    id: persistent\n  spec: "not the applied config"\n' +
+      '- node: 192.0.2.10\n  metadata:\n    id: v1alpha1\n  spec: "machine:\\n  type: worker\\n"\n';
+    assert.equal(extractMachineConfigSpec(twoDocs), undefined);
   });
 });

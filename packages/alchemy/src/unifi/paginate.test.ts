@@ -5,6 +5,12 @@
  * list operation (`getNetworksOverviewPage`) through the fake UniFi server. `M2`: this file does
  * not repeat the 404/500 decode tests `network.test.ts` already covers — those are about ONE
  * page's failure, not the walk this file exists to prove.
+ *
+ * ⛔ MINOR-3 (red team, 2026-09-26): `page.offset`/`page.totalCount` are wire-controlled values
+ *   `@distilled.cloud/core` never validates (`wifi-broadcast.ts`'s header documents why), so the
+ *   "malformed response" test below plants a non-numeric value in each and proves `paginate.ts`'s
+ *   `numOrPlaceholder` keeps it out of the error text, instead of assuming a vendor response is
+ *   always well-typed just because the SDK's TS types say so.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
@@ -174,6 +180,24 @@ describe('pageAll -- IMPORTANT-3: typed failures on a self-contradicting respons
     const failure = await flip(pageAll(fetchPage, { limit: 1 }));
 
     expect(failure.reason).toBe('page-ceiling');
+  });
+
+  test('a non-numeric offset/totalCount from a malformed response never appears in the error text (MINOR-3)', async () => {
+    const SENTINEL = 'sentinel-do-not-log-me';
+    // Cast, not a typo: the SDK's TS types say `offset`/`totalCount` are numbers, but nothing
+    // validates that at runtime -- this is exactly the shape a genuinely malformed page could take.
+    const fetchPage = () =>
+      Effect.succeed({
+        data: [],
+        offset: SENTINEL,
+        totalCount: SENTINEL,
+      } as unknown as OffsetPage<Row>);
+
+    const failure = await flip(pageAll(fetchPage, {}));
+
+    expect(failure.reason).toBe('offset-mismatch');
+    expect(failure.detail).not.toContain(SENTINEL);
+    expect(failure.message).not.toContain(SENTINEL);
   });
 
   test('an honest, well-behaved server never trips any of the three checks', async () => {

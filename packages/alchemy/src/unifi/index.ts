@@ -37,4 +37,67 @@ export {
   type FirewallZoneProps,
   driftOf as firewallZoneDriftOf,
 } from './firewall-zone.ts';
+export {
+  UnifiDnsPolicy,
+  UnifiDnsPolicyProvider,
+  declareDnsPolicy,
+  dnsPolicy,
+  type DnsPolicyAttributes,
+  type DnsPolicyProps,
+  driftOf as dnsPolicyDriftOf,
+} from './dns-policy.ts';
+export {
+  UnifiAclRule,
+  UnifiAclRuleProvider,
+  aclRule,
+  declareAclRule,
+  type AclRuleAttributes,
+  type AclRuleProps,
+  driftOf as aclRuleDriftOf,
+} from './acl-rule.ts';
+export {
+  UnifiAclRuleOrdering,
+  UnifiAclRuleOrderingProvider,
+  aclRuleOrdering,
+  declareAclRuleOrdering,
+  type AclRuleOrderingAttributes,
+  type AclRuleOrderingProps,
+  driftOf as aclRuleOrderingDriftOf,
+} from './acl-rule-ordering.ts';
+export {
+  UnifiWifiBroadcast,
+  UnifiWifiBroadcastProvider,
+  declareWifiBroadcast,
+  wifiBroadcast,
+  type WifiBroadcastAttributes,
+  type WifiBroadcastProps,
+  driftOf as wifiBroadcastDriftOf,
+} from './wifi-broadcast.ts';
+export {
+  UnifiFirewallPolicy,
+  UnifiFirewallPolicyProvider,
+  declareFirewallPolicy,
+  firewallPolicy,
+  type FirewallPolicyAttributes,
+  type FirewallPolicyProps,
+  driftOf as firewallPolicyDriftOf,
+} from './firewall-policy.ts';
+export {
+  UnifiFirewallPolicyOrdering,
+  UnifiFirewallPolicyOrderingProvider,
+  declareFirewallPolicyOrdering,
+  firewallPolicyOrdering,
+  type FirewallPolicyOrderingAttributes,
+  type FirewallPolicyOrderingProps,
+  driftOf as firewallPolicyOrderingDriftOf,
+} from './firewall-policy-ordering.ts';
+export {
+  UnifiTrafficMatchingList,
+  UnifiTrafficMatchingListProvider,
+  declareTrafficMatchingList,
+  trafficMatchingList,
+  type TrafficMatchingListAttributes,
+  type TrafficMatchingListProps,
+  driftOf as trafficMatchingListDriftOf,
+} from './traffic-matching-list.ts';
 export { providers } from './providers.ts';

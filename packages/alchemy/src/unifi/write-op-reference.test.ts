@@ -18,20 +18,16 @@
  *   contains one of those exact names as a token anywhere in its code — an identifier, a bracket
  *   key, a destructured binding, a re-export, or a dynamic-import property access all show up as
  *   the same literal text, so one scan catches all of them without parsing which syntax form it is.
- * ⚠️ COMMENTS ARE STRIPPED WITH A SINGLE LEFT-TO-RIGHT SCAN, NOT TWO INDEPENDENT REGEXES. An
- *   earlier "mask strings, then regex the comments" attempt at fixing this had its own bug: an
- *   apostrophe in ordinary prose ("doesn't", "it's") reads as an unterminated string open to any
- *   regex that does not already know it is inside a comment, and can swallow real code up to the
- *   next quote anywhere later in the file. `stripComments` below tracks ONE state (code / line
- *   comment / block comment / string) char by char left to right, so a comment can't be misread as
- *   a string and a string's contents (needed below — a write op hidden in a string token is still
- *   an offense) are never mistaken for a comment either. See its own test for the specific
- *   "glob-like string" bug (LOW-4) this replaces.
+ * ⚠️ COMMENTS ARE STRIPPED WITH A SINGLE LEFT-TO-RIGHT SCAN, NOT TWO INDEPENDENT REGEXES — see
+ *   `scan-source.ts`'s header for why (LOW-4's "glob-like string" bug and the apostrophe-in-prose
+ *   trap this replaces). `stripComments`/`walk` are SHARED with `wifi-broadcast-details-call.test.ts`
+ *   (red team, IMPORTANT-2, 2026-09-26) rather than duplicated a second time.
  */
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripComments, walk } from './scan-source.ts';
 
 const SELF = fileURLToPath(import.meta.url);
 const DIR = dirname(SELF);
@@ -42,49 +38,13 @@ const BANNED_VERBS = ['create', 'update', 'delete', 'patch', 'execute', 'remove'
 // longer English word that merely starts the same way (`removes`, `updated`, `deletion`).
 const WRITE_OP_NAME = new RegExp(`^(?:${BANNED_VERBS.join('|')})(?:[A-Z][A-Za-z0-9]*)?$`);
 
-/**
- * One left-to-right scan tracking a single state (code / `//` / `/* *\/` / string) — see the file
- * header for why two independent regex passes cannot do this correctly. Comments are blanked to
- * spaces (newlines kept, so line numbers in a caller's own diagnostics would still line up); string
- * and template literal CONTENTS are left untouched, because a write-op reference hidden inside one
- * (`alias['deleteNetwork']`) is still an offense this scan needs to see.
- */
-const stripComments = (src: string): string => {
-  let out = '';
-  for (let i = 0; i < src.length;) {
-    const two = src.slice(i, i + 2);
-    if (two === '//') {
-      const end = src.indexOf('\n', i);
-      const stop = end === -1 ? src.length : end;
-      out += ' '.repeat(stop - i);
-      i = stop;
-    } else if (two === '/*') {
-      const end = src.indexOf('*/', i + 2);
-      const stop = end === -1 ? src.length : end + 2;
-      out += src.slice(i, stop).replace(/[^\n]/g, ' ');
-      i = stop;
-    } else if (src[i] === '"' || src[i] === "'" || src[i] === '`') {
-      const quote = src[i];
-      let j = i + 1;
-      while (j < src.length && src[j] !== quote) j += src[j] === '\\' ? 2 : 1;
-      const stop = Math.min(j + 1, src.length);
-      out += src.slice(i, stop);
-      i = stop;
-    } else {
-      out += src[i];
-      i += 1;
-    }
-  }
-  return out;
-};
-
 /** Every real write-op export name the SDK has TODAY, read from its own service modules — not a
  *  hand-maintained list, so a renamed operation or a new service file is caught here for free
  *  instead of silently falling outside a list this test forgot to update. */
 const sdkWriteOpNames = (): ReadonlySet<string> => {
   const names = new Set<string>();
-  for (const file of readdirSync(SDK_SERVICES_DIR).filter((f) => f.endsWith('.ts'))) {
-    const src = stripComments(readFileSync(join(SDK_SERVICES_DIR, file), 'utf8'));
+  for (const file of walk(SDK_SERVICES_DIR)) {
+    const src = stripComments(readFileSync(file, 'utf8'));
     for (const m of src.matchAll(/export (?:const|function) ([A-Za-z_$][\w$]*)/g)) {
       if (WRITE_OP_NAME.test(m[1] ?? '')) names.add(m[1] as string);
     }
@@ -93,12 +53,6 @@ const sdkWriteOpNames = (): ReadonlySet<string> => {
 };
 
 const REAL_WRITE_OP_NAMES = sdkWriteOpNames();
-
-const walk = (dir: string): string[] =>
-  readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = join(dir, entry.name);
-    return entry.isDirectory() ? walk(full) : entry.name.endsWith('.ts') ? [full] : [];
-  });
 
 /** Recursive by construction (IMPORTANT-2): a future `src/unifi/<subdir>/*.ts` is walked too. */
 const sourceFiles = () => walk(DIR).filter((path) => path !== SELF);
