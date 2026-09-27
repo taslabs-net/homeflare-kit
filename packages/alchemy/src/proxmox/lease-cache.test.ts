@@ -14,13 +14,14 @@ import * as Cache from 'effect/Cache';
 import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
-import type { PveCredential } from './credentials.ts';
-import { type LeaseKey, makeLeases, timeToLive } from './lease-cache.ts';
+import { type PveCredential, mintTier } from './credentials.ts';
+import { type LeaseKey, makeLeases, targetForKey, timeToLive } from './lease-cache.ts';
 
 const C1: LeaseKey = {
   mount: 'proxmox-c1',
   role: 'read',
   scheme: 'pve',
+  tier: 'read',
 };
 /** ⚠️ Same role as C1, DIFFERENT mount — the collision the key has to survive. */
 const C2: LeaseKey = { ...C1, mount: 'proxmox-c2' };
@@ -76,6 +77,32 @@ describe('how long a lease is kept', () => {
 
   it('never keeps a failure', () => {
     assert.equal(keptSeconds(Exit.fail(new Error('vault sealed'))), 0);
+  });
+});
+
+describe('K-T1: targetForKey round-trips the resolved tier back through mintTier', () => {
+  it('a plain role reconstructs to itself, overridden or not', () => {
+    const key: LeaseKey = { mount: 'proxmox-tb4', role: 'read', scheme: 'pve', tier: 'read' };
+    assert.equal(mintTier(targetForKey(key), key.role), 'read');
+  });
+
+  it('an overridden tier reconstructs to the SAME tier, not the bare role', () => {
+    // ⛔ This is the exact reconstruction the cache-miss path depends on: `keyOf` resolved
+    //   `talos-provision` from the caller's real target once; `targetForKey` never sees that
+    //   target again, only this key, so it has to be able to rebuild the same answer from `tier`
+    //   alone.
+    const key: LeaseKey = {
+      mount: 'proxmox-tb4',
+      role: 'read',
+      scheme: 'pve',
+      tier: 'talos-provision',
+    };
+    assert.equal(mintTier(targetForKey(key), key.role), 'talos-provision');
+  });
+
+  it('a pbs key never carries an override through', () => {
+    const key: LeaseKey = { mount: 'pbs-c1', role: 'provision', scheme: 'pbs', tier: 'provision' };
+    assert.equal(mintTier(targetForKey(key), key.role), 'provision');
   });
 });
 
@@ -137,8 +164,8 @@ describe('lease cache under concurrency', () => {
 
   it('shares one lease across two members of the same cluster mount', async () => {
     const mint = countingMint((call) => cred(`hf-read@pve!${String(call)}`, 3600));
-    const NODE_B: LeaseKey = { mount: 'proxmox-c1', role: 'read', scheme: 'pve' };
-    const NODE_C: LeaseKey = { mount: 'proxmox-c1', role: 'read', scheme: 'pve' };
+    const NODE_B: LeaseKey = { mount: 'proxmox-c1', role: 'read', scheme: 'pve', tier: 'read' };
+    const NODE_C: LeaseKey = { mount: 'proxmox-c1', role: 'read', scheme: 'pve', tier: 'read' };
     await Effect.runPromise(
       Effect.gen(function* () {
         const leases = yield* makeLeases(mint.mintFor);
@@ -151,7 +178,7 @@ describe('lease cache under concurrency', () => {
 
   it('keeps read and provision apart', async () => {
     const mint = countingMint((call) => cred(`hf@pve!${String(call)}`, 3600));
-    const PROVISION: LeaseKey = { ...C1, role: 'provision' };
+    const PROVISION: LeaseKey = { ...C1, role: 'provision', tier: 'provision' };
     const [read, provision] = await Effect.runPromise(
       Effect.gen(function* () {
         const leases = yield* makeLeases(mint.mintFor);
@@ -159,5 +186,30 @@ describe('lease cache under concurrency', () => {
       }),
     );
     assert.notEqual(read.tokenId, provision.tokenId);
+  });
+
+  // ⛔ K-T1's own reason `tier` joined the key, not just `role`: without it, two consumers on the
+  //   SAME mount/role/scheme but DIFFERENT `PveTarget.roles` overrides would collide into one
+  //   cache entry and hand each other's credential to the wrong caller.
+  it('keeps two different tier overrides of the same mount/role/scheme apart', async () => {
+    const mint = countingMint((call) => cred(`hf@pve!${String(call)}`, 3600));
+    const DEFAULT_READ: LeaseKey = {
+      mount: 'proxmox-tb4',
+      role: 'read',
+      scheme: 'pve',
+      tier: 'read',
+    };
+    const OVERRIDDEN_READ: LeaseKey = { ...DEFAULT_READ, tier: 'talos-provision' };
+    const [plain, overridden] = await Effect.runPromise(
+      Effect.gen(function* () {
+        const leases = yield* makeLeases(mint.mintFor);
+        return [
+          yield* Cache.get(leases, DEFAULT_READ),
+          yield* Cache.get(leases, OVERRIDDEN_READ),
+        ] as const;
+      }),
+    );
+    assert.notEqual(plain.tokenId, overridden.tokenId);
+    assert.equal(mint.calls(), 2);
   });
 });

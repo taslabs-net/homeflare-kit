@@ -47,7 +47,7 @@ import * as Cache from 'effect/Cache';
 import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
-import { type ApiTarget, type PveCredential, type PveRole } from './credentials.ts';
+import { type ApiTarget, type PveCredential, type PveRole, mintTier } from './credentials.ts';
 import { mint } from './mint.ts';
 
 /**
@@ -73,17 +73,30 @@ const REMINT_MARGIN_SECONDS = 60;
  *   distinct OpenBao mounts with distinct policies; two estates never share a mount name.
  * ★ A PLAIN OBJECT IS A SAFE KEY BECAUSE EFFECT COMPARES KEYS STRUCTURALLY — two separately built
  *   literals with the same fields are one entry, which the probe above measured.
+ *
+ * ⛔ `tier` IS ALSO PART OF THE KEY (K-T1) — NOT JUST `role`. `targetForKey` below has to
+ *   RECONSTRUCT a target from the key alone (it does not keep the caller's original `ApiTarget`
+ *   around), and a `PveTarget.roles` override lives on THAT original target, not on `role` — so
+ *   without `tier` in the key, every `leased()` call for an overridden role would resolve its
+ *   override once at the first `keyOf`, then reuse whatever `targetForKey` happens to
+ *   reconstruct on a cache miss, and TWO DIFFERENT overrides sharing one `{mount, role, scheme}`
+ *   (e.g. one consumer's default `read` tier and another's `roles: {read: 'x'}` override, same
+ *   mount) would collide into ONE cache entry and hand each other's credential to the wrong
+ *   caller. Resolving the tier at `keyOf` — where the real target is still in hand — and keying
+ *   on it closes that: two different tiers are two different entries, always.
  */
 export type LeaseKey = {
   readonly mount: string;
   readonly role: PveRole;
   readonly scheme: ApiTarget['scheme'];
+  readonly tier: string;
 };
 
 const keyOf = (target: ApiTarget, role: PveRole): LeaseKey => ({
   mount: target.mount,
   role,
   scheme: target.scheme,
+  tier: mintTier(target, role),
 });
 
 /**
@@ -115,10 +128,20 @@ export const timeToLive = (exit: Exit.Exit<PveCredential, unknown>): Duration.Du
 export const makeLeases = <E, R>(mintFor: (key: LeaseKey) => Effect.Effect<PveCredential, E, R>) =>
   Cache.makeWith(mintFor, { capacity: 64, requireServicesAt: 'lookup', timeToLive });
 
-const targetForKey = (key: LeaseKey): ApiTarget =>
+/**
+ * ⛔ CARRIES `key.tier` BACK IN AS A `roles` OVERRIDE (K-T1), SO `mint`'S OWN `mintTier` CALL
+ *   REPRODUCES THE SAME TIER `keyOf` ALREADY RESOLVED. This target is synthetic — it is never the
+ *   caller's real `PveTarget` (`members`/`api` are throwaway placeholders `mint` never reads) —
+ *   but `{ [key.role]: key.tier }` makes `mintTier(targetForKey(key), key.role) === key.tier`
+ *   whether or not the original target had an override, which is what keeps this reconstruction
+ *   from silently dropping one.
+ * ⚠️ EXPORTED FOR THE TEST, which checks that round trip directly rather than only through the
+ *   cache's externally visible behaviour.
+ */
+export const targetForKey = (key: LeaseKey): ApiTarget =>
   key.scheme === 'pbs'
     ? { api: 'https://pbs.invalid/api2/json', mount: key.mount, scheme: 'pbs' }
-    : { members: [], mount: key.mount, scheme: 'pve' };
+    : { members: [], mount: key.mount, roles: { [key.role]: key.tier }, scheme: 'pve' };
 
 const leases = Effect.runSync(makeLeases((key) => mint(targetForKey(key), key.role)));
 

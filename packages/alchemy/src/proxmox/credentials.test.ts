@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import * as Effect from 'effect/Effect';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import type { BaoEnvironment, PveTarget } from './credentials.ts';
+import { type BaoEnvironment, type PbsTarget, type PveTarget, mintTier } from './credentials.ts';
 import { mint } from './mint.ts';
 
 /**
@@ -164,5 +164,59 @@ describe('mint', () => {
       socket,
     );
     rmSync(socket, { force: true });
+  });
+
+  // ⛔ K-T1: the whole point of `target.roles` is that a real HTTP request goes to the
+  //   OVERRIDDEN tier's path, not the bare role's — checked end to end here, not only through
+  //   `mintTier`'s own unit tests below.
+  it('requests the overridden tier, not the bare role, when target.roles names one', async () => {
+    const scoped: PveTarget = { ...C1, roles: { read: 'talos-provision' } };
+    await withFake(CREDENTIAL, async (address, seen) => {
+      await Effect.runPromise(
+        mint(scoped, 'read', { BAO_ADDR: address, BAO_TOKEN: TOKEN }).pipe(
+          Effect.provide(FetchHttpClient.layer),
+        ),
+      );
+      assert.equal(seen[0]?.path, '/v1/proxmox-c1/creds/talos-provision');
+    });
+  });
+
+  // ⛔ A role `target.roles` does not mention falls back to itself — an override on `read` alone
+  //   must never touch `provision` on the same target.
+  it('leaves an unmentioned role alone on a partially overridden target', async () => {
+    const scoped: PveTarget = { ...C1, roles: { read: 'talos-provision' } };
+    await withFake(CREDENTIAL, async (address, seen) => {
+      await Effect.runPromise(
+        mint(scoped, 'provision', { BAO_ADDR: address, BAO_TOKEN: TOKEN }).pipe(
+          Effect.provide(FetchHttpClient.layer),
+        ),
+      );
+      assert.equal(seen[0]?.path, '/v1/proxmox-c1/creds/provision');
+    });
+  });
+});
+
+describe('mintTier', () => {
+  it('is the bare role when the target carries no override', () => {
+    assert.equal(mintTier(C1, 'read'), 'read');
+    assert.equal(mintTier(C1, 'provision'), 'provision');
+  });
+
+  it('reads a PveTarget.roles override when one names the role', () => {
+    const scoped: PveTarget = { ...C1, roles: { provision: 'talos-provision' } };
+    assert.equal(mintTier(scoped, 'provision'), 'talos-provision');
+    assert.equal(mintTier(scoped, 'read'), 'read', 'unmentioned role: unchanged');
+  });
+
+  // ⛔ PbsTarget carries no `roles` field at all (credentials.ts's own ⛔) — this pins that a PBS
+  //   target can never override, structurally, not just "nobody has set one yet".
+  it('never overrides a PbsTarget: the field does not exist on that type', () => {
+    const pbs: PbsTarget = {
+      api: 'https://pbs.example:8007/api2/json',
+      mount: 'pbs-c1',
+      scheme: 'pbs',
+    };
+    assert.equal(mintTier(pbs, 'read'), 'read');
+    assert.equal(mintTier(pbs, 'provision'), 'provision');
   });
 });

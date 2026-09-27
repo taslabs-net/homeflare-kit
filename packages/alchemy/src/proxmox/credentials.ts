@@ -86,9 +86,33 @@ export type PveTarget = {
    *   and a wrong guess fails closed with a 401 rather than doing something odd.
    */
   readonly scheme: 'pve';
+  /**
+   * Overrides which OpenBao mint TIER NAME (`<mount>/creds/<tier>`) a semantic role resolves to.
+   * Omitted or missing a role: unchanged, `role` is also the tier name, as every consumer before
+   * this field got. Present: `mintTier` below reads it first.
+   *
+   * ★ WHY A TARGET-LEVEL OVERRIDE, NOT A THIRD `PveRole`. A consumer whose OpenBao mount vends a
+   *   single least-privilege tier for BOTH read and write (one tier that can only ever reach the
+   *   scope that consumer needs, rather than the estate's general `read`/`provision` split) sets
+   *   `roles: { read: 'my-tier', provision: 'my-tier' }` and every read/diff/reconcile/delete this
+   *   package already issues resolves to that tier, with no new call site anywhere in the package.
+   *   Widening `PveRole` itself to a per-consumer string would instead touch every literal
+   *   `'read'`/`'provision'` call site (`mintFor.ts` — this package's own doc comment lists eight)
+   *   for something only the TARGET, never the CALL, needs to know.
+   */
+  readonly roles?: {
+    readonly read?: string;
+    readonly provision?: string;
+  };
 };
 
-/** The same client against a Proxmox Backup Server. See the ⛔ on `scheme` above. */
+/**
+ * The same client against a Proxmox Backup Server. See the ⛔ on `scheme` above.
+ * ⛔ NO `roles` FIELD. The estate has no PBS consumer with a scoped tier yet, and a PBS mount
+ *   vending only `read`/`provision` is the same shape `mint.ts` always assumed — `mintTier` below
+ *   never overrides a PBS target for exactly that reason. Add the field here, the same way, when
+ *   a PBS consumer needs it.
+ */
 export type PbsTarget = {
   readonly mount: string;
   readonly api: string;
@@ -97,6 +121,17 @@ export type PbsTarget = {
 
 /** Either product. What `pve()` and `pveOperations` accept; what a RESOURCE accepts is narrower. */
 export type ApiTarget = PbsTarget | PveTarget;
+
+/**
+ * The OpenBao mint tier a role resolves to for `target` — `target.roles`'s override (PVE only)
+ * or `role` itself, unchanged. THE single place `<mount>/creds/<tier>` gets its tier segment from
+ * a `PveRole`: `mint.ts`'s path and `lease-cache.ts`'s cache key both call this rather than either
+ * reading `role` or `target.roles` directly, so there is exactly one definition of "the tier" for
+ * both to agree on — `lease-cache.ts`'s own header says why the cache needed this too, not just
+ * the mint call.
+ */
+export const mintTier = (target: ApiTarget, role: PveRole): string =>
+  target.scheme === 'pve' ? (target.roles?.[role] ?? role) : role;
 
 /**
  * What a mint returns.

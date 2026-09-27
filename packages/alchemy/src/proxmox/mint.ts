@@ -14,6 +14,7 @@ import * as Headers from 'effect/unstable/http/Headers';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
 import { PveCredentialDenied } from './credential-errors.ts';
+import { mintTier } from './credentials.ts';
 import type { ApiTarget, BaoEnvironment, PveCredential, PveRole } from './credentials.ts';
 
 /** openbao v2.6.2 api/env.go:22-34 — a present BAO_* wins, even empty; else its VAULT_* twin. */
@@ -46,7 +47,11 @@ const baoVariable = (env: BaoEnvironment, name: string) =>
  */
 export const mint = (target: ApiTarget, role: PveRole, env: BaoEnvironment = process.env) =>
   Effect.gen(function* () {
-    const path = `${target.mount}/creds/${role}`;
+    // ⛔ THE ONE PLACE A `PveRole` BECOMES A TIER NAME. `mintTier` (credentials.ts) reads
+    //   `target.roles` when the target overrides it; every other line in this function uses
+    //   `tier`, never `role`, for anything that reaches OpenBao or an error message.
+    const tier = mintTier(target, role);
+    const path = `${target.mount}/creds/${tier}`;
     // ⛔ METHOD, PATH AND OpenBao's `errors` ONLY — never a header (the token), never a success
     //   body (the credential is IN it, so echoing it would print the secret into a log).
     const refuse = (status: number, detail: string) =>
@@ -125,7 +130,9 @@ export const mint = (target: ApiTarget, role: PveRole, env: BaoEnvironment = pro
        *   so it is the one signal trusted here.
        */
       if (status === 403 && isOpenBaoBody) {
-        return yield* Effect.fail(new PveCredentialDenied({ detail, mount: target.mount, role }));
+        return yield* Effect.fail(
+          new PveCredentialDenied({ detail, mount: target.mount, role, tier }),
+        );
       }
       return yield* Effect.fail(refuse(status, detail || '(no errors given)'));
     }
@@ -135,7 +142,7 @@ export const mint = (target: ApiTarget, role: PveRole, env: BaoEnvironment = pro
       // ⛔ REFUSE RATHER THAN RETURN A HALF CREDENTIAL, and again WITHOUT quoting the body.
       return yield* Effect.fail(
         new Error(
-          `${target.mount}/creds/${role} returned no token_id/secret. Either this approle lacks ` +
+          `${target.mount}/creds/${tier} returned no token_id/secret. Either this approle lacks ` +
             `the grant, or the mount is not ${target.mount}. Say which mount and role you needed ` +
             `than falling back to a stored credential -- every stored PVE token is read-only.`,
         ),
