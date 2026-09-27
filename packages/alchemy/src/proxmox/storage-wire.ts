@@ -7,6 +7,8 @@
 import * as storage from '@distilled.cloud/proxmox/storage';
 import * as Effect from 'effect/Effect';
 import { runPve } from './distilled-pve.ts';
+import { sharedAccepted } from './storage-plugin-options.ts';
+import type { MutableFields } from './storage-form.ts';
 import type { StorageProps } from './storage.ts';
 import { UNREADABLE, type Unreadable, readOrUnreadable } from './unreadable-read.ts';
 import { bool } from './values.ts';
@@ -110,14 +112,40 @@ export const dropUnreadable = (live: StorageAttributes | Unreadable | undefined)
   live === UNREADABLE ? undefined : live;
 
 /**
+ * The declared fields (of the 7 `mutable()` — storage-form.ts — ever writes) whose value
+ * genuinely differs from what PVE just reported. `matches` below and storage-form.ts's
+ * `updateForm` share this one comparison, so the plan's noop/update verdict and the partial PUT
+ * body it sends can never disagree about what "changed" means for a list, a boolean or `shared`.
+ *
+ * ⛔ `shared` IS SKIPPED ENTIRELY FOR A TYPE THAT DOESN'T ACCEPT IT (storage-plugin-options.ts's
+ *   `sharedAccepted`, vendor-cited there) — the same treatment `type` already gets below
+ *   (create-only, never compared) and for the identical reason: PVE will never apply a `shared`
+ *   PUT for cephfs/rbd/zfspool/… (it 500s, `unexpected property 'shared'` — the bug this family
+ *   shipped with, measured 2026-09-27), so comparing it against a live value that can never move
+ *   to match could only ever report `update` forever. Without this skip, `mutable()`'s own gate
+ *   (storage-form.ts) would still keep `shared` out of the wire body, but `matches` would keep
+ *   reporting drift for a field nothing can ever apply — a plan that never reaches noop.
+ */
+export const changedProps = (
+  live: StorageAttributes,
+  props: StorageProps,
+): Partial<MutableFields> => ({
+  ...(sameList(props.content, live.content) ? {} : { content: props.content }),
+  ...(sameList(props.nodes, live.nodes) ? {} : { nodes: props.nodes }),
+  ...(sameList(props['prune-backups'], live['prune-backups'])
+    ? {}
+    : { 'prune-backups': props['prune-backups'] }),
+  ...(same(props.disable, live.disable) ? {} : { disable: props.disable }),
+  ...(sharedAccepted(props.type) && !same(props.shared, live.shared)
+    ? { shared: props.shared }
+    : {}),
+  ...(same(props.preallocation, live.preallocation) ? {} : { preallocation: props.preallocation }),
+  ...(same(props.comment, live.comment) ? {} : { comment: props.comment }),
+});
+
+/**
  * ⚠️ `type` IS NEVER COMPARED — CREATE-ONLY (`storage.ts`'s own `StorageProps.type` doc), so a
  *   changed declaration plans `noop` on it, same as before the migration.
  */
 export const matches = (attributes: StorageAttributes, props: StorageProps) =>
-  sameList(props.content, attributes.content) &&
-  sameList(props.nodes, attributes.nodes) &&
-  sameList(props['prune-backups'], attributes['prune-backups']) &&
-  same(props.disable, attributes.disable) &&
-  same(props.shared, attributes.shared) &&
-  same(props.preallocation, attributes.preallocation) &&
-  same(props.comment, attributes.comment);
+  Object.keys(changedProps(attributes, props)).length === 0;

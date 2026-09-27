@@ -112,7 +112,12 @@ export interface StorageProps extends WithTarget {
   nodes?: string;
   /** Keeps the definition but stops PVE using it. */
   disable?: boolean;
-  /** Tells PVE the same volumes are visible from every node — a claim, not a mechanism. */
+  /**
+   * Tells PVE the same volumes are visible from every node — a claim, not a mechanism.
+   * ⚠️ ONLY SENT/COMPARED WHEN THE TYPE'S OWN PLUGIN ACCEPTS IT (storage-plugin-options.ts,
+   *   vendor-cited: `dir`/`lvm` today) — cephfs/rbd/nfs/cifs/pbs/zfspool/lvmthin have it fixed or
+   *   implicit, so a declared value there is silently never sent rather than crashing the PUT.
+   */
   shared?: boolean;
   /** `off` | `metadata` | `falloc` | `full`. File-based plugins only. */
   preallocation?: string;
@@ -166,7 +171,9 @@ export const ProxmoxStorageProvider = () =>
         diff: Effect.fn(function* ({ news, output }) {
           if (!isResolved(news)) return undefined;
           yield* guardWrite(STORAGE_CREATE, createForm(news), output === undefined);
-          yield* guardWrite(STORAGE_UPDATE, updateForm(news), false);
+          // ⚠️ `live: undefined`: no read yet, so this only sanity-checks the FULL declared set
+          //   (storage-form.ts's `updateForm` doc) — `reconcile` builds the actual partial body.
+          yield* guardWrite(STORAGE_UPDATE, updateForm(news, undefined), false);
           if (output === undefined) return undefined;
           // ⚠️ `readStorageOrFail`, NOT `readStorage` — see that function's own ⛔ in
           //   storage-wire.ts. A genuine TRANSIENT failure here propagates and fails the whole
@@ -192,7 +199,12 @@ export const ProxmoxStorageProvider = () =>
           //   handles — group.ts's/user.ts's reconcile have the same note.
           const before = dropUnreadable(yield* readStorage(news));
           yield* guardWrite(STORAGE_CREATE, createForm(news), before === undefined);
-          yield* guardWrite(STORAGE_UPDATE, updateForm(news), false);
+          // ★ COMPUTED ONCE, THEN REUSED FOR BOTH THE GUARD AND THE WRITE — storage-form.ts's own
+          //   ⚠️ on `toDistilledUpdate`: `update` is the partial body (only fields that differ
+          //   from `before`, and never `shared` for a type that doesn't accept it), so the
+          //   constraint check below inspects exactly what the PUT, if any, will carry.
+          const update = updateForm(news, before);
+          yield* guardWrite(STORAGE_UPDATE, update, false);
           if (before === undefined) {
             yield* runPve(
               news.target,
@@ -205,7 +217,7 @@ export const ProxmoxStorageProvider = () =>
               news.target,
               'provision',
               true,
-              storage.putStorage(toDistilledUpdate(news)),
+              storage.putStorage(toDistilledUpdate(update)),
             );
           }
           const after = dropUnreadable(yield* readStorage(news));
