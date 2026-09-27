@@ -78,6 +78,7 @@ import * as Effect from 'effect/Effect';
 import { asForm } from './distilled-guard.ts';
 import { guardForm } from './constraint-guard.ts';
 import type { PveRequirements, WithTarget } from './resource-spec.ts';
+import { mintTier } from './credentials.ts';
 import { UNREADABLE, unreadableWarning } from './unreadable-read.ts';
 import { dropUnreadable, readPool, readPoolOrFail } from './zfs-pool-wire.ts';
 import type { ZfsPoolAttributes } from './zfs-pool-wire.ts';
@@ -202,7 +203,12 @@ export const ProxmoxZfsPoolProvider = () =>
           //   update, the cries-wolf class of bug.
           const live = yield* readPoolOrFail(news);
           if (live === UNREADABLE) {
-            yield* unreadableWarning('Proxmox.ZfsPool', `${news.node}/${news.name}`);
+            yield* unreadableWarning(
+              'Proxmox.ZfsPool',
+              `${news.node}/${news.name}`,
+              news.target.mount,
+              mintTier(news.target, 'read'),
+            );
             return { action: 'noop' } as const;
           }
           // ⛔ FOUND WRITING THIS FILE, 2026-09-24 — an earlier edit that removed the dead

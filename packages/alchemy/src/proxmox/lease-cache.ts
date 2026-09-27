@@ -66,28 +66,34 @@ const REMINT_MARGIN_SECONDS = 60;
 /**
  * What a credential is cached under.
  *
- * ⛔ KEYED ON THE OPENBAO MOUNT AND ROLE, NOT ON A MEMBER HOSTNAME. A PVE API token is
- *   cluster-wide — `user.cfg` is replicated — so node-b, node-c and node-d share one credential. Keying on
- *   `api` would mint three identical tokens when failover rotates members.
+ * ⛔ KEYED ON THE OPENBAO MOUNT AND TIER, NOT ON A MEMBER HOSTNAME OR ON `role` (M3, red team on
+ *   K-T1). A PVE API token is cluster-wide — `user.cfg` is replicated — so node-b, node-c and
+ *   node-d share one credential. Keying on `api` would mint three identical tokens when failover
+ *   rotates members. `role` USED to be part of this key too, but the minted credential depends
+ *   only on `(mount, scheme, tier)` — `role` only ever fed `mintTier` to re-derive the tier the
+ *   key already carries — so `roles: { read: 'x', provision: 'x' }` (one tier for both roles, the
+ *   shape `docs/credentials.md` itself recommends) used to open TWO cache entries and mint TWO
+ *   byte-for-byte interchangeable tokens for what is provably one credential. Dropping `role`
+ *   collapses that back to one entry without changing the default case, where `tier === role`
+ *   already.
  * ★ THE MOUNT CANNOT COLLIDE ACROSS CLUSTERS: `proxmox-c1`, `proxmox-c2` and `pbs-c1` are
  *   distinct OpenBao mounts with distinct policies; two estates never share a mount name.
  * ★ A PLAIN OBJECT IS A SAFE KEY BECAUSE EFFECT COMPARES KEYS STRUCTURALLY — two separately built
  *   literals with the same fields are one entry, which the probe above measured.
  *
- * ⛔ `tier` IS ALSO PART OF THE KEY (K-T1) — NOT JUST `role`. `targetForKey` below has to
- *   RECONSTRUCT a target from the key alone (it does not keep the caller's original `ApiTarget`
- *   around), and a `PveTarget.roles` override lives on THAT original target, not on `role` — so
- *   without `tier` in the key, every `leased()` call for an overridden role would resolve its
- *   override once at the first `keyOf`, then reuse whatever `targetForKey` happens to
- *   reconstruct on a cache miss, and TWO DIFFERENT overrides sharing one `{mount, role, scheme}`
- *   (e.g. one consumer's default `read` tier and another's `roles: {read: 'x'}` override, same
- *   mount) would collide into ONE cache entry and hand each other's credential to the wrong
- *   caller. Resolving the tier at `keyOf` — where the real target is still in hand — and keying
- *   on it closes that: two different tiers are two different entries, always.
+ * ⛔ `tier` IS THE KEY, NOT `role` (K-T1). `targetForKey` below has to RECONSTRUCT a target from
+ *   the key alone (it does not keep the caller's original `ApiTarget` around), and a
+ *   `PveTarget.roles` override lives on THAT original target, not on `role` — so without `tier`
+ *   in the key, every `leased()` call for an overridden role would resolve its override once at
+ *   the first `keyOf`, then reuse whatever `targetForKey` happens to reconstruct on a cache miss,
+ *   and TWO DIFFERENT overrides sharing one `{mount, scheme}` (e.g. one consumer's default `read`
+ *   tier and another's `roles: {read: 'x'}` override, same mount) would collide into ONE cache
+ *   entry and hand each other's credential to the wrong caller. Resolving the tier at `keyOf` —
+ *   where the real target is still in hand — and keying on it closes that: two different tiers
+ *   are two different entries, always.
  */
 export type LeaseKey = {
   readonly mount: string;
-  readonly role: PveRole;
   readonly scheme: ApiTarget['scheme'];
   readonly tier: string;
 };
@@ -101,7 +107,6 @@ export type LeaseKey = {
  */
 export const keyOf = (target: ApiTarget, role: PveRole): LeaseKey => ({
   mount: target.mount,
-  role,
   scheme: target.scheme,
   tier: mintTier(target, role),
 });
@@ -139,18 +144,29 @@ export const makeLeases = <E, R>(mintFor: (key: LeaseKey) => Effect.Effect<PveCr
  * ⛔ CARRIES `key.tier` BACK IN AS A `roles` OVERRIDE (K-T1), SO `mint`'S OWN `mintTier` CALL
  *   REPRODUCES THE SAME TIER `keyOf` ALREADY RESOLVED. This target is synthetic — it is never the
  *   caller's real `PveTarget` (`members`/`api` are throwaway placeholders `mint` never reads) —
- *   but `{ [key.role]: key.tier }` makes `mintTier(targetForKey(key), key.role) === key.tier`
- *   whether or not the original target had an override, which is what keeps this reconstruction
- *   from silently dropping one.
+ *   and, since M3 dropped `role` from `LeaseKey`, it no longer even knows which semantic role
+ *   produced `key.tier`. It doesn't need to: `roles: { read: key.tier }` plus always minting with
+ *   the fixed role `'read'` (below) makes `mintTier(targetForKey(key), 'read') === key.tier`
+ *   unconditionally, because `mintTier` only ever consults the ONE role it's called with. Which
+ *   role the ORIGINAL caller asked for is irrelevant here — `keyOf` already folded that into
+ *   `key.tier` before this function ever sees the key.
+ * ⚠️ THE PBS BRANCH MINTS WITH `key.tier` ITSELF AS THE ROLE, NOT `'read'`. A `PbsTarget` has no
+ *   `roles` override (see `credentials.ts`'s ⛔ on `PbsTarget`), so `mintTier` for `scheme:'pbs'`
+ *   always returns its `role` argument unchanged — meaning `key.tier` for a PBS key IS the literal
+ *   role name (`'read'`/`'provision'`) `keyOf` recorded. Passing anything else here would ask
+ *   OpenBao for the wrong tier.
  * ⚠️ EXPORTED FOR THE TEST, which checks that round trip directly rather than only through the
  *   cache's externally visible behaviour.
  */
 export const targetForKey = (key: LeaseKey): ApiTarget =>
   key.scheme === 'pbs'
     ? { api: 'https://pbs.invalid/api2/json', mount: key.mount, scheme: 'pbs' }
-    : { members: [], mount: key.mount, roles: { [key.role]: key.tier }, scheme: 'pve' };
+    : { members: [], mount: key.mount, roles: { read: key.tier }, scheme: 'pve' };
 
-const leases = Effect.runSync(makeLeases((key) => mint(targetForKey(key), key.role)));
+const mintForKey = (key: LeaseKey) =>
+  mint(targetForKey(key), key.scheme === 'pbs' ? (key.tier as PveRole) : 'read');
+
+const leases = Effect.runSync(makeLeases(mintForKey));
 
 /**
  * A credential for `role` on `target`: a still-valid lease when one is kept, one shared mint when

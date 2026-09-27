@@ -50,6 +50,7 @@ import * as Effect from 'effect/Effect';
 import { attributesOf, bind, guardWrite, identity, matches, tuple } from './acl-wire.ts';
 import type { PveRequirements, WithTarget } from './resource-spec.ts';
 import { runPve } from './distilled-pve.ts';
+import { mintTier } from './credentials.ts';
 import {
   UNREADABLE,
   type Unreadable,
@@ -148,7 +149,12 @@ export const ProxmoxAclProvider = () =>
           // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and
           //   force `update` on a grant that was plainly there — see unreadable-read.ts.
           if (live === UNREADABLE) {
-            yield* unreadableWarning('Proxmox.Acl', identity(news));
+            yield* unreadableWarning(
+              'Proxmox.Acl',
+              identity(news),
+              news.target.mount,
+              mintTier(news.target, 'provision'),
+            );
             return { action: 'noop' } as const;
           }
           return live !== undefined && matches(live, news)

@@ -64,6 +64,7 @@ import {
 } from './role-wire.ts';
 import type { PveRequirements, WithTarget } from './resource-spec.ts';
 import { runPve } from './distilled-pve.ts';
+import { mintTier } from './credentials.ts';
 import {
   UNREADABLE,
   type Unreadable,
@@ -151,7 +152,12 @@ export const ProxmoxRoleProvider = () =>
           // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and force
           //   `update` on a role that was plainly there — see unreadable-read.ts.
           if (live === UNREADABLE) {
-            yield* unreadableWarning('Proxmox.Role', news.roleid);
+            yield* unreadableWarning(
+              'Proxmox.Role',
+              news.roleid,
+              news.target.mount,
+              mintTier(news.target, 'read'),
+            );
             return { action: 'noop' } as const;
           }
           if (live === undefined) {

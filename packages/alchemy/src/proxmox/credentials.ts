@@ -138,9 +138,29 @@ export type ApiTarget = PbsTarget | PveTarget;
  * reading `role` or `target.roles` directly, so there is exactly one definition of "the tier" for
  * both to agree on — `lease-cache.ts`'s own header says why the cache needed this too, not just
  * the mint call.
+ *
+ * ⛔ AN EMPTY OR `/`-BEARING OVERRIDE THROWS RATHER THAN BUILDING A PATH (M5, red team on K-T1).
+ *   `role` itself is a compile-time literal and never needs this check; only `target.roles`, a
+ *   plain string a caller can set to anything, does. Left unchecked, `roles: { read: '' }` would
+ *   silently mint `<mount>/creds/` — a 404 `mint.ts`'s own `refuse` reports as a mint failure, but
+ *   every `pveOperations` family folds a mint failure into "absent" (`unreadable-read.ts`'s ⛔),
+ *   so the plan would say CREATE for an object that is plainly there instead of naming the bad
+ *   config. A `/` in the value would instead interpolate a second path segment into the OpenBao
+ *   URL. `role` is source-controlled and this fires at the first `mintTier` call, before any
+ *   network request, so the fix cannot itself widen what an operator's config can reach.
  */
-export const mintTier = (target: ApiTarget, role: PveRole): string =>
-  target.scheme === 'pve' ? (target.roles?.[role] ?? role) : role;
+export const mintTier = (target: ApiTarget, role: PveRole): string => {
+  if (target.scheme !== 'pve') return role;
+  const tier = target.roles?.[role];
+  if (tier === undefined || tier === '') return role;
+  if (tier.includes('/')) {
+    throw new Error(
+      `PveTarget.roles.${role} = ${JSON.stringify(tier)} is not a valid OpenBao tier name -- ` +
+        'it would be interpolated straight into "<mount>/creds/<tier>" and must not contain "/".',
+    );
+  }
+  return tier;
+};
 
 /**
  * What a mint returns.
