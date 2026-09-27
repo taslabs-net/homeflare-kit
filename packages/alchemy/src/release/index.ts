@@ -37,6 +37,7 @@ export { VICTORIA_RELEASES } from './victoria.ts';
 export type {
   ExecResult,
   FileStat,
+  HostPlatform,
   HostRunner,
   HostUser,
   WriteOptions,

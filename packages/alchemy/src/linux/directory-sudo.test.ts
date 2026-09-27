@@ -10,9 +10,10 @@
  *   and is what refused the live deploy with `SudoRefusedError`.
  * ⛔ NEITHER TEST BELOW READS `process.platform`. `fakeLinuxHost()` (via `fakeSudoHost()`)
  *   declares `platform: 'linux'` itself — sshRunner's own probe requires it — so this suite
- *   catches the regression on every machine that runs `bun test`, not only a Linux one: this
- *   repo's own CI is the mini (darwin), which is exactly the "darwin process, Linux target"
- *   split the live incident measured.
+ *   catches the regression on every machine that runs `bun test`, regardless of that machine's
+ *   own OS. (This repo's own `check` job runs on `ubuntu-latest`, not the mini, so CI alone never
+ *   reproduces the "darwin process, Linux target" split the live incident measured; this suite's
+ *   fixed, declared target is what actually proves the fix, on any OS.)
  */
 import { describe, expect, test } from 'bun:test';
 import { reconcileDirectory } from './directory-lifecycle.ts';

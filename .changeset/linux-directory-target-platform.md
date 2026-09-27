@@ -1,5 +1,5 @@
 ---
-'@homeflare/alchemy': patch
+'@homeflare/alchemy': minor
 ---
 
 Host.Directory's chmod/chown no longer decide whether to pass `--` by the OS of the machine running Alchemy. They now read the target's own platform from `HostRunner.platform` — a new field every `HostRunner` declares (`localRunner()`, `sshRunner()`, `sshSudoRunner()`, and any consumer's own runner).

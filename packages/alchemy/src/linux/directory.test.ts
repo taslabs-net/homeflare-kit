@@ -108,10 +108,11 @@ describe('drift', () => {
 describe('argv', () => {
   // ⛔ REGRESSION, 2026-09-27: this used to read `process.platform !== 'darwin'` to decide what
   //   the fake (a LINUX host) should have produced — so it only ever proved the real behaviour
-  //   when `bun test` itself happened to run on a Mac, and passed just as happily on a Linux CI
-  //   box while asserting the wrong thing. `runner.platform` is declared by the fixture instead,
-  //   so these two tests hold regardless of what OS actually runs the suite — the exact "darwin
-  //   process, Linux target" split the homeflare-ct100 incident measured.
+  //   when `bun test` itself happened to run on Linux (matching the fake's target by
+  //   coincidence), and passed just as happily on a Mac while asserting the bug itself (no `--`
+  //   for a Linux target). `runner.platform` is declared by the fixture instead, so these two
+  //   tests hold regardless of what OS actually runs the suite — the exact "darwin process,
+  //   Linux target" split the homeflare-ct100 incident measured.
   test('mkdir keeps --, and chmod/chown carry -- for a Linux target', async () => {
     const fake = host();
     expect(fake.runner.platform).toBe('linux'); // ★ fakeLinuxHost's own declaration.

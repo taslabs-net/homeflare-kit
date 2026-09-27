@@ -102,7 +102,16 @@ export const localRunner = (options: LocalRunnerOptions = {}): HostRunner => {
   //   process's own machine, so `process.platform` and `HostRunner.platform` name the same host.
   //   Everywhere else (chmodChownEnd, host-lookup's callers over ssh) reads `runner.platform`
   //   instead — see the incident on `HostRunner.platform`'s own doc comment.
-  const hostPlatform: HostPlatform = platform === 'darwin' ? 'darwin' : 'linux';
+  // ⛔ DECLARED, NEVER GUESSED, past these two: silently folding freebsd/win32/etc. into 'linux'
+  //   would hand a BSD host GNU's `--`, which macOS's own (BSD-flavoured) chmod/chown already
+  //   reject — the same shape of bug this PR fixes. sshRunner's own `uname -s` probe refuses a
+  //   non-Linux target the same way; localRunner refuses here instead of guessing.
+  if (platform !== 'darwin' && platform !== 'linux') {
+    throw new Error(
+      `localRunner(): unsupported process.platform ${JSON.stringify(platform)} — HostRunner only targets darwin and linux.`,
+    );
+  }
+  const hostPlatform: HostPlatform = platform;
   return {
     effectiveUid: () => process.geteuid?.() ?? -1,
     exec: (argv) => run(argv, timeoutMs),
