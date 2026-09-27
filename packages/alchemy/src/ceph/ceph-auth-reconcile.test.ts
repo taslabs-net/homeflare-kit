@@ -1,6 +1,8 @@
 /**
  * The observe -> ensure -> sync loop against fakeCephDial + fakeBao — no ssh, no real vault.
- * Mon-transport doc acceptance tests #2 (the reconcile loop itself) and #3 (secret handling).
+ * Mon-transport doc acceptance tests #2 (the reconcile loop itself) and #3 (secret handling). The
+ * failure-path half of #3 — a malformed `auth get` reply that still carries a key — is
+ * ceph-auth-reconcile-secrecy.test.ts, split out to keep this file under the house line cap.
  */
 import { describe, expect, test } from 'bun:test';
 import { sha256 } from '../openbao/digest.ts';
@@ -38,6 +40,7 @@ const argvOf = (seen: readonly { readonly argv: readonly string[] }[]) =>
 
 describe('create of absent', () => {
   test('a preflight write, get-or-create, the real write, one quorum check, key never in the attributes', async () => {
+    const lines: string[] = [];
     const fake = fakeCephDial({
       [MON]: [
         { kind: 'result', result: ABSENT },
@@ -48,7 +51,10 @@ describe('create of absent', () => {
     await withFake(okReply, async (bao) => {
       const attrs = await run(
         { BAO_ADDR: bao.address },
-        reconcileCephAuthEntity(PROPS, undefined, { dial: fake.dial, log: () => {} }),
+        reconcileCephAuthEntity(PROPS, undefined, {
+          dial: fake.dial,
+          log: (line) => lines.push(line),
+        }),
       );
       expect(attrs).toEqual(PRIOR);
       expect(JSON.stringify(attrs)).not.toContain(KEY);
@@ -69,6 +75,9 @@ describe('create of absent', () => {
         ['quorum_status', '-f'],
       ]);
       for (const call of fake.seen) expect(JSON.stringify(call.argv)).not.toContain(KEY);
+      // Decision 65 (LAND finding 5): the create path's own `auth get` observe also reads the
+      // keyring's unfiltered stdout — this proves the runner's log line never carries it either.
+      expect(lines.join('\n')).not.toContain(KEY);
     });
   });
 
@@ -90,21 +99,28 @@ describe('create of absent', () => {
 
 describe('a second reconcile, caps unchanged', () => {
   test('zero bao writes, zero quorum checks — the observe alone decides', async () => {
+    // Decision 65 (LAND finding 5): this `auth get` reads the keyring's unfiltered stdout too —
+    // prove the key never survives into attrs or the per-call log line, same as the create path.
+    const lines: string[] = [];
     const fake = fakeCephDial({ [MON]: [fakeCephOk(keyring())] });
     await withFake(okReply, async (bao) => {
       const attrs = await run(
         { BAO_ADDR: bao.address },
-        reconcileCephAuthEntity(PROPS, PRIOR, { dial: fake.dial, log: () => {} }),
+        reconcileCephAuthEntity(PROPS, PRIOR, { dial: fake.dial, log: (line) => lines.push(line) }),
       );
       expect(attrs).toEqual(PRIOR);
+      expect(JSON.stringify(attrs)).not.toContain(KEY);
       expect(writesOf(bao.seen)).toHaveLength(0);
       expect(fake.seen).toHaveLength(1);
+      expect(lines.join('\n')).not.toContain(KEY);
     });
   });
 });
 
 describe('caps drift', () => {
   test('runs exactly auth caps, never get-or-create; the fingerprint is reused, not reminted', async () => {
+    // Same decision-65 guarantee: the drifted `auth get` reply carries the key in its stdout too.
+    const lines: string[] = [];
     const drifted: CephAuthEntityAttributes = { ...PRIOR, caps: OTHER_CAPS };
     const fake = fakeCephDial({
       [MON]: [fakeCephOk(keyring(OTHER_CAPS)), fakeCephOk(HEALTHY_QUORUM)],
@@ -112,16 +128,21 @@ describe('caps drift', () => {
     await withFake(okReply, async (bao) => {
       const attrs = await run(
         { BAO_ADDR: bao.address },
-        reconcileCephAuthEntity(PROPS, drifted, { dial: fake.dial, log: () => {} }),
+        reconcileCephAuthEntity(PROPS, drifted, {
+          dial: fake.dial,
+          log: (line) => lines.push(line),
+        }),
       );
       expect(attrs.caps).toEqual(CAPS);
       expect(attrs.fingerprint).toBe(PRIOR.fingerprint);
+      expect(JSON.stringify(attrs)).not.toContain(KEY);
       expect(writesOf(bao.seen)).toHaveLength(0);
       expect(argvOf(fake.seen)).toEqual([
         ['auth', 'get'],
         ['auth', 'caps'],
         ['quorum_status', '-f'],
       ]);
+      expect(lines.join('\n')).not.toContain(KEY);
     });
   });
 });

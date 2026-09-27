@@ -51,6 +51,45 @@ describe('parseAuthGet', () => {
     const bad = JSON.stringify([{ entity: ENTITY, key: 'x' }]);
     expect(() => parseAuthGet({ exitCode: 0, stderr: '', stdout: bad }, ENTITY)).toThrow();
   });
+
+  // Decision 65 (LAND finding 5): `auth get` is read unfiltered on every reconcile, so every
+  // failure path below feeds it a sentinel key and proves the thrown error never echoes it.
+  const SENTINEL = 'sentinel-ceph-key-must-never-leak';
+
+  test('a malformed present entry never lets the key it carried leak into the thrown error', () => {
+    const bad = JSON.stringify([{ entity: ENTITY, key: SENTINEL }]); // no caps field
+    let caught: unknown;
+    try {
+      parseAuthGet({ exitCode: 0, stderr: '', stdout: bad }, ENTITY);
+    } catch (cause) {
+      caught = cause;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(String(caught)).not.toContain(SENTINEL);
+  });
+
+  test('a nonzero exit never echoes stdout, even if stdout somehow carried the key', () => {
+    const stdout = JSON.stringify([{ caps: CAPS, entity: ENTITY, key: SENTINEL }]);
+    let caught: unknown;
+    try {
+      parseAuthGet({ exitCode: 13, stderr: 'Error EPERM: refused', stdout }, ENTITY);
+    } catch (cause) {
+      caught = cause;
+    }
+    expect(String(caught)).toContain('EPERM');
+    expect(String(caught)).not.toContain(SENTINEL);
+  });
+
+  test('unparseable stdout carrying what looks like a key never echoes it in the parse error', () => {
+    let caught: unknown;
+    try {
+      parseAuthGet({ exitCode: 0, stderr: '', stdout: `not json ${SENTINEL}` }, ENTITY);
+    } catch (cause) {
+      caught = cause;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(String(caught)).not.toContain(SENTINEL);
+  });
 });
 
 describe('parseAuthGetOrCreate', () => {

@@ -9,9 +9,13 @@
  *   plainly: "Existing auth entities are recorded as observed inventory only — never adopted:
  *   adopting one would mean reading and fingerprinting its key, and a key is only ever handled for
  *   an entity this stack owns."
- * ⛔ THE KEY IS READ EXACTLY ONCE, ON THE CREATE PATH, AND WRITTEN STRAIGHT TO OPENBAO. It is never
- *   assigned to a variable this function returns, logs, or puts in the attributes it hands back —
- *   `attributesOf` takes a fingerprint, never a key.
+ * ⛔ THE OBSERVE STEP READS `auth get`'S UNFILTERED STDOUT ON EVERY RECONCILE (decision 65,
+ *   2026-09-26, amending the design after LAND finding 5 — no node-side filter narrows it first).
+ *   The key that stdout carries is dropped in the same breath: `parseAuthGet` has no `key` field in
+ *   its return type at all, so there is no variable here ever holding it past that call. Only `auth
+ *   get-or-create`, run once on the create branch, yields a `key` value, and it goes straight to
+ *   OpenBao — never assigned to a variable this function returns, logs, or puts in the attributes
+ *   it hands back — `attributesOf` takes a fingerprint, never a key.
  * ★ CAPS DRIFT NEVER RE-MINTS THE KEY. `auth caps` changes only what an entity may do; the returned
  *   attributes reuse `output.fingerprint` unchanged.
  * ⛔ A MOVED IDENTITY IS REFUSED HERE TOO, BELT AND SUSPENDERS WITH `planCephAuthEntity`'s

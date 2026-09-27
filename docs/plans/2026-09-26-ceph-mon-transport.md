@@ -123,10 +123,12 @@ not an alternative, it is a dependency.
   with the declared caps → capture the key **in memory only** → write it to
   OpenBao via stdin (⛔ never argv, never a temp file) → attributes: entity,
   caps, `sha256(key)` fingerprint, bao path.
-- ⛔ The stdout of an unfiltered `auth get*` holds the key: only the create
-  path may read it, error paths report stderr only
-  (the `talos/credentials.ts:83` rule), and the runner's per-call log line
-  prints argv, never output.
+- ⛔ The stdout of an unfiltered `auth get*` holds the key. **Decision 65**
+  (LAND finding 5, 2026-09-26) amended this: the observe step reads it
+  unfiltered on every reconcile, not only create, no node-side filter — but
+  the key is dropped in memory before anything is logged, returned, stored or
+  put in an error; error paths report stderr only (`talos/credentials.ts:83`);
+  the runner's per-call log line prints argv, never output.
 - Rows are creates through the first-create gate, no `adopt()`. The consuming
   side — the ceph-csi secret inside k8s reading the key from the vault — is
   its own design when the k8s consumer path exists; one line here on purpose.
@@ -134,9 +136,11 @@ not an alternative, it is a dependency.
 ## Risks
 
 - Key exposure is the whole game: one stray log line ships a cluster
-  credential into a transcript. The family gets a structural test over its own
-  source (no output-logging) plus fake-runner tests asserting the key never
-  reaches state, logs or argv.
+  credential into a transcript — including from `auth get`'s unfiltered
+  stdout, read on every reconcile since decision 65, not only on create. The
+  family gets a structural test over its own source (no output-logging) plus
+  fake-runner tests asserting the key never reaches state, logs or errors on
+  the create, no-op, caps-drift or failure path.
 - Ceph CLI output drifts across releases: every parsed literal is recorded
   with the measured Ceph version and date; parse `-f json` everywhere.
 - A down anchor node must read as a transport error, never as "absent →

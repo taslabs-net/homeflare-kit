@@ -5,10 +5,11 @@
  * below is REASONED from public Ceph documentation, not measured, and an unexpected shape is
  * always an error, never a guess.
  *
- * ⛔ `parseAuthGet`'S RETURN TYPE HAS NO `key` FIELD. This is the structural half of "only the
- *   create path may read the key" (mon-transport doc, `Ceph.AuthEntity`): the observe step calls
- *   this, and the key that `auth get`'s own JSON carries is discarded inside `parseKeyringEntry`
- *   and never reaches any caller of this function — not a convention, a type.
+ * ⛔ `parseAuthGet`'S RETURN TYPE HAS NO `key` FIELD. Decision 65 (2026-09-26, LAND finding 5)
+ *   amended the design to let the observe step read `auth get`'s unfiltered stdout on every
+ *   reconcile, not only on create — but the key it carries is dropped in the same breath:
+ *   `parseKeyringEntry` reads it into a local binding and `parseAuthGet` never puts it in the
+ *   object it returns. Not a convention, a type: there is no field here to forget to strip.
  * ⛔ `parseQuorumStatus` FAILS CLOSED. A JSON parse error, a missing `quorum` array or an empty one
  *   all answer `{ healthy: false }`; nothing here ever calls an unparseable answer healthy.
  */
