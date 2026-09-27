@@ -2,6 +2,196 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.40.0
+
+### Minor Changes
+
+- [#306](https://github.com/taslabs-net/homeflare-kit/pull/306) [`d11352c`](https://github.com/taslabs-net/homeflare-kit/commit/d11352c29cb39ea9f1abba5464662b26ee9c4e1b) Thanks [@taslabs-net](https://github.com/taslabs-net)! - New `@homeflare/alchemy/ceph`: `Ceph.AuthEntity` (K-A4), plus the ssh mon-command transport it
+  runs on — built for the Talos-on-PVE ceph-csi entity, per the accepted design
+  (`docs/plans/2026-09-26-ceph-mon-transport.md`).
+
+  The PVE API has no `ceph auth` endpoint at all (measured against the pinned schema); this family
+  closes that gap over ssh + `sudo -n /usr/bin/ceph`, tried against the declared mon nodes in order,
+  behind a client-side argv allowlist of exact shapes — `auth get`, `auth get-or-create`, `auth
+caps`, and `config get`/`set`/`rm` against a named option list that starts empty. `auth ls` and
+  `auth del` are refused outright: `ls` prints every key on the cluster, and a wrong delete cuts
+  every VM disk on it (D3, lockout safety — never auto-delete). The entity operand is bounded to the
+  `client.k8s-` prefix, so nothing this allowlist accepts can touch `client.admin`, a mon/osd/mgr
+  keyring, or the PVE storage client.
+
+  The minted key is captured in memory only, never Alchemy props, state, argv, or a log line.
+  `auth get-or-create` mints it once, on the create path, and writes it straight to OpenBao
+  (`<mount>/ceph/<entity>`). `auth get`'s stdout, which also carries the key, is read unfiltered on
+  every reconcile to compare caps — the key is parsed out and dropped before anything is logged,
+  returned or stored, so it never survives past that one read. Caps drift runs `auth caps` alone and
+  never re-mints the key. After every write the transport re-checks
+  `quorum_status` on a fresh connection and fails the row on a degraded answer, rather than
+  continuing past it. `read` and `diff` never ssh — this family's plan is props-against-state only,
+  and reconcile is where the only live check happens. Rows are creates through the first-create
+  gate: a live entity found with no prior state is refused, not adopted, even under `--adopt`.
+
+  Tested entirely offline against a fake dial — no ssh, no spawned process, ever, in this package's
+  own test suite. `Ceph.AuthEntity` itself is not yet consumed by a stack; that lands with the
+  Talos-on-PVE work this design gates.
+
+- [#311](https://github.com/taslabs-net/homeflare-kit/pull/311) [`0047c69`](https://github.com/taslabs-net/homeflare-kit/commit/0047c693f0a7259f52492ca1e545adb9c3ae5bad) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Closes the three `Talos.*` follow-ups PR 307 named but did not fix
+  (docs/plans/2026-09-26-talos-stack-first-boot.md), and exports their Resource constructors now
+  that the fixes land:
+
+  `Talos.Bootstrap` — "once means once". The shipped `isBootstrapped` turned every read failure into
+  `false` (`Effect.orElseSucceed`), so `reconcile` could re-run `talosctl bootstrap` against an
+  already-bootstrapped cluster after a merely transient read failure — Talos's only server-side guard
+  is a non-empty etcd data directory, so this forms a second, isolated single-member cluster (split
+  brain) rather than rejoining the existing one. Fixed: `read` now answers presence/absence correctly
+  (`undefined` only from a successful read that finds no members; a failing read propagates instead of
+  being read as absence); `diff` trusts `output.bootstrapped` once it is `true` and never touches the
+  live cluster; `reconcile` checks `output?.bootstrapped` first and, once true, never spawns `talosctl
+bootstrap` again — a failing or empty confirmation read both raise the new `TalosReBootstrapRefused`
+  instead. Re-bootstrap is now a human decision, never an automatic one.
+
+  `Talos.ClusterHealth` — no more swallowed transport errors. The shipped `read` caught EVERY error
+  from its health check, including a `mintTalosconfig`/`bao` failure, into a plain `healthy: false` —
+  a vault outage read exactly like "cluster not healthy yet". `read` and `reconcile` now only catch
+  `TalosError` (a completed `talosctl health` run that itself exited non-zero); anything else
+  propagates. The type's own doc comments also now say explicitly that a consuming stack's `after`
+  must reach past `Talos.Bootstrap`/`Talos.Kubeconfig` through the Cilium CNI install — the default
+  health checks (kube-proxy, CoreDNS) wait on a CNI that does not exist yet at bootstrap.
+
+  `Talos.Kubeconfig` — lands in OpenBao instead of an un-vaulted host `runtimePath` that was never
+  cleaned up. CREATE now runs `talosctl kubeconfig` into a throwaway unguessable temp path, reads it
+  back, and writes its bytes into the vault via stdin (`credentials-write.ts`'s new `writeKvValue` —
+  never argv), then deletes the temp file. Written ONCE at bring-up, not re-minted every deploy (a
+  fresh admin cert every reconcile would rotate credentials for no reason): once `output` is defined,
+  reconcile only reads the vault copy back to confirm it. The `runtimePath` prop is gone, replaced by
+  an optional `kubeconfigKey` (default `'kubeconfig'`); the persisted `connection` no longer carries a
+  host path — a consumer materializes its own temp file via the new `mintKubeconfig` (the same pattern
+  `mintTalosconfig` already established for the talosconfig itself). Wiring `Kubernetes.ClusterAdapter`
+  to call it is separate, later work.
+
+  `TalosBootstrap`, `TalosClusterHealth` and `TalosKubeconfig` (plus their `*Attributes`/`*Props` types)
+  now export from the package barrel alongside their `*Provider` factories, so a consuming stack can
+  actually declare these rows — PR 307's red team held them back specifically for the defects above.
+
+  Docs: `docs/plans/2026-09-26-talos-secrets-flow.md` records Tim's D1/D2/D3 answers (decision 61 —
+  mini's vault + copy-list entry, agent plan lane denied, O-A all-in-vault-digest-pinned confirmed) and
+  `docs/plans/2026-09-26-ceph-mon-transport.md` records decision 65's `auth get` amendment (read
+  directly, in-process, on every reconcile — no node-side shell filter for that call — key dropped
+  before anything is logged/returned/stored).
+
+  **LAND red team fixes, applied before merge (same PR, never shipped broken):**
+
+  - `Talos.Kubeconfig` could never actually be created — `read` returned a defined, empty-fingerprint
+    object instead of `undefined` on a genuine cold start, so the engine always adopted it and forced
+    `update`, and `reconcile`'s write-once gate then tried to confirm a key that had never been
+    written. Fixed: `read` now distinguishes a measured OpenBao "key never written" response from
+    every other failure; `reconcile`'s write-once branch also gates on a non-empty
+    `credentialGeneration`, not just a defined `output`.
+  - `credentials-write.ts`'s `writeKvValue` used `field=@-`, which is not the stdin convention (`@`
+    means "read a file at this literal path") — measured against OpenBao v2.6.2, it fails outright, or
+    silently reads a stray file literally named `-`. Fixed to `field=-`.
+  - `Talos.ClusterHealth` could never pass with more than one control-plane node — `--nodes` took the
+    full node list, and `talosctl health` refuses more than one. Fixed: one contact node for
+    `--nodes`/`--endpoints`; the full lists still reach `--control-plane-nodes`/`--worker-nodes`.
+  - The persisted `connection`'s `auth.path` was left `undefined`, which would let a consumer's stock
+    `Kubernetes.KubeConfigAdapter` silently fall back to `$KUBECONFIG`/`~/.kube/config` instead of
+    failing — exactly the exposure this feature removes elsewhere. Fixed to a sentinel path that can
+    never resolve, so an early consumer fails loudly instead of reaching a stranger's cluster.
+  - `Talos.Bootstrap` gained an optional `peers` prop: before a CREATE bootstraps a node, every listed
+    peer must show a successful, empty etcd-members read, closing a split-brain path where a lost
+    state row plus a reset node would otherwise re-bootstrap a second cluster.
+
+- [#307](https://github.com/taslabs-net/homeflare-kit/pull/307) [`cf17df3`](https://github.com/taslabs-net/homeflare-kit/commit/cf17df313c12357de18fc937ede093708dd15963) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Talos machine config, talosconfig and any future KV-backed Talos material now come from OpenBao
+  instead of repo disk — the accepted secrets-flow design
+  (docs/plans/2026-09-26-talos-secrets-flow.md and -talos-stack-first-boot.md).
+
+  Fixed the C1 temp-file-lifetime defect: `mintTalosconfig` used to wrap its own body in
+  `Effect.scoped`, so its delete finalizer ran — deleting the file — the instant `mintTalosconfig`
+  returned, before any caller ever passed the path to `talosctl`. It is now built on
+  `Effect.acquireRelease` and contributes `Scope.Scope` to its own return type, so the file survives
+  until the CALLER's own `Effect.scoped` closes; every Talos resource file (`kubeconfig.ts`,
+  `talos-bootstrap.ts`, `talos-cluster-health.ts`, `talos-machine-config.ts`) now wraps its
+  `read`/`reconcile` bodies accordingly. Also fixed `talosconfigKey`'s default, which read
+  `<mount>/data/data/talosconfig` (now `<mount>/talosconfig`) — `bao kv get` inserts the KV-v2
+  `data/` segment itself.
+
+  `Talos.MachineConfig`'s props changed: `configFile` (a repo-relative path) and `insecure` are gone.
+  Props now carry `configKey` (an OpenBao KV path under `target.mount`, e.g. `nodes/10001`) and a
+  required `configDigest` — sha256 of the canonical config text, pinned in git by the operator after
+  seeding the KV value. The digest is verified against the live KV content before ANY talosctl spawn;
+  a mismatch fails closed with a typed `TalosConfigDigestMismatch`, applying nothing. `insecure` is no
+  longer a prop: the CREATE path (`output === undefined`) applies `--insecure` and UPDATE never does,
+  since a fixed value broke in both directions. No code path ever builds `--dry-run` (it prints the
+  cluster CA key and bootstrap token on an otherwise-empty node).
+
+  The live convergence check now hashes only the `spec` payload extracted from
+  `talosctl get machineconfig v1alpha1 -o yaml`'s wrapper (`values.ts`'s new `extractMachineConfigSpec`)
+  instead of the whole wrapper, which carries a version/timestamp that changes on every observation and
+  could never match the pinned digest. The resource id is never omitted: an unfiltered `get
+machineconfig` also lists a `persistent` resource sorted ahead of `v1alpha1`, so a bare `doc[0]` (the
+  shipped shape) silently read the wrong one — `extractMachineConfigSpec` now also refuses more than one
+  document rather than guessing. `MachineConfigAttributes.converged` is `'read-back' | 'accepted' |
+false` instead of a boolean: `reconcile` proves convergence with a bounded, short-interval poll
+  (`machine-config-poll.ts`) — `'read-back'` for `no-reboot` (the API never drops), `'accepted'` for
+  `reboot`/`auto` (tolerates the API dropping for a reboot) — and raises a typed
+  `TalosConvergenceTimeout` rather than a silent pass if the cap expires. `ApplyMode` drops `'staged'`
+  and `'try'`: `try` reverts itself after its own timeout, so a poll "confirming" it would be watching a
+  change already undone, and `staged` defers to a reboot this package never drives — both need design
+  work this change does not do, not a policy guess.
+
+  `read` now answers three ways instead of two (`machine-config-read.ts`), because Alchemy calls it with
+  no prior state both as its cold-start adoption probe and to recover an interrupted create: an
+  authenticated read that fails but an inserted `--insecure` maintenance-mode probe succeeds means "not
+  created yet" (`undefined`); an authenticated read that succeeds and matches the pin is ours (plain
+  attributes); one that succeeds and differs is `Unowned` — exists, not proven ours — so the engine
+  fails closed behind `--adopt` instead of silently running `apply-config` onto a mistyped or foreign
+  node; both reads failing propagates the authenticated error, never a disguised "not created". A
+  transport failure was always meant to propagate rather than read as `converged: false` — this was the
+  gap that broke it for the cold-start case specifically.
+
+  `TalosMachineConfig` and its `*Provider` now export from the package barrel, so a consuming stack can
+  declare `Talos.MachineConfig` rows — it fails closed on a digest mismatch and never adopts silently.
+  `Talos.Bootstrap`, `Talos.ClusterHealth` and `Talos.Kubeconfig` stay provider-only: exporting their
+  Resource constructors would let a stack declare them, and that is not safe yet — Bootstrap can plan a
+  second `talosctl bootstrap` after a failing plan-time read (etcd split-brain risk), and Kubeconfig
+  still writes a cluster-admin kubeconfig to un-vaulted host disk. `TalosTarget`/`TalosCredential`/
+  `ApplyMode` export unconditionally since they carry no such risk.
+
+  Not in this change, flagged rather than fixed: `Talos.Kubeconfig`'s host-disk kubeconfig (above);
+  `Talos.Bootstrap`'s re-bootstrap risk and `Talos.ClusterHealth`'s CNI-ordering swallow-on-failure
+  (docs/plans/2026-09-26-talos-stack-first-boot.md's "Bootstrap" and "CNI ordering" sections); no kit
+  command yet prints only a KV value's digest, so an operator computes `sha256(canonicalText(content))`
+  by hand to pin it.
+
+- [#303](https://github.com/taslabs-net/homeflare-kit/pull/303) [`ca3f3bb`](https://github.com/taslabs-net/homeflare-kit/commit/ca3f3bbfe6659f1e265f2924dd33de8c124ac62c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Added three more read-only `Unifi.*` families, mirroring `Unifi.Network`/`Unifi.FirewallZone`'s existing shape: `Unifi.DnsPolicy`, `Unifi.AclRule`, and `Unifi.AclRuleOrdering` (one ordered, order-preserving resource per site — never `sortedSet` — for the site's ACL rule priority list, kept separate from `Unifi.AclRule` itself). Each is gated on a per-tag OpenAPI closure diff (10.4.57 vs a 10.6.97 mirror, diffing aid only) confirming its tag decodes the same on both versions; full breakdown in `docs/unifi-dns-policy.md` and `docs/unifi-acl-rule.md`. No write path exists for either family — `reconcile`/`delete` refuse via the existing typed `UnifiWriteRefused`, and the existing `GetOnlyHttpClient` wire guard and static write-op-reference test cover them without any change to either mechanism.
+
+- [#309](https://github.com/taslabs-net/homeflare-kit/pull/309) [`1b24ce7`](https://github.com/taslabs-net/homeflare-kit/commit/1b24ce7d92dc0c3a92ad83f1cf43a44c70e2b59c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Added three more read-only `Unifi.*` families: `Unifi.FirewallPolicy`, `Unifi.FirewallPolicyOrdering`, and `Unifi.TrafficMatchingList`. `Unifi.FirewallPolicyOrdering` is keyed per `(sourceFirewallZoneId, destinationFirewallZoneId)` zone pair — one resource per pair, not site-wide like `Unifi.AclRuleOrdering` — comparing its `before`/`afterSystemDefined` policy-id lists independently and order-preservingly (T5; never `sortedSet`, since a policy moving between the two halves is real drift on both fields, not one reorder). `Unifi.FirewallPolicy` compares its post-A3-typed `action`/`source`/`destination`/`ipProtocolScope`/`schedule` fields wholesale, normalizing only the one genuinely top-level set-shaped array (`connectionStateFilter`); its own decode-proof test walks B0b's `pageAll` against this family's page shape (T9's 424-live-policy scale) even though `fetchLive` itself reads by id, same as `Unifi.AclRule`. `Unifi.TrafficMatchingList` is the simplest object shape in the directory (no `metadata` at all) and keeps its post-A3-typed `items` union compared wholesale, same known-gap posture ACL rule's own nested filters already carry (a membership-preserving reorder of object-shaped match entries has no cheap canonical sort key).
+
+  Each family is gated on its own per-tag OpenAPI closure diff (10.4.57 vs the same `beezly/unifi-apis` 10.6.97 mirror every other family doc cites, diffing aid only): `Firewall`'s 13 operations (106-schema closure) and `Traffic Matching Lists`' 5 operations (19-schema closure) are both byte-identical between versions and share zero schemas with the 14 that changed elsewhere in the document — corroborated independently by the A3 changeset's own broader 25-operation/139-schema re-check. Full breakdown in `docs/unifi-firewall-policy.md` and `docs/unifi-traffic-matching-list.md`; `docs/unifi.md`'s own family index and its now-outdated "FirewallPolicy is a bigger, separate PR" note are updated to point at them.
+
+  No write path exists for any of the three — `reconcile`/`delete` refuse via the existing typed `UnifiWriteRefused`, and the existing `GetOnlyHttpClient` wire guard and static write-op-reference test cover them without any change to either mechanism.
+
+- [#308](https://github.com/taslabs-net/homeflare-kit/pull/308) [`9e2ccd9`](https://github.com/taslabs-net/homeflare-kit/commit/9e2ccd9a88c1d57fecb7d94c9a4929d1f9017d2c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Added a fifth read-only `Unifi.*` family, `Unifi.WifiBroadcast` (one WiFi network/SSID broadcast on a site). Unlike every other family here, its declarable shape is built entirely from the LIST endpoint's overview response (`getWifiBroadcastPage`) — the single-object details call (`getWifiBroadcastDetails`) is never called, because that shape carries the WPA/PPSK passphrase (T23; the spec has no `writeOnly` flag on it), and a static guard now bans any source reference to that call under `src/unifi`. `WifiBroadcastProps`/`WifiBroadcastAttributes` type `securityConfiguration` as the overview's own `{type, presharedKeyNetworkIds}` shape, so no passphrase field is DECLARED for them to carry; because the SDK's wire decode does not strip a key a schema doesn't declare, every nested object this family touches (`network`, `hotspotConfiguration`, `broadcastingDeviceFilter`, and each `presharedKeyNetworkIds` element) is rebuilt field-by-field at runtime too, not just typed narrowly — `wifi-broadcast-secrets.test.ts` proves a stray passphrase-shaped key on the wire never survives into attributes, the declaration renderer, or a forced decode-failure error, for all five of those locations. With no get-by-id call for the overview shape, `fetchLive` is also the first resource-level consumer of the existing `pageAll` pager, whose own error messages now render a non-numeric wire value as a fixed placeholder rather than interpolating it directly. No write path exists — `reconcile`/`delete` refuse via the existing typed `UnifiWriteRefused`, and the existing `GetOnlyHttpClient` wire guard and static write-op-reference test cover it without any change to either mechanism.
+
+### Patch Changes
+
+- [#310](https://github.com/taslabs-net/homeflare-kit/pull/310) [`77edfec`](https://github.com/taslabs-net/homeflare-kit/commit/77edfec37d0f48c98c0d9d8e047b690db6388ee5) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fixed `Proxmox.Vm`'s disk-drift check (`qemu-volume.ts`'s `judgeDisk`): it never recognized
+  `<storage>:0,import-from=<volid>` (PVE's create-time spelling for importing a disk from another
+  volume or a downloaded image) as a new-disk spelling, so it compared the declared literal volname
+  `"0"` against PVE's live read-back of the real `vm-<vmid>-disk-<n>` it allocated on import and
+  refused the update -- on the very deploy that created the disk (post-write verification reads the
+  config right back) and on every plan after, since the declared value stays `import-from=...` for
+  as long as the caller keeps declaring it that way.
+
+  Found by homeflare-proxmox PR 84's red team against a real fake-PVE engine; tracked there as the
+  `kit-disk-import-bug` blocker on `declareTalos`. `<storage>:0,import-from=<volid>` is now treated
+  the same as the existing `<storage>:GiB` and `<storage>:cloudinit` new-disk spellings: it always
+  matches whatever volume is already live in that slot, and no resize is ever attempted for it.
+
+  Also fixes a LAND-stage red-team finding on this same change: options declared alongside
+  `import-from` (e.g. `<storage>:0,import-from=<volid>,iothread=1`) are now recognized and enforced
+  regardless of where they sit relative to `import-from`, instead of being silently dropped (declared
+  after it) or stranding the disk with a forever-refused volname mismatch (declared before it).
+
 ## 0.39.0
 
 ### Minor Changes
