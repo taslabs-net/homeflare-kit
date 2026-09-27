@@ -86,9 +86,42 @@ export type PveTarget = {
    *   and a wrong guess fails closed with a 401 rather than doing something odd.
    */
   readonly scheme: 'pve';
+  /**
+   * Overrides which OpenBao mint TIER NAME (`<mount>/creds/<tier>`) a semantic role resolves to.
+   * Omitted or missing a role: unchanged, `role` is also the tier name, as every consumer before
+   * this field got. Present: `mintTier` below reads it first.
+   *
+   * ★ WHY A TARGET-LEVEL OVERRIDE, NOT A THIRD `PveRole`. A consumer whose OpenBao mount vends a
+   *   single least-privilege tier for BOTH read and write (one tier that can only ever reach the
+   *   scope that consumer needs, rather than the estate's general `read`/`provision` split) sets
+   *   `roles: { read: 'my-tier', provision: 'my-tier' }` and every read/diff/reconcile/delete this
+   *   package already issues resolves to that tier, with no new call site anywhere in the package.
+   *   Widening `PveRole` itself to a per-consumer string would instead touch every literal
+   *   `'read'`/`'provision'` call site across the package (`client.ts`, `lxc-read.ts`,
+   *   `lxc-task.ts`, `network-apply-read.ts`, `network-apply-run.ts`, `qemu-read.ts`,
+   *   `qemu-task.ts`, `storage-download-task.ts` — the eight this field's `mintTier` indirection
+   *   above already covers) for something only the TARGET, never the CALL, needs to know.
+   *
+   * ⛔ SET BOTH ROLES OR NEITHER (I2, red team on K-T1). An unmentioned role is NOT scoped down —
+   *   it still mints the estate-wide tier this file's own header describes (`hf-provision@pve`,
+   *   27 privileges including `Permissions.Modify`/`Sys.Modify` for `provision`). Setting only
+   *   `roles: { read: 'my-tier' }` leaves every reconcile/delete on this target minting that wide
+   *   credential while the plan output looks fully scoped down — nothing here warns. See
+   *   `docs/credentials.md`'s override paragraph for the same warning at the consumer-facing level.
+   */
+  readonly roles?: {
+    readonly read?: string;
+    readonly provision?: string;
+  };
 };
 
-/** The same client against a Proxmox Backup Server. See the ⛔ on `scheme` above. */
+/**
+ * The same client against a Proxmox Backup Server. See the ⛔ on `scheme` above.
+ * ⛔ NO `roles` FIELD. The estate has no PBS consumer with a scoped tier yet, and a PBS mount
+ *   vending only `read`/`provision` is the same shape `mint.ts` always assumed — `mintTier` below
+ *   never overrides a PBS target for exactly that reason. Add the field here, the same way, when
+ *   a PBS consumer needs it.
+ */
 export type PbsTarget = {
   readonly mount: string;
   readonly api: string;
@@ -97,6 +130,44 @@ export type PbsTarget = {
 
 /** Either product. What `pve()` and `pveOperations` accept; what a RESOURCE accepts is narrower. */
 export type ApiTarget = PbsTarget | PveTarget;
+
+/**
+ * The OpenBao mint tier a role resolves to for `target` — `target.roles`'s override (PVE only)
+ * or `role` itself, unchanged. THE single place `<mount>/creds/<tier>` gets its tier segment from
+ * a `PveRole`: `mint.ts`'s path and `lease-cache.ts`'s cache key both call this rather than either
+ * reading `role` or `target.roles` directly, so there is exactly one definition of "the tier" for
+ * both to agree on — `lease-cache.ts`'s own header says why the cache needed this too, not just
+ * the mint call.
+ *
+ * ⛔ AN OVERRIDE THAT IS NOT A PLAIN TIER NAME THROWS RATHER THAN BUILDING A PATH (M5, red team on
+ *   K-T1; widened after a second red-team pass found the first fix incomplete). `role` itself is
+ *   a compile-time literal and never needs this check; only `target.roles`, a plain string a
+ *   caller can set to anything, does. This is an ALLOWLIST, not a denylist of `/` alone — the
+ *   value is concatenated straight into `${mount}/creds/${tier}` and then into a URL (`mint.ts`),
+ *   so `''`, `'..'`, `'?x'` and `'#x'` are each their own way to land on a DIFFERENT OpenBao path
+ *   (a dropped segment, a parent path, a querystring, a fragment) without containing `/` at all.
+ *   Every one of those produces a 404 `mint.ts`'s own `refuse` reports as a mint failure, and
+ *   every `pveOperations` family folds a mint failure into "absent" (`unreadable-read.ts`'s ⛔),
+ *   so the plan would say CREATE for an object that is plainly there instead of naming the bad
+ *   config — the exact hazard the first version of this check believed it had closed. `role` is
+ *   source-controlled and this fires at the first `mintTier` call, before any network request, so
+ *   the fix cannot itself widen what an operator's config can reach.
+ */
+const VALID_TIER = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+export const mintTier = (target: ApiTarget, role: PveRole): string => {
+  if (target.scheme !== 'pve') return role;
+  const tier = target.roles?.[role];
+  if (tier === undefined) return role;
+  if (!VALID_TIER.test(tier)) {
+    throw new Error(
+      `PveTarget.roles.${role} = ${JSON.stringify(tier)} is not a valid OpenBao tier name -- ` +
+        'it would be interpolated straight into "<mount>/creds/<tier>" and must be a plain name ' +
+        '(letters, digits, ".", "_", "-", not starting with one of those and not "..").',
+    );
+  }
+  return tier;
+};
 
 /**
  * What a mint returns.

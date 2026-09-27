@@ -12,7 +12,20 @@ a denied grant rather than a missing file, and `Bearer ` + nothing 401s in a way
 like a bad credential.
 
 The Proxmox subpath mints every call's token from an OpenBao mount instead; see
-[proxmox.md](./proxmox.md).
+[proxmox.md](./proxmox.md). Every call still asks for one of two semantic roles, `read` or
+`provision` (`PveRole`, `credentials.ts`) — a `PveTarget` can optionally override which OpenBao
+mint TIER NAME each one actually resolves to (`roles: { read?, provision? }`, K-T1, 2026-09-27):
+one consumer with its own least-privilege tier for both roles on the SAME mount sets
+`roles: { read: 'my-tier', provision: 'my-tier' }` and every call this package already makes
+mints that tier instead, with no new call site anywhere in the package. `credentials.ts`'s
+`mintTier` is the one place that resolution happens; `mint.ts` and `lease-cache.ts` both call it
+rather than reading `role`/`target.roles` directly — see `mintTier`'s own header for why the
+lease cache specifically needed it too, not just the mint call.
+
+⛔ **Override both roles or neither.** An unmentioned role is not scoped down — it still mints
+the estate-wide `read`/`provision` tier. Setting only `roles: { read: 'my-tier' }` leaves every
+reconcile/delete on that target minting the full-privilege `provision` credential while the plan
+output looks entirely scoped down.
 
 The Forgejo subpath (2026-09-23, moved onto `@distilled.cloud/forgejo`) resolves credentials
 through the package's own `CredentialsFromEnv` layer, which reads `FORGEJO_URL` / `FORGEJO_TOKEN`

@@ -60,6 +60,7 @@ import * as Effect from 'effect/Effect';
 import { guardWrite } from './distilled-guard.ts';
 import type { PveRequirements, WithTarget } from './resource-spec.ts';
 import { runPve } from './distilled-pve.ts';
+import { mintTier } from './credentials.ts';
 import { UNREADABLE, unreadableWarning } from './unreadable-read.ts';
 import {
   USER_CREATE,
@@ -162,7 +163,12 @@ export const ProxmoxUserProvider = () =>
           // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and force
           //   `update` on an account that was plainly there — see unreadable-read.ts.
           if (live === UNREADABLE) {
-            yield* unreadableWarning('Proxmox.User', news.userid);
+            yield* unreadableWarning(
+              'Proxmox.User',
+              news.userid,
+              news.target.mount,
+              mintTier(news.target, 'read'),
+            );
             return { action: 'noop' } as const;
           }
           if (live === undefined) {

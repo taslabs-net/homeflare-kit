@@ -85,6 +85,7 @@ import {
 } from './group-wire.ts';
 import type { PveRequirements, WithTarget } from './resource-spec.ts';
 import { runPve } from './distilled-pve.ts';
+import { mintTier } from './credentials.ts';
 import { UNREADABLE, unreadableWarning } from './unreadable-read.ts';
 
 export interface GroupProps extends WithTarget {
@@ -162,7 +163,12 @@ export const ProxmoxGroupProvider = () =>
           // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and force
           //   `update` on a group that was plainly there — see unreadable-read.ts.
           if (live === UNREADABLE) {
-            yield* unreadableWarning('Proxmox.Group', news.groupid);
+            yield* unreadableWarning(
+              'Proxmox.Group',
+              news.groupid,
+              news.target.mount,
+              mintTier(news.target, 'read'),
+            );
             return { action: 'noop' } as const;
           }
           if (live === undefined) {

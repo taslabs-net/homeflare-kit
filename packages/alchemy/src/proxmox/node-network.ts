@@ -94,6 +94,7 @@ import {
 } from './node-network-wire.ts';
 import type { NodeNetworkAttributes } from './node-network-wire.ts';
 import { runPve } from './distilled-pve.ts';
+import { mintTier } from './credentials.ts';
 import { type PveRequirements } from './resource-spec.ts';
 import { UNREADABLE, unreadableWarning } from './unreadable-read.ts';
 
@@ -173,7 +174,12 @@ export const ProxmoxNodeNetworkProvider = () =>
           // ⛔ THE CRIES-WOLF FIX: a refused mint used to fall into `undefined` and force `update`
           //   on an interface that was plainly there — see unreadable-read.ts.
           if (live === UNREADABLE) {
-            yield* unreadableWarning('Proxmox.NodeNetwork', `${news.node}/${news.iface}`);
+            yield* unreadableWarning(
+              'Proxmox.NodeNetwork',
+              `${news.node}/${news.iface}`,
+              news.target.mount,
+              mintTier(news.target, 'read'),
+            );
             return { action: 'noop' } as const;
           }
           if (live === undefined) {

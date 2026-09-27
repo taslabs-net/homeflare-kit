@@ -51,10 +51,22 @@ export const readOrUnreadable = <A, E, R>(
  * in `bun run plan`'s own output (Effect's default logger), even though the Diff type has
  * nowhere to carry the distinction through to the printed action. See the header for why a log
  * line, not a failed diff or a fourth Diff action, is what "the plan reports" means here.
+ *
+ * ⛔ M6 (Opus red team, K-T1): NAMES `mount` AND `tier`, NOT JUST THE RESOURCE. Before this, the
+ *   line read "no grant for this credential's role" with nothing to act on — an operator debugging
+ *   a scoped-down `PveTarget.roles` override (the whole point of K-T1) had to go re-derive which
+ *   mount and tier the read actually asked OpenBao for before they could even open that mount's
+ *   policy. `PveCredentialDenied`'s own message already made this exact call — reading `tier`, not
+ *   `role`, per that class's own ⛔ — so this warning takes the same two fields for the same reason.
  */
-export const unreadableWarning = (type: string, identity: string): Effect.Effect<void> =>
+export const unreadableWarning = (
+  type: string,
+  identity: string,
+  mount: string,
+  tier: string,
+): Effect.Effect<void> =>
   Effect.logWarning(
-    `${type} ${identity}: the read was refused (no grant for this credential's role) -- ` +
-      'reporting noop rather than forcing an update with nothing compared. Re-plan on a lane ' +
-      'that can read this object before trusting this row.',
+    `${type} ${identity}: the read of ${mount}/creds/${tier} was refused (no grant for this ` +
+      "credential's role) -- reporting noop rather than forcing an update with nothing compared. " +
+      'Re-plan on a lane that can read this object before trusting this row.',
   );

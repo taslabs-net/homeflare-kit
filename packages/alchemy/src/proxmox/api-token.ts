@@ -52,6 +52,7 @@ import * as Provider from 'alchemy/Provider';
 import * as access from '@distilled.cloud/proxmox/access';
 import * as Effect from 'effect/Effect';
 import { API_TOKEN_UPDATE, attributesOf, matches, shape } from './api-token-form.ts';
+import { mintTier } from './credentials.ts';
 import { guardWrite } from './distilled-guard.ts';
 import type { PveRequirements, WithTarget } from './resource-spec.ts';
 import { runPve } from './distilled-pve.ts';
@@ -190,7 +191,12 @@ export const ProxmoxApiTokenProvider = () =>
           // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and force
           //   `update` on a token that was plainly there — see unreadable-read.ts.
           if (live === UNREADABLE) {
-            yield* unreadableWarning('Proxmox.ApiToken', `${news.userid}!${news.tokenid}`);
+            yield* unreadableWarning(
+              'Proxmox.ApiToken',
+              `${news.userid}!${news.tokenid}`,
+              news.target.mount,
+              mintTier(news.target, 'provision'),
+            );
             return { action: 'noop' } as const;
           }
           // ⚠️ NO GUARDED-CREATE BRANCH HERE, UNLIKE EVERY OTHER FAMILY IN THIS SUB-AREA. There

@@ -86,6 +86,7 @@ import {
   updateForm,
 } from './storage-form.ts';
 import { dropUnreadable, matches, readStorage, readStorageOrFail } from './storage-wire.ts';
+import { mintTier } from './credentials.ts';
 import { UNREADABLE, unreadableWarning } from './unreadable-read.ts';
 import type { StorageAttributes } from './storage-wire.ts';
 import type { StorageLocator } from './storage-form.ts';
@@ -182,7 +183,12 @@ export const ProxmoxStorageProvider = () =>
           // ⛔ THE CRIES-WOLF FIX: a refused read used to fall into `undefined` below and force
           //   `update` on a storage that was plainly there — see unreadable-read.ts.
           if (live === UNREADABLE) {
-            yield* unreadableWarning('Proxmox.Storage', news.storage);
+            yield* unreadableWarning(
+              'Proxmox.Storage',
+              news.storage,
+              news.target.mount,
+              mintTier(news.target, 'provision'),
+            );
             return { action: 'noop' } as const;
           }
           if (live === undefined) {
