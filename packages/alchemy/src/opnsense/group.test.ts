@@ -12,6 +12,7 @@ import { spec } from './group.ts';
 import { fakeFailure, fakeOpnsense, fakeOpnsenseLayer, getOnlyOrFail } from './fake-opnsense.ts';
 import type { OpnsenseWriteRefused } from './policy.ts';
 import { opnsenseOperations } from './resource.ts';
+import { optionMap } from './wire.ts';
 
 const asRefusal = (value: unknown) => value as OpnsenseWriteRefused;
 
@@ -24,14 +25,18 @@ const PROPS: GroupProps = {
   uuid: UUID,
 };
 
-const liveItem = (overrides: Partial<group.GroupItem> = {}): group.GroupItem => ({
+// `liveItem` builds a `ModelIfgroupentryReadItem` — the WHOLE-MODEL `get()`'s read-shaped item,
+// whose `members` decodes as an option map, not a comma string (OPNSENSE-2 — see group-form.ts).
+const liveItem = (
+  overrides: Partial<group.ModelIfgroupentryReadItem> = {},
+): group.ModelIfgroupentryReadItem => ({
   ifname: 'IOT_DEVICES',
-  members: 'opt1,opt2',
+  members: optionMap('opt1', 'opt2'),
   sequence: '1',
   ...overrides,
 });
 
-const getResponse = (items: Record<string, group.GroupItem>) =>
+const getResponse = (items: Record<string, group.ModelIfgroupentryReadItem>) =>
   Response.json({ group: { ifgroupentry: items } });
 
 describe('Opnsense.Firewall.Group spec.fetchLive', () => {
@@ -86,17 +91,21 @@ describe('opnsenseOperations(spec).read — S7/S8, marker-less API', () => {
 
 describe('opnsenseOperations(spec).diff', () => {
   test('noop when the declared member set matches live, regardless of order', async () => {
-    const fake = getOnlyOrFail(() => getResponse({ [UUID]: liveItem({ members: 'opt2,opt1' }) }));
+    const fake = getOnlyOrFail(() =>
+      getResponse({ [UUID]: liveItem({ members: optionMap('opt2', 'opt1') }) }),
+    );
     const result = await Effect.runPromise(
       opnsenseOperations(spec)
-        .diff(PROPS, attributesOf(UUID, liveItem({ members: 'opt2,opt1' })))
+        .diff(PROPS, attributesOf(UUID, liveItem({ members: optionMap('opt2', 'opt1') })))
         .pipe(Effect.provide(fakeOpnsenseLayer(fake.fetch))),
     );
     expect(result).toEqual({ action: 'noop' });
   });
 
   test('update when a member was removed live', async () => {
-    const fake = getOnlyOrFail(() => getResponse({ [UUID]: liveItem({ members: 'opt1' }) }));
+    const fake = getOnlyOrFail(() =>
+      getResponse({ [UUID]: liveItem({ members: optionMap('opt1') }) }),
+    );
     const result = await Effect.runPromise(
       opnsenseOperations(spec)
         .diff(PROPS, attributesOf(UUID, liveItem()))
@@ -108,7 +117,9 @@ describe('opnsenseOperations(spec).diff', () => {
 
 describe('opnsenseOperations(spec).reconcile and destroy — the read-only policy', () => {
   test('reconcile observes with one GET, then refuses — never a write', async () => {
-    const fake = getOnlyOrFail(() => getResponse({ [UUID]: liveItem({ members: 'opt1' }) }));
+    const fake = getOnlyOrFail(() =>
+      getResponse({ [UUID]: liveItem({ members: optionMap('opt1') }) }),
+    );
     const failure = asRefusal(
       await Effect.runPromise(
         Effect.flip(

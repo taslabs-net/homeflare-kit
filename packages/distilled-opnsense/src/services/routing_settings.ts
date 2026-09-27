@@ -171,6 +171,146 @@ export const GetRequest = /*@__PURE__*/ S.suspend(() =>
   ),
 ).annotate({ identifier: "GetRequest" }) as any as S.Schema<GetRequest>;
 
+export interface OptionEntry {
+  value: string;
+  selected: number;
+}
+export const OptionEntry = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    value: S.String,
+    selected: S.Number,
+  }),
+).annotate({ identifier: "OptionEntry" }) as any as S.Schema<OptionEntry>;
+
+export type ModelGateway_itemReadItemInterfaceMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelGateway_itemReadItemInterfaceMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelGateway_itemReadItemInterfaceMap>;
+
+export type ModelGateway_itemReadItemIpprotocolMap = {
+  [key: string]: OptionEntry | undefined;
+};
+export const ModelGateway_itemReadItemIpprotocolMap = /*@__PURE__*/ S.Record(
+  S.String,
+  OptionEntry,
+) as any as S.Schema<ModelGateway_itemReadItemIpprotocolMap>;
+
+export interface ModelGateway_itemReadItem {
+  /** Item id, assigned by OPNsense on creation. */
+  uuid?: string;
+  /** OPNsense FieldType: BooleanField */
+  disabled: string;
+  /** OPNsense FieldType: TextField; pattern /^[a-zA-Z0-9_\-]{1,32}$/ */
+  name: string;
+  /** OPNsense FieldType: DescriptionField */
+  descr?: string;
+  /** OPNsense FieldType: InterfaceField */
+  interface: ModelGateway_itemReadItemInterfaceMap;
+  /** OPNsense FieldType: OptionField */
+  ipprotocol: ModelGateway_itemReadItemIpprotocolMap;
+  /** OPNsense FieldType: TextField */
+  gateway?: string;
+  /** OPNsense FieldType: BooleanField */
+  defaultgw?: string;
+  /** OPNsense FieldType: BooleanField */
+  fargw?: string;
+  /** OPNsense FieldType: BooleanField */
+  monitor_disable: string;
+  /** OPNsense FieldType: BooleanField */
+  monitor_noroute?: string;
+  /** OPNsense FieldType: BooleanField */
+  monitor_killstates?: string;
+  /** OPNsense FieldType: BooleanField */
+  monitor_killstates_priority?: string;
+  /** OPNsense FieldType: TextField */
+  monitor?: string;
+  /** OPNsense FieldType: BooleanField */
+  force_down?: string;
+  /** OPNsense FieldType: BooleanField */
+  nosync?: string;
+  /** OPNsense FieldType: IntegerField; range 0..255 (as text) */
+  priority: string;
+  /** OPNsense FieldType: IntegerField; range 1..10 (as text) */
+  weight: string;
+  /** OPNsense FieldType: IntegerField; range 1..+inf (as text) */
+  latencylow?: string;
+  /** OPNsense FieldType: IntegerField; range 1..+inf (as text) */
+  latencyhigh?: string;
+  /** OPNsense FieldType: IntegerField; range 1..99 (as text) */
+  losslow?: string;
+  /** OPNsense FieldType: IntegerField; range 1..100 (as text) */
+  losshigh?: string;
+  /** OPNsense FieldType: IntegerField; range 1..+inf (as text) */
+  interval?: string;
+  /** OPNsense FieldType: IntegerField; range 1..+inf (as text) */
+  time_period?: string;
+  /** OPNsense FieldType: IntegerField; range 1..+inf (as text) */
+  loss_interval?: string;
+  /** OPNsense FieldType: IntegerField; range 0..+inf (as text) */
+  data_length?: string;
+}
+export const ModelGateway_itemReadItem = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    uuid: S.optional(S.String),
+    disabled: S.String,
+    name: S.String,
+    descr: S.optional(S.String),
+    interface: ModelGateway_itemReadItemInterfaceMap,
+    ipprotocol: ModelGateway_itemReadItemIpprotocolMap,
+    gateway: S.optional(S.String),
+    defaultgw: S.optional(S.String),
+    fargw: S.optional(S.String),
+    monitor_disable: S.String,
+    monitor_noroute: S.optional(S.String),
+    monitor_killstates: S.optional(S.String),
+    monitor_killstates_priority: S.optional(S.String),
+    monitor: S.optional(S.String),
+    force_down: S.optional(S.String),
+    nosync: S.optional(S.String),
+    priority: S.String,
+    weight: S.String,
+    latencylow: S.optional(S.String),
+    latencyhigh: S.optional(S.String),
+    losslow: S.optional(S.String),
+    losshigh: S.optional(S.String),
+    interval: S.optional(S.String),
+    time_period: S.optional(S.String),
+    loss_interval: S.optional(S.String),
+    data_length: S.optional(S.String),
+  }),
+).annotate({
+  identifier: "ModelGateway_itemReadItem",
+}) as any as S.Schema<ModelGateway_itemReadItem>;
+
+export type ModelGateway_itemReadItemMap = {
+  [key: string]: ModelGateway_itemReadItem | undefined;
+};
+export const ModelGateway_itemReadItemMap = /*@__PURE__*/ S.Record(
+  S.String,
+  ModelGateway_itemReadItem,
+) as any as S.Schema<ModelGateway_itemReadItemMap>;
+
+export interface ModelRead {
+  gateway_item?: ModelGateway_itemReadItemMap;
+}
+export const ModelRead = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    gateway_item: S.optional(ModelGateway_itemReadItemMap),
+  }),
+).annotate({ identifier: "ModelRead" }) as any as S.Schema<ModelRead>;
+
+export interface GetResponse {
+  gateways?: ModelRead;
+}
+export const GetResponse = /*@__PURE__*/ S.suspend(() =>
+  S.Struct({
+    gateways: S.optional(ModelRead),
+  }),
+).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
+
 export type ModelGateway_itemItemIpprotocol = "inet" | "inet6";
 export const ModelGateway_itemItemIpprotocol = S.String;
 
@@ -277,15 +417,6 @@ export const Model = /*@__PURE__*/ S.suspend(() =>
     gateway_item: S.optional(ModelGateway_itemItemMap),
   }),
 ).annotate({ identifier: "Model" }) as any as S.Schema<Model>;
-
-export interface GetResponse {
-  gateways?: Model;
-}
-export const GetResponse = /*@__PURE__*/ S.suspend(() =>
-  S.Struct({
-    gateways: S.optional(Model),
-  }),
-).annotate({ identifier: "GetResponse" }) as any as S.Schema<GetResponse>;
 
 export interface SetRequest {
   gateways?: Model;

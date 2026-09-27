@@ -1,16 +1,20 @@
 /**
- * `group-form.ts`'s pure functions against literal `GroupItem` fixtures — no network.
+ * `group-form.ts`'s pure functions against literal `ModelIfgroupentryReadItem` fixtures (the
+ * WHOLE-MODEL `get()`'s read-shaped item — `members` is an option map, OPNSENSE-2) — no network.
  */
 import { describe, expect, test } from 'bun:test';
 import type * as group from '@distilled.cloud/opnsense/firewall_group';
 import { attributesOf, matches } from './group-form.ts';
 import type { GroupProps } from './group.ts';
+import { optionMap } from './wire.ts';
 
 const UUID = '33333333-3333-3333-3333-333333333333';
 
-const liveGroup = (overrides: Partial<group.GroupItem> = {}): group.GroupItem => ({
+const liveGroup = (
+  overrides: Partial<group.ModelIfgroupentryReadItem> = {},
+): group.ModelIfgroupentryReadItem => ({
   ifname: 'IOT_DEVICES',
-  members: 'opt1,opt2',
+  members: optionMap('opt1', 'opt2'),
   sequence: '1',
   ...overrides,
 });
@@ -27,8 +31,8 @@ describe('group-form attributesOf', () => {
     });
   });
 
-  test('members are split, sorted and deduplicated', () => {
-    const live = liveGroup({ members: 'opt2,opt1,opt1' });
+  test('members are the selected keys, sorted and deduplicated', () => {
+    const live = liveGroup({ members: optionMap('opt2', 'opt1') });
     expect(attributesOf(UUID, live).members).toEqual(['opt1', 'opt2']);
   });
 
@@ -50,13 +54,13 @@ describe('group-form matches', () => {
   });
 
   test('member-list order alone is not drift', () => {
-    const live = attributesOf(UUID, liveGroup({ members: 'opt2,opt1' }));
+    const live = attributesOf(UUID, liveGroup({ members: optionMap('opt2', 'opt1') }));
     const declared: GroupProps = { ...props, members: ['opt1', 'opt2'] };
     expect(matches(live, declared)).toBe(true);
   });
 
   test('a removed member is drift', () => {
-    const live = attributesOf(UUID, liveGroup({ members: 'opt1' }));
+    const live = attributesOf(UUID, liveGroup({ members: optionMap('opt1') }));
     expect(matches(live, props)).toBe(false);
   });
 });
@@ -65,7 +69,7 @@ describe('propsFromLive round-trip', () => {
   test('the props it returns plan noop against the exact live object they came from', () => {
     const live = liveGroup({
       descr: 'IoT VLANs',
-      members: 'opt3,opt1,opt2',
+      members: optionMap('opt3', 'opt1', 'opt2'),
       nogroup: '1',
       sequence: '5',
     });
