@@ -127,6 +127,8 @@ export const fakeLinuxHost = (options: FakeLinuxOptions = {}) => {
     lookupUser: async (nameOrId) =>
       options.users?.[nameOrId] ??
       Object.values(options.users ?? {}).find((user) => String(user.uid) === nameOrId),
+    // ★ This fake models sshRunner()'s own target, which is always Linux — fixed, not an option.
+    platform: 'linux',
     privileged,
     readFile: async (path) => files.get(path)?.bytes,
     removeFile: async (path) => {

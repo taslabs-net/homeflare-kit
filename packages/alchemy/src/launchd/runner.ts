@@ -59,7 +59,29 @@ export type WriteOptions = {
 
 export type HostUser = { readonly uid: number; readonly gid: number; readonly home: string };
 
+/**
+ * The two host families a HostRunner ever actually targets. ★ Not `NodeJS.Platform`: nothing
+ *   here runs against `win32`/`aix`/etc, and a narrower type is what makes `runner.platform ===
+ *   'darwin'` exhaustive rather than a string comparison that silently matches nothing.
+ */
+export type HostPlatform = 'darwin' | 'linux';
+
 export interface HostRunner {
+  /**
+   * ⛔ DECLARED, NEVER INFERRED — same rule as `privileged`, and the same failure mode. The OS of
+   *   the TARGET this runner writes to, never of the process running Alchemy: `localRunner()` may
+   *   run ON either, but `sshRunner()`/`sshSudoRunner()` always reach a Linux host from wherever
+   *   Alchemy itself happens to run.
+   * 🔴 INCIDENT, homeflare-ct100 2026-09-27: `Host.Directory`'s chmod/chown end-of-options token
+   *   (directory-lifecycle.ts `chmodChownEnd`) read `process.platform` — the Mac mini's own OS —
+   *   instead of the runner's target. Deploying from the Mac to CT100 (a Debian LXC over
+   *   `sshSudoRunner`) dropped GNU's required `--`, and `sudo-allowlist-dir.ts`'s `dirProgramProblem`
+   *   refused every chown with `SudoRefusedError` even though the path was under a declared prefix.
+   *   `localRunner()`'s own local deploys never showed it: there, `process.platform` and the
+   *   target happen to be the same machine. This field is the fix: every call site that needs to
+   *   know the target's OS reads `runner.platform`, never `process.platform`.
+   */
+  readonly platform: HostPlatform;
   /**
    * ⛔ DECLARED, NEVER INFERRED. `true` only when this runner can do every root-needing call the
    *   providers make of it: every call already runs as root (a runner that talks to a root helper,

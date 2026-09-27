@@ -154,6 +154,10 @@ export const sshRunner = async (options: SshRunnerOptions): Promise<HostRunner> 
       const result = await run(execScript(userQuery('linux', nameOrId)));
       return result.exitCode === 0 ? parseUser('linux', result.stdout) : undefined;
     },
+    // ★ Fixed, not read from the caller's own `process.platform`: the probe above already
+    //   refused anything but `uname -s` = Linux, so this is the one true answer for this runner —
+    //   whatever OS is running Alchemy itself is irrelevant (HostRunner.platform's doc comment).
+    platform: 'linux',
     privileged: false,
     readFile: async (path) => {
       const result = await run(readScript(path));

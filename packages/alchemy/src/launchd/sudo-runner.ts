@@ -162,6 +162,9 @@ export const makeSudoRunner = (prefixList: readonly string[], deps: SudoDeps): H
     },
     lookupGroup: (nameOrId) => base.lookupGroup(nameOrId),
     lookupUser: (nameOrId) => base.lookupUser(nameOrId),
+    // ★ Forwarded, never hardcoded: this runner elevates on the SAME target `base` already
+    //   declared (localRunner's own machine), so it carries no opinion of its own.
+    platform: base.platform,
     // ★ True, so the providers let a system-domain job through to this runner (canActAsRoot).
     privileged: true,
     readFile: (path) => base.readFile(path),

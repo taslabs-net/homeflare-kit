@@ -15,7 +15,7 @@ import { randomBytes } from 'node:crypto';
 import { lstat, open, readFile, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { groupQuery, parseGroup, parseUser, userQuery } from './host-lookup.ts';
-import type { ExecResult, FileStat, HostRunner, WriteOptions } from './runner.ts';
+import type { ExecResult, FileStat, HostPlatform, HostRunner, WriteOptions } from './runner.ts';
 
 export type LocalRunnerOptions = {
   /** Kill a spawned program after this long. @default 120_000 */
@@ -98,6 +98,20 @@ const writeAtomic = async (path: string, bytes: Uint8Array, options: WriteOption
 export const localRunner = (options: LocalRunnerOptions = {}): HostRunner => {
   const timeoutMs = options.execTimeoutMs ?? 120_000;
   const platform = process.platform;
+  // ★ THE ONE PLACE `process.platform` MAY DECIDE HOST BEHAVIOUR: here, the target IS this
+  //   process's own machine, so `process.platform` and `HostRunner.platform` name the same host.
+  //   Everywhere else (chmodChownEnd, host-lookup's callers over ssh) reads `runner.platform`
+  //   instead — see the incident on `HostRunner.platform`'s own doc comment.
+  // ⛔ DECLARED, NEVER GUESSED, past these two: silently folding freebsd/win32/etc. into 'linux'
+  //   would hand a BSD host GNU's `--`, which macOS's own (BSD-flavoured) chmod/chown already
+  //   reject — the same shape of bug this PR fixes. sshRunner's own `uname -s` probe refuses a
+  //   non-Linux target the same way; localRunner refuses here instead of guessing.
+  if (platform !== 'darwin' && platform !== 'linux') {
+    throw new Error(
+      `localRunner(): unsupported process.platform ${JSON.stringify(platform)} — HostRunner only targets darwin and linux.`,
+    );
+  }
+  const hostPlatform: HostPlatform = platform;
   return {
     effectiveUid: () => process.geteuid?.() ?? -1,
     exec: (argv) => run(argv, timeoutMs),
@@ -109,6 +123,7 @@ export const localRunner = (options: LocalRunnerOptions = {}): HostRunner => {
       const result = await run(userQuery(platform, nameOrId), timeoutMs);
       return result.exitCode === 0 ? parseUser(platform, result.stdout) : undefined;
     },
+    platform: hostPlatform,
     privileged: false,
     readFile: async (path) => {
       try {

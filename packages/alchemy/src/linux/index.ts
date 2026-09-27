@@ -24,6 +24,7 @@ export { sshSudoRunner } from './sudo-runner.ts';
 export type {
   ExecResult,
   FileStat,
+  HostPlatform,
   HostRunner,
   HostUser,
   WriteOptions,
