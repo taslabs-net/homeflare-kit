@@ -100,8 +100,18 @@ const octal = (mode: number) => mode.toString(8).padStart(3, '0');
  *   keep it. These paths are absolute, so the token is only an option guard.
  * ⛔ Linux keeps `--`. The sudo allowlist requires that exact token; dropping it there
  *   refuses the elevation.
+ * 🔴 INCIDENT, homeflare-ct100 2026-09-27: this used to decide on `process.platform` — the OS of
+ *   the machine RUNNING Alchemy — instead of `runner.platform`, the OS of the TARGET the runner
+ *   actually writes to. Deploying from the Mac mini (`darwin`) to CT100, a Debian LXC reached
+ *   over `sshSudoRunner`, dropped the required `--` and `sudo-allowlist-dir.ts`'s
+ *   `dirProgramProblem` refused every chown with `SudoRefusedError`, even though the path was
+ *   under a declared prefix — `localRunner()`'s own local (Mac-to-Mac) deploys never showed it,
+ *   because there `process.platform` and the target happen to be the same machine. Reading
+ *   `runner.platform` instead (declared by every HostRunner — see its own doc comment) makes the
+ *   decision follow the target, not the caller.
  */
-const chmodChownEnd = (): readonly string[] => (process.platform === 'darwin' ? [] : ['--']);
+const chmodChownEnd = (runner: HostRunner): readonly string[] =>
+  runner.platform === 'darwin' ? [] : ['--'];
 
 /** One program, checked: anything but exit 0 is an Error naming the argv and the host's words. */
 const must = async (runner: HostRunner, path: string, argv: readonly string[]): Promise<void> => {
@@ -160,7 +170,12 @@ export const reconcileDirectory = async (
     }
     await must(runner, props.path, ['mkdir', '-m', octal(want.mode), '--', props.path]);
   } else if (stat.mode !== want.mode) {
-    await must(runner, props.path, ['chmod', octal(want.mode), ...chmodChownEnd(), props.path]);
+    await must(runner, props.path, [
+      'chmod',
+      octal(want.mode),
+      ...chmodChownEnd(runner),
+      props.path,
+    ]);
   }
   /**
    * ★ Only when it is actually wrong. A `chown` that changes nothing is still a write on the host
@@ -174,7 +189,7 @@ export const reconcileDirectory = async (
     ? undefined
     : ownerArg(want);
   if (owner !== undefined)
-    await must(runner, props.path, ['chown', owner, ...chmodChownEnd(), props.path]);
+    await must(runner, props.path, ['chown', owner, ...chmodChownEnd(runner), props.path]);
   const after = await readDirectory(runner, props.path);
   // ⚠️ READ BACK: a runner that ignored the mode shows up here, not as a forever-`update`.
   if (after === undefined || after.mode !== want.mode || !ownerMatches(after, want)) {

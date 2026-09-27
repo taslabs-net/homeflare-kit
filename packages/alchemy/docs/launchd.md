@@ -174,6 +174,8 @@ job is declared: [launchd-ports.md](./launchd-ports.md).
 
 `HostRunner` (see `src/launchd/runner.ts`) is `exec(argv)` (never through a shell), `readFile`,
 `stat` (lstat), `writeFileAtomic`, `removeFile`, `lookupUser`, `lookupGroup`, `sleep`, plus
-`privileged` and `effectiveUid()`. `localRunner()` implements it with `node:fs` and
-`node:child_process`; `sudoRunner()` wraps it and elevates the allowlist. Tests use an in-memory
-fake, so nothing in the test suite runs `launchctl` or `sudo`, or writes outside a temp directory.
+`platform` (`'darwin' | 'linux'`, the target host's own OS — declared, never inferred from
+`process.platform`), `privileged` and `effectiveUid()`. `localRunner()` implements it with
+`node:fs` and `node:child_process`; `sudoRunner()` wraps it and elevates the allowlist. Tests use
+an in-memory fake, so nothing in the test suite runs `launchctl` or `sudo`, or writes outside a
+temp directory.

@@ -99,6 +99,9 @@ export const makeSshSudoRunner = (prefixList: readonly string[], deps: SshSudoDe
     },
     lookupGroup: (nameOrId) => base.lookupGroup(nameOrId),
     lookupUser: (nameOrId) => base.lookupUser(nameOrId),
+    // ★ Forwarded, never hardcoded — same reasoning as ../launchd/sudo-runner.ts's own forward:
+    //   this runner elevates on the SAME target `base` (sshRunner) already declared.
+    platform: base.platform,
     privileged: true,
     readFile: (path) => base.readFile(path),
     removeFile: async (path) => {
