@@ -156,6 +156,8 @@ export const fakeRunner = (options: FakeOptions = {}) => {
     lookupUser: async (nameOrId) =>
       options.users?.[nameOrId] ??
       Object.values(options.users ?? {}).find((user) => String(user.uid) === nameOrId),
+    // ★ This fake models launchd, which only ever exists on a Mac — fixed, not an option.
+    platform: 'darwin',
     privileged,
     readFile: async (path) => files.get(path)?.bytes,
     removeFile: async (path) => {

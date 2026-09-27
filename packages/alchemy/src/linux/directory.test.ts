@@ -3,6 +3,7 @@
  * to create a parent.
  */
 import { describe, expect, test } from 'bun:test';
+import type { HostRunner } from '../launchd/runner.ts';
 import {
   deleteDirectory,
   diffDirectory,
@@ -105,8 +106,15 @@ describe('drift', () => {
 });
 
 describe('argv', () => {
-  test('chmod and chown omit -- on Darwin; mkdir keeps it on every platform', async () => {
+  // ⛔ REGRESSION, 2026-09-27: this used to read `process.platform !== 'darwin'` to decide what
+  //   the fake (a LINUX host) should have produced — so it only ever proved the real behaviour
+  //   when `bun test` itself happened to run on a Mac, and passed just as happily on a Linux CI
+  //   box while asserting the wrong thing. `runner.platform` is declared by the fixture instead,
+  //   so these two tests hold regardless of what OS actually runs the suite — the exact "darwin
+  //   process, Linux target" split the homeflare-ct100 incident measured.
+  test('mkdir keeps --, and chmod/chown carry -- for a Linux target', async () => {
     const fake = host();
+    expect(fake.runner.platform).toBe('linux'); // ★ fakeLinuxHost's own declaration.
     const created = await reconcileDirectory(fake.runner, {
       group: 0,
       mode: 0o755,
@@ -118,13 +126,30 @@ describe('argv', () => {
       { group: 0, mode: 0o750, owner: 0, path: '/opt/app/bin' },
       created,
     );
-    const gnu = process.platform !== 'darwin';
-    const chown = fake.calls.find((call) => call[0] === 'chown');
-    const chmod = fake.calls.find((call) => call[0] === 'chmod');
-    const mkdir = fake.calls.find((call) => call[0] === 'mkdir');
-    expect(chown?.includes('--')).toBe(gnu);
-    expect(chmod?.includes('--')).toBe(gnu);
-    expect(mkdir).toContain('--');
+    expect(fake.calls.find((call) => call[0] === 'mkdir')).toContain('--');
+    expect(fake.calls.find((call) => call[0] === 'chown')).toContain('--');
+    expect(fake.calls.find((call) => call[0] === 'chmod')).toContain('--');
+  });
+
+  test('mkdir still keeps --, but chmod/chown omit it for a runner declared as Darwin', async () => {
+    const fake = host();
+    // ★ Same fake host, only the declared target changes — proves chmodChownEnd() reads
+    //   `runner.platform`, never the machine `bun test` itself happens to run on.
+    const darwinRunner: HostRunner = { ...fake.runner, platform: 'darwin' };
+    const created = await reconcileDirectory(darwinRunner, {
+      group: 0,
+      mode: 0o755,
+      owner: 0,
+      path: '/opt/app/bin',
+    });
+    await reconcileDirectory(
+      darwinRunner,
+      { group: 0, mode: 0o750, owner: 0, path: '/opt/app/bin' },
+      created,
+    );
+    expect(fake.calls.find((call) => call[0] === 'mkdir')).toContain('--');
+    expect(fake.calls.find((call) => call[0] === 'chown')?.includes('--')).toBe(false);
+    expect(fake.calls.find((call) => call[0] === 'chmod')?.includes('--')).toBe(false);
   });
 });
 
