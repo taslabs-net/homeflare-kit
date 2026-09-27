@@ -2,6 +2,106 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.41.0
+
+### Minor Changes
+
+- [#313](https://github.com/taslabs-net/homeflare-kit/pull/313) [`f167fd2`](https://github.com/taslabs-net/homeflare-kit/commit/f167fd2a3e152462dc9da579ca92263aa695a558) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Host.Directory's chmod/chown no longer decide whether to pass `--` by the OS of the machine running Alchemy. They now read the target's own platform from `HostRunner.platform` — a new field every `HostRunner` declares (`localRunner()`, `sshRunner()`, `sshSudoRunner()`, and any consumer's own runner).
+
+  Deploying from a Mac to a Linux host over `sshSudoRunner` (homeflare-ct100, 2026-09-27) dropped GNU's required `--` because the old check read `process.platform`, the Mac's own OS, and the sudo allowlist refused every chown with `SudoRefusedError` even though the path was under a declared prefix. `localRunner()`'s own local deploys never showed this, because there the target and the calling process are the same machine.
+
+  A custom `HostRunner` implementation now needs to declare `platform: 'darwin' | 'linux'`.
+
+### Patch Changes
+
+- [#264](https://github.com/taslabs-net/homeflare-kit/pull/264) [`a2a4818`](https://github.com/taslabs-net/homeflare-kit/commit/a2a4818226d2c672c3a96132231f8ff09ae2cbf4) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Compatibility fix for the already-merged `opnsense/*` family (PR [#236](https://github.com/taslabs-net/homeflare-kit/issues/236)),
+  made necessary by this PR's `@homeflare/distilled-opnsense` SDK bump: the
+  whole-model `get()` this family's `Opnsense.Firewall.Alias`/`Opnsense.Firewall.Group`
+  `fetchLive` reads now correctly decodes list-shaped fields (`type`,
+  `interface`, `proto`, `categories`, `members`, `content`) as OPNsense's
+  real option-map shape `{key: {value, selected}}`, not a string — see the
+  SDK PR's OPNSENSE-2 fix.
+
+  This surfaces (and fixes) a real, previously-masked bug rather than
+  introducing one: `alias-form.ts`'s old `csvSet(live.categories)` called
+  `.trim()` on what the pre-fix SDK typed as a string — the exact crash
+  class the SDK PR's changeset describes for the live homeflare-network
+  import — just never hit here because this family's own tests used a fake
+  OPNsense returning string-shaped fixtures that matched the bug instead of
+  the real wire. `wire.ts`'s new `selectedOf`/`selectedOneOf` extract the
+  selected key(s) back to the plain string/string[] shape
+  `AliasAttributes`/`GroupAttributes` already declared, so `matches` and the
+  declaration renderer (`propsFromLive`) are behaviorally unchanged for any
+  already-correct declaration.
+
+  No live-plan impact expected: this is the read path decoding correctly
+  for the first time against a real option-map response, not a change to
+  what a declaration renders or what `matches` reports for a value that was
+  already being read successfully (a value that decoded as `[object Object]`
+  or threw before this fix could never have matched a real declaration
+  anyway).
+
+  **Still held for the follow-up PR** (per the SDK PR's own note): switching
+  `Category`/`Group` to their now-correct per-item `getCategory`/`getGroup`
+  (OPNSENSE-1) instead of whole-model `get()`, `catchTag` typed errors, a
+  delete-of-absent test and a transient-read-propagates test.
+
+  **The opnsense family is correct for consumers only after the alias pin
+  moves to the released `distilled-opnsense`.** `packages/alchemy/
+package.json` still pins `"@distilled.cloud/opnsense": "npm:@homeflare/
+distilled-opnsense@0.2.0"` exactly — this PR does not bump it. The bun
+  workspace links the local package during development, which is why this
+  fix's tests and this repo's own pre-push gate pass, but a published
+  `@homeflare/alchemy` consumer installs the pinned `0.2.0` from npm, which
+  still cannot decode option maps, underneath family code that now expects
+  them. Moving the pin is a separate, later PR, once `@homeflare/
+distilled-opnsense` has actually released (the same two-step precedent as
+  kit commit `06591c9` / PR [#206](https://github.com/taslabs-net/homeflare-kit/issues/206)).
+
+- [#314](https://github.com/taslabs-net/homeflare-kit/pull/314) [`3e9d6f3`](https://github.com/taslabs-net/homeflare-kit/commit/3e9d6f339938e0ead794b98598344c77033fe59e) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Fix `Proxmox.Storage` updates: `reconcile` used to PUT the FULL declared
+  form to `/storage/{storage}` whenever anything drifted, including a
+  `shared` that already matched what PVE reported live. Measured
+  2026-09-27, `bun run deploy`: updating `storage-cephfs-tb4` (only its
+  `content` had actually drifted, adding `import` for Talos) failed with
+  `InternalServerError: update storage failed: unexpected property
+'shared'` — cephfs's own PVE storage plugin never accepts `shared` in its
+  `options()` at all (vendor-cited in the new `storage-plugin-options.ts`,
+  checked against `github.com/proxmox/pve-storage`, branch `master`,
+  2026-09-27), even though the combined `pve-apidoc` schema and distilled's
+  generated wire types both carry the field.
+
+  `updateForm` (`storage-form.ts`) now builds a genuinely partial PUT body:
+  once a live read exists, only the declared fields that differ from it
+  (`storage-wire.ts`'s new `changedProps`, shared with `matches`'s own
+  drift check so the two can never disagree) reach the wire, and `shared`
+  is additionally gated by a per-type accepted-list (`sharedAccepted`) so
+  it is never sent — or compared, which would otherwise make a plan loop
+  forever on a field nothing can ever apply — for a type whose plugin
+  doesn't accept it. `storage.ts`'s `reconcile` now computes that partial
+  form once and passes the same object to both `guardWrite` and the actual
+  `putStorage` call, so the vendor-constraint guard always checks exactly
+  what is sent.
+
+  New tests (`storage-update.test.ts`, no live PVE): a cephfs storage whose
+  only drift is `content` PUTs `content` and nothing else; an
+  already-matching storage sends no PUT at all; a `dir` storage (whose own
+  `DirPlugin.pm` options() does list `shared`) sends it when it drifts —
+  the accepted-type path, contrasted with cephfs's refused one.
+
+  Second pass (same day, a red team on this PR before merge): a declared
+  `shared` on a type outside `sharedAccepted` that genuinely disagrees
+  with what PVE reports used to vanish into the same skip and plan `noop`
+  forever, silently — the recorded attribute stayed whatever PVE already
+  had, with no warning. `matches` now dies with a clear message on exactly
+  that one case; a matching or undeclared `shared` is unaffected and still
+  plans `noop`. Also, `btrfs` and `esxi` were re-checked against
+  `github.com/proxmox/pve-storage` (master, 2026-09-27) and do accept
+  `shared` in their own `options()` (`BTRFSPlugin.pm:69`,
+  `ESXiPlugin.pm:52`) — moved from unverified into `sharedAccepted`, so a
+  declared `shared` on one of those two types is sent again rather than
+  silently dropped; `iscsi`, `iscsidirect` and the remote-ZFS `zfs` plugin
+  are now verified absent rather than unverified.
+
 ## 0.40.0
 
 ### Minor Changes
