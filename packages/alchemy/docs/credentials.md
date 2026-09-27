@@ -22,6 +22,11 @@ mints that tier instead, with no new call site anywhere in the package. `credent
 rather than reading `role`/`target.roles` directly — see `mintTier`'s own header for why the
 lease cache specifically needed it too, not just the mint call.
 
+⛔ **Override both roles or neither.** An unmentioned role is not scoped down — it still mints
+the estate-wide `read`/`provision` tier. Setting only `roles: { read: 'my-tier' }` leaves every
+reconcile/delete on that target minting the full-privilege `provision` credential while the plan
+output looks entirely scoped down.
+
 The Forgejo subpath (2026-09-23, moved onto `@distilled.cloud/forgejo`) resolves credentials
 through the package's own `CredentialsFromEnv` layer, which reads `FORGEJO_URL` / `FORGEJO_TOKEN`
 — the same two variable names the retired hand-rolled client read, still resolved on the calling

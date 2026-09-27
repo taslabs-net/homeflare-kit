@@ -92,7 +92,14 @@ export type LeaseKey = {
   readonly tier: string;
 };
 
-const keyOf = (target: ApiTarget, role: PveRole): LeaseKey => ({
+/**
+ * ⚠️ EXPORTED FOR THE TEST (I1, red team on K-T1). This is the one line the whole PR exists
+ *   for — `tier: mintTier(target, role)` is what makes an overridden `PveTarget.roles` reach the
+ *   cached path at all. Nothing else in this file's test suite calls `keyOf` or `leased`
+ *   directly, so without this export a regression here (e.g. reverting to `tier: role`) passed
+ *   the whole suite silently.
+ */
+export const keyOf = (target: ApiTarget, role: PveRole): LeaseKey => ({
   mount: target.mount,
   role,
   scheme: target.scheme,

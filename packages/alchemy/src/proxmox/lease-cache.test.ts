@@ -14,8 +14,8 @@ import * as Cache from 'effect/Cache';
 import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
-import { type PveCredential, mintTier } from './credentials.ts';
-import { type LeaseKey, makeLeases, targetForKey, timeToLive } from './lease-cache.ts';
+import { type PveCredential, type PveTarget, mintTier } from './credentials.ts';
+import { type LeaseKey, keyOf, makeLeases, targetForKey, timeToLive } from './lease-cache.ts';
 
 const C1: LeaseKey = {
   mount: 'proxmox-c1',
@@ -77,6 +77,34 @@ describe('how long a lease is kept', () => {
 
   it('never keeps a failure', () => {
     assert.equal(keptSeconds(Exit.fail(new Error('vault sealed'))), 0);
+  });
+});
+
+describe('K-T1: keyOf resolves an overridden tier into the cache key (I1)', () => {
+  // ⛔ The one line the PR exists for (`tier: mintTier(target, role)` in `keyOf`) had no direct
+  //   test: revert it to `tier: role` and the rest of the suite still passes, because
+  //   `targetForKey`'s tests prove only the reconstruction half and `mintTier`'s tests prove only
+  //   the resolution function, never the composition a real `leased()` call depends on.
+  it('a plain PveTarget with no override keys on the bare role', () => {
+    const target: PveTarget = { members: [], mount: 'proxmox-tb4', scheme: 'pve' };
+    assert.equal(keyOf(target, 'read').tier, 'read');
+  });
+
+  it('a PveTarget.roles override reaches the cache key, not just a direct mint', () => {
+    const target: PveTarget = {
+      members: [],
+      mount: 'proxmox-tb4',
+      roles: { read: 'talos-provision' },
+      scheme: 'pve',
+    };
+    assert.equal(keyOf(target, 'read').tier, 'talos-provision');
+    // The unmentioned role still falls back to itself on the same target.
+    assert.equal(keyOf(target, 'provision').tier, 'provision');
+  });
+
+  it('a PbsTarget key never carries an override — the type has no roles field', () => {
+    const pbs = { api: 'https://pbs.invalid/api2/json', mount: 'pbs-c1', scheme: 'pbs' as const };
+    assert.equal(keyOf(pbs, 'read').tier, 'read');
   });
 });
 

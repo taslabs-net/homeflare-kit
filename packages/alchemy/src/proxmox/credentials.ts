@@ -97,8 +97,17 @@ export type PveTarget = {
    *   `roles: { read: 'my-tier', provision: 'my-tier' }` and every read/diff/reconcile/delete this
    *   package already issues resolves to that tier, with no new call site anywhere in the package.
    *   Widening `PveRole` itself to a per-consumer string would instead touch every literal
-   *   `'read'`/`'provision'` call site (`mintFor.ts` — this package's own doc comment lists eight)
-   *   for something only the TARGET, never the CALL, needs to know.
+   *   `'read'`/`'provision'` call site across the package (`client.ts`, `lxc-read.ts`,
+   *   `lxc-task.ts`, `network-apply-read.ts`, `network-apply-run.ts`, `qemu-read.ts`,
+   *   `qemu-task.ts`, `storage-download-task.ts` — the eight this field's `mintTier` indirection
+   *   above already covers) for something only the TARGET, never the CALL, needs to know.
+   *
+   * ⛔ SET BOTH ROLES OR NEITHER (I2, red team on K-T1). An unmentioned role is NOT scoped down —
+   *   it still mints the estate-wide tier this file's own header describes (`hf-provision@pve`,
+   *   27 privileges including `Permissions.Modify`/`Sys.Modify` for `provision`). Setting only
+   *   `roles: { read: 'my-tier' }` leaves every reconcile/delete on this target minting that wide
+   *   credential while the plan output looks fully scoped down — nothing here warns. See
+   *   `docs/credentials.md`'s override paragraph for the same warning at the consumer-facing level.
    */
   readonly roles?: {
     readonly read?: string;

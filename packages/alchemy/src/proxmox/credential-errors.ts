@@ -6,8 +6,8 @@ import * as Data from 'effect/Data';
 import type { PveRole } from './credentials.ts';
 
 /**
- * OpenBao answered 403 to `GET /v1/<mount>/creds/<role>`: this identity's AppRole has no grant
- * for `role` on `mount` — measured 2026-09-24 as "the agent lane cannot mint `provision`" (the
+ * OpenBao answered 403 to `GET /v1/<mount>/creds/<tier>`: this identity's AppRole has no grant
+ * for `tier` on `mount` — measured 2026-09-24 as "the agent lane cannot mint `provision`" (the
  * lane's policy grants `read` but not `provision`). A TYPED tag, not the plain `Error` every
  * other mint failure still is (404 no such role/mount, 503 sealed, a network failure), because
  * this ONE case means "refused, not evidence of anything about the object" — a family's

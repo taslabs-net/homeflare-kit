@@ -1,5 +1,5 @@
 /**
- * Minting one PVE/PBS credential from OpenBao: `GET /v1/<mount>/creds/<role>`, alive for five
+ * Minting one PVE/PBS credential from OpenBao: `GET /v1/<mount>/creds/<tier>`, alive for five
  * minutes. Split out of `credentials.ts` (2026-09-24) to keep that file's TYPES under the
  * 250-line cap once `PveCredentialDenied`'s catchers needed a real header there; the reasoning
  * for WHY the estate mints rather than stores a token is still credentials.ts's own header.
@@ -22,7 +22,9 @@ const baoVariable = (env: BaoEnvironment, name: string) =>
   env[`BAO_${name}`] ?? env[`VAULT_${name}`] ?? '';
 
 /**
- * Mint one credential for `role`: `GET /v1/<mount>/creds/<role>` on OpenBao's HTTP API.
+ * Mint one credential for `role`: `GET /v1/<mount>/creds/<tier>` on OpenBao's HTTP API, where
+ * `tier` is `mintTier(target, role)` (credentials.ts) — `role` itself unless `target.roles`
+ * overrides it (K-T1).
  *
  * 🔴 IT SHELLED OUT TO `bao read -format=json` UNTIL 2026-09-14. The case for the CLI was that one
  *   client could not disagree with `bao kv get` about what this machine may do. <estate>/openbao then
