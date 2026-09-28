@@ -16,6 +16,14 @@ export interface BaoAuthRoleProps {
   bindSecretId?: boolean;
   /** `0` means unlimited uses — the shape reconcile.sh writes for headless roles. */
   secretIdNumUses?: number;
+  /**
+   * Token period, e.g. `24h` — set only for a periodic (forever-renewable) role, where
+   * `tokenTtl`/`tokenMaxTtl` are conventionally `'0'`. Omitted means this declaration does not
+   * manage the field: a live role's `token_period` (however it got set) is left untouched, the
+   * same way an omitted `bindSecretId` is. See house `openbao/approles.ts` for the role this
+   * unblocks — a periodic agent token that was inexpressible with these props.
+   */
+  tokenPeriod?: string;
 }
 
 export interface BaoAuthRoleAttributes {
@@ -26,6 +34,7 @@ export interface BaoAuthRoleAttributes {
   secretIdTtl: string;
   bindSecretId: boolean;
   secretIdNumUses: number;
+  tokenPeriod: string;
   /** SHA-256 of the managed fields — safe to persist; see policy.ts. */
   digest: string;
 }
@@ -64,6 +73,7 @@ export const attributesOf = (
     secretIdTtl: ttlText(ttlSeconds(live['secret_id_ttl']), '0'),
     bindSecretId: bool(live['bind_secret_id'], true),
     secretIdNumUses: int(live['secret_id_num_uses'], 0),
+    tokenPeriod: ttlText(ttlSeconds(live['token_period']), '0'),
   };
   return { ...attrs, digest: sha256(JSON.stringify(attrs)) };
 };
@@ -88,6 +98,7 @@ export const matches = (attributes: BaoAuthRoleAttributes, props: BaoAuthRolePro
     sameTtl(props.tokenMaxTtl, attributes.tokenMaxTtl) &&
     sameTtl(props.secretIdTtl, attributes.secretIdTtl) &&
     (props.bindSecretId === undefined || attributes.bindSecretId === props.bindSecretId) &&
-    (props.secretIdNumUses === undefined || attributes.secretIdNumUses === props.secretIdNumUses)
+    (props.secretIdNumUses === undefined || attributes.secretIdNumUses === props.secretIdNumUses) &&
+    (props.tokenPeriod === undefined || sameTtl(props.tokenPeriod, attributes.tokenPeriod))
   );
 };

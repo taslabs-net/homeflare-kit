@@ -43,3 +43,40 @@ describe('auth role secret_id TTL', () => {
     expect(matches(attributesOf(PROPS, { ...live, secret_id_ttl: 0 }), PROPS)).toBe(false);
   });
 });
+
+describe('auth role token_period', () => {
+  const LIVE = {
+    bind_secret_id: true,
+    secret_id_num_uses: 0,
+    secret_id_ttl: 7776000,
+    token_max_ttl: 3600,
+    token_period: 0,
+    token_policies: ['default', 'host-cert'],
+    token_ttl: 900,
+  };
+
+  it('omits token_period from the SDK write when the prop is unset', async () => {
+    expect((await Effect.runPromise(authRoleRequest(PROPS))).token_period).toBeUndefined();
+  });
+
+  it('writes 24h as the equivalent SDK seconds, never legacy period', async () => {
+    const props = { ...PROPS, tokenPeriod: '24h' };
+    const request = await Effect.runPromise(authRoleRequest(props));
+    expect(request.token_period).toBe(86400);
+    expect(request).not.toHaveProperty('period');
+  });
+
+  it('reads a live token_period back and matches an equivalent declaration', () => {
+    const props = { ...PROPS, tokenPeriod: '24h' };
+    const attributes = attributesOf(props, { ...LIVE, token_period: 86400 });
+    expect(attributes.tokenPeriod).toBe('1d');
+    expect(matches(attributes, props)).toBe(true);
+    expect(matches(attributesOf(props, { ...LIVE, token_period: 3600 }), props)).toBe(false);
+  });
+
+  it('leaves an unmanaged live token_period out of drift when the prop is unset', () => {
+    const attributes = attributesOf(PROPS, { ...LIVE, token_period: 86400 });
+    expect(attributes.tokenPeriod).toBe('1d');
+    expect(matches(attributes, PROPS)).toBe(true);
+  });
+});

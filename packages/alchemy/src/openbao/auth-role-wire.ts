@@ -35,6 +35,7 @@ const completeRole = (live: AppRoleReadRoleResponse): boolean =>
   seconds(live.secret_id_ttl) &&
   seconds(live.token_ttl) &&
   seconds(live.token_max_ttl) &&
+  seconds(live.token_period) &&
   Array.isArray(live.token_policies) &&
   live.token_policies.every((policy) => typeof policy === 'string');
 
@@ -56,7 +57,14 @@ export const authRoleRequest = (props: BaoAuthRoleProps) =>
     const tokenTtl = parseDuration(props.tokenTtl);
     const tokenMaxTtl = parseDuration(props.tokenMaxTtl);
     const secretIdTtl = parseDuration(props.secretIdTtl);
-    if (!seconds(tokenTtl) || !seconds(tokenMaxTtl) || !seconds(secretIdTtl)) {
+    const tokenPeriod =
+      props.tokenPeriod === undefined ? undefined : parseDuration(props.tokenPeriod);
+    if (
+      !seconds(tokenTtl) ||
+      !seconds(tokenMaxTtl) ||
+      !seconds(secretIdTtl) ||
+      (props.tokenPeriod !== undefined && !seconds(tokenPeriod))
+    ) {
       return yield* Effect.fail(
         new BaoError(0, 'POST', readPath(props.name), ['invalid role TTL duration']),
       );
@@ -64,6 +72,9 @@ export const authRoleRequest = (props: BaoAuthRoleProps) =>
     // ★ The former CLI-style body used strings for every k=v. The SDK schema uses seconds,
     // booleans and arrays; omitted knobs stay omitted on update.
     // pathRoleCreateUpdate preserves absent bind_secret_id/secret_id_num_uses on existing roles.
+    // ⛔ token_period, not period — the vendor doc on both fields says period is legacy and loses
+    // to token_period when both are set (approle.ts AppRoleWriteRoleRequest); this Resource only
+    // ever emits the modern field.
     const request: AppRoleWriteRoleRequest = {
       ...identity(props.name),
       token_policies: [...props.tokenPolicies],
@@ -72,6 +83,7 @@ export const authRoleRequest = (props: BaoAuthRoleProps) =>
       secret_id_ttl: secretIdTtl,
       ...(props.bindSecretId === undefined ? {} : { bind_secret_id: props.bindSecretId }),
       ...(props.secretIdNumUses === undefined ? {} : { secret_id_num_uses: props.secretIdNumUses }),
+      ...(tokenPeriod === undefined ? {} : { token_period: tokenPeriod }),
     };
     return request;
   });
