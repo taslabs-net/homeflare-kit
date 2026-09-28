@@ -102,19 +102,16 @@ export const createOsd = Effect.fn(function* (news: CephOsdProps) {
  * ⚠️ `cleanup` DEFAULTS TO FALSE, so the logical volumes survive and the disk can be re-added
  *   without a rebuild. Ceph still starts backfilling the missing copies the moment the OSD goes.
  *
- * ⚠️ `cleanup` RIDES A DELETE BODY, ON `client.ts` AND ON DISTILLED ALIKE — PRE-EXISTING, NOT
- *   INTRODUCED HERE. `client.ts`'s own `buildRequest` (client.ts) puts `form` in the body for
- *   every method, DELETE included, and CHECKED against distilled's generated
- *   `DeleteNodeCephOsdRequest`: `cleanup` carries no `T.Query()` annotation either, so it also
- *   defaults to a body field. ceph-fs-wire.ts's own ⛔ (measured from PVE's `AnyEvent.pm`) is that
- *   PVE's server never reads a body on DELETE — so `cleanup=1` was ALREADY silently ignored by
- *   the live cluster before this migration, on the unmigrated code too. Migrating carries the
- *   SAME behaviour forward exactly, byte-for-byte, rather than introducing a new gap; unlike
- *   `Proxmox.CephFs`'s delete, this is not a reason to keep the call on the hand client. It has
- *   zero practical effect today regardless, since the whole DELETE 403s for this package's
- *   credential either way (the root-only ⛔ at the top of ceph-osd.ts) — flagged separately as a
- *   pre-existing, out-of-scope bug worth its own fix (move `cleanup` into the query string, the
- *   way `destroyPath` in ceph-fs-wire.ts already does).
+ * ★ CORRECTED 2026-09-28: `cleanup` IS QUERY-BOUND ON DISTILLED, NOT BODY. This comment previously
+ *   claimed `DeleteNodeCephOsdRequest.cleanup` carried no `T.Query()` annotation and so rode the
+ *   DELETE body, silently ignored by PVE's server (which never reads a body on DELETE, per
+ *   ceph-fs-wire.ts's measurement of `AnyEvent.pm`). That was true of the old `client.ts` hand
+ *   client, but distilled-proxmox's generated schema
+ *   (`packages/distilled-proxmox/src/services/nodes.ts`) declares
+ *   `cleanup: S.optional(S.String.pipe(T.Query()))` — query-bound — as of SDK 0.3.0, the same fix
+ *   that landed for the sibling `Proxmox.CephFs`'s `destroyFs`. Since this file already runs on
+ *   distilled (`import * as nodes from '@distilled.cloud/proxmox/nodes'`), `cleanup: '1'` below
+ *   reaches PVE correctly today. No code change needed here; this was a stale doc claim only.
  */
 export const destroyOsd = (olds: CephOsdProps) =>
   runPve(
