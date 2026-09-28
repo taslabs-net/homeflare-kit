@@ -44,6 +44,51 @@ SdnVnet, SdnSubnet, HaResource, HaRule and CephFlag.
 Their previous measured-none records
 are historical inventories, not a current census or permission to skip migration.
 
+**Measured 2026-09-28, by parser** (Bun's `Transpiler.scanImports` — a real import-graph
+read, not a text match — walked one hop through local imports so a family that only
+reaches the hand client via the shared `resource.ts` factory is still attributed
+correctly; run against `packages/alchemy/src/proxmox` and `src/openbao`):
+
+| Package                           | distilled-only | hand-client-only                                                                                                                                                                                | mixed                                                                                                    | no transport import (pure logic/form/test) |
+| --------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `alchemy/src/proxmox` (165 files) | 71             | 9 — `resource.ts` (the shared `pveHandlers` factory itself), `sdn-zone.ts`, `sdn-vnet.ts`, `sdn-subnet.ts`, `sdn-apply.ts`, `sdn-apply-read.ts`, `ha-resource.ts`, `ha-rule.ts`, `ceph-flag.ts` | 1 — `index.ts` (barrel, re-exports both)                                                                 | 84                                         |
+| `alchemy/src/openbao` (80 files)  | 2              | 36 (every `Bao*` family but Policy)                                                                                                                                                             | 5 — `distilled.ts`, `policy-wire.ts`, `policy-identity.ts`, `auth-role-wire.ts`, `auth-role-identity.ts` | 37                                         |
+
+The proxmox count confirms the doc text above with one addition: nine, not eight,
+files are hand-client-only. Eight back the seven named families (SdnApply's family
+spans two files, `sdn-apply.ts` and `sdn-apply-read.ts`); the ninth is `resource.ts`
+— the shared `pveHandlers`/`pveOperations` factory itself, which imports
+`./client.ts` and no `@distilled.cloud/*` module, so
+the one-hop rule that correctly attributes the seven named families' hand-client use
+attributes this file's own import the same way. It does not mean every distilled-only
+family still calls through it: 17 of the 71 import `resource.ts`, and all 17 are
+type-only (`PveRequirements`/`WithTarget`, or `WithPbsTarget` for three PBS files —
+types are erased at build time, invisible to `scanImports`, so the parser correctly
+leaves them out of this table). `ceph-osd.ts` is one of those 17, not an exception;
+it is the only one of the 71 that even mentions `pveHandlers` at all, in a comment
+explaining why it deliberately does not use the factory — read in full, it calls
+neither factory function. No other PVE/PBS family has regressed to hand-client
+since the 28-family migration
+landed.
+
+**OpenBao is far less migrated than this repo's own comments could suggest** — only
+`BaoPolicy`'s wire/identity pair and the `distilled.ts` wrapper use distilled transport
+at all today; every other family (`BaoMount`, `BaoAuthMethod`, `BaoAuthRole`'s form
+paths, `BaoPkiRole`, `BaoSshRole`, `BaoCloudflareRole`, `BaoProxmoxRole`, `BaoJwtRole`,
+`BaoJwtAuthConfig`, `BaoMfaTotpMethod`, `BaoMfaLoginEnforcement`, `BaoPlugin`,
+rename/remount/role-reconcile helpers) is still on the hand `bao-http.ts` client.
+`mount-wire.ts` specifically is blocked on more than volume: the distilled SDK's
+`mounts.ts` operations all declare `errors: []` (no typed absence error), unlike the
+sibling `policies.ts`'s `PolicyNotFound` — a clean migration needs that SDK gap patched
+first, in the distilled clone, per [the interim route](./distilled-interim.md)'s
+build-SDK-first step. Two `codex/`-prefixed worktrees already exist in the distilled
+clone (`openbao-mount-map`, `openbao-policy-runtime`) with unmerged work toward exactly
+this: `openbao-mount-map`'s six commits generate the OpenBao SDK from a disposable local
+2.6.2 server and add a typed mount-inventory response shape (`protocol-mount-tables.ts`,
+provenance in `patches/mount-tables.md`), but its `mounts.ts` operations still declare
+`errors: []` — the inventory-shape fix and the typed-absence-error fix are two separate
+gaps, and only the first is done there.
+
 - NetworkApply reads `listNodeNetwork`. A string `changes` sibling is preserved by
   the protocol and decoded by that operation's union. The diff is counted and does
   not enter state or logs.
