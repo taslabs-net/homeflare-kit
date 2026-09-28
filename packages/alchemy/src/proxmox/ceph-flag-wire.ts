@@ -52,9 +52,31 @@ const attributesOf = (live: unknown, props: CephFlagProps): CephFlagAttributes =
   value: bool(live),
 });
 
+/**
+ * ⛔ `Effect.die`, NOT a silent coercion, on `null`/`undefined`. `bool` treats a missing value as
+ *   `false` because most callers hand it an optional PVE form field where that is correct — but
+ *   here it would read an unmeasured "no answer" as "flag is clear", and distilled's
+ *   `transformResponse` maps a `{"data":null}` body to `{}` before this ever sees it (a shape
+ *   `get_flag`'s `type => 'boolean'` schema does not document and this PVE has never produced).
+ *   `value: false` in state would then plan `noop` over that silence with no read-back guard to
+ *   catch it (`reconcile`'s guard only fires on a write). Dying surfaces the unmeasured shape
+ *   instead of guessing a brake's position.
+ */
+const definedOrDie = (live: unknown, props: CephFlagProps) =>
+  live === null || live === undefined
+    ? Effect.die(
+        new Error(
+          `cluster/ceph/flags/${props.flag}: GET answered with no data (null/undefined). This ` +
+            "endpoint's success is documented as a bare boolean, not an absence -- check " +
+            '`ceph osd dump | head -1` and the cluster log rather than trust a coerced `false`.',
+        ),
+      )
+    : Effect.succeed(live);
+
 /** The live flag, as attributes. No `catchTag`: see the file header. */
 export const readClusterCephFlag = (props: CephFlagProps) =>
   runPve(props.target, 'read', false, cluster.getClusterCephFlag({ flag: props.flag })).pipe(
+    Effect.flatMap((live) => definedOrDie(live, props)),
     Effect.map((live) => attributesOf(live, props)),
   );
 
