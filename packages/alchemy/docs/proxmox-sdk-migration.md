@@ -49,14 +49,23 @@ read, not a text match — walked one hop through local imports so a family that
 reaches the hand client via the shared `resource.ts` factory is still attributed
 correctly; run against `packages/alchemy/src/proxmox` and `src/openbao`):
 
-| Package                           | distilled-only | hand-client-only                                                                                                                       | mixed                                                                                                    | no transport import (pure logic/form/test) |
-| --------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `alchemy/src/proxmox` (163 files) | 71             | 8 — `sdn-zone.ts`, `sdn-vnet.ts`, `sdn-subnet.ts`, `sdn-apply.ts`, `sdn-apply-read.ts`, `ha-resource.ts`, `ha-rule.ts`, `ceph-flag.ts` | 1 — `index.ts` (barrel, re-exports both)                                                                 | 83                                         |
-| `alchemy/src/openbao` (80 files)  | 2              | 36 (every `Bao*` family but Policy)                                                                                                    | 5 — `distilled.ts`, `policy-wire.ts`, `policy-identity.ts`, `auth-role-wire.ts`, `auth-role-identity.ts` | 37                                         |
+| Package                           | distilled-only | hand-client-only                                                                                                                                                                                | mixed                                                                                                    | no transport import (pure logic/form/test) |
+| --------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `alchemy/src/proxmox` (165 files) | 71             | 9 — `resource.ts` (the shared `pveHandlers` factory itself), `sdn-zone.ts`, `sdn-vnet.ts`, `sdn-subnet.ts`, `sdn-apply.ts`, `sdn-apply-read.ts`, `ha-resource.ts`, `ha-rule.ts`, `ceph-flag.ts` | 1 — `index.ts` (barrel, re-exports both)                                                                 | 84                                         |
+| `alchemy/src/openbao` (80 files)  | 2              | 36 (every `Bao*` family but Policy)                                                                                                                                                             | 5 — `distilled.ts`, `policy-wire.ts`, `policy-identity.ts`, `auth-role-wire.ts`, `auth-role-identity.ts` | 37                                         |
 
-The proxmox count confirms the doc text above exactly: eight files back the seven named
-families (SdnApply's family spans two files, `sdn-apply.ts` and `sdn-apply-read.ts`).
-No other PVE/PBS family has regressed to hand-client since the 28-family migration
+The proxmox count confirms the doc text above with one addition: the eight files back
+the seven named families (SdnApply's family spans two files, `sdn-apply.ts` and
+`sdn-apply-read.ts`), plus `resource.ts` — the shared `pveHandlers`/`pveOperations`
+factory itself, which imports `./client.ts` and no `@distilled.cloud/*` module, so
+the one-hop rule that correctly attributes the seven named families' hand-client use
+attributes this file's own import the same way. It does not mean every distilled-only
+family still calls through it: only `ceph-osd.ts` among the 71 imports `resource.ts`
+for anything beyond its `PveRequirements`/`WithTarget` **types** (erased at build time,
+invisible to `scanImports`, so the parser correctly leaves it out of this table), and
+even that file's `pveHandlers` mention is a comment, not a call — read in full, it
+calls neither factory function. No other PVE/PBS family has regressed to hand-client
+since the 28-family migration
 landed.
 
 **OpenBao is far less migrated than this repo's own comments could suggest** — only
