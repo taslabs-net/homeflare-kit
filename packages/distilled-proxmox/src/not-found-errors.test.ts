@@ -27,6 +27,13 @@ import {
   deleteNodeCephFs,
   getNodeCephPoolStatus,
 } from "./services/nodes.ts";
+import {
+  deleteClusterHaResource,
+  getClusterHaResource,
+  getClusterHaRule,
+  HaResourceNotFound,
+  HaRuleNotFound,
+} from "./services/cluster.ts";
 import { getStorage, StorageNotFound } from "./services/storage.ts";
 
 const testCredentials = credentials({
@@ -99,6 +106,37 @@ describe("WI-3 typed not-found errors decode from PVE's real wire shape", () => 
       },
     );
     expect(error).toBeInstanceOf(CephPoolNotFound);
+  });
+
+  test("a missing HA resource's 500 decodes to HaResourceNotFound", async () => {
+    const error = await flipped(getClusterHaResource({ sid: "ct:101" }), 500, {
+      message: "no such resource 'ct:101'\n",
+    });
+    expect(error).toBeInstanceOf(HaResourceNotFound);
+  });
+
+  test("deleting an unmanaged HA resource's 500 decodes to HaResourceNotFound", async () => {
+    const error = await flipped(
+      deleteClusterHaResource({ sid: "vm:100" }),
+      500,
+      { message: "cannot delete service 'vm:100', not HA managed!\n" },
+    );
+    expect(error).toBeInstanceOf(HaResourceNotFound);
+  });
+
+  test("a missing HA rule's 500 decodes to HaRuleNotFound", async () => {
+    const error = await flipped(getClusterHaRule({ rule: "keep-apart" }), 500, {
+      message: "no such ha rule 'keep-apart'\n",
+    });
+    expect(error).toBeInstanceOf(HaRuleNotFound);
+  });
+
+  test("a nearby HA sentence does not become absence", async () => {
+    const error = await flipped(getClusterHaResource({ sid: "ct:101" }), 500, {
+      message:
+        "service 'ct:101' in error state, must be disabled and fixed first\n",
+    });
+    expect(error).not.toBeInstanceOf(HaResourceNotFound);
   });
 
   test("a missing Ceph filesystem's 500 (on destroy) decodes to CephFsNotFound", async () => {

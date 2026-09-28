@@ -33,6 +33,32 @@ export class FirewallAliasNotFound
     [{ status: 400, message: { matches: "^no such alias$" } }],
   ) {}
 
+/** The HA resource does not exist. pve-ha-manager 5.2.5, 28c31e4124ab2440753e7bf843c4dba97637aed8, PVE/API2/HA/Resources.pm:27 (GET, via the read method at line 179) raises no such resource '<sid>', and line 320 (DELETE) raises cannot delete service '<sid>', not HA managed. Both are wire 500. PUT does not raise either sentence and is not attached. */
+export class HaResourceNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<HaResourceNotFound>()("HaResourceNotFound", {
+      message: S.String,
+    }).pipe(C.withBadRequestError),
+    [
+      { status: 500, message: { matches: "^no such resource '[^']+'\\n?$" } },
+      {
+        status: 500,
+        message: {
+          matches: "^cannot delete service '[^']+', not HA managed!\\n?$",
+        },
+      },
+    ],
+  ) {}
+
+/** The HA rule does not exist. pve-ha-manager 5.2.5, 28c31e4124ab2440753e7bf843c4dba97637aed8, PVE/API2/HA/Rules.pm:25 (GET, via the read method at line 247) raises no such ha rule '<ruleid>' as a wire 500. DELETE removes the id with no absence check and is not attached. PUT of a missing rule raises a different sentence and is not this tag. */
+export class HaRuleNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<HaRuleNotFound>()("HaRuleNotFound", {
+      message: S.String,
+    }).pipe(C.withBadRequestError),
+    [{ status: 500, message: { matches: "^no such ha rule '[^']+'\\n?$" } }],
+  ) {}
+
 /** The metrics server does not exist. pve-manager 9.2.11, f6997e698c7933ea8e62319e2bf1bf7262daa56a, PVE/API2/Cluster/MetricServer.pm:136 throws status server entry '<id>' does not exist on GET, and line 228 throws no such server '<id>' on PUT. Both are wire 500. DELETE dereferences the plugin config without an explicit absence check and is not declared to return this tag. */
 export class MetricServerNotFound
   extends /*@__PURE__*/ T.applyErrorMatchers(
@@ -15366,7 +15392,7 @@ export const deleteClusterHaGroup: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type DeleteClusterHaResourceError = ProxmoxOpError;
+export type DeleteClusterHaResourceError = HaResourceNotFound | ProxmoxOpError;
 /** Delete resource configuration. (root-privileged endpoint) */
 export const deleteClusterHaResource: API.OperationMethod<
   DeleteClusterHaResourceRequest,
@@ -15376,7 +15402,7 @@ export const deleteClusterHaResource: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: DeleteClusterHaResourceRequest,
   output: DeleteClusterHaResourceResponse,
-  errors: [],
+  errors: [HaResourceNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
@@ -16107,7 +16133,7 @@ export const getClusterHaGroup: API.OperationMethod<
   retry: Retry.Retry,
 }));
 
-export type GetClusterHaResourceError = ProxmoxOpError;
+export type GetClusterHaResourceError = HaResourceNotFound | ProxmoxOpError;
 /** Read resource configuration. */
 export const getClusterHaResource: API.OperationMethod<
   GetClusterHaResourceRequest,
@@ -16117,12 +16143,12 @@ export const getClusterHaResource: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: GetClusterHaResourceRequest,
   output: GetClusterHaResourceResponse,
-  errors: [],
+  errors: [HaResourceNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));
 
-export type GetClusterHaRuleError = ProxmoxOpError;
+export type GetClusterHaRuleError = HaRuleNotFound | ProxmoxOpError;
 /** Read HA rule. */
 export const getClusterHaRule: API.OperationMethod<
   GetClusterHaRuleRequest,
@@ -16132,7 +16158,7 @@ export const getClusterHaRule: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: GetClusterHaRuleRequest,
   output: GetClusterHaRuleResponse,
-  errors: [],
+  errors: [HaRuleNotFound],
   protocol: ProxmoxProtocol,
   retry: Retry.Retry,
 }));

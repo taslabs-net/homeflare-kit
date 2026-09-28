@@ -37,6 +37,12 @@ operations the vendor schema itself marks `proxyto: "node"`.
 Task polling belongs in the Alchemy provider: the SDK exports the generated
 `getNodeTaskStatus` operation, and the caller owns its bound and failure policy.
 
+HA resource GET and DELETE expose `HaResourceNotFound`, and HA rule GET exposes
+`HaRuleNotFound`, from pve-ha-manager 5.2.5 (`28c31e41`): `no such resource`,
+`cannot delete service … not HA managed`, and `no such ha rule`. PUT is not
+attached — it does not raise those sentences. Rule DELETE has no absence
+check and stays untyped.
+
 Pool, backup-job, metric-server and network-interface missing reads expose precise typed tags
 from vendor source at pve-manager 9.2.11. Backup-job absence uses a sole nested
 `errors.id`; network-interface absence uses the exact sole `errors.iface` — on both its
