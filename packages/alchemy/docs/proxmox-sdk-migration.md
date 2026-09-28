@@ -61,11 +61,13 @@ spans two files, `sdn-apply.ts` and `sdn-apply-read.ts`); the ninth is `resource
 `./client.ts` and no `@distilled.cloud/*` module, so
 the one-hop rule that correctly attributes the seven named families' hand-client use
 attributes this file's own import the same way. It does not mean every distilled-only
-family still calls through it: only `ceph-osd.ts` among the 71 imports `resource.ts`
-for anything beyond its `PveRequirements`/`WithTarget` **types** (erased at build time,
-invisible to `scanImports`, so the parser correctly leaves it out of this table), and
-even that file's `pveHandlers` mention is a comment, not a call — read in full, it
-calls neither factory function. No other PVE/PBS family has regressed to hand-client
+family still calls through it: 17 of the 71 import `resource.ts`, and all 17 are
+type-only (`PveRequirements`/`WithTarget`, or `WithPbsTarget` for three PBS files —
+types are erased at build time, invisible to `scanImports`, so the parser correctly
+leaves them out of this table). `ceph-osd.ts` is one of those 17, not an exception;
+it is the only one of the 71 that even mentions `pveHandlers` at all, in a comment
+explaining why it deliberately does not use the factory — read in full, it calls
+neither factory function. No other PVE/PBS family has regressed to hand-client
 since the 28-family migration
 landed.
 
