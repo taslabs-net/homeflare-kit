@@ -79,75 +79,18 @@ import * as Effect from 'effect/Effect';
 import {
   CEPH_FLAG_UPDATE,
   readClusterCephFlag,
+  readClusterCephFlagForDiff,
   updateForm,
   writeClusterCephFlag,
 } from './ceph-flag-wire.ts';
+import { mintTier } from './credentials.ts';
+import { UNREADABLE, unreadableWarning } from './unreadable-read.ts';
 import { guardWrite } from './distilled-guard.ts';
-import type { PveRequirements, WithTarget } from './resource-spec.ts';
+import type { CephFlagAttributes, CephFlagProps } from './ceph-flag-types.ts';
+import type { PveRequirements } from './resource-spec.ts';
 import { formToSend } from './update-guard.ts';
 
-/**
- * PVE's eleven flags, spelled as `PVE::Ceph::Tools::get_possible_osd_flags` spells them.
- *
- * ⚠️ THE ENUM IS CLOSED AND A TYPO IS A 400, WHICH IS WHY THIS IS A UNION AND NOT `string`. Both
- *   the GET and the PUT declare `additionalProperties => 0` over exactly this list.
- * ⚠️ CEPH HAS FLAGS PVE DOES NOT MODEL, and four of them are always on. MEASURED on C1:
- *   `ceph osd dump` reports `flags sortbitwise,recovery_deletes,purged_snapdirs,pglog_hardlimit`.
- *   PVE reads that same string and answers only about its own eleven, so the others can neither
- *   leak in here nor be set from here — `noautoscale` and `nosnaptrim` included.
- *   ⛔ IF SOMEBODY LATER "IMPROVES" THE READ BY PARSING `osd dump` DIRECTLY, those four become
- *     permanently-set flags that nothing declares: a forever-diff on a brand new cluster.
- */
-export type CephFlagName =
-  | 'nobackfill'
-  | 'nodeep-scrub'
-  | 'nodown'
-  | 'noin'
-  | 'noout'
-  | 'norebalance'
-  | 'norecover'
-  | 'noscrub'
-  | 'notieragent'
-  | 'noup'
-  | 'pause';
-
-export interface CephFlagProps extends WithTarget {
-  /**
-   * Which flag. PVE's primary key here, and the last segment of the path.
-   *
-   * ⚠️ EDITING IT IN PLACE ORPHANS THE OLD FLAG RATHER THAN MOVING ANYTHING. `diff` reads the NEW
-   *   path and reconcile writes it, while the old flag keeps whatever this stack last put there.
-   *   There is deliberately no replace override for it — acl.ts needs one because its `delete`
-   *   removes a real grant, and `delete` here is inert by design, so a replace would do exactly
-   *   what an update already does. Declare a second resource and set the old one to `value: false`
-   *   rather than renaming this one.
-   * ⛔ TWO RESOURCES DECLARING THE SAME FLAG ARE ONE CLUSTER OBJECT, and Alchemy sees two ids
-   *   rather than a collision — the acl.ts hazard exactly. Disagreeing, they take turns winning
-   *   and BOTH plan `update` for ever; agreeing, deleting either leaves the flag where the other
-   *   put it. One declaration per flag per cluster.
-   */
-  flag: CephFlagName;
-  /**
-   * Set the flag (`true`) or clear it (`false`).
-   *
-   * ⛔ REQUIRED, WITH NO DEFAULT — see the second ⛔ in the header, which is the whole safety
-   *   argument for this family. It is also the only field PVE accepts on this endpoint, and it is
-   *   not optional in the schema either: omitting it from the form is a 400, not an untouched
-   *   flag. (The BULK endpoint is the one where omission means "leave it alone"; this is not it.)
-   */
-  value: boolean;
-}
-
-export interface CephFlagAttributes {
-  /**
-   * ⚠️ REPORTED, NEVER COMPARED. It is the path key the read was made WITH, copied back out of
-   *   props, so comparing it against props would be true by construction — the same reasoning
-   *   acl.ts gives for the four identity fields it also declines to diff.
-   */
-  flag: CephFlagName;
-  /** Whether ceph has the flag set right now. The only field `matches` looks at. */
-  value: boolean;
-}
+export type { CephFlagAttributes, CephFlagName, CephFlagProps } from './ceph-flag-types.ts';
 
 export interface ProxmoxCephFlag extends Resource<
   'Proxmox.CephFlag',
@@ -195,9 +138,19 @@ export const ProxmoxCephFlagProvider = () =>
           if (!isResolved(news)) return undefined;
           yield* guardWrite(CEPH_FLAG_UPDATE, updateForm(news), false);
           if (output === undefined) return undefined;
-          // ⛔ Never absent — see the second ⛔ above. A failed read propagates instead of
-          //   reaching this point, so there is no "live === undefined" branch to guard here.
-          const live = yield* readClusterCephFlag(news);
+          // ⛔ Never absent — see the second ⛔ above. A failed read other than a refused mint
+          //   propagates instead of reaching this point. A refused mint must NOT fail `diff`:
+          //   that aborts the whole plan (unreadable-read.ts). `read` still propagates.
+          const live = yield* readClusterCephFlagForDiff(news);
+          if (live === UNREADABLE) {
+            yield* unreadableWarning(
+              'Proxmox.CephFlag',
+              news.flag,
+              news.target.mount,
+              mintTier(news.target, 'read'),
+            );
+            return { action: 'noop' } as const;
+          }
           return { action: matches(live, news) ? 'noop' : 'update' } as const;
         }),
         /** ⛔ Inert, deliberately. The third ⛔ in the header is the whole argument; read it. */

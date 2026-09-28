@@ -31,6 +31,7 @@ import * as cluster from '@distilled.cloud/proxmox/cluster';
 import * as Effect from 'effect/Effect';
 import type { CephFlagAttributes, CephFlagProps } from './ceph-flag.ts';
 import { runPve } from './distilled-pve.ts';
+import { readOrUnreadable } from './unreadable-read.ts';
 import { bool, flag } from './values.ts';
 
 /** The one endpoint this family writes, as `guardWrite` (distilled-guard.ts) keys it. */
@@ -53,32 +54,55 @@ const attributesOf = (live: unknown, props: CephFlagProps): CephFlagAttributes =
 });
 
 /**
- * ⛔ `Effect.die`, NOT a silent coercion, on `null`/`undefined`. `bool` treats a missing value as
+ * ⛔ DIE ON THE POST-TRANSFORM SHAPE, NOT THE PRE-TRANSFORM ONE. `bool` treats a missing value as
  *   `false` because most callers hand it an optional PVE form field where that is correct — but
- *   here it would read an unmeasured "no answer" as "flag is clear", and distilled's
- *   `transformResponse` maps a `{"data":null}` body to `{}` before this ever sees it (a shape
+ *   here it would read an unmeasured "no answer" as "flag is clear". distilled's
+ *   `transformResponse` maps a `{"data":null}` body to `{}` BEFORE this function sees it (a shape
  *   `get_flag`'s `type => 'boolean'` schema does not document and this PVE has never produced).
- *   `value: false` in state would then plan `noop` over that silence with no read-back guard to
- *   catch it (`reconcile`'s guard only fires on a write). Dying surfaces the unmeasured shape
- *   instead of guessing a brake's position.
+ *   Guarding only `null`/`undefined` lets that `{}` through, and `bool({})` is `false` — a plan
+ *   of `noop` over a set brake, with no read-back guard, because `reconcile`'s guard only fires
+ *   on a write. A success here is a scalar (`true`/`false`/`0`/`1`/`'0'`/`'1'`). Anything else,
+ *   including the empty object the protocol substitutes for null, is the unmeasured shape.
  */
-const definedOrDie = (live: unknown, props: CephFlagProps) =>
-  live === null || live === undefined
-    ? Effect.die(
+export const scalarFlagOrDie = (live: unknown, props: CephFlagProps) => {
+  const scalar =
+    typeof live === 'boolean' || live === 0 || live === 1 || live === '0' || live === '1';
+  return scalar
+    ? Effect.succeed(live)
+    : Effect.die(
         new Error(
-          `cluster/ceph/flags/${props.flag}: GET answered with no data (null/undefined). This ` +
-            "endpoint's success is documented as a bare boolean, not an absence -- check " +
-            '`ceph osd dump | head -1` and the cluster log rather than trust a coerced `false`.',
+          `cluster/ceph/flags/${props.flag}: GET answered ${JSON.stringify(live)}, not a bare ` +
+            "boolean. This endpoint's success is a scalar; an empty object is what the protocol " +
+            'substitutes for `{"data":null}`. Check `ceph osd dump | head -1` and the cluster ' +
+            'log rather than trust a coerced `false`.',
         ),
-      )
-    : Effect.succeed(live);
+      );
+};
 
-/** The live flag, as attributes. No `catchTag`: see the file header. */
+/**
+ * The live flag, as attributes.
+ *
+ * ⚠️ NO ABSENCE TAG, ON PURPOSE. Both operations declare `errors: []` (see the file header), so
+ *   there is nothing to `catchTag` except `PveCredentialDenied`, and that one is caught by the
+ *   caller that plans (`readClusterCephFlagForDiff`) — not here. `read` and `reconcile` must
+ *   still see a refused mint as itself.
+ */
 export const readClusterCephFlag = (props: CephFlagProps) =>
   runPve(props.target, 'read', false, cluster.getClusterCephFlag({ flag: props.flag })).pipe(
-    Effect.flatMap((live) => definedOrDie(live, props)),
+    Effect.flatMap((live) => scalarFlagOrDie(live, props)),
     Effect.map((live) => attributesOf(live, props)),
   );
+
+/**
+ * The same read, with a refused mint turned into `UNREADABLE`.
+ *
+ * ⛔ `diff` MUST NOT FAIL ON A REFUSED READ. Alchemy runs every resource's `diff` under
+ *   `Effect.exit` and fails the whole plan if one fails (unreadable-read.ts). A lane that cannot
+ *   mint `read` would otherwise abort every other row, not just this flag. `read` and
+ *   `reconcile` keep the propagating form above.
+ */
+export const readClusterCephFlagForDiff = (props: CephFlagProps) =>
+  readOrUnreadable(readClusterCephFlag(props));
 
 /**
  * ⚠️ ONLY `value` GOES IN THE BODY. `flag` is already bound by the path and the PUT declares
