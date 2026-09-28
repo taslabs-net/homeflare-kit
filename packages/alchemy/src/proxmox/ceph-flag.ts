@@ -73,10 +73,18 @@
  *     "Permission check failed (/, Sys.Modify)" on the first deploy, and widen deliberately.
  */
 import { Resource } from 'alchemy';
+import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { type PveRequirements, type WithTarget, pveHandlers } from './resource.ts';
-import { bool, flag } from './values.ts';
+import {
+  CEPH_FLAG_UPDATE,
+  readClusterCephFlag,
+  updateForm,
+  writeClusterCephFlag,
+} from './ceph-flag-wire.ts';
+import { guardWrite } from './distilled-guard.ts';
+import type { PveRequirements, WithTarget } from './resource-spec.ts';
+import { formToSend } from './update-guard.ts';
 
 /**
  * PVE's eleven flags, spelled as `PVE::Ceph::Tools::get_possible_osd_flags` spells them.
@@ -151,86 +159,72 @@ export interface ProxmoxCephFlag extends Resource<
 
 export const ProxmoxCephFlag = Resource<ProxmoxCephFlag>('Proxmox.CephFlag');
 
-const handlers = pveHandlers<CephFlagProps, CephFlagAttributes>({
-  /**
-   * ⚠️ `live` IS A BARE BOOLEAN HERE, NOT AN OBJECT, AND IT IS HANDED TO `bool` WHOLE ON PURPOSE.
-   *   `get_flag` returns perl `1` or `0` under a `type => 'boolean'` return schema, so the wire is
-   *   `{"data":0}` or `{"data":false}` depending on how the REST layer renders it. `bool` accepts
-   *   every one of those spellings, which is exactly why it is a shared coercion. The factory
-   *   types this parameter `Record<string, unknown>` because every OTHER PVE read is an object;
-   *   reaching for `live['value']` here would answer undefined on every plan and diff `false`
-   *   forever against a set flag.
-   *   ⚠️ THE SCALAR IS A MEASURED PROPERTY OF THIS PVE, NOT A PROMISE. A later version wrapping
-   *     the answer in an object would make `bool` read a SET flag as false, and `value: false`
-   *     would then plan `noop` over a live flag — silently. Re-measure
-   *     `GET /cluster/ceph/flags/noout` after a major upgrade; cheaper than a second parse path.
-   *
-   * ⛔ IT NEVER ANSWERS undefined, WHICH MAKES THE CREATE BRANCH UNREACHABLE, AND ITS ERROR WILL
-   *   MISLEAD YOU. All eleven flags always exist; there is nothing for "absent" to mean. So a POST
-   *   to `collection` means the READ failed — an expired 300s lease, node-b down, or ceph simply not
-   *   configured on the cluster (every one of these four handlers opens with
-   *   `check_ceph_configured()`, which dies). Read the resulting "Method 'POST /cluster/ceph/flags'
-   *   not implemented" as "the read failed" and go and look at the credential, not at ceph. Same
-   *   shape as the unreachable POST in acl.ts, same advice.
-   */
-  attributes: (live, props) => ({ flag: props.flag, value: bool(live) }),
-  collection: () => 'cluster/ceph/flags',
-  /**
-   * ⛔ UNREACHABLE — see the second ⛔ in `attributes`. It is written in the BULK endpoint's shape
-   *   (the flag name is the parameter, not `value`) rather than left empty, because that is the
-   *   only body `cluster/ceph/flags` has ever documented. Nothing sends it today.
-   */
-  createForm: (props) => ({ [props.flag]: flag(props.value) ?? '0' }),
-  endpoint: { update: 'pve:PUT /cluster/ceph/flags/{flag}' }, // ⛔ No create: see above.
-  /**
-   * ⚠️ `value` IS THE ONLY THING COMPARED, AND THE LIST OF THINGS DELIBERATELY NOT COMPARED IS THE
-   *   point of this resource. `flag` is props-derived (see `CephFlagAttributes`). `description`
-   *   and `name` exist only on the bulk GET, which this file does not read, so neither can be
-   *   compared by accident. Nothing PVE returns here is rewritten, re-ordered or re-typed by the
-   *   cluster, because all PVE returns here is one boolean.
-   *   ★ MEASURED: on C1, `GET /cluster/ceph/flags` answers value 0 for all eleven flags, so a
-   *     declaration of `value: false` reads back false and plans `noop`.
-   */
-  matches: (attributes, props) => attributes.value === props.value,
-  path: (props) => `cluster/ceph/flags/${props.flag}`,
-  /**
-   * ⚠️ ONLY `value` GOES IN THE BODY. `flag` is already bound by the path and the PUT declares
-   *   `additionalProperties => 0`, so a second copy in the form could only disagree with the URL.
-   * ⚠️ THE `?? '0'` IS UNREACHABLE, AND IS WRITTEN RATHER THAN CAST AWAY. `flag()` types its
-   *   answer `string | undefined` because it serves OPTIONAL props, and `value` here is required,
-   *   so the branch cannot be taken; a cast would claim a proof the type system has not made.
-   */
-  updateForm: (props) => ({ value: flag(props.value) ?? '0' }),
-});
+/**
+ * ⚠️ `value` IS THE ONLY THING COMPARED, AND THE LIST OF THINGS DELIBERATELY NOT COMPARED IS THE
+ *   point of this resource. `flag` is props-derived (see `CephFlagAttributes`). `description`
+ *   and `name` exist only on the bulk GET, which this file does not read, so neither can be
+ *   compared by accident. Nothing PVE returns here is rewritten, re-ordered or re-typed by the
+ *   cluster, because all PVE returns here is one boolean.
+ *   ★ MEASURED: on C1, `GET /cluster/ceph/flags` answers value 0 for all eleven flags, so a
+ *     declaration of `value: false` reads back false and plans `noop`.
+ */
+const matches = (attributes: CephFlagAttributes, props: CephFlagProps) =>
+  attributes.value === props.value;
 
+/**
+ * ★ MIGRATED OFF `pveHandlers`/`client.ts`'s generic `pve()` ONTO `@distilled.cloud/proxmox`'s
+ *   typed `cluster.getClusterCephFlag`/`cluster.putClusterCephFlag` (ceph-flag-wire.ts).
+ *   `pveHandlers` cannot run a distilled operation, so `diff`/`reconcile` are hand-written here,
+ *   the same way ceph-pool.ts and backup-job.ts hand-write theirs for the same reason.
+ *
+ * ⛔ THIS FAMILY HAS NO CREATE KEY, AND THAT IS THE VENDOR'S DOING, NOT AN OMISSION HERE. PVE
+ *   registers only `PUT /cluster/ceph/flags/{flag}`; `POST /cluster/ceph/flags` does not exist
+ *   (constraints-forms.test.ts's own regression test), which is why the second ⛔ in the header
+ *   above calls the create branch unreachable — there is no create form and no create endpoint to
+ *   guard, only `CEPH_FLAG_UPDATE`.
+ */
 export const ProxmoxCephFlagProvider = () =>
   Provider.effect(
     ProxmoxCephFlag,
     Effect.succeed(
       ProxmoxCephFlag.Provider.of({
-        /**
-         * ⚠️ NOT THE ONE-LINE `Provider.of(handlers)` EVERY OTHER FILE HERE USES, AND THE TWO
-         *   REASONS ARE BOTH acl.ts's. PVE implements no DELETE on this path, and the factory's
-         *   read-back guard is dead whenever `attributes` cannot answer undefined. Unlike acl.ts
-         *   this SPREADS the factory's handlers instead of retyping them, so `list`, `read` and
-         *   `diff` cannot drift from the shared ones — only the two that genuinely differ are
-         *   written out below.
-         */
-        ...handlers,
+        /** ⛔ Empty, like every resource in this package — see resource.ts's own ⚠️ on why. */
+        list: () => Effect.succeed([]),
+        read: ({ olds }) => readClusterCephFlag(olds),
+        diff: Effect.fn(function* ({ news, output }) {
+          if (!isResolved(news)) return undefined;
+          yield* guardWrite(CEPH_FLAG_UPDATE, updateForm(news), false);
+          if (output === undefined) return undefined;
+          // ⛔ Never absent — see the second ⛔ above. A failed read propagates instead of
+          //   reaching this point, so there is no "live === undefined" branch to guard here.
+          const live = yield* readClusterCephFlag(news);
+          return { action: matches(live, news) ? 'noop' : 'update' } as const;
+        }),
         /** ⛔ Inert, deliberately. The third ⛔ in the header is the whole argument; read it. */
         delete: () => Effect.void,
         /**
-         * ⚠️ THE READ-BACK GUARD, RESTORED FOR A FAMILY WHOSE "ABSENT" DOES NOT EXIST.
-         *   `ops.reconcile` refuses when the object is still missing after a write, and a flag is
-         *   never missing, so that check can never fire here — exactly the hole acl.ts patches
-         *   with `bound`. PVE answers 200 with `{"data":null}` on calls that did nothing, and this
-         *   PUT's documented return IS null, so the status code carries no evidence at all.
+         * ⚠️ THE READ-BACK GUARD, RESTORED FOR A FAMILY WHOSE "ABSENT" DOES NOT EXIST. A generic
+         *   `reconcile` (resource.ts) refuses when the object is still missing after a write, and
+         *   a flag is never missing, so that check could never fire here. PVE answers 200 with
+         *   `{"data":null}` on calls that did nothing, and this PUT's documented return IS null,
+         *   so the status code carries no evidence at all — only a read-back does.
          * ⚠️ THE PER-FLAG PUT IS SYNCHRONOUS (`$rados->mon_command` inline, MEASURED in Ceph.pm),
          *   which is what makes this check fair rather than a race against a worker task. If it
          *   ever fires spuriously the honest fix is to look at the mon, not to delete the guard.
+         * ⛔ `formToSend` IS WHAT MAKES ADOPTING AN ALREADY-MATCHING FLAG FREE. Alchemy's
+         *   `adopted` action reaches `reconcile` exactly like `update` does (resource.ts's own ⛔
+         *   on this), so without this guard adopting a flag that already reads correctly would
+         *   still fire a PUT — pointless against ceph, and update-guard.ts's header has the
+         *   incident where the equivalent gap on CephPool forked an unnecessary worker.
          */
         reconcile: Effect.fn(function* ({ news }) {
-          const after = yield* handlers.reconcile({ news });
+          const live = yield* readClusterCephFlag(news);
+          const form = formToSend(matches, live, news, updateForm(news));
+          if (form !== undefined) {
+            yield* guardWrite(CEPH_FLAG_UPDATE, updateForm(news), false);
+            yield* writeClusterCephFlag(news);
+          }
+          const after = yield* readClusterCephFlag(news);
           if (after.value !== news.value) {
             return yield* Effect.die(
               new Error(
