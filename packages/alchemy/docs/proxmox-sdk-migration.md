@@ -54,10 +54,11 @@ correctly; run against `packages/alchemy/src/proxmox` and `src/openbao`):
 | `alchemy/src/proxmox` (165 files) | 71             | 9 — `resource.ts` (the shared `pveHandlers` factory itself), `sdn-zone.ts`, `sdn-vnet.ts`, `sdn-subnet.ts`, `sdn-apply.ts`, `sdn-apply-read.ts`, `ha-resource.ts`, `ha-rule.ts`, `ceph-flag.ts` | 1 — `index.ts` (barrel, re-exports both)                                                                 | 84                                         |
 | `alchemy/src/openbao` (80 files)  | 2              | 36 (every `Bao*` family but Policy)                                                                                                                                                             | 5 — `distilled.ts`, `policy-wire.ts`, `policy-identity.ts`, `auth-role-wire.ts`, `auth-role-identity.ts` | 37                                         |
 
-The proxmox count confirms the doc text above with one addition: the eight files back
-the seven named families (SdnApply's family spans two files, `sdn-apply.ts` and
-`sdn-apply-read.ts`), plus `resource.ts` — the shared `pveHandlers`/`pveOperations`
-factory itself, which imports `./client.ts` and no `@distilled.cloud/*` module, so
+The proxmox count confirms the doc text above with one addition: nine, not eight,
+files are hand-client-only. Eight back the seven named families (SdnApply's family
+spans two files, `sdn-apply.ts` and `sdn-apply-read.ts`); the ninth is `resource.ts`
+— the shared `pveHandlers`/`pveOperations` factory itself, which imports
+`./client.ts` and no `@distilled.cloud/*` module, so
 the one-hop rule that correctly attributes the seven named families' hand-client use
 attributes this file's own import the same way. It does not mean every distilled-only
 family still calls through it: only `ceph-osd.ts` among the 71 imports `resource.ts`
