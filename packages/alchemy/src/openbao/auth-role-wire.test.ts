@@ -16,6 +16,7 @@ const DATA = {
   secret_id_num_uses: 0,
   secret_id_ttl: 7776000,
   token_max_ttl: 3600,
+  token_period: 0,
   token_policies: ['host-cert'],
   token_ttl: 900,
 };

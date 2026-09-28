@@ -25,6 +25,7 @@ const ROLE = {
   secret_id_num_uses: 0,
   secret_id_ttl: 0,
   token_max_ttl: 3600,
+  token_period: 0,
   token_policies: ['default'],
   token_ttl: 900,
 };
