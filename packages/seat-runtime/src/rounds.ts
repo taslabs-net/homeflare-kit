@@ -26,13 +26,21 @@
  *   answers on round `maxRounds` exactly is `capped: false`: the cap did not fire.
  * 🔴 THE FORCED TURN CAN BE REFUSED, AND THEN THE RUN DOES NOT DIE OF IT. A provider that asks for
  *   a tool although none was offered (a gateway that adds a dummy tool for a history full of
- *   tool calls does exactly that) answers a turn the SDK cannot decode: `AiError` with reason
- *   `InvalidOutputError`, "Expected ... text | reasoning ..." (reproduced 2026-09-29, review of
- *   PR 328 round 2, against a scripted model: 3 model calls, then the whole run failed with all
- *   its rounds already spent). That one failure is caught: the result is `capped` and
- *   `unanswered`, its `response` is the LAST TOOL ROUND's (whose calls did run), `rounds` stays
- *   `maxRounds`, and a warning, a span error and `seat_rounds_unanswered_total` say what happened.
- *   Any OTHER failure of the forced turn (network, rate limit, a handler) still fails the run.
+ *   tool calls does exactly that) answers a turn the SDK cannot use, and the SDK says so with one
+ *   of TWO `AiError` reasons, depending on WHO rejects the tool call:
+ *   - `ToolNotFoundError`: @effect/ai-openai-compat (`SeatModel`'s provider) rejects it first,
+ *     while it maps the reply (`transformToolCallParams`: "Tool ... not found. Available tools:
+ *     none"). Measured 2026-09-29 (review of PR 328, of the round 2 fix), `SeatModel` against a loopback
+ *     LiteLLM stand-in that answered every call with a tool call: 3 model calls, tools offered
+ *     [true, true, false], then the whole run failed with every round already spent. Round 2's
+ *     fix caught only the reason below and so did nothing for this provider.
+ *   - `InvalidOutputError`: `LanguageModel.make`'s own decode of the provider's parts ("Expected
+ *     ... text | reasoning ..."), reached by a provider that hands the SDK a tool-call part
+ *     itself (the scripted model in tests/fake-model.ts).
+ *   Either is caught: the result is `capped` and `unanswered`, its `response` is the LAST TOOL
+ *   ROUND's (whose calls did run), `rounds` stays `maxRounds`, and a warning, a span error and
+ *   `seat_rounds_unanswered_total` say what happened. Any OTHER failure of the forced turn
+ *   (network, rate limit, a handler) still fails the run.
  */
 import * as Effect from 'effect/Effect';
 import * as Metric from 'effect/Metric';
@@ -160,21 +168,25 @@ export function runRounds<Tools extends Record<string, Tool.Any>>(
       maxRounds,
     });
     const forcedRound = maxRounds + 1;
+    /** The forced turn came back as a tool call: counted and logged, and the run goes on. */
+    const refused = () =>
+      Effect.as(
+        Effect.all([
+          Metric.update(roundsUnanswered, 1),
+          Effect.logWarning('seat forced final turn refused: the model still asked for a tool', {
+            maxRounds,
+          }),
+        ]),
+        undefined,
+      );
     const forced = yield* chat.generateText({ prompt: Prompt.empty, toolChoice: 'none' }).pipe(
       Effect.flatMap(finish(forcedRound, true)),
       span(forcedRound, true),
-      // ⚠️ Only `InvalidOutputError`: see the header for what it is and what it is not.
-      Effect.catchReason('AiError', 'InvalidOutputError', () =>
-        Effect.as(
-          Effect.all([
-            Metric.update(roundsUnanswered, 1),
-            Effect.logWarning('seat forced final turn refused: the model still asked for a tool', {
-              maxRounds,
-            }),
-          ]),
-          undefined,
-        ),
-      ),
+      // ⚠️ Only the two reasons of a tool call nobody offered: see the header for who raises which.
+      Effect.catchReasons('AiError', {
+        InvalidOutputError: refused,
+        ToolNotFoundError: refused,
+      }),
     );
     return forced === undefined
       ? { response, rounds: maxRounds, capped: true, unanswered: true }

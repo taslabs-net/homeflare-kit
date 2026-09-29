@@ -42,8 +42,11 @@ export type FakeModel = {
  * @param failAt Call number to fail with an `AiError`, instead.
  * @param stubborn A model that asks for a tool even when NONE is offered: what a gateway that
  *              invents a tool for a history full of tool calls can answer (review of PR 328,
- *              round 2). The SDK cannot decode that part, so the call fails with
- *              `InvalidOutputError`, as it does with a real provider.
+ *              round 2). ⚠️ This model hands the SDK a tool-call part itself, so `LanguageModel`
+ *              rejects it with `InvalidOutputError`. It is NOT what `SeatModel` does: compat
+ *              rejects the same reply first, as `ToolNotFoundError` (an earlier version of this
+ *              comment said "as it does with a real provider", and was wrong). The real-provider
+ *              path is tests/seat-refused.test.ts, through `SeatModel` and a loopback stub.
  */
 export function fakeModel(
   asks: (call: number) => boolean,

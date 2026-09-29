@@ -73,7 +73,7 @@ export function headerValues(headers: McpHeaders | undefined): string[] {
  *   client when the budget is spent, and `close` aborts the transport's fetch, which is the only
  *   thing that cancels that pending POST.
  * ★ THE CALLER'S `signal` CLOSES IT TOO. It fires when the fiber is interrupted (a seat shutting
- *   down, an `Effect.timeout`), which only means something because `connect` runs the handshake
+ *   down, an `Effect.timeout`), which only means something because `connectAndBuild` runs the handshake
  *   in the `restore`d, interruptible part of its mask: a handshake inside `acquireRelease`'s
  *   uninterruptible acquire would ignore it (that was the first version of this timeout).
  * ⚠️ Whatever the SDK rejects with after the budget is spent (an `AbortError` from the cancelled
@@ -117,27 +117,44 @@ async function handshake(
 }
 
 /**
- * Connect and handshake; the client lives as long as the surrounding `Scope`.
+ * Connect, handshake and BUILD whatever the caller needs from the client (`build`: for
+ * `mcpToolkit`, listing the tools and making the toolkit). The client lives as long as the
+ * surrounding `Scope`, and only when ALL of that worked.
  *
- * ★ THE FINALIZER IS REGISTERED ONLY AFTER THE HANDSHAKE SUCCEEDED. A scoped constructor that
- *   fails must leave nothing in the caller's scope, and this one used to register the `Client`'s
- *   `close` first. Each `Client` carries its own JSON Schema validator (SDK client/index.js), so
- *   a seat retrying `mcpToolkit` through a gateway outage held one per failed attempt until its
- *   scope closed: measured 2026-09-29 (review of PR 328), 64.7 MB against 10.6 MB after 3 001
- *   refused attempts in one scope, about 18 KB each. `handshake` closes the client on every
- *   failure, so a failed attempt has nothing left to release.
- * ⚠️ `uninterruptibleMask` keeps the gap between "the handshake returned" and "the finalizer is
- *   registered" from being an interruption point (a client opened and never closed); only the
- *   handshake itself is restored to interruptible, and `onError` closes the client when it
- *   fails OR is interrupted, so the SDK's own close-on-abort is not the only line of defence.
+ * ★ THE FINALIZER IS REGISTERED LAST: after the handshake AND after `build`. A scoped constructor
+ *   that fails must leave nothing in the caller's scope, and this one has been wrong twice:
+ *   - it used to register the `Client`'s `close` before the handshake. Each `Client` carries its
+ *     own JSON Schema validator (SDK client/index.js), so a seat retrying `mcpToolkit` through a
+ *     gateway outage held one per failed attempt until its scope closed: measured 2026-09-29
+ *     (review of PR 328), 64.7 MB against 10.6 MB after 3 001 refused attempts in one scope,
+ *     about 18 KB each. `handshake` closes the client on every failure, so a refused handshake
+ *     has nothing left to release.
+ *   - it then registered it right after the handshake, BEFORE the `tools/list` that `build` does,
+ *     and that listing can fail too: a JSON-RPC error, a page held past `connectTimeoutMs`, a
+ *     caller who interrupts. Measured 2026-09-29 (review of PR 328, later round), a loopback
+ *     server that completed the handshake: 20 attempts whose listing errored left 20 finalizers
+ *     and 20 open SSE streams in one scope; 10 whose listing was held left 10 finalizers, 10
+ *     streams and 10 `tools/list` POSTs still open (the SDK's per-request timeout rejects the
+ *     promise and does not abort the fetch). A seat retrying once a second against a slow gateway
+ *     is about 3 600 sessions and sockets an hour, held for the life of the seat.
+ *   `close` aborts the transport's fetches (the SSE stream and a held POST alike), which is why
+ *   closing the client is what releases them.
+ * ⚠️ `uninterruptibleMask` keeps the gaps between the steps from being interruption points (a
+ *   client opened and never closed); only the handshake and `build` are restored to
+ *   interruptible, and each has an `onError` that closes the client when it fails OR is
+ *   interrupted, so the SDK's own close-on-abort is not the only line of defence. `onError` runs
+ *   uninterruptibly, so the close itself cannot be cut off.
+ * ★ THE `seat.mcp.connect` SPAN IS THE HANDSHAKE ONLY, not `build`: it is what a slow or refused
+ *   connect looks like in a trace, and the listing is not that.
  */
-export const connect = (
+export const connectAndBuild = <A>(
   url: URL,
   headers: McpHeaders | undefined,
   server: string,
   timeout: number,
   redact: Redact,
-): Effect.Effect<Client, McpToolkitError, Scope.Scope> =>
+  build: (client: Client) => Effect.Effect<A, McpToolkitError>,
+): Effect.Effect<A, McpToolkitError, Scope.Scope> =>
   Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
       const client = new Client({ name: '@homeflare/seat-runtime', version: VERSION });
@@ -146,9 +163,10 @@ export const connect = (
         Effect.tryPromise({
           try: (signal) => handshake(client, url, headers, timeout, signal),
           catch: (cause) => new McpToolkitError({ operation: 'connect', server, cause, redact }),
-        }),
+        }).pipe(Effect.withSpan('seat.mcp.connect', { attributes: { 'server.address': server } })),
       ).pipe(Effect.onError(() => close));
+      const built = yield* restore(build(client)).pipe(Effect.onError(() => close));
       yield* Effect.addFinalizer(() => close);
-      return client;
+      return built;
     }),
-  ).pipe(Effect.withSpan('seat.mcp.connect', { attributes: { 'server.address': server } }));
+  );

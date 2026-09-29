@@ -43,12 +43,15 @@ function chatReply(
   body: Record<string, unknown>,
   alwaysTool: boolean,
   toolCall: StubToolCall,
+  stubborn: boolean,
 ): Response {
   const tools = Array.isArray(body['tools']) && body['tools'].length > 0;
   const messages = Array.isArray(body['messages']) ? (body['messages'] as { role?: string }[]) : [];
   // ★ `alwaysTool` is a model that never stops asking: the round cap has something to cap. A
-  //   request that offers no tools is still answered with text, as a real model must.
-  const wantsTool = tools && (alwaysTool || !messages.some((message) => message.role === 'tool'));
+  //   request that offers no tools is still answered with text, as a real model must, unless
+  //   `stubborn`: then it asks for the tool anyway, which is the refused forced turn.
+  const wantsTool =
+    stubborn || (tools && (alwaysTool || !messages.some((message) => message.role === 'tool')));
   return Response.json({
     id: 'stub-1',
     object: 'chat.completion',
@@ -79,6 +82,11 @@ export function startStub(options?: {
   readonly alwaysTool?: boolean;
   /** What the model asks for when it asks for a tool. Default: `read_fact {"key":"a"}`. */
   readonly toolCall?: StubToolCall;
+  /**
+   * Ask for the tool on EVERY request, even one that offers none: a gateway that invents a tool
+   * for a history full of tool calls (review of PR 328), so the forced final turn is refused.
+   */
+  readonly stubborn?: boolean;
 }): Stub {
   const requests: Captured[] = [];
   const server = Bun.serve({
@@ -97,6 +105,7 @@ export function startStub(options?: {
           json,
           options?.alwaysTool === true,
           options?.toolCall ?? DEFAULT_TOOL_CALL,
+          options?.stubborn === true,
         );
       if (path === '/v1/embeddings' && json !== undefined) return embeddingReply(json);
       if (path.includes('opentelemetry')) return new Response(null, { status: 200 });

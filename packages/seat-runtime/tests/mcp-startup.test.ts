@@ -8,7 +8,8 @@
  *   one `Client` (and its JSON Schema validator) per failed attempt until its scope closed:
  *   measured 64.7 MB against 10.6 MB after 3 001 refused attempts in one scope. A scope whose
  *   `state` is still `Empty` has had no finalizer added, which is exactly the claim, and it does
- *   not depend on a heap threshold.
+ *   not depend on a heap threshold. A failure AFTER the handshake (the `tools/list`) is the same
+ *   claim and its own file: tests/mcp-list-failure.test.ts.
  * ⛔ 127.0.0.1, never Bun's wildcard default (tests/loopback-servers.test.ts scans for it).
  */
 import { afterEach, describe, expect, test } from 'bun:test';

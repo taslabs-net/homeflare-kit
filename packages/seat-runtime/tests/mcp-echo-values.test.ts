@@ -36,7 +36,12 @@ function echoOf(request: Request): string {
   return `rejected key ${query}; bad credential ${auth}; token ${auth.split(' ').at(-1) ?? ''}; api ${key}`;
 }
 
-function server(failOn: 'initialize' | 'tools/call'): string {
+/**
+ * `failOn` names how the server rejects: `initialize` and `tools/call` answer HTTP 401 with the
+ * echo; `isError` answers a `tools/call` with an `isError: true` RESULT, which is how MCP says a
+ * tool failed; `success` answers it with an ordinary result that holds the same text.
+ */
+function server(failOn: 'initialize' | 'tools/call' | 'isError' | 'success'): string {
   const listener = Bun.serve({
     hostname: '127.0.0.1',
     port: 0,
@@ -44,6 +49,16 @@ function server(failOn: 'initialize' | 'tools/call'): string {
       if (request.method !== 'POST') return new Response(null, { status: 405 });
       const body = (await request.json()) as { id?: number; method?: string };
       if (body.method === failOn) return new Response(echoOf(request), { status: 401 });
+      if (body.method === 'tools/call' && (failOn === 'isError' || failOn === 'success')) {
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: {
+            isError: failOn === 'isError',
+            content: [{ type: 'text', text: echoOf(request) }],
+          },
+        });
+      }
       if (body.method === 'initialize') {
         return Response.json({
           jsonrpc: '2.0',
@@ -76,6 +91,18 @@ const headers = {
 
 const leaks = (text: string): string[] => ALL.filter((secret) => text.includes(secret));
 
+/** Call the server's one tool, `echo`, and hand back the last result the toolkit produced. */
+const callEcho = (url: string) =>
+  Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { toolkit } = yield* mcpToolkit(url, headers);
+        const stream = yield* toolkit.handle('echo', {});
+        return Option.getOrThrow(yield* Stream.runLast(stream));
+      }),
+    ).pipe(Effect.orDie),
+  );
+
 describe('a server that echoes a query value or a header value on its own', () => {
   test('a failed handshake: the message and everything printed hold none of them', async () => {
     const error = await Effect.runPromise(
@@ -88,18 +115,29 @@ describe('a server that echoes a query value or a header value on its own', () =
   });
 
   test('a failed tool call: the text the model reads holds none of them', async () => {
-    const last = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const { toolkit } = yield* mcpToolkit(server('tools/call'), headers);
-          const stream = yield* toolkit.handle('echo', {});
-          return Option.getOrThrow(yield* Stream.runLast(stream));
-        }),
-      ).pipe(Effect.orDie),
-    );
+    const last = await callEcho(server('tools/call'));
     expect(last.isFailure).toBe(true);
     expect(String(last.result)).toContain('rejected key');
     expect(leaks(String(last.result))).toEqual([]);
+  });
+
+  // 🔴 The gap of review of PR 328 (later round): redaction covered the thrown failures and not
+  //   an `isError` RESULT, the MCP-native failure, so a server that rejected a credential by name
+  //   put it in the text a cloud model reads.
+  test('an isError result: the text the model reads holds none of them', async () => {
+    const last = await callEcho(server('isError'));
+    expect(last.isFailure).toBe(true);
+    expect(String(last.result)).toContain('rejected key');
+    expect(String(last.result)).toContain('[redacted]');
+    expect(leaks(String(last.result))).toEqual([]);
+  });
+
+  // ⚠️ A SUCCESS is the tool's payload and is delivered as it came: rewriting it would corrupt
+  //   data that merely contains a value (src/mcp-toolset.ts header). Pinned so it is a decision.
+  test('a successful result is delivered verbatim, not redacted', async () => {
+    const last = await callEcho(server('success'));
+    expect(last.isFailure).toBe(false);
+    expect(String(last.result)).toContain(QUERY);
   });
 });
 
