@@ -20,6 +20,7 @@ Measured at 1.100.0 (`schema.prisma`, `pass_through_endpoints.py`, and the mini'
 | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | Pass-through endpoints                                                                                  | Yes — this package                                               |
 | Budgets (`/budget/*`)                                                                                   | Yes — `LiteLLM.Budget`, [litellm-budget.md](./litellm-budget.md) |
+| MCP servers (`/v1/mcp/server`)                                                                          | Yes — `LiteLLM.MCPServer`, [litellm-mcp.md](./litellm-mcp.md)    |
 | Models, virtual keys, teams, credentials, access groups                                                 | DB-backed, API-managed, but no kit resource yet                  |
 | `router_settings`, `litellm_settings`, `general_settings.master_key`/`database_url`/`store_model_in_db` | config-file only — read-only through the API                     |
 | A `config.yaml` pass-through entry (`is_from_config: true`)                                             | Read-only through this resource — see Refusals                   |

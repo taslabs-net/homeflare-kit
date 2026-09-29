@@ -38,4 +38,21 @@ export {
   LitellmBudgetHardCapUnjustifiedError,
   LitellmBudgetUnreadableError,
 } from './budget-errors.ts';
+export {
+  LiteLLMMCPServer,
+  LiteLLMMCPServerProvider,
+  isLiteLLMMCPServer,
+  type McpServerAttributes,
+  type McpServerError,
+  type McpServerProps,
+} from './mcp-server.ts';
+export {
+  LitellmMcpServerAbsentAfterWriteError,
+  LitellmMcpServerAmbiguousNameError,
+  LitellmMcpServerCredentialEnvUnsetError,
+  LitellmMcpServerInvalidError,
+  LitellmMcpServerNotConvergedError,
+  LitellmMcpServerUnreadableError,
+} from './mcp-server-errors.ts';
+export type { McpAuthType, McpStaticAuthType, McpTransport } from './mcp-server-types.ts';
 export { litellmProviders } from './providers.ts';
