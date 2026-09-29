@@ -25,4 +25,17 @@ export {
   type PassThroughEndpointError,
   type PassThroughEndpointProps,
 } from './pass-through-endpoint.ts';
+export {
+  LiteLLMBudget,
+  LiteLLMBudgetProvider,
+  isLiteLLMBudget,
+  type BudgetAttributes,
+  type BudgetError,
+  type BudgetProps,
+} from './budget.ts';
+export {
+  LitellmBudgetFieldNotClearedError,
+  LitellmBudgetHardCapUnjustifiedError,
+  LitellmBudgetUnreadableError,
+} from './budget-errors.ts';
 export { litellmProviders } from './providers.ts';

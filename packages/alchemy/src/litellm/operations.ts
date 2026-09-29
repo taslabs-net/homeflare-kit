@@ -77,7 +77,7 @@ const semaphoreFor = (baseUrl: string): Effect.Effect<Semaphore.Semaphore> =>
  *   `Fetch` service still wins inside that client, which is how the fake proxy stays the test
  *   transport.
  */
-const throughFetch = <A, E, R>(io: Effect.Effect<A, E, R>) =>
+export const throughFetch = <A, E, R>(io: Effect.Effect<A, E, R>) =>
   io.pipe(Effect.provide(FetchHttpClient.layer));
 
 const mutate = <A, E>(
