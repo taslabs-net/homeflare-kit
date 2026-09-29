@@ -12,9 +12,10 @@
  *   either — `toAttributes` copies no credential — and a rotated credential is noticed through a
  *   seal (mcp-server-credential.ts).
  * ⛔ NO LITELLM CREDENTIAL IS A PROP either: `litellmProviders`' layer supplies `Credentials`.
- * ⚠️ UNMEASURED AT 1.103.0, each guarded by a read back: whether `PUT /v1/mcp/server` merges or
- *   replaces, whether a create honours a supplied `server_id`, and whether an empty list or a
- *   `false` lands on an edit. Nothing here assumes them; the returned row is what is recorded.
+ * ⚠️ UNMEASURED AT 1.103.0, each guarded by a read back: whether a create honours a supplied
+ *   `server_id`, and whether an empty list or a `false` lands on an edit (that the edit is a partial
+ *   update is read from the source, `mcp-server-form.ts`). Nothing here assumes them; the returned
+ *   row is what is recorded.
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
@@ -28,11 +29,15 @@ import * as Predicate from 'effect/Predicate';
 import {
   LitellmMcpServerAbsentAfterWriteError,
   LitellmMcpServerAmbiguousNameError,
-  LitellmMcpServerCredentialEnvUnsetError,
   LitellmMcpServerInvalidError,
   LitellmMcpServerNotConvergedError,
 } from './mcp-server-errors.ts';
-import { credentialState, resolveCredential, sealCredential } from './mcp-server-credential.ts';
+import {
+  credentialState,
+  requireCredential,
+  resolveCredential,
+  sealCredential,
+} from './mcp-server-credential.ts';
 import {
   createBody,
   differing,
@@ -179,14 +184,7 @@ export const mcpServerHandlers = {
 
       if (before === undefined) {
         // A static credential is part of the create: without it the row would exist unusable.
-        if (isStaticAuthType(news.authType) && credential.value === undefined) {
-          return yield* Effect.fail(
-            new LitellmMcpServerCredentialEnvUnsetError({
-              serverName: news.serverName,
-              variable: credential.variable ?? '(undeclared)',
-            }),
-          );
-        }
+        yield* requireCredential(news, credential);
         const wanted = yield* wantedId(id, instanceId, news, output);
         const created = yield* createMcpServer(createBody(news, wanted, credential.value));
         // ★ THE ROW LITELLM ANSWERS IS THE TRUTH: a proxy that ignores a supplied `server_id` is
@@ -198,7 +196,10 @@ export const mcpServerHandlers = {
         const live = toAttributes(before);
         const state = credentialState(news, sealed, credential);
         if (differing(live, news).length > 0 || state === 'stale') {
-          // ★ Sent whenever the deploying process has it, demanded only when the seal says stale.
+          // ⛔ A CHANGED AUTH TYPE DEMANDS THE CREDENTIAL, before anything is written: LiteLLM wipes
+          //   the stored one on an auth-class change that sends none (mcp-server-credential.ts).
+          if (live.authType !== news.authType) yield* requireCredential(news, credential);
+          // ★ Otherwise sent whenever the process has it, demanded only when the seal says stale.
           const send = isStaticAuthType(news.authType) ? credential.value : undefined;
           const leavingStatic =
             !isStaticAuthType(news.authType) && (sealed !== '' || isStaticAuthType(live.authType));

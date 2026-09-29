@@ -10,6 +10,10 @@
  *   real proxy does on a duplicate create, an edit of a missing id, a delete of a missing id, and
  *   whether its list redacts `credentials` is UNMEASURED; the answers below (400, 404, 404, redacted
  *   unless `echoCredentials`) are the fake's own choices, and every test that leans on one says so.
+ * ★ ONE RULE IS MEASURED, NOT CHOSEN: an edit that changes `auth_type` and sends no `credentials` key
+ *   clears the stored credential (litellm 1.103.0, `db.py` lines 1013-1014, read from the live
+ *   container; every static type is its own credential class). The engine tests that rely on it are
+ *   `mcp-server-retype.test.ts`.
  * ⚠️ `servers()` RETURNS WHAT REACHED THE PROXY, credentials included, so a test can assert what
  *   was SENT. The list route (`GET`) is what a resource can read, and it hides them by default.
  * ★ `FAKE-*` VALUES ONLY. Nothing here is, or looks like, a real credential.
@@ -102,6 +106,14 @@ export const startFakeMcpLitellm = (options: FakeMcpOptions = {}): FakeMcpLitell
             : true,
         ),
       );
+      // ★ measured: a changed auth class with no `credentials` key wipes the stored credential
+      if (
+        typeof body['auth_type'] === 'string' &&
+        body['auth_type'] !== rows[at]?.['auth_type'] &&
+        !('credentials' in body)
+      ) {
+        patch['credentials'] = null;
+      }
       rows = rows.map((row, i) => (i === at ? { ...row, ...patch } : row));
       return json(200, visible(rows[at] ?? {}));
     }

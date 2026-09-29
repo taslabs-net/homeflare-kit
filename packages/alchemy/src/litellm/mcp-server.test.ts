@@ -52,13 +52,12 @@ afterEach(() => {
   delete process.env[VARIABLE];
 });
 
-test('creates a server, sends the credential once, and defaults every access grant to closed', async () => {
+test('creates a server, sends the credential once, and defaults the key and group grants to closed', async () => {
   const fake = startFakeMcpLitellm({ masterKey: KEY });
   expect(await stack(fake).deploy(declare(docs))).toEqual({ Docs: 'create' });
   const [row] = fake.servers();
   expect(row).toMatchObject({
     allow_all_keys: false,
-    allowed_tools: [],
     auth_type: 'bearer_token',
     mcp_access_groups: [],
     server_name: 'FAKE_docs',
@@ -66,6 +65,8 @@ test('creates a server, sends the credential once, and defaults every access gra
     url: 'https://mcp.example.com/mcp',
   });
   expect(row?.['credentials']).toEqual({ auth_value: 'FAKE-token-one' });
+  // ⛔ an undeclared tool list is not sent: `[]` would mean "no restriction" (mcp-server-tools.test.ts)
+  expect(fake.bodies()[0]).not.toHaveProperty('allowed_tools');
   // ★ a deterministic physical name, not a proxy-issued uuid
   expect(String(row?.['server_id'])).toMatch(/^[a-z0-9-]+$/);
 });
@@ -134,7 +135,7 @@ test('a live row is Unowned: refused without --adopt, taken by name with it, wit
   expect(writesOf(fake.requests())).toEqual([]);
 });
 
-test('adopting an open server planned closed: allow_all_keys and the tool list are corrected', async () => {
+test('adopting an open server: allow_all_keys is corrected to closed, the undeclared tool list is left', async () => {
   const open = serverRow({
     ...live,
     allow_all_keys: true,
@@ -142,9 +143,13 @@ test('adopting an open server planned closed: allow_all_keys and the tool list a
   });
   const fake = startFakeMcpLitellm({ masterKey: KEY, seed: [open] });
   await stack(fake).deploy(declare(search, 'Search'), { adopt: true });
-  expect(fake.servers()[0]).toMatchObject({ allow_all_keys: false, allowed_tools: [] });
+  expect(fake.servers()[0]).toMatchObject({
+    allow_all_keys: false,
+    allowed_tools: ['FAKE_tool_a'],
+  });
   // ★ the update sent the whole managed set, and left the id alone
   expect(fake.bodies()[0]).toMatchObject({ server_id: 'FAKE-uuid-1', allow_all_keys: false });
+  expect(fake.bodies()[0]).not.toHaveProperty('allowed_tools');
 });
 
 test('two live rows with the declared name are refused, never guessed at', async () => {

@@ -2,18 +2,26 @@
  * Refusals, wire bodies, the read shape and the comparison for `LiteLLM.MCPServer`, testable
  * without a server.
  *
- * ⛔ FIELDS THAT ARE ACCESS GRANTS ARE ALWAYS COMPARED, WITH A SAFE DEFAULT. `allow_all_keys`
- *   (default false), `allowed_tools` and `mcp_access_groups` (default empty) decide which keys can
- *   reach a server, so an adopted row whose live value differs from the declaration is planned an
- *   update rather than left as it is. Descriptive fields (`alias`, `description`) are compared only
- *   when declared, so adopting a row never clears text a person wrote.
- * ⚠️ EVERY UPDATE SENDS THE FULL MANAGED SET, NOT ONLY THE FIELDS THAT DIFFER. Whether `PUT
- *   /v1/mcp/server` merges the fields it is given or replaces the row is UNMEASURED at 1.103.0
- *   (the request has every field optional except `server_id`, which suggests a merge). Sending the
- *   whole managed set is correct under both; reconcile then reads back and fails loudly if a
- *   declared field did not land (`LitellmMcpServerNotConvergedError`). Fields this resource does
- *   not model are not sent, so a replace-style edit would drop them: measure against a scratch
- *   proxy before the first live update of an adopted OAuth row (docs/litellm-mcp.md).
+ * ⛔ TWO ACCESS GRANTS ARE ALWAYS COMPARED, WITH A CLOSED DEFAULT. `allow_all_keys` (default
+ *   false) and `mcp_access_groups` (default empty) decide which keys can reach a server, so a live
+ *   value that differs from the declaration is corrected rather than left as it is.
+ * ⛔ `allowed_tools` IS NOT ONE OF THEM: it is compared and sent ONLY WHEN DECLARED, like `alias`.
+ *   An empty list is the OPEN state, not a closed one. Measured on the live 1.103.0 container:
+ *   `server_applies_tool_allowlist` (`mcp_server/utils.py`) is "the `mcp_info` enforce flag, or a
+ *   non-empty `allowed_tools`", and `filter_tools_by_allowed_tools` (`server.py` lines 1692-1698)
+ *   returns every tool when it is false. This resource does not model `mcp_info`, so a default of
+ *   `[]` would switch a live whitelist OFF the moment a row is adopted without restating it, and an
+ *   adopted row is planned `adopted` (Alchemy's adoption branch), so no `update` would show. An
+ *   undeclared list is left exactly as the proxy holds it.
+ * ★ Descriptive fields (`alias`, `description`) are also compared only when declared, so adopting a
+ *   row never clears text a person wrote.
+ * ⚠️ EVERY UPDATE SENDS THE FULL MANAGED SET, NOT ONLY THE FIELDS THAT DIFFER. The edit route is a
+ *   PARTIAL update at 1.103.0 (measured by reading the live container's `mcp_server/db.py`, the
+ *   update function's `exclude_unset=True`: fields the caller did not send keep their stored value;
+ *   no live call was made), so a field this resource does not send is left alone. Sending the whole
+ *   managed set is still correct, and reconcile reads back and fails loudly if a declared field did
+ *   not land (`LitellmMcpServerNotConvergedError`). Whether a `false` or an empty list is written
+ *   rather than skipped stays UNMEASURED, which is what the read back guards.
  */
 import type * as mcp from '@distilled.cloud/litellm/mcp_management';
 import * as Redacted from 'effect/Redacted';
@@ -153,7 +161,9 @@ export const differing = (live: McpServerAttributes, props: McpServerProps): rea
   if (live.transport !== props.transport) out.push('transport');
   if (live.authType !== props.authType) out.push('auth_type');
   if (live.allowAllKeys !== (props.allowAllKeys ?? false)) out.push('allow_all_keys');
-  if (!sameSet(live.allowedTools, props.allowedTools ?? [])) out.push('allowed_tools');
+  if (props.allowedTools !== undefined && !sameSet(live.allowedTools, props.allowedTools)) {
+    out.push('allowed_tools');
+  }
   if (!sameSet(live.mcpAccessGroups, props.mcpAccessGroups ?? [])) out.push('mcp_access_groups');
   if (props.alias !== undefined && live.alias !== props.alias) out.push('alias');
   if (props.description !== undefined && live.description !== props.description) {
@@ -166,7 +176,7 @@ export const differing = (live: McpServerAttributes, props: McpServerProps): rea
 const managed = (props: McpServerProps) => ({
   ...(props.alias === undefined ? {} : { alias: props.alias }),
   allow_all_keys: props.allowAllKeys ?? false,
-  allowed_tools: [...(props.allowedTools ?? [])],
+  ...(props.allowedTools === undefined ? {} : { allowed_tools: [...props.allowedTools] }),
   auth_type: props.authType,
   ...(props.description === undefined ? {} : { description: props.description }),
   mcp_access_groups: [...(props.mcpAccessGroups ?? [])],

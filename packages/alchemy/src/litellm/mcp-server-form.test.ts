@@ -146,13 +146,19 @@ describe('what differs', () => {
     expect(differing(attributes(), base)).toEqual([]);
   });
 
-  test('access grants are always compared, against a closed default', () => {
-    const open = attributes({
-      allowAllKeys: true,
-      allowedTools: ['FAKE_a'],
-      mcpAccessGroups: ['FAKE_g'],
-    });
-    expect(differing(open, base)).toEqual(['allow_all_keys', 'allowed_tools', 'mcp_access_groups']);
+  test('key and group grants are always compared, against a closed default', () => {
+    const open = attributes({ allowAllKeys: true, mcpAccessGroups: ['FAKE_g'] });
+    expect(differing(open, base)).toEqual(['allow_all_keys', 'mcp_access_groups']);
+  });
+
+  test('a tool list is compared only when declared: an undeclared one is never drift', () => {
+    const whitelisted = attributes({ allowedTools: ['FAKE_a'] });
+    expect(differing(whitelisted, base)).toEqual([]);
+    // ⚠️ a declared `[]` is a real difference from a whitelist: it asks for "no restriction"
+    expect(differing(whitelisted, { ...base, allowedTools: [] })).toEqual(['allowed_tools']);
+    expect(differing(attributes(), { ...base, allowedTools: ['FAKE_a'] })).toEqual([
+      'allowed_tools',
+    ]);
   });
 
   test('lists compare as sets: order and repeats do not matter', () => {
@@ -187,7 +193,6 @@ describe('the write bodies', () => {
     );
     expect(body).toEqual({
       allow_all_keys: false,
-      allowed_tools: [],
       auth_type: 'bearer_token',
       credentials: { auth_value: 'FAKE-token' },
       mcp_access_groups: [],
@@ -203,6 +208,23 @@ describe('the write bodies', () => {
       'FAKE-token',
     );
     expect(JSON.stringify(token)).not.toContain('FAKE-token');
+  });
+
+  test('allowed_tools is sent only when declared, and a declared empty list is sent as it is', () => {
+    for (const body of [
+      createBody(base, 'FAKE-id', undefined),
+      updateBody(base, 'FAKE-id', undefined, false),
+    ]) {
+      expect(body).not.toHaveProperty('allowed_tools');
+    }
+    expect(updateBody({ ...base, allowedTools: [] }, 'FAKE-id', undefined, false)).toHaveProperty(
+      'allowed_tools',
+      [],
+    );
+    expect(createBody({ ...base, allowedTools: ['FAKE_a'] }, 'FAKE-id', undefined)).toHaveProperty(
+      'allowed_tools',
+      ['FAKE_a'],
+    );
   });
 
   test('an update with no credential sends no credentials key, so the stored one is left', () => {

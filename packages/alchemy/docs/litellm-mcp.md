@@ -34,7 +34,8 @@ export class Docs extends LiteLLMMCPServer('Docs', {
   mcpAccessGroups: ['example-knowledge'],
 }) {}
 
-// A static credential is the NAME of an environment variable in the deploying process.
+// A static credential is the NAME of an environment variable in the deploying process. The tool
+// whitelist is pinned by declaring `allowedTools`; leave it out to keep whatever the proxy holds.
 export class Keyed extends LiteLLMMCPServer('Keyed', {
   serverName: 'example_keyed',
   url: 'https://keyed.example.com/sse',
@@ -52,7 +53,7 @@ Then provide `litellmProviders()` alongside the stack's other providers.
 | Concern     | Rule                                                                                                                                                                       |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity    | The live row whose `server_name` is `serverName`. `serverId` pins one row instead. Two rows with the same name are refused (`LitellmMcpServerAmbiguousNameError`).         |
-| Adopt       | A live row with no state is `Unowned`; it needs `--adopt`. Adopting a row that already matches writes nothing.                                                             |
+| Adopt       | A live row with no state is `Unowned`; it needs `--adopt`. Adopting a row that already matches writes nothing. The plan says `adopted` even when reconcile then writes.    |
 | Id          | A create asks for `serverId`, else a deterministic physical name. The id LiteLLM answers is the one recorded, so a proxy that issues its own id is still tracked.          |
 | Replace     | Only a changed declared `serverId`, create-first. A changed `serverName` is an update: it renames the tools of every key that calls them.                                  |
 | Removal     | `defaultRemovalPolicy: 'retain'`. Opt in with `RemovalPolicy.destroy()`. A replace under `retain` leaves the old row live.                                                 |
@@ -60,12 +61,28 @@ Then provide `litellmProviders()` alongside the stack's other providers.
 | Read        | `GET /v1/mcp/server` (the whole table). Copies no credential, header or environment value; a URL is redacted on the way in.                                                |
 | Write check | Reconcile reads back and fails (`LitellmMcpServerNotConvergedError`) if a declared field did not land, or (`LitellmMcpServerAbsentAfterWriteError`) if the row is missing. |
 
-## Access grants default to closed
+## Access grants
 
-`allowAllKeys` (default `false`), `allowedTools` and `mcpAccessGroups` (default empty) are **always
-compared**, because they decide which keys can reach a server. An adopted row whose live value differs is
-planned an update rather than left open. Lists compare as sets. `alias` and `description` are compared
-**only when declared**, so adopting a row never clears text a person wrote.
+`allowAllKeys` (default `false`) and `mcpAccessGroups` (default empty) are **always compared**, because
+they decide which keys can reach a server: a live row that has them wider than declared is corrected.
+Lists compare as sets.
+
+⛔ **`allowedTools` is compared and sent only when declared, like `alias` and `description`.** An empty
+list is the **open** state, not a closed one. Measured on the live 1.103.0 container (read-only, source
+only): `server_applies_tool_allowlist` (`mcp_server/utils.py`) is "the `mcp_info` enforce flag, or a
+non-empty `allowed_tools`", and `filter_tools_by_allowed_tools` (`server.py` lines 1692-1698) returns
+every tool when that is false. `mcp_info` is not modelled here, so:
+
+- Leave `allowedTools` out and the live whitelist is left exactly as it is: adopting a whitelisted row
+  never widens it.
+- Declare a list and it is authoritative: the live list becomes exactly that set.
+- Declare `[]` only to say "no restriction". It is sent as it is.
+
+⚠️ **The plan does not show an adopted row's write.** Alchemy's adoption branch plans `adopted` for a
+live row with no state, whether or not reconcile then writes (`mcp-server-tools.test.ts` pins this), so
+a corrected `allowAllKeys` or `mcpAccessGroups` on an adopted row appears in the plan only as `adopted`.
+Later deploys of a row this stack owns plan `update`. `alias` and `description` are compared **only when
+declared**, so adopting a row never clears text a person wrote.
 
 Team access is not here: the create and edit requests have no team field (`teams` exists only on the
 row a read returns). Grant a team access from the team side (its `object_permission`).
@@ -91,9 +108,14 @@ variable's current value with a **seal** (a salted scrypt digest) kept in the at
 | `none`    | no credential is declared                                 | no change                                  |
 
 A **create** needs the variable and fails naming it (`LitellmMcpServerCredentialEnvUnsetError`) if it
-is unset or empty. An update sends the credential whenever the process has it. Moving a server off a
-static type sends `credentials: null` and forgets the seal. ⚠️ A seal of a guessable secret is still
-guessable: use a random token.
+is unset or empty, and so does **any write that changes `authType` to a static type** (from `none`,
+`oauth2` or another static type): before anything is sent. ⛔ Measured on the live 1.103.0 container
+(`mcp_server/db.py` lines 1013-1014): an edit whose auth class differs from the stored one and that
+sends no credential wipes the stored credential, and each static type is its own class. Sent without
+the value, the row would end with none while the seal still matched the old value, so a later deploy
+would be a no-op and the server would stay unauthenticated. Any other update sends the credential
+whenever the process has it. Moving a server off a static type sends `credentials: null` and forgets
+the seal. ⚠️ A seal of a guessable secret is still guessable: use a random token.
 
 ## Refused before any request
 
@@ -108,18 +130,20 @@ guessable: use a random token.
 `stdio` and its `command`/`args`/`env`; `static_headers`, `extra_headers` and `env_vars` (a header or
 variable can carry a secret); OAuth client registration and endpoints; `mcp_info`, tool renames, BYOK;
 `timeout`, `max_concurrent_requests`, `available_on_public_internet`; `teams`. A row that uses them can
-be adopted, and what is not declared is not sent. ⚠️ Whether `PUT` merges or replaces is unmeasured, so
-a replace-style edit would drop them: measure on a scratch proxy before the first live update of an
+be adopted, and what is not declared is not sent. The edit route is a partial update at 1.103.0
+(`mcp_server/db.py`, `exclude_unset=True`, read from the live container, not exercised), so an unsent
+field keeps its stored value; measure it once on a scratch proxy before the first live update of an
 adopted OAuth row (below).
 
 ## Unmeasured at 1.103.0
 
 No live proxy was contacted. The fake (`fake-mcp-litellm.ts`) is built from the generated schema and
-makes its own choices for each of these; every one is guarded by the read back, so a wrong guess
-fails loudly rather than reporting a converged row.
+makes its own choices for each of these, except the clear-on-auth-change rule above, which it models
+from the source; every one is guarded by the read back, so a wrong guess fails loudly rather than
+reporting a converged row.
 
-- Whether `PUT /v1/mcp/server` merges only the fields it is given or replaces the row, and whether an
-  empty list, a `false` or a `null` lands on an edit.
+- Whether an empty list, a `false` or a `null` lands on an edit. (That `PUT /v1/mcp/server` is a
+  partial update is read from the source, not called.)
 - Whether a create honours a supplied `server_id`, and what a duplicate id or name answers.
 - Whether the list redacts `credentials` (the resource copies none either way), whether it is paged or
   filtered for the master key, and whether it includes config-file servers, which cannot be edited.
@@ -131,6 +155,6 @@ fails loudly rather than reporting a converged row.
 
 ## Before the first live adoption
 
-Adopting a row that already matches is a no-op. Before an update reaches a live OAuth row, measure the
+Adopting a row that already matches is a no-op. Before an update reaches a live OAuth row, exercise the
 edit route once against a scratch LiteLLM (a row with `static_headers` and OAuth endpoints, then an edit
-of `allowAllKeys` alone) and record whether the other fields survive.
+of `allowAllKeys` alone) and record whether the other fields survive; the source says they do.

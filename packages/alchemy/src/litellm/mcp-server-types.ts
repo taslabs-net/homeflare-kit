@@ -66,10 +66,15 @@ export interface McpServerProps {
   readonly description?: string;
   /**
    * Whether EVERY virtual key may call this server. Always compared, default `false`: it is an
-   * access grant, so an adopted row that has it on is planned an update, never left open silently.
+   * access grant, so an adopted row that has it on is corrected, never left open silently.
    */
   readonly allowAllKeys?: boolean;
-  /** Tools a caller may use; empty or omitted means no restriction. Always compared (as a set). */
+  /**
+   * The tools a caller may use, compared as a set. ⛔ COMPARED AND SENT ONLY WHEN DECLARED: omitted
+   * leaves the live whitelist exactly as it is. ⚠️ `[]` is NOT "closed" — at 1.103.0 an empty list
+   * turns the whitelist off (every tool is returned) unless the row's `mcp_info` carries the enforce
+   * flag, which this resource does not model. Declare `[]` only to mean "no restriction".
+   */
   readonly allowedTools?: readonly string[];
   /** Access groups this server belongs to. Always compared (as a set). */
   readonly mcpAccessGroups?: readonly string[];
