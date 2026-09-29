@@ -1,0 +1,127 @@
+/**
+ * A fake of LiteLLM's `/v1/mcp/server` routes for tests — TEST ONLY, never imported by `index.ts`.
+ * Like `fake-litellm.ts` it is a `fetch` function handed to Effect's real `FetchHttpClient` through
+ * its `Fetch` reference, so a test exercises distilled's REAL path assembly, JSON encoding and
+ * status-to-error matching; only the wire responses a scenario needs are written here.
+ *
+ * ★ A SEPARATE FILE FROM `fake-litellm.ts` ON PURPOSE: that fake carries the pass-through and
+ *   budget routes and is at its size budget; a fake per route family keeps each one small.
+ * ⚠️ SHAPES ARE FROM THE GENERATED 1.103.0 SCHEMA (`mcp_management.ts`), NOT A LIVE READ. What the
+ *   real proxy does on a duplicate create, an edit of a missing id, a delete of a missing id, and
+ *   whether its list redacts `credentials` is UNMEASURED; the answers below (400, 404, 404, redacted
+ *   unless `echoCredentials`) are the fake's own choices, and every test that leans on one says so.
+ * ⚠️ `servers()` RETURNS WHAT REACHED THE PROXY, credentials included, so a test can assert what
+ *   was SENT. The list route (`GET`) is what a resource can read, and it hides them by default.
+ * ★ `FAKE-*` VALUES ONLY. Nothing here is, or looks like, a real credential.
+ */
+/** One request that reached the fake. Its own type, so this file depends on no other fake. */
+export interface FakeMcpRequest {
+  readonly method: string;
+  readonly path: string;
+}
+
+type Row = Record<string, unknown>;
+
+export interface FakeMcpLitellm {
+  readonly fetch: typeof globalThis.fetch;
+  /** Every stored row exactly as the proxy holds it, `credentials` included. */
+  readonly servers: () => readonly Row[];
+  readonly requests: () => readonly FakeMcpRequest[];
+  /** The JSON bodies of every `POST`/`PUT`, in order. */
+  readonly bodies: () => readonly Row[];
+}
+
+export interface FakeMcpOptions {
+  readonly masterKey?: string;
+  readonly seed?: readonly Row[];
+  /** `GET` echoes the stored `credentials` instead of hiding them (a worst-case proxy). */
+  readonly echoCredentials?: boolean;
+  /** `PUT` drops an empty list and a `false`, like a truthiness check would. */
+  readonly editIgnoresFalsy?: boolean;
+  /** `POST` ignores a supplied `server_id` and issues its own. */
+  readonly issuesOwnId?: boolean;
+  /** Every `DELETE` answers 400, whether or not the row exists (no rights). */
+  readonly forbidDelete?: boolean;
+}
+
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' }, status });
+
+const ISSUED_ID = 'FAKE-issued-id-0001';
+
+/** A minimal 1.103.0-shaped row, as the list route returns it. */
+export const serverRow = (fields: Row): Row => ({
+  allow_all_keys: false,
+  allowed_tools: [],
+  auth_type: null,
+  mcp_access_groups: [],
+  transport: 'http',
+  ...fields,
+});
+
+export const startFakeMcpLitellm = (options: FakeMcpOptions = {}): FakeMcpLitellm => {
+  const masterKey = options.masterKey ?? 'sk-test-master';
+  let rows: Row[] = (options.seed ?? []).map((row) => ({ ...row }));
+  const requests: FakeMcpRequest[] = [];
+  const bodies: Row[] = [];
+
+  const visible = (row: Row): Row =>
+    options.echoCredentials === true ? row : { ...row, credentials: null };
+
+  const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const request =
+      input instanceof Request ? new Request(input, init) : new Request(String(input), init);
+    const url = new URL(request.url);
+    requests.push({ method: request.method, path: `${url.pathname}${url.search}` });
+    if (request.headers.get('authorization') !== `Bearer ${masterKey}`) {
+      return json(401, { detail: 'invalid api key' });
+    }
+    if (url.pathname === '/v1/mcp/server' && request.method === 'GET') {
+      return json(200, rows.map(visible));
+    }
+    if (url.pathname === '/v1/mcp/server' && request.method === 'POST') {
+      const body = (await request.json()) as Row;
+      bodies.push(body);
+      const id = options.issuesOwnId === true ? ISSUED_ID : String(body['server_id']);
+      if (rows.some((row) => row['server_id'] === id)) {
+        return json(400, { detail: { error: `MCP server ${id} already exists` } });
+      }
+      const created = serverRow({ ...body, server_id: id });
+      rows = [...rows, created];
+      return json(200, visible(created));
+    }
+    if (url.pathname === '/v1/mcp/server' && request.method === 'PUT') {
+      const body = (await request.json()) as Row;
+      bodies.push(body);
+      const at = rows.findIndex((row) => row['server_id'] === body['server_id']);
+      if (at === -1) return json(404, { detail: { error: 'MCP server not found' } });
+      const patch = Object.fromEntries(
+        Object.entries(body).filter(([, value]) =>
+          options.editIgnoresFalsy === true
+            ? value !== false && !(Array.isArray(value) && value.length === 0)
+            : true,
+        ),
+      );
+      rows = rows.map((row, i) => (i === at ? { ...row, ...patch } : row));
+      return json(200, visible(rows[at] ?? {}));
+    }
+    const byId = /^\/v1\/mcp\/server\/([^/]+)$/.exec(url.pathname);
+    if (byId !== null && request.method === 'DELETE') {
+      if (options.forbidDelete === true) return json(400, { detail: 'not_allowed_access' });
+      const id = decodeURIComponent(byId[1] ?? '');
+      if (!rows.some((row) => row['server_id'] === id)) {
+        return json(404, { detail: { error: `MCP server ${id} not found` } });
+      }
+      rows = rows.filter((row) => row['server_id'] !== id);
+      return json(200, {});
+    }
+    return json(404, { detail: 'not found' });
+  }) as typeof globalThis.fetch;
+
+  return {
+    bodies: () => [...bodies],
+    fetch,
+    requests: () => [...requests],
+    servers: () => rows.map((row) => ({ ...row })),
+  };
+};
