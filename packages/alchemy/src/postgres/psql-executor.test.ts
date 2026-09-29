@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
+import { postgresRunnerProviders } from './providers.ts';
 import { postgresRunnerConnection, withPg } from './connection.ts';
 import { reconcileWithClient } from './database.ts';
 import { buildCreateDatabaseSql, isDuplicateDatabaseRace } from './database-sql.ts';
@@ -91,5 +92,15 @@ describe('runner transport through withPg', () => {
       withPg((pg, ctx) => reconcileWithClient(pg, props, ctx.template)).pipe(Effect.provide(layer)),
     );
     expect(stdins.slice(before).some((s) => s.startsWith('CREATE DATABASE'))).toBe(false);
+  });
+
+  test("postgresRunnerProviders keeps the connection live for the engine's later handler calls", async () => {
+    const run: PsqlRunner = () => ok('[]');
+    const rows = await Effect.runPromise(
+      withPg((pg) => pg.unsafe('SELECT 1')).pipe(
+        Effect.provide(postgresRunnerProviders({ run, ...target })),
+      ),
+    );
+    expect(rows).toEqual([]);
   });
 });

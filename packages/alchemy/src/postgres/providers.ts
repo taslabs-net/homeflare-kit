@@ -17,9 +17,13 @@ import {
 } from './connection.ts';
 import { PostgresDatabaseProvider } from './database.ts';
 
+// ⚠️ `Layer.provideMerge`, NEVER plain `Layer.provide`: the handlers' `withPg` reads
+//   `PostgresConnection` when the ENGINE later calls `read`/`reconcile`, and plain `provide`
+//   seals it away ("Service not found: Postgres.Connection" — measured for `caddyProviders`,
+//   see `caddy/providers.ts`).
 export const postgresProviders = (config: PostgresConnectionConfig) =>
-  PostgresDatabaseProvider().pipe(Layer.provide(postgresConnection(config)));
+  PostgresDatabaseProvider().pipe(Layer.provideMerge(postgresConnection(config)));
 
 /** The same provider over a command runner (`psql-executor.ts`) — for a loopback-only cluster. */
 export const postgresRunnerProviders = (config: PostgresRunnerConfig) =>
-  PostgresDatabaseProvider().pipe(Layer.provide(postgresRunnerConnection(config)));
+  PostgresDatabaseProvider().pipe(Layer.provideMerge(postgresRunnerConnection(config)));
