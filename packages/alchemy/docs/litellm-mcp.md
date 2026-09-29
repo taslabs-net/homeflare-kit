@@ -62,7 +62,7 @@ Then provide `litellmProviders()` alongside the stack's other providers.
 | Identity    | The live row whose `server_name` is `serverName`. `serverId` pins one row instead. Two rows with the same name are refused (`LitellmMcpServerAmbiguousNameError`).                                                                                                  |
 | Adopt       | A live row with no state is `Unowned`; it needs `--adopt`. Adopting a row that already matches writes nothing. The plan says `adopted` even when reconcile then writes. A row the list lacks is adopted only by declaring its `serverId`.                           |
 | Id          | A create asks for `serverId`, else a deterministic physical name. The id LiteLLM answers is the one recorded, so a proxy that issues its own id is still tracked.                                                                                                   |
-| Replace     | Only a changed declared `serverId`, create-first. A changed `serverName` is an update: it renames the tools of every key that calls them.                                                                                                                           |
+| Replace     | Only a changed declared `serverId`, create-first. A changed `serverName` is an update that re-sends the live alias, so the tool prefix stays. Declare `alias` to change the prefix.                                                                                 |
 | Removal     | `defaultRemovalPolicy: 'retain'`. Opt in with `RemovalPolicy.destroy()`. A replace under `retain` leaves the old row live.                                                                                                                                          |
 | Delete      | Always sends the DELETE (it acts on the table). If it fails, the failure is swallowed only when a by-id read of the table says the row is gone; a row still there, or a read that fails, re-raises the original error.                                              |
 | Read        | The list first, then the table by id when the list lacks the row (the id it would use: recorded, declared, or the deterministic one). Copies no credential, header or environment value; a URL is redacted on the way in.                                           |
@@ -139,8 +139,11 @@ the seal. ⚠️ A seal of a guessable secret is still guessable: use a random t
 
 ## Refused before any request
 
-- A `-` in `serverName` or `alias` (LiteLLM's tool-prefix separator; it answers 400), a space or blank in
-  `alias` (LiteLLM stores `_`, so the row would never match).
+- A `serverName` or `alias` outside `^[A-Za-z0-9._]{1,128}$`. LiteLLM 1.103 runs the MCP SDK's
+  `validate_tool_name` on both, so a space, `/`, `:`, `@`, `-` or more than 128 characters is a 400
+  only at apply. A blank `alias` is the same refusal.
+- A blank `description` (`''` or whitespace). LiteLLM copies the column into `mcp_info` only when
+  the value is truthy, so a declared blank one is written and read back as absent and never converges.
 - A blank or padded `serverName`, `stdio` (it runs a command on the proxy host), and any auth type
   outside `none`, `oauth2` and the five static ones (the rest need credential fields not modelled).
 - A URL with userinfo, a fragment, or a query parameter whose name looks like a credential (`token`,

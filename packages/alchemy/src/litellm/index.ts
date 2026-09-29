@@ -50,6 +50,7 @@ export {
   LitellmMcpServerAbsentAfterWriteError,
   LitellmMcpServerAmbiguousNameError,
   LitellmMcpServerCredentialEnvUnsetError,
+  LitellmMcpServerDescriptionShadowedError,
   LitellmMcpServerInvalidError,
   LitellmMcpServerNotConvergedError,
   LitellmMcpServerUnreadableError,
