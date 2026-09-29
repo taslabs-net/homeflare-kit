@@ -2,16 +2,17 @@
 
 What every HomeFlare coding seat shares: an Effect AI **model** that talks to LiteLLM the
 way the seats need, **telemetry** that lands traces, logs and metrics in the Victoria stack
-on CT100 from one environment block, the **round loop** (`runRounds`, with a hard cap), and
-**MCP servers as a toolkit** (`mcpToolkit`).
+on CT100 from one environment block, the **round loop** (`runRounds`, with a hard cap),
+**MCP servers as a toolkit** (`mcpToolkit`), and **Postgres and Valkey state** on a subpath
+(`SeatState`).
 
 ```sh
 bun add @homeflare/seat-runtime effect@4.0.0-rc.115
 ```
 
 ⛔ **Pin the rc, and put `overrides` in YOUR root `package.json`.** `effect` is an exact peer
-and `@effect/ai-openai-compat` an exact dependency, both `4.0.0-rc.115` (`@modelcontextprotocol/sdk`
-is an exact dependency too, `1.31.0`). If your app also
+and `@effect/ai-openai-compat` and `@effect/sql-pg` exact dependencies, all `4.0.0-rc.115`
+(`@modelcontextprotocol/sdk` is an exact dependency too, `1.31.0`). If your app also
 uses `@effect/platform-bun`, add this to your own manifest, or a fresh install crashes:
 
 ```json
@@ -159,6 +160,20 @@ what was measured, is in [docs/mcp.md](./docs/mcp.md); the rules to know first:
 - ⚠️ The tool list is a **snapshot**, and 🔴 rc.115 cannot decode a `Tool.dynamic`'s call alone: an
   argument the server's schema does not declare is dropped (workaround in `src/mcp-tool.ts`).
 
+### `SeatState` (`@homeflare/seat-runtime/state`)
+
+```ts
+import { SeatState } from '@homeflare/seat-runtime/state';
+const state = SeatState.layer({ postgres: { url: pgDsn }, valkey: { url: valkeyUrl } });
+```
+
+`SqlClient` and `Redis`, Effect's own services, on their own subpath: the root stays runtime-neutral and
+this holds `node:net` and `Bun.RedisClient` (Valkey is Bun only). ⛔ **No host is held here**: the URLs
+are yours, `Redacted`. A layer connects when built, so a wrong URL fails at startup as a typed error;
+an out-of-prefix write is a typed `RedisError` (`SeatState.isPermissionDenied`); a lost Valkey is
+reconnected by the layer. Span attributes never hold a key, value or password, and a Valkey error is
+scrubbed of quoted arguments (Postgres's is not). **No `subscribe`.** Traps, tests: [docs/state.md](./docs/state.md).
+
 ## The measured pairing
 
 Exact same-rc pins, the `overrides` trap, rc.118's dropped `unstable/` prefix and the MCP SDK's
@@ -167,7 +182,7 @@ has 26 `TS2411` errors under `skipLibCheck: false` (upstream's): keep it `true`.
 
 ## What is not here
 
-No Postgres or Valkey state (0.3), no retry policy (the caller retries in Effect), no way to
+No Valkey `subscribe` or migrations, no retry policy (the caller retries in Effect), no way to
 merge an MCP toolkit with a local one (`Toolkit.merge` takes toolkits that still need handlers,
 `mcp.toolkit` already has them), no prompt for the forced final turn (it is sent empty). Nothing
 reads a credential from disk or logs one.
@@ -176,7 +191,7 @@ reads a credential from disk or logs one.
 
 ```sh
 bun run --filter @homeflare/seat-runtime types   # tsc --noEmit, scoped to this package
-bun test packages/seat-runtime
+bun test packages/seat-runtime   # the store suites skip without a store: docs/state.md
 bun run --filter @homeflare/seat-runtime smoke   # needs `build` first
 ```
 

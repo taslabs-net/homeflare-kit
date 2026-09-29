@@ -25,6 +25,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./state": {
+      "types": "./dist/state.d.ts",
+      "default": "./dist/state.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -32,7 +36,7 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts --outdir dist --target node --format esm --packages external --sourcemap=linked",
+    "build:js": "bun build ./src/index.ts ./src/state.ts --root ./src --outdir dist --target node --format esm --packages external --sourcemap=linked",
     "build:types": "tsc --project tsconfig.build.json",
     "clean": "rm -rf dist",
     "types": "tsc --noEmit",
@@ -41,6 +45,7 @@
   },
   "dependencies": {
     "@effect/ai-openai-compat": "4.0.0-rc.115",
+    "@effect/sql-pg": "4.0.0-rc.115",
     "@modelcontextprotocol/sdk": "1.31.0"
   },
   "devDependencies": {

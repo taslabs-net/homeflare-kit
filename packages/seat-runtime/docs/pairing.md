@@ -29,3 +29,11 @@ effect/process/ChildProcess`). Only a **root** `overrides` fixes it. An `overrid
 - ✅ Live, read-only (2026-09-29, the packed tarball on CT100): `mcpToolkit` connects to LiteLLM's
   MCP gateway (`:4100/mcp`, a seat key as the bearer, an SSE reply to `initialize`) in 63 ms. ⚠️ That key
   sees **0 tools and 0 resources**, so a live tool call through `mcpToolkit` is **not measured**.
+- ✅ `@effect/sql-pg` rc.115 (2026-09-29, `npm view` and a scratch install): one peer (`effect ^rc.115`)
+  and no dependency: it speaks the Postgres wire protocol itself over `node:net`, so no driver package
+  joins the tree. It builds and queries under Bun against Postgres 18.6, and its `.d.ts` names
+  `node:stream` and `node:tls`, so a consumer with `skipLibCheck: false` and no `@types/node` sees 4
+  `TS2591` errors from it (upstream's; `scripts/smoke.ts` allows exactly those).
+- ⚠️ `@effect/platform-bun` rc.115 ships `BunRedis`, but this package does **not** use it: it would make
+  `@effect/platform-bun` a dependency, and with it the `platform-node-shared` trap above for every
+  consumer. `SeatState.valkey` is the same `send` over `Bun.RedisClient` ([state.md](./state.md)).

@@ -12,6 +12,7 @@
 import { describe, expect, test } from 'bun:test';
 
 const indexUrl = new URL('../dist/index.js', import.meta.url);
+const stateUrl = new URL('../dist/state.js', import.meta.url);
 const built = await Bun.file(indexUrl).exists();
 
 describe.skipIf(!built)('dist/', () => {
@@ -42,6 +43,32 @@ describe.skipIf(!built)('dist/', () => {
     expect(
       SeatModel.layer({ model: 'm', apiUrl: 'http://127.0.0.1:1/v1', apiKey: 'k', tags: ['a:b'] }),
     ).toBeDefined();
+  });
+
+  test('the state subpath is built, and its layers and helper survive bundling', async () => {
+    const { SeatState } = await import(stateUrl.href);
+    for (const name of [
+      'postgres',
+      'postgresFromEnv',
+      'valkey',
+      'valkeyFromEnv',
+      'layer',
+      'layerFromEnv',
+      'isPermissionDenied',
+    ]) {
+      expect(typeof SeatState[name]).toBe('function');
+    }
+    expect(typeof SeatState.PgClient.layer).toBe('function');
+    expect(SeatState.POSTGRES_URL_VARIABLE).toBe('SEAT_POSTGRES_URL');
+    expect(SeatState.VALKEY_URL_VARIABLE).toBe('SEAT_VALKEY_URL');
+    expect(SeatState.isPermissionDenied(new Error('NOPERM'))).toBe(false);
+  });
+
+  test('the root entry does not reach the state subpath', async () => {
+    // ⛔ The root stays runtime-neutral: `node:net` and Bun.RedisClient live behind ./state only.
+    const root = await Bun.file(indexUrl).text();
+    expect(root).not.toContain('@effect/sql-pg');
+    expect(root).not.toContain('RedisClient');
   });
 
   test('VERSION matches package.json', async () => {
