@@ -34,8 +34,8 @@ export type McpAuthType = 'none' | 'oauth2' | McpStaticAuthType;
 export interface McpServerProps {
   /**
    * The server's name, and the way an existing row is ADOPTED: the live row whose `server_name`
-   * equals it. LiteLLM prefixes every tool with it, so renaming a server renames its tools for
-   * every key and seat that calls them. Changing it is an update of the same row, never a replace.
+   * equals it. Changing it is an update of the same row, never a replace. The update re-sends the
+   * live alias, so the tool prefix stays. Declare `alias` to change the prefix.
    */
   readonly serverName: string;
   /**
@@ -49,8 +49,9 @@ export interface McpServerProps {
    * The tool prefix LiteLLM shows (`<alias>-<tool>`). Compared only when declared, and an
    * undeclared live alias is KEPT: an update that sends a `serverName` with no alias would make
    * LiteLLM rewrite the alias to the name, so the live one is re-sent (mcp-server-form.ts).
-   * ⛔ No `-` (LiteLLM's tool-prefix separator, refused with a 400) and no space (LiteLLM stores
-   * it as `_`, so the row would never match the declaration).
+   * Declare this to change the prefix; a changed `serverName` does not. ⛔ Must match
+   * `^[A-Za-z0-9._]{1,128}$` (same rule as `serverName`): LiteLLM 1.103 runs `validate_tool_name`
+   * on it, so a space, `/`, `:`, `@` or more than 128 characters is a 400 only at apply.
    */
   readonly alias?: string;
   /**
@@ -69,10 +70,12 @@ export interface McpServerProps {
    */
   readonly authValue?: FromEnv;
   /**
-   * Compared only when declared. ⚠️ LiteLLM's list answers `mcp_info.description` in preference to
-   * this column, and this resource writes only the column. A row whose `mcp_info` has a
-   * `description` key (even a null one) that differs from the declaration is refused
-   * (`LitellmMcpServerDescriptionShadowedError`) rather than written and failed on the read back.
+   * Compared only when declared. ⚠️ A blank one (`''` or whitespace) is refused: LiteLLM copies the
+   * column into `mcp_info` only when the value is truthy, so it would never converge. LiteLLM's
+   * list answers `mcp_info.description` in preference to this column, and this resource writes only
+   * the column. A row whose `mcp_info` has a `description` key (even a null one) that differs from
+   * the declaration is refused (`LitellmMcpServerDescriptionShadowedError`) rather than written and
+   * failed on the read back.
    */
   readonly description?: string;
   /**

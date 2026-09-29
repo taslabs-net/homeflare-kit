@@ -148,11 +148,37 @@ describe('the names LiteLLM would refuse or rewrite', () => {
     ['a hyphen in the alias', { ...base, alias: 'my-search' }, 'alias'],
     ['a space in the alias', { ...base, alias: 'my search' }, 'space'],
     ['a blank alias', { ...base, alias: ' ' }, 'alias'],
+    ['a slash in serverName', { ...base, serverName: 'FAKE/web' }, 'serverName'],
+    ['a colon in serverName', { ...base, serverName: 'FAKE:web' }, 'serverName'],
+    ['an at-sign in serverName', { ...base, serverName: 'FAKE@web' }, 'serverName'],
+    ['a slash in the alias', { ...base, alias: 'my/search' }, 'alias'],
+    ['a colon in the alias', { ...base, alias: 'my:search' }, 'alias'],
+    ['an at-sign in the alias', { ...base, alias: 'my@search' }, 'alias'],
   ])('%s is refused before any request', (_label, props, mention) => {
     expect(firstProblem(props)).toContain(mention);
   });
 
-  test('a space in serverName is allowed: LiteLLM stores the name as written', () => {
-    expect(firstProblem({ ...base, serverName: 'FAKE web' })).toBeUndefined();
+  test('a space in serverName is refused: LiteLLM 1.103 rejects it at apply, it is not stored as written', () => {
+    const problem = firstProblem({ ...base, serverName: 'FAKE web' });
+    expect(problem).toContain('serverName');
+    expect(problem).toContain('space');
+  });
+
+  test('a serverName or alias longer than 128 characters is refused', () => {
+    const over = 'A'.repeat(129);
+    expect(firstProblem({ ...base, serverName: over })).toContain('128');
+    expect(firstProblem({ ...base, alias: over })).toContain('128');
+  });
+
+  test('a name of letters, digits, "." and "_" up to 128 characters passes', () => {
+    expect(
+      firstProblem({ ...base, serverName: 'A'.repeat(128), alias: 'FAKE.web_1' }),
+    ).toBeUndefined();
+  });
+
+  test('a declared blank description is refused: LiteLLM never copies it into mcp_info', () => {
+    expect(firstProblem({ ...base, description: '' })).toContain('description');
+    expect(firstProblem({ ...base, description: ' ' })).toContain('description');
+    expect(firstProblem({ ...base, description: 'FAKE notes' })).toBeUndefined();
   });
 });

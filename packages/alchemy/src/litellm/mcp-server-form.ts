@@ -43,28 +43,27 @@ const listProblem = (name: string, list: readonly unknown[] | undefined): string
     : undefined;
 
 /**
- * ⛔ `-` IS LITELLM'S TOOL-PREFIX SEPARATOR (`MCP_TOOL_PREFIX_SEPARATOR`, default `-`, unset in the
- *   live container as measured 2026-09-29): a tool is `<alias>-<tool>`, and `validate_mcp_server_name`
- *   answers 400 for a `server_name` or `alias` that holds it. Refused here so nothing is written
- *   to Alchemy's state first. A proxy that set another separator would be over-refused: rare, loud.
+ * ⛔ LITELLM 1.103 RUNS THE MCP SDK'S `validate_tool_name` ON `server_name` AND THE NORMALISED
+ *   ALIAS, and that 400 happens only at apply. The names it accepts are `^[A-Za-z0-9._]{1,128}$`:
+ *   a space, `/`, `:`, `@`, or more than 128 characters is refused here so nothing is written to
+ *   Alchemy's state first. `-` is out for the same reason and one more: it is
+ *   `MCP_TOOL_PREFIX_SEPARATOR` (default `-`, unset in the live container as measured 2026-09-29),
+ *   and a tool is `<alias>-<tool>`. A proxy that set another separator would be over-refused:
+ *   rare, and loud. `normalize_server_name` would also rewrite a space to `_`, so a name outside
+ *   this pattern would never equal the row it produced.
  */
-const separatorProblem = (field: string, value: string): string | undefined =>
-  value.includes('-')
-    ? `\`${field}\` must not contain "-": LiteLLM uses it to separate a tool's server prefix from its name`
-    : undefined;
+const TOOL_NAME = /^[A-Za-z0-9._]{1,128}$/;
 
-/**
- * ⚠️ LiteLLM REWRITES SPACES IN AN ALIAS TO `_` on every write (`normalize_server_name`), so a declared
- *   alias with a space would never equal the row it produced and every deploy would fail the read back.
- *   A `serverName` is stored as written, so spaces are allowed there.
- */
+const toolNameProblem = (field: string, value: string): string | undefined =>
+  TOOL_NAME.test(value)
+    ? undefined
+    : `\`${field}\` must match ^[A-Za-z0-9._]{1,128}$: LiteLLM 1.103 rejects a space, "/", ":", "@", "-" or more than 128 characters only at apply`;
+
+/** A declared alias is a tool name too. Omitted is fine: the live alias is kept. */
 const aliasProblem = (alias: string | undefined): string | undefined => {
   if (alias === undefined) return undefined;
   if (isBlank(alias)) return '`alias` must be a non-empty string when declared';
-  if (alias.includes(' ')) {
-    return '`alias` must not contain a space: LiteLLM stores it with "_" instead, so the row would never match';
-  }
-  return separatorProblem('alias', alias);
+  return toolNameProblem('alias', alias);
 };
 
 /** The first reason a declaration is refused, or `undefined`. Pure: no environment, no server. */
@@ -72,8 +71,15 @@ export const firstProblem = (props: McpServerProps): string | undefined => {
   if (isBlank(props.serverName) || props.serverName !== props.serverName.trim()) {
     return '`serverName` must be a non-empty string without leading or trailing whitespace';
   }
-  const named = separatorProblem('serverName', props.serverName) ?? aliasProblem(props.alias);
+  const named = toolNameProblem('serverName', props.serverName) ?? aliasProblem(props.alias);
   if (named !== undefined) return named;
+  // ⛔ A blank description never converges. LiteLLM copies the column into `mcp_info` only when
+  //   the value is truthy (`build_mcp_server_from_table`), and the list then answers
+  //   `mcp_info.description`. `''` is written and read back as absent, so every deploy would fail
+  //   the read back. Omitted is still "leave the live text alone".
+  if (props.description !== undefined && isBlank(props.description)) {
+    return '`description` must be a non-empty string when declared: LiteLLM copies it into mcp_info only when it is truthy, so a blank one never converges';
+  }
   if (props.serverId !== undefined && isBlank(props.serverId)) {
     return '`serverId` must be a non-empty string when declared';
   }
