@@ -47,8 +47,9 @@ export const quoteIdent = (value: string): string => `"${value.replace(/"/g, '""
  * value that is locale or encoding text, never for an identifier (see the file header). */
 export const quoteStringLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
 
-const withOptions = (props: PostgresDatabaseProps): string => {
+const withOptions = (props: PostgresDatabaseProps, template?: string): string => {
   const parts: string[] = [`OWNER ${quoteIdent(props.owner)}`];
+  if (template !== undefined) parts.push(`TEMPLATE ${quoteIdent(template)}`);
   if (props.encoding !== undefined) parts.push(`ENCODING ${quoteStringLiteral(props.encoding)}`);
   if (props.localeProvider !== undefined) {
     parts.push(`LOCALE_PROVIDER ${quoteStringLiteral(props.localeProvider)}`);
@@ -74,8 +75,8 @@ const withOptions = (props: PostgresDatabaseProps): string => {
  * `Math.trunc`ed and stringified, and a boolean is one of exactly two literal words this file
  * writes, so no declared value reaches the statement through string interpolation unescaped.
  */
-export const buildCreateDatabaseSql = (props: PostgresDatabaseProps): string =>
-  `CREATE DATABASE ${quoteIdent(props.name)} WITH ${withOptions(props)}`;
+export const buildCreateDatabaseSql = (props: PostgresDatabaseProps, template?: string): string =>
+  `CREATE DATABASE ${quoteIdent(props.name)} WITH ${withOptions(props, template)}`;
 
 /** `42P04` (`duplicate_database`) is a race: something else created the name between our read
  * and our create. Measured at `internal/sqlError.ts@effect/sql-pg 4.0.0-rc.115`: every SQLSTATE

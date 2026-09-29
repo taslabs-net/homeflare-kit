@@ -9,8 +9,17 @@
  *   the results under whatever logical grouping it wants.
  */
 import * as Layer from 'effect/Layer';
-import { type PostgresConnectionConfig, postgresConnection } from './connection.ts';
+import {
+  type PostgresConnectionConfig,
+  type PostgresRunnerConfig,
+  postgresConnection,
+  postgresRunnerConnection,
+} from './connection.ts';
 import { PostgresDatabaseProvider } from './database.ts';
 
 export const postgresProviders = (config: PostgresConnectionConfig) =>
   PostgresDatabaseProvider().pipe(Layer.provide(postgresConnection(config)));
+
+/** The same provider over a command runner (`psql-executor.ts`) — for a loopback-only cluster. */
+export const postgresRunnerProviders = (config: PostgresRunnerConfig) =>
+  PostgresDatabaseProvider().pipe(Layer.provide(postgresRunnerConnection(config)));
