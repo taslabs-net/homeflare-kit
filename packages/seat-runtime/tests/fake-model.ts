@@ -40,8 +40,16 @@ export type FakeModel = {
  * @param asks  Whether call number `call` (1-based) asks for a tool; when it does not, the
  *              model answers. A call with NO tools offered can only answer, whatever `asks` says.
  * @param failAt Call number to fail with an `AiError`, instead.
+ * @param stubborn A model that asks for a tool even when NONE is offered: what a gateway that
+ *              invents a tool for a history full of tool calls can answer (review of PR 328,
+ *              round 2). The SDK cannot decode that part, so the call fails with
+ *              `InvalidOutputError`, as it does with a real provider.
  */
-export function fakeModel(asks: (call: number) => boolean, failAt?: number): FakeModel {
+export function fakeModel(
+  asks: (call: number) => boolean,
+  failAt?: number,
+  stubborn = false,
+): FakeModel {
   const sent: Sent[] = [];
   const layer = Layer.effect(
     LanguageModel.LanguageModel,
@@ -62,7 +70,7 @@ export function fakeModel(asks: (call: number) => boolean, failAt?: number): Fak
             }),
           );
         }
-        const asking = options.tools.length > 0 && asks(call);
+        const asking = (options.tools.length > 0 || stubborn) && asks(call);
         return Effect.succeed(
           // Spread: `PartEncoded[]` is mutable, and the `as const` tuples above are not.
           [...(asking ? asksForTool(`call-${String(call)}`) : answers(`answer-${String(call)}`))],

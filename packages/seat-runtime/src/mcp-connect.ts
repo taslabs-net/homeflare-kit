@@ -22,6 +22,31 @@ export type McpHeaders = Readonly<Record<string, string | Redacted.Redacted<stri
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 
+/**
+ * The longest a timer can run: `setTimeout` takes a 32-bit signed delay, and a larger one (like
+ * one below 1) is set to 1 ms. Node documents that; Bun does the same (measured, see below).
+ */
+export const MAX_TIMEOUT_MS: number = 2 ** 31 - 1;
+
+/**
+ * ⛔ A timeout that is not a finite number of milliseconds in `(0, MAX_TIMEOUT_MS]` is a
+ *   programming error, and dies with a `RangeError` before any request, as `maxRounds` does.
+ *   The budget feeds two timers (ours and the SDK's per request), and an out-of-range value made
+ *   them disagree: measured 2026-09-29 (review of PR 328) against a healthy local stub,
+ *   `Infinity` failed at once ("did not finish within Infinity ms") while `0`, `-1`, `NaN` and
+ *   `2 ** 31` each happened to succeed, because the timer clamped to 1 ms and the handshake won
+ *   the race. A real handshake takes longer than that 1 ms (not measured remotely), so those
+ *   would lose it.
+ */
+export const validateTimeout = (timeout: number): Effect.Effect<number> =>
+  Number.isFinite(timeout) && timeout > 0 && timeout <= MAX_TIMEOUT_MS
+    ? Effect.succeed(timeout)
+    : Effect.die(
+        new RangeError(
+          `connectTimeoutMs must be a finite number of milliseconds above 0 and at most ${String(MAX_TIMEOUT_MS)}, got ${String(timeout)}`,
+        ),
+      );
+
 const plainHeaders = (headers: McpHeaders | undefined): Record<string, string> =>
   Object.fromEntries(
     Object.entries(headers ?? {}).map(([name, value]) => [
@@ -29,6 +54,15 @@ const plainHeaders = (headers: McpHeaders | undefined): Record<string, string> =
       Redacted.isRedacted(value) ? Redacted.value(value) : value,
     ]),
   );
+
+/**
+ * The header values as plain strings, for `redactor` and for nothing else: a value an error
+ * message must never repeat is exactly a value the redactor has to know. Kept here so that a
+ * `Redacted` is unwrapped in this file only.
+ */
+export function headerValues(headers: McpHeaders | undefined): string[] {
+  return Object.values(plainHeaders(headers));
+}
 
 /**
  * ★ THE BUDGET COVERS THE WHOLE HANDSHAKE, NOT ONE REQUEST. SDK 1.31.0 `Client.connect` sends
@@ -39,9 +73,9 @@ const plainHeaders = (headers: McpHeaders | undefined): Record<string, string> =
  *   client when the budget is spent, and `close` aborts the transport's fetch, which is the only
  *   thing that cancels that pending POST.
  * ★ THE CALLER'S `signal` CLOSES IT TOO. It fires when the fiber is interrupted (a seat shutting
- *   down, an `Effect.timeout`), which only means something because the handshake is NOT inside
- *   `acquireRelease`'s uninterruptible acquire: that acquire holds the `Client` object and
- *   nothing on the network.
+ *   down, an `Effect.timeout`), which only means something because `connect` runs the handshake
+ *   in the `restore`d, interruptible part of its mask: a handshake inside `acquireRelease`'s
+ *   uninterruptible acquire would ignore it (that was the first version of this timeout).
  * ⚠️ Whatever the SDK rejects with after the budget is spent (an `AbortError` from the cancelled
  *   fetch, or its own `Request timed out`) is an artefact of the close, so it is replaced by one
  *   message that says what happened.
@@ -84,9 +118,18 @@ async function handshake(
 
 /**
  * Connect and handshake; the client lives as long as the surrounding `Scope`.
- * ⚠️ The scope holds only the `Client` (a constructor, no I/O), so the handshake after it is
- * interruptible and bounded (`handshake`); a failed handshake has already closed the client
- * and the finalizer's `close` is then a no-op.
+ *
+ * ★ THE FINALIZER IS REGISTERED ONLY AFTER THE HANDSHAKE SUCCEEDED. A scoped constructor that
+ *   fails must leave nothing in the caller's scope, and this one used to register the `Client`'s
+ *   `close` first. Each `Client` carries its own JSON Schema validator (SDK client/index.js), so
+ *   a seat retrying `mcpToolkit` through a gateway outage held one per failed attempt until its
+ *   scope closed: measured 2026-09-29 (review of PR 328), 64.7 MB against 10.6 MB after 3 001
+ *   refused attempts in one scope, about 18 KB each. `handshake` closes the client on every
+ *   failure, so a failed attempt has nothing left to release.
+ * ⚠️ `uninterruptibleMask` keeps the gap between "the handshake returned" and "the finalizer is
+ *   registered" from being an interruption point (a client opened and never closed); only the
+ *   handshake itself is restored to interruptible, and `onError` closes the client when it
+ *   fails OR is interrupted, so the SDK's own close-on-abort is not the only line of defence.
  */
 export const connect = (
   url: URL,
@@ -95,14 +138,17 @@ export const connect = (
   timeout: number,
   redact: Redact,
 ): Effect.Effect<Client, McpToolkitError, Scope.Scope> =>
-  Effect.gen(function* () {
-    const client = yield* Effect.acquireRelease(
-      Effect.sync(() => new Client({ name: '@homeflare/seat-runtime', version: VERSION })),
-      (open) => Effect.ignore(Effect.tryPromise(() => open.close())),
-    );
-    yield* Effect.tryPromise({
-      try: (signal) => handshake(client, url, headers, timeout, signal),
-      catch: (cause) => new McpToolkitError({ operation: 'connect', server, cause, redact }),
-    });
-    return client;
-  }).pipe(Effect.withSpan('seat.mcp.connect', { attributes: { 'server.address': server } }));
+  Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* () {
+      const client = new Client({ name: '@homeflare/seat-runtime', version: VERSION });
+      const close = Effect.ignore(Effect.tryPromise(() => client.close()));
+      yield* restore(
+        Effect.tryPromise({
+          try: (signal) => handshake(client, url, headers, timeout, signal),
+          catch: (cause) => new McpToolkitError({ operation: 'connect', server, cause, redact }),
+        }),
+      ).pipe(Effect.onError(() => close));
+      yield* Effect.addFinalizer(() => close);
+      return client;
+    }),
+  ).pipe(Effect.withSpan('seat.mcp.connect', { attributes: { 'server.address': server } }));

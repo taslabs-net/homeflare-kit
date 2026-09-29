@@ -4,7 +4,14 @@
  *
  * ⛔ THE ADDRESS IS ORIGIN AND PATH ONLY. A query string is where a token lands when a server
  *   wants one there, and the headers a caller passes are bearer credentials: neither may reach
- *   an error message, a log line or a span attribute. Headers are never read here at all.
+ *   an error message, a log line or a span attribute. Header NAMES and the header map are never
+ *   read here; a header VALUE is read only to be redacted (`redactor`).
+ * 🔴 A SERVER ECHOES A VALUE ON ITS OWN. Redacting the query STRING and the address is not
+ *   enough: a server that answers "rejected key QVALUE" prints the value alone, and one that says
+ *   "bad credential Bearer HVALUE" prints a header's. Measured 2026-09-29 (review of PR 328,
+ *   round 2): both reached `McpToolkitError.message`. So `redactor` also takes out each query
+ *   value and each header value the caller passed (`MIN_SECRET_LENGTH` and up). What it cannot
+ *   catch: a value the server TRANSFORMS (hashed, base64, truncated), and one under the minimum.
  * 🔴 THE `cause` IS A COPY, NEVER THE ORIGINAL. Measured 2026-09-29 (review of PR 328): under Bun a
  *   refused fetch is a `TypeError` whose own `path` field is the FULL URL, query string included,
  *   so attaching it as `cause` printed the token through `Bun.inspect`, `console.error`, an
@@ -14,7 +21,7 @@
  *   carried, and `redactor` takes the query string, fragment and password out of what remains.
  *   The price: `cause instanceof McpError` no longer holds; read `cause.code` instead.
  */
-/** Which call failed. `connect` covers the transport and the `initialize` handshake. */
+/** Which call failed. `connect` covers the transport and the whole handshake (mcp-connect.ts). */
 export type McpOperation = 'connect' | 'listTools' | 'listResources' | 'readResource';
 
 /** A server address safe to print: `https://host:port/path`, no credentials, query or fragment. */
@@ -26,16 +33,50 @@ export function serverLabel(url: URL): string {
 export type Redact = (text: string) => string;
 
 /**
- * A `Redact` for one server address. The whole URL becomes `serverLabel` and any bare query
- * string, fragment or password left over becomes `[redacted]`: a server can echo the address
- * back in an error body, and a fetch failure can print it.
+ * The shortest value `redactor` treats as a secret ON ITS OWN. Redacting every occurrence of a
+ * value costs legible messages (a `?v=1` would blank every "1"), and a value this short is not
+ * a credential anyone relies on. The query STRING, fragment and password are redacted whole
+ * whatever their length.
  */
-export function redactor(url: URL): Redact {
+export const MIN_SECRET_LENGTH = 6;
+
+/** The values in a raw query string, as written (percent-encoded) and as decoded. */
+function queryValues(url: URL): string[] {
+  const raw = url.search
+    .slice(1)
+    .split('&')
+    .map((pair) => pair.slice(pair.indexOf('=') + 1));
+  return [...raw, ...url.searchParams.values()];
+}
+
+/**
+ * A header value, and its credential when it has a scheme: `Bearer abc` is echoed whole or as
+ * `abc`, and "Bearer" alone is not a secret.
+ */
+function headerParts(value: string): string[] {
+  const token = value.trim().split(/\s+/).at(-1) ?? '';
+  return [value, token];
+}
+
+/**
+ * A `Redact` for one server address, plus any header values the caller passes. The whole URL
+ * becomes `serverLabel`; a bare query string, fragment or password left over, each query value
+ * and each header value (`MIN_SECRET_LENGTH` and up, longest first) becomes `[redacted]`: a
+ * server can echo the address or a value back in an error body, and a fetch failure can print it.
+ */
+export function redactor(url: URL, headerValues: ReadonlyArray<string> = []): Redact {
   const label = serverLabel(url);
-  const secrets = [
+  const whole = [
     url.search.length > 1 ? url.search : '',
     url.hash.length > 1 ? url.hash : '',
     url.password,
+  ];
+  const parts = [...queryValues(url), ...headerValues.flatMap(headerParts)];
+  const secrets = [
+    ...whole,
+    ...[...new Set(parts)]
+      .filter((part) => part.length >= MIN_SECRET_LENGTH)
+      .sort((a, b) => b.length - a.length),
   ].filter((secret) => secret !== '');
   return (text) => {
     let out = text.split(url.href).join(label);

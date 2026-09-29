@@ -24,6 +24,15 @@
  *   back `finishReason: 'stop'` with text and no tool call. One sample, one alias.
  * ⚠️ `capped` MEANS THE MODEL STILL WANTED TOOLS after `maxRounds` tool rounds. A model that
  *   answers on round `maxRounds` exactly is `capped: false`: the cap did not fire.
+ * 🔴 THE FORCED TURN CAN BE REFUSED, AND THEN THE RUN DOES NOT DIE OF IT. A provider that asks for
+ *   a tool although none was offered (a gateway that adds a dummy tool for a history full of
+ *   tool calls does exactly that) answers a turn the SDK cannot decode: `AiError` with reason
+ *   `InvalidOutputError`, "Expected ... text | reasoning ..." (reproduced 2026-09-29, review of
+ *   PR 328 round 2, against a scripted model: 3 model calls, then the whole run failed with all
+ *   its rounds already spent). That one failure is caught: the result is `capped` and
+ *   `unanswered`, its `response` is the LAST TOOL ROUND's (whose calls did run), `rounds` stays
+ *   `maxRounds`, and a warning, a span error and `seat_rounds_unanswered_total` say what happened.
+ *   Any OTHER failure of the forced turn (network, rate limit, a handler) still fails the run.
  */
 import * as Effect from 'effect/Effect';
 import * as Metric from 'effect/Metric';
@@ -40,6 +49,11 @@ const roundsTotal = Metric.counter('seat_rounds_total', {
 /** Runs whose cap fired: the interesting number, because each one is an agent that did not finish. */
 const roundsCapped = Metric.counter('seat_rounds_capped_total', {
   description: 'runRounds runs that hit maxRounds and were given a forced final turn.',
+});
+
+/** Runs whose forced final turn was refused: the model still asked for a tool. */
+const roundsUnanswered = Metric.counter('seat_rounds_unanswered_total', {
+  description: 'runRounds runs whose forced final turn came back as a tool call, not an answer.',
 });
 
 /**
@@ -82,10 +96,16 @@ export type RoundsOptions<Tools extends Record<string, Tool.Any>> = {
 export type RoundsResult<Tools extends Record<string, Tool.Any>> = {
   /** The last model turn: the answer, or the forced final turn when the cap fired. */
   readonly response: Response<Tools>;
-  /** Model turns taken, the forced one included. */
+  /** Model turns that returned, the forced one included when it did. */
   readonly rounds: number;
-  /** The cap fired and `response` is the forced final turn. */
+  /** The cap fired and `response` is the forced final turn (or see `unanswered`). */
   readonly capped: boolean;
+  /**
+   * The forced turn was refused (a provider that still asks for a tool) and `response` is the
+   * last TOOL round's: it holds no answer, and its tool calls ran. Only ever true with `capped`;
+   * `rounds` then counts the turns that returned, so it is `maxRounds`. See the header.
+   */
+  readonly unanswered: boolean;
 };
 
 /**
@@ -119,22 +139,45 @@ export function runRounds<Tools extends Record<string, Tool.Any>>(
         attributes: { 'seat.round': round, 'seat.round.forced': forced },
       });
 
-    for (let round = 1; round <= maxRounds; round += 1) {
-      const response = yield* chat
+    const turn = (round: number) =>
+      chat
         .generateText({ prompt: Prompt.empty, toolkit })
         .pipe(Effect.flatMap(finish(round, false)), span(round, false));
-      // ★ The exit test is the model's: no tool calls means it has answered.
-      if (response.toolCalls.length === 0) return { response, rounds: round, capped: false };
+
+    let round = 1;
+    let response: Response<Tools> = yield* turn(round);
+    // ★ The exit test is the model's: no tool calls means it has answered.
+    while (response.toolCalls.length > 0 && round < maxRounds) {
+      round += 1;
+      response = yield* turn(round);
+    }
+    if (response.toolCalls.length === 0) {
+      return { response, rounds: round, capped: false, unanswered: false };
     }
 
     yield* Metric.update(roundsCapped, 1);
     yield* Effect.logWarning('seat round cap reached; forcing a final turn without tools', {
       maxRounds,
     });
-    const round = maxRounds + 1;
-    const response = yield* chat
-      .generateText({ prompt: Prompt.empty, toolChoice: 'none' })
-      .pipe(Effect.flatMap(finish(round, true)), span(round, true));
-    return { response, rounds: round, capped: true };
+    const forcedRound = maxRounds + 1;
+    const forced = yield* chat.generateText({ prompt: Prompt.empty, toolChoice: 'none' }).pipe(
+      Effect.flatMap(finish(forcedRound, true)),
+      span(forcedRound, true),
+      // ⚠️ Only `InvalidOutputError`: see the header for what it is and what it is not.
+      Effect.catchReason('AiError', 'InvalidOutputError', () =>
+        Effect.as(
+          Effect.all([
+            Metric.update(roundsUnanswered, 1),
+            Effect.logWarning('seat forced final turn refused: the model still asked for a tool', {
+              maxRounds,
+            }),
+          ]),
+          undefined,
+        ),
+      ),
+    );
+    return forced === undefined
+      ? { response, rounds: maxRounds, capped: true, unanswered: true }
+      : { response: forced, rounds: forcedRound, capped: true, unanswered: false };
   });
 }

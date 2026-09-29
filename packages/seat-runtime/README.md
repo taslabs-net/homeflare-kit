@@ -102,12 +102,19 @@ The one round loop. `Chat.generateText` resolves the tool calls of **one** model
 returns, and Effect AI has no `maxRounds`; this is the documented `while` with a cap.
 
 ```ts
-const toolkit = yield * MyToolkit; // a Toolkit with its handlers provided; or `mcp.toolkit`
-const chat = yield * Chat.fromPrompt('Review this diff.');
-const result =
-  yield * runRounds({ chat, toolkit, maxRounds: 8, onRound: (r) => Effect.log(r.round) });
-result.response.text; // the answer
-result.capped; // true when the cap fired; result.rounds counts the forced turn too
+const program = Effect.gen(function* () {
+  const toolkit = yield* MyToolkit; // a Toolkit with its handlers provided; or `mcp.toolkit`
+  const chat = yield* Chat.fromPrompt('Review this diff.');
+  const result = yield* runRounds({
+    chat,
+    toolkit,
+    maxRounds: 8,
+    onRound: (r) => Effect.log(r.round),
+  });
+  result.response.text; // the answer
+  result.capped; // true when the cap fired; result.rounds counts the forced turn too
+  result.unanswered; // true when the forced turn was refused (below)
+});
 ```
 
 - Every round sends an empty prompt: `Chat` appends the model's turn and the tool results.
@@ -117,68 +124,45 @@ result.capped; // true when the cap fired; result.rounds counts the forced turn 
   `tools` nor `tool_choice`; the history still carries the earlier calls and results. Measured
   once on 2026-09-29 through CT100's LiteLLM: cf-code accepted that history and answered with
   `finishReason: 'stop'` and no tool call (one sample, one alias, not the tests' stub).
+- 🔴 **The forced turn can be refused.** A provider that still asks for a tool although none was
+  offered answers a turn the SDK cannot decode (`AiError`, `InvalidOutputError`). That one failure
+  does not fail the run: it returns `capped: true, unanswered: true`, `response` is the last tool
+  round's (no answer; its calls ran), `rounds` is `maxRounds`. Any other failure of that turn
+  (network, rate limit) still fails the run.
 - `maxRounds` must be a positive integer; `0`, `Infinity` or `NaN` is a `RangeError` defect
   before any model call. Errors are the turn's own (`AiError`, a handler's failure); nothing retries.
 - Observable: a `seat.round` span per turn (`seat.round`, `seat.round.forced`, `seat.tool_calls`),
-  counters `seat_rounds_total` and `seat_rounds_capped_total`, a warning log when the cap fires.
+  counters `seat_rounds_total`, `seat_rounds_capped_total` and `seat_rounds_unanswered_total`,
+  a warning log when the cap fires (and another when the forced turn is refused).
 
 ### `mcpToolkit`
 
 ```ts
-const mcp =
-  yield * mcpToolkit('https://mcp.example/mcp', { authorization: Redacted.make(`Bearer ${t}`) });
-yield * runRounds({ chat, toolkit: mcp.toolkit, maxRounds: 8 });
-const notes = yield * mcp.listResources;
-const hello = yield * mcp.readResource('estate://notes/hello');
+const program = Effect.gen(function* () {
+  const mcp = yield* mcpToolkit('https://mcp.example/mcp', {
+    authorization: Redacted.make(`Bearer ${token}`),
+  });
+  yield* runRounds({ chat, toolkit: mcp.toolkit, maxRounds: 8 });
+  const notes = yield* mcp.listResources;
+  const hello = yield* mcp.readResource('estate://notes/hello');
+}).pipe(Effect.scoped); // the connection closes with the scope
 ```
 
 The official MCP SDK `Client` over Streamable HTTP; each MCP tool is a `Tool.dynamic` carrying
-the server's own JSON Schema. It needs a `Scope`: the connection closes with it.
+the server's own JSON Schema. It needs a `Scope`: the connection closes with it. The detail, with
+what was measured, is in [docs/mcp.md](./docs/mcp.md); the rules to know first:
 
-- **A tool failure goes back to the model**, not out of the run: an `isError` result, a JSON-RPC
-  error (bad arguments, unknown tool) and a call that never completed are all the tool's result.
-  Connecting and listing fail with `McpToolkitError` (`_tag`, `operation`, `server`), whose message
-  holds the origin and path only, and whose `cause` is a scrubbed copy: never a header or a query
-  string (under Bun a refused fetch's own `path` field is the full URL; tests/printed.ts).
-- **Results are strings.** Text blocks verbatim; an image, audio or blob becomes a one-line marker,
-  never its bytes; an empty result reads `(no content)`.
-- ⚠️ The tool list is a **snapshot** at connect time. Names are passed through unchanged: an
-  OpenAI-shaped API takes `[A-Za-z0-9_-]{1,64}`, so a server that names a tool with a dot is not
-  renamed here (not measured through LiteLLM's MCP gateway).
-- 🔴 **compat rc.115 cannot decode a tool call for a `Tool.dynamic` alone** (measured 2026-09-29:
-  `UnsupportedSchemaError: Root JSON Schema must have type "object"`; rc.118 fixed it). The
-  workaround in `src/mcp-tool.ts` costs two things: an argument the server's schema **does not
-  declare is dropped**, and a tool that declares no properties takes no arguments. (An explicit
-  `null` on an optional argument arrives as `null`: tests/mcp-arguments.test.ts, end to end.)
-- `listResources` is empty when the server does not advertise resources; `readResource` fails
-  with `McpToolkitError` for an unknown URI. A workerd deployment is untested (the SDK's default
-  validator is `ajv`, which needs `new Function`).
+- **A tool failure goes back to the model**, not out of the run. Connecting and listing fail with
+  `McpToolkitError`, whose message and `cause` never hold the headers or the query string.
+- **`connectTimeoutMs`** (default 15 s) bounds the handshake and each startup `tools/list` page.
+- ⚠️ The tool list is a **snapshot**, and 🔴 rc.115 cannot decode a `Tool.dynamic`'s call alone: an
+  argument the server's schema does not declare is dropped (workaround in `src/mcp-tool.ts`).
 
 ## The measured pairing
 
-Measured 2026-09-29 (a scratch install, then this package's tests and smoke):
-
-- ✅ `effect` rc.115 with `@effect/ai-openai-compat` rc.115: clean install, `tsc` 7.0.2 exit 0,
-  and at runtime chat, a tool round, embeddings, three OTLP signals and `traceparent`.
-- ⚠️ With `skipLibCheck: false`, compat's **own** `.d.ts` has 26 `TS2411` errors. Upstream's,
-  not ours; keep `skipLibCheck: true`. `scripts/smoke.ts` allows exactly those and nothing else.
-- ⚠️ compat beta.107 beside effect rc.115 also installed and passed the same small surface
-  (the scout's `pairBeta`). Nothing wider was tried, so the rule stays **same exact rc**.
-- 🔴 **rc.118 drops the `unstable/` prefix**: `effect/unstable/ai` becomes `effect/ai`. rc.116
-  and rc.117 keep it. The estate is pinned at rc.115, so do not bump one package alone.
-- 🔴 **`@effect/platform-node-shared` resolves to rc.118** under `@effect/platform-bun`
-  rc.115 on a fresh install, and the process dies at import (`Cannot find module
-effect/process/ChildProcess`). Only a **root** `overrides` fixes it. An `overrides` field in
-  a workspace member's manifest, or in a tarball you install, is ignored (measured), which is
-  why this package declares none. `scripts/smoke.ts` installs platform-bun beside it with the
-  override above and asserts all three resolve to rc.115.
-- ✅ `@modelcontextprotocol/sdk` 1.31.0 (the scout's measured pairing, `npm view` current on
-  2026-09-29): list, call and resource read against an Effect `McpServer`. Its `zod` peer
-  (`^3.25 || ^4.0`) is satisfied by the kit's zod, one copy in the lockfile, and its client entry
-  imports no `node:` module (all three asserted in `tests/pairing.test.ts`).
-- ✅ Live, read-only (2026-09-29, the packed tarball on CT100): `mcpToolkit` connects to LiteLLM's
-  MCP gateway (`:4100/mcp`, a seat key as the bearer, an SSE reply to `initialize`) in 63 ms. ⚠️ That key
-  sees **0 tools and 0 resources**, so a live tool call through `mcpToolkit` is **not measured**.
+Exact same-rc pins, the `overrides` trap, rc.118's dropped `unstable/` prefix and the MCP SDK's
+pairing, each with what was measured: [docs/pairing.md](./docs/pairing.md). ⚠️ Compat's own `.d.ts`
+has 26 `TS2411` errors under `skipLibCheck: false` (upstream's): keep it `true`.
 
 ## What is not here
 

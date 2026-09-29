@@ -48,6 +48,7 @@ describe('the cap', () => {
     const result = success(exit);
 
     expect(result.capped).toBe(true);
+    expect(result.unanswered).toBe(false);
     expect(result.rounds).toBe(4);
     expect(result.response.text).toBe('answer-4');
     // The handler ran for the three tool rounds and never for the forced one.
@@ -89,12 +90,45 @@ describe('the forced final turn', () => {
   });
 });
 
+describe('a forced turn the provider refuses', () => {
+  // 🔴 A provider that still asks for a tool on the forced turn. The SDK cannot decode a tool
+  //   call nobody offered, so the turn fails with `InvalidOutputError`; before this was handled
+  //   it failed the whole run with every round already spent (review of PR 328, round 2).
+  test('ends the run as capped and unanswered, with the last tool round as its response', async () => {
+    const model = fakeModel(() => true, undefined, true);
+    const { exit, handled, rounds } = await run(model, 3);
+    const result = success(exit);
+
+    expect(result).toMatchObject({ capped: true, unanswered: true, rounds: 3 });
+    // No answer: the response is round 3's, a turn that asked for a tool, and that tool ran.
+    expect(result.response.toolCalls).toHaveLength(1);
+    expect(handled).toEqual(['a', 'a', 'a']);
+    // The forced call WAS made (it is the refused one) and no more were.
+    expect(model.sent.map((s) => [s.tools, s.toolChoice])).toEqual([
+      [1, 'auto'],
+      [1, 'auto'],
+      [1, 'auto'],
+      [0, 'none'],
+    ]);
+    // `onRound` and the counters speak only for turns that returned.
+    expect(rounds.map((r) => r.forced)).toEqual([false, false, false]);
+  });
+
+  test('another failure of the forced turn still fails the run', async () => {
+    const model = fakeModel(() => true, 4); // call 4 is the forced turn: a scripted AiError
+    const { exit } = await run(model, 3);
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(Exit.isFailure(exit) ? Cause.pretty(exit.cause) : '').toContain('scripted failure');
+  });
+});
+
 describe('a run that finishes before the cap', () => {
   test('answering early is not capped and gets no forced turn', async () => {
     const model = fakeModel((call) => call < 2); // asks once, then answers
     const { exit, handled, rounds } = await run(model, 5);
 
-    expect(success(exit)).toMatchObject({ capped: false, rounds: 2 });
+    expect(success(exit)).toMatchObject({ capped: false, unanswered: false, rounds: 2 });
     expect(handled).toEqual(['a']);
     expect(model.sent.map((s) => s.tools)).toEqual([1, 1]);
     expect(rounds.map((r) => r.forced)).toEqual([false, false]);

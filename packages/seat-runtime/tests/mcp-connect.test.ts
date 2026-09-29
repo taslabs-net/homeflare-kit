@@ -5,67 +5,23 @@
  * ★ THE SERVER ANSWERS `initialize` AND HOLDS `notifications/initialized`. That is the case the
  *   first version of the timeout missed (review of PR 328): SDK 1.31.0 `Client.connect` awaits
  *   the notification's POST with no timeout of its own, inside an uninterruptible acquire, and
- *   the first test here held only the FIRST request, so it could not see it. A `Bun.serve` stub
- *   rather than the Effect `McpServer`: the point is a response that never comes.
- * ⛔ 127.0.0.1, never Bun's wildcard default.
+ *   the first test here held only the FIRST request, so it could not see it. The stub is
+ *   tests/mcp-wedge.ts.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { Effect } from 'effect';
 import { McpToolkitError, mcpToolkit } from '../src/index.ts';
+import { type Wedge, wedgedServer } from './mcp-wedge.ts';
 import { printed } from './printed.ts';
-
-type Wedge = {
-  readonly url: string;
-  /** How many `notifications/initialized` POSTs the server took and never answered. */
-  readonly held: () => number;
-  readonly stop: () => void;
-};
 
 const servers: Wedge[] = [];
 afterEach(() => {
   for (const server of servers.splice(0)) server.stop();
 });
 
-/**
- * A server whose `initialize` answer is valid, session id included, and whose
- * `notifications/initialized` POST is taken and never answered: a worker that wedges between the
- * first request and the second. `idleTimeout: 0` so Bun does not drop the held connection for us.
- */
+/** A server that answers `initialize` and holds `notifications/initialized`. */
 function wedgedAfterInitialize(): Wedge {
-  let held = 0;
-  const listener = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    idleTimeout: 0,
-    async fetch(request) {
-      if (request.method !== 'POST') return new Response(null, { status: 405 });
-      const body = (await request.json()) as { id?: number; method: string };
-      if (body.method === 'initialize') {
-        return Response.json(
-          {
-            jsonrpc: '2.0',
-            id: body.id,
-            result: {
-              protocolVersion: '2025-06-18',
-              capabilities: { tools: {} },
-              serverInfo: { name: 'wedge', version: '0' },
-            },
-          },
-          { headers: { 'mcp-session-id': 'session-1' } },
-        );
-      }
-      if (body.method === 'notifications/initialized') {
-        held += 1;
-        return new Promise<Response>(() => undefined);
-      }
-      return new Response(null, { status: 404 });
-    },
-  });
-  const server: Wedge = {
-    url: `http://127.0.0.1:${String(listener.port)}/mcp`,
-    held: () => held,
-    stop: () => void listener.stop(true),
-  };
+  const server = wedgedServer('notifications/initialized');
   servers.push(server);
   return server;
 }

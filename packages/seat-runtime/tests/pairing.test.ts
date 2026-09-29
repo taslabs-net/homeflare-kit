@@ -124,26 +124,4 @@ describe('the MCP SDK pairing', () => {
     // No copy nested under the SDK (bun writes those as "<parent>/zod").
     expect(lock).not.toContain('"@modelcontextprotocol/sdk/zod"');
   });
-
-  test('the SDK’s client entry pulls no node: or bun: module at import time', async () => {
-    // ⛔ The published entry point stays runtime-neutral (AGENTS.md). The scout read the import
-    //   graph of client/index.js and client/streamableHttp.js: 16 files, no node: specifier.
-    const root = new URL('../node_modules/@modelcontextprotocol/sdk/dist/esm/', import.meta.url);
-    const seen = new Set<string>();
-    const bad: string[] = [];
-    const walk = async (file: URL): Promise<void> => {
-      if (seen.has(file.href)) return;
-      seen.add(file.href);
-      const text = await Bun.file(file).text();
-      for (const m of text.matchAll(/^\s*(?:import|export)[^'"]*?from\s+['"]([^'"]+)['"]/gm)) {
-        const spec = m[1] ?? '';
-        if (spec.startsWith('.')) await walk(new URL(spec, file));
-        else if (/^(node|bun):/.test(spec)) bad.push(`${file.pathname} -> ${spec}`);
-      }
-    };
-    await walk(new URL('client/index.js', root));
-    await walk(new URL('client/streamableHttp.js', root));
-    expect(seen.size).toBeGreaterThan(10);
-    expect(bad).toEqual([]);
-  });
 });

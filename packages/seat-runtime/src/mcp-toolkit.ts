@@ -26,7 +26,13 @@
 import * as Effect from 'effect/Effect';
 import type * as Scope from 'effect/Scope';
 import * as Toolkit from 'effect/unstable/ai/Toolkit';
-import { DEFAULT_CONNECT_TIMEOUT_MS, type McpHeaders, connect } from './mcp-connect.ts';
+import {
+  DEFAULT_CONNECT_TIMEOUT_MS,
+  type McpHeaders,
+  connect,
+  headerValues,
+  validateTimeout,
+} from './mcp-connect.ts';
 import { McpToolkitError, describeCause, redactor, serverLabel } from './mcp-error.ts';
 import { collect } from './mcp-pages.ts';
 import { renderResult } from './mcp-render.ts';
@@ -62,12 +68,21 @@ export type McpToolkit = {
 
 export type McpToolkitOptions = {
   /**
-   * How long the WHOLE handshake may take: `initialize` and the `notifications/initialized`
-   * that follows it. Default 15 000 ms.
+   * The budget for STARTING UP, in milliseconds; default 15 000. A finite number above 0 and at
+   * most 2 ** 31 - 1, or a `RangeError` defect before any request (mcp-connect.ts).
+   * It covers, each with the full budget:
+   *   - the WHOLE handshake: `initialize` and the `notifications/initialized` that follows it;
+   *   - every `tools/list` page read after it (a server holding one fails the call as
+   *     `McpToolkitError` with `operation: 'listTools'`).
+   * ⚠️ It is a budget PER REQUEST, not a total: a server that answers each of its (up to 100)
+   *   tool pages in just under the budget can still take that many budgets. Wrap the whole call
+   *   in `Effect.timeout` for a total.
    * ⚠️ The SDK bounds only the `initialize` request (its default is 60 s) and leaves the
    *   notification unbounded, so a server that answers `initialize` and then stalls would hold a
    *   seat at startup indefinitely. Here the budget covers both, and the handshake is
    *   interruptible, so a caller's `Effect.timeout` or a shutdown also ends it (mcp-connect.ts).
+   * ⚠️ NOT COVERED: `listResources`, `readResource` and tool calls, which are requests you make
+   *   after startup and keep the SDK's 60 s default per request. They are interruptible too.
    */
   readonly connectTimeoutMs?: number | undefined;
 };
@@ -85,6 +100,7 @@ export function mcpToolkit(
   options?: McpToolkitOptions,
 ): Effect.Effect<McpToolkit, McpToolkitError, Scope.Scope> {
   return Effect.gen(function* () {
+    const timeout = yield* validateTimeout(options?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS);
     // ⚠️ Parsed INSIDE the Effect: `new URL` throws, and a throw at call time would skip the typed
     //   error. The message never repeats the string: a URL is where a token may sit.
     const target = yield* Effect.try({
@@ -98,19 +114,14 @@ export function mcpToolkit(
     });
     const server = serverLabel(target);
     // ⛔ Every error and every failure text below goes through this: a server echoes its address,
-    //   and a fetch failure prints it, query string and all (mcp-error.ts).
-    const redact = redactor(target);
+    //   a query value or a header value, and a fetch failure prints the address, query string and
+    //   all (mcp-error.ts).
+    const redact = redactor(target, headerValues(headers));
     const readFailure = (cause: unknown) =>
       new McpToolkitError({ operation: 'readResource', server, cause, redact });
 
     // The connection lives in the surrounding scope; `connect` opens it and closes it on release.
-    const client = yield* connect(
-      target,
-      headers,
-      server,
-      options?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
-      redact,
-    );
+    const client = yield* connect(target, headers, server, timeout, redact);
 
     // ★ A server that does not advertise tools is not asked for them: a resources-only server
     //   answers `tools/list` with "method not found", and one such server would otherwise make
@@ -122,8 +133,10 @@ export function mcpToolkit(
             'listTools',
             server,
             async (cursor, signal) => {
+              // ★ `timeout` here is the startup budget: without it the SDK waits its 60 s per page.
               const page = await client.listTools(cursor === undefined ? undefined : { cursor }, {
                 signal,
+                timeout,
               });
               return { items: page.tools, next: page.nextCursor };
             },
