@@ -62,10 +62,12 @@ export type McpToolkit = {
 
 export type McpToolkitOptions = {
   /**
-   * How long the `initialize` handshake may take. Default 15 000 ms.
-   * ⚠️ The SDK's own default is 60 s, and connecting is UNINTERRUPTIBLE (`acquireRelease` runs
-   *   acquire uninterruptible), so a server that accepts the connection and never answers would
-   *   hold a seat at startup for that minute, whatever `Effect.timeout` the caller wraps around it.
+   * How long the WHOLE handshake may take: `initialize` and the `notifications/initialized`
+   * that follows it. Default 15 000 ms.
+   * ⚠️ The SDK bounds only the `initialize` request (its default is 60 s) and leaves the
+   *   notification unbounded, so a server that answers `initialize` and then stalls would hold a
+   *   seat at startup indefinitely. Here the budget covers both, and the handshake is
+   *   interruptible, so a caller's `Effect.timeout` or a shutdown also ends it (mcp-connect.ts).
    */
   readonly connectTimeoutMs?: number | undefined;
 };
@@ -101,15 +103,13 @@ export function mcpToolkit(
     const readFailure = (cause: unknown) =>
       new McpToolkitError({ operation: 'readResource', server, cause, redact });
 
-    const client = yield* Effect.acquireRelease(
-      connect(
-        target,
-        headers,
-        server,
-        options?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
-        redact,
-      ),
-      (open) => Effect.ignore(Effect.tryPromise(() => open.close())),
+    // The connection lives in the surrounding scope; `connect` opens it and closes it on release.
+    const client = yield* connect(
+      target,
+      headers,
+      server,
+      options?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
+      redact,
     );
 
     // ★ A server that does not advertise tools is not asked for them: a resources-only server
