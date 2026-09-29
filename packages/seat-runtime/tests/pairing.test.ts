@@ -32,6 +32,7 @@ const compat = await read(
 const sdk = await read(
   new URL('../node_modules/@modelcontextprotocol/sdk/package.json', import.meta.url),
 );
+const sqlPg = await read(new URL('../node_modules/@effect/sql-pg/package.json', import.meta.url));
 const lock = await Bun.file(new URL('../../../bun.lock', import.meta.url)).text();
 
 const PIN = '4.0.0-rc.115';
@@ -48,19 +49,34 @@ describe('installed versions', () => {
     expect(range).toMatch(/rc\.\d+/);
     expect(Bun.semver.satisfies(effect.version ?? '', range)).toBe(true);
   });
+
+  test('@effect/sql-pg is the same exact rc, and effect satisfies its peer', () => {
+    // ★ MEASURED 2026-09-29: sql-pg rc.115 has ONE peer (`effect ^rc.115`) and no dependency, and
+    //   speaks the Postgres wire protocol itself over node:net, so it adds no driver to the tree.
+    expect(sqlPg.version).toBe(PIN);
+    const range = sqlPg.peerDependencies?.['effect'] ?? '';
+    expect(range).toMatch(/rc\.\d+/);
+    expect(Bun.semver.satisfies(effect.version ?? '', range)).toBe(true);
+    expect(Object.keys(sqlPg.dependencies ?? {})).toEqual([]);
+  });
 });
 
 describe('declared pins', () => {
   test('the peer, the dependency and the catalog all say the same rc', () => {
     expect(pkg.peerDependencies?.['effect']).toBe(PIN);
     expect(pkg.dependencies?.['@effect/ai-openai-compat']).toBe(PIN);
+    expect(pkg.dependencies?.['@effect/sql-pg']).toBe(PIN);
     expect(rootPkg.catalog?.['effect']).toBe(PIN);
     expect(rootPkg.catalog?.['@effect/ai-openai-compat']).toBe(PIN);
+    expect(rootPkg.catalog?.['@effect/sql-pg']).toBe(PIN);
   });
 
   test('nothing else is a runtime dependency', () => {
+    // ⛔ NOT `@effect/platform-bun`: it would put the platform-node-shared trap below on every
+    //   consumer (src/state-valkey.ts holds the reasoning), and an `overrides` cannot ship.
     expect(Object.keys(pkg.dependencies ?? {}).sort()).toEqual([
       '@effect/ai-openai-compat',
+      '@effect/sql-pg',
       '@modelcontextprotocol/sdk',
     ]);
     expect(Object.keys(pkg.peerDependencies ?? {})).toEqual(['effect']);

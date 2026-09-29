@@ -16,7 +16,7 @@ every app and Worker that consumes them is scaffolded the same way.
 | [`@homeflare/typesafe`](./packages/typesafe)         | Official TypeSafe System One SDK, Worker key required.                                                                   |
 | [`@homeflare/alchemy`](./packages/alchemy)           | Custom Alchemy providers: Cloudflare, Proxmox, OpenBao, Forgejo, Talos, launchd, Linux/systemd, release binaries, Caddy. |
 | [`@homeflare/site`](./packages/site)                 | One typed site config; hostnames and addresses derived, the rest pinned.                                                 |
-| [`@homeflare/seat-runtime`](./packages/seat-runtime) | Effect AI model and OTLP layers for coding seats, a capped round loop, and MCP servers as a toolkit.                     |
+| [`@homeflare/seat-runtime`](./packages/seat-runtime) | Effect AI model and OTLP layers for coding seats, a capped round loop, MCP toolkit, Postgres and Valkey state.           |
 | [`@homeflare/config`](./packages/config)             | Shared tsconfig, oxlint and oxfmt presets.                                                                               |
 
 ## Using them

@@ -16,6 +16,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { packForPublish } from '../../../scripts/pack.ts';
+import { STATE_CONSUMER } from './smoke-state.ts';
 
 const pkgRoot = new URL('../', import.meta.url).pathname;
 
@@ -174,13 +175,20 @@ try {
     throw new Error(`seat-runtime smoke: @modelcontextprotocol/sdk resolved ${mcp}`);
 
   await Bun.write(join(scratch, 'consumer.ts'), CONSUMER);
+  // The `/state` subpath, resolved through `exports` like any consumer's import (smoke-state.ts).
+  await Bun.write(join(scratch, 'state-consumer.ts'), STATE_CONSUMER);
+  const sqlPg = await version('@effect/sql-pg');
+  if (sqlPg !== RC)
+    throw new Error(`seat-runtime smoke: @effect/sql-pg resolved ${sqlPg}, want ${RC}`);
 
   console.log('running under bun…');
   console.log(await run(['bun', 'consumer.ts'], scratch));
+  console.log(await run(['bun', 'state-consumer.ts'], scratch));
 
   // ⛔ NODE IS DELIBERATE: bun's resolver forgives things node's does not.
   console.log('running under node…');
   console.log(await run(['node', '--experimental-strip-types', 'consumer.ts'], scratch));
+  console.log(await run(['node', '--experimental-strip-types', 'state-consumer.ts'], scratch));
 
   await Bun.write(
     join(scratch, 'tsconfig.json'),
@@ -194,7 +202,7 @@ try {
           noEmit: true,
           skipLibCheck: false,
         },
-        include: ['consumer.ts'],
+        include: ['consumer.ts', 'state-consumer.ts'],
       },
       null,
       2,
@@ -209,16 +217,23 @@ try {
   });
   const output = await new Response(tsc.stdout).text();
   await tsc.exited;
-  // ⚠️ skipLibCheck is OFF so a .d.ts naming a file the tarball lacks fails here. But
-  //   compat's OWN .d.ts has 26 TS2411 errors under it (measured 2026-09-29 by the scout,
-  //   tsc 7.0.2). Those are upstream's, so they are allowed; an error anywhere else is ours.
-  const foreign = output
-    .split('\n')
-    .filter((line) => /error TS/.test(line) && !line.includes('@effect/ai-openai-compat'));
+  // ⚠️ skipLibCheck is OFF so a .d.ts naming a file the tarball lacks fails here. But two
+  //   dependencies' OWN .d.ts fail under it (measured 2026-09-29, tsc 7.0.2), and both are
+  //   upstream's, so exactly those are allowed and an error anywhere else is ours:
+  //   - compat: 26 TS2411 in `@effect/ai-openai-compat`;
+  //   - sql-pg: TS2591, its public config type names `node:stream` and `node:tls` and a consumer
+  //     with no @types/node cannot resolve them. Only `/state` reaches it (docs/state.md).
+  const upstreamCompat = (line: string): boolean => line.includes('@effect/ai-openai-compat');
+  const upstreamSqlPg = (line: string): boolean =>
+    line.includes('@effect/sql-pg/dist/') &&
+    line.includes('TS2591') &&
+    /'node:(stream|tls)'/.test(line);
+  const errors = output.split('\n').filter((line) => /error TS/.test(line));
+  const foreign = errors.filter((line) => !upstreamCompat(line) && !upstreamSqlPg(line));
   if (foreign.length > 0)
     throw new Error(`seat-runtime smoke: consumer typecheck\n${foreign.join('\n')}`);
   console.log(
-    `typecheck ok (${output.split('\n').filter((l) => l.includes('error TS')).length} upstream errors in compat)`,
+    `typecheck ok (${errors.filter(upstreamCompat).length} upstream errors in compat, ${errors.filter(upstreamSqlPg).length} in sql-pg)`,
   );
 
   console.log('\nseat-runtime smoke: ok');

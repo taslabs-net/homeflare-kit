@@ -70,6 +70,7 @@
     "@alchemy.run/frontend-frameworks": "2.0.0-beta.79",
     "effect": "4.0.0-rc.115",
     "@effect/ai-openai-compat": "4.0.0-rc.115",
+    "@effect/sql-pg": "4.0.0-rc.115",
     "@modelcontextprotocol/sdk": "1.31.0",
     "mime": "4.1.0",
     "handlebars": "4.7.9",

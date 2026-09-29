@@ -247,6 +247,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@effect/ai-openai-compat": "4.0.0-rc.115",
+        "@effect/sql-pg": "4.0.0-rc.115",
         "@modelcontextprotocol/sdk": "1.31.0",
       },
       "devDependencies": {
@@ -303,6 +304,7 @@
     "@cloudflare/kumo": "2.13.2",
     "@cloudflare/workers-types": "5.20260908.1",
     "@effect/ai-openai-compat": "4.0.0-rc.115",
+    "@effect/sql-pg": "4.0.0-rc.115",
     "@flue/cli": "2.1.1",
     "@flue/react": "2.1.1",
     "@flue/runtime": "2.1.1",
