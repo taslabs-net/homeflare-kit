@@ -30,13 +30,27 @@ packages/typesafe/src/gate/generated/gitleaks-rules-emitted.ts:aws-amazon-bedroc
 # clone again) can shift these line numbers or surface new ones from a
 # vendor doc update; re-run `gitleaks protect --staged --redact --no-banner`
 # and update the fingerprints below rather than reaching for --no-verify.
-packages/distilled-litellm/src/services/config_yaml.ts:slack-webhook-url:703
-packages/distilled-litellm/src/services/key_management.ts:generic-api-key:4030
-packages/distilled-litellm/src/services/key_management.ts:generic-api-key:4130
-packages/distilled-litellm/src/services/key_management.ts:curl-auth-header:3982
-packages/distilled-litellm/src/services/team_management.ts:curl-auth-header:3672
-packages/distilled-litellm/src/services/team_management.ts:curl-auth-header:3689
-packages/distilled-litellm/src/services/model_management.ts:curl-auth-header:4018
+# Refreshed for LiteLLM v1.103.0 (2026-09-29): a scan of `src/` with this file
+# disabled found 12 hits, and every one was matched to a placeholder above or to
+# one new one — the 64-hex-character hashed-token example the vendor added to
+# the /key/info and /spend/logs docstrings between v1.100.0 and v1.103.0
+# (litellm/proxy/management_endpoints/key_management_endpoints.py and
+# litellm/proxy/spend_tracking/spend_management_endpoints.py; absent from the
+# v1.100.0 spec and present in the v1.103.0 one). It is a documented example of
+# the identifier those routes take, published in the vendor's public source.
+# No hit was unclassified.
+packages/distilled-litellm/src/services/budget_spend_tracking.ts:generic-api-key:745
+packages/distilled-litellm/src/services/budget_spend_tracking.ts:generic-api-key:855
+packages/distilled-litellm/src/services/budget_spend_tracking.ts:generic-api-key:2560
+packages/distilled-litellm/src/services/config_yaml.ts:slack-webhook-url:818
+packages/distilled-litellm/src/services/key_management.ts:generic-api-key:1853
+packages/distilled-litellm/src/services/key_management.ts:curl-auth-header:4085
+packages/distilled-litellm/src/services/key_management.ts:generic-api-key:4085
+packages/distilled-litellm/src/services/key_management.ts:generic-api-key:4133
+packages/distilled-litellm/src/services/key_management.ts:generic-api-key:4233
+packages/distilled-litellm/src/services/model_management.ts:curl-auth-header:4663
+packages/distilled-litellm/src/services/team_management.ts:curl-auth-header:4294
+packages/distilled-litellm/src/services/team_management.ts:curl-auth-header:4311
 
 # ceph-key-leak-assert.ts's KEY_SHAPED_SENTINEL is a fake cephx-shaped key, deliberately built to
 # look like a real minted key (base64, no hyphen) so ceph-auth-parse.test.ts,
