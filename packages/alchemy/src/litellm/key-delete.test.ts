@@ -29,6 +29,7 @@ const attributes: KeyAttributes = {
   metadata: {},
   models: [],
   teamId: null,
+  withheld: [],
 };
 const paths = (fake: ReturnType<typeof newFake>) => fake.keys.writes().map((write) => write.path);
 const answer = (status: number, body: unknown) =>

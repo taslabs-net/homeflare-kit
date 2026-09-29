@@ -60,6 +60,7 @@ describe('create returns the key Redacted, and it goes nowhere else', () => {
       'metadata',
       'models',
       'teamId',
+      'withheld',
     ]);
     expect(JSON.stringify(attributes)).not.toContain(FAKE_KEY);
   });

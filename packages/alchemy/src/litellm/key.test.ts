@@ -81,7 +81,9 @@ describe('create', () => {
 
 describe('adopt by alias', () => {
   const live = liveRow({ budget_id: 'hf-tier-agent', models: ['old-model'] });
-  const declared = { keyAlias: 'seat-a', models: ['glm-5.3'] };
+  // ★ `budgetId: null` IS DECLARED: an omitted prop is left alone (key-scope.test.ts), so unbinding
+  //   the live tier takes a declaration.
+  const declared = { budgetId: null, keyAlias: 'seat-a', models: ['glm-5.3'] };
 
   test('a live key with no state is refused without --adopt, and nothing is written', async () => {
     const fake = newFake({ budgetSeed: [tier('hf-tier-agent')], keySeed: [live] });
@@ -130,11 +132,11 @@ describe('update', () => {
     expect(fake.keys.rows()[0]).toMatchObject({ budget_id: 'tier-b' });
   });
 
-  test('dropping budget_id, models and routes clears them', async () => {
+  test('declaring null and [] clears budget_id, models and routes', async () => {
     const fake = newFake({ budgetSeed: [tier('tier-a')] });
     const stack = keyStack(fake);
     await deploy(stack, { ...seat, allowedRoutes: ['/v1/*'], budgetId: 'tier-a', models: ['m'] });
-    await deploy(stack, seat);
+    await deploy(stack, { ...seat, allowedRoutes: [], budgetId: null, models: [] });
     expect(fake.keys.rows()[0]).toMatchObject({ allowed_routes: [], budget_id: null, models: [] });
   });
 
@@ -152,7 +154,7 @@ describe('update', () => {
       keyUpdateIgnoresNull: true,
     });
     const message = await failureOf(
-      keyStack(fake).deploy(declare({ keyAlias: 'seat-a' }), { adopt: true }),
+      keyStack(fake).deploy(declare({ budgetId: null, keyAlias: 'seat-a' }), { adopt: true }),
     );
     expect(message).toContain('budget_id');
   });
@@ -177,10 +179,11 @@ describe('duration', () => {
     expect(await deploy(stack, { ...seat, duration: '30d' })).toEqual({ Seat: 'noop' });
     expect(await deploy(stack, { ...seat, duration: '7d' })).toEqual({ Seat: 'update' });
     expect(fake.keys.writes().at(-1)?.body).toEqual({ duration: '7d', key_alias: 'seat-a' });
-    expect(await deploy(stack, seat)).toEqual({ Seat: 'update' });
+    // `duration: null` is the declaration that clears the expiry; leaving it out does not (key-scope.test.ts).
+    expect(await deploy(stack, { ...seat, duration: null })).toEqual({ Seat: 'update' });
     expect(fake.keys.writes().at(-1)?.body).toEqual({ duration: null, key_alias: 'seat-a' });
     expect(fake.keys.rows()[0]?.['expires']).toBeNull();
-    expect(await deploy(stack, seat)).toEqual({ Seat: 'noop' });
+    expect(await deploy(stack, { ...seat, duration: null })).toEqual({ Seat: 'noop' });
   });
 
   test('an adopted key remembers no duration, so declaring one arms it once', async () => {
@@ -208,6 +211,7 @@ describe('form helpers', () => {
       metadata: { seat: 'a' },
       models: ['a'],
       teamId: null,
+      withheld: [],
     });
     expect(JSON.stringify(attributes)).not.toContain('FAKE-TOKEN');
   });

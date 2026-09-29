@@ -98,3 +98,20 @@ export const liveRow = (fields: Record<string, unknown> = {}): Record<string, un
   token: 'FAKE-TOKEN-HASH-do-not-surface',
   ...fields,
 });
+
+/**
+ * Someone changing a live key outside the stack — the dashboard's `/key/update` — through the fake's
+ * own route, so it replaces `metadata` the way LiteLLM does. It shows in `fake.keys.writes()`.
+ */
+export const dashboardEdit = async (
+  fake: Fake,
+  keyAlias: string,
+  patch: Record<string, unknown>,
+): Promise<void> => {
+  const response = await fake.fetch(`${FAKE_BASE}/key/update`, {
+    body: JSON.stringify({ key_alias: keyAlias, ...patch }),
+    headers: { authorization: `Bearer ${MASTER_KEY}`, 'content-type': 'application/json' },
+    method: 'POST',
+  });
+  if (!response.ok) throw new Error(`dashboard edit failed: ${response.status}`);
+};

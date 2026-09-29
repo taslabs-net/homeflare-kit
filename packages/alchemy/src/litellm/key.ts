@@ -15,6 +15,9 @@
  * ⛔ A RENAME IS REFUSED, not replaced. The new key would need the same value, and `/key/generate`
  *   rejects a second key with a value it already holds; under `retain` the old row would still be
  *   there. Declare the new alias as a new resource and destroy the old one.
+ * ★ A DECLARATION MANAGES ONLY WHAT IT NAMES (key-form.ts): an omitted prop is never compared or sent,
+ *   and `metadata` is a merge (key-metadata.ts), so an adopted key's scope, budget and guardrails are
+ *   never cleared by leaving them out.
  * ⛔ NO CREDENTIAL IS A PROP; `litellmProviders`' layer supplies `Credentials`.
  */
 import { Resource } from 'alchemy';
@@ -38,6 +41,11 @@ import {
   differing,
   updateBody,
 } from './key-form.ts';
+import { callbackSlotsIn } from './key-metadata.ts';
+import {
+  LitellmKeyCallbackMetadataDeclaredError,
+  LitellmKeyCallbackMetadataLiveError,
+} from './key-metadata-errors.ts';
 import { deleteKey, findKey, generateKey, updateKey } from './key-operations.ts';
 import { echoes, refuseDebugLogging, resolveKeyValue } from './key-secret.ts';
 
@@ -56,6 +64,38 @@ const remembering = (live: KeyAttributes, output: KeyAttributes | undefined): Ke
   ...live,
   duration: output?.duration ?? null,
 });
+
+/**
+ * What state remembers of `duration` after a write: the declaration when it names one, else what it
+ * remembered (`before`, `undefined` for a key just created). The row carries only `expires`.
+ */
+const remembered = (news: KeyProps, before: KeyAttributes | undefined): string | null =>
+  news.duration !== undefined ? news.duration : (before?.duration ?? null);
+
+/**
+ * The `metadata` refusals that need no write to know (key-metadata.ts): a declaration that names a
+ * callback slot, and — given the live row — a metadata write onto a key that holds one.
+ */
+const refuseMetadata = (news: KeyProps, live: KeyAttributes | undefined) =>
+  Effect.gen(function* () {
+    const declared = callbackSlotsIn(news.metadata);
+    if (declared.length > 0) {
+      return yield* new LitellmKeyCallbackMetadataDeclaredError({
+        keyAlias: news.keyAlias,
+        slots: declared,
+      });
+    }
+    if (
+      live !== undefined &&
+      live.withheld.length > 0 &&
+      differing(live, news).includes('metadata')
+    ) {
+      return yield* new LitellmKeyCallbackMetadataLiveError({
+        keyAlias: news.keyAlias,
+        slots: live.withheld,
+      });
+    }
+  });
 
 /**
  * Create the key, then prove LiteLLM stored the value it was sent.
@@ -89,6 +129,7 @@ export const keyHandlers = {
   diff: ({ news, output }: { news: Input<KeyProps>; output: KeyAttributes | undefined }) =>
     Effect.gen(function* () {
       if (!isResolved(news)) return undefined;
+      yield* refuseMetadata(news, output);
       if (output === undefined) return undefined;
       if (news.keyAlias !== output.keyAlias) {
         return yield* new LitellmKeyAliasChangedError({ from: output.keyAlias, to: news.keyAlias });
@@ -111,21 +152,24 @@ export const keyHandlers = {
   }) =>
     Effect.gen(function* () {
       const alias = news.keyAlias;
+      yield* refuseMetadata(news, undefined);
       const found = yield* findKey(alias);
-      if (found === undefined) {
+      const before = found === undefined ? undefined : remembering(found, output);
+      if (before === undefined) {
         yield* createKey(news);
       } else {
         yield* refuseTakeover({ fqn, instanceId, output }, `LiteLLM.Key ${alias}`);
-        const before = remembering(found, output);
+        yield* refuseMetadata(news, before);
         if (differing(before, news).length > 0) yield* updateKey(updateBody(news, before));
       }
 
       const after = yield* findKey(alias);
       if (after === undefined)
         return yield* new LitellmKeyAbsentAfterWriteError({ keyAlias: alias });
-      // ★ THE MEMO IS THE DECLARATION: a write that reached here carried `duration` whenever the
-      //   expiry differed, so what is left to check is the row itself (and whether it HAS an expiry).
-      const settled = { ...after, duration: news.duration ?? null };
+      // ★ THE MEMO IS THE DECLARATION when it names a `duration` (else what state already remembered):
+      //   a write that reached here carried `duration` whenever the expiry differed, so what is left
+      //   to check is the row itself (and whether it HAS an expiry).
+      const settled = { ...after, duration: remembered(news, before) };
       const left = differing(settled, news);
       if (left.length > 0) {
         return yield* new LitellmKeyFieldNotAppliedError({ fields: left, keyAlias: alias });

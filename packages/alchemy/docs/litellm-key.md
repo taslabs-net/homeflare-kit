@@ -77,19 +77,28 @@ value: "Must start with 'sk-' and be at least 16 characters long."
 
 ## Props
 
-| prop            | type                      | notes                                                                                    |
-| --------------- | ------------------------- | ---------------------------------------------------------------------------------------- |
-| `keyAlias`      | `string`                  | **Identity.** Non-empty, unique per proxy. Declare an existing key's alias to adopt it.  |
-| `key`           | `{ fromEnv: string }`     | Write-only, create-only. Optional when the key already exists.                           |
-| `budgetId`      | `string`                  | The tier. Pass `budget.budgetId` and Alchemy creates the tier first. Omitted = none.     |
-| `models`        | `string[]`                | Omitted = `[]`, which LiteLLM reads as "all models". Compared order-insensitively.       |
-| `allowedRoutes` | `string[]`                | Exact or wildcard routes. Omitted = `[]`.                                                |
-| `teamId`        | `string`                  | Omitted = none.                                                                          |
-| `metadata`      | `Record<string, unknown>` | Stored in state, so no secrets. `/key/update` **replaces** it wholesale: omitted = `{}`. |
-| `duration`      | `string`                  | `'30d'`, `'12h'`, … from creation. Omitted = never expires. See below.                   |
+| prop            | type                      | notes                                                                                   |
+| --------------- | ------------------------- | --------------------------------------------------------------------------------------- |
+| `keyAlias`      | `string`                  | **Identity.** Non-empty, unique per proxy. Declare an existing key's alias to adopt it. |
+| `key`           | `{ fromEnv: string }`     | Write-only, create-only. Optional when the key already exists.                          |
+| `budgetId`      | `string \| null`          | The tier. Pass `budget.budgetId` and Alchemy creates the tier first. `null` unbinds.    |
+| `models`        | `string[]`                | `[]` = **all models** (LiteLLM's reading). Compared order-insensitively.                |
+| `allowedRoutes` | `string[]`                | Exact or wildcard routes. `[]` = no route restriction.                                  |
+| `teamId`        | `string \| null`          | `null` detaches the team.                                                               |
+| `metadata`      | `Record<string, unknown>` | The keys you manage: a **merge**, see [below](#metadata). Stored in state: no secrets.  |
+| `duration`      | `string \| null`          | `'30d'`, `'12h'`, … from creation. `null` = never expires. See below.                   |
+
+⛔ **A declaration manages only what it names.** An omitted prop is neither compared nor sent, so a
+live scope, budget, team or expiry stays as it is; a **new** key with no `models` starts with
+LiteLLM's default, all models. Clearing is explicit: `models: []`, `allowedRoutes: []`,
+`budgetId: null`, `teamId: null`, `duration: null`. Omission never clears, because clearing fails open
+on a credential: `[]` is "all models" and "no route restriction", and an adopted key's plan says
+`adopted`, never the `update` the apply would send (the plan cannot probe it; `--adopt` given for
+another resource takes over every declared key whose alias is live).
 
 Attributes: `keyAlias`, `budgetId`, `models`, `allowedRoutes`, `teamId`, `metadata`, `expires` (what
-the row says, observed) and `duration` (see below). ⛔ There is no `key`, `token` or hash attribute.
+the row says, observed), `duration` (see below) and `withheld` (the names of the `metadata` callback
+slots the row has, [below](#metadata)). ⛔ There is no `key`, `token` or hash attribute.
 
 ## Behaviour
 
@@ -99,23 +108,18 @@ the row says, observed) and `duration` (see below). ⛔ There is no `key`, `toke
 | Adopt       | A live key with the alias and no state is `Unowned`; needs `--adopt`. The apply re-checks it (`refuseTakeover`) for a create the planner could not probe.                                        |
 | Removal     | `defaultRemovalPolicy: 'retain'`: deleting a key breaks whatever holds it. Opt in with `RemovalPolicy.destroy()`.                                                                                |
 | Read        | `/key/list?key_alias=…&return_full_object=true`. Two rows under one alias are refused (`LitellmKeyAmbiguousAliasError`); the column is not unique in LiteLLM's schema.                           |
-| Update      | `/key/update` by alias with **only the fields that differ**. A dropped `budget_id`/`team_id`/`duration` is an explicit `null`, a dropped list `[]`, dropped metadata `{}`.                       |
+| Update      | `/key/update` by alias with **only the declared fields that differ**. A declared `null` on `budget_id`/`team_id`/`duration` is sent as `null`, a declared `[]` as `[]`; `metadata` is merged.    |
 | Write check | Reconcile reads back; a field the row still differs on fails with `LitellmKeyFieldNotAppliedError`.                                                                                              |
 | Delete      | Idempotent by the list: an absent alias writes nothing. The SDK's `KeyNotFound` (a lost race, a retried delete) re-lists and is swallowed only if the key is gone. Any other failure propagates. |
 | Read errors | A 5xx on `/key/list` propagates typed. It is never read as "no such key" (which would go on to create one).                                                                                      |
 
-⛔ **The declaration is the whole truth for these fields, so omitting one on an adopted key CHANGES
-it.** Dropping `budgetId` clears the binding (and that tier's rate limits); dropping `models` or
-`allowedRoutes` sends `[]`, which LiteLLM reads as **all models / no route restriction**, so the key
-is WIDENED; dropping `teamId` detaches the team. Adopting a key means declaring what it has now. The
-plan shows the `update` first, and `alchemy deploy --dry-run` shows it without writing.
-
 ### `duration`
 
 The row carries `expires`, an absolute time, so a declared `'30d'` cannot be read back. State
-remembers the duration this provider last wrote. Changing or dropping it plans an `update` that sends
-`duration` (`null` = never expires; the 1.103.0 source sets `expires` from it). A key whose expiry
-was set or cleared by hand while the declaration says otherwise plans an update too.
+remembers the duration this provider last wrote. Changing it, or declaring `null`, plans an `update`
+that sends `duration` (`null` = never expires; the 1.103.0 source sets `expires` from it). Omitting it
+leaves a live expiry alone. A key whose expiry was set or cleared by hand while the declaration names
+a `duration` plans an update too.
 ⚠️ **An adopted key remembers nothing**, so declaring a `duration` on one re-arms its expiry once,
 from that deploy; afterwards a plan is quiet.
 
@@ -162,9 +166,20 @@ generated row type and the Prisma model both carry it; a miss fails the apply lo
 retried `/key/generate` after a lost response (the SDK's default retry applies; the next deploy reads
 the row). No live LiteLLM was contacted.
 
+## `metadata`
+
+LiteLLM keeps a key's guardrails, tags, per-model RPM/TPM limits, `allowed_passthrough_routes` and
+more **inside** `metadata`, and `/key/update` replaces the column with what it is sent. So `metadata`
+is a **merge** at the top-level key: the keys you declare are compared and written, every other live
+key is carried into the update body unchanged, and one is cleared by declaring it `null`. Declaring
+`{ seat: 'a' }` on a key that also has `guardrails` leaves them. Details and the measured source:
+[litellm-key-metadata.md](./litellm-key-metadata.md). ⛔ `logging`, `callback_settings` and
+`secret_manager_settings` carry callback secret keys: they are never held in state, a declaration
+naming one is refused, and a metadata write onto a key that has one is refused (`withheld`).
+
 ## Not modelled
 
-Rate limits, `max_budget`/`soft_budget`, tags, guardrails, `allowed_passthrough_routes`,
-`object_permission`, `blocked` and `spend`. The row read back has some of them, some it does not, and
-a field a declaration cannot diff is a field it cannot own. Bind a `LiteLLM.Budget` for limits. Because
-`/key/update` is a merge patch, a field this resource never sends is left as it is.
+`max_budget`/`soft_budget`, `object_permission`, `blocked`, `spend` and the top-level rate limits.
+The row read back has some of them, some it does not, and a field a declaration cannot diff is a field
+it cannot own. Bind a `LiteLLM.Budget` for limits. `/key/update` is a merge patch for the columns, so
+a field this resource never sends is left as it is; the ones inside `metadata` are left by the merge.

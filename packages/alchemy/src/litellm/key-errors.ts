@@ -9,6 +9,10 @@
 import type * as keys from '@distilled.cloud/litellm/key_management';
 import * as Data from 'effect/Data';
 import type { HttpClientErrorReason } from 'effect/unstable/http/HttpClientError';
+import type {
+  LitellmKeyCallbackMetadataDeclaredError,
+  LitellmKeyCallbackMetadataLiveError,
+} from './key-metadata-errors.ts';
 
 /** A create is needed and the declaration names no `key` — LiteLLM would mint a value nobody holds. */
 export class LitellmKeyValueRequiredError extends Data.TaggedError('LitellmKeyValueRequiredError')<{
@@ -208,6 +212,8 @@ export type KeyError =
   | LitellmKeyValueNotHonouredError
   | LitellmKeyAliasChangedError
   | LitellmKeyAmbiguousAliasError
+  | LitellmKeyCallbackMetadataDeclaredError
+  | LitellmKeyCallbackMetadataLiveError
   | LitellmKeyUnreadableError
   | LitellmKeyAbsentAfterWriteError
   | LitellmKeyFieldNotAppliedError;

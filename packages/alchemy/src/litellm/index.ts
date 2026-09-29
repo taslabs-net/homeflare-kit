@@ -141,4 +141,8 @@ export {
   LitellmKeyValueNotHonouredError,
   LitellmKeyValueRequiredError,
 } from './key-errors.ts';
+export {
+  LitellmKeyCallbackMetadataDeclaredError,
+  LitellmKeyCallbackMetadataLiveError,
+} from './key-metadata-errors.ts';
 export { litellmProviders } from './providers.ts';
