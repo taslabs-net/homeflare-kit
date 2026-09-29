@@ -43,6 +43,29 @@ async function post(env: Record<string, string> | 'process'): Promise<Seen[]> {
 
 const urls = (seen: Seen[]): string[] => seen.map((s) => s.url).sort();
 
+/**
+ * Run `body` with `process.env` holding exactly `set` among its `OTEL_*` keys, then put every
+ * one of them back as it was.
+ *
+ * ⛔ WHY EVERY `OTEL_*` KEY IS CLEARED, NOT JUST THE ONE UNDER TEST. Effect reads a per-signal
+ *   endpoint, `OTEL_SDK_DISABLED` and `OTEL_<SIGNAL>_EXPORTER` before the base variable, so a
+ *   test that sets only the base URL still depends on whatever else the shell exported. The CT100
+ *   Claude Code seats export all three per-signal endpoints in their `settings.json` `env`, and
+ *   that reaches the Bash subprocess a builder runs the gate from.
+ * ⚠️ The variables are process-wide and other files share the process, hence the `finally`.
+ */
+async function withOtelEnv<T>(set: Record<string, string>, body: () => Promise<T>): Promise<T> {
+  const saved = Object.entries(process.env).filter(([name]) => name.startsWith('OTEL_'));
+  for (const [name] of saved) delete process.env[name];
+  Object.assign(process.env, set);
+  try {
+    return await body();
+  } finally {
+    for (const name of Object.keys(set)) delete process.env[name];
+    for (const [name, value] of saved) if (value !== undefined) process.env[name] = value;
+  }
+}
+
 describe('CT100 defaults', () => {
   test('the exact addresses, one per signal, with an empty environment', async () => {
     expect(SeatObs.CT100_ENDPOINTS).toEqual({
@@ -90,23 +113,45 @@ describe('the environment wins', () => {
   });
 
   test('the real process environment is read the same way', async () => {
-    // ⚠️ `fromEnvRecord` above is a stand-in; a deployed seat reads `process.env`. Set and
-    //   restored here because the variable is process-wide and other files share the process.
-    const name = 'OTEL_EXPORTER_OTLP_ENDPOINT';
-    const before = process.env[name];
-    process.env[name] = 'http://collector.test:4318';
-    try {
-      expect(urls(await post('process'))).toEqual(
-        [
-          'http://collector.test:4318/v1/logs',
-          'http://collector.test:4318/v1/metrics',
-          'http://collector.test:4318/v1/traces',
-        ].sort(),
-      );
-    } finally {
-      if (before === undefined) delete process.env[name];
-      else process.env[name] = before;
-    }
+    // ⚠️ `fromEnvRecord` above is a stand-in; a deployed seat reads `process.env`.
+    const seen = await withOtelEnv(
+      { OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector.test:4318' },
+      () => post('process'),
+    );
+    expect(urls(seen)).toEqual(
+      [
+        'http://collector.test:4318/v1/logs',
+        'http://collector.test:4318/v1/metrics',
+        'http://collector.test:4318/v1/traces',
+      ].sort(),
+    );
+  });
+
+  test('an ambient OTEL_* block does not leak into the process-environment case', async () => {
+    // The CT100 seat shape: every per-signal endpoint and exporter, plus a disable switch, all
+    // exported by the shell that runs the gate. None of it may change what the case above sees,
+    // and every key must be back afterwards.
+    const ambient = {
+      OTEL_SDK_DISABLED: 'true',
+      OTEL_TRACES_EXPORTER: 'none',
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'http://ambient.test/t',
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: 'http://ambient.test/l',
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: 'http://ambient.test/m',
+    };
+    const inner = { OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector.test:4318' };
+    const seen = await withOtelEnv(ambient, () => withOtelEnv(inner, () => post('process')));
+    expect(urls(seen)).toEqual(
+      [
+        'http://collector.test:4318/v1/logs',
+        'http://collector.test:4318/v1/metrics',
+        'http://collector.test:4318/v1/traces',
+      ].sort(),
+    );
+    await withOtelEnv(ambient, async () => {
+      await withOtelEnv(inner, async () => undefined);
+      for (const [name, value] of Object.entries(ambient)) expect(process.env[name]).toBe(value);
+      expect(process.env.OTEL_EXPORTER_OTLP_ENDPOINT).toBeUndefined();
+    });
   });
 
   test('OTEL_SDK_DISABLED silences every signal', async () => {
