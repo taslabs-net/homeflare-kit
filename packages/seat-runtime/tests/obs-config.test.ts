@@ -85,6 +85,37 @@ describe('CT100 defaults', () => {
     expect(named?.body).toContain('cf-review');
     expect(named?.body).not.toContain(SeatObs.DEFAULT_SERVICE_NAME);
   });
+
+  test('a service.name in OTEL_RESOURCE_ATTRIBUTES replaces the default too', async () => {
+    // ⚠️ Effect resolves the name as OTEL_SERVICE_NAME, then `service.name` from the resource
+    //   attributes, so an injected OTEL_SERVICE_NAME default would have shadowed the operator's
+    //   attribute and merged their seat into every other one in Victoria, silently.
+    const attributes = 'service.name=cf-review,host.name=ct100-probe';
+    const seen = await post({ OTEL_RESOURCE_ATTRIBUTES: attributes });
+    const traces = seen.find((s) => s.url.endsWith('/traces'));
+    expect(traces?.body).toContain('cf-review');
+    expect(traces?.body).toContain('ct100-probe');
+    expect(traces?.body).not.toContain(SeatObs.DEFAULT_SERVICE_NAME);
+  });
+
+  test('resource attributes without a service.name still get the default name', async () => {
+    // The step-aside is keyed on `service.name` alone, not on the variable being present.
+    const seen = await post({ OTEL_RESOURCE_ATTRIBUTES: 'host.name=ct100-probe' });
+    const traces = seen.find((s) => s.url.endsWith('/traces'));
+    expect(traces?.body).toContain(SeatObs.DEFAULT_SERVICE_NAME);
+    expect(traces?.body).toContain('ct100-probe');
+  });
+
+  test('OTEL_SERVICE_NAME still beats a service.name in the resource attributes', async () => {
+    // Effect's own order, which the fix must not disturb.
+    const seen = await post({
+      OTEL_SERVICE_NAME: 'named-by-variable',
+      OTEL_RESOURCE_ATTRIBUTES: 'service.name=named-by-attribute',
+    });
+    const traces = seen.find((s) => s.url.endsWith('/traces'));
+    expect(traces?.body).toContain('named-by-variable');
+    expect(traces?.body).not.toContain('named-by-attribute');
+  });
 });
 
 describe('the environment wins', () => {

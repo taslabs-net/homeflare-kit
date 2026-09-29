@@ -10,9 +10,11 @@
  *   flusher unless `OTEL_<SIGNAL>_EXPORTER` names `otlp` and an endpoint is set. So the CT100
  *   defaults below are not a convenience, they are what makes this layer emit at all.
  */
+import * as Config from 'effect/Config';
 import * as ConfigProvider from 'effect/ConfigProvider';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import * as Schema from 'effect/Schema';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import {
   type OtlpExporter,
@@ -37,8 +39,21 @@ export const CT100_ENDPOINTS: {
   metrics: 'http://10.100.1.4:8428/opentelemetry/v1/metrics',
 };
 
-/** Shown when a process sets no `OTEL_SERVICE_NAME`; set one per seat. */
+/**
+ * Shown when a process names itself neither with `OTEL_SERVICE_NAME` nor with a `service.name`
+ * in `OTEL_RESOURCE_ATTRIBUTES`; set one per seat.
+ */
 export const DEFAULT_SERVICE_NAME = 'seat-runtime';
+
+/**
+ * `OTEL_RESOURCE_ATTRIBUTES` read the way Effect reads it (`OtlpResource.fromConfig`, rc.115:
+ * `key=value` pairs, both sides URI-decoded), so "has a `service.name`" means what Effect means.
+ */
+const resourceAttributes = Config.Record(
+  Schema.StringFromUriComponent,
+  Schema.StringFromUriComponent,
+  'OTEL_RESOURCE_ATTRIBUTES',
+).pipe(Config.withDefault(undefined));
 
 /**
  * The fallback config source, computed against the CURRENT provider.
@@ -48,15 +63,21 @@ export const DEFAULT_SERVICE_NAME = 'seat-runtime';
  * ⚠️ THE PER-SIGNAL DEFAULTS STEP ASIDE FOR A BASE ENDPOINT. Effect reads
  *   `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and only then `OTEL_EXPORTER_OTLP_ENDPOINT`, so a
  *   per-signal default would shadow an operator's base URL and send their traces to CT100.
+ * ⚠️ THE SERVICE NAME STEPS ASIDE FOR `service.name` IN `OTEL_RESOURCE_ATTRIBUTES` FOR THE SAME
+ *   REASON. Effect resolves `OTEL_SERVICE_NAME`, then that attribute, then fails, so an injected
+ *   `OTEL_SERVICE_NAME` would win over the operator's attribute and Effect then drops the
+ *   attribute, leaving their seat mislabelled `seat-runtime` in Victoria with nothing to say why.
  */
 const defaults: Effect.Effect<ConfigProvider.ConfigProvider> = Effect.gen(function* () {
   const current = yield* ConfigProvider.ConfigProvider;
   const base = yield* current.load(['OTEL_EXPORTER_OTLP_ENDPOINT']);
+  const attributes = yield* resourceAttributes.parse(current);
+  const named = attributes?.['service.name'] !== undefined;
   return ConfigProvider.fromUnknown({
     OTEL_TRACES_EXPORTER: 'otlp',
     OTEL_LOGS_EXPORTER: 'otlp',
     OTEL_METRICS_EXPORTER: 'otlp',
-    OTEL_SERVICE_NAME: DEFAULT_SERVICE_NAME,
+    ...(named ? {} : { OTEL_SERVICE_NAME: DEFAULT_SERVICE_NAME }),
     ...(base === undefined
       ? {
           OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: CT100_ENDPOINTS.traces,

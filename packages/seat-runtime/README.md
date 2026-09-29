@@ -79,8 +79,9 @@ this package is not measured against the live services; the tests use a stub.
 
 ⛔ **The defaults are what makes it emit at all.** `layerFromConfig` exports nothing, silently,
 unless the environment names an exporter and an endpoint. The environment still wins: set
-`OTEL_SERVICE_NAME` per seat (the default, `SeatObs.DEFAULT_SERVICE_NAME`, is `seat-runtime`),
-`OTEL_SDK_DISABLED=true` to
+`OTEL_SERVICE_NAME` per seat, or a `service.name` in `OTEL_RESOURCE_ATTRIBUTES` (the default,
+`SeatObs.DEFAULT_SERVICE_NAME`, is `seat-runtime`; Effect reads `OTEL_SERVICE_NAME` first, so
+when both are set the variable wins), `OTEL_SDK_DISABLED=true` to
 silence everything, `OTEL_TRACES_EXPORTER=none` for one signal, or a per-signal
 `OTEL_EXPORTER_OTLP_<TRACES|LOGS|METRICS>_ENDPOINT`. A base `OTEL_EXPORTER_OTLP_ENDPOINT`
 replaces all three defaults (Effect appends `/v1/<signal>`, which fits a collector, not
