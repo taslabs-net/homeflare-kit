@@ -34,9 +34,11 @@
  *     LiteLLM stand-in that answered every call with a tool call: 3 model calls, tools offered
  *     [true, true, false], then the whole run failed with every round already spent. Round 2's
  *     fix caught only the reason below and so did nothing for this provider.
- *   - `InvalidOutputError`: `LanguageModel.make`'s own decode of the provider's parts ("Expected
- *     ... text | reasoning ..."), reached by a provider that hands the SDK a tool-call part
- *     itself (the scripted model in tests/fake-model.ts).
+ *   - `InvalidOutputError` raised by `LanguageModel` (module `LanguageModel`): the SDK's own decode
+ *     of the provider's parts ("Expected ... text | reasoning ..."), reached by a provider that hands
+ *     the SDK a tool-call part itself (the scripted model in tests/fake-model.ts). The same reason
+ *     raised by `OpenAiClient` (an empty, truncated or non-completion body, a dropped stream) is NOT
+ *     a refusal and fails the run (tests/seat-broken-forced.test.ts).
  *   Either is caught: the result is `capped` and `unanswered`, its `response` is the LAST TOOL
  *   ROUND's (whose calls did run), `rounds` stays `maxRounds`, and a warning, a span error and
  *   `seat_rounds_unanswered_total` say what happened. Any OTHER failure of the forced turn
@@ -48,11 +50,25 @@ import type * as Chat from 'effect/unstable/ai/Chat';
 import type * as LanguageModel from 'effect/unstable/ai/LanguageModel';
 import * as Prompt from 'effect/unstable/ai/Prompt';
 import type * as Tool from 'effect/unstable/ai/Tool';
+import type { AiError } from 'effect/unstable/ai/AiError';
 import type * as Toolkit from 'effect/unstable/ai/Toolkit';
+
+/**
+ * A tool call the forced turn cannot use. `ToolNotFoundError` is compat's own rejection (its reply
+ * mapping); `InvalidOutputError` counts ONLY when `LanguageModel` raised it (the SDK's decode of a
+ * provider that handed it a tool-call part). compat raises the same reason, from `OpenAiClient`, for
+ * a 200 with an empty, non-JSON, truncated or non-completion body and for a body stream that dies
+ * mid-read: those are gateway or network failures and must fail the run, not read as a refusal
+ * (review of PR 328, round 4; tests/seat-broken-forced.test.ts).
+ */
+const isToolRefusal = (error: AiError): boolean =>
+  error.reason._tag === 'ToolNotFoundError' ||
+  (error.reason._tag === 'InvalidOutputError' && error.module === 'LanguageModel');
 
 /** Every model turn, forced or not. */
 const roundsTotal = Metric.counter('seat_rounds_total', {
-  description: 'Model turns taken by runRounds, the forced final turn included.',
+  description:
+    'Model turns taken by runRounds that returned; a refused forced final turn is not counted.',
 });
 /** Runs whose cap fired: the interesting number, because each one is an agent that did not finish. */
 const roundsCapped = Metric.counter('seat_rounds_capped_total', {
@@ -73,7 +89,7 @@ type Response<Tools extends Record<string, Tool.Any>> =
   | LanguageModel.GenerateTextResponse<Tools, 'opaque'>
   | LanguageModel.GenerateTextResponse<{}, 'decoded'>;
 
-/** One model turn, as `onRound` and the result see it. */
+/** One model turn, as `onRound` and the result see it. A refused forced final turn is not reported. */
 export type Round<Tools extends Record<string, Tool.Any>> = {
   /** 1-based. The forced final turn, when there is one, is `maxRounds + 1`. */
   readonly round: number;
@@ -182,11 +198,11 @@ export function runRounds<Tools extends Record<string, Tool.Any>>(
     const forced = yield* chat.generateText({ prompt: Prompt.empty, toolChoice: 'none' }).pipe(
       Effect.flatMap(finish(forcedRound, true)),
       span(forcedRound, true),
-      // ⚠️ Only the two reasons of a tool call nobody offered: see the header for who raises which.
-      Effect.catchReasons('AiError', {
-        InvalidOutputError: refused,
-        ToolNotFoundError: refused,
-      }),
+      // ⚠️ Only a tool call nobody offered: see the header for who raises which. Every other AiError
+      //   (a dropped connection, an empty or truncated body, a rate limit) still fails the run.
+      Effect.catchTag('AiError', (error) =>
+        isToolRefusal(error) ? refused() : Effect.fail(error),
+      ),
     );
     return forced === undefined
       ? { response, rounds: maxRounds, capped: true, unanswered: true }

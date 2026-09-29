@@ -68,6 +68,23 @@ function chatReply(
   });
 }
 
+function brokenReply(kind: 'empty' | 'truncated' | 'html' | 'noChoices' | 'reset'): Response {
+  const headers = { 'content-type': kind === 'html' ? 'text/html' : 'application/json' };
+  if (kind === 'empty') return new Response('', { status: 200, headers });
+  if (kind === 'truncated')
+    return new Response('{"id":"stub-1","choices":[{"index":0,"mess', { status: 200, headers });
+  if (kind === 'html')
+    return new Response('<html><body>gateway timeout page</body></html>', { status: 200, headers });
+  if (kind === 'noChoices') return Response.json({ detail: 'upstream said no' });
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"id":'));
+      controller.error(new Error('connection reset'));
+    },
+  });
+  return new Response(body, { status: 200, headers });
+}
+
 function embeddingReply(body: Record<string, unknown>): Response {
   const input = Array.isArray(body['input']) ? body['input'] : [body['input']];
   return Response.json({
@@ -87,6 +104,12 @@ export function startStub(options?: {
    * for a history full of tool calls (review of PR 328), so the forced final turn is refused.
    */
   readonly stubborn?: boolean;
+  /**
+   * Answer a request that offers NO tools (the forced final turn) with a broken 200 instead of text:
+   * a gateway or network failure that compat reports as `InvalidOutputError` too (review of PR 328,
+   * round 4). `reset` sends headers and then kills the body stream.
+   */
+  readonly brokenForced?: 'empty' | 'truncated' | 'html' | 'noChoices' | 'reset';
 }): Stub {
   const requests: Captured[] = [];
   const server = Bun.serve({
@@ -100,13 +123,17 @@ export function startStub(options?: {
         ? (JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>)
         : undefined;
       requests.push({ path, headers: Object.fromEntries(request.headers), bytes, json });
-      if (path === '/v1/chat/completions' && json !== undefined)
+      if (path === '/v1/chat/completions' && json !== undefined) {
+        const offersTools = Array.isArray(json['tools']) && json['tools'].length > 0;
+        if (options?.brokenForced !== undefined && !offersTools)
+          return brokenReply(options.brokenForced);
         return chatReply(
           json,
           options?.alwaysTool === true,
           options?.toolCall ?? DEFAULT_TOOL_CALL,
           options?.stubborn === true,
         );
+      }
       if (path === '/v1/embeddings' && json !== undefined) return embeddingReply(json);
       if (path.includes('opentelemetry')) return new Response(null, { status: 200 });
       return new Response('not found', { status: 404 });
