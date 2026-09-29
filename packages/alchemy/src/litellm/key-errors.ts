@@ -3,9 +3,12 @@
  *
  * ⛔ NOT ONE OF THESE CARRIES A KEY VALUE. They name the alias, the environment VARIABLE and the
  *   rule broken, never what the variable held: an error is logged, retried and pasted into a PR.
+ *   The SDK's own errors are the other half: `generateKey` (key-operations.ts) turns the one that
+ *   holds the request, and so the value, into `LitellmKeyTransportError` below.
  */
 import type * as keys from '@distilled.cloud/litellm/key_management';
 import * as Data from 'effect/Data';
+import type { HttpClientErrorReason } from 'effect/unstable/http/HttpClientError';
 
 /** A create is needed and the declaration names no `key` — LiteLLM would mint a value nobody holds. */
 export class LitellmKeyValueRequiredError extends Data.TaggedError('LitellmKeyValueRequiredError')<{
@@ -30,6 +33,32 @@ export class LitellmKeyDebugLoggingError extends Data.TaggedError('LitellmKeyDeb
     return (
       `LiteLLM.Key '${this.keyAlias}': DISTILLED_DEBUG_HTTP is set, so the SDK would print the ` +
       "key to stderr in /key/generate's request and response. Unset it and run again. Nothing was written."
+    );
+  }
+}
+
+/**
+ * `/key/generate` failed on the wire (or its answer could not be read), so nobody knows whether the
+ * key exists.
+ *
+ * ⛔ THIS IS WHAT STANDS IN FOR AN `HttpClientError`, WHICH CARRIES ITS REQUEST, AND THE REQUEST BODY
+ *   OF `/key/generate` IS `{"key":"sk-…"}`. Measured 2026-09-29 with a synthetic value: on a dropped
+ *   connection `JSON.stringify(error)`, `Bun.inspect(error, { depth: 10 })` and Effect's JSON logger
+ *   all printed the key, and so did the failure of a deploy over it. A defect from reading a broken
+ *   answer (`protocol-rest.ts` reads it with `Effect.orDie`) carries the same request. So `reason` is
+ *   the `HttpClientError` reason's TAG (a string) and nothing else is kept: no request, no cause, no
+ *   description (a cause is free text from `fetch`).
+ */
+export class LitellmKeyTransportError extends Data.TaggedError('LitellmKeyTransportError')<{
+  readonly keyAlias: string;
+  readonly reason: HttpClientErrorReason['_tag'] | 'Defect';
+}> {
+  override get message(): string {
+    return (
+      `LiteLLM.Key '${this.keyAlias}': the /key/generate request failed (${this.reason}) before an ` +
+      'answer could be read, so the key MAY have been created. This error keeps neither the request ' +
+      "nor its cause: the request body holds the key's value. Look for the alias in LiteLLM. A key " +
+      'that landed is taken over by the next deploy with --adopt; one that did not is created by it.'
     );
   }
 }
@@ -171,6 +200,7 @@ export type KeyError =
   | keys.UpdateKeyFnKeyUpdatePostError
   | keys.DeleteKeyFnKeyDeletePostError
   | LitellmKeyDebugLoggingError
+  | LitellmKeyTransportError
   | LitellmKeyAliasEmptyError
   | LitellmKeyValueRequiredError
   | LitellmKeyValueMissingError

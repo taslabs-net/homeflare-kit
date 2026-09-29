@@ -15,19 +15,25 @@
  *   reads the row. UNVERIFIED against a live proxy — the retry policy is core's, not this file's.
  * ⚠️ DELETE IS IDEMPOTENT BY THIS FUNCTION, not by the vendor. MEASURED in the litellm 1.103.0 wheel
  *   (`key_management_endpoints.py`): `/key/delete` for an alias it does not hold answers 404 "No keys
- *   found" (`delete_verification_tokens`, :4914-4918), and 403 for a caller that may not delete the
- *   key (:4933-4936) — statuses the SDK's delete operation does not declare (its distilled patch
- *   adds 400 only, `patches/key_management/delete_key_fn_key_delete_post.json`; the runtime tags
- *   are still `NotFound`/`Forbidden`, measured with the fake). So an absent alias is settled by the
- *   LIST, which answers absence unambiguously, and a delete that FAILS re-lists and is swallowed only
- *   if the key has gone since — whatever the status, never on message text (S21; operations.ts's
- *   `deletePassThroughEndpoint` and budget-operations.ts decide the same way).
+ *   found" (`delete_verification_tokens`, :4915-4918), and 403 for a caller that may not delete the
+ *   key (:4933-4936). The SDK types both as resource-specific tags, `KeyNotFound` and
+ *   `KeyDeleteForbidden` (a distilled patch, `patches/key_management/delete_key_fn_key_delete_post.json`,
+ *   each matched on the status AND a phrase of the vendor's message), so `catchTag` sees them: the
+ *   MESSAGE MATCH LIVES IN THE SDK, never here (S21). An absent alias is settled by the LIST, which
+ *   answers absence unambiguously, and a `KeyNotFound` (another caller won the race, or a retry of a
+ *   delete whose answer was lost) re-lists and is swallowed only if the key has gone since. Every
+ *   other failure, `KeyDeleteForbidden` included, propagates typed: a 404 that is not the vendor's
+ *   is core's `NotFound`, not absence. operations.ts's `deletePassThroughEndpoint` and
+ *   budget-operations.ts decide the same way, on their own tag.
  */
 import * as keys from '@distilled.cloud/litellm/key_management';
 import * as Effect from 'effect/Effect';
+import * as Predicate from 'effect/Predicate';
+import { isHttpClientError } from 'effect/unstable/http/HttpClientError';
 import {
   LitellmKeyAliasEmptyError,
   LitellmKeyAmbiguousAliasError,
+  LitellmKeyTransportError,
   LitellmKeyUnreadableError,
 } from './key-errors.ts';
 import { type KeyAttributes, toAttributes } from './key-form.ts';
@@ -71,9 +77,43 @@ const findKeyByAlias = (keyAlias: string) =>
     ),
   );
 
-/** `/key/generate`. The response's `key` is `Redacted` (the SDK's `SensitiveValue`); never log the response. */
-export const generateKey = (body: keys.GenerateKeyFnKeyGeneratePostRequest) =>
-  throughFetch(keys.generateKeyFnKeyGeneratePost(body));
+/**
+ * Whether `value` holds the request it answers. An `HttpClientError` does, through `reason.request`
+ * (its `request` getter reads it), and its body is the JSON the call sent.
+ */
+const carriesRequest = (value: unknown): boolean =>
+  isHttpClientError(value) || Predicate.hasProperty(value, 'request');
+
+/**
+ * `/key/generate`. The response's `key` is `Redacted` (the SDK's `SensitiveValue`); never log the response.
+ * ⛔ THE REQUEST BODY IS `{"key":"sk-…"}`, AND A FAILED CALL CAN CARRY ITS REQUEST. Two ways, both
+ *   measured 2026-09-29 with a synthetic key (key-transport.test.ts): a transport failure is an
+ *   `HttpClientError` in the error channel, and a body that fails mid-read is the SAME error as a
+ *   DEFECT (`Effect.orDie` in `@distilled.cloud/core`'s `protocol-rest.ts`). Either would put the
+ *   plaintext in front of anything that serialises, inspects or logs the failure — while the SDK's
+ *   own `HttpClientError` is not something this resource can leave typed as it is. Both become
+ *   `LitellmKeyTransportError`, which keeps the alias and the reason's tag and nothing else.
+ *   The SDK's status errors (`BadRequest`, `Forbidden`, …) carry only the proxy's message text and
+ *   stay as they are, so a caller can still `catchTag` them.
+ */
+export const generateKey = (body: keys.GenerateKeyFnKeyGeneratePostRequest) => {
+  const keyAlias = body.key_alias ?? '';
+  return throughFetch(keys.generateKeyFnKeyGeneratePost(body)).pipe(
+    Effect.catchTag('HttpClientError', (error) =>
+      Effect.fail(new LitellmKeyTransportError({ keyAlias, reason: error.reason._tag })),
+    ),
+    Effect.catchDefect((defect) =>
+      carriesRequest(defect)
+        ? Effect.fail(
+            new LitellmKeyTransportError({
+              keyAlias,
+              reason: isHttpClientError(defect) ? defect.reason._tag : 'Defect',
+            }),
+          )
+        : Effect.die(defect),
+    ),
+  );
+};
 
 /** `/key/update`, found by the body's `key_alias`. */
 export const updateKey = (body: keys.UpdateKeyFnKeyUpdatePostRequest) =>
@@ -97,7 +137,7 @@ export const deleteKey = (
         ? Effect.void
         : throughFetch(keys.deleteKeyFnKeyDeletePost({ key_aliases: [keyAlias] })).pipe(
             Effect.asVoid,
-            Effect.catch((original) =>
+            Effect.catchTag('KeyNotFound', (original) =>
               findKey(keyAlias).pipe(
                 Effect.flatMap((still) =>
                   still === undefined ? Effect.void : Effect.fail(original),

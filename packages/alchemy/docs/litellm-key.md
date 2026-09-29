@@ -33,13 +33,13 @@ export default Effect.gen(function* () {
 Then provide `litellmProviders()` alongside the stack's other providers, as
 [litellm.md](./litellm.md#example) shows.
 
-| where the value is         | it is                                                                  |
-| -------------------------- | ---------------------------------------------------------------------- |
-| the declaration / state    | never: the state row holds `{ fromEnv: 'HF_SEAT_A_KEY' }`, the NAME    |
-| `diff`, `read`, a plan     | never read: a plan needs no secret and runs without the variable       |
-| `/key/generate`'s body     | once, on create, unwrapped in `createBody` and nowhere else            |
-| `/key/generate`'s response | `Redacted` (the SDK's `T.SensitiveValue`); compared with what was sent |
-| an attribute, error or log | never: errors name the alias, the variable and the rule, not the value |
+| where the value is         | it is                                                                                                                                                            |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the declaration / state    | never: the state row holds `{ fromEnv: 'HF_SEAT_A_KEY' }`, the NAME                                                                                              |
+| `diff`, `read`, a plan     | never read: a plan needs no secret and runs without the variable                                                                                                 |
+| `/key/generate`'s body     | once, on create, unwrapped in `createBody` and nowhere else                                                                                                      |
+| `/key/generate`'s response | `Redacted` (the SDK's `T.SensitiveValue`); compared with what was sent                                                                                           |
+| an attribute, error or log | never: errors name the alias, the variable and the rule, not the value; a failed create is `LitellmKeyTransportError`, never the SDK's `HttpClientError` (below) |
 
 ★ **Why the value is minted outside and not by LiteLLM.** `/key/generate` does return the new key,
 and the SDK hands it back `Redacted`. A resource has two places to put it: an attribute, which is
@@ -59,6 +59,15 @@ value: "Must start with 'sk-' and be at least 16 characters long."
 - ⛔ **`DISTILLED_DEBUG_HTTP` refuses a create.** While it is set the SDK prints the first 400
   characters of every request and response body to stderr (`@distilled.cloud/core`, read 2026-09-29),
   and `/key/generate` carries the key in both. An update carries no value, so it is not refused.
+- ⛔ **A create that fails on the wire does not carry the request.** `/key/generate`'s request body is
+  `{"key":"sk-…"}`, and the SDK's `HttpClientError` holds its request, so `JSON.stringify`,
+  `Bun.inspect` at depth or Effect's JSON logger printed the value from a dropped connection, from the
+  deploy that failed over it, and from a defect (`protocol-rest.ts` reads a body with `Effect.orDie`).
+  Measured 2026-09-29 with a synthetic key (`key-transport.test.ts`, each reading searched for the
+  value). `generateKey` turns both into `LitellmKeyTransportError`: the alias and the reason's tag, no
+  request, no cause. The key **may** exist afterwards (the answer can be lost after the write); the next
+  deploy sees a live key with no state and takes it with `--adopt`, and one that did not land is created.
+  The SDK's status errors (`BadRequest`, `Forbidden`, …) hold only the proxy's message and stay typed.
 - ⚠️ **A proxy with the dashboard's `disable_custom_api_keys` setting on** answers 403 to any
   user-defined key (`_check_custom_key_allowed`). It surfaces as the SDK's `Forbidden`.
   UNVERIFIED whether the estate's proxy has it on.
@@ -84,16 +93,16 @@ the row says, observed) and `duration` (see below). ⛔ There is no `key`, `toke
 
 ## Behaviour
 
-| Concern     | Rule                                                                                                                                                                       |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity    | `keyAlias`. A different alias is **refused** (`LitellmKeyAliasChangedError`), not replaced: the new key would need the same value, and a retained old row still holds it.  |
-| Adopt       | A live key with the alias and no state is `Unowned`; needs `--adopt`. The apply re-checks it (`refuseTakeover`) for a create the planner could not probe.                  |
-| Removal     | `defaultRemovalPolicy: 'retain'`: deleting a key breaks whatever holds it. Opt in with `RemovalPolicy.destroy()`.                                                          |
-| Read        | `/key/list?key_alias=…&return_full_object=true`. Two rows under one alias are refused (`LitellmKeyAmbiguousAliasError`); the column is not unique in LiteLLM's schema.     |
-| Update      | `/key/update` by alias with **only the fields that differ**. A dropped `budget_id`/`team_id`/`duration` is an explicit `null`, a dropped list `[]`, dropped metadata `{}`. |
-| Write check | Reconcile reads back; a field the row still differs on fails with `LitellmKeyFieldNotAppliedError`.                                                                        |
-| Delete      | Idempotent by the list: an absent alias writes nothing. A failed delete re-lists and is swallowed only if the key has gone since.                                          |
-| Read errors | A 5xx on `/key/list` propagates typed. It is never read as "no such key" (which would go on to create one).                                                                |
+| Concern     | Rule                                                                                                                                                                                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Identity    | `keyAlias`. A different alias is **refused** (`LitellmKeyAliasChangedError`), not replaced: the new key would need the same value, and a retained old row still holds it.                        |
+| Adopt       | A live key with the alias and no state is `Unowned`; needs `--adopt`. The apply re-checks it (`refuseTakeover`) for a create the planner could not probe.                                        |
+| Removal     | `defaultRemovalPolicy: 'retain'`: deleting a key breaks whatever holds it. Opt in with `RemovalPolicy.destroy()`.                                                                                |
+| Read        | `/key/list?key_alias=…&return_full_object=true`. Two rows under one alias are refused (`LitellmKeyAmbiguousAliasError`); the column is not unique in LiteLLM's schema.                           |
+| Update      | `/key/update` by alias with **only the fields that differ**. A dropped `budget_id`/`team_id`/`duration` is an explicit `null`, a dropped list `[]`, dropped metadata `{}`.                       |
+| Write check | Reconcile reads back; a field the row still differs on fails with `LitellmKeyFieldNotAppliedError`.                                                                                              |
+| Delete      | Idempotent by the list: an absent alias writes nothing. The SDK's `KeyNotFound` (a lost race, a retried delete) re-lists and is swallowed only if the key is gone. Any other failure propagates. |
+| Read errors | A 5xx on `/key/list` propagates typed. It is never read as "no such key" (which would go on to create one).                                                                                      |
 
 ⛔ **The declaration is the whole truth for these fields, so omitting one on an adopted key CHANGES
 it.** Dropping `budgetId` clears the binding (and that tier's rate limits); dropping `models` or
@@ -135,10 +144,17 @@ keys found" (:4914) and of a forbidden one 403 (:4933); `/key/list` filters `key
 size at most 100 (:6376); `models` and `allowed_routes` are non-null `String[]` columns, hence `[]`
 not `null` to clear.
 
-⚠️ **The SDK's delete operation declares 400 and 422 only.** The 404 and 403 above are still decoded
-to `NotFound`/`Forbidden` at runtime (measured with the fake) but are not in the operation's error
-type, so `deleteKey` decides by re-listing and does not `catchTag` them. A distilled patch for
-`/key/delete` would close it.
+★ **`/key/delete`'s 404 and 403 are typed by the SDK, as resource-specific tags.** The operation
+declared 400 and 422 only, so both surfaced at runtime as core's status-mapped `NotFound`/`Forbidden`,
+outside its error type. A distilled patch (`patches/key_management/delete_key_fn_key_delete_post.json`
+in the distilled clone, byte-copied here) now types them as `KeyNotFound` (404, the message
+`No keys found`) and `KeyDeleteForbidden` (403, `You are not authorized to delete this key`), each
+matched on the status AND that phrase. `delete_key_fn` re-raises through `handle_exception_on_proxy`, so
+the wire message is Python's `str(detail)`, `{'error': 'No keys found'}`, which the `includes` matcher
+fits, as it fits a bare `detail`. `deleteKey` does `catchTag('KeyNotFound')`, then re-lists: the absence
+proof is still the list, never the tag. A 404 without the phrase (a proxy in front) stays core's
+`NotFound` and fails. UNVERIFIED against a live proxy: the wire shape is read from the wheel's source.
+The tags ship with the next `@homeflare/distilled-litellm` release (its own changeset); the workspace copy has them now.
 
 UNVERIFIED: that `/key/list?return_full_object=true` returns `budget_id` on a live 1.103.0 proxy (the
 generated row type and the Prisma model both carry it; a miss fails the apply loudly as

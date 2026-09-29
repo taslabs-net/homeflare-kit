@@ -134,6 +134,7 @@ export {
   LitellmKeyDebugLoggingError,
   LitellmKeyAmbiguousAliasError,
   LitellmKeyFieldNotAppliedError,
+  LitellmKeyTransportError,
   LitellmKeyUnreadableError,
   LitellmKeyValueMalformedError,
   LitellmKeyValueMissingError,

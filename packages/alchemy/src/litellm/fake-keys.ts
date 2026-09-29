@@ -10,7 +10,10 @@
  *   (`duration: null` sets `expires` null, :2468-2500) and omitted fields are untouched; an update
  *   that finds no alias is 404 (`_get_and_validate_existing_key`, per the distilled patch); a delete
  *   of an alias it does not hold is 404 "No keys found" (:4914-4918) and of a key the caller may not
- *   delete 403 (:4933-4936); `/key/list` filters `key_alias` exactly unless told otherwise, and
+ *   delete 403 (:4933-4936), BOTH answered as a `ProxyException` envelope, because `delete_key_fn`
+ *   re-raises through `handle_exception_on_proxy` (`proxy/utils.py:7815`), whose `message` is `str(detail)`
+ *   (`_types.py` `ProxyException`): `{"error": {"message": "{'error': 'No keys found'}", "code": "404", ...}}`;
+ *   `/key/list` filters `key_alias` exactly unless told otherwise, and
  *   `return_full_object` answers full rows, `token` being the sha256 hex of the key (`hash_token`).
  * ⚠️ NOT MODELLED, or only a stand-in: `disable_custom_api_keys` (a 403 for ANY user-defined key);
  *   a `budget_id` that names no budget is a foreign-key violation whose status is UNMEASURED — 400
@@ -47,6 +50,20 @@ export interface FakeKeys {
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' }, status });
+
+/**
+ * What `/key/delete` answers a failure with: a `ProxyException`, whose `message` is Python's `str()` of
+ * the `HTTPException` detail dict (`{'error': '…'}`), and whose `code` is the status as a string.
+ */
+const proxyException = (status: number, error: string) =>
+  json(status, {
+    error: {
+      code: String(status),
+      message: `{'error': '${error}'}`,
+      param: null,
+      type: 'internal_server_error',
+    },
+  });
 
 const sha256 = (value: string): string =>
   new Bun.CryptoHasher('sha256').update(value).digest('hex');
@@ -134,13 +151,13 @@ export const createFakeKeys = (
 
   const remove = (body: Row) => {
     if (options?.keyDeleteForbidden === true) {
-      return json(403, { detail: { error: 'You are not authorized to delete this key' } });
+      return proxyException(403, 'You are not authorized to delete this key');
     }
     const aliases = Array.isArray(body['key_aliases']) ? body['key_aliases'] : [];
     const found = aliases.filter((alias) => byAlias(alias) !== -1);
-    if (found.length === 0) return json(404, { detail: { error: 'No keys found' } });
+    if (found.length === 0) return proxyException(404, 'No keys found');
     rows = rows.filter((row) => !found.includes(row['key_alias']));
-    if (options?.keyDeleteRaces === true) return json(404, { detail: { error: 'No keys found' } });
+    if (options?.keyDeleteRaces === true) return proxyException(404, 'No keys found');
     return json(200, { deleted_keys: found });
   };
 

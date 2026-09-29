@@ -31,6 +31,16 @@ const attributes: KeyAttributes = {
   teamId: null,
 };
 const paths = (fake: ReturnType<typeof newFake>) => fake.keys.writes().map((write) => write.path);
+const answer = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' }, status });
+/** The fake, with `POST /key/delete` answered by `respond` (the row untouched) and every other route its own. */
+const deleteAnswering = (fake: ReturnType<typeof newFake>, respond: () => Response) => ({
+  ...fake,
+  fetch: (async (input: string | URL | Request, init?: RequestInit) =>
+    new URL(input instanceof Request ? input.url : String(input)).pathname === '/key/delete'
+      ? respond()
+      : fake.fetch(input, init)) as typeof globalThis.fetch,
+});
 const create = (stack: ReturnType<typeof keyStack>, destroy: boolean) =>
   withEnv({ [VAR]: FAKE_KEY }, () =>
     stack.deploy(destroy ? declare(seat).pipe(RemovalPolicy.destroy()) : declare(seat)),
@@ -69,16 +79,70 @@ describe('delete', () => {
   });
 
   test('a delete another caller won the race for is swallowed once a re-list shows it gone', async () => {
+    // ★ The fake answers the 404 as the real ProxyException (`message` is `str(detail)`, fake-keys.ts),
+    //   so this is `KeyNotFound` matched on the wire shape `delete_key_fn` really produces.
     const fake = newFake({ keyDeleteRaces: true, keySeed: [liveRow()] });
     await runAgainst(fake, keyHandlers.delete({ output: attributes }));
     expect(fake.keys.rows()).toEqual([]);
   });
 
-  test('a delete the caller may not make is NOT swallowed: it fails and the key stays', async () => {
+  test('a delete the caller may not make is NOT swallowed: it fails typed and the key stays', async () => {
     const fake = newFake({ keyDeleteForbidden: true, keySeed: [liveRow()] });
     const error = await runAgainst(fake, Effect.flip(keyHandlers.delete({ output: attributes })));
-    expect(error).toMatchObject({ _tag: 'Forbidden' });
+    expect(error).toMatchObject({ _tag: 'KeyDeleteForbidden' });
     expect(fake.keys.rows()).toHaveLength(1);
+  });
+
+  test("the SDK's delete tags are in the operation's type, so a caller can catchTag them", async () => {
+    // ★ THE TYPE IS THE ASSERTION: `catchTag('KeyDeleteForbidden')` only compiles while the SDK's
+    //   `/key/delete` error union carries it (a distilled patch), which `bun run check` proves.
+    const fake = newFake({ keyDeleteForbidden: true, keySeed: [liveRow()] });
+    const handled = await runAgainst(
+      fake,
+      keyHandlers
+        .delete({ output: attributes })
+        .pipe(Effect.catchTag('KeyDeleteForbidden', () => Effect.succeed('caught'))),
+    );
+    expect(handled).toBe('caught');
+  });
+
+  test('a 404 the vendor did not send is not "the key is gone": it fails as core\'s NotFound', async () => {
+    const fake = deleteAnswering(newFake({ keySeed: [liveRow()] }), () =>
+      answer(404, { detail: 'route not found' }),
+    );
+    const error = await runAgainst(fake, Effect.flip(keyHandlers.delete({ output: attributes })));
+    expect(error).toMatchObject({ _tag: 'NotFound' });
+    expect(fake.keys.rows()).toHaveLength(1);
+  });
+
+  test('a "No keys found" (bare `detail` shape too) that the re-list contradicts is not swallowed: the LIST decides', async () => {
+    const fake = deleteAnswering(newFake({ keySeed: [liveRow()] }), () =>
+      answer(404, { detail: { error: 'No keys found' } }),
+    );
+    const error = await runAgainst(fake, Effect.flip(keyHandlers.delete({ output: attributes })));
+    expect(error).toMatchObject({ _tag: 'KeyNotFound' });
+    expect(fake.keys.rows()).toHaveLength(1);
+  });
+
+  test('any OTHER failure is not swallowed, even when the key is gone by the time it is re-listed', async () => {
+    // The delete RUNS (the row is gone) and its answer is a 400: only a `KeyNotFound` is read as
+    // "already done", so this surfaces and the next deploy, which lists first, finds nothing to do.
+    const fake = newFake({ keySeed: [liveRow()] });
+    const answeredBadly = {
+      ...fake,
+      fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+        const reply = await fake.fetch(input, init);
+        const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
+        return path === '/key/delete' ? answer(400, { detail: { error: 'Not all keys' } }) : reply;
+      }) as typeof globalThis.fetch,
+    };
+    const error = await runAgainst(
+      answeredBadly,
+      Effect.flip(keyHandlers.delete({ output: attributes })),
+    );
+    expect(error).toMatchObject({ _tag: 'BadRequest' });
+    expect(fake.keys.rows()).toEqual([]);
+    await runAgainst(fake, keyHandlers.delete({ output: attributes })); // and the rerun is a no-op
   });
 });
 
