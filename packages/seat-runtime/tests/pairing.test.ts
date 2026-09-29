@@ -29,6 +29,9 @@ const effect = await read(new URL('../node_modules/effect/package.json', import.
 const compat = await read(
   new URL('../node_modules/@effect/ai-openai-compat/package.json', import.meta.url),
 );
+const sdk = await read(
+  new URL('../node_modules/@modelcontextprotocol/sdk/package.json', import.meta.url),
+);
 const lock = await Bun.file(new URL('../../../bun.lock', import.meta.url)).text();
 
 const PIN = '4.0.0-rc.115';
@@ -56,7 +59,10 @@ describe('declared pins', () => {
   });
 
   test('nothing else is a runtime dependency', () => {
-    expect(Object.keys(pkg.dependencies ?? {})).toEqual(['@effect/ai-openai-compat']);
+    expect(Object.keys(pkg.dependencies ?? {}).sort()).toEqual([
+      '@effect/ai-openai-compat',
+      '@modelcontextprotocol/sdk',
+    ]);
     expect(Object.keys(pkg.peerDependencies ?? {})).toEqual(['effect']);
   });
 });
@@ -87,5 +93,35 @@ describe('the platform-node-shared trap', () => {
 
   test('this package declares no `overrides`, because it would do nothing', () => {
     expect(pkg.overrides).toBeUndefined();
+  });
+});
+
+describe('the MCP SDK pairing', () => {
+  // ★ 1.31.0 IS WHAT THE SCOUT MEASURED (2026-09-29, pair115: list, call and resource read
+  //   against an Effect McpServer) and what `npm view` named current that day. It is a plain
+  //   pinned dependency, not a peer: this package's `mcpToolkit` is the only thing that
+  //   imports it, and a consumer should not have to choose a version.
+  const SDK = '@modelcontextprotocol/sdk';
+
+  test('the dependency, the catalog and the installed copy are one exact version', () => {
+    expect(pkg.dependencies?.[SDK]).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(rootPkg.catalog?.[SDK]).toBe(pkg.dependencies?.[SDK]);
+    expect(sdk.version).toBe(pkg.dependencies?.[SDK]);
+  });
+
+  test('the kit’s zod satisfies the range the SDK peers on', () => {
+    // 🔴 The SDK's `zod` is a NON-optional peer (`^3.25 || ^4.0`, 1.31.0). A kit zod outside that
+    //   range would make bun install a second copy for the SDK, and two zods in one process is
+    //   the classic "schema from another copy" failure.
+    const range = sdk.peerDependencies?.['zod'] ?? '';
+    expect(range).not.toBe('');
+    expect(Bun.semver.satisfies(rootPkg.catalog?.['zod'] ?? '', range)).toBe(true);
+  });
+
+  test('the lockfile resolves exactly one zod', () => {
+    const versions = [...lock.matchAll(/^ {4}"zod": \["zod@([^"]+)"/gm)].map((m) => m[1]);
+    expect(versions).toEqual([rootPkg.catalog?.['zod']]);
+    // No copy nested under the SDK (bun writes those as "<parent>/zod").
+    expect(lock).not.toContain('"@modelcontextprotocol/sdk/zod"');
   });
 });

@@ -1,15 +1,17 @@
 # @homeflare/seat-runtime
 
-The two layers every HomeFlare coding seat shares: an Effect AI **model** that talks to
-LiteLLM the way the seats need, and **telemetry** that lands traces, logs and metrics in
-the Victoria stack on CT100 from one environment block.
+What every HomeFlare coding seat shares: an Effect AI **model** that talks to LiteLLM the
+way the seats need, **telemetry** that lands traces, logs and metrics in the Victoria stack
+on CT100 from one environment block, the **round loop** (`runRounds`, with a hard cap), and
+**MCP servers as a toolkit** (`mcpToolkit`).
 
 ```sh
 bun add @homeflare/seat-runtime effect@4.0.0-rc.115
 ```
 
 ⛔ **Pin the rc, and put `overrides` in YOUR root `package.json`.** `effect` is an exact peer
-and `@effect/ai-openai-compat` an exact dependency, both `4.0.0-rc.115`. If your app also
+and `@effect/ai-openai-compat` an exact dependency, both `4.0.0-rc.115` (`@modelcontextprotocol/sdk`
+is an exact dependency too, `1.31.0`). If your app also
 uses `@effect/platform-bun`, add this to your own manifest, or a fresh install crashes:
 
 ```json
@@ -94,29 +96,81 @@ a log POST exists only when something logged.
 
 `VERSION` is the package's own version.
 
+### `runRounds`
+
+The one round loop. `Chat.generateText` resolves the tool calls of **one** model turn and
+returns, and Effect AI has no `maxRounds`; this is the documented `while` with a cap.
+
+```ts
+const program = Effect.gen(function* () {
+  const toolkit = yield* MyToolkit; // a Toolkit with its handlers provided; or `mcp.toolkit`
+  const chat = yield* Chat.fromPrompt('Review this diff.');
+  const result = yield* runRounds({
+    chat,
+    toolkit,
+    maxRounds: 8,
+    onRound: (r) => Effect.log(r.round),
+  });
+  result.response.text; // the answer
+  result.capped; // true when the cap fired; result.rounds counts the forced turn too
+  result.unanswered; // true when the forced turn was refused (below)
+});
+```
+
+- Every round sends an empty prompt: `Chat` appends the model's turn and the tool results.
+- It stops when a turn asks for no tools (`capped: false`), including on round `maxRounds`.
+- After `maxRounds` turns that all asked for tools, **one more turn is forced with no toolkit and
+  `toolChoice: 'none'`** (`capped: true`, `rounds: maxRounds + 1`). compat then sends neither
+  `tools` nor `tool_choice`; the history still carries the earlier calls and results. Measured
+  once on 2026-09-29 through CT100's LiteLLM: cf-code accepted that history and answered with
+  `finishReason: 'stop'` and no tool call (one sample, one alias, not the tests' stub).
+- 🔴 **The forced turn can be refused.** A provider that still asks for a tool although none was
+  offered answers a turn the SDK cannot use: `AiError` with reason `ToolNotFoundError` (what
+  `SeatModel`'s compat provider raises, measured) or `InvalidOutputError` raised by the SDK's own decode (module `LanguageModel`; the same reason raised by `OpenAiClient` for an empty, truncated or non-completion body is a gateway failure and fails the run).
+  Either does not fail the run: it returns `capped: true, unanswered: true`, `response` is the
+  last tool round's (no answer; its calls ran), `rounds` is `maxRounds`. Any other failure of that
+  turn (network, rate limit) still fails the run.
+- `maxRounds` must be a positive integer; `0`, `Infinity` or `NaN` is a `RangeError` defect
+  before any model call. Errors are the turn's own (`AiError`, a handler's failure); nothing retries.
+- Observable: a `seat.round` span per turn (`seat.round`, `seat.round.forced`, `seat.tool_calls`),
+  counters `seat_rounds_total`, `seat_rounds_capped_total` and `seat_rounds_unanswered_total`,
+  a warning log when the cap fires (and another when the forced turn is refused).
+
+### `mcpToolkit`
+
+```ts
+const program = Effect.gen(function* () {
+  const mcp = yield* mcpToolkit('https://mcp.example/mcp', {
+    authorization: Redacted.make(`Bearer ${token}`),
+  });
+  yield* runRounds({ chat, toolkit: mcp.toolkit, maxRounds: 8 });
+  const notes = yield* mcp.listResources;
+  const hello = yield* mcp.readResource('estate://notes/hello');
+}).pipe(Effect.scoped); // the connection closes with the scope
+```
+
+The official MCP SDK `Client` over Streamable HTTP; each MCP tool is a `Tool.dynamic` carrying
+the server's own JSON Schema. It needs a `Scope`: the connection closes with it. The detail, with
+what was measured, is in [docs/mcp.md](./docs/mcp.md); the rules to know first:
+
+- **A tool failure goes back to the model**, not out of the run. Connecting and listing fail with
+  `McpToolkitError`, whose message and `cause` never hold the headers or the query string.
+- **`connectTimeoutMs`** (default 15 s) bounds the handshake and each startup `tools/list` page.
+- ⚠️ The tool list is a **snapshot**, and 🔴 rc.115 cannot decode a `Tool.dynamic`'s call alone: an
+  argument the server's schema does not declare is dropped (workaround in `src/mcp-tool.ts`).
+
 ## The measured pairing
 
-Measured 2026-09-29 (a scratch install, then this package's tests and smoke):
-
-- ✅ `effect` rc.115 with `@effect/ai-openai-compat` rc.115: clean install, `tsc` 7.0.2 exit 0,
-  and at runtime chat, a tool round, embeddings, three OTLP signals and `traceparent`.
-- ⚠️ With `skipLibCheck: false`, compat's **own** `.d.ts` has 26 `TS2411` errors. Upstream's,
-  not ours; keep `skipLibCheck: true`. `scripts/smoke.ts` allows exactly those and nothing else.
-- ⚠️ compat beta.107 beside effect rc.115 also installed and passed the same small surface
-  (the scout's `pairBeta`). Nothing wider was tried, so the rule stays **same exact rc**.
-- 🔴 **rc.118 drops the `unstable/` prefix**: `effect/unstable/ai` becomes `effect/ai`. rc.116
-  and rc.117 keep it. The estate is pinned at rc.115, so do not bump one package alone.
-- 🔴 **`@effect/platform-node-shared` resolves to rc.118** under `@effect/platform-bun`
-  rc.115 on a fresh install, and the process dies at import (`Cannot find module
-effect/process/ChildProcess`). Only a **root** `overrides` fixes it. An `overrides` field in
-  a workspace member's manifest, or in a tarball you install, is ignored (measured), which is
-  why this package declares none. `scripts/smoke.ts` installs platform-bun beside it with the
-  override above and asserts all three resolve to rc.115.
+Exact same-rc pins, the `overrides` trap, rc.118's dropped `unstable/` prefix and the MCP SDK's
+pairing, each with what was measured: [docs/pairing.md](./docs/pairing.md). ⚠️ Compat's own `.d.ts`
+has 26 `TS2411` errors under `skipLibCheck: false` (upstream's): keep it `true`.
 
 ## What is not here
 
-No round loop, no MCP toolkit (0.2), no Postgres or Valkey state (0.3), no retry policy: the
-caller retries in Effect. Nothing reads a credential from disk or logs one.
+No Postgres or Valkey state (0.3), no retry policy (the caller retries in Effect), no way to
+merge an MCP toolkit with a local one (`Toolkit.merge` takes toolkits that still need handlers,
+`mcp.toolkit` already has them), no prompt for the forced final turn (it is sent empty). Nothing
+reads a credential from disk or logs one.
 
 ## Development
 

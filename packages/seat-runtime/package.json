@@ -13,6 +13,7 @@
   },
   "files": [
     "dist",
+    "docs",
     "src",
     "README.md",
     "LICENSE"
@@ -39,7 +40,8 @@
     "smoke": "bun run scripts/smoke.ts"
   },
   "dependencies": {
-    "@effect/ai-openai-compat": "4.0.0-rc.115"
+    "@effect/ai-openai-compat": "4.0.0-rc.115",
+    "@modelcontextprotocol/sdk": "1.31.0"
   },
   "devDependencies": {
     "effect": "catalog:"

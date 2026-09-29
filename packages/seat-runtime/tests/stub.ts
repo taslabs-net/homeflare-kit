@@ -26,18 +26,32 @@ export type Stub = {
   readonly stop: () => void;
 };
 
-const TOOL_CALL = {
+/** The tool call a model reply asks for: `arguments` is the JSON text, exactly as a model sends it. */
+export type StubToolCall = { readonly name: string; readonly arguments: string };
+
+const DEFAULT_TOOL_CALL: StubToolCall = { name: 'read_fact', arguments: '{"key":"a"}' };
+
+const toolCallReply = (call: StubToolCall) => ({
   role: 'assistant',
   content: null,
   tool_calls: [
-    { id: 'c1', type: 'function', function: { name: 'read_fact', arguments: '{"key":"a"}' } },
+    { id: 'c1', type: 'function', function: { name: call.name, arguments: call.arguments } },
   ],
-};
+});
 
-function chatReply(body: Record<string, unknown>): Response {
+function chatReply(
+  body: Record<string, unknown>,
+  alwaysTool: boolean,
+  toolCall: StubToolCall,
+  stubborn: boolean,
+): Response {
   const tools = Array.isArray(body['tools']) && body['tools'].length > 0;
   const messages = Array.isArray(body['messages']) ? (body['messages'] as { role?: string }[]) : [];
-  const wantsTool = tools && !messages.some((message) => message.role === 'tool');
+  // ★ `alwaysTool` is a model that never stops asking: the round cap has something to cap. A
+  //   request that offers no tools is still answered with text, as a real model must, unless
+  //   `stubborn`: then it asks for the tool anyway, which is the refused forced turn.
+  const wantsTool =
+    stubborn || (tools && (alwaysTool || !messages.some((message) => message.role === 'tool')));
   return Response.json({
     id: 'stub-1',
     object: 'chat.completion',
@@ -46,12 +60,29 @@ function chatReply(body: Record<string, unknown>): Response {
     choices: [
       {
         index: 0,
-        message: wantsTool ? TOOL_CALL : { role: 'assistant', content: 'pong' },
+        message: wantsTool ? toolCallReply(toolCall) : { role: 'assistant', content: 'pong' },
         finish_reason: wantsTool ? 'tool_calls' : 'stop',
       },
     ],
     usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
   });
+}
+
+function brokenReply(kind: 'empty' | 'truncated' | 'html' | 'noChoices' | 'reset'): Response {
+  const headers = { 'content-type': kind === 'html' ? 'text/html' : 'application/json' };
+  if (kind === 'empty') return new Response('', { status: 200, headers });
+  if (kind === 'truncated')
+    return new Response('{"id":"stub-1","choices":[{"index":0,"mess', { status: 200, headers });
+  if (kind === 'html')
+    return new Response('<html><body>gateway timeout page</body></html>', { status: 200, headers });
+  if (kind === 'noChoices') return Response.json({ detail: 'upstream said no' });
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"id":'));
+      controller.error(new Error('connection reset'));
+    },
+  });
+  return new Response(body, { status: 200, headers });
 }
 
 function embeddingReply(body: Record<string, unknown>): Response {
@@ -64,7 +95,22 @@ function embeddingReply(body: Record<string, unknown>): Response {
   });
 }
 
-export function startStub(): Stub {
+export function startStub(options?: {
+  readonly alwaysTool?: boolean;
+  /** What the model asks for when it asks for a tool. Default: `read_fact {"key":"a"}`. */
+  readonly toolCall?: StubToolCall;
+  /**
+   * Ask for the tool on EVERY request, even one that offers none: a gateway that invents a tool
+   * for a history full of tool calls (review of PR 328), so the forced final turn is refused.
+   */
+  readonly stubborn?: boolean;
+  /**
+   * Answer a request that offers NO tools (the forced final turn) with a broken 200 instead of text:
+   * a gateway or network failure that compat reports as `InvalidOutputError` too (review of PR 328,
+   * round 4). `reset` sends headers and then kills the body stream.
+   */
+  readonly brokenForced?: 'empty' | 'truncated' | 'html' | 'noChoices' | 'reset';
+}): Stub {
   const requests: Captured[] = [];
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -77,7 +123,17 @@ export function startStub(): Stub {
         ? (JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>)
         : undefined;
       requests.push({ path, headers: Object.fromEntries(request.headers), bytes, json });
-      if (path === '/v1/chat/completions' && json !== undefined) return chatReply(json);
+      if (path === '/v1/chat/completions' && json !== undefined) {
+        const offersTools = Array.isArray(json['tools']) && json['tools'].length > 0;
+        if (options?.brokenForced !== undefined && !offersTools)
+          return brokenReply(options.brokenForced);
+        return chatReply(
+          json,
+          options?.alwaysTool === true,
+          options?.toolCall ?? DEFAULT_TOOL_CALL,
+          options?.stubborn === true,
+        );
+      }
       if (path === '/v1/embeddings' && json !== undefined) return embeddingReply(json);
       if (path.includes('opentelemetry')) return new Response(null, { status: 200 });
       return new Response('not found', { status: 404 });

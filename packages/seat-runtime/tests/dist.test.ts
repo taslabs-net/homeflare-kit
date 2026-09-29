@@ -24,6 +24,19 @@ describe.skipIf(!built)('dist/', () => {
     expect(SeatObs.CT100_ENDPOINTS.traces).toContain('/insert/opentelemetry/v1/traces');
   });
 
+  test('the round loop, the MCP toolkit and its error survive bundling', async () => {
+    const { runRounds, mcpToolkit, McpToolkitError } = await import(indexUrl.href);
+    expect(typeof runRounds).toBe('function');
+    expect(typeof mcpToolkit).toBe('function');
+    const error = new McpToolkitError({
+      operation: 'connect',
+      server: 'http://x/mcp',
+      cause: 'no',
+    });
+    expect(error).toBeInstanceOf(Error);
+    expect(error._tag).toBe('McpToolkitError');
+  });
+
   test('the built layer builds', async () => {
     const { SeatModel } = await import(indexUrl.href);
     expect(
