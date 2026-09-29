@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/seat-runtime",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "One Effect AI model layer and one OTLP layer for HomeFlare's coding seats: LiteLLM tags, no-cache and no-retry per request, traces, logs and metrics to VictoriaMetrics on CT100.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/seat-runtime#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",

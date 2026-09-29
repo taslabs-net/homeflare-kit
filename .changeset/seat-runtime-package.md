@@ -1,5 +1,0 @@
----
-'@homeflare/seat-runtime': minor
----
-
-Add `@homeflare/seat-runtime`, the model and telemetry layers every coding seat shares. `SeatModel.layer` and `SeatModel.embeddingLayer` give an Effect AI `LanguageModel` and `EmbeddingModel` over LiteLLM on the chat-completions wire (`@effect/ai-openai-compat`, exact rc.115 beside an exact rc.115 `effect` peer). Every request carries the `x-litellm-tags` header, `num_retries: 0`, the response-cache controls (`cache: {no-cache, no-store}`, on by default) and optional `metadata`; the embedding layer reports its dimensions without sending them. `SeatObs.layer` is `OtlpTracer`, `OtlpLogger` and `OtlpMetrics` `.layerFromConfig()` over `fetch` with protobuf, defaulting to CT100's VictoriaTraces, VictoriaLogs and VictoriaMetrics endpoints, and the `OTEL_*` environment still wins (a base endpoint replaces all three defaults, and a `service.name` in `OTEL_RESOURCE_ATTRIBUTES` replaces the default service name). The README states the measured pairing, including the `@effect/platform-node-shared` trap that only a consumer's root `overrides` fixes.
