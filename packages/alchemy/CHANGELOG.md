@@ -2,6 +2,20 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.43.0
+
+### Minor Changes
+
+- [#322](https://github.com/taslabs-net/homeflare-kit/pull/322) [`efaecde`](https://github.com/taslabs-net/homeflare-kit/commit/efaecde10af13de3087cc3f78aafa098c9147c3b) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Bao.AuthRole` now supports an optional `tokenPeriod` duration prop, written as the modern OpenBao `token_period` field. Omitting it leaves any existing live value unmanaged.
+
+- [#323](https://github.com/taslabs-net/homeflare-kit/pull/323) [`1e230b1`](https://github.com/taslabs-net/homeflare-kit/commit/1e230b138081b58a758fb5b1805f8ce1c05f3c1a) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `LiteLLM.Budget`, the first LiteLLM resource beyond pass-through endpoints. It declares a budget tier with `softBudget` as the monitoring field, never defaults `max_budget`, and refuses a hard `maxBudget` without a `maxBudgetReason`. It adopts existing tier rows by id and defaults to `retain` on removal.
+
+- [#324](https://github.com/taslabs-net/homeflare-kit/pull/324) [`48b809a`](https://github.com/taslabs-net/homeflare-kit/commit/48b809afbc95ef5ab79014bc28f73d856a20e957) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Postgres.Database` can now reach a loopback-only cluster through a caller-supplied command runner (`postgresRunnerProviders`), creating databases `FROM template0` by default on that transport.
+
+### Patch Changes
+
+- [#319](https://github.com/taslabs-net/homeflare-kit/pull/319) [`1a7b3d2`](https://github.com/taslabs-net/homeflare-kit/commit/1a7b3d262046e93bf473509cd9865e3522bb92f8) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `Proxmox.CephFlag` now calls the typed cluster flag operations. A GET that is not a bare boolean fails the plan instead of reading the flag as clear, and a refused read reports noop instead of aborting every other row.
+
 ## 0.42.0
 
 ### Minor Changes
