@@ -40,6 +40,8 @@ export interface FakeLitellm {
   readonly fetch: typeof globalThis.fetch;
   readonly rows: () => readonly PassThroughGenericEndpoint[];
   readonly requests: () => readonly FakeRequest[];
+  /** `/budget/*` rows, wire-shaped (`tpm_limit`/`rpm_limit` as decimal strings, like the real table). */
+  readonly budgets: () => readonly Record<string, unknown>[];
 }
 
 const RACE_WINDOW_MS = 15;
@@ -53,11 +55,52 @@ export const startFakeLitellm = (options?: {
   readonly seed?: readonly PassThroughGenericEndpoint[];
   /** Every `DELETE` 400s `not_allowed_access`, whether or not the row exists — see the file header. */
   readonly forbidDelete?: boolean;
+  readonly budgetSeed?: readonly Record<string, unknown>[];
+  /** `/budget/update` drops `null`s instead of writing them (an `exclude_none` merge). */
+  readonly budgetExcludeNone?: boolean;
 }): FakeLitellm => {
   const masterKey = options?.masterKey ?? 'sk-test-master';
   const forbidDelete = options?.forbidDelete ?? false;
   let rows: PassThroughGenericEndpoint[] = [...(options?.seed ?? [])];
   const requests: FakeRequest[] = [];
+  let budgets: Record<string, unknown>[] = [...(options?.budgetSeed ?? [])];
+
+  /**
+   * ⚠️ Shapes from the generated 1.100.0 schema (`budget_management.ts`), not a live 1.103.0 read.
+   *   Create of an existing id is 400 (a unique-key failure); update/delete of a missing id is 400
+   *   (unmeasured, the SDK patch for these routes declares `BadRequest`).
+   */
+  const budgetRoute = async (request: Request, url: URL) => {
+    if (request.method === 'GET' && url.pathname === '/budget/list') return json(200, budgets);
+    const body = (await request.json()) as Record<string, unknown>;
+    const id = String(body['budget_id'] ?? body['id']);
+    const at = budgets.findIndex((row) => row['budget_id'] === id);
+    const wire = (fields: Record<string, unknown>) =>
+      Object.fromEntries(
+        Object.entries(fields).map(([k, v]) => [
+          k,
+          k.endsWith('_limit') && v !== null ? String(v) : v,
+        ]),
+      );
+    if (url.pathname === '/budget/new') {
+      if (at !== -1) return json(400, { detail: `budget ${id} exists` });
+      budgets = [...budgets, { created_at: 'now', updated_at: 'now', ...wire(body) }];
+      return json(200, {});
+    }
+    if (at === -1) return json(400, { detail: `budget ${id} not found` });
+    if (url.pathname === '/budget/update') {
+      const patch = options?.budgetExcludeNone
+        ? Object.fromEntries(Object.entries(body).filter(([, v]) => v !== null))
+        : body;
+      budgets = budgets.map((row, i) => (i === at ? { ...row, ...wire(patch) } : row));
+      return json(200, {});
+    }
+    if (url.pathname === '/budget/delete') {
+      budgets = budgets.filter((_, i) => i !== at);
+      return json(200, {});
+    }
+    return json(404, { detail: 'not found' });
+  };
 
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const request =
@@ -66,6 +109,7 @@ export const startFakeLitellm = (options?: {
     requests.push({ method: request.method, path: `${url.pathname}${url.search}` });
     const auth = request.headers.get('authorization');
     if (auth !== `Bearer ${masterKey}`) return json(401, { detail: 'invalid api key' });
+    if (url.pathname.startsWith('/budget/')) return budgetRoute(request, url);
     if (
       url.pathname !== '/config/pass_through_endpoint' &&
       !url.pathname.startsWith('/config/pass_through_endpoint/')
@@ -117,5 +161,10 @@ export const startFakeLitellm = (options?: {
     return json(405, { detail: `unhandled ${request.method} ${url.pathname}` });
   }) as typeof globalThis.fetch;
 
-  return { fetch, requests: () => [...requests], rows: () => [...rows] };
+  return {
+    budgets: () => [...budgets],
+    fetch,
+    requests: () => [...requests],
+    rows: () => [...rows],
+  };
 };

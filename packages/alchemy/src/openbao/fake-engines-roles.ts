@@ -57,7 +57,13 @@ export const wireRoles = (): Store =>
   store<Stored>(
     (path, body, before) =>
       path.startsWith('auth/approle/role/')
-        ? { bind_secret_id: true, secret_id_num_uses: 0, ...before, ...typed(body) }
+        ? {
+            bind_secret_id: true,
+            secret_id_num_uses: 0,
+            token_period: 0,
+            ...before,
+            ...typed(body),
+          }
         : typed(body),
     (path) => keyOf(path),
   );
