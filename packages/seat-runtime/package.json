@@ -1,0 +1,50 @@
+{
+  "name": "@homeflare/seat-runtime",
+  "version": "0.0.0",
+  "description": "One Effect AI model layer and one OTLP layer for HomeFlare's coding seats: LiteLLM tags, no-cache and no-retry per request, traces, logs and metrics to VictoriaMetrics on CT100.",
+  "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/seat-runtime#readme",
+  "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
+  "license": "MIT",
+  "author": "Timothy Schneider",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taslabs-net/homeflare-kit.git",
+    "directory": "packages/seat-runtime"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun run build:js && bun run build:types",
+    "build:js": "bun build ./src/index.ts --outdir dist --target node --format esm --packages external --sourcemap=linked",
+    "build:types": "tsc --project tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "types": "tsc --noEmit",
+    "test": "bun test",
+    "smoke": "bun run scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@effect/ai-openai-compat": "4.0.0-rc.115"
+  },
+  "devDependencies": {
+    "effect": "catalog:"
+  },
+  "peerDependencies": {
+    "effect": "4.0.0-rc.115"
+  }
+}
