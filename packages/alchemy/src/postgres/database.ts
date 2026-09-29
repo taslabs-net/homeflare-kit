@@ -80,6 +80,7 @@ const liveDrift = (props: PostgresDatabaseProps, live: PostgresDatabaseAttribute
 export const reconcileWithClient = (
   pg: PgExecutor,
   props: PostgresDatabaseProps,
+  template?: string,
 ): Effect.Effect<
   PostgresDatabaseAttributes,
   PostgresDatabaseOwnerMissing | PostgresDatabaseDrift | PostgresDatabaseCreateVanished | SqlError
@@ -93,7 +94,7 @@ export const reconcileWithClient = (
           new PostgresDatabaseOwnerMissing({ database: props.name, owner: props.owner }),
         );
       }
-      yield* pg.unsafe(buildCreateDatabaseSql(props)).pipe(
+      yield* pg.unsafe(buildCreateDatabaseSql(props, template)).pipe(
         Effect.asVoid,
         Effect.catchTag('SqlError', (error) =>
           isDuplicateDatabaseRace(error) ? Effect.succeed(undefined) : Effect.fail(error),
@@ -183,7 +184,7 @@ export const postgresDatabaseHandlers = PostgresDatabase.Provider.of({
           new PostgresDatabaseNameRefused({ name: news.name, ...nameRefusal }),
         );
       }
-      return yield* withPg((pg) => reconcileWithClient(pg, news));
+      return yield* withPg((pg, ctx) => reconcileWithClient(pg, news, ctx.template));
     }),
 
   delete: ({ olds }) => Effect.fail(new PostgresDatabaseDropRefused({ database: olds.name })),

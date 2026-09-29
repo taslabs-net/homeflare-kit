@@ -5,8 +5,15 @@
  * ⛔ THIS BARREL IS THE PUBLIC API, deliberately smaller than the directory: `fake-sql.ts` is a
  *   test double, not something a consuming stack should import.
  */
-export type { PostgresConnectionConfig } from './connection.ts';
-export { PostgresConnection, postgresConnection, withPg } from './connection.ts';
+export type { PostgresConnectionConfig, PostgresRunnerConfig } from './connection.ts';
+export {
+  PostgresConnection,
+  postgresConnection,
+  postgresRunnerConnection,
+  withPg,
+} from './connection.ts';
+export type { PsqlResult, PsqlRunner } from './psql-executor.ts';
+export { inlineParams, makePsqlExecutor } from './psql-executor.ts';
 export type { PostgresDatabaseAttributes, PostgresDatabaseProps } from './database-attrs.ts';
 export { POSTGRES_NAME_MAX_BYTES, nameByteRefusal, utf8ByteLength } from './database-attrs.ts';
 export {
@@ -27,4 +34,4 @@ export {
   PostgresDatabaseRenameRefused,
   type PostgresDatabaseError,
 } from './errors.ts';
-export { postgresProviders } from './providers.ts';
+export { postgresProviders, postgresRunnerProviders } from './providers.ts';

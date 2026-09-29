@@ -123,3 +123,25 @@ mini's 19 already-live databases needs `adopt(true)` in the consuming stack.
 
 Whether `ALTER DATABASE … REFRESH COLLATION VERSION` should ever be offered as an explicit,
 separate operation (not part of `reconcile`) is open — nothing in this family calls it.
+
+## Runner transport (loopback-only clusters)
+
+A cluster reachable only by a command — CT100's rootful podman container `postgres`, loopback
+listener, local socket, user `postgres`, no password — cannot take a wire connection from the
+mini. `postgresRunnerProviders({ run, database, username, template? })` (or
+`postgresRunnerConnection` on its own) runs the same `Postgres.Database` reconcile through a
+caller-supplied `PsqlRunner`, which prepends the transport, e.g. `ssh <host> sudo -n podman
+exec -i postgres <argv>` with `stdin` piped through. The kit holds no host, container or sudo
+rule; the consuming stack's runner does.
+
+- Same props, same create-and-assert, same adopt/retain and drift semantics — only the
+  `PgExecutor` differs (`psql-executor.ts`).
+- `psql` has no bind parameters, so string params are inlined as `quoteStringLiteral`
+  literals; a non-string param is refused. Rows come back through `json_agg`, so `oid` and
+  `datconnlimit` are numbers as on the socket path.
+- `CREATE DATABASE … TEMPLATE "template0"` is the runner default (`template` overrides):
+  CT100's `template1` is ParadeDB's and would copy postgis/pg_ivm/paradedb objects. The socket
+  path adds no `TEMPLATE` clause, unchanged.
+- Not covered: there is no `Postgres.Role` resource in the kit yet, so the owner role must
+  exist (`PostgresDatabaseOwnerMissing` otherwise). NetBox's 11 lost triggers on `pg_restore`
+  are a restore concern, out of this resource's scope.

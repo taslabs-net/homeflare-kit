@@ -18,6 +18,8 @@ import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { PgExecutor } from './database-sql.ts';
+import { type PsqlRunner, makePsqlExecutor } from './psql-executor.ts';
 
 /** What a stack passes to reach one cluster. `host` may be a socket directory (one beginning
  * with `/` expands to `${host}/.s.PGSQL.${port}` — measured in
@@ -31,11 +33,27 @@ export interface PostgresConnectionConfig {
   readonly ssl?: boolean;
 }
 
+/** The runner transport (`psql-executor.ts`): SQL goes through `run` instead of a socket, for a
+ * host whose Postgres is reachable only by a command (CT100: ssh + `podman exec`). `template`
+ * is the `CREATE DATABASE` template — `template0` by default, because CT100's `template1` is
+ * ParadeDB's and would copy postgis/pg_ivm/paradedb objects into every new database. */
+export interface PostgresRunnerConfig {
+  readonly run: PsqlRunner;
+  readonly database: string;
+  readonly username: string;
+  readonly template?: string;
+}
+
+/** What `withPg`'s callback learns about the transport beyond the client. */
+export interface PgContext {
+  readonly template?: string;
+}
+
 /** The lazy connection service. Its value is an `Effect` of the config, per S24 — see the file
  * header for why. */
 export class PostgresConnection extends Context.Service<
   PostgresConnection,
-  Effect.Effect<PostgresConnectionConfig>
+  Effect.Effect<PostgresConnectionConfig | PostgresRunnerConfig>
 >()('Postgres.Connection') {}
 
 /** A stack's one-line way to provide a cluster: `Layer.provide(postgresConnection({ … }))` on
@@ -43,6 +61,14 @@ export class PostgresConnection extends Context.Service<
 export const postgresConnection = (
   config: PostgresConnectionConfig,
 ): Layer.Layer<PostgresConnection> => Layer.succeed(PostgresConnection, Effect.succeed(config));
+
+/** A stack's one-line way to provide a cluster reached through a command runner. */
+export const postgresRunnerConnection = (
+  config: PostgresRunnerConfig,
+): Layer.Layer<PostgresConnection> => Layer.succeed(PostgresConnection, Effect.succeed(config));
+
+const isRunner = (c: PostgresConnectionConfig | PostgresRunnerConfig): c is PostgresRunnerConfig =>
+  'run' in c;
 
 /**
  * Run one operation against a freshly built, freshly closed connection pool.
@@ -53,10 +79,18 @@ export const postgresConnection = (
  * closes its own.
  */
 export const withPg = <A, E>(
-  build: (pg: PgClient.PgClient) => Effect.Effect<A, E>,
+  build: (pg: PgClient.PgClient | PgExecutor, context: PgContext) => Effect.Effect<A, E>,
 ): Effect.Effect<A, E | SqlError, PostgresConnection> =>
   Effect.gen(function* () {
     const resolveConfig = yield* PostgresConnection;
     const config = yield* resolveConfig;
-    return yield* Effect.provide(Effect.flatMap(PgClient.PgClient, build), PgClient.layer(config));
+    if (isRunner(config)) {
+      return yield* build(makePsqlExecutor(config.run, config), {
+        template: config.template ?? 'template0',
+      });
+    }
+    return yield* Effect.provide(
+      Effect.flatMap(PgClient.PgClient, (pg) => build(pg, {})),
+      PgClient.layer(config),
+    );
   });
