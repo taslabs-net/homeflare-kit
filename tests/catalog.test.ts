@@ -89,6 +89,11 @@ const EXPLICIT_EXACT_PEERS: Readonly<Record<string, readonly string[]>> = {
     'mime',
   ],
   site: ['effect'],
+  // ★ `effect` alone, for @effect/ai-openai-compat's sake: that package peers on `effect ^rc.115`,
+  //   so a ranged peer here would admit an effect newer than the compat it is bundled with
+  //   (rc.118 drops the `unstable/` prefix this code imports). packages/seat-runtime/tests/
+  //   pairing.test.ts holds the measurement; compat is a pinned DEPENDENCY, not a peer.
+  'seat-runtime': ['effect'],
 };
 
 /** Every explicit entry above, plus `effect` alone for every `distilled-*` interim copy. */

@@ -242,6 +242,19 @@
         "zod",
       ],
     },
+    "packages/seat-runtime": {
+      "name": "@homeflare/seat-runtime",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect/ai-openai-compat": "4.0.0-rc.115",
+      },
+      "devDependencies": {
+        "effect": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "4.0.0-rc.115",
+      },
+    },
     "packages/site": {
       "name": "@homeflare/site",
       "version": "0.1.1",
@@ -288,6 +301,7 @@
     "@changesets/cli": "3.0.3",
     "@cloudflare/kumo": "2.13.2",
     "@cloudflare/workers-types": "5.20260908.1",
+    "@effect/ai-openai-compat": "4.0.0-rc.115",
     "@flue/cli": "2.1.1",
     "@flue/react": "2.1.1",
     "@flue/runtime": "2.1.1",
@@ -501,6 +515,8 @@
 
     "@distilled.cloud/unifi-network": ["@homeflare/distilled-unifi-network@workspace:packages/distilled-unifi-network"],
 
+    "@effect/ai-openai-compat": ["@effect/ai-openai-compat@4.0.0-rc.115", "", { "peerDependencies": { "effect": "^4.0.0-rc.115" } }, "sha512-P2BdD2CbajJR3cmnnHMlhG8p9sAM+1zzB9rl4PH/3BjyJw7wkUDjSTgDOvpuYX788aLZkhzgcW2f0NBsyVs4OQ=="],
+
     "@effect/platform-bun": ["@effect/platform-bun@4.0.0-rc.115", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.115" }, "peerDependencies": { "effect": "^4.0.0-rc.115" } }, "sha512-ilTFcs66ghInP8WHCJYa4bx/yzohYM9dRR//qjmVBBpSKu1hrCTiRWpEcc1N6zrnOEPk2kyVaKg5ykSMgiBMqQ=="],
 
     "@effect/platform-node": ["@effect/platform-node@4.0.0-rc.115", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.115", "undici": "^8.10.2" }, "peerDependencies": { "effect": "^4.0.0-rc.115", "redis": ">=5.0.0 <7.0.0" } }, "sha512-mW03Wjq2FiTL5oi9yOkaKpCyUNBaduKgTk7qMHNELvC21Jq2qOAfdsfH+p+s2zmpB9w2RSa+ApODv4WjO9wQfw=="],
@@ -560,6 +576,8 @@
     "@homeflare/distilled-unifi-network": ["@homeflare/distilled-unifi-network@workspace:packages/distilled-unifi-network"],
 
     "@homeflare/kit": ["@homeflare/kit@workspace:packages/kit"],
+
+    "@homeflare/seat-runtime": ["@homeflare/seat-runtime@workspace:packages/seat-runtime"],
 
     "@homeflare/site": ["@homeflare/site@workspace:packages/site"],
 

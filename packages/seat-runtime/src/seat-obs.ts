@@ -1,0 +1,82 @@
+/**
+ * Traces, logs and metrics from any Effect seat to VictoriaMetrics on CT100, from one
+ * environment block.
+ *
+ * ★ `layerFromConfig`, NOT `Otlp.layer`. The combined layer takes ONE base URL and appends
+ *   `/v1/traces` and friends, and the three Victoria services each mount OTLP at a different
+ *   path (measured 2026-09-29, README). The per-signal layers read the per-signal env the
+ *   Claude Code seats already carry, so one block wires every seat.
+ * ⛔ WITH NO ENVIRONMENT `layerFromConfig` EXPORTS NOTHING, SILENTLY. It returns a bare
+ *   flusher unless `OTEL_<SIGNAL>_EXPORTER` names `otlp` and an endpoint is set. So the CT100
+ *   defaults below are not a convenience, they are what makes this layer emit at all.
+ */
+import * as ConfigProvider from 'effect/ConfigProvider';
+import * as Effect from 'effect/Effect';
+import * as Layer from 'effect/Layer';
+import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import {
+  type OtlpExporter,
+  OtlpLogger,
+  OtlpMetrics,
+  OtlpSerialization,
+  OtlpTracer,
+} from 'effect/unstable/observability';
+
+/**
+ * CT100's Victoria services, one path each. Verified 2026-09-29 by GET against the live
+ * ports (no payload sent): a mounted path answers, an unmounted sibling answers
+ * `unsupported path requested`; the counters carry `format="protobuf"` for traces and logs.
+ */
+export const CT100_ENDPOINTS: {
+  readonly traces: string;
+  readonly logs: string;
+  readonly metrics: string;
+} = {
+  traces: 'http://10.100.1.4:10428/insert/opentelemetry/v1/traces',
+  logs: 'http://10.100.1.4:9428/insert/opentelemetry/v1/logs',
+  metrics: 'http://10.100.1.4:8428/opentelemetry/v1/metrics',
+};
+
+/** Shown when a process sets no `OTEL_SERVICE_NAME`; set one per seat. */
+export const DEFAULT_SERVICE_NAME = 'seat-runtime';
+
+/**
+ * The fallback config source, computed against the CURRENT provider.
+ *
+ * ⛔ EVERYTHING HERE IS A FALLBACK. The environment is tried first, so `OTEL_SDK_DISABLED=true`,
+ *   `OTEL_TRACES_EXPORTER=none` and every endpoint the operator sets win.
+ * ⚠️ THE PER-SIGNAL DEFAULTS STEP ASIDE FOR A BASE ENDPOINT. Effect reads
+ *   `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and only then `OTEL_EXPORTER_OTLP_ENDPOINT`, so a
+ *   per-signal default would shadow an operator's base URL and send their traces to CT100.
+ */
+const defaults: Effect.Effect<ConfigProvider.ConfigProvider> = Effect.gen(function* () {
+  const current = yield* ConfigProvider.ConfigProvider;
+  const base = yield* current.load(['OTEL_EXPORTER_OTLP_ENDPOINT']);
+  return ConfigProvider.fromUnknown({
+    OTEL_TRACES_EXPORTER: 'otlp',
+    OTEL_LOGS_EXPORTER: 'otlp',
+    OTEL_METRICS_EXPORTER: 'otlp',
+    OTEL_SERVICE_NAME: DEFAULT_SERVICE_NAME,
+    ...(base === undefined
+      ? {
+          OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: CT100_ENDPOINTS.traces,
+          OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: CT100_ENDPOINTS.logs,
+          OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: CT100_ENDPOINTS.metrics,
+        }
+      : {}),
+  });
+}).pipe(Effect.orDie);
+
+/**
+ * OTLP tracer, logger and metrics over `fetch`, protobuf on the wire (what VictoriaTraces,
+ * VictoriaLogs and VictoriaMetrics ingest, and what the Claude Code seats already send).
+ */
+export const layer: Layer.Layer<OtlpExporter.Flusher> = Layer.mergeAll(
+  OtlpTracer.layerFromConfig(),
+  OtlpLogger.layerFromConfig(),
+  OtlpMetrics.layerFromConfig(),
+).pipe(
+  Layer.provide(OtlpSerialization.layerProtobuf),
+  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(ConfigProvider.layerAdd(defaults)),
+);
