@@ -119,4 +119,25 @@ export {
   LitellmRegistryUnreadableError,
   type RegistryError,
 } from './registry-errors.ts';
+export {
+  LiteLLMKey,
+  LiteLLMKeyProvider,
+  isLiteLLMKey,
+  type KeyAttributes,
+  type KeyError,
+  type KeyProps,
+} from './key.ts';
+export {
+  LitellmKeyAbsentAfterWriteError,
+  LitellmKeyAliasChangedError,
+  LitellmKeyAliasEmptyError,
+  LitellmKeyDebugLoggingError,
+  LitellmKeyAmbiguousAliasError,
+  LitellmKeyFieldNotAppliedError,
+  LitellmKeyUnreadableError,
+  LitellmKeyValueMalformedError,
+  LitellmKeyValueMissingError,
+  LitellmKeyValueNotHonouredError,
+  LitellmKeyValueRequiredError,
+} from './key-errors.ts';
 export { litellmProviders } from './providers.ts';
