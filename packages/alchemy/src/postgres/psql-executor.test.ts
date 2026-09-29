@@ -19,7 +19,7 @@ describe('psql executor', () => {
     const calls: { argv: readonly string[]; stdin: string }[] = [];
     const run: PsqlRunner = (call) => {
       calls.push(call);
-      return ok('[{"oid":16400,"name":"x"}]\n');
+      return ok('[{"oid":"16400","name":"x"}]\n');
     };
     const rows = await Effect.runPromise(
       makePsqlExecutor(run, target).unsafe('SELECT 1 FROM pg_database WHERE datname = $1', ['x']),

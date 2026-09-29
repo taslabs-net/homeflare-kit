@@ -32,7 +32,8 @@ export interface PsqlResult {
 }
 
 /** Runs one `psql` argv (starting with `psql`) with `stdin` and answers its exit. The consumer's
- * implementation prepends the transport (`ssh … sudo -n podman exec -i <container>`). */
+ * implementation prepends the transport (`ssh … sudo -n podman exec -i <container>`) and owns
+ * the timeout and output bound: the kit sets neither. */
 export type PsqlRunner = (call: {
   readonly argv: readonly string[];
   readonly stdin: string;
@@ -45,13 +46,21 @@ export interface PsqlTarget {
 
 /** Replace `$1…$n` with string literals; refuses a non-string param or a missing one. */
 export const inlineParams = (sql: string, params: ReadonlyArray<unknown>): string =>
-  sql.replace(/\$(\d+)/g, (_match, index: string) => {
-    const value = params[Number(index) - 1];
-    if (typeof value !== 'string') {
-      throw new Error(`psql executor: param $${index} must be a string, got ${typeof value}`);
-    }
-    return quoteStringLiteral(value);
-  });
+  params.length === 0
+    ? sql
+    : sql.replace(/\$(\d+)/g, (_match, index: string) => {
+        const value = params[Number(index) - 1];
+        if (typeof value !== 'string') {
+          throw new Error(`psql executor: param $${index} must be a string, got ${typeof value}`);
+        }
+        return quoteStringLiteral(value);
+      });
+
+/** Postgres `to_json` emits the `oid` type as a string; the socket driver returns a number. */
+const normalizeRow = (row: unknown): unknown =>
+  typeof row === 'object' && row !== null && typeof (row as { oid?: unknown }).oid === 'string'
+    ? { ...row, oid: Number((row as { oid: string }).oid) }
+    : row;
 
 const isSelect = (sql: string): boolean => /^\s*SELECT\b/i.test(sql);
 
@@ -80,7 +89,11 @@ const failure = (operation: string, result: PsqlResult): SqlError => {
 export const makePsqlExecutor = (run: PsqlRunner, target: PsqlTarget): PgExecutor => ({
   unsafe: <A extends object>(sql: string, params: ReadonlyArray<unknown> = []) =>
     Effect.gen(function* () {
-      const inlined = inlineParams(sql, params);
+      const inlined = yield* Effect.try({
+        try: () => inlineParams(sql, params),
+        catch: (cause) =>
+          new SqlError({ reason: new UnknownError({ cause, operation: 'psql inline params' }) }),
+      });
       const rows = isSelect(inlined);
       const result = yield* Effect.tryPromise({
         try: () =>
@@ -106,6 +119,12 @@ export const makePsqlExecutor = (run: PsqlRunner, target: PsqlTarget): PgExecuto
           new SqlError({ reason: new ConnectionError({ cause, operation: 'psql exec' }) }),
       });
       if (result.code !== 0) return yield* Effect.fail(failure(inlined.slice(0, 40), result));
-      return (rows ? JSON.parse(result.stdout.trim() || '[]') : []) as ReadonlyArray<A>;
+      if (!rows) return [] as ReadonlyArray<A>;
+      const parsed = yield* Effect.try({
+        try: () => (JSON.parse(result.stdout.trim() || '[]') as unknown[]).map(normalizeRow),
+        catch: (cause) =>
+          new SqlError({ reason: new UnknownError({ cause, operation: 'psql parse output' }) }),
+      });
+      return parsed as ReadonlyArray<A>;
     }),
 });
