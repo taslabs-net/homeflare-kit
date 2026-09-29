@@ -26,6 +26,25 @@ export {
   selectDatabase,
 } from './database-sql.ts';
 export { PostgresDatabase, PostgresDatabaseProvider, isPostgresDatabase } from './database.ts';
+export type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
+export { schemaNameByteRefusal } from './schema-attrs.ts';
+export {
+  buildCommentSchemaSql,
+  buildCreateSchemaSql,
+  buildDropSchemaSql,
+  schemaIsEmpty,
+  selectSchema,
+} from './schema-sql.ts';
+export { PostgresSchema, PostgresSchemaProvider, isPostgresSchema } from './schema.ts';
+export {
+  PostgresSchemaCreateVanished,
+  PostgresSchemaDrift,
+  PostgresSchemaDropNotEmptyError,
+  PostgresSchemaNameRefused,
+  PostgresSchemaOwnerMissing,
+  PostgresSchemaRenameRefused,
+  type PostgresSchemaError,
+} from './schema-errors.ts';
 export {
   PostgresDatabaseDrift,
   PostgresDatabaseDropRefused,
