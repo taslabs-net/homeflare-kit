@@ -138,7 +138,8 @@ the server's own JSON Schema. It needs a `Scope`: the connection closes with it.
 - **A tool failure goes back to the model**, not out of the run: an `isError` result, a JSON-RPC
   error (bad arguments, unknown tool) and a call that never completed are all the tool's result.
   Connecting and listing fail with `McpToolkitError` (`_tag`, `operation`, `server`), whose message
-  holds the origin and path only: never a header or a query string.
+  holds the origin and path only, and whose `cause` is a scrubbed copy: never a header or a query
+  string (under Bun a refused fetch's own `path` field is the full URL; tests/printed.ts).
 - **Results are strings.** Text blocks verbatim; an image, audio or blob becomes a one-line marker,
   never its bytes; an empty result reads `(no content)`.
 - ⚠️ The tool list is a **snapshot** at connect time. Names are passed through unchanged: an
@@ -146,8 +147,9 @@ the server's own JSON Schema. It needs a `Scope`: the connection closes with it.
   renamed here (not measured through LiteLLM's MCP gateway).
 - 🔴 **compat rc.115 cannot decode a tool call for a `Tool.dynamic` alone** (measured 2026-09-29:
   `UnsupportedSchemaError: Root JSON Schema must have type "object"`; rc.118 fixed it). The
-  workaround in `src/mcp-tool.ts` costs one thing: an argument the server's schema **does not
-  declare is dropped**, and a tool that declares no properties takes no arguments.
+  workaround in `src/mcp-tool.ts` costs two things: an argument the server's schema **does not
+  declare is dropped**, and a tool that declares no properties takes no arguments. (An explicit
+  `null` on an optional argument arrives as `null`: tests/mcp-arguments.test.ts, end to end.)
 - `listResources` is empty when the server does not advertise resources; `readResource` fails
   with `McpToolkitError` for an unknown URI. A workerd deployment is untested (the SDK's default
   validator is `ajv`, which needs `new Function`).

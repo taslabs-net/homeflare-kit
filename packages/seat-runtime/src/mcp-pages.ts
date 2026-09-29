@@ -7,7 +7,7 @@
  *   listing loudly instead of truncating it quietly.
  */
 import * as Effect from 'effect/Effect';
-import { type McpOperation, McpToolkitError } from './mcp-error.ts';
+import { type McpOperation, McpToolkitError, type Redact } from './mcp-error.ts';
 
 export const MAX_PAGES = 100;
 
@@ -18,6 +18,7 @@ export function collect<T>(
   operation: McpOperation,
   server: string,
   page: (cursor: string | undefined, signal: AbortSignal) => Promise<Page<T>>,
+  redact?: Redact | undefined,
 ): Effect.Effect<ReadonlyArray<T>, McpToolkitError> {
   return Effect.tryPromise({
     try: async (signal) => {
@@ -31,6 +32,6 @@ export function collect<T>(
       }
       throw new Error(`the server returned more than ${String(MAX_PAGES)} pages`);
     },
-    catch: (cause) => new McpToolkitError({ operation, server, cause }),
+    catch: (cause) => new McpToolkitError({ operation, server, cause, redact }),
   });
 }

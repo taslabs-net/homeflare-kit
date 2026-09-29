@@ -67,6 +67,14 @@ describe('what a tool call decodes to', () => {
     expect(result._tag === 'Failure' ? String(result.failure) : '').toContain('query');
   });
 
+  test('an explicit null on an optional argument is a value, not an absent key', async () => {
+    const result = await decode(tool, { query: 'q', limit: null });
+    expect(result._tag === 'Success' ? result.success : undefined).toEqual({
+      query: 'q',
+      limit: null,
+    });
+  });
+
   test('⚠️ an undeclared argument is dropped, not forwarded', async () => {
     const result = await decode(tool, { query: 'q', undeclared: true });
     expect(result._tag === 'Success' ? result.success : undefined).toEqual({ query: 'q' });
@@ -100,6 +108,29 @@ describe('the compat codec, which is the whole reason for the workaround', () =>
         OpenAiStructuredOutput.toCodecOpenAI(tool.parametersSchema as never),
       ).not.toThrow();
     }
+  });
+
+  // 🔴 THE REASON THE SCHEMA CANNOT ENCODE. compat decodes a tool call through this codec and
+  //   re-encodes with `parametersSchema`, keeping the params as sent only if a step FAILS. The
+  //   codec deletes a `null` on an optional key, so the re-encode has to fail. The end-to-end
+  //   proof is tests/mcp-arguments.test.ts; these two say why.
+  test('deletes an explicit null on an optional key, which is why the schema must not encode', async () => {
+    const tool = mcpTool({ name: 'search', inputSchema: SERVER_SCHEMA });
+    const { codec } = OpenAiStructuredOutput.toCodecOpenAI(tool.parametersSchema as never);
+    const decoded = await Effect.runPromise(
+      Schema.decodeUnknownEffect(codec as Schema.Decoder<unknown>)({ query: 'q', limit: null }),
+    );
+    expect(decoded).toEqual({ query: 'q' });
+  });
+
+  test('and encoding through the tool’s schema fails, so compat forwards the params as sent', async () => {
+    const tool = mcpTool({ name: 'search', inputSchema: SERVER_SCHEMA });
+    const encoded = await Effect.runPromise(
+      Schema.encodeUnknownEffect(tool.parametersSchema as Schema.Encoder<unknown>)({
+        query: 'q',
+      }).pipe(Effect.result),
+    );
+    expect(encoded._tag).toBe('Failure');
   });
 
   test('and does throw for Schema.Unknown, so the workaround is still needed', () => {

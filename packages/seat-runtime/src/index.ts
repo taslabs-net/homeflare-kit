@@ -12,8 +12,8 @@ export * as SeatObs from './seat-obs.ts';
 export { runRounds } from './rounds.ts';
 export type { Round, RoundsOptions, RoundsResult } from './rounds.ts';
 export { mcpToolkit } from './mcp-toolkit.ts';
+export type { McpHeaders } from './mcp-connect.ts';
 export type {
-  McpHeaders,
   McpResource,
   McpResourceContent,
   McpToolkit,

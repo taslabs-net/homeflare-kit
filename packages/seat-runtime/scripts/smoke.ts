@@ -98,7 +98,16 @@ const refused = await Effect.runPromise(
 );
 if (!(refused instanceof McpToolkitError) || refused._tag !== 'McpToolkitError' || refused.operation !== 'connect')
   throw new Error('mcpToolkit refused connection: ' + String(refused));
-if (refused.message.includes('smoke-secret')) throw new Error('mcpToolkit leaked the query string');
+// ⚠️ NOT JUST THE MESSAGE: a refused fetch carries the full URL in its own \`path\` field (Bun) and
+//   an error's \`cause\` chain is printed by every logger, so walk every own field of the chain.
+const everything = JSON.stringify(refused, (_key, value: unknown) =>
+  value instanceof Error
+    ? Object.fromEntries(
+        Object.getOwnPropertyNames(value).map((name) => [name, (value as unknown as Record<string, unknown>)[name]]),
+      )
+    : value,
+);
+if (everything.includes('smoke-secret')) throw new Error('mcpToolkit leaked the query string: ' + everything);
 
 const model = seen.filter((s) => !s.url.includes('opentelemetry'));
 if (model.length !== 3) throw new Error('expected 3 model calls, saw ' + model.length);

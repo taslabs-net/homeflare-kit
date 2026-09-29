@@ -2,7 +2,9 @@
  * An MCP server on loopback, built with Effect AI's own `McpServer` (the server half of the
  * stack, so the client under test talks to something that was not written to please it):
  * two tools, one that answers and one that fails, and one resource. Every request's headers
- * are recorded, because "the headers you pass are the headers that arrive" is a claim.
+ * are recorded, because "the headers you pass are the headers that arrive" is a claim, and so
+ * are a tool call's arguments, because what the server RECEIVES is the only honest answer to
+ * "did the argument survive the model, compat and the toolkit".
  *
  * ★ Seeded from the scout's measured scratch (pair115/mcp.ts, 2026-09-29), which proved the
  *   official client lists and calls tools and reads a resource against this server. One
@@ -45,6 +47,23 @@ const tools = McpServer.toolkit(toolkit).pipe(
     }),
   ),
 );
+// ★ An OPTIONAL, NULLABLE argument: `null` means "unassign" and an omitted key means "leave it",
+//   the shape where dropping a `null` is a silent wrong write. Only registered on request, so
+//   the default tool list stays the two above.
+const UpdateIssue = Tool.make('update_issue', {
+  description: 'Update an issue',
+  parameters: Schema.Struct({
+    id: Schema.String,
+    assignee: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  }),
+  success: Schema.String,
+});
+const issueToolkit = Toolkit.make(UpdateIssue);
+const issueTools = McpServer.toolkit(issueToolkit).pipe(
+  Layer.provide(
+    issueToolkit.toLayer({ update_issue: ({ id }) => Effect.succeed(`updated:${id}`) }),
+  ),
+);
 const resource = McpServer.resource({
   uri: RESOURCE_URI,
   name: 'hello',
@@ -59,6 +78,8 @@ export type McpStub = {
   readonly seen: Array<{
     readonly method: string;
     readonly headers: Readonly<Record<string, string>>;
+    /** A `tools/call`'s `arguments` as they crossed the wire; undefined for every other request. */
+    readonly arguments?: unknown;
   }>;
   readonly stop: () => Promise<void>;
 };
@@ -70,6 +91,8 @@ export type McpStub = {
 export function startMcpStub(options?: {
   readonly resources?: boolean;
   readonly tools?: boolean;
+  /** Also serve `update_issue`, the optional-nullable-argument tool. */
+  readonly issues?: boolean;
 }): McpStub {
   const server = McpServer.layerHttp({
     name: 'seat-runtime-stub',
@@ -79,6 +102,7 @@ export function startMcpStub(options?: {
   }).pipe(Layer.provide(HttpRouter.layer));
   const registrations = Layer.mergeAll(
     options?.tools === false ? Layer.empty : tools,
+    options?.issues === true ? issueTools : Layer.empty,
     options?.resources === false ? Layer.empty : resource,
   );
   // The failing tools are deliberate, and the server logs each one as an ERROR with a stack.
@@ -90,8 +114,15 @@ export function startMcpStub(options?: {
     port: 0,
     async fetch(request) {
       const rpc = request.method === 'POST' ? await request.clone().text() : '';
-      const method = (JSON.parse(rpc || '{}') as { method?: string }).method ?? request.method;
-      seen.push({ method, headers: Object.fromEntries(request.headers) });
+      const message = JSON.parse(rpc || '{}') as {
+        method?: string;
+        params?: { arguments?: unknown };
+      };
+      seen.push({
+        method: message.method ?? request.method,
+        headers: Object.fromEntries(request.headers),
+        arguments: message.method === 'tools/call' ? message.params?.arguments : undefined,
+      });
       return web.handler(request);
     },
   });

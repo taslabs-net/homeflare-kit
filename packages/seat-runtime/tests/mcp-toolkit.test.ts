@@ -8,6 +8,7 @@ import { Effect, Option, Redacted, Stream } from 'effect';
 import { Tool } from 'effect/unstable/ai';
 import { type McpToolkit, McpToolkitError, mcpToolkit } from '../src/index.ts';
 import { BOOM_TEXT, type McpStub, RESOURCE_TEXT, RESOURCE_URI, startMcpStub } from './mcp-stub.ts';
+import { printed } from './printed.ts';
 
 let stub: McpStub;
 beforeAll(() => {
@@ -166,7 +167,9 @@ describe('headers and errors', () => {
       ),
     );
     expect(error).toMatchObject({ _tag: 'McpToolkitError', operation: 'connect' });
-    const shown = `${error.message} ${error.server}`;
+    // ⚠️ The whole error as a log would print it, not just `message`: a refused fetch carries the
+    //   full URL in its own `path` field (tests/printed.ts).
+    const shown = `${error.message} ${error.server} ${printed(error)}`;
     expect(shown).not.toContain('query-secret');
     expect(shown).not.toContain('header-secret');
     expect(error.server).toBe(down.url);
@@ -179,7 +182,7 @@ describe('a server that cannot be reached, or will not answer', () => {
       Effect.scoped(mcpToolkit('not a url?token=parse-secret')).pipe(Effect.flip),
     );
     expect(error).toMatchObject({ _tag: 'McpToolkitError', operation: 'connect' });
-    expect(`${error.message} ${error.server}`).not.toContain('parse-secret');
+    expect(`${error.message} ${error.server} ${printed(error)}`).not.toContain('parse-secret');
   });
 
   test('a server that accepts and never answers is cut off at connectTimeoutMs', async () => {

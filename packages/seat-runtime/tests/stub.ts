@@ -26,15 +26,24 @@ export type Stub = {
   readonly stop: () => void;
 };
 
-const TOOL_CALL = {
+/** The tool call a model reply asks for: `arguments` is the JSON text, exactly as a model sends it. */
+export type StubToolCall = { readonly name: string; readonly arguments: string };
+
+const DEFAULT_TOOL_CALL: StubToolCall = { name: 'read_fact', arguments: '{"key":"a"}' };
+
+const toolCallReply = (call: StubToolCall) => ({
   role: 'assistant',
   content: null,
   tool_calls: [
-    { id: 'c1', type: 'function', function: { name: 'read_fact', arguments: '{"key":"a"}' } },
+    { id: 'c1', type: 'function', function: { name: call.name, arguments: call.arguments } },
   ],
-};
+});
 
-function chatReply(body: Record<string, unknown>, alwaysTool: boolean): Response {
+function chatReply(
+  body: Record<string, unknown>,
+  alwaysTool: boolean,
+  toolCall: StubToolCall,
+): Response {
   const tools = Array.isArray(body['tools']) && body['tools'].length > 0;
   const messages = Array.isArray(body['messages']) ? (body['messages'] as { role?: string }[]) : [];
   // ★ `alwaysTool` is a model that never stops asking: the round cap has something to cap. A
@@ -48,7 +57,7 @@ function chatReply(body: Record<string, unknown>, alwaysTool: boolean): Response
     choices: [
       {
         index: 0,
-        message: wantsTool ? TOOL_CALL : { role: 'assistant', content: 'pong' },
+        message: wantsTool ? toolCallReply(toolCall) : { role: 'assistant', content: 'pong' },
         finish_reason: wantsTool ? 'tool_calls' : 'stop',
       },
     ],
@@ -66,7 +75,11 @@ function embeddingReply(body: Record<string, unknown>): Response {
   });
 }
 
-export function startStub(options?: { readonly alwaysTool?: boolean }): Stub {
+export function startStub(options?: {
+  readonly alwaysTool?: boolean;
+  /** What the model asks for when it asks for a tool. Default: `read_fact {"key":"a"}`. */
+  readonly toolCall?: StubToolCall;
+}): Stub {
   const requests: Captured[] = [];
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -80,7 +93,11 @@ export function startStub(options?: { readonly alwaysTool?: boolean }): Stub {
         : undefined;
       requests.push({ path, headers: Object.fromEntries(request.headers), bytes, json });
       if (path === '/v1/chat/completions' && json !== undefined)
-        return chatReply(json, options?.alwaysTool === true);
+        return chatReply(
+          json,
+          options?.alwaysTool === true,
+          options?.toolCall ?? DEFAULT_TOOL_CALL,
+        );
       if (path === '/v1/embeddings' && json !== undefined) return embeddingReply(json);
       if (path.includes('opentelemetry')) return new Response(null, { status: 200 });
       return new Response('not found', { status: 404 });

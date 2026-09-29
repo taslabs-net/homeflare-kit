@@ -23,23 +23,16 @@
  *   error, a span or a log (mcp-error.ts). Pass a bearer value as `Redacted` to keep it out of
  *   an accidental print of the argument, as `SeatModel` does with the API key.
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import * as Effect from 'effect/Effect';
-import * as Redacted from 'effect/Redacted';
 import type * as Scope from 'effect/Scope';
 import * as Toolkit from 'effect/unstable/ai/Toolkit';
-import { McpToolkitError, describeCause, serverLabel } from './mcp-error.ts';
+import { DEFAULT_CONNECT_TIMEOUT_MS, type McpHeaders, connect } from './mcp-connect.ts';
+import { McpToolkitError, describeCause, redactor, serverLabel } from './mcp-error.ts';
 import { collect } from './mcp-pages.ts';
 import { renderResult } from './mcp-render.ts';
 import { type McpTool, mcpTool } from './mcp-tool.ts';
-import { VERSION } from './version.ts';
 
 export type McpTools = Readonly<Record<string, McpTool>>;
-
-/** Header values; a `Redacted` is unwrapped only at the moment the transport is built. */
-export type McpHeaders = Readonly<Record<string, string | Redacted.Redacted<string>>>;
 
 export type McpResource = {
   readonly uri: string;
@@ -77,45 +70,8 @@ export type McpToolkitOptions = {
   readonly connectTimeoutMs?: number | undefined;
 };
 
-export const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const plainHeaders = (headers: McpHeaders | undefined): Record<string, string> =>
-  Object.fromEntries(
-    Object.entries(headers ?? {}).map(([name, value]) => [
-      name,
-      Redacted.isRedacted(value) ? Redacted.value(value) : value,
-    ]),
-  );
-
-/**
- * Connect and handshake. ⚠️ A failure AFTER the transport starts (a refused `initialize`)
- * leaves the client holding an open transport, so it is closed here before the error
- * propagates: `acquireRelease` only releases what acquire returned.
- */
-const connect = (url: URL, headers: McpHeaders | undefined, server: string, timeout: number) =>
-  Effect.tryPromise({
-    try: async (signal) => {
-      const client = new Client({ name: '@homeflare/seat-runtime', version: VERSION });
-      const transport = new StreamableHTTPClientTransport(url, {
-        requestInit: { headers: plainHeaders(headers) },
-      });
-      try {
-        // ⚠️ The SDK's own `sessionId?: string` reads as `string | undefined` against its own
-        //   `Transport` under `exactOptionalPropertyTypes` (this repo's baseline), so the two
-        //   of its types do not line up here. Upstream's typing, not a wrong argument: the
-        //   class IS the transport, and nothing of it reaches this package's declarations.
-        await client.connect(transport as Transport, { signal, timeout });
-      } catch (error) {
-        await client.close().catch(() => undefined);
-        throw error;
-      }
-      return client;
-    },
-    catch: (cause) => new McpToolkitError({ operation: 'connect', server, cause }),
-  }).pipe(Effect.withSpan('seat.mcp.connect', { attributes: { 'server.address': server } }));
 
 /**
  * Connect to a Streamable HTTP MCP server, list its tools, and return them as a toolkit.
@@ -139,11 +95,20 @@ export function mcpToolkit(
         }),
     });
     const server = serverLabel(target);
+    // ⛔ Every error and every failure text below goes through this: a server echoes its address,
+    //   and a fetch failure prints it, query string and all (mcp-error.ts).
+    const redact = redactor(target);
     const readFailure = (cause: unknown) =>
-      new McpToolkitError({ operation: 'readResource', server, cause });
+      new McpToolkitError({ operation: 'readResource', server, cause, redact });
 
     const client = yield* Effect.acquireRelease(
-      connect(target, headers, server, options?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS),
+      connect(
+        target,
+        headers,
+        server,
+        options?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
+        redact,
+      ),
       (open) => Effect.ignore(Effect.tryPromise(() => open.close())),
     );
 
@@ -153,12 +118,17 @@ export function mcpToolkit(
     const listed =
       client.getServerCapabilities()?.tools === undefined
         ? []
-        : yield* collect('listTools', server, async (cursor, signal) => {
-            const page = await client.listTools(cursor === undefined ? undefined : { cursor }, {
-              signal,
-            });
-            return { items: page.tools, next: page.nextCursor };
-          });
+        : yield* collect(
+            'listTools',
+            server,
+            async (cursor, signal) => {
+              const page = await client.listTools(cursor === undefined ? undefined : { cursor }, {
+                signal,
+              });
+              return { items: page.tools, next: page.nextCursor };
+            },
+            redact,
+          );
     const tools = listed.map((tool) =>
       mcpTool({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }),
     );
@@ -173,7 +143,7 @@ export function mcpToolkit(
         }
         const result = yield* Effect.tryPromise({
           try: (signal) => client.callTool({ name, arguments: params }, undefined, { signal }),
-          catch: (cause) => `MCP call to ${name} failed: ${describeCause(cause)}`,
+          catch: (cause) => `MCP call to ${name} failed: ${redact(describeCause(cause))}`,
         });
         const text = renderResult(result);
         return result.isError === true ? yield* Effect.fail(text) : text;
@@ -193,20 +163,26 @@ export function mcpToolkit(
       //   "method not found", and "no resources" is the truthful reading of that.
       client.getServerCapabilities()?.resources === undefined
         ? Effect.succeed<ReadonlyArray<McpResource>>([])
-        : collect('listResources', server, async (cursor, signal) => {
-            const page = await client.listResources(cursor === undefined ? undefined : { cursor }, {
-              signal,
-            });
-            return {
-              items: page.resources.map((resource): McpResource => ({
-                uri: resource.uri,
-                name: resource.name,
-                description: resource.description,
-                mimeType: resource.mimeType,
-              })),
-              next: page.nextCursor,
-            };
-          }),
+        : collect(
+            'listResources',
+            server,
+            async (cursor, signal) => {
+              const page = await client.listResources(
+                cursor === undefined ? undefined : { cursor },
+                { signal },
+              );
+              return {
+                items: page.resources.map((resource): McpResource => ({
+                  uri: resource.uri,
+                  name: resource.name,
+                  description: resource.description,
+                  mimeType: resource.mimeType,
+                })),
+                next: page.nextCursor,
+              };
+            },
+            redact,
+          ),
     ).pipe(
       Effect.withSpan('seat.mcp.list_resources', { attributes: { 'server.address': server } }),
     );

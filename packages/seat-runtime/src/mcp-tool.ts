@@ -13,10 +13,22 @@
  *   `jsonSchema`. The estate is pinned at rc.115 and rc.118 drops the `unstable/` import prefix,
  *   so this file carries the workaround until the pin moves.
  * ★ THE WORKAROUND: keep `jsonSchema` (what the model is sent, and what `Tool.getJsonSchema`
- *   returns), and replace `parametersSchema` — what the codec, the Response parts and the
- *   Toolkit decode with — by an object schema of the DECLARED property names, each `Unknown`.
- *   Every declared value passes through untouched and `required` is honoured, so a missing
- *   argument fails as a tool result the model can read instead of reaching the server.
+ *   returns), and replace `parametersSchema` — what compat's codec and the Toolkit decode with —
+ *   by an object schema of the DECLARED property names, each `Unknown`, decoded to `Unknown`
+ *   with an ENCODE THAT IS FORBIDDEN. Every declared value passes through untouched and
+ *   `required` is honoured, so a missing argument fails as a tool result the model can read
+ *   instead of reaching the server.
+ * 🔴 WHY THE ENCODE IS FORBIDDEN. compat's `transformToolCallParams` (OpenAiLanguageModel.js)
+ *   decodes the model's params through the OpenAI structured-output codec and re-encodes them
+ *   with `parametersSchema`, falling back to the params AS SENT when either step fails. That
+ *   codec rewrites every optional property as nullable and reads `null` as ABSENT, so with a
+ *   plain object schema an explicit `null` on an optional argument was deleted before the call.
+ *   Measured 2026-09-29 (review of PR 328), end to end through `SeatModel` and `mcpToolkit` into
+ *   an Effect `McpServer`: `update_issue {id, assignee: null}` (null unassigns, omitted leaves
+ *   alone) reached the server as `{id}`, and the run ended 'done'. That normalisation exists for
+ *   the codec's own JSON Schema, and the model here was sent the server's, where `null` is a
+ *   value. Forbidding the encode makes the re-encode fail, so compat forwards the params as the
+ *   model sent them: `null` arrives as `null` (pinned in tests/mcp-arguments.test.ts).
  * ⚠️ WHAT IT COSTS: a property the schema does not declare is DROPPED before the call
  *   (Effect's decoder ignores excess keys; v4 has no "preserve"), so a server that declares
  *   `additionalProperties: true` and relies on undeclared keys gets fewer than the model sent.
@@ -29,6 +41,7 @@
  */
 import type * as JsonSchema from 'effect/JsonSchema';
 import * as Schema from 'effect/Schema';
+import * as SchemaGetter from 'effect/SchemaGetter';
 import * as Tool from 'effect/unstable/ai/Tool';
 
 /** One dynamic tool per MCP tool: the server's JSON Schema in, text out, failures returned. */
@@ -49,7 +62,7 @@ export type McpToolSpec = {
   readonly inputSchema: JsonSchema.JsonSchema;
 };
 
-/** The workaround's `parametersSchema`: the declared property names, each passed through as-is. */
+/** The workaround's `parametersSchema`: the declared property names, each passed through as-is, decode-only. */
 export function declaredParameters(inputSchema: JsonSchema.JsonSchema): Schema.Constraint {
   const properties = inputSchema['properties'];
   const names =
@@ -58,13 +71,19 @@ export function declaredParameters(inputSchema: JsonSchema.JsonSchema): Schema.C
   const required = new Set(
     Array.isArray(inputSchema['required']) ? (inputSchema['required'] as unknown[]) : [],
   );
-  return Schema.Struct(
+  const declared = Schema.Struct(
     Object.fromEntries(
       names.map((name) => [
         name,
         required.has(name) ? Schema.Unknown : Schema.optional(Schema.Unknown),
       ]),
     ),
+  );
+  return declared.pipe(
+    Schema.decodeTo(Schema.Unknown, {
+      decode: SchemaGetter.passthrough(),
+      encode: SchemaGetter.forbiddenEncoding,
+    }),
   );
 }
 
