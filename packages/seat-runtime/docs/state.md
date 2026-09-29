@@ -42,6 +42,30 @@ at the first query. Postgres runs `select 1`; Valkey runs `connect()`. Each is b
 `connectTimeout` (Postgres) and `connectionTimeout` (Valkey), 5 s by default. A Valkey server that is
 down is retried until that timeout, so one that is a moment late is waited for.
 
+## A Valkey that goes away, and comes back
+
+Commands fail **at once** while the connection is down (`RedisError`, the offline queue is off), and
+the seat retries in Effect, where an attempt is a span. What makes that retry worth anything is that
+**the layer reconnects itself**: 🔴 measured 2026-09-29 (Bun 1.4.0, default `maxRetries` 20), a
+`Bun.RedisClient` retries on its own for about 31 s of outage and then GIVES UP, after which it stays
+dead (`Connection has failed`) even when the server is back, until `connect()` is called again. The
+review that found it measured the same cliff between 30 s (recovered) and 45 s (not). So a seat whose
+Valkey restarted for a minute lost it until the process restarted.
+
+Off Bun's `onclose` the layer now calls `connect()` again: one attempt at a time, each bounded by
+`connectionTimeout`, pausing 250 ms doubling to 5 s between attempts, with one `valkey reconnect`
+span per attempt, a warning when it starts and an info line when it succeeds. It stops with the
+layer's scope. `maxRetries` (option) sets when this loop takes over from Bun's. Measured through the
+layer with the DEFAULT budget (scratch server, `connectionTimeout` 3 s): after a 45 s outage the first
+`PING` was answered 1.5 s after the server returned, after a 75 s outage 1.8 s. The test suite uses
+`maxRetries: 2`, which makes Bun give up after about 0.3 s.
+
+- ⛔ `onclose` also runs for every failed `connect()` and for the client's own `close()`, so it is a
+  hint: the loop runs only while `client.connected` is false.
+- 🔴 **`client.onclose = null` breaks `close()`.** Bun accepts it, and `close()` then calls the null
+  and throws `TypeError: ... is not a function` (worded with whatever call site is on the stack).
+  The layer assigns a no-op instead.
+
 ## The typed error for an out-of-prefix write
 
 Every Valkey failure is Effect's `RedisError` (`_tag: 'RedisError'`, so `Effect.catchTag` works).
@@ -67,12 +91,30 @@ The layer stays usable after a denied call. The URL carries the user and passwor
   The text holds `$1` placeholders, never a parameter value (asserted).
 - **Valkey:** one client span per command, named `valkey <COMMAND>`, with `db.system.name=redis`
   (the OpenTelemetry registry has `redis` and no `valkey`, read 2026-09-29), `db.operation.name`,
-  `server.address`, `server.port` and the database index as `db.namespace`. ⛔ Never a key, a value or
-  the URL's user or password (asserted in process and in the exported OTLP payload).
+  `server.address`, `server.port` and the database index as `db.namespace`. ⛔ The span's ATTRIBUTES
+  never hold a key, a value or the URL's user or password (asserted in process and in the exported
+  OTLP payload).
+
+🔴 **A failed span is not only its attributes.** `OtlpTracer` exports the error a failed span ended
+with as `exception.message` and `exception.stacktrace`, with the whole `cause` chain, so an error
+text that quotes an argument carries it into the trace. Measured 2026-09-29 with canary values, in
+the exported payload:
+
+- **Valkey** quotes them in `ERR unknown command 'JSON.SET', with args beginning with: '<key>'
+'<value>'` and `ERR unknown subcommand '<key>'`. ✅ **Scrubbed:** the error that leaves the layer is
+  a new `Error` with the arguments cut (`src/state-valkey-scrub.ts`), asserted on the wire.
+- **Postgres** quotes them in `invalid input syntax for type integer: "<value>"`, which rides in the
+  `[cause]` of the exported stack. ⚠️ **Not scrubbed:** `@effect/sql-pg` builds the span and the error
+  itself and has no hook, so a test pins the leak (`tests/state-error-text.test.ts`).
+
+A Valkey text that echoes an argument without quotes, and the text a Lua script raises itself
+(`error(...)` comes back as `ERR user_script:1: <text>`), are not covered. For Postgres, do not put a
+secret in a parameter whose type the server can reject, or keep the exporter's destination one you
+trust with seat data; a scrub in `SeatObs` would cover it and was not built (it would change every span).
 
 Both spans join the trace of the run that made the call, and `SeatObs` exports them: asserted against
-the stub's OTLP payload (`db.system.name` with `postgresql` or `redis`, the span names, no secret). Ingest
-by the live VictoriaTraces is not measured, as for the rest of this package.
+the stub's OTLP payload (`db.system.name` with `postgresql` or `redis`, the span names, no secret in a
+SUCCESSFUL call). Ingest by the live VictoriaTraces is not measured, as for the rest of this package.
 
 ## Measured traps, and what this package does about each
 
@@ -91,7 +133,7 @@ Measured 2026-09-29, Bun 1.4.0, `@effect/sql-pg` rc.115, Valkey 9.1.1, Postgres 
   command after the server was killed failed in 1 ms, and the first one after a restart succeeded
   within 0.5 s; `tests/state-valkey.test.ts` holds it) and
   gives every command a deadline (`commandTimeout`, 10 s) against a server that holds the socket
-  open and says nothing.
+  open and says nothing. Past Bun's retry budget it reconnects itself (above).
 - 🔴 **`connectionTimeout` does not bound DNS.** A name that does not resolve took 31 s with
   `connectionTimeout: 700`; the layer wraps `connect()` in an Effect timeout of the same length.
 - ⚠️ **Not `BunRedis` from `@effect/platform-bun`.** Rc.115 ships one, but depending on
@@ -112,11 +154,12 @@ Measured 2026-09-29, Bun 1.4.0, `@effect/sql-pg` rc.115, Valkey 9.1.1, Postgres 
   included: raise it, or such a call fails as `RedisError` at the deadline.
 - No migrations, no schema, no key-prefix helper (the server's ACL is the enforcement), no metrics
   of its own (the spans are the signal).
-- **UNVERIFIED:** reconnect past a 4 s outage (Bun's `maxRetries` default is untried), `rediss://`
-  TLS, and the seats' real stores: `valkey-seats :6381` was not listening on CT100 (`ss`, 2026-09-29)
-  and no test used the `hf_agent` role. Everything above ran against scratch stores. The Postgres
-  suite ran twice: once against a scratch database on CT100 (trust auth, through an ssh tunnel),
-  once against a local scram-sha-256 Postgres 18 (which is what runs the wrong-password test).
+- **UNVERIFIED:** `rediss://` TLS; a password rotated while the server was down (the loop would
+  retry an authentication that fails, one `valkey reconnect` span per attempt, and never stop); and
+  the seats' real stores: `valkey-seats :6381` was not listening on CT100 (`ss`, 2026-09-29) and no
+  test used the `hf_agent` role. Everything above ran against scratch stores. The Postgres suite ran
+  twice: once against a scratch database on CT100 (trust auth, through an ssh tunnel), once against a
+  local scram-sha-256 Postgres 18 (which is what runs the wrong-password test).
 
 ## The tests, and running them
 

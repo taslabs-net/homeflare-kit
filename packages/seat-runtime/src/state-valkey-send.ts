@@ -4,6 +4,9 @@
  * ⛔ A SPAN NAMES THE COMMAND, NEVER ITS ARGUMENTS. Keys are seat data and values are whatever the
  *   seat stored; `AUTH` and `HELLO ... AUTH` carry a password. Only the upper-cased command name
  *   (`SET`, `GET`) is recorded, so the span is low-cardinality and holds nothing to redact.
+ * 🔴 NOR IS THE ERROR TEXT: the server quotes the arguments of a call it refuses (`unknown command
+ *   'X', with args beginning with: '<key>' '<value>'`), and a failed span exports its error, so
+ *   what a caller receives is `scrubbedError`, never Bun's own (state-valkey-scrub.ts).
  * 🔴 THE DEADLINE IS NOT OPTIONAL. Measured 2026-09-29 (Bun 1.4.0): a `Bun.RedisClient` on its
  *   defaults that has lost its server QUEUES every command and never answers it until the server
  *   is back (a `send` sat unresolved past 8 s against a dead port; after a restart the queued
@@ -14,6 +17,7 @@
 import * as Effect from 'effect/Effect';
 import * as Redis from 'effect/unstable/persistence/Redis';
 import type * as Duration from 'effect/Duration';
+import { scrubbedError } from './state-valkey-scrub.ts';
 
 /** What this file needs of a client: `Bun.RedisClient` has this exact `send`. */
 export type ValkeyCall = {
@@ -41,7 +45,7 @@ export function instrumentedSend(client: ValkeyCall, options: SendOptions): Send
     return Effect.tryPromise({
       // ⚠️ Bun's `send` types its argument list as a mutable array; ours is readonly.
       try: () => client.send(command, [...args]) as Promise<A>,
-      catch: (cause) => new Redis.RedisError({ cause }),
+      catch: (cause) => new Redis.RedisError({ cause: scrubbedError(cause, command) }),
     }).pipe(
       Effect.timeoutOrElse({
         duration: options.commandTimeout,

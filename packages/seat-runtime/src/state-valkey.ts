@@ -23,6 +23,8 @@
  * 🔴 `connectionTimeout` DOES NOT BOUND DNS. Measured 2026-09-29: with `connectionTimeout: 700`, a
  *   host name that does not resolve failed after 31 s. `connect()` therefore also runs under an
  *   Effect timeout of the same length.
+ * 🔴 BUN'S OWN RECONNECT ENDS, AND THE CLIENT THEN STAYS DEAD (about 31 s of outage here): the layer
+ *   reconnects it itself, off `onclose` (state-valkey-connection.ts holds the measurement).
  */
 import * as Config from 'effect/Config';
 import * as Duration from 'effect/Duration';
@@ -31,6 +33,7 @@ import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
 import * as Redis from 'effect/unstable/persistence/Redis';
 import { valkeyFields } from './state-dsn.ts';
+import { keepConnected } from './state-valkey-connection.ts';
 import { instrumentedSend } from './state-valkey-send.ts';
 
 export type ValkeyOptions = {
@@ -41,12 +44,19 @@ export type ValkeyOptions = {
    */
   readonly url: string | Redacted.Redacted<string>;
   /**
-   * How long to wait to connect and authenticate when the layer is built. Default 5 s (Bun's own
-   * is 10 s). ⚠️ A finite positive duration of at most 2 ** 31 - 1 ms, or a `RangeError` defect.
+   * How long to wait to connect and authenticate when the layer is built, and for each reconnect
+   * attempt after Bun gives up. Default 5 s (Bun's own is 10 s). ⚠️ A finite positive duration of at
+   * most 2 ** 31 - 1 ms, or a `RangeError` defect.
    */
   readonly connectionTimeout?: Duration.Input | undefined;
   /** How long one command may take. Default 10 s; same limits as `connectionTimeout`. */
   readonly commandTimeout?: Duration.Input | undefined;
+  /**
+   * How many times Bun retries a lost connection before it gives up (its default is 20, about 30
+   * s of outage). After that THE LAYER reconnects until the server is back, so this only sets
+   * when its own loop takes over. A non-negative integer, or a `RangeError` defect.
+   */
+  readonly maxRetries?: number | undefined;
 };
 
 export const DEFAULT_CONNECTION_TIMEOUT: Duration.Duration = Duration.seconds(5);
@@ -100,15 +110,25 @@ const build = Effect.fnUntraced(function* (options: ValkeyOptions) {
   const commandTimeout = options.commandTimeout ?? DEFAULT_COMMAND_TIMEOUT;
   const connectMs = milliseconds(connectionTimeout, 'connectionTimeout');
   const commandMs = milliseconds(commandTimeout, 'commandTimeout');
+  const maxRetries = options.maxRetries;
+  if (maxRetries !== undefined && !(Number.isInteger(maxRetries) && maxRetries >= 0)) {
+    throw new RangeError('maxRetries must be a non-negative integer');
+  }
   const RedisClient = yield* loadClient;
   // ⛔ OFFLINE QUEUE OFF: a command sent while the connection is down fails at once as
   //   `RedisError` (a seat retries in Effect, where an attempt is a span) instead of waiting for
   //   a reconnect that may not come. Measured 2026-09-29: after a server restart the same client
-  //   answered again within 1.5 s. It is also why the layer connects first: an unconnected
-  //   client with the queue off refuses every command.
+  //   answered again within 1.5 s; past Bun's retry budget the layer reconnects behind the
+  //   caller's retry (state-valkey-connection.ts). It is also why the layer connects first: an
+  //   unconnected client with the queue off refuses every command.
   const client = yield* Effect.acquireRelease(
     Effect.try({
-      try: () => new RedisClient(url, { connectionTimeout: connectMs, enableOfflineQueue: false }),
+      try: () =>
+        new RedisClient(url, {
+          connectionTimeout: connectMs,
+          enableOfflineQueue: false,
+          ...(maxRetries === undefined ? {} : { maxRetries }),
+        }),
       catch: () => refused('Bun.RedisClient refused the URL'),
     }),
     (opened) => Effect.sync(() => opened.close()),
@@ -129,6 +149,8 @@ const build = Effect.fnUntraced(function* (options: ValkeyOptions) {
     ...(fields.port === undefined ? {} : { 'server.port': fields.port }),
     ...(fields.database === undefined ? {} : { 'db.namespace': fields.database }),
   };
+  // ⛔ AFTER the first connect, so a wrong URL or password fails the build instead of being retried.
+  yield* keepConnected(client, { connectionTimeout, attributes });
   return yield* Redis.make({
     send: instrumentedSend(client, { commandTimeout, commandTimeoutMs: commandMs, attributes }),
     subscribe,

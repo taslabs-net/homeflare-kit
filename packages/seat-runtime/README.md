@@ -170,9 +170,9 @@ const state = SeatState.layer({ postgres: { url: pgDsn }, valkey: { url: valkeyU
 `SqlClient` and `Redis`, Effect's own services, on their own subpath: the root stays runtime-neutral and
 this holds `node:net` and `Bun.RedisClient` (Valkey is Bun only). ⛔ **No host is held here**: the URLs
 are yours, `Redacted`. A layer connects when built, so a wrong URL fails at startup as a typed error;
-an out-of-prefix write is a typed `RedisError` (`SeatState.isPermissionDenied`); state calls are spans
-in the run's trace, never with a key, value or password. **No `subscribe`.**
-The traps and the tests: [docs/state.md](./docs/state.md).
+an out-of-prefix write is a typed `RedisError` (`SeatState.isPermissionDenied`); a lost Valkey is
+reconnected by the layer. Span attributes never hold a key, value or password, and a Valkey error is
+scrubbed of quoted arguments (Postgres's is not). **No `subscribe`.** Traps, tests: [docs/state.md](./docs/state.md).
 
 ## The measured pairing
 

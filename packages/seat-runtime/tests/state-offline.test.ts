@@ -156,6 +156,17 @@ describe('valkey', () => {
     },
   );
 
+  test.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'maxRetries %p is a RangeError defect before anything connects',
+    async (maxRetries) => {
+      const exit = await Effect.runPromiseExit(
+        Effect.scoped(Layer.build(SeatState.valkey({ url: 'redis://127.0.0.1:1', maxRetries }))),
+      );
+      expect(exit._tag).toBe('Failure');
+      expect(printed(exit)).toContain('RangeError');
+    },
+  );
+
   test('fromEnv: a missing variable is a ConfigError that names it', async () => {
     const error = await failureOf(SeatState.valkeyFromEnv().pipe(fromEnv({})));
     expect(error._tag).toBe('ConfigError');
