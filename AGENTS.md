@@ -32,7 +32,7 @@ them to fit a line limit — extract into a new file instead.
 | `@homeflare/typesafe`     | TypeSafe System One client                       | `@typesafe-ai/sdk` (official)                                                                                |
 | `@homeflare/alchemy`      | custom Alchemy providers, one subpath per system | `alchemy`, `effect` (pinned peers), vendor SDKs; host access (`node:*`, `launchctl`) only behind its subpath |
 | `@homeflare/site`         | typed site config + `derive()`                   | `effect` (pinned peer); `node:*` only in `/load`                                                             |
-| `@homeflare/seat-runtime` | Effect AI model + OTLP layers for coding seats   | `effect` (pinned peer), `@effect/ai-openai-compat` (pinned dependency); nothing runtime-specific             |
+| `@homeflare/seat-runtime` | Model, OTLP, round loop, MCP toolkit             | `effect` (pinned peer), `@effect/ai-openai-compat`, `@modelcontextprotocol/sdk` (pinned); runtime-neutral    |
 | `@homeflare/config`       | tsconfig / oxlint / oxfmt presets                | — (no code)                                                                                                  |
 
 ⚠️ **TWO KINDS OF AUTH, NOT INTERCHANGEABLE.** `@homeflare/cloudflare` verifies a

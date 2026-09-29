@@ -39,9 +39,9 @@ async function run(cmd: readonly string[], cwd: string): Promise<string> {
 
 const CONSUMER = `import { Effect, Layer } from 'effect';
 import * as ConfigProvider from 'effect/ConfigProvider';
-import { EmbeddingModel, LanguageModel } from 'effect/unstable/ai';
+import { Chat, EmbeddingModel, LanguageModel, Toolkit } from 'effect/unstable/ai';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import { SeatModel, SeatObs, VERSION } from '@homeflare/seat-runtime';
+import { McpToolkitError, SeatModel, SeatObs, VERSION, mcpToolkit, runRounds } from '@homeflare/seat-runtime';
 
 const seen: { url: string; tags: string | null; auth: string | null; body: string }[] = [];
 const fake = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -80,14 +80,28 @@ const program = Effect.gen(function* () {
   const dims = (yield* EmbeddingModel.EmbeddingModel.use((m) => m.embed('hello'))).vector.length;
   // A log POST exists only when something was logged; the other two signals always flush.
   yield* Effect.log('smoke line');
-  return { text, dims };
+  // The round loop through the same fake fetch: a model that asks for no tools ends it at once.
+  const chat = yield* Chat.fromPrompt('ping');
+  const looped = yield* runRounds({ chat, toolkit: yield* Toolkit.empty, maxRounds: 2 });
+  return { text, dims, rounds: looped.rounds, capped: looped.capped };
 }).pipe(Effect.withSpan('smoke.run'), Effect.provide(layers));
 
 const result = await Effect.runPromise(Effect.scoped(program));
 if (result.text !== 'pong' || result.dims !== 3) throw new Error('model calls: ' + JSON.stringify(result));
+if (result.rounds !== 1 || result.capped) throw new Error('runRounds: ' + JSON.stringify(result));
+
+// ⚠️ NO SERVER HERE, so mcpToolkit is proved only as far as a refused connection: the SDK's
+//   client entry resolved under this runtime's own module rules (a missing \`exports\` subpath or
+//   a bare directory import dies at import, not here), and the typed error comes back.
+const refused = await Effect.runPromise(
+  Effect.scoped(mcpToolkit('http://127.0.0.1:1/mcp?token=smoke-secret')).pipe(Effect.flip),
+);
+if (!(refused instanceof McpToolkitError) || refused._tag !== 'McpToolkitError' || refused.operation !== 'connect')
+  throw new Error('mcpToolkit refused connection: ' + String(refused));
+if (refused.message.includes('smoke-secret')) throw new Error('mcpToolkit leaked the query string');
 
 const model = seen.filter((s) => !s.url.includes('opentelemetry'));
-if (model.length !== 2) throw new Error('expected 2 model calls, saw ' + model.length);
+if (model.length !== 3) throw new Error('expected 3 model calls, saw ' + model.length);
 for (const call of model) {
   if (call.auth !== 'Bearer smoke-key') throw new Error('bearer key: ' + call.auth);
   if (call.tags !== 'host:ct100,seat:smoke') throw new Error('tags: ' + call.tags);
@@ -140,6 +154,15 @@ try {
     // ⛔ All three at the one rc, or the consumer crashes at import (see tests/pairing.test.ts).
     if (found !== RC) throw new Error(`seat-runtime smoke: ${name} resolved ${found}, want ${RC}`);
   }
+
+  // The MCP SDK is this package's OWN pinned dependency (not the rc), so it must arrive at the
+  // version the manifest names: a consumer cannot choose a different one.
+  const manifest = (await Bun.file(join(pkgRoot, 'package.json')).json()) as {
+    dependencies: Record<string, string>;
+  };
+  const mcp = await version('@modelcontextprotocol/sdk');
+  if (mcp !== manifest.dependencies['@modelcontextprotocol/sdk'])
+    throw new Error(`seat-runtime smoke: @modelcontextprotocol/sdk resolved ${mcp}`);
 
   await Bun.write(join(scratch, 'consumer.ts'), CONSUMER);
 

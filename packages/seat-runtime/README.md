@@ -1,15 +1,17 @@
 # @homeflare/seat-runtime
 
-The two layers every HomeFlare coding seat shares: an Effect AI **model** that talks to
-LiteLLM the way the seats need, and **telemetry** that lands traces, logs and metrics in
-the Victoria stack on CT100 from one environment block.
+What every HomeFlare coding seat shares: an Effect AI **model** that talks to LiteLLM the
+way the seats need, **telemetry** that lands traces, logs and metrics in the Victoria stack
+on CT100 from one environment block, the **round loop** (`runRounds`, with a hard cap), and
+**MCP servers as a toolkit** (`mcpToolkit`).
 
 ```sh
 bun add @homeflare/seat-runtime effect@4.0.0-rc.115
 ```
 
 ⛔ **Pin the rc, and put `overrides` in YOUR root `package.json`.** `effect` is an exact peer
-and `@effect/ai-openai-compat` an exact dependency, both `4.0.0-rc.115`. If your app also
+and `@effect/ai-openai-compat` an exact dependency, both `4.0.0-rc.115` (`@modelcontextprotocol/sdk`
+is an exact dependency too, `1.31.0`). If your app also
 uses `@effect/platform-bun`, add this to your own manifest, or a fresh install crashes:
 
 ```json
@@ -94,6 +96,62 @@ a log POST exists only when something logged.
 
 `VERSION` is the package's own version.
 
+### `runRounds`
+
+The one round loop. `Chat.generateText` resolves the tool calls of **one** model turn and
+returns, and Effect AI has no `maxRounds`; this is the documented `while` with a cap.
+
+```ts
+const toolkit = yield * MyToolkit; // a Toolkit with its handlers provided; or `mcp.toolkit`
+const chat = yield * Chat.fromPrompt('Review this diff.');
+const result =
+  yield * runRounds({ chat, toolkit, maxRounds: 8, onRound: (r) => Effect.log(r.round) });
+result.response.text; // the answer
+result.capped; // true when the cap fired; result.rounds counts the forced turn too
+```
+
+- Every round sends an empty prompt: `Chat` appends the model's turn and the tool results.
+- It stops when a turn asks for no tools (`capped: false`), including on round `maxRounds`.
+- After `maxRounds` turns that all asked for tools, **one more turn is forced with no toolkit and
+  `toolChoice: 'none'`** (`capped: true`, `rounds: maxRounds + 1`). compat then sends neither
+  `tools` nor `tool_choice`; the history still carries the earlier calls and results. Measured
+  once on 2026-09-29 through CT100's LiteLLM: cf-code accepted that history and answered with
+  `finishReason: 'stop'` and no tool call (one sample, one alias, not the tests' stub).
+- `maxRounds` must be a positive integer; `0`, `Infinity` or `NaN` is a `RangeError` defect
+  before any model call. Errors are the turn's own (`AiError`, a handler's failure); nothing retries.
+- Observable: a `seat.round` span per turn (`seat.round`, `seat.round.forced`, `seat.tool_calls`),
+  counters `seat_rounds_total` and `seat_rounds_capped_total`, a warning log when the cap fires.
+
+### `mcpToolkit`
+
+```ts
+const mcp =
+  yield * mcpToolkit('https://mcp.example/mcp', { authorization: Redacted.make(`Bearer ${t}`) });
+yield * runRounds({ chat, toolkit: mcp.toolkit, maxRounds: 8 });
+const notes = yield * mcp.listResources;
+const hello = yield * mcp.readResource('estate://notes/hello');
+```
+
+The official MCP SDK `Client` over Streamable HTTP; each MCP tool is a `Tool.dynamic` carrying
+the server's own JSON Schema. It needs a `Scope`: the connection closes with it.
+
+- **A tool failure goes back to the model**, not out of the run: an `isError` result, a JSON-RPC
+  error (bad arguments, unknown tool) and a call that never completed are all the tool's result.
+  Connecting and listing fail with `McpToolkitError` (`_tag`, `operation`, `server`), whose message
+  holds the origin and path only: never a header or a query string.
+- **Results are strings.** Text blocks verbatim; an image, audio or blob becomes a one-line marker,
+  never its bytes; an empty result reads `(no content)`.
+- ⚠️ The tool list is a **snapshot** at connect time. Names are passed through unchanged: an
+  OpenAI-shaped API takes `[A-Za-z0-9_-]{1,64}`, so a server that names a tool with a dot is not
+  renamed here (not measured through LiteLLM's MCP gateway).
+- 🔴 **compat rc.115 cannot decode a tool call for a `Tool.dynamic` alone** (measured 2026-09-29:
+  `UnsupportedSchemaError: Root JSON Schema must have type "object"`; rc.118 fixed it). The
+  workaround in `src/mcp-tool.ts` costs one thing: an argument the server's schema **does not
+  declare is dropped**, and a tool that declares no properties takes no arguments.
+- `listResources` is empty when the server does not advertise resources; `readResource` fails
+  with `McpToolkitError` for an unknown URI. A workerd deployment is untested (the SDK's default
+  validator is `ajv`, which needs `new Function`).
+
 ## The measured pairing
 
 Measured 2026-09-29 (a scratch install, then this package's tests and smoke):
@@ -112,11 +170,20 @@ effect/process/ChildProcess`). Only a **root** `overrides` fixes it. An `overrid
   a workspace member's manifest, or in a tarball you install, is ignored (measured), which is
   why this package declares none. `scripts/smoke.ts` installs platform-bun beside it with the
   override above and asserts all three resolve to rc.115.
+- ✅ `@modelcontextprotocol/sdk` 1.31.0 (the scout's measured pairing, `npm view` current on
+  2026-09-29): list, call and resource read against an Effect `McpServer`. Its `zod` peer
+  (`^3.25 || ^4.0`) is satisfied by the kit's zod, one copy in the lockfile, and its client entry
+  imports no `node:` module (all three asserted in `tests/pairing.test.ts`).
+- ✅ Live, read-only (2026-09-29, the packed tarball on CT100): `mcpToolkit` connects to LiteLLM's
+  MCP gateway (`:4100/mcp`, a seat key as the bearer, an SSE reply to `initialize`) in 63 ms. ⚠️ That key
+  sees **0 tools and 0 resources**, so a live tool call through `mcpToolkit` is **not measured**.
 
 ## What is not here
 
-No round loop, no MCP toolkit (0.2), no Postgres or Valkey state (0.3), no retry policy: the
-caller retries in Effect. Nothing reads a credential from disk or logs one.
+No Postgres or Valkey state (0.3), no retry policy (the caller retries in Effect), no way to
+merge an MCP toolkit with a local one (`Toolkit.merge` takes toolkits that still need handlers,
+`mcp.toolkit` already has them), no prompt for the forced final turn (it is sent empty). Nothing
+reads a credential from disk or logs one.
 
 ## Development
 

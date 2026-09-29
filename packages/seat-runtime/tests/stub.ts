@@ -34,10 +34,12 @@ const TOOL_CALL = {
   ],
 };
 
-function chatReply(body: Record<string, unknown>): Response {
+function chatReply(body: Record<string, unknown>, alwaysTool: boolean): Response {
   const tools = Array.isArray(body['tools']) && body['tools'].length > 0;
   const messages = Array.isArray(body['messages']) ? (body['messages'] as { role?: string }[]) : [];
-  const wantsTool = tools && !messages.some((message) => message.role === 'tool');
+  // ★ `alwaysTool` is a model that never stops asking: the round cap has something to cap. A
+  //   request that offers no tools is still answered with text, as a real model must.
+  const wantsTool = tools && (alwaysTool || !messages.some((message) => message.role === 'tool'));
   return Response.json({
     id: 'stub-1',
     object: 'chat.completion',
@@ -64,7 +66,7 @@ function embeddingReply(body: Record<string, unknown>): Response {
   });
 }
 
-export function startStub(): Stub {
+export function startStub(options?: { readonly alwaysTool?: boolean }): Stub {
   const requests: Captured[] = [];
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -77,7 +79,8 @@ export function startStub(): Stub {
         ? (JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>)
         : undefined;
       requests.push({ path, headers: Object.fromEntries(request.headers), bytes, json });
-      if (path === '/v1/chat/completions' && json !== undefined) return chatReply(json);
+      if (path === '/v1/chat/completions' && json !== undefined)
+        return chatReply(json, options?.alwaysTool === true);
       if (path === '/v1/embeddings' && json !== undefined) return embeddingReply(json);
       if (path.includes('opentelemetry')) return new Response(null, { status: 200 });
       return new Response('not found', { status: 404 });
