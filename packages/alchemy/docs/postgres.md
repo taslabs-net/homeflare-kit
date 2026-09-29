@@ -145,3 +145,7 @@ rule; the consuming stack's runner does.
 - Not covered: there is no `Postgres.Role` resource in the kit yet, so the owner role must
   exist (`PostgresDatabaseOwnerMissing` otherwise). NetBox's 11 lost triggers on `pg_restore`
   are a restore concern, out of this resource's scope.
+
+`Postgres.Schema` ([postgres-schema.md](./postgres-schema.md)) rides the same two transports —
+`postgresProviders` and `postgresRunnerProviders` both merge its provider alongside
+`Postgres.Database`'s, so one connection serves the family.
