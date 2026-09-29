@@ -1,5 +1,11 @@
 # @homeflare/distilled-proxmox
 
+## 0.3.4
+
+### Patch Changes
+
+- [#320](https://github.com/taslabs-net/homeflare-kit/pull/320) [`34967ab`](https://github.com/taslabs-net/homeflare-kit/commit/34967ab2a637f36fcfd0a6f43c9b2c195530df07) Thanks [@taslabs-net](https://github.com/taslabs-net)! - HA resource and HA rule reads now fail as `HaResourceNotFound` and `HaRuleNotFound` instead of a generic server error, and deleting an HA resource that is not managed fails as the same resource tag. A nearby sentence (a resource stuck in error state) stays a generic failure.
+
 ## 0.3.3
 
 ### Patch Changes
