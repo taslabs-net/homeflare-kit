@@ -13,6 +13,12 @@
  * ../../../../upstream/distilled/packages/litellm/docs/errors.md (in the
  * distilled clone this package's `src/` was copied from) and
  * ../../alchemy/docs/distilled-interim.md.
+ *
+ * It then sends the two data-plane routes whose request bodies are typed by
+ * patch (`POST /v2/rerank`, `POST /mcp-rest/tools/call` — the vendor spec
+ * declares no body for them, see the distilled clone's
+ * `packages/litellm/docs/data-plane-bodies.md`) and asserts the typed fields
+ * reach the wire as the JSON body the proxy handler reads.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -60,12 +66,17 @@ import * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
 
 // Fake HttpClient: captures the outgoing request instead of sending it, and
 // answers with a canned 200 so the operation's response decoding also runs.
-let captured: { method: string; url: string; headers: Record<string, string> } | undefined;
+let captured:
+  | { method: string; url: string; headers: Record<string, string>; body: unknown }
+  | undefined;
 const fakeClient = HttpClient.make((request) => {
+  const body = request.body as { _tag: string; body?: Uint8Array };
   captured = {
     method: request.method,
     url: request.url,
     headers: Object.fromEntries(Object.entries(request.headers)),
+    // A JSON body arrives as a Uint8Array HttpBody; anything else means no body was sent.
+    body: body._tag === 'Uint8Array' ? JSON.parse(new TextDecoder().decode(body.body)) : undefined,
   };
   return Effect.succeed(
     HttpClientResponse.fromWeb(
@@ -78,14 +89,15 @@ const fakeClient = HttpClient.make((request) => {
   );
 });
 
-const program = Litellm.Services.keyManagement.listKeysKeyListGet({}).pipe(
-  Effect.provide(Layer.succeed(HttpClient.HttpClient, fakeClient)),
-  Effect.provide(
-    Litellm.credentials({ apiKey: 'smoke-key', baseUrl: 'https://litellm.example.com' }),
-  ),
-);
+const provide = (effect: Effect.Effect<unknown, unknown, unknown>) =>
+  effect.pipe(
+    Effect.provide(Layer.succeed(HttpClient.HttpClient, fakeClient)),
+    Effect.provide(
+      Litellm.credentials({ apiKey: 'smoke-key', baseUrl: 'https://litellm.example.com' }),
+    ),
+  ) as Effect.Effect<unknown, unknown, never>;
 
-const result = await Effect.runPromise(program as Effect.Effect<unknown, unknown, never>);
+const result = await Effect.runPromise(provide(Litellm.Services.keyManagement.listKeysKeyListGet({})));
 
 if (captured === undefined) throw new Error('no request was built');
 if (captured.method !== 'GET') throw new Error(\`expected GET, got \${captured.method}\`);
@@ -98,6 +110,31 @@ if ((result as Record<string, unknown>)['total_count'] !== 3) {
 }
 
 console.log('request built:', captured.method, captured.url);
+
+// Typed data-plane bodies: the proxy handlers read the raw JSON body, so the
+// fields must arrive at the top level exactly as the caller gave them.
+const rerankBody = { model: 'rerank-v1', query: 'q', documents: ['a', { text: 'b' }], top_n: 1 };
+await Effect.runPromise(provide(Litellm.Services.rerank.postRerankV2Rerank(rerankBody)));
+if (captured.method !== 'POST' || !captured.url.endsWith('/v2/rerank')) {
+  throw new Error(\`unexpected rerank request: \${captured.method} \${captured.url}\`);
+}
+// The body is encoded in schema order, not call order, so compare structurally.
+if (!Bun.deepEquals(captured.body, rerankBody)) {
+  throw new Error(\`rerank body did not reach the wire: \${JSON.stringify(captured.body)}\`);
+}
+
+const toolBody = { server_id: 'srv', name: 'tool', arguments: { a: 1 } };
+await Effect.runPromise(
+  provide(Litellm.Services.mcpRest.postCallToolRestApiMcpRestToolsCall(toolBody)),
+);
+if (captured.method !== 'POST' || !captured.url.endsWith('/mcp-rest/tools/call')) {
+  throw new Error(\`unexpected tool-call request: \${captured.method} \${captured.url}\`);
+}
+if (!Bun.deepEquals(captured.body, toolBody)) {
+  throw new Error(\`tool-call body did not reach the wire: \${JSON.stringify(captured.body)}\`);
+}
+
+console.log('typed bodies ok: rerank, mcp tools/call');
 console.log('consumer ok');
 `,
   );
