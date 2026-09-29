@@ -126,7 +126,7 @@ const program = Effect.gen(function* () {
   `finishReason: 'stop'` and no tool call (one sample, one alias, not the tests' stub).
 - 🔴 **The forced turn can be refused.** A provider that still asks for a tool although none was
   offered answers a turn the SDK cannot use: `AiError` with reason `ToolNotFoundError` (what
-  `SeatModel`'s compat provider raises, measured) or `InvalidOutputError` (the SDK's own decode).
+  `SeatModel`'s compat provider raises, measured) or `InvalidOutputError` raised by the SDK's own decode (module `LanguageModel`; the same reason raised by `OpenAiClient` for an empty, truncated or non-completion body is a gateway failure and fails the run).
   Either does not fail the run: it returns `capped: true, unanswered: true`, `response` is the
   last tool round's (no answer; its calls ran), `rounds` is `maxRounds`. Any other failure of that
   turn (network, rate limit) still fails the run.

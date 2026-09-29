@@ -10,7 +10,7 @@
  * ⛔ 127.0.0.1, never Bun's wildcard default (tests/loopback-servers.test.ts scans for it).
  */
 import { afterAll, describe, expect, test } from 'bun:test';
-import { Effect, Exit, Layer, Schema } from 'effect';
+import { Cause, Effect, Exit, Layer, Schema } from 'effect';
 import { Chat, Tool, Toolkit } from 'effect/unstable/ai';
 import { SeatModel, runRounds } from '../src/index.ts';
 import { type Stub, startStub } from './stub.ts';
@@ -52,6 +52,12 @@ describe('a forced turn that comes back broken fails the run', () => {
       const { exit, toolsOffered } = await run(kind);
       expect(toolsOffered).toEqual([true, true, false]);
       expect(Exit.isFailure(exit)).toBe(true);
+      // The typed error survives (a `die` would pass the check above): the caller sees the AiError.
+      if (Exit.isFailure(exit)) {
+        const error = Cause.squash(exit.cause) as { _tag?: string; module?: string };
+        expect(error._tag).toBe('AiError');
+        expect(error.module).toBe('OpenAiClient');
+      }
     });
   }
 });
