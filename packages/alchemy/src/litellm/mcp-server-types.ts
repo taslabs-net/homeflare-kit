@@ -45,7 +45,13 @@ export interface McpServerProps {
    * `RemovalPolicy.destroy()`).
    */
   readonly serverId?: string;
-  /** Display alias. Compared only when declared; an undeclared live alias is left alone. */
+  /**
+   * The tool prefix LiteLLM shows (`<alias>-<tool>`). Compared only when declared, and an
+   * undeclared live alias is KEPT: an update that sends a `serverName` with no alias would make
+   * LiteLLM rewrite the alias to the name, so the live one is re-sent (mcp-server-form.ts).
+   * ⛔ No `-` (LiteLLM's tool-prefix separator, refused with a 400) and no space (LiteLLM stores
+   * it as `_`, so the row would never match the declaration).
+   */
   readonly alias?: string;
   /**
    * The upstream MCP endpoint, `http` or `https`. ⛔ Refused if it carries userinfo, a fragment or
@@ -62,7 +68,12 @@ export interface McpServerProps {
    * holds it. Required for those types and refused for the others.
    */
   readonly authValue?: FromEnv;
-  /** Compared only when declared. */
+  /**
+   * Compared only when declared. ⚠️ LiteLLM's list answers `mcp_info.description` in preference to
+   * this column, and this resource writes only the column. A row whose `mcp_info` has a
+   * `description` key (even a null one) that differs from the declaration is refused
+   * (`LitellmMcpServerDescriptionShadowedError`) rather than written and failed on the read back.
+   */
   readonly description?: string;
   /**
    * Whether EVERY virtual key may call this server. Always compared, default `false`: it is an
@@ -100,6 +111,10 @@ export interface McpServerAttributes {
    */
   readonly credentialSeal: string;
 }
+
+/** Whether a value is not a string with something in it. Takes `unknown`: a declaration can say anything. */
+export const isBlank = (value: unknown): boolean =>
+  typeof value !== 'string' || value.trim() === '';
 
 const STATIC: ReadonlySet<string> = new Set<McpStaticAuthType>([
   'api_key',

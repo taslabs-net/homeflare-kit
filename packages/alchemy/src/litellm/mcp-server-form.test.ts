@@ -10,10 +10,10 @@ import {
   createBody,
   differing,
   firstProblem,
-  redactUrl,
   toAttributes,
   updateBody,
 } from './mcp-server-form.ts';
+import { redactUrl } from './mcp-server-url.ts';
 import type { McpServerAttributes, McpServerProps } from './mcp-server-types.ts';
 
 const base: McpServerProps = {
@@ -213,14 +213,13 @@ describe('the write bodies', () => {
   test('allowed_tools is sent only when declared, and a declared empty list is sent as it is', () => {
     for (const body of [
       createBody(base, 'FAKE-id', undefined),
-      updateBody(base, 'FAKE-id', undefined, false),
+      updateBody(base, 'FAKE-id', undefined, false, attributes()),
     ]) {
       expect(body).not.toHaveProperty('allowed_tools');
     }
-    expect(updateBody({ ...base, allowedTools: [] }, 'FAKE-id', undefined, false)).toHaveProperty(
-      'allowed_tools',
-      [],
-    );
+    expect(
+      updateBody({ ...base, allowedTools: [] }, 'FAKE-id', undefined, false, attributes()),
+    ).toHaveProperty('allowed_tools', []);
     expect(createBody({ ...base, allowedTools: ['FAKE_a'] }, 'FAKE-id', undefined)).toHaveProperty(
       'allowed_tools',
       ['FAKE_a'],
@@ -228,10 +227,15 @@ describe('the write bodies', () => {
   });
 
   test('an update with no credential sends no credentials key, so the stored one is left', () => {
-    expect(updateBody(base, 'FAKE-id', undefined, false)).not.toHaveProperty('credentials');
+    expect(updateBody(base, 'FAKE-id', undefined, false, attributes())).not.toHaveProperty(
+      'credentials',
+    );
   });
 
   test('leaving a static type sends an explicit null', () => {
-    expect(updateBody(base, 'FAKE-id', undefined, true)).toHaveProperty('credentials', null);
+    expect(updateBody(base, 'FAKE-id', undefined, true, attributes())).toHaveProperty(
+      'credentials',
+      null,
+    );
   });
 });

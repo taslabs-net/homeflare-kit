@@ -135,15 +135,14 @@ describe('delete', () => {
     expect(fake.servers()).toEqual([]);
   });
 
-  test('an id already gone is done, and no DELETE is sent', async () => {
+  test('an id already gone is done, confirmed by a table read (mcp-server-registry.test.ts)', async () => {
     const fake = startFakeMcpLitellm({ masterKey: KEY });
     await expect(run(fake.fetch, deleteMcpServer('FAKE-never'))).resolves.toBeUndefined();
-    expect(fake.requests().some((call) => call.method === 'DELETE')).toBe(false);
   });
 
   test('a delete refused for another reason is not swallowed: it fails and the row is live', async () => {
     // ⚠️ the fake answers 400 to every DELETE — the status of "no rights" is unmeasured on the
-    //   real route, which is exactly why the read, not the status, decides.
+    //   real route, which is exactly why a read of the table, not the status, decides.
     const fake = startFakeMcpLitellm({ forbidDelete: true, masterKey: KEY, seed: [row] });
     await expect(run(fake.fetch, deleteMcpServer('FAKE-uuid-1'))).rejects.toThrow();
     expect(fake.servers()).toHaveLength(1);

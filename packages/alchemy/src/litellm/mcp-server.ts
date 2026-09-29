@@ -12,6 +12,11 @@
  *   either — `toAttributes` copies no credential — and a rotated credential is noticed through a
  *   seal (mcp-server-credential.ts).
  * ⛔ NO LITELLM CREDENTIAL IS A PROP either: `litellmProviders`' layer supplies `Credentials`.
+ * ⛔ THE LIST IS LITELLM'S IN-MEMORY REGISTRY, NOT THE TABLE (mcp-server-operations.ts): a committed row
+ *   can be missing from it. So a row the list lacks is read by id from the table (`findLive`), the read
+ *   back after a write falls back to the same read, and a delete always sends its DELETE.
+ * ⛔ AN UPDATE NEVER LETS LITELLM DEFAULT THE ALIAS (mcp-server-form.ts): the alias is the tool prefix.
+ * ⚠️ A `description` that the row's `mcp_info` would hide is refused before any write (mcp-server-shadow.ts).
  * ⚠️ UNMEASURED AT 1.103.0, each guarded by a read back: whether a create honours a supplied
  *   `server_id`, and whether an empty list or a `false` lands on an edit (that the edit is a partial
  *   update is read from the source, `mcp-server-form.ts`). Nothing here assumes them; the returned
@@ -21,14 +26,11 @@ import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
-import { createPhysicalName } from 'alchemy/PhysicalName';
 import * as Provider from 'alchemy/Provider';
-import type * as mcp from '@distilled.cloud/litellm/mcp_management';
 import * as Effect from 'effect/Effect';
 import * as Predicate from 'effect/Predicate';
 import {
   LitellmMcpServerAbsentAfterWriteError,
-  LitellmMcpServerAmbiguousNameError,
   LitellmMcpServerInvalidError,
   LitellmMcpServerNotConvergedError,
 } from './mcp-server-errors.ts';
@@ -45,12 +47,15 @@ import {
   toAttributes,
   updateBody,
 } from './mcp-server-form.ts';
+import { findLive, wantedId } from './mcp-server-locate.ts';
 import {
   createMcpServer,
   deleteMcpServer,
   listMcpServers,
+  readMcpServer,
   updateMcpServer,
 } from './mcp-server-operations.ts';
+import { refuseShadowedDescription } from './mcp-server-shadow.ts';
 import {
   type McpServerAttributes,
   type McpServerProps,
@@ -82,40 +87,6 @@ const refuse = (props: McpServerProps) => {
       );
 };
 
-/**
- * The live row this declaration means, or `undefined`. A pinned id (from state, else declared) wins;
- * otherwise the name decides, and an ambiguous name is refused.
- */
-const locate = (
-  rows: readonly mcp.LiteLLMMCPServerTable[],
-  props: McpServerProps,
-  output: McpServerAttributes | undefined,
-) => {
-  const pinned = output?.serverId ?? props.serverId;
-  if (pinned !== undefined) return Effect.succeed(rows.find((row) => row.server_id === pinned));
-  const named = rows.filter((row) => row.server_name === props.serverName);
-  return named.length > 1
-    ? Effect.fail(
-        new LitellmMcpServerAmbiguousNameError({
-          serverIds: named.map((row) => row.server_id),
-          serverName: props.serverName,
-        }),
-      )
-    : Effect.succeed(named[0]);
-};
-
-const wantedId = (
-  id: string,
-  instanceId: string,
-  props: McpServerProps,
-  output: McpServerAttributes | undefined,
-) =>
-  output?.serverId !== undefined
-    ? Effect.succeed(output.serverId)
-    : props.serverId !== undefined
-      ? Effect.succeed(props.serverId)
-      : createPhysicalName({ id, instanceId, lowercase: true, maxLength: 64 });
-
 type Args<P> = {
   id: string;
   instanceId: string;
@@ -137,7 +108,7 @@ export const mcpServerHandlers = {
    *   later, stricter release now refuses. The cold-start probe has no such catch, so there the
    *   defect fails the plan, as intended. `pbs-notification-target-lifecycle.ts` reasons the same.
    */
-  read: ({ olds, output }: Args<{ olds: McpServerProps }>) =>
+  read: ({ id, instanceId, olds, output }: Args<{ olds: McpServerProps }>) =>
     Effect.gen(function* () {
       const problem = output === undefined ? firstProblem(olds) : undefined;
       if (problem !== undefined) {
@@ -145,7 +116,10 @@ export const mcpServerHandlers = {
           new LitellmMcpServerInvalidError({ problem, serverName: String(olds.serverName) }),
         );
       }
-      const found = yield* locate(yield* listMcpServers(), olds, output);
+      // ★ THE LIST, THEN THE TABLE BY ID: a row the registry lacks is still a live row
+      //   (mcp-server-locate.ts). `instanceId` is what recovery of an interrupted create needs to
+      //   rebuild the deterministic id that create asked for.
+      const found = yield* findLive(id, instanceId, olds, output);
       if (found === undefined) return undefined;
       const live = toAttributes(found);
       return output === undefined
@@ -177,7 +151,7 @@ export const mcpServerHandlers = {
   reconcile: ({ id, instanceId, news, output }: Args<{ news: McpServerProps }>) =>
     Effect.gen(function* () {
       yield* refuse(news);
-      const before = yield* locate(yield* listMcpServers(), news, output);
+      const before = yield* findLive(id, instanceId, news, output);
       const credential = resolveCredential(news);
       let sealed = output?.credentialSeal ?? '';
       let serverId: string;
@@ -199,17 +173,26 @@ export const mcpServerHandlers = {
           // ⛔ A CHANGED AUTH TYPE DEMANDS THE CREDENTIAL, before anything is written: LiteLLM wipes
           //   the stored one on an auth-class change that sends none (mcp-server-credential.ts).
           if (live.authType !== news.authType) yield* requireCredential(news, credential);
+          // ⛔ Same rule for a description `mcp_info` would hide: before anything is written.
+          if (differing(live, news).includes('description')) {
+            yield* refuseShadowedDescription(news, serverId);
+          }
           // ★ Otherwise sent whenever the process has it, demanded only when the seal says stale.
           const send = isStaticAuthType(news.authType) ? credential.value : undefined;
           const leavingStatic =
             !isStaticAuthType(news.authType) && (sealed !== '' || isStaticAuthType(live.authType));
-          yield* updateMcpServer(updateBody(news, serverId, send, leavingStatic));
+          yield* updateMcpServer(updateBody(news, serverId, send, leavingStatic, live));
           if (send !== undefined) sealed = sealCredential(send);
           else if (leavingStatic) sealed = '';
         }
       }
 
-      const found = (yield* listMcpServers()).find((row) => row.server_id === serverId);
+      // ★ THE LIST FIRST, THEN THE TABLE: after a create the registry refresh can fail (LiteLLM only
+      //   logs it), and a committed row that the list does not show yet is "created, not yet visible",
+      //   never absent. The by-id read also registers it, which heals the list.
+      const found =
+        (yield* listMcpServers()).find((row) => row.server_id === serverId) ??
+        (yield* readMcpServer(serverId));
       if (found === undefined) {
         return yield* Effect.fail(
           new LitellmMcpServerAbsentAfterWriteError({ serverId, serverName: news.serverName }),

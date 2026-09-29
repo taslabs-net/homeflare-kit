@@ -1,6 +1,6 @@
 /**
  * Refusals, wire bodies, the read shape and the comparison for `LiteLLM.MCPServer`, testable
- * without a server.
+ * without a server. The URL rules are in `mcp-server-url.ts`.
  *
  * ⛔ TWO ACCESS GRANTS ARE ALWAYS COMPARED, WITH A CLOSED DEFAULT. `allow_all_keys` (default
  *   false) and `mcp_access_groups` (default empty) decide which keys can reach a server, so a live
@@ -14,62 +14,66 @@
  *   adopted row is planned `adopted` (Alchemy's adoption branch), so no `update` would show. An
  *   undeclared list is left exactly as the proxy holds it.
  * ★ Descriptive fields (`alias`, `description`) are also compared only when declared, so adopting a
- *   row never clears text a person wrote.
- * ⚠️ EVERY UPDATE SENDS THE FULL MANAGED SET, NOT ONLY THE FIELDS THAT DIFFER. The edit route is a
- *   PARTIAL update at 1.103.0 (measured by reading the live container's `mcp_server/db.py`, the
- *   update function's `exclude_unset=True`: fields the caller did not send keep their stored value;
- *   no live call was made), so a field this resource does not send is left alone. Sending the whole
- *   managed set is still correct, and reconcile reads back and fails loudly if a declared field did
- *   not land (`LitellmMcpServerNotConvergedError`). Whether a `false` or an empty list is written
- *   rather than skipped stays UNMEASURED, which is what the read back guards.
+ *   row never clears text a person wrote. That holds on the wire too, for `alias` only because an
+ *   update RE-SENDS the live alias whenever it sends a `serverName` (`identityOnUpdate` below).
+ * ⚠️ EVERY UPDATE SENDS THE FULL MANAGED SET, NOT ONLY THE FIELDS THAT DIFFER, bar the two name
+ *   fields, which `identityOnUpdate` sends selectively because LiteLLM defaults an alias. The edit
+ *   route is a PARTIAL update at 1.103.0 (measured by reading the live container's
+ *   `mcp_server/db.py`, the update function's `exclude_unset=True`: fields the caller did not send
+ *   keep their stored value; no live call was made), so a field this resource does not send is left
+ *   alone. Sending the whole managed set is still correct, and reconcile reads back and fails loudly
+ *   if a declared field did not land (`LitellmMcpServerNotConvergedError`). Whether a `false` or an
+ *   empty list is written rather than skipped stays UNMEASURED, which is what the read back guards.
  */
 import type * as mcp from '@distilled.cloud/litellm/mcp_management';
 import * as Redacted from 'effect/Redacted';
+import { redactUrl, urlProblem } from './mcp-server-url.ts';
 import {
   AUTH_TYPES,
   type McpServerAttributes,
   type McpServerProps,
   TRANSPORTS,
+  isBlank,
   isStaticAuthType,
 } from './mcp-server-types.ts';
-
-/** A query parameter whose NAME says it carries a secret. */
-const SECRET_PARAM = /token|secret|passw|api.?key|auth|credential|signature|^key$|^sig$/i;
-
-const isBlank = (value: unknown): boolean => typeof value !== 'string' || value.trim() === '';
-
-/** Why a URL may not be declared, or `undefined`. ⛔ Never quotes the URL: it may hold the secret. */
-const urlProblem = (raw: unknown): string | undefined => {
-  if (isBlank(raw)) return '`url` must be a non-empty string';
-  let url: URL;
-  try {
-    url = new URL(raw as string);
-  } catch {
-    return '`url` must be a full http(s) URL including the scheme';
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return '`url` must be http or https';
-  if (url.username !== '' || url.password !== '') {
-    return '`url` must not carry userinfo; declare the credential as `authValue`';
-  }
-  if (url.hash !== '') return '`url` must not carry a fragment';
-  for (const name of url.searchParams.keys()) {
-    if (SECRET_PARAM.test(name)) {
-      return `\`url\` carries the query parameter "${name}", which looks like a credential; declare it as \`authValue\` instead, because the URL is stored in Alchemy's state`;
-    }
-  }
-  return undefined;
-};
 
 const listProblem = (name: string, list: readonly unknown[] | undefined): string | undefined =>
   list !== undefined && list.some((entry) => isBlank(entry))
     ? `\`${name}\` must hold non-empty strings`
     : undefined;
 
+/**
+ * ⛔ `-` IS LITELLM'S TOOL-PREFIX SEPARATOR (`MCP_TOOL_PREFIX_SEPARATOR`, default `-`, unset in the
+ *   live container as measured 2026-09-29): a tool is `<alias>-<tool>`, and `validate_mcp_server_name`
+ *   answers 400 for a `server_name` or `alias` that holds it. Refused here so nothing is written
+ *   to Alchemy's state first. A proxy that set another separator would be over-refused: rare, loud.
+ */
+const separatorProblem = (field: string, value: string): string | undefined =>
+  value.includes('-')
+    ? `\`${field}\` must not contain "-": LiteLLM uses it to separate a tool's server prefix from its name`
+    : undefined;
+
+/**
+ * ⚠️ LiteLLM REWRITES SPACES IN AN ALIAS TO `_` on every write (`normalize_server_name`), so a declared
+ *   alias with a space would never equal the row it produced and every deploy would fail the read back.
+ *   A `serverName` is stored as written, so spaces are allowed there.
+ */
+const aliasProblem = (alias: string | undefined): string | undefined => {
+  if (alias === undefined) return undefined;
+  if (isBlank(alias)) return '`alias` must be a non-empty string when declared';
+  if (alias.includes(' ')) {
+    return '`alias` must not contain a space: LiteLLM stores it with "_" instead, so the row would never match';
+  }
+  return separatorProblem('alias', alias);
+};
+
 /** The first reason a declaration is refused, or `undefined`. Pure: no environment, no server. */
 export const firstProblem = (props: McpServerProps): string | undefined => {
   if (isBlank(props.serverName) || props.serverName !== props.serverName.trim()) {
     return '`serverName` must be a non-empty string without leading or trailing whitespace';
   }
+  const named = separatorProblem('serverName', props.serverName) ?? aliasProblem(props.alias);
+  if (named !== undefined) return named;
   if (props.serverId !== undefined && isBlank(props.serverId)) {
     return '`serverId` must be a non-empty string when declared';
   }
@@ -98,39 +102,13 @@ export const firstProblem = (props: McpServerProps): string | undefined => {
 };
 
 /**
- * `userinfo` and secret-looking query values replaced with `REDACTED`, so a live URL that carries a
- * token never reaches Alchemy's unencrypted state.
- * ★ A URL THAT NEEDS NO REDACTION COMES BACK BYTE-FOR-BYTE, never re-serialised: `URL#toString`
- *   adds a trailing slash to a bare origin, and a declared `https://host` would then differ from
- *   its own live row on every plan. A URL that does not parse is returned as it is.
- */
-export const redactUrl = (raw: string): string => {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return raw;
-  }
-  let changed = false;
-  if (url.username !== '') {
-    url.username = 'REDACTED';
-    changed = true;
-  }
-  if (url.password !== '') {
-    url.password = 'REDACTED';
-    changed = true;
-  }
-  // ⚠️ A Set first: `set` mutates the live iterator's list, and a repeated name would be skipped.
-  for (const name of new Set(url.searchParams.keys())) {
-    if (!SECRET_PARAM.test(name)) continue;
-    url.searchParams.set(name, 'REDACTED');
-    changed = true;
-  }
-  return changed ? url.toString() : raw;
-};
-
-/**
- * One row of `GET /v1/mcp/server` as attributes.
+ * One row of `GET /v1/mcp/server`, or of the by-id read, as attributes.
+ *
+ * ⚠️ THE LIST'S `description` IS `mcp_info.description` WHEN THAT EXISTS, else the column (measured
+ *   on the live 1.103.0 container: `_build_mcp_server_table` and, on registration,
+ *   `build_mcp_server_from_table`, which copies the column into `mcp_info` only when `mcp_info`
+ *   has none). This resource writes only the column, so a declared description cannot be read back
+ *   from a row whose `mcp_info` holds another: reconcile refuses that before it writes.
  *
  * ⛔ `credentials`, `static_headers`, `env`, `env_vars` and every other field are deliberately NOT
  *   copied: what LiteLLM stores as a credential stays on the proxy. The `credentialSeal` is filled
@@ -172,18 +150,45 @@ export const differing = (live: McpServerAttributes, props: McpServerProps): rea
   return out;
 };
 
-/** The managed set both writes send. ⚠️ See the file header on why an update sends all of it. */
+/** The managed set both writes send, WITHOUT the name fields. ⚠️ See the file header on why an update sends all of it. */
 const managed = (props: McpServerProps) => ({
-  ...(props.alias === undefined ? {} : { alias: props.alias }),
   allow_all_keys: props.allowAllKeys ?? false,
   ...(props.allowedTools === undefined ? {} : { allowed_tools: [...props.allowedTools] }),
   auth_type: props.authType,
   ...(props.description === undefined ? {} : { description: props.description }),
   mcp_access_groups: [...(props.mcpAccessGroups ?? [])],
-  server_name: props.serverName,
   transport: props.transport,
   url: props.url,
 });
+
+/** A create names the row, and sends an alias only when one is declared: LiteLLM defaults it to the name. */
+const identityOnCreate = (props: McpServerProps) => ({
+  ...(props.alias === undefined ? {} : { alias: props.alias }),
+  server_name: props.serverName,
+});
+
+/**
+ * ⛔ AN UPDATE MUST NOT LET LITELLM DEFAULT THE ALIAS. Measured 2026-09-29 by running the live
+ *   1.103.0 container's own `validate_and_normalize_mcp_server_payload` and `_prepare_mcp_server_data`
+ *   on an edit body (no database, no network): a body with a `server_name` and no `alias` comes out
+ *   with `alias = normalize(server_name)` and the alias IS WRITTEN, because the route captures the
+ *   set of fields the caller sent BEFORE the normalisation and `_prepare_mcp_server_data` drops an
+ *   alias only when it is still None. The alias is the tool prefix (`get_server_prefix`), so a row
+ *   with alias `search` and name `estate_web` would have every tool renamed `estate_web-*` for
+ *   every key and seat, while `differing` (which skips an undeclared alias) called it converged.
+ *   A body with neither field sends no alias. So:
+ *   - `server_name` is sent only when it CHANGES, and
+ *   - an alias is sent when declared, or (on a rename) as the live one, so a rename keeps the prefix.
+ *   A live row with no alias that is renamed gets the new name as its alias: LiteLLM's own default.
+ */
+const identityOnUpdate = (props: McpServerProps, live: McpServerAttributes) => {
+  const renamed = live.serverName !== props.serverName;
+  const alias = props.alias ?? (renamed && live.alias !== null ? live.alias : undefined);
+  return {
+    ...(alias === undefined ? {} : { alias }),
+    ...(renamed ? { server_name: props.serverName } : {}),
+  };
+};
 
 /**
  * ⛔ THE ONE PLACE THE CREDENTIAL IS UNWRAPPED, and it goes straight onto the wire body. `undefined`
@@ -198,6 +203,7 @@ export const createBody = (
   credential: Redacted.Redacted<string> | undefined,
 ): mcp.AddMcpServerV1McpServerPostRequest => ({
   ...managed(props),
+  ...identityOnCreate(props),
   ...credentialsOf(credential),
   server_id: serverId,
 });
@@ -212,8 +218,10 @@ export const updateBody = (
   serverId: string,
   credential: Redacted.Redacted<string> | undefined,
   clearCredentials: boolean,
+  live: McpServerAttributes,
 ): mcp.EditMcpServerV1McpServerPutRequest => ({
   ...managed(props),
+  ...identityOnUpdate(props, live),
   ...(clearCredentials ? { credentials: null } : credentialsOf(credential)),
   server_id: serverId,
 });

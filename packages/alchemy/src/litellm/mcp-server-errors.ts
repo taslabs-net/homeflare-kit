@@ -67,7 +67,10 @@ export class LitellmMcpServerUnreadableError extends Data.TaggedError(
   }
 }
 
-/** A create or edit returned no error, yet the row is absent on the read back. */
+/**
+ * A create or edit returned no error, yet the row is absent on the read back: neither in the list
+ * NOR in a database-backed read by id (the list alone is the registry, which can lag a commit).
+ */
 export class LitellmMcpServerAbsentAfterWriteError extends Data.TaggedError(
   'LitellmMcpServerAbsentAfterWriteError',
 )<{
@@ -77,7 +80,7 @@ export class LitellmMcpServerAbsentAfterWriteError extends Data.TaggedError(
   override get message(): string {
     return (
       `LiteLLM.MCPServer "${this.serverName}": the write of ${this.serverId} returned no error ` +
-      'but the row is absent.'
+      'but the row is absent from the list and from the database read.'
     );
   }
 }
@@ -102,14 +105,37 @@ export class LitellmMcpServerNotConvergedError extends Data.TaggedError(
   }
 }
 
+/**
+ * The declared `description` cannot be applied: the live row's `mcp_info` has a `description` key
+ * (even a null one), and LiteLLM answers that in preference to the column, which is all this
+ * resource writes (`mcp_info` is not modelled). Raised BEFORE any write, so the row is untouched.
+ * Nothing here names the text itself: a description is free text a person wrote.
+ */
+export class LitellmMcpServerDescriptionShadowedError extends Data.TaggedError(
+  'LitellmMcpServerDescriptionShadowedError',
+)<{
+  readonly serverName: string;
+  readonly serverId: string;
+}> {
+  override get message(): string {
+    return (
+      `LiteLLM.MCPServer "${this.serverName}": ${this.serverId} has a \`description\` in \`mcp_info\`, ` +
+      'which LiteLLM shows instead of the column this resource writes, and it differs from the ' +
+      'declaration. Edit it in LiteLLM, or remove `description` from the declaration.'
+    );
+  }
+}
+
 export type McpServerError =
   | mcp.AddMcpServerV1McpServerPostError
   | mcp.EditMcpServerV1McpServerPutError
   | mcp.FetchAllMcpServersV1McpServerGetError
+  | mcp.FetchMcpServerV1McpServerServerIdGetError
   | mcp.RemoveMcpServerV1McpServerServerIdDeleteError
   | LitellmMcpServerInvalidError
   | LitellmMcpServerCredentialEnvUnsetError
   | LitellmMcpServerAmbiguousNameError
   | LitellmMcpServerUnreadableError
   | LitellmMcpServerAbsentAfterWriteError
-  | LitellmMcpServerNotConvergedError;
+  | LitellmMcpServerNotConvergedError
+  | LitellmMcpServerDescriptionShadowedError;
