@@ -24,9 +24,9 @@ export type ValkeyAclProfile = 'seat' | 'service';
 export interface ValkeyAclUser {
   /** The username (matches the seat name). */
   readonly name: string;
-  /** The key pattern this user may touch, sent as `~<keyPrefix>` — CT100's consuming template
-   * binds each seat to `~<seat>:*` (`homeflare-ct100/src/valkey-acl.ts`); `*` is for the one
-   * user that owns a whole instance (LiteLLM's cache user). */
+  /** The key pattern this user may touch, sent as `~<keyPrefix>`. A `seat` must be exactly
+   * `<name>:*` — CT100's template (`homeflare-ct100/src/valkey-acl.ts`) — or reconcile refuses
+   * it before any write. `*` is for the `service` profile only (LiteLLM's cache user). */
   readonly keyPrefix: string;
   /** The fixed command allow-list the user carries (see the header; never a free-form list). */
   readonly profile: ValkeyAclProfile;

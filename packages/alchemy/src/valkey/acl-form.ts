@@ -22,7 +22,12 @@
  */
 import type { ValkeyAclProfile, ValkeyAclUser } from './acl-attrs.ts';
 import { sealMatches } from '../secrets/write-only.ts';
-import { ValkeyAclParseError } from './errors.ts';
+import {
+  ValkeyAclParseError,
+  ValkeyAclReservedUser,
+  ValkeyAclSeatKeyPrefix,
+  ValkeyAclUserNameMismatch,
+} from './errors.ts';
 
 /** The seat command allow-list — fixed, mirrored from `homeflare-ct100/src/valkey-acl.ts`. */
 export const SEAT_COMMANDS =
@@ -111,6 +116,37 @@ export const inferProfile = (rules: ReadonlyArray<string>): ValkeyAclProfile | '
 
 const sameSet = <T>(left: ReadonlySet<T>, right: ReadonlySet<T>): boolean =>
   left.size === right.size && [...left].every((item) => right.has(item));
+
+/** Whether a seat-profile user's key prefix is anything but `<name>:*`. `keyPrefix` goes on
+ * the wire as `~<keyPrefix>` and read-back compares the declaration to itself, so `*`,
+ * `grok:*`, or `claude:grok:*` would converge and grant keys the seat does not own. CT100's
+ * template is exactly `~${user}:*`. A service user is exempt: owning the instance is what
+ * that profile is for (LiteLLM's cache user, `*`). */
+export const seatKeyPrefixEscapes = (user: ValkeyAclUser): boolean =>
+  user.profile === 'seat' && user.keyPrefix !== `${user.name}:*`;
+
+/** Refusals that must run before any `ACL SETUSER`. A mismatched record key would split one
+ * user into two records. `default` or the connection username, and a seat prefix other than
+ * `<name>:*`, would otherwise look absent (read hides the reserved names) or converge
+ * (read-back compares the declaration to itself) and then rewrite the live ACL. */
+export const refusalBeforeWrite = (
+  instance: string,
+  users: Readonly<Record<string, ValkeyAclUser>>,
+  self?: string,
+): ValkeyAclUserNameMismatch | ValkeyAclReservedUser | ValkeyAclSeatKeyPrefix | undefined => {
+  for (const [key, user] of Object.entries(users)) {
+    if (user.name !== key) {
+      return new ValkeyAclUserNameMismatch({ instance, recordKey: key, user: user.name });
+    }
+    if (user.name === 'default' || (self !== undefined && user.name === self)) {
+      return new ValkeyAclReservedUser({ instance, user: user.name });
+    }
+    if (seatKeyPrefixEscapes(user)) {
+      return new ValkeyAclSeatKeyPrefix({ instance, user: user.name, keyPrefix: user.keyPrefix });
+    }
+  }
+  return undefined;
+};
 
 /** Whether two pattern lists hold the same members in any order — the shape `diff` compares
  * channel patterns with (the server's echo order is its own). */

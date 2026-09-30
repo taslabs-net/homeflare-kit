@@ -21,10 +21,14 @@ import type {
   ValkeyAclUser,
   ValkeyAclUserAttributes,
 } from './acl-attrs.ts';
-import { buildDelUserArgs, passwordState, sameMembers } from './acl-form.ts';
+import { buildDelUserArgs, passwordState, sameMembers, seatKeyPrefixEscapes } from './acl-form.ts';
 import { readParsedUsers, readWithExecutor, reconcileWithExecutor } from './acl-ops.ts';
 import { withValkey } from './connection.ts';
-import { ValkeyAclUserNameMismatch, ValkeyInstanceUnreachable } from './errors.ts';
+import {
+  ValkeyAclSeatKeyPrefix,
+  ValkeyAclUserNameMismatch,
+  ValkeyInstanceUnreachable,
+} from './errors.ts';
 import { resolveAll } from '../secrets/write-only.ts';
 import { ValkeyServerError } from './transport.ts';
 
@@ -83,6 +87,17 @@ export const valkeyAclFileHandlers = ValkeyAclFile.Provider.of({
               instance: news.instance,
               recordKey: key,
               user: user.name,
+            }),
+          );
+        }
+        // The plan refuses what reconcile refuses: a seat declaring `*` or another seat's
+        // prefix would converge and pass read-back, holding every key on the instance.
+        if (seatKeyPrefixEscapes(user)) {
+          return yield* Effect.fail(
+            new ValkeyAclSeatKeyPrefix({
+              instance: news.instance,
+              user: user.name,
+              keyPrefix: user.keyPrefix,
             }),
           );
         }

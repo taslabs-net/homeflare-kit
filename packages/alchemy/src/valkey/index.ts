@@ -22,6 +22,7 @@ export {
   ValkeyAclParseError,
   ValkeyAclReadbackFailed,
   ValkeyAclReservedUser,
+  ValkeyAclSeatKeyPrefix,
   ValkeyAclUserNameMismatch,
   ValkeyAuthPasswordMissing,
   ValkeyInstanceDrift,

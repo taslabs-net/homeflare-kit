@@ -98,6 +98,24 @@ export class ValkeyAclReadbackFailed extends Data.TaggedError('ValkeyAclReadback
   }
 }
 
+/** A `seat`-profile user's key prefix escapes its own keyspace. The seat profile exists to pin
+ * each seat to keys beginning with its own name (`~<name>:…`); `keyPrefix` goes on the wire as
+ * `~<keyPrefix>`, so `*` is every key and `grok:*` is another seat's. Refused before any write —
+ * a `service` user is the profile that owns a whole instance. */
+export class ValkeyAclSeatKeyPrefix extends Data.TaggedError('ValkeyAclSeatKeyPrefix')<{
+  readonly instance: string;
+  readonly user: string;
+  readonly keyPrefix: string;
+}> {
+  override get message(): string {
+    return (
+      `Valkey.AclFile "${this.instance}": ACL user "${this.user}" declares key prefix ` +
+      `"${this.keyPrefix}". A seat user is limited to "${this.user}:*"; a user that owns ` +
+      'every key on the instance declares profile "service".'
+    );
+  }
+}
+
 /** A declaration names `default` or the connection username. `ACL SETUSER` `reset` would replace
  * the credential this kit authenticates with (`~* +@all`) with a profile that cannot run `ACL`,
  * and the next `ACL LIST` answers `NOPERM`. Refused before any write. */
@@ -139,4 +157,5 @@ export type ValkeyError =
   | ValkeyAclReadbackFailed
   | ValkeyAclUserNameMismatch
   | ValkeyAclReservedUser
+  | ValkeyAclSeatKeyPrefix
   | ValkeyAuthPasswordMissing;

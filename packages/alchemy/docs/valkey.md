@@ -76,8 +76,9 @@ export class SeatsAcl extends ValkeyAclFile('SeatsAcl', {
 - **The key prefix is the isolation.** `~claude:*` limits a seat to its own keyspace — the
   pattern `homeflare-ct100/src/valkey-acl.ts` already renders (`~${user}:*`) — and
   `resetchannels` plus `&<user>:*` limits pub/sub to its own channels (a `service` profile gets
-  `allchannels` instead — the one consumer that owns a whole instance). A seat gets `WRITE` only
-  where its job writes.
+  `allchannels` instead — the one consumer that owns a whole instance). A seat whose
+  `keyPrefix` is not `<name>:*` is refused before any write (`ValkeyAclSeatKeyPrefix`); `*`
+  is a `service` pattern only. A seat gets `WRITE` only where its job writes.
 - **Fixed command allow-list, not a prop.** A seat gets `+@read +@write` plus the data-type
   categories, and is denied `-@dangerous -@admin` plus the keyless/admin commands
   (`-keys -flushall -flushdb -monitor -acl -config -shutdown -debug`) and
@@ -96,7 +97,8 @@ with more than one instance calls it more than once and merges the results. `hos
 secret; `password` is a `FromEnv` reference resolved at call time (a missing variable is the typed
 `ValkeyAuthPasswordMissing`, and a username without a password is unrepresentable). `withValkey`
 opens one `node:net` socket per operation and closes it after — never held across a whole
-reconcile.
+reconcile. Connect, each read, and the socket idle timer share `timeoutMs` (default 10s); a
+reply longer than 1 MiB or an array longer than 10,000 elements fails `ValkeySocketError`.
 
 ```ts
 import { valkeyProviders } from '@homeflare/alchemy/valkey';

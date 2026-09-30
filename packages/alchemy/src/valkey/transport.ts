@@ -10,10 +10,22 @@
  *   `ACL SETUSER`, `PING`) are all long-settled. Nothing here parses a version-specific field.
  * ★ RUNTIME-NEUTRAL. The executor is a function of `node:net` sockets, no Bun API; a Bun-only
  *   consumer would be a regression the postgres family's own `PgClient` avoided.
+ * ⛔ AN `error` EVENT WITH NO LISTENER EXITS THE PROCESS. `openSocket` listens only until
+ *   `connect`. This executor installs the listener that stays for the life of the socket, and
+ *   fails the in-flight read with `ValkeySocketError` (measured 2026-09-30: a peer RST after
+ *   the connect listener was dropped was `uncaughtException` `read ECONNRESET`, exit 1).
  */
-import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import type { Socket } from 'node:net';
+import { type InFlight, type ReadBuf, readReply } from './resp.ts';
+import {
+  type ValkeyReply,
+  ValkeySocketError,
+  type ValkeyTransportError,
+} from './transport-error.ts';
+
+export type { ValkeyReply, ValkeyTransportError } from './transport-error.ts';
+export { ValkeyServerError, ValkeySocketError } from './transport-error.ts';
 
 /** One command with its arguments, as the byte strings that go on the wire. */
 export interface ValkeyCommand {
@@ -28,188 +40,60 @@ export interface ValkeyExecutor {
   readonly send: (args: ReadonlyArray<string>) => Effect.Effect<ValkeyReply, ValkeyTransportError>;
 }
 
-export type ValkeyReply =
-  | { readonly kind: 'bulk'; readonly value: string | null }
-  | { readonly kind: 'array'; readonly values: ReadonlyArray<string | null> }
-  | { readonly kind: 'error'; readonly message: string };
-
-/** A reply that came back as an error line (`-ERR …`). `detail` is the server's own error text;
- * the `message` getter names it without recursing. */
-export class ValkeyServerError extends Data.TaggedError('ValkeyServerError')<{
-  readonly detail: string;
-}> {
-  override get message(): string {
-    return this.detail;
-  }
-}
-
-/** A socket-level failure (connection refused, reset, closed mid-reply) — distinct from a
- * protocol-level `ValkeyServerError` so callers can tell "server said no" from "never reached
- * it". */
-export class ValkeySocketError extends Data.TaggedError('ValkeySocketError')<{
-  readonly reason: string;
-}> {
-  override get message(): string {
-    return this.reason;
-  }
-}
-
-/** The two transport-level failures every `ValkeyExecutor` can surface, as one union so a
- * caller's declared error channel stays short. */
-export type ValkeyTransportError = ValkeyServerError | ValkeySocketError;
+/** The per-read abort, and the idle/`connect` deadline `withValkey` sets on the socket. */
+export const DEFAULT_SOCKET_TIMEOUT_MS = 10_000;
 
 const CRLF = '\r\n';
 
 const encodeArgs = (args: ReadonlyArray<string>): string =>
   `*${args.length}${CRLF}${args.map((a) => `$${Buffer.byteLength(a)}${CRLF}${a}`).join(CRLF)}${CRLF}`;
 
-/** A mutable buffer shared between recursive RESP reads so array items consume bytes from the
- * same stream the outer `*` marker was read from. Property assignment is deliberate: it keeps
- * the same object identity, not a local rebound variable, so no byte is lost between items. */
-interface ReadBuf {
-  buf: Buffer;
-}
-
-type ParsedLine = { readonly value: string; readonly drop: number } | undefined;
-
-/** Read one RESP value from the socket, one line/prefix at a time, never buffering beyond what a
- * single reply needs. Recursion depth is bounded by the protocol (arrays nest), not by input size
- * that this family controls.
- *
- * ★ PULL FIRST, THEN LISTEN. A reply the socket delivered whole sits in `state.buf` before this
- * read begins — a nested array issues several sequential reads, and only the first one has a
- * pending `data` event to listen for. Every read therefore checks the buffer it may already hold
- * (and whether the socket already ended) before registering any listener; only a genuinely
- * incomplete prefix waits for the next chunk. */
-const readReply = (
+/**
+ * The real executor over a `node:net` socket. `socket` is supplied by the caller (which owns
+ * connect/close), so `withValkey` can open one socket per operation and close it after.
+ * `timeoutMs` bounds each read; the default matches the socket deadline in `connection.ts`.
+ */
+export const makeSocketExecutor = (
   socket: Socket,
-  state: ReadBuf,
-  command: string,
-): Effect.Effect<ValkeyReply, ValkeyTransportError> => {
-  /** Resolve once `done(currentBuffer)` returns the bytes to drop from the front of the buffer.
-   * On each incoming chunk the buffer grows; when `done` says a complete token is present, the
-   * buffer is advanced in-place and the promise resolves. */
-  const readUntil = (
-    done: (buffer: Buffer) => ParsedLine,
-  ): Effect.Effect<string, ValkeySocketError> =>
-    Effect.tryPromise({
-      try: (signal) =>
-        new Promise<string>((resolve, reject) => {
-          const settle = (parsed: Exclude<ParsedLine, undefined>) => {
-            state.buf = state.buf.subarray(parsed.drop);
-            resolve(parsed.value);
-          };
-          // Pull first: the bytes this read needs may already be in the buffer.
-          const immediate = done(state.buf);
-          if (immediate !== undefined) {
-            settle(immediate);
-            return;
-          }
-          if (socket.readableEnded || socket.destroyed) {
-            reject(new ValkeySocketError({ reason: 'socket closed mid-reply' }));
-            return;
-          }
-          const cleanup = () => {
-            socket.off('data', onData);
-            socket.off('end', onEnd);
-            signal.removeEventListener('abort', onAbort);
-          };
-          const onData = (chunk: Buffer) => {
-            state.buf = Buffer.concat([state.buf, chunk]);
-            const parsed = done(state.buf);
-            if (parsed === undefined) return;
-            cleanup();
-            settle(parsed);
-          };
-          const onEnd = () => {
-            cleanup();
-            reject(new ValkeySocketError({ reason: 'socket closed mid-reply' }));
-          };
-          const onAbort = () => {
-            cleanup();
-            reject(new ValkeySocketError({ reason: 'read interrupted' }));
-          };
-          signal.addEventListener('abort', onAbort);
-          socket.on('data', onData);
-          socket.on('end', onEnd);
-        }),
-      catch: (cause) =>
-        cause instanceof ValkeySocketError
-          ? cause
-          : new ValkeySocketError({ reason: String(cause) }),
-    });
-
-  const readLine = (): Effect.Effect<string, ValkeySocketError> =>
-    readUntil((buffer) => {
-      const nl = buffer.indexOf(CRLF);
-      return nl === -1
-        ? undefined
-        : { value: buffer.subarray(0, nl).toString('utf8'), drop: nl + 2 };
-    });
-
-  const readBytes = (n: number): Effect.Effect<string, ValkeySocketError> =>
-    readUntil((buffer) =>
-      buffer.length < n + 2
-        ? undefined
-        : { value: buffer.subarray(0, n).toString('utf8'), drop: n + 2 },
-    );
-
-  return Effect.gen(function* () {
-    const line = yield* readLine();
-    const prefix = line[0];
-    if (prefix === '+') return { kind: 'bulk', value: line.slice(1) } as const;
-    if (prefix === '-') {
-      return yield* Effect.fail(new ValkeyServerError({ detail: line.slice(1) }));
-    }
-    if (prefix === '$') {
-      const n = Number(line.slice(1));
-      if (n === -1) return { kind: 'bulk', value: null } as const;
-      return { kind: 'bulk', value: yield* readBytes(n) } as const;
-    }
-    if (prefix === '*') {
-      const n = Number(line.slice(1));
-      if (n === -1) return { kind: 'array', values: [] } as const;
-      const values: Array<string | null> = [];
-      for (let i = 0; i < n; i += 1) {
-        const item = yield* readReply(socket, state, command);
-        // ⛔ A NESTED ARRAY IS A REPLY THIS FAMILY DOES NOT UNDERSTAND — failing beats
-        //   null-flattening it: `values` is typed flat, so a `*1` inside `ACL GETUSER` would
-        //   silently lose every flag, password and command rule it carries. The commands this
-        //   family reads (`ACL LIST`, `CONFIG GET`) answer flat arrays; a future command that
-        //   needs nesting must extend this union with a test, not hope.
-        if (item.kind !== 'bulk') {
-          return yield* Effect.fail(
-            new ValkeyServerError({
-              detail: `nested array inside the reply to ${command}: this family reads only flat arrays`,
-            }),
-          );
-        }
-        values.push(item.value);
+  timeoutMs: number = DEFAULT_SOCKET_TIMEOUT_MS,
+): ValkeyExecutor => {
+  const inFlight: InFlight = { fail: null };
+  let socketFailure: string | undefined;
+  const onError = (error: Error) => {
+    socketFailure = error.message;
+    inFlight.fail?.(error.message);
+  };
+  socket.on('error', onError);
+  return {
+    send: (args) => {
+      if (socketFailure !== undefined || socket.destroyed) {
+        return Effect.fail(new ValkeySocketError({ reason: socketFailure ?? 'socket closed' }));
       }
-      return { kind: 'array', values } as const;
-    }
-    if (prefix === ':') return { kind: 'bulk', value: line.slice(1) } as const;
-    return yield* Effect.fail(
-      new ValkeyServerError({ detail: `unexpected RESP prefix ${prefix}` }),
-    );
-  });
+      const state: ReadBuf = { buf: Buffer.alloc(0), taken: 0 };
+      // Command name only. The full argv of `AUTH` / `ACL SETUSER` includes `>password`.
+      const command = args[0] ?? 'command';
+      try {
+        socket.write(encodeArgs(args));
+      } catch (cause) {
+        return Effect.fail(
+          new ValkeySocketError({
+            reason: cause instanceof Error ? cause.message : String(cause),
+          }),
+        );
+      }
+      // `write` can emit `error` synchronously (a peer RST already in the buffer). The
+      // lifetime listener stashes it; failing here beats starting a read nothing will answer.
+      if (socketFailure !== undefined || socket.destroyed) {
+        return Effect.fail(new ValkeySocketError({ reason: socketFailure ?? 'socket closed' }));
+      }
+      return readReply(socket, state, command, inFlight, timeoutMs);
+    },
+  };
 };
 
-/** The real executor over a `node:net` socket. `socket` is supplied by the caller (which owns
- * connect/close), so `withValkey` can open one socket per operation and close it after. */
-export const makeSocketExecutor = (socket: Socket): ValkeyExecutor => ({
-  send: (args) => {
-    const state: ReadBuf = { buf: Buffer.alloc(0) };
-    const command = args.join(' ');
-    socket.write(encodeArgs(args));
-    return readReply(socket, state, command);
-  },
-});
-
 /**
- * Decode a flat array reply into `Map<string, string | null>` for the two `key value key value`
- * shapes this family reads — `CONFIG GET` (alternating `key value`), and `INFO` (parsed one line
- * at a time by callers). Null values are preserved; a missing key is `null`, never `''`.
+ * Decode a flat array reply into `Map<string, string | null>` for the `key value key value`
+ * shape `CONFIG GET` answers. Null values are preserved; a missing key is `null`, never `''`.
  */
 export const arrayPairs = (
   values: ReadonlyArray<string | null>,

@@ -32,13 +32,12 @@ import {
   parseAclLine,
   passwordState,
   planAclUsers,
+  refusalBeforeWrite,
 } from './acl-form.ts';
 import {
   ValkeyAclParseError,
   ValkeyAclPasswordMissing,
   ValkeyAclReadbackFailed,
-  ValkeyAclReservedUser,
-  ValkeyAclUserNameMismatch,
   type ValkeyError,
 } from './errors.ts';
 import { type ValkeyExecutor, ValkeyServerError, type ValkeyTransportError } from './transport.ts';
@@ -129,27 +128,12 @@ export const reconcileWithExecutor = (
   self?: string,
 ): Effect.Effect<ValkeyAclFileAttributes, ValkeyError | ValkeyTransportError> =>
   Effect.gen(function* () {
-    // The record key is this family's identity for a user; a declaration keyed under one name
-    // whose `name` says another would split one user into two records. Refused before any write.
-    for (const [key, user] of Object.entries(props.users)) {
-      if (user.name !== key) {
-        return yield* Effect.fail(
-          new ValkeyAclUserNameMismatch({
-            instance: props.instance,
-            recordKey: key,
-            user: user.name,
-          }),
-        );
-      }
-      // ⛔ BEFORE ANY WRITE. Read hides `default` and the connection username so an undeclared
-      //   admin is not removed. A declaration of that name looks absent, and `ACL SETUSER reset`
-      //   would replace `~* +@all` with a profile that cannot run `ACL` — the next list is NOPERM.
-      if (user.name === 'default' || (self !== undefined && user.name === self)) {
-        return yield* Effect.fail(
-          new ValkeyAclReservedUser({ instance: props.instance, user: user.name }),
-        );
-      }
-    }
+    // ⛔ BEFORE ANY WRITE. Reserved names, a split record key, and a seat prefix other than
+    //   `<name>:*` are refused here — see `refusalBeforeWrite`. Read hides `default` and the
+    //   connection username, so a declaration of either would otherwise look absent and `reset`
+    //   the credential this kit authenticates with.
+    const refused = refusalBeforeWrite(props.instance, props.users, self);
+    if (refused !== undefined) return yield* Effect.fail(refused);
 
     const live = yield* readParsedUsers(executor, self);
     const { create, update, remove } = planAclUsers(props.users, live);
