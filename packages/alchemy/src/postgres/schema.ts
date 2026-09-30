@@ -7,7 +7,8 @@
  * ⛔ NOT ALTER-CAPABLE. `ALTER SCHEMA` only renames or changes owner in Postgres; neither is
  *   implemented. An owner or comment mismatch against the live row is a typed
  *   `PostgresSchemaDrift` refusal, never an `ALTER SCHEMA` — same rule `Postgres.Database`
- *   applies to its own asserted props.
+ *   applies to its own asserted props. An omitted `owner` is compared to `current_user`
+ *   (`schema-assert.ts`): a fresh create without `AUTHORIZATION` would be owned by that role.
  * ⛔ THE DECLARED `database` IS PROVEN, NEVER ASSUMED. The family connection points at a
  *   maintenance database (a brand-new database cannot be connected to on a cold plan —
  *   `docs/postgres.md#measured-path`), so the handlers below open `props.database` themselves
@@ -30,11 +31,13 @@ import {
 } from './schema-attrs.ts';
 import { schemaNameByteRefusal } from './schema-attrs.ts';
 import { diffPostgresSchema } from './schema-diff.ts';
+import { assertLive, assertOwner } from './schema-assert.ts';
 import {
   buildCommentSchemaSql,
   buildCreateSchemaSql,
   buildDropSchemaSql,
   currentDatabase,
+  currentUser,
   isDependentObjectsError,
   schemaIsEmpty,
   selectSchema,
@@ -44,7 +47,7 @@ import type { PgExecutor } from './database-sql.ts';
 import { type PostgresConnection, withPg } from './connection.ts';
 import {
   PostgresSchemaCreateVanished,
-  PostgresSchemaDrift,
+  type PostgresSchemaDrift,
   PostgresSchemaDropNotEmptyError,
   PostgresSchemaNameRefused,
   PostgresSchemaOwnerMissing,
@@ -69,39 +72,6 @@ export const isPostgresSchema = (value: unknown): value is PostgresSchema =>
   (typeof value === 'object' || typeof value === 'function') &&
   value !== null &&
   (value as { Type?: unknown }).Type === 'Postgres.Schema';
-
-/** Owner and comment are the only asserted props (beyond the database itself, proven by
- * `current_database()` before any write): both compared against the live row. */
-const liveDrift = (props: PostgresSchemaProps, live: PostgresSchemaAttributes) => {
-  if (props.owner !== undefined && props.owner !== live.owner) {
-    return { prop: 'owner', declared: props.owner, live: live.owner };
-  }
-  const comment = normalizedComment(props.comment);
-  if (comment !== undefined && comment !== (live.comment ?? undefined)) {
-    return { prop: 'comment', declared: comment, live: live.comment };
-  }
-  return undefined;
-};
-
-/** Assert one just-read row against the declaration — the drift refusal every return path
- * passes through, never trust: a concurrent creator can win the `IF NOT EXISTS` race (the
- * `CREATE` then does nothing) and hand back a row this declaration never asked for. */
-const assertLive = (
-  props: PostgresSchemaProps,
-  row: PostgresSchemaAttributes,
-): Effect.Effect<PostgresSchemaAttributes, PostgresSchemaDrift> => {
-  const drift = liveDrift(props, row);
-  return drift === undefined
-    ? Effect.succeed(row)
-    : Effect.fail(
-        new PostgresSchemaDrift({
-          schema: props.name,
-          prop: drift.prop,
-          declared: drift.declared,
-          live: drift.live,
-        }),
-      );
-};
 
 /** The connected database, proven equal to the declaration or refused — the guard every write
  * path in this family runs first. */
@@ -138,6 +108,8 @@ export const reconcileWithClient = (
 > =>
   Effect.gen(function* () {
     yield* assertDatabase(props, pg);
+    // Only an omitted owner needs the session role: a declared owner is the comparison itself.
+    const executingRole = props.owner !== undefined ? props.owner : yield* currentUser(pg);
     const observed = yield* selectSchema(pg, props.name);
     if (observed === undefined) {
       if (props.owner !== undefined) {
@@ -154,6 +126,9 @@ export const reconcileWithClient = (
       if (created === undefined) {
         return yield* Effect.fail(new PostgresSchemaCreateVanished({ schema: props.name }));
       }
+      // Owner before COMMENT ON (schema-assert.ts): a race winner is refused here, so their
+      // schema is never commented.
+      yield* assertOwner(props, created, executingRole);
       const comment = normalizedComment(props.comment);
       if (comment !== undefined && comment !== (created.comment ?? undefined)) {
         yield* pg.unsafe(buildCommentSchemaSql(props.name, comment)).pipe(Effect.asVoid);
@@ -161,11 +136,11 @@ export const reconcileWithClient = (
         if (commented === undefined) {
           return yield* Effect.fail(new PostgresSchemaCreateVanished({ schema: props.name }));
         }
-        return yield* assertLive(props, commented);
+        return yield* assertLive(props, commented, executingRole);
       }
-      return yield* assertLive(props, created);
+      return yield* assertLive(props, created, executingRole);
     }
-    return yield* assertLive(props, observed);
+    return yield* assertLive(props, observed, executingRole);
   });
 
 /** The core of `read`: one bound `SELECT`, no ownership branding. */

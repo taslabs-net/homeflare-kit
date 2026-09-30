@@ -34,6 +34,7 @@ export {
   buildCreateSchemaSql,
   buildDropSchemaSql,
   currentDatabase,
+  currentUser,
   isDependentObjectsError,
   schemaIsEmpty,
   selectSchema,

@@ -60,6 +60,21 @@ export const currentDatabase = (pg: PgExecutor): Effect.Effect<string, SqlError>
   );
 
 /**
+ * The role a `CREATE SCHEMA` without `AUTHORIZATION` is owned by. Measured at
+ * `gram.y@REL_18_6`: absent `AUTHORIZATION`, the schema owner is the current user.
+ * `reconcile` compares an omitted `owner` to this, so a race winner owned by someone else
+ * is drift rather than an adopted row.
+ */
+const CURRENT_USER_SQL = 'SELECT current_user AS role';
+
+export const currentUser = (pg: PgExecutor): Effect.Effect<string, SqlError> =>
+  Effect.map(
+    pg.unsafe<{ readonly role: string }>(CURRENT_USER_SQL),
+    // An empty answer can only compare unequal, failing closed into PostgresSchemaDrift.
+    (rows) => rows[0]?.role ?? '',
+  );
+
+/**
  * "Empty" means no object of ANY kind the schema owns. Measured object kinds live in four
  * catalogs: relations (tables, views, indexes, sequences — `pg_class`), functions and
  * aggregates (`pg_proc`), types, domains and enums (`pg_type`), operators (`pg_operator`). A

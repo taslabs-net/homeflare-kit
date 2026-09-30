@@ -28,6 +28,10 @@ props.
 `owner` and `comment` are the only asserted props; both are compared against the live row on
 every plan. `owner` must already exist as a role — checked with a `pg_roles` lookup before the
 30`CREATE SCHEMA`, so a missing role fails with `PostgresSchemaOwnerMissing` before any write.
+An omitted `owner` is not "leave the live owner alone": a fresh `CREATE SCHEMA` without
+`AUTHORIZATION` is owned by `current_user`, so the re-read compares `live.owner` to that role
+and drifts on a mismatch. That refuses a concurrent creator's row instead of adopting it — a
+later `RemovalPolicy.destroy()` would otherwise drop their schema.
 
 ## `database` (required)
 
@@ -59,7 +63,9 @@ An empty string IS "no comment": Postgres stores `COMMENT ON SCHEMA … IS ''` a
 `comment: ''` is normalized to "no comment" — no `COMMENT ON` is issued, and the declaration
 never drifts against the NULL the server stores. A comment mismatch is a drift refusal, and an
 undeclared comment leaves an existing live comment alone (the declaration asserts what it
-declares, nothing more).
+declares, nothing more). `COMMENT ON` is issued only after the re-read's owner has been
+asserted. A race winner is refused first, so their schema is never commented: the kit role is
+superuser, the comment would land, and the drift failure does not roll it back.
 
 ## `delete` — drop only when safe
 
@@ -84,13 +90,13 @@ Unlike `Postgres.Database` (which never drops), a schema can be dropped — but 
 
 ## Behaviour
 
-| Concern     | Rule                                                                                                                                                                                                                                                                                        |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity    | `name` is the logical id. A changed `name` or `database` is refused at plan (never `ALTER … RENAME`, never a silent move).                                                                                                                                                                  |
-| Adopt       | A schema carries no ownership mark (H1), so `read` answers `Unowned` for a match and an already-live schema needs `adopt(true)`.                                                                                                                                                            |
-| Removal     | `defaultRemovalPolicy: 'retain'`; opt in with `RemovalPolicy.destroy()`. Drop refuses non-empty without `cascade`.                                                                                                                                                                          |
-| Read        | One bound `SELECT` on `pg_namespace` (name, owner, comment, `oid`, `current_database() AS database`). `undefined` when absent.                                                                                                                                                              |
-| Write check | Re-reads after `CREATE` (S10): a schema still absent after a successful create fails with `PostgresSchemaCreateVanished`; every re-read row is asserted against the declaration, so a concurrent creator winning the `IF NOT EXISTS` race is a drift refusal, never a silently adopted row. |
+| Concern     | Rule                                                                                                                                                                                                                                                                                                                                                            |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity    | `name` is the logical id. A changed `name` or `database` is refused at plan (never `ALTER … RENAME`, never a silent move).                                                                                                                                                                                                                                      |
+| Adopt       | A schema carries no ownership mark (H1), so `read` answers `Unowned` for a match and an already-live schema needs `adopt(true)`.                                                                                                                                                                                                                                |
+| Removal     | `defaultRemovalPolicy: 'retain'`; opt in with `RemovalPolicy.destroy()`. Drop refuses non-empty without `cascade`.                                                                                                                                                                                                                                              |
+| Read        | One bound `SELECT` on `pg_namespace` (name, owner, comment, `oid`, `current_database() AS database`). `undefined` when absent.                                                                                                                                                                                                                                  |
+| Write check | Re-reads after `CREATE` (S10): a schema still absent after a successful create fails with `PostgresSchemaCreateVanished`; every re-read row is asserted against the declaration (an omitted `owner` against `current_user`), so a concurrent creator winning the `IF NOT EXISTS` race is a drift refusal before any `COMMENT ON`, never a silently adopted row. |
 
 ## Not alterable, not modelled
 
