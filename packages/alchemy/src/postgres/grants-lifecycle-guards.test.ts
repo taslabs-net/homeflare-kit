@@ -2,10 +2,11 @@
  * The ownership and refusal guards of `Postgres.Grants`, replayed against the fake server
  * model: objects the declared role OWNS are never touched (an owner holds every privilege
  * implicitly and a REVOKE cannot take that away — measured on PG 18.6, where a repair left
- * the docs' own seat example with an empty ACL on its own schema), `read` answers
- * `undefined` for a target that holds nothing, the three database-mismatch refusals fire
- * before any statement, the reconcile-side retarget guard closes the plan-time bypass, and
- * `delete` is a no-op when the role or schema is missing or the target holds no grants.
+ * the docs' own seat example with an empty ACL on its own schema), the three
+ * database-mismatch refusals fire before any statement, the reconcile-side retarget guard
+ * closes the plan-time bypass, and `delete` is a no-op when the role or schema is missing or
+ * the target holds no grants. The read path's absent-vs-projection faces live in
+ * `grants-read-absent.test.ts`.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
@@ -115,30 +116,6 @@ describe('reconcile: objects the role owns are left alone', () => {
   });
 });
 
-describe('read: an empty target is absent', () => {
-  test('answers undefined when the role holds nothing anywhere', async () => {
-    const fake = makeFakeGrants(ownedCatalog);
-    const live = await run(
-      readWithClient(
-        fake,
-        {
-          role: 'seat_writer',
-          database: 'agents',
-          schema: 'app',
-          tables: ['notes', 'shared'],
-          columns: [{ table: 'notes', column: 'id' }],
-          defaults: [],
-        },
-        context,
-      ),
-    );
-    // A first create, never an adoption of an empty schema: only grants mark the target
-    // as live, so the stack declares this grant set with adopt(true) when it is already
-    // applied and without it on a first deploy.
-    expect(live).toBeUndefined();
-  });
-});
-
 describe('the connected database must be the declared one', () => {
   test('reconcile, read and delete each refuse before any statement', async () => {
     const fake = makeFakeGrants(ownedCatalog);
@@ -163,6 +140,7 @@ describe('the connected database must be the declared one', () => {
           defaults: [],
         },
         wrongDb,
+        false,
       ),
     );
     expect(readError).toBeInstanceOf(PostgresGrantsDatabaseMismatch);

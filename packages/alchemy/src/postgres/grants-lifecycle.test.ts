@@ -103,7 +103,7 @@ describe('reconcile: convergence', () => {
         context,
       ),
     );
-    const live = await run(readWithClient(fake, namesFromAttrs(attrs), context));
+    const live = await run(readWithClient(fake, namesFromAttrs(attrs), context, true));
     expect(live?.tables).toEqual([{ table: 'widgets', privileges: ['select'] }]);
     expect(live?.columns).toEqual([{ table: 'widgets', column: 'id', privileges: ['select'] }]);
   });

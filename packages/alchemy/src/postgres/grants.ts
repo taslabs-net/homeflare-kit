@@ -66,7 +66,9 @@ export const postgresGrantsHandlers = PostgresGrants.Provider.of({
     Effect.gen(function* () {
       const names =
         output !== undefined ? namesFromAttrs(output) : declaredNames(resolveProps(olds));
-      const live = yield* withPg((pg, context) => readWithClient(pg, names, context));
+      const live = yield* withPg((pg, context) =>
+        readWithClient(pg, names, context, output !== undefined),
+      );
       return live === undefined ? undefined : Unowned(live);
     }),
 

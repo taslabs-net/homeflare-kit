@@ -153,6 +153,7 @@ in one schema of one database — schema `USAGE`/`CREATE`, per-table, per-column
 default privileges for future tables, and an optional clear of PUBLIC — computed as a
 diff against the catalogs through `aclexplode` so a re-run with nothing changed writes
 nothing and drift is repaired. See `docs/postgres-grants.md` for the vocabularies (pinned
-against `acl.h` and `grant.sgml` at `REL_18_6`), the convergence proof, the per-seat
-example (a seat group role that writes its own schema in `agents` and selects only from
-the shared ledger view), and the refusal surface.
+against `acl.h` and `grant.sgml` at `REL_18_6`), the convergence proof, and the refusal
+surface; the per-seat worked example (a seat group role that writes its own schema in
+`agents` and selects only from the shared ledger view) lives in
+`docs/postgres-grants-example.md`.

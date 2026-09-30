@@ -119,7 +119,12 @@ GRANT/REVOKE statements appear at apply, and `alchemy drift` is the path that
 re-reads the live catalogs.
 
 `read` answers `Unowned` (a grant set carries no ownership mark) — a stack declaring
-already-live grants needs `adopt(true)`. Retargeting `role`, `database` or `schema` is
+already-live grants needs `adopt(true)`. With no stored output, an all-empty read is
+`undefined` too: that is a first create, never the adoption of an empty schema (H1 —
+only grants mark a target as live). When the resource already has applied state, the
+same all-empty read is a real projection: the grantee may own everything outright, so
+`aclexplode` has no rows to report, and answering `undefined` there would flip the next
+apply into a first create. Retargeting `role`, `database` or `schema` is
 refused at plan (`PostgresGrantsRetargetRefused`): those three name what the grant set
 is about, so a new target is a new logical id.
 
@@ -139,52 +144,8 @@ resource cannot revoke (a third grantor's, say) survives the pass.
 
 ## The per-seat shape (the example this family exists for)
 
-One seat, one group role, one schema it owns the keys to, and read-only sight of the
-shared ledger. The write half is OWNERSHIP, not ACL rows: the operator creates the
-schema (and its tables) with the seat as owner, so the seat holds `CREATE` on the
-schema and every privilege on its own tables implicitly — this resource recognizes
-the catalogs' ownership facts (`pg_namespace.nspowner`, `pg_class.relowner`), records
-them in state (`schemaOwnedByRole`, `ownedTables`), and issues nothing for those
-objects. What the seat needs ACL rows FOR is other people's objects:
-
-```ts
-import { PostgresGrants, postgresProviders } from '@homeflare/alchemy/postgres';
-
-// …provide `postgresProviders(config)` alongside the stack's other providers.
-
-// The seat's own schema: the declarations below state the intent, and ownership
-// satisfies them — the repair and the delete skip the owned schema and `notes`
-// entirely (measured on PG 18.6: a REVOKE on them would strip the recorded ACL
-// entries to `{}` while the rights continue, converging on nothing). PUBLIC's
-// defaults are PUBLIC's, so the clear still runs:
-class SeatClaude2Own extends PostgresGrants('grants/seat-claude2-own', {
-  role: 'seat_claude2', // NOLOGIN group role, membership owned by a human
-  database: 'agents', // the CT100 agents database this grant set lives in
-  schema: 'claude2', // the seat's OWN schema — ownership carries the rights
-  schemaUsage: true,
-  schemaCreate: true,
-  tables: [{ table: 'notes', privileges: ['select', 'insert', 'update', 'delete'] }],
-  revokeFromPublic: true, // nothing in the seat's schema is world-readable
-}) {}
-
-// Select-only sight of the shared ledger, granted where it lives (the `ledger` schema
-// in the same database, FORCE RLS'd at the table — this resource only writes ACL rows):
-class SeatClaude2LedgerRead extends PostgresGrants('grants/seat-claude2-ledger-read', {
-  role: 'seat_claude2',
-  database: 'agents',
-  schema: 'ledger',
-  schemaUsage: true,
-  schemaCreate: false,
-  tables: [{ table: 'events', privileges: ['select'] }],
-  revokeFromPublic: false, // PUBLIC's ledger defaults are the ledger stack's call
-}) {}
-```
-
-The seat group role can write its own `claude2` schema (it owns the schema and its
-tables — `SeatClaude2Own` records that in state) and only SELECT from the shared
-ledger view. Column-level grants work the same way when a role must see one column of
-a wide table — the estate read role `hf_agent`'s column-level SELECT on
-`LiteLLM_SpendLogs` is the estate's own example.
+The worked example — one seat, one group role, its own schema, read-only sight of the
+shared ledger — lives in [`postgres-grants-example.md`](./postgres-grants-example.md).
 
 ## Not covered
 

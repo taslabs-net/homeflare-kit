@@ -16,10 +16,12 @@
  *   time — a role created in the same deploy) and the REMOVED-entries revoke set, run
  *   before the new declaration's plan and re-read after, because the server's `REVOKE ALL`
  *   on a table also clears that grantee's column entries on it.
- * ★ `read` answers `undefined` for a target that holds NOTHING anywhere: that is a first
- *   create, never an adoption of an empty schema (H1: only grants mark the target as
- *   live). No role check — the aclexplode reads are missing-role-safe by construction
- *   (`grants-read.ts`).
+ * ★ `read` answers `undefined` for a target that holds NOTHING anywhere and has no stored
+ *   output: that is a first create, never an adoption of an empty schema (H1: only grants
+ *   mark the target as live). On the update path — the resource already has applied state
+ *   — an all-empty projection is a real answer (the grantee owns everything outright, so
+ *   `aclexplode` has no rows) and is returned as the projection, not as absent. No role
+ *   check — the aclexplode reads are missing-role-safe by construction (`grants-read.ts`).
  * ★ `delete` NEVER RE-GRANTS, NEVER CASCADES. The `retain` policy is the default; the
  *   revokes are idempotent; the delete then re-reads and re-plans like `reconcile` does
  *   (S10), so a third grantor's grant that a revoke cannot clear fails loud with the
@@ -150,6 +152,7 @@ export const readWithClient = (
   pg: PgExecutor,
   names: ReturnType<typeof namesFromAttrs>,
   context: PgContext,
+  stored: boolean,
 ): Effect.Effect<PostgresGrantsAttributes | undefined, PostgresGrantsDatabaseMismatch | SqlError> =>
   Effect.gen(function* () {
     if (context.database !== names.database) {
@@ -168,7 +171,7 @@ export const readWithClient = (
       projected.tables.some((table) => table.privileges.length > 0) ||
       projected.columns.some((column) => column.privileges.length > 0) ||
       projected.defaults.some((entry) => entry.privileges.length > 0);
-    return holdsAnything ? projected : undefined;
+    return stored || holdsAnything ? projected : undefined;
   });
 
 export const deleteWithClient = (
