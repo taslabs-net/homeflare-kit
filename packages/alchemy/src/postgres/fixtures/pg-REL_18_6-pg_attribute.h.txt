@@ -1,0 +1,24 @@
+# path: src/include/catalog/pg_attribute.h
+# blob: c612aed620f63dd871f2f2cfa4ae78106992f1b9
+# tag: REL_18_6 (commit 724edf9bde9d356724ad384a2e196edc3c9f80f7)
+# fetched: 2026-09-30 via gh api repos/postgres/postgres/contents/...?ref=724edf9bde9d356724ad384a2e196edc3c9f80f7
+# excerpt: the struct header columns attrelid/attname (lines 37-46) and the attacl column (lines 170-174) of the full file, two ranges
+#
+CATALOG(pg_attribute,1249,AttributeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(75,AttributeRelation_Rowtype_Id) BKI_SCHEMA_MACRO
+{
+	Oid			attrelid BKI_LOOKUP(pg_class);	/* OID of relation containing
+												 * this attribute */
+	NameData	attname;		/* name of attribute */
+
+	/*
+	 * atttypid is the OID of the instance in Catalog Class pg_type that
+	 * defines the data type of this attribute (e.g. int4).  Information in
+	 * that instance is redundant with the attlen, attbyval, and attalign
+#
+# excerpt continued: lines 170-174
+#
+
+	/* Column-level access permissions */
+	aclitem		attacl[1] BKI_DEFAULT(_null_);
+
+	/* Column-level options */

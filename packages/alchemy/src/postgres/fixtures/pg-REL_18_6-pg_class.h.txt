@@ -1,0 +1,33 @@
+# path: src/include/catalog/pg_class.h
+# blob: 07d182da796a0c798d0ded6d97b61671d37ac491
+# tag: REL_18_6 (commit 724edf9bde9d356724ad384a2e196edc3c9f80f7)
+# fetched: 2026-09-30 via gh api repos/postgres/postgres/contents/...?ref=724edf9bde9d356724ad384a2e196edc3c9f80f7
+# excerpt: the struct header columns relname/relnamespace (lines 33-48) and the relacl column (lines 133-140) of the full file, two ranges
+#
+{
+	/* oid */
+	Oid			oid;
+
+	/* class name */
+	NameData	relname;
+
+	/* OID of namespace containing this class */
+	Oid			relnamespace BKI_DEFAULT(pg_catalog) BKI_LOOKUP(pg_namespace);
+
+	/* OID of entry in pg_type for relation's implicit row type, if any */
+	Oid			reltype BKI_LOOKUP_OPT(pg_type);
+
+	/* OID of entry in pg_type for underlying composite type, if any */
+	Oid			reloftype BKI_DEFAULT(0) BKI_LOOKUP_OPT(pg_type);
+
+#
+# excerpt continued: lines 133-140
+#
+
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
+	/* NOTE: These fields are not present in a relcache entry's rd_rel field. */
+	/* access permissions */
+	aclitem		relacl[1] BKI_DEFAULT(_null_);
+
+	/* access-method-specific options */
+	text		reloptions[1] BKI_DEFAULT(_null_);
