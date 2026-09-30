@@ -16,15 +16,23 @@ Effect's `rc` line is not semver-compatible with itself. Alchemy 78's peer is
 `effect >= 4.0.0-rc.115`; an unlocked `@effect/platform-node-shared` still floats to the
 next rc and breaks at import. Pin the whole set.
 
-| what resolves                                                 | what happens                                           |
-| ------------------------------------------------------------- | ------------------------------------------------------ |
-| Alchemy 77 + `effect` → rc.115 (measured 2026-09-16)          | `TypeError: Config.string is not a function` at import |
-| `@effect/platform-node-shared` newer than the pinned `effect` | `Cannot find module 'effect/ByteSize'`                 |
-| `rolldown` → 1.2.9 via vite's `~1.2.6` (measured 2026-09-16)  | `GET …/rolldown-1.2.9.tgz - 404` at `bun add`          |
-| no `mime` (measured 2026-09-17 against Alchemy 78)            | `Cannot find package 'mime'` from cloudflare-runtime   |
+| what resolves                                                                               | what happens                                                                                             |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Alchemy 77 + `effect` → rc.115 (measured 2026-09-16)                                        | `TypeError: Config.string is not a function` at import                                                   |
+| `@effect/platform-node-shared` newer than the pinned `effect`                               | `Cannot find module 'effect/ByteSize'`                                                                   |
+| `rolldown` → 1.2.9 via vite's `~1.2.6` (measured 2026-09-16)                                | `GET …/rolldown-1.2.9.tgz - 404` at `bun add`                                                            |
+| no `mime` (measured 2026-09-17 against Alchemy 78)                                          | `Cannot find package 'mime'` from cloudflare-runtime                                                     |
+| `redis` → 6.3.0 via the `>=5.0.0 <7.0.0` peer of platform-node/sql-pg (measured 2026-09-30) | `No version matching "6.3.0" found for specifier "@redis/time-series" (but package exists)` at `bun add` |
 
 Alchemy 78 adapted to rc.115 — that first row is why we used to pin 112, not a reason to
 stay there. The override is still the only thing that holds the set together.
+
+⛔ **`redis` (added 2026-09-30) is exact in `overrides` for the same class of gap.**
+`redis@6.3.0` hit npm at 11:03Z with its own exact dependency `@redis/time-series@6.3.0`
+never published (latest stays 6.2.1), so a lockfile-less install floating the
+`>=5.0.0 <7.0.0` peer of `@effect/platform-node`/`@effect/sql-pg` to the dist-tag latest
+failed outright. Pin 6.2.1 — the set this repo's own `bun.lock` resolves — and lift the
+pin only when upstream's 6.3.0 line is complete (every `@redis/*` sub-package published).
 
 ⚠️ `@effect/platform-node` is **required, not optional**: Alchemy's module graph reaches
 `Cloudflare/Workers/WorkerBridge → @effect/platform-node/NodeServices` even when you only

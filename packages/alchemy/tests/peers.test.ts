@@ -76,4 +76,13 @@ describe('peer contract', () => {
     expect(smoke).toMatch(/rolldown:\s*'1\.2\.8'/);
     expect(readme).toContain('"rolldown": "1.2.8"');
   });
+
+  test('overrides pin redis to the complete sub-package set, not a floating peer', () => {
+    // 🔴 Measured 2026-09-30 on #335's CI: redis@6.3.0 hit npm at 11:03Z without its
+    //   own exact dependency @redis/time-series@6.3.0 (latest stays 6.2.1); a
+    //   lockfile-less install floating the >=5.0.0 <7.0.0 peer of platform-node/sql-pg
+    //   to the dist-tag latest fails bun add outright.
+    expect(smoke).toMatch(/redis:\s*'6\.2\.1'/);
+    expect(readme).toContain('"redis": "6.2.1"');
+  });
 });

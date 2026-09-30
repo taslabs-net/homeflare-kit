@@ -59,6 +59,13 @@ const PINS = {
   //   1.2.9 and npm 404'd the tarball. 1.2.8 is the last version a green consumer
   //   install actually fetched (#37, five minutes earlier).
   rolldown: '1.2.8',
+  // ⛔ Exact for the same class of upstream gap. Measured 2026-09-30 on #335's CI:
+  //   redis@6.3.0 hit npm at 11:03Z without its own exact dependency
+  //   `@redis/time-series@6.3.0` (latest stays 6.2.1), so a lockfile-less install
+  //   floating the `>=5.0.0 <7.0.0` peer of @effect/platform-node/@effect/sql-pg
+  //   to the dist-tag latest fails outright. 6.2.1 is the set this repo's own
+  //   bun.lock resolves; lift the pin when upstream's 6.3.0 line is complete.
+  redis: '6.2.1',
 };
 
 async function run(cmd: readonly string[], cwd: string): Promise<string> {
