@@ -53,6 +53,40 @@ test('adopting a matching row stamps the seal locally and leaves unmanaged param
   expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'noop' });
 });
 
+test('adopting a matching row still converges a DECLARED credential, flags intact', async () => {
+  const fake = startFakeModelLitellm({
+    fillsParamDefaults: true,
+    masterKey: KEY,
+    seed: [
+      modelRow({
+        litellm_params: {
+          model: 'xai/grok-4.7',
+          api_key: 'os.environ/FAKE_OLD_KEY',
+          use_in_pass_through: true,
+        },
+        model_info: { access_groups: [], id: 'FAKE-live-id' },
+        model_name: 'grok',
+      }),
+    ],
+  });
+  // api_key is never on the read, so the row looks like a perfect match: only the declared
+  // credential reference says otherwise, and only a write can converge it (model-form.ts).
+  const adopted: ModelProps = {
+    apiKey: { fromEnv: 'FAKE_NEW_KEY' },
+    model: 'xai/grok-4.7',
+    modelName: 'grok',
+  };
+  const engine = stack(fake);
+  expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'adopted' });
+  expect(writesOf(fake.requests())).toContain('POST /model/update');
+  expect(fake.models()[0]?.['litellm_params']).toMatchObject({
+    api_key: 'os.environ/FAKE_NEW_KEY',
+    model: 'xai/grok-4.7',
+    use_in_pass_through: true,
+  });
+  expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'noop' });
+});
+
 test('a real params write sends null for the non-None defaults and keeps extra keys', async () => {
   const fake = startFakeModelLitellm({
     fillsParamDefaults: true,

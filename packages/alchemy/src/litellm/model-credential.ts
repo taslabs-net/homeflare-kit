@@ -14,9 +14,12 @@
  *   digest change and updates. What was last written is remembered exactly; a row whose params the
  *   proxy hides stays quiet because the comparison never involves them.
  * ⛔ ADOPTED OR FOREIGN ROWS START `paramsSeal: ''` (a row cannot supply a digest of values it
- *   hides), which reads as `stale`: one write stamps the declaration onto the row, and after that
- *   the seal is stable. `seals/write-only.ts` carries the scrypt rules; see also
- *   mcp-server-credential.ts for the credential that LiteLLM STORES (this one is only referenced).
+ *   hides), which reads as `stale`. A bare adopt of a visibly matching row records the digest
+ *   locally with no write; a stale seal on a declaration that manages a param the read never
+ *   shows (`api_key`, `api_base`) forces one stamping POST, so a different stored reference is
+ *   never sealed over. After that the seal is stable. `seals/write-only.ts` carries the scrypt
+ *   rules; see also mcp-server-credential.ts for the credential that LiteLLM STORES (this one is
+ *   only referenced).
  */
 import { seal, sealMatches } from '../secrets/write-only.ts';
 import type { ModelProps } from './model-types.ts';

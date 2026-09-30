@@ -118,7 +118,8 @@ export const modelHandlers = {
       }
       // Visible drift, or a stale seal, is an update: api_base and api_key are not on the
       // read, so the seal is the only signal they moved (model-credential.ts). Reconcile
-      // records a seal locally when nothing else moved — POST rewrites unmanaged params.
+      // then decides the writes: a bare matching adopt records its seal locally, and a
+      // declaration that manages an invisible param POSTs once to converge it.
       return differing(output, news).length === 0 && sealState(news, output.paramsSeal) === 'match'
         ? ({ action: 'noop' } as const)
         : ({ action: 'update' } as const);
@@ -142,17 +143,20 @@ export const modelHandlers = {
         modelId = before.id;
         const drifted = differing(before, news);
         const sealStale = sealState(news, sealed) === 'stale';
-        // ⛔ AN EMPTY SEAL IS NOT A WRITE. A live row starts `paramsSeal: ''` (model-form.ts),
-        //   and POST `/model/update` rewrites unmanaged `litellm_params`. Adopting a row whose
-        //   visible fields already match records the digest locally. A seal that EXISTS and no
-        //   longer matches is a declaration this resource already owns — `api_base` / `api_key`
-        //   are not on the read — so that one does POST, with nulls for the five non-`None`
-        //   defaults (model-form.ts).
-        const ownedSealMoved = sealStale && sealed !== '';
-        if (drifted.length > 0 || ownedSealMoved) {
+        // ⛔ A STAMPING ADOPT, AND ONE MORE REASON TO WRITE. A live row starts `paramsSeal: ''`
+        //   (model-form.ts), and POST `/model/update` rewrites unmanaged `litellm_params`: a bare
+        //   adopt of an already-matching row records the digest locally and writes nothing. A
+        //   declaration that manages an invisible param (`apiKey` / `apiBase` — never on the
+        //   read) must still POST once: a matching-looking row can carry a DIFFERENT stored
+        //   reference, and a local seal over it would freeze that divergence forever. A seal
+        //   that EXISTS and no longer matches is a declaration this resource already owns —
+        //   that one POSTs too, with nulls for the five non-`None` defaults (model-form.ts).
+        const sealNeedsStamp =
+          sealStale && (sealed !== '' || news.apiKey !== undefined || news.apiBase !== undefined);
+        if (drifted.length > 0 || sealNeedsStamp) {
           if (
             drifted.some((field) => field === 'model_name' || field === 'model') ||
-            ownedSealMoved
+            sealNeedsStamp
           ) {
             yield* updateModel(updateBody(news, before));
           }

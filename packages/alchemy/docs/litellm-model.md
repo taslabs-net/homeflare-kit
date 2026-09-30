@@ -98,7 +98,8 @@ A plan is refused, before any write, when the declaration:
   `model_info` beyond what the read returns, `teams`, and config-file rows (`db_model: false`) are
   not modelled on purpose. Every `POST /model/update` walks the parsed params model, not only
   an update to a duplicate name: a `None` default keeps the stored value, and a non-`None`
-  default overwrites it. A matching adopt records `paramsSeal` locally and does not POST. A
-  real params write sends `null` for `use_in_pass_through`, `use_litellm_proxy`, `use_xai_oauth`,
+  default overwrites it. A bare matching adopt records `paramsSeal` locally and does not POST; an
+  adopt whose declaration also manages `api_key` or `api_base` POSTs once, because those params
+  never appear on a read and only a write can converge them. A real params write sends `null` for `use_in_pass_through`, `use_litellm_proxy`, `use_xai_oauth`,
   `allow_client_keepalive_override` and `merge_reasoning_content_in_choices`, so those stored
   values are kept, and it is a merge — an undeclared key on the row is left in place.

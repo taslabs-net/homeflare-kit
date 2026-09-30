@@ -66,9 +66,10 @@ test('a declared id pins one of two same-named rows', async () => {
   });
   const pinned: ModelProps = { ...grok, id: 'FAKE-live-id-b' };
   expect(await stack(fake).deploy(declare(pinned), { adopt: true })).toEqual({ Grok: 'adopted' });
-  // A matching pin records the seal locally, so the only write is absent. The adopted row is
-  // the one the id named: the sibling with the same group name is left alone.
-  expect(writesOf(fake.requests())).not.toContain('POST /model/update');
+  // The pin's declaration manages a credential the read never shows, so adopt converges it with
+  // one params POST (the five nulls keep unmanaged flags — model-form.ts). The sibling with the
+  // same group name is left alone: the adopted row is the one the id named.
+  expect(writesOf(fake.requests())).toContain('POST /model/update');
   expect(fake.models().map((row) => (row['model_info'] as Row)['id'])).toEqual([
     'FAKE-live-id-a',
     'FAKE-live-id-b',
