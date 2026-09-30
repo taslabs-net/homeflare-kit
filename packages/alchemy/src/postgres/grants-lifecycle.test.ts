@@ -1,14 +1,18 @@
 /**
- * `reconcile`, `read` and `delete` against `fake-grants-sql.ts`'s server-model fake: greenfield
- * emits REVOKE-then-GRANT, a no-op re-run emits nothing, PUBLIC clearing, third-grantor survival
- * as `PostgresGrantsRepairRefused`, and the missing role/schema/database guards. Every case
- * reverts cleanly by reverting `grants-*.ts` locally: these tests fail on `origin/main` because
- * the files do not exist there.
+ * The base lifecycles of `Postgres.Grants` against `fake-grants-sql.ts`'s server-model
+ * fake: greenfield emits REVOKE-then-GRANT per class, a re-run with the previous `output`
+ * writes nothing, `read` answers the projection recovered from the attributes, a third
+ * grantor's grant survives as `PostgresGrantsRepairRefused`, and the missing role/schema
+ * guards refuse before any statement. The repair-specific lifecycles (a table revoke's
+ * column collateral, removal revocation, default privileges, a PUBLIC sequence) live in
+ * `grants-lifecycle-repair.test.ts`; the ownership and refusal guards in
+ * `grants-lifecycle-guards.test.ts`.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import { makeFakeGrants } from './fake-grants-sql.ts';
-import { deleteWithClient, readWithClient, reconcileWithClient } from './grants.ts';
+import { deleteWithClient, readWithClient, reconcileWithClient } from './grants-ops.ts';
+import { namesFromAttrs } from './grants-declare.ts';
 import type { PgContext } from './connection.ts';
 import type { PostgresGrantsProps } from './grants-attrs.ts';
 import {
@@ -35,7 +39,7 @@ const baseProps: PostgresGrantsProps = {
  * columns so column and table grants have a target. */
 const catalog = {
   schemas: ['app'],
-  roles: ['seat_writer'],
+  roles: ['postgres', 'seat_writer'],
   tables: [{ schema: 'app', table: 'widgets', columns: ['id', 'name'] }],
 };
 
@@ -50,6 +54,7 @@ describe('reconcile: greenfield', () => {
           tables: [{ table: 'widgets', privileges: ['select'] }],
           columnGrants: [{ table: 'widgets', column: 'id', privileges: ['select'] }],
         },
+        undefined,
         context,
       ),
     );
@@ -72,51 +77,35 @@ describe('reconcile: greenfield', () => {
 });
 
 describe('reconcile: convergence', () => {
-  test('a re-run after a successful reconcile writes nothing', async () => {
+  test('a re-run with the previous output writes nothing', async () => {
     const fake = makeFakeGrants(catalog);
-    await run(
-      reconcileWithClient(
-        fake,
-        { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] },
-        context,
-      ),
-    );
+    const props = { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] };
+    const attrs = await run(reconcileWithClient(fake, props, undefined, context));
     const writesBefore = fake.statements.filter((s) => isWrite(s.text)).length;
-    const again = await run(
-      reconcileWithClient(
-        fake,
-        { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] },
-        context,
-      ),
-    );
+    // The engine's real update flow: `output` (the persisted attributes) is passed back in,
+    // and its names are all still declared, so no removed-entries revocation may fire.
+    const again = await run(reconcileWithClient(fake, props, attrs, context));
     expect(again.tables).toEqual([{ table: 'widgets', privileges: ['select'] }]);
     expect(fake.statements.filter((s) => isWrite(s.text)).length).toBe(writesBefore);
   });
 
-  test('readWithClient answers Unowned-equivalent attributes from the model', async () => {
+  test('readWithClient answers the projection recovered from the attributes', async () => {
     const fake = makeFakeGrants(catalog);
-    await run(
+    const attrs = await run(
       reconcileWithClient(
         fake,
-        { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] },
-        context,
-      ),
-    );
-    const attrs = await run(
-      readWithClient(
-        fake,
         {
-          role: 'seat_writer',
-          database: 'agents',
-          schema: 'app',
-          tables: ['widgets'],
-          columns: [],
-          defaults: [],
+          ...baseProps,
+          tables: [{ table: 'widgets', privileges: ['select'] }],
+          columnGrants: [{ table: 'widgets', column: 'id', privileges: ['select'] }],
         },
+        undefined,
         context,
       ),
     );
-    expect(attrs?.tables).toEqual([{ table: 'widgets', privileges: ['select'] }]);
+    const live = await run(readWithClient(fake, namesFromAttrs(attrs), context));
+    expect(live?.tables).toEqual([{ table: 'widgets', privileges: ['select'] }]);
+    expect(live?.columns).toEqual([{ table: 'widgets', column: 'id', privileges: ['select'] }]);
   });
 
   test('a third grantor\u2019s grant survives REVOKE and surfaces as PostgresGrantsRepairRefused', async () => {
@@ -135,6 +124,7 @@ describe('reconcile: convergence', () => {
       reconcileWithClient(
         fake,
         { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] },
+        undefined,
         context,
       ),
     );
@@ -150,14 +140,14 @@ describe('reconcile: convergence', () => {
 describe('reconcile: guards', () => {
   test('refuses before any write when the grantee role is missing', async () => {
     const fake = makeFakeGrants({ ...catalog, roles: [] });
-    const error = await fails(reconcileWithClient(fake, baseProps, context));
+    const error = await fails(reconcileWithClient(fake, baseProps, undefined, context));
     expect(error).toBeInstanceOf(PostgresGrantsRoleMissing);
     expect(fake.statements.filter((s) => isWrite(s.text))).toEqual([]);
   });
 
   test('refuses when the schema does not exist', async () => {
     const fake = makeFakeGrants({ ...catalog, schemas: [] });
-    const error = await fails(reconcileWithClient(fake, baseProps, context));
+    const error = await fails(reconcileWithClient(fake, baseProps, undefined, context));
     expect(error).toBeInstanceOf(PostgresGrantsSchemaMissing);
   });
 });
@@ -173,6 +163,7 @@ describe('delete', () => {
           tables: [{ table: 'widgets', privileges: ['select'] }],
           revokeFromPublic: true,
         },
+        undefined,
         context,
       ),
     );

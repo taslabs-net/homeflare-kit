@@ -1,34 +1,19 @@
 /**
- * The pure diff engine: `resolveProps`' defaults, the declaration refusals, the repair plan
- * (no-op, drift, revoke-only, grant-option split, the two PUBLIC clears) and `splitGrantWords`.
- * The read-back projection, the plan-time comparison and the cleared twin `delete` replays
- * live in `grants-plan-diff.test.ts`.
+ * The pure declaration layer: `resolveProps`' defaults and normalization, the declaration
+ * refusals (vocabulary, plain-vs-starred conflict, duplicates, name length) and
+ * `splitGrantWords`. The repair and revocation planners live in
+ * `grants-repair-plan.test.ts`; the projection and comparison in `grants-plan-diff.test.ts`.
  */
 import { describe, expect, test } from 'bun:test';
 import type { PostgresGrantsProps } from './grants-attrs.ts';
-import {
-  declarationRefusal,
-  grantsNamesRefusal,
-  resolveProps,
-  splitGrantWords,
-} from './grants-declare.ts';
-import { planRepair } from './grants-plan.ts';
-import type { LiveGrants } from './grants-read.ts';
+import { declarationRefusal, grantsNamesRefusal } from './grants-refuse.ts';
+import { resolveProps, splitGrantWords } from './grants-declare.ts';
 
 const props: PostgresGrantsProps = {
   role: 'seat_writer',
   database: 'agents',
   schema: 'app',
 };
-
-const live = (over: Partial<LiveGrants> = {}): LiveGrants => ({
-  schemaExists: true,
-  schema: { role: [], public: [] },
-  tables: [],
-  columns: [],
-  defaults: [],
-  ...over,
-});
 
 describe('resolveProps', () => {
   test('schemaUsage defaults true, schemaCreate and the PUBLIC revokes default false', () => {
@@ -91,6 +76,25 @@ describe('declarationRefusal', () => {
     expect(refusal).toEqual({ kind: 'privilege', prop: 'tables.widgets', word: '*' });
   });
 
+  test('a base word declared both plain and WITH GRANT OPTION is refused — the server keeps one aclitem per grantee per grantor, so the pair can never converge', () => {
+    expect(
+      declarationRefusal(
+        resolveProps({
+          ...props,
+          tables: [{ table: 'widgets', privileges: ['select', 'select*'] }],
+        }),
+      ),
+    ).toEqual({ kind: 'duplicate', prop: 'tables.widgets', name: 'select' });
+    expect(
+      declarationRefusal(
+        resolveProps({
+          ...props,
+          columnGrants: [{ table: 'widgets', column: 'id', privileges: ['update', 'update*'] }],
+        }),
+      ),
+    ).toEqual({ kind: 'duplicate', prop: 'columnGrants.widgets.id', name: 'update' });
+  });
+
   test('the same table, column pair or forRole twice is a duplicate refusal', () => {
     expect(
       declarationRefusal(
@@ -131,83 +135,6 @@ describe('declarationRefusal', () => {
     const refused = grantsNamesRefusal(resolveProps({ ...props, role: 'a'.repeat(64) }));
     expect(refused).toEqual({ name: 'a'.repeat(64), byteLength: 64, limit: 63 });
     expect(grantsNamesRefusal(resolveProps({ ...props, schema: 'a'.repeat(63) }))).toBeUndefined();
-  });
-});
-
-describe('planRepair', () => {
-  test('a class whose live set equals the declaration contributes nothing', () => {
-    expect(
-      planRepair(
-        resolveProps({ ...props, tables: [{ table: 'widgets', privileges: ['select'] }] }),
-        live({
-          schema: { role: ['usage'], public: [] },
-          tables: [{ table: 'widgets', role: ['select'], public: [] }],
-        }),
-      ),
-    ).toEqual([]);
-  });
-
-  test('drift on a table is REVOKE ALL then GRANT the declared words', () => {
-    expect(
-      planRepair(
-        resolveProps({ ...props, tables: [{ table: 'widgets', privileges: ['select'] }] }),
-        live({ tables: [{ table: 'widgets', role: ['insert', 'update'], public: [] }] }),
-      ),
-    ).toEqual([
-      'REVOKE ALL ON SCHEMA "app" FROM "seat_writer"',
-      'GRANT usage ON SCHEMA "app" TO "seat_writer"',
-      'REVOKE ALL ON "app"."widgets" FROM "seat_writer"',
-      'GRANT select ON "app"."widgets" TO "seat_writer"',
-    ]);
-  });
-
-  test('a class that declares nothing but holds live grants gets the revoke only', () => {
-    expect(
-      planRepair(
-        resolveProps({ ...props, schemaUsage: false }),
-        live({ schema: { role: ['usage'], public: [] } }),
-      ),
-    ).toEqual(['REVOKE ALL ON SCHEMA "app" FROM "seat_writer"']);
-  });
-
-  test('a mixed grant-option list splits into one plain grant and one option grant', () => {
-    const plan = planRepair(
-      resolveProps({
-        ...props,
-        tables: [{ table: 'widgets', privileges: ['select', 'insert*'] }],
-      }),
-      live({ tables: [{ table: 'widgets', role: ['delete'], public: [] }] }),
-    );
-    expect(plan).toContain('GRANT select ON "app"."widgets" TO "seat_writer"');
-    expect(plan).toContain('GRANT insert ON "app"."widgets" TO "seat_writer" WITH GRANT OPTION');
-    expect(plan.some((s) => s === 'GRANT select, insert ON "app"."widgets" TO "seat_writer"')).toBe(
-      false,
-    );
-  });
-});
-
-describe('the PUBLIC clears', () => {
-  const declared = resolveProps({ ...props, revokeFromPublic: true });
-
-  test('PUBLIC schema words earn the schema revoke; PUBLIC table words earn the tables revoke', () => {
-    expect(planRepair(declared, live({ schema: { role: ['usage'], public: ['usage'] } }))).toEqual([
-      'REVOKE ALL ON SCHEMA "app" FROM PUBLIC',
-    ]);
-    expect(
-      planRepair(
-        declared,
-        live({
-          schema: { role: ['usage'], public: [] },
-          columns: [{ table: 'widgets', column: 'id', role: [], public: ['select'] }],
-        }),
-      ),
-    ).toEqual(['REVOKE ALL ON ALL TABLES IN SCHEMA "app" FROM PUBLIC']);
-  });
-
-  test('without the flag, PUBLIC holds are never drift', () => {
-    expect(
-      planRepair(resolveProps(props), live({ schema: { role: ['usage'], public: ['usage'] } })),
-    ).toEqual([]);
   });
 });
 

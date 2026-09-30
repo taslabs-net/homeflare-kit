@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import * as Effect from 'effect/Effect';
-import { diffPostgresGrants } from './grants.ts';
+import { diffPostgresGrants } from './grants-ops.ts';
 import type { PostgresGrantsAttributes, PostgresGrantsProps } from './grants-attrs.ts';
 import {
   PostgresGrantsDuplicateObject,
@@ -31,6 +31,8 @@ const output: PostgresGrantsAttributes = {
   defaults: [],
   publicSchemaRevoked: true,
   publicTablesRevoked: true,
+  schemaOwnedByRole: false,
+  ownedTables: [],
 };
 
 describe('diff: retarget refusals', () => {

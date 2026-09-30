@@ -37,6 +37,15 @@ describe('grant builders', () => {
     );
   });
 
+  test('an out-of-vocabulary word is refused before it reaches a GRANT clause', () => {
+    // The builders are exported API, so the vocabulary check lives inside them, not only
+    // in the resource path: an injected fragment can never be concatenated into SQL.
+    expect(() => grantTableSql('app', 'widgets', 'seat_writer', ['select', 'execute'])).toThrow(
+      /not a privilege/,
+    );
+    expect(() => grantTableSql('app', 'widgets', 'seat_writer', ['*'])).toThrow(/not a privilege/);
+  });
+
   test('a column grant parenthesizes the column after the words', () => {
     expect(grantColumnSql('app', 'widgets', 'id', 'seat_writer', ['select'])).toBe(
       'GRANT select ("id") ON "app"."widgets" TO "seat_writer"',
