@@ -5,7 +5,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
-import { SqlError, SqlSyntaxError } from 'effect/unstable/sql/SqlError';
+import { SqlError, UnknownError } from 'effect/unstable/sql/SqlError';
 import { makeFakeSql } from './fake-sql.ts';
 import { type PostgresSchemaAttributes, type PostgresSchemaProps } from './schema-attrs.ts';
 import type { PgExecutor } from './database-sql.ts';
@@ -209,8 +209,8 @@ describe('drop', () => {
 
   test('classifies the server 2BP01 refusal as the typed not-empty tag', async () => {
     // The emptiness check said empty, but the server refuses with SQLSTATE 2BP01 — an object
-    // kind the check's four catalogs do not cover. Both drivers classify 42* as SqlSyntaxError
-    // with the raw code on the cause; this executor replays exactly that shape.
+    // kind the check's four catalogs do not cover. Class `2B` is not `42`, so both drivers
+    // wrap it as UnknownError with the raw code on the cause; this executor replays that shape.
     const refusing: PgExecutor = {
       unsafe: <A extends object>(text: string) =>
         text.startsWith('SELECT current_database()')
@@ -219,7 +219,7 @@ describe('drop', () => {
             ? Effect.succeed([{ empty: true }] as unknown as ReadonlyArray<A>)
             : Effect.fail(
                 new SqlError({
-                  reason: new SqlSyntaxError({
+                  reason: new UnknownError({
                     cause: Object.assign(
                       new Error('ERROR:  2BP01: dependent objects still exist'),
                       { code: '2BP01' },

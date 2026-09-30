@@ -71,7 +71,8 @@ Unlike `Postgres.Database` (which never drops), a schema can be dropped — but 
   `pg_class` (relations), `pg_proc` (functions), `pg_type` (types/enums/domains) and
   `pg_operator` — so a schema holding only functions or enums is still refused. Whatever the
   catalogs miss is still safe: the server's own `2BP01` dependent-objects refusal is classified
-  as the same typed tag.
+  as the same typed tag. `2BP01` is class `2B`, so both transports wrap it as `UnknownError`
+  with the raw code on `reason.cause.code` — the classifier reads that code, not the tag.
 - With `cascade: true` the drop is `DROP SCHEMA IF EXISTS … CASCADE` and removes the schema's
   objects too. The `IF EXISTS` makes delete idempotent.
 - A `cascade` change is a real change: it answers `update` (compared against the previous

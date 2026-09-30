@@ -91,13 +91,15 @@ export const schemaIsEmpty = (pg: PgExecutor, name: string): Effect.Effect<boole
   );
 
 /** SQLSTATE `2BP01` (`dependent_objects_still_exist`): the non-cascade `DROP SCHEMA` refused
- * because an object kind outside the emptiness check's four catalogs still exists. Measured at
- * `internal/sqlError.ts@effect/sql-pg`: every SQLSTATE starting `42` classifies as
- * `SqlSyntaxError` with the raw code on `reason.cause.code` — the same shape
- * `isDuplicateDatabaseRace` (`database-sql.ts`) reads, and the runner transport's `failure()`
- * (`psql-executor.ts`) produces. */
+ * because an object kind outside the emptiness check's four catalogs still exists.
+ *
+ * Measured at `@effect/sql-pg@4.0.0-rc.115` `src/internal/sqlError.ts#classifySqlState`: only
+ * class `42` becomes `SqlSyntaxError`. `2BP01` is class `2B`, so it falls through to
+ * `UnknownError` (`sqlError.ts:74`). `PgConnection.ts#classifyFields` still puts the raw code
+ * on `reason.cause.code`. The runner transport copies that rule (`psql-executor.ts#failure`):
+ * `SqlSyntaxError` only when `state.startsWith('42')`, otherwise `UnknownError` with the same
+ * `cause.code`. Reading the code, not the tag, is what makes a real server refusal match. */
 export const isDependentObjectsError = (error: SqlError): boolean => {
-  if (error.reason._tag !== 'SqlSyntaxError') return false;
   const cause = error.reason.cause;
   return (
     typeof cause === 'object' && cause !== null && (cause as { code?: unknown }).code === '2BP01'
