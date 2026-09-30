@@ -85,8 +85,8 @@ describe('reconcile: greenfield', () => {
       reconcileWithClient(fake, { ...baseProps, memberOf: ['seat-b', 'hf_agent'] }),
     );
     expect(startingWith(fake, 'GRANT')).toEqual([
-      { text: 'GRANT "hf_agent" TO "seat-observability"', params: [] },
-      { text: 'GRANT "seat-b" TO "seat-observability"', params: [] },
+      { text: 'GRANT "hf_agent" TO "seat-observability" WITH SET FALSE', params: [] },
+      { text: 'GRANT "seat-b" TO "seat-observability" WITH SET FALSE', params: [] },
     ]);
     expect(attrs.memberOf).toEqual(['hf_agent', 'seat-b']);
   });
@@ -158,7 +158,7 @@ describe('reconcile: already present', () => {
     fake.memberships.add('seat-observability\0hf_agent');
     const attrs = await run(reconcileWithClient(fake, { ...baseProps, memberOf: ['seat-owners'] }));
     expect(startingWith(fake, 'GRANT').map((s) => s.text)).toEqual([
-      'GRANT "seat-owners" TO "seat-observability"',
+      'GRANT "seat-owners" TO "seat-observability" WITH SET FALSE',
     ]);
     expect(startingWith(fake, 'REVOKE').map((s) => s.text)).toEqual([
       'REVOKE "hf_agent" FROM "seat-observability"',
@@ -200,6 +200,10 @@ describe('read', () => {
       inherit: true,
       validUntil: null,
       memberOf: ['hf_agent', 'seat-b'],
+      memberships: [
+        { parent: 'hf_agent', admin: false, set: false },
+        { parent: 'seat-b', admin: false, set: false },
+      ],
     });
   });
 });

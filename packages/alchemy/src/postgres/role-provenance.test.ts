@@ -73,20 +73,20 @@ const PROP_MAPPING: Readonly<
 /** Every synopsis option this family does NOT declare as a prop, and why. */
 const EXCLUDED: Readonly<Record<string, string>> = {
   SUPERUSER:
-    'left at the server default (NOSUPERUSER); a stack-minted superuser defeats the least-privilege ledger the estate maintains',
+    'left at the server default (NOSUPERUSER) on CREATE; an adopt or alter that finds rolsuper true is PostgresRolePrivilegedRefused — the flag is not inherited, SET ROLE exercises it',
   NOSUPERUSER:
     'the server default for CREATE ROLE; never declared, so the default is what a create lands on',
   CREATEDB:
     "left at the server default (NOCREATEDB); database creation is Postgres.Database's job, not a role prop",
   NOCREATEDB: 'the server default for CREATE ROLE; never declared',
   CREATEROLE:
-    'left at the server default (NOCREATEROLE); a CREATEROLE role can manage — and escalate through — other roles',
+    'left at the server default (NOCREATEROLE) on CREATE; an adopt or alter that finds rolcreaterole true is refused — a CREATEROLE role can manage other roles',
   NOCREATEROLE: 'the server default for CREATE ROLE; never declared',
   REPLICATION:
     'left at the server default (NOREPLICATION); replication is a cluster-operator concern, never a seat role',
   NOREPLICATION: 'the server default for CREATE ROLE; never declared',
   BYPASSRLS:
-    "left at the server default (NOBYPASSRLS); a role bypassing row-level security defeats the estate's ledger model",
+    'left at the server default (NOBYPASSRLS) on CREATE; an adopt or alter that finds rolbypassrls true is refused',
   NOBYPASSRLS: 'the server default for CREATE ROLE; never declared',
   'PASSWORD NULL':
     'clears the password; this family never clears one — a password is either declared by reference or left alone',
@@ -94,7 +94,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
     'the create-time membership shorthand; this family writes memberships with one explicit GRANT per parent instead, so the re-read stays authoritative',
   ROLE: 'grants the listed roles membership in the NEW role — the inverse of memberOf; membership is declared in one direction only',
   ADMIN:
-    'grants membership with ADMIN OPTION; the seat shape needs no admin option, and pg_auth_members keeps its default',
+    'grants membership with ADMIN OPTION; a live membership that already has admin_option is revoked and re-granted without it, and the seat GRANT says SET FALSE',
   SYSID:
     'ignored by the server since PostgreSQL 8.1 (the docs keep it only for compatibility); this family never assigns oids',
 };

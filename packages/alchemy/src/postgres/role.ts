@@ -22,7 +22,7 @@
  * ★ `defaultRemovalPolicy: 'retain'` — a seat group role may own objects and be granted across
  *   databases; a destroy is still implemented in full (`DROP ROLE IF EXISTS`), opt in with
  *   `.pipe(RemovalPolicy.destroy())`. A role that still owns objects fails the drop with the
- *   server's own `2B01`, surfaced as the client's `SqlError`.
+ *   server's own `2BP01` (`dependent_objects_still_exist`), surfaced as the client's `SqlError`.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
@@ -37,17 +37,20 @@ import { passwordMatchesSeal, resolvePassword, sealPassword } from './role-secre
 import {
   buildAlterRoleSql,
   buildCreateRoleSql,
-  buildGrantMembershipSql,
-  buildRevokeMembershipSql,
   buildSetPasswordSql,
   membershipDrift,
+  privilegedFlags,
   readRoleWithClient,
   scalarDrift,
+  storedAttributes,
+  syncMemberships,
+  unsafeMemberships,
 } from './role-sql.ts';
 import {
   PostgresRoleCreateVanished,
   PostgresRoleNameRefused,
   PostgresRolePasswordEnvUnsetError,
+  PostgresRolePrivilegedRefused,
   PostgresRoleRenameRefused,
   PostgresRoleValidUntilRefused,
 } from './role-errors.ts';
@@ -87,7 +90,10 @@ export const reconcileWithClient = (
   previousSeal = '',
 ): Effect.Effect<
   PostgresRoleAttributes,
-  PostgresRolePasswordEnvUnsetError | PostgresRoleCreateVanished | SqlError
+  | PostgresRolePasswordEnvUnsetError
+  | PostgresRolePrivilegedRefused
+  | PostgresRoleCreateVanished
+  | SqlError
 > =>
   Effect.gen(function* () {
     const resolved = resolvePassword(props, env);
@@ -117,9 +123,24 @@ export const reconcileWithClient = (
         return yield* Effect.fail(new PostgresRoleCreateVanished({ role: props.name }));
       }
       return {
-        ...created,
+        ...storedAttributes(created),
         passwordSeal: resolved.value === undefined ? '' : sealPassword(resolved.value),
       };
+    }
+    // A live role this stack did not create can carry flags CREATE ROLE's default leaves off.
+    // They are not inherited: SET ROLE to this role exercises them. Refuse before any write.
+    const flags = privilegedFlags(observed);
+    if (flags.length > 0) {
+      return yield* Effect.fail(new PostgresRolePrivilegedRefused({ role: props.name, flags }));
+    }
+    // A declared password this stack has never sealed is not "do not churn". CREATE ROLE and
+    // ALTER ROLE … PASSWORD are two statements; a retry after the second failed, or after the
+    // process died before state was saved, sees the role and an empty seal. An unset variable
+    // there must refuse — reporting success would leave a LOGIN role with a null password.
+    if (resolved.variable !== undefined && resolved.value === undefined && previousSeal === '') {
+      return yield* Effect.fail(
+        new PostgresRolePasswordEnvUnsetError({ role: props.name, variable: resolved.variable }),
+      );
     }
     // Adopted or drifted: every scalar comes back to the declaration, one ALTER per field.
     for (const change of scalarDrift(props, observed)) {
@@ -136,36 +157,18 @@ export const reconcileWithClient = (
         .unsafe(buildSetPasswordSql(props.name, Redacted.value(resolved.value)))
         .pipe(Effect.asVoid);
     }
-    yield* syncMemberships(pg, props, observed.memberOf ?? []);
+    yield* syncMemberships(pg, props, observed.memberOf ?? [], unsafeMemberships(observed));
     const after = yield* readRoleWithClient(pg, props.name);
     if (after === undefined) {
       return yield* Effect.fail(new PostgresRoleCreateVanished({ role: props.name }));
     }
     return {
-      ...after,
+      ...storedAttributes(after),
       passwordSeal:
         resolved.value === undefined || passwordMatched
           ? previousSeal
           : sealPassword(resolved.value),
     };
-  });
-
-/** Grant what the declaration wants and revoke what it does not. `undefined` leaves live alone;
- * answers the declared set (sorted, de-duplicated), or the live set when nothing was declared. */
-export const syncMemberships = (
-  pg: PgExecutor,
-  props: PostgresRoleProps,
-  live: readonly string[],
-): Effect.Effect<readonly string[], SqlError> =>
-  Effect.gen(function* () {
-    const { grants, revokes } = membershipDrift(props.memberOf, live);
-    for (const parent of grants) {
-      yield* pg.unsafe(buildGrantMembershipSql(props.name, parent)).pipe(Effect.asVoid);
-    }
-    for (const parent of revokes) {
-      yield* pg.unsafe(buildRevokeMembershipSql(props.name, parent)).pipe(Effect.asVoid);
-    }
-    return props.memberOf === undefined ? live : [...new Set(props.memberOf)].sort();
   });
 
 /** The core of `read`. Answers `undefined` when absent; ownership branding and the state-only

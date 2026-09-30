@@ -4,7 +4,7 @@
  * ⛔ NONE OF THESE IS A STATUS-CODE OR MESSAGE MATCH. Every one is raised from a fact the
  *   provider already checked (a byte count, a live catalog row, a missing environment variable,
  *   a vanished create) — never from sniffing a driver error's text. A `DROP ROLE` that the
- *   server refuses (the role still owns objects, `2B01 dependent_objects_still_exist`) surfaces
+ *   server refuses (the role still owns objects, `2BP01 dependent_objects_still_exist`) surfaces
  *   as the `SqlError` the client raised, unclassified by this family.
  */
 import * as Data from 'effect/Data';
@@ -64,7 +64,26 @@ export class PostgresRolePasswordEnvUnsetError extends Data.TaggedError(
   override get message(): string {
     return (
       `Postgres.Role "${this.role}": password.fromEnv "${this.variable}" is unset or empty ` +
-      'in the deploying process, but this create requires a password.'
+      'in the deploying process, but this write requires a password this stack has not sealed.'
+    );
+  }
+}
+
+/** A live role carries a catalog flag this family never declares (`rolsuper`, `rolcreaterole`,
+ * `rolcreatedb`, `rolreplication`, `rolbypassrls`). Those are not inherited: a member who
+ * `SET ROLE`s to the parent exercises them. Refused before any write, adopt included. */
+export class PostgresRolePrivilegedRefused extends Data.TaggedError(
+  'PostgresRolePrivilegedRefused',
+)<{
+  readonly role: string;
+  readonly flags: readonly string[];
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Role "${this.role}": the live role has ${this.flags.join(', ')} set. This ` +
+      'family never declares those attributes (a create lands on the server default, all off), ' +
+      'and they are not inherited — a member who SET ROLEs to this role would exercise them. ' +
+      'Clear the flag on the cluster before this stack adopts the role.'
     );
   }
 }
@@ -108,4 +127,5 @@ export type PostgresRoleError =
   | PostgresRoleRenameRefused
   | PostgresRoleValidUntilRefused
   | PostgresRolePasswordEnvUnsetError
+  | PostgresRolePrivilegedRefused
   | PostgresRoleCreateVanished;

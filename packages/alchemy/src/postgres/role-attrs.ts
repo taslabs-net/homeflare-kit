@@ -34,8 +34,12 @@ const VALID_UNTIL_OFFSET = /(?:Z|[+-]\d{2}:\d{2})$/;
 export const validUntilRefusal = (
   value: string,
 ): { readonly reason: 'unparseable' | 'zone-free' } | undefined => {
+  // A zone suffix is not a timestamp. `2027-13-01T00:00:00Z` and `not-a-dateZ` match the
+  // offset and `Date.parse` to NaN; accepting them sends a VALID UNTIL PostgreSQL rejects, or
+  // one that never compares equal on read-back, so every later reconcile re-issues the ALTER.
+  if (Number.isNaN(Date.parse(value))) return { reason: 'unparseable' };
   if (VALID_UNTIL_OFFSET.test(value)) return undefined;
-  return { reason: Number.isNaN(Date.parse(value)) ? 'unparseable' : 'zone-free' };
+  return { reason: 'zone-free' };
 };
 
 /** Whether a declared `validUntil` and the live serialised value name the same instant. Both
@@ -92,10 +96,31 @@ export interface PostgresRoleAttributes {
   /** ISO 8601 (`...Z`), server-side serialised; `null` when the live row has no expiry. */
   readonly validUntil: string | null;
   /**
+   * Catalog flags this family never declares. A create lands on the server default (all false).
+   * An adopt or alter that finds any of them true is refused — they are not inherited, so a
+   * member who `SET ROLE`s to this role would exercise them. Absent on a seeded test row means
+   * false, the default a `CREATE ROLE` without the option lands on.
+   */
+  readonly superuser?: boolean;
+  readonly createrole?: boolean;
+  readonly createdb?: boolean;
+  readonly replication?: boolean;
+  readonly bypassrls?: boolean;
+  /**
    * Parent role names, sorted. Empty array when the role is a member of nothing. Null means
    * "memberships were not declared on this resource", so the field is not asserted.
    */
   readonly memberOf: readonly string[] | null;
+  /**
+   * The membership rows behind `memberOf`, including `admin_option` and `set_option`. Present
+   * on a catalog read; absent on attributes the engine stored before this field existed, which
+   * is the safe case (nothing to re-grant). Not compared by `diff` — reconcile reads it live.
+   */
+  readonly memberships?: readonly {
+    readonly parent: string;
+    readonly admin: boolean;
+    readonly set: boolean;
+  }[];
   /**
    * A seal of the last password value written, or `''` if none was ever written (`seal()` from
    * `secrets/write-only.ts`). Lets a later reconcile notice a rotated environment variable

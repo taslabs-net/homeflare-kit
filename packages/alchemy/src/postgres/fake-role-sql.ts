@@ -24,6 +24,8 @@ export interface FakeRoleState {
   readonly roleRows: Map<string, PostgresRoleAttributes>;
   /** `member\0parent` pairs backing `pg_auth_members`; `GRANT`/`REVOKE` mutate it. */
   readonly memberships: Set<string>;
+  /** Options a name-only compare would hide. A `GRANT … WITH SET FALSE` clears the row. */
+  readonly membershipOptions: Map<string, { readonly admin: boolean; readonly set: boolean }>;
   /** Hands out the next `oid` a real cluster would assign. */
   nextOid(): number;
 }
@@ -97,7 +99,12 @@ export const applyRoleStatement = <A extends object>(
       .filter((pair) => pair.split('\0')[0] === member)
       .map((pair) => pair.split('\0')[1] as string)
       .sort();
-    return Effect.succeed(parents.map((parent) => ({ parent })) as unknown as ReadonlyArray<A>);
+    return Effect.succeed(
+      parents.map((parent) => {
+        const options = state.membershipOptions.get(`${member}\0${parent}`);
+        return { parent, admin: options?.admin === true, set: options?.set === true };
+      }) as unknown as ReadonlyArray<A>,
+    );
   }
 
   if (text.includes('FROM pg_roles r')) {
@@ -127,11 +134,14 @@ export const applyRoleStatement = <A extends object>(
   }
 
   if (text.startsWith('GRANT')) {
-    const m = /^GRANT "((?:[^"]|"")*)" TO "((?:[^"]|"")*)"$/.exec(text);
+    const m = /^GRANT "((?:[^"]|"")*)" TO "((?:[^"]|"")*)"(?: WITH SET FALSE)?$/.exec(text);
     if (m === null) {
       throw new Error(`fake-sql: could not parse a generated GRANT statement: ${text}`);
     }
-    state.memberships.add(`${unquoteIdent(m[2] as string)}\0${unquoteIdent(m[1] as string)}`);
+    const pair = `${unquoteIdent(m[2] as string)}\0${unquoteIdent(m[1] as string)}`;
+    state.memberships.add(pair);
+    // `WITH SET FALSE` is the seat grant. It carries no ADMIN, so the options row goes away.
+    if (text.endsWith('WITH SET FALSE')) state.membershipOptions.delete(pair);
     return Effect.succeed([] as unknown as ReadonlyArray<A>);
   }
 
@@ -140,7 +150,9 @@ export const applyRoleStatement = <A extends object>(
     if (m === null) {
       throw new Error(`fake-sql: could not parse a generated REVOKE statement: ${text}`);
     }
-    state.memberships.delete(`${unquoteIdent(m[2] as string)}\0${unquoteIdent(m[1] as string)}`);
+    const pair = `${unquoteIdent(m[2] as string)}\0${unquoteIdent(m[1] as string)}`;
+    state.memberships.delete(pair);
+    state.membershipOptions.delete(pair);
     return Effect.succeed([] as unknown as ReadonlyArray<A>);
   }
 

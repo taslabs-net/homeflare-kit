@@ -77,6 +77,10 @@ describe('validUntil', () => {
     expect(validUntilRefusal('2027-01-01T00:00:00')).toEqual({ reason: 'zone-free' });
     expect(validUntilRefusal('2027-01-01')).toEqual({ reason: 'zone-free' });
     expect(validUntilRefusal('not a timestamp')).toEqual({ reason: 'unparseable' });
+    // A zone suffix is not enough: Date.parse of these is NaN, and a plan that accepts them
+    // sends a VALID UNTIL PostgreSQL rejects or that never compares equal on read-back.
+    expect(validUntilRefusal('2027-13-01T00:00:00Z')).toEqual({ reason: 'unparseable' });
+    expect(validUntilRefusal('not-a-dateZ')).toEqual({ reason: 'unparseable' });
   });
 
   test('refuseAtPlan raises the typed tag for a zone-free value', async () => {
@@ -206,7 +210,7 @@ describe('quoting', () => {
     expect(buildAlterRoleSql('a"b', { prop: 'connectionLimit', value: 3 })).toBe(
       'ALTER ROLE "a""b" WITH CONNECTION LIMIT 3',
     );
-    expect(buildGrantMembershipSql('m"1', 'p"2')).toBe('GRANT "p""2" TO "m""1"');
+    expect(buildGrantMembershipSql('m"1', 'p"2')).toBe('GRANT "p""2" TO "m""1" WITH SET FALSE');
     expect(buildRevokeMembershipSql('m"1', 'p"2')).toBe('REVOKE "p""2" FROM "m""1"');
     expect(buildDropRoleSql('a"b')).toBe('DROP ROLE IF EXISTS "a""b"');
   });

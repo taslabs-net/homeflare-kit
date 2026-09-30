@@ -43,6 +43,23 @@ describe('psql executor', () => {
     expect(isDuplicateDatabaseRace(error)).toBe(true);
   });
 
+  test('a failed password statement does not carry the password in the error', async () => {
+    const password = 'seat-secret-value';
+    const statement = `ALTER ROLE "hf_agent" WITH PASSWORD '${password}'`;
+    const run: PsqlRunner = () =>
+      Promise.resolve({
+        code: 3,
+        stdout: '',
+        stderr: `ERROR:  42501: permission denied\nSTATEMENT:  ${statement}\n`,
+      });
+    const error = await Effect.runPromise(
+      Effect.flip(makePsqlExecutor(run, target).unsafe(statement)),
+    );
+    const rendered = `${error.message}\n${String(error.reason.operation ?? '')}\n${JSON.stringify(error)}`;
+    expect(rendered).not.toContain(password);
+    expect(rendered).not.toContain(`PASSWORD '${password.slice(0, 3)}`);
+  });
+
   test('a runner that never reached psql is a ConnectionError', async () => {
     const run: PsqlRunner = () =>
       Promise.resolve({ code: 255, stdout: '', stderr: 'ssh: refused' });

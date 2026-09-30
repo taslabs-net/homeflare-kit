@@ -67,15 +67,19 @@ const isSelect = (sql: string): boolean => /^\s*SELECT\b/i.test(sql);
 const wrapRows = (sql: string): string =>
   `SELECT coalesce(json_agg(t), '[]'::json)::text FROM (${sql}) t;`;
 
+/** A password literal must not survive into an error Alchemy logs. `ALTER ROLE … PASSWORD`
+ * inlines the value (Postgres has no bind form), and the runner turns the first 40 characters
+ * of that statement into `operation` and the full `stderr` into `message`. */
+export const redactPasswordLiterals = (text: string): string =>
+  text.replace(/PASSWORD\s+'(?:[^']|'')*'/gi, "PASSWORD '[redacted]'");
+
 const failure = (operation: string, result: PsqlResult): SqlError => {
   const state = /ERROR:\s+([0-9A-Z]{5}):/.exec(result.stderr)?.[1];
+  const stderr = redactPasswordLiterals(result.stderr.trim());
   const fields = {
-    cause: Object.assign(
-      new Error(result.stderr.trim()),
-      state === undefined ? {} : { code: state },
-    ),
-    message: result.stderr.trim(),
-    operation,
+    cause: Object.assign(new Error(stderr), state === undefined ? {} : { code: state }),
+    message: stderr,
+    operation: redactPasswordLiterals(operation),
   };
   const reason =
     state === undefined
@@ -118,7 +122,9 @@ export const makePsqlExecutor = (run: PsqlRunner, target: PsqlTarget): PgExecuto
         catch: (cause) =>
           new SqlError({ reason: new ConnectionError({ cause, operation: 'psql exec' }) }),
       });
-      if (result.code !== 0) return yield* Effect.fail(failure(inlined.slice(0, 40), result));
+      if (result.code !== 0) {
+        return yield* Effect.fail(failure(redactPasswordLiterals(inlined).slice(0, 40), result));
+      }
       if (!rows) return [] as ReadonlyArray<A>;
       const parsed = yield* Effect.try({
         try: () => (JSON.parse(result.stdout.trim() || '[]') as unknown[]).map(normalizeRow),

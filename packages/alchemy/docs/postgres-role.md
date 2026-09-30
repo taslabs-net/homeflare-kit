@@ -21,7 +21,8 @@ run yourself. The `Postgres.Database` resource in this kit already binds `@effec
   that needs it. State remembers only a `scrypt:<salt>:<digest>` seal, so a reconcile re-sends the
   secret only when the environment value differs from the one last written — a plan never re-sends
   a secret that already matches, and never stores one. A create that declares a password but whose
-  variable is unset refuses before any write (`PostgresRolePasswordEnvUnsetError`).
+  variable is unset refuses before any write (`PostgresRolePasswordEnvUnsetError`), including
+  the retry of a create whose password statement never sealed.
 - **Membership is `pg_auth_members`, compared as a sorted set.** `memberOf` omitted leaves live
   memberships alone; `[]` ensures none. Moves run through one-parent `GRANT`/`REVOKE`
   (`alter_role.sgml`: "there are no options for adding or removing memberships; use GRANT and
@@ -29,7 +30,11 @@ run yourself. The `Postgres.Database` resource in this kit already binds `@effec
 - **`defaultRemovalPolicy: 'retain'`.** A seat group role may own objects and be granted across
   databases. A destroy is still implemented in full (`DROP ROLE IF EXISTS`, idempotent), opted in
   with `.pipe(RemovalPolicy.destroy())`. A role that still owns objects fails the drop with the
-  server's own `2B01`, surfaced as the client's `SqlError`.
+  server's own `2BP01` (`dependent_objects_still_exist`; class `2B` is `2B000`), surfaced as the
+  client's `SqlError`. An adopt or alter that finds `SUPERUSER`, `CREATEROLE`, `CREATEDB`,
+  `REPLICATION` or `BYPASSRLS` set refuses (`PostgresRolePrivilegedRefused`) before any write:
+  those flags are not inherited, and `SET ROLE` to the parent exercises them. A seat `GRANT`
+  says `WITH SET FALSE`; a membership already granted `WITH ADMIN` is revoked and re-granted.
 
 ## Props → `CREATE ROLE` / `ALTER ROLE` → catalog mapping
 

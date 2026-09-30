@@ -50,6 +50,7 @@ export {
   selectRole,
   selectRoleMemberships,
 } from './role-sql.ts';
+export type { MembershipRow } from './role-sql.ts';
 export { PostgresRole, isPostgresRole } from './role.ts';
 export { PostgresRoleProvider } from './role-provider.ts';
 export { resolvePassword } from './role-secrets.ts';
@@ -59,6 +60,7 @@ export {
   PostgresRoleCreateVanished,
   PostgresRoleNameRefused,
   PostgresRolePasswordEnvUnsetError,
+  PostgresRolePrivilegedRefused,
   PostgresRoleRenameRefused,
   PostgresRoleValidUntilRefused,
   type PostgresRoleError,

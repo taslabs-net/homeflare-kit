@@ -7,6 +7,7 @@
 import { Unowned } from 'alchemy/AdoptPolicy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
+import { refuseTakeover } from '../ownership/adopt.ts';
 import { PostgresRole } from './role.ts';
 import { diffPostgresRole, readRole, reconcileWithClient, refuseAtPlan } from './role.ts';
 import { buildDropRoleSql } from './role-sql.ts';
@@ -31,11 +32,20 @@ export const postgresRoleHandlers = PostgresRole.Provider.of({
 
   diff: ({ news, output }) => diffPostgresRole(news, output),
 
-  reconcile: ({ news, output }) =>
+  reconcile: ({ fqn, instanceId, news, output }) =>
     Effect.gen(function* () {
       yield* refuseAtPlan(news);
       return yield* withPg((pg) =>
-        reconcileWithClient(pg, news, process.env, output?.passwordSeal),
+        Effect.gen(function* () {
+          // Alchemy skips the plan probe while a prop is still an Output, and a role can
+          // appear between plan and apply. A live role with no state is a takeover: refuse
+          // before any ALTER, PASSWORD or REVOKE, unless `--adopt` speaks for this apply.
+          const observed = yield* readRole(pg, news.name);
+          if (observed !== undefined && output === undefined) {
+            yield* refuseTakeover({ fqn, instanceId, output }, 'Postgres.Role');
+          }
+          return yield* reconcileWithClient(pg, news, process.env, output?.passwordSeal);
+        }),
       );
     }),
 

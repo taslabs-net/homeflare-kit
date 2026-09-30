@@ -34,6 +34,8 @@ export interface FakeSql extends PgExecutor {
   readonly roleRows: Map<string, PostgresRoleAttributes>;
   /** `member\0parent` pairs backing `pg_auth_members`; `GRANT`/`REVOKE` mutate it. */
   readonly memberships: Set<string>;
+  /** Options on a membership the name alone hides. Absent means neither ADMIN nor SET. */
+  readonly membershipOptions: Map<string, { readonly admin: boolean; readonly set: boolean }>;
 }
 
 export interface FakeSqlOptions {
@@ -83,12 +85,14 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   const roleRows = new Map(options.roleRows?.map((r) => [r.name, r] as const) ?? []);
   const databases = new Map(options.databases?.map((d) => [d.name, d] as const) ?? []);
   const memberships = new Set<string>();
+  const membershipOptions = new Map<string, { readonly admin: boolean; readonly set: boolean }>();
   let raceRemaining = options.raceNextCreate === true ? 1 : 0;
   let oidCounter = 20000;
   const roleState: FakeRoleState = {
     roleNames,
     roleRows,
     memberships,
+    membershipOptions,
     nextOid: () => {
       const oid = oidCounter;
       oidCounter += 1;
@@ -142,5 +146,5 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
       throw new Error(`fake-sql: unrecognised statement: ${text}`);
     });
 
-  return { unsafe, statements, databases, roleRows, memberships };
+  return { unsafe, statements, databases, roleRows, memberships, membershipOptions };
 };

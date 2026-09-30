@@ -110,6 +110,18 @@ describe('password: live role', () => {
     expect(fake.statements.some((s) => s.text.startsWith('ALTER'))).toBe(false);
     expect(attrs.passwordSeal).toBe(oldSeal);
   });
+
+  test('a declared password whose seal is still empty refuses an unset variable on the update path', async () => {
+    // CREATE ROLE committed, then ALTER ROLE … PASSWORD failed or the process died before state
+    // was saved. The next run sees the role and an empty seal. Reporting success would leave a
+    // LOGIN role this stack has never sealed.
+    const fake = makeFakeSql({ roleRows: [liveRole({ login: true })] });
+    const error = await fails(
+      reconcileWithClient(fake, { ...withPassword, login: true }, { PG_SEAT_ROLE_PASSWORD: '' }),
+    );
+    expect(error).toBeInstanceOf(PostgresRolePasswordEnvUnsetError);
+    expect(fake.statements.some((s) => s.text.startsWith('ALTER'))).toBe(false);
+  });
 });
 
 describe('password: no new write statements on the no-op path', () => {
