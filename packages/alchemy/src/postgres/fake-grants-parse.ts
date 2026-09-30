@@ -8,6 +8,10 @@
  * ⛔ IT PARSES ITS OWN OUTPUT, NOT SQL IN GENERAL (`fake-sql.ts`'s own rule): every value
  *   the builders `quoteIdent` is read back through the same `"…""…"` unquoting, and every
  *   statement ends in exactly one of the accepted shapes or the parse refuses.
+ * ⛔ A COLUMN GRANT CARRIES ONE COLUMN LIST PER WORD — `GRANT select ("id"), update ("id")`:
+ *   a single trailing list binds only to the privilege it follows (gram.y@REL_18_6), so
+ *   `GRANT select, update ("id")` is a table-level SELECT on a real server. The parser
+ *   refuses that shape instead of filing it as a column-only grant.
  */
 export interface AclObject {
   readonly schema: string;
@@ -33,12 +37,16 @@ const unquote = (raw: string): string => raw.replace(/""/g, '"');
 
 const IDENT = String.raw`"((?:[^"]|"")*)"`;
 const WORDS = String.raw`([a-z]+(?:, [a-z]+)*)`;
+/** One column-grant atom, `word ("col")` — the shape every builder column statement is made of. */
+const SYNOPSIS = String.raw`[a-z]+ \("(?:[^"]|"")*"\)`;
 const GRANTEE = String.raw`(?:"((?:[^"]|"")*)"|PUBLIC)`;
 const OPTION = String.raw`(?:( WITH GRANT OPTION))?`;
 
 interface Pattern {
   readonly re: RegExp;
-  readonly parse: (m: RegExpExecArray) => Omit<ParsedWrite, 'kind'>;
+  /** `undefined` when the regex matched but the shape is one no builder emits — the loop
+   * falls through and the parse refuses (a builder regression, not a tolerated statement). */
+  readonly parse: (m: RegExpExecArray) => Omit<ParsedWrite, 'kind'> | undefined;
 }
 
 const role = (raw: string | undefined): string => (raw === undefined ? 'PUBLIC' : unquote(raw));
@@ -72,17 +80,33 @@ const PATTERNS: ReadonlyArray<Pattern & { readonly kind: 'grant' | 'revoke' }> =
   },
   {
     kind: 'grant',
-    re: new RegExp(`^GRANT ${WORDS} \\(${IDENT}\\) ON ${IDENT}\\.${IDENT} TO ${GRANTEE}${OPTION}$`),
-    parse: (m) => ({
-      object: {
-        schema: unquote(m[3] as string),
-        table: unquote(m[4] as string),
-        column: unquote(m[2] as string),
-      },
-      grantee: role(m[5] as string | undefined),
-      words: (m[1] as string).split(', '),
-      option: m[6] !== undefined,
-    }),
+    // ⛔ Every word carries its OWN column list — `GRANT select ("id"), update ("id") …`.
+    // A single trailing list binds only to the privilege it follows (gram.y@REL_18_6), so
+    // `GRANT select, update ("id")` is a table-level SELECT on a real server; the parser
+    // refuses that shape instead of filing it as a column-only grant (a builder that
+    // emits it would over-grant at the table level while the suite stays green).
+    re: new RegExp(
+      `^GRANT (${SYNOPSIS}(?:, ${SYNOPSIS})*) ON ${IDENT}\\.${IDENT} TO ${GRANTEE}${OPTION}$`,
+    ),
+    parse: (m) => {
+      const pairs = [...(m[1] as string).matchAll(/([a-z]+) \("((?:[^"]|"")*)"\)/g)];
+      const first = pairs[0];
+      if (first === undefined) return undefined;
+      const column = unquote(first[2] as string);
+      // One statement grants ONE column: every synopsis pair must name the same one (the
+      // builders emit one column per statement) — mixed columns are a foreign shape.
+      if (pairs.some(([, , raw]) => unquote(raw as string) !== column)) return undefined;
+      return {
+        object: {
+          schema: unquote(m[2] as string),
+          table: unquote(m[3] as string),
+          column,
+        },
+        grantee: role(m[4] as string | undefined),
+        words: pairs.map(([, word]) => word as string),
+        option: m[5] !== undefined,
+      };
+    },
   },
   {
     kind: 'revoke',
@@ -157,7 +181,9 @@ export const parseGrantStatement = (text: string): ParsedWrite | undefined => {
   for (const pattern of PATTERNS) {
     const m = pattern.re.exec(text);
     if (m === null) continue;
-    return { kind: pattern.kind, ...pattern.parse(m) };
+    const parsed = pattern.parse(m);
+    if (parsed === undefined) continue;
+    return { kind: pattern.kind, ...parsed };
   }
   return undefined;
 };

@@ -52,6 +52,19 @@ describe('grant builders', () => {
     );
   });
 
+  test('a multi-word column grant repeats the synopsis per word', () => {
+    // One trailing column list binds only to the privilege it follows (gram.y@REL_18_6):
+    // `GRANT select, update ("id")` is a table-level SELECT plus a column-level UPDATE.
+    // Every word carries its own list, so all of them land on the column and nothing on
+    // the relation — a grant the declaration did not name is never issued.
+    expect(grantColumnSql('app', 'widgets', 'amount', 'seat_writer', ['select', 'update'])).toBe(
+      'GRANT select ("amount"), update ("amount") ON "app"."widgets" TO "seat_writer"',
+    );
+    expect(grantColumnSql('app', 'widgets', 'amount', 'seat_writer', ['select*', 'update*'])).toBe(
+      'GRANT select ("amount"), update ("amount") ON "app"."widgets" TO "seat_writer" WITH GRANT OPTION',
+    );
+  });
+
   test('a schema grant names SCHEMA, not a relation', () => {
     expect(grantSchemaSql('app', 'seat_writer', ['usage'])).toBe(
       'GRANT usage ON SCHEMA "app" TO "seat_writer"',

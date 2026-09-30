@@ -61,7 +61,14 @@ export const grantTableSql = (
   return `GRANT ${parts.join(', ')} ON ${quoteIdent(schema)}.${quoteIdent(table)} TO ${quoteIdent(role)}${optionClause(anyOption)}`;
 };
 
-/** `GRANT` on one column of one relation. */
+/** `GRANT` on one column of one relation.
+ *
+ * Each word is emitted as its own synopsis inside one statement — `GRANT select ("col"),
+ * update ("col") ON …`. A column list binds only to the privilege it follows
+ * (gram.y@REL_18_6), so a word list under ONE trailing column list parses as a table-level
+ * grant of every word but the last (which alone lands on the column) — a silent over-grant
+ * the declaration did not name. Repeating the synopsis is the one shape that puts every
+ * declared word on the column and nothing on the relation. */
 export const grantColumnSql = (
   schema: string,
   table: string,
@@ -70,7 +77,8 @@ export const grantColumnSql = (
   words: ReadonlyArray<string>,
 ): string => {
   const { parts, anyOption } = splitParts(words);
-  return `GRANT ${parts.join(', ')} (${quoteIdent(column)}) ON ${quoteIdent(schema)}.${quoteIdent(table)} TO ${quoteIdent(role)}${optionClause(anyOption)}`;
+  const columnList = `(${quoteIdent(column)})`;
+  return `GRANT ${parts.map((word) => `${word} ${columnList}`).join(', ')} ON ${quoteIdent(schema)}.${quoteIdent(table)} TO ${quoteIdent(role)}${optionClause(anyOption)}`;
 };
 
 /** `GRANT` on the schema itself (`USAGE` / `CREATE`). */

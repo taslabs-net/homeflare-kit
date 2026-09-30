@@ -5,11 +5,15 @@
  * grants must re-grant the columns in the SAME pass to converge; (2) removing an entry from
  * the declaration revokes the privilege instead of silently retaining it; (3) default
  * privileges grant, read back and converge; (4) a PUBLIC grant on a SEQUENCE survives the
- * bulk revoke, so it must never block `revokeFromPublic`'s convergence.
+ * bulk revoke, so it must never block `revokeFromPublic`'s convergence; (5) a multi-word
+ * column grant repeats the synopsis per word — every word lands on the column, nothing on
+ * the relation, and the parser refuses the single-trailing-list shape PG 18.6 reads as a
+ * table-level grant.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import { makeFakeGrants } from './fake-grants-sql.ts';
+import { parseGrantStatement } from './fake-grants-parse.ts';
 import { reconcileWithClient } from './grants-ops.ts';
 import type { PgContext } from './connection.ts';
 import type { PostgresGrantsAttributes, PostgresGrantsProps } from './grants-attrs.ts';
@@ -153,5 +157,60 @@ describe('reconcile: PUBLIC on a sequence', () => {
     const writesBefore = fake.statements.filter((s) => isWrite(s.text)).length;
     await run(reconcileWithClient(fake, props, attrs, context));
     expect(fake.statements.filter((s) => isWrite(s.text)).length).toBe(writesBefore);
+  });
+});
+
+describe('reconcile: multi-word column grants land on the column, not the table', () => {
+  test('a two-word column declaration converges and leaves no table-level grant', async () => {
+    const fake = makeFakeGrants(catalog);
+    const props: PostgresGrantsProps = {
+      ...baseProps,
+      columnGrants: [{ table: 'widgets', column: 'id', privileges: ['select', 'update'] }],
+    };
+    const attrs = await run(reconcileWithClient(fake, props, undefined, context));
+    // Each word carries its own column list, so `select` and `update` both land on the
+    // column and nothing lands on the relation — the re-read projection proves it.
+    expect(attrs.columns).toEqual([
+      { table: 'widgets', column: 'id', privileges: ['select', 'update'] },
+    ]);
+    expect(attrs.tables).toEqual([]);
+    // The statement that got the words there is the synopsis repeat, not a word list under
+    // one trailing column list (which PG 18.6 reads as a table-level grant of all but the last).
+    expect(writesOf(fake)).toContain(
+      'GRANT select ("id"), update ("id") ON "app"."widgets" TO "seat_writer"',
+    );
+    // A re-run with the projection back in is a no-op — the shape converges.
+    const writesBefore = fake.statements.filter((s) => isWrite(s.text)).length;
+    await run(reconcileWithClient(fake, props, attrs, context));
+    expect(fake.statements.filter((s) => isWrite(s.text)).length).toBe(writesBefore);
+  });
+});
+
+describe('fake parser: the single-trailing-column-list shape is refused', () => {
+  test('a word list under one column list is not a column grant', () => {
+    // On PG 18.6 this is a table-level SELECT plus a column-level UPDATE; the builders
+    // never emit it, so the parser must not file it as a column-only grant.
+    expect(parseGrantStatement('GRANT select, update ("id") ON "app"."widgets" TO "seat"')).toBe(
+      undefined,
+    );
+  });
+
+  test('the synopsis-repeat shape parses as one column grant with every word', () => {
+    const parsed = parseGrantStatement(
+      'GRANT select ("id"), update ("id") ON "app"."widgets" TO "seat"',
+    );
+    expect(parsed).toEqual({
+      kind: 'grant',
+      object: { schema: 'app', table: 'widgets', column: 'id' },
+      grantee: 'seat',
+      words: ['select', 'update'],
+      option: false,
+    });
+  });
+
+  test('mixed columns in one statement are refused', () => {
+    expect(
+      parseGrantStatement('GRANT select ("id"), update ("name") ON "app"."widgets" TO "seat"'),
+    ).toBe(undefined);
   });
 });
