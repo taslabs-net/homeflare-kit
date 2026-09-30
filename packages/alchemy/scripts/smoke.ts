@@ -133,7 +133,7 @@ import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement,
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { PROVISION_PRIVILEGES, PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, ProxmoxNotificationMatcher, alertmanagerAlertBody, declareProvisionBaseline, provisionBootstrap } from '@homeflare/alchemy/proxmox';
 import { NETBOX_CONSTRAINTS_DIGEST, NetboxPrefix, bodyViolations, constraintsFor } from '@homeflare/alchemy/netbox';
-import { PostgresDatabase, isPostgresDatabase, nameByteRefusal, quoteIdent } from '@homeflare/alchemy/postgres';
+import { PostgresDatabase, PostgresSchema, isPostgresDatabase, isPostgresSchema, nameByteRefusal, quoteIdent } from '@homeflare/alchemy/postgres';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
 import { PAPERLESS_CONSTRAINTS_DIGEST, Tag as PaperlessTag, bodyViolations as paperlessBodyViolations, constraintsFor as paperlessConstraintsFor } from '@homeflare/alchemy/paperless';
 import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, renderUnit, sshRunner } from '@homeflare/alchemy/linux';
@@ -154,7 +154,7 @@ for (const [name, value] of Object.entries({
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
   NetboxPrefix, bodyViolations, constraintsFor, NETBOX_CONSTRAINTS_DIGEST,
   PaperlessTag, paperlessBodyViolations, paperlessConstraintsFor, PAPERLESS_CONSTRAINTS_DIGEST,
-  PostgresDatabase, isPostgresDatabase, nameByteRefusal, quoteIdent,
+  PostgresDatabase, PostgresSchema, isPostgresDatabase, isPostgresSchema, nameByteRefusal, quoteIdent,
   HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, ReleaseBinary, releaseProviders,
   parseVerifyArgs, verifySession, verifyStack,
   litellmProviders,
@@ -370,6 +370,9 @@ if (!isPostgresDatabase(PostgresDatabase) || quoteIdent('a"b') !== '"a""b"') {
 }
 if (nameByteRefusal('a'.repeat(64))?.byteLength !== 64 || nameByteRefusal('a'.repeat(63)) !== undefined) {
   throw new Error('postgres subpath from dist lost the NAMEDATALEN byte-length refusal');
+}
+if (!isPostgresSchema(PostgresSchema)) {
+  throw new Error('postgres subpath from dist lost isPostgresSchema or the Schema resource');
 }
 
 console.log('all nineteen subpaths import and resolve');

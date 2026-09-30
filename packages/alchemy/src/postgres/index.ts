@@ -1,6 +1,7 @@
 /**
- * PostgreSQL providers for Alchemy — `Postgres.Database`, create-and-assert over a self-hosted
- * cluster, walked against PostgreSQL 18.6. See `docs/postgres.md`.
+ * PostgreSQL providers for Alchemy — `Postgres.Database` (create-and-assert over one
+ * self-hosted cluster) and `Postgres.Schema` (create-and-assert over one schema inside one),
+ * both walked against PostgreSQL 18.6. See `docs/postgres.md` and `docs/postgres-schema.md`.
  *
  * ⛔ THIS BARREL IS THE PUBLIC API, deliberately smaller than the directory: `fake-sql.ts` is a
  *   test double, not something a consuming stack should import.
@@ -18,6 +19,7 @@ export type { PostgresDatabaseAttributes, PostgresDatabaseProps } from './databa
 export { POSTGRES_NAME_MAX_BYTES, nameByteRefusal, utf8ByteLength } from './database-attrs.ts';
 export {
   buildCreateDatabaseSql,
+  databaseExists,
   firstDrift,
   isDuplicateDatabaseRace,
   quoteIdent,
@@ -26,6 +28,36 @@ export {
   selectDatabase,
 } from './database-sql.ts';
 export { PostgresDatabase, PostgresDatabaseProvider, isPostgresDatabase } from './database.ts';
+export type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
+export { normalizedComment, schemaNameByteRefusal } from './schema-attrs.ts';
+export {
+  buildCommentSchemaSql,
+  buildCreateSchemaSql,
+  buildDropSchemaSql,
+  currentDatabase,
+  currentUser,
+  isDependentObjectsError,
+  schemaIsEmpty,
+  selectSchema,
+} from './schema-sql.ts';
+export {
+  PostgresSchema,
+  PostgresSchemaProvider,
+  diffPostgresSchema,
+  isPostgresSchema,
+} from './schema.ts';
+export {
+  PostgresSchemaCreateVanished,
+  PostgresSchemaDatabaseRefused,
+  PostgresSchemaDeleteForeignRefused,
+  PostgresSchemaDrift,
+  PostgresSchemaDropNotEmptyError,
+  PostgresSchemaNameRefused,
+  PostgresSchemaOwnerMissing,
+  PostgresSchemaRenameRefused,
+  PostgresSchemaWrongDatabase,
+  type PostgresSchemaError,
+} from './schema-errors.ts';
 export {
   PostgresDatabaseDrift,
   PostgresDatabaseDropRefused,

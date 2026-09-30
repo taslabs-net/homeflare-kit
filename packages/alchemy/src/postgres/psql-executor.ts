@@ -11,8 +11,9 @@
  * ⛔ `psql` HAS NO BIND PARAMETERS OVER STDIN. Every `$n` is replaced by a `quoteStringLiteral`
  *   literal, and ONLY string params are accepted — this family binds a database or role name,
  *   nothing else — so a number or object is a refusal, never silently stringified.
- * ★ ROWS COME BACK AS JSON: a `SELECT` is wrapped in `json_agg`, so `oid` and `datconnlimit`
- *   arrive as JS numbers exactly as the socket client decodes them (database-sql.ts, no bigint).
+ * ★ ROWS COME BACK AS JSON: a row-returning statement (`SELECT`, or a `WITH` query) is wrapped
+ *   in `json_agg`, so `oid` and `datconnlimit` arrive as JS numbers exactly as the socket client
+ *   decodes them (database-sql.ts, no bigint).
  * ★ `VERBOSITY=verbose` puts the SQLSTATE in the error line, so `42P04` (duplicate database)
  *   stays recognisable to `isDuplicateDatabaseRace`.
  */
@@ -62,7 +63,10 @@ const normalizeRow = (row: unknown): unknown =>
     ? { ...row, oid: Number((row as { oid: string }).oid) }
     : row;
 
-const isSelect = (sql: string): boolean => /^\s*SELECT\b/i.test(sql);
+/** Row-returning statements: a plain `SELECT`, or a CTE query (`WITH … SELECT …`). A `WITH`
+ * whose rows were discarded would answer an empty table instead of its result — the emptiness
+ * check is `WITH`-led, so a missing `WITH` here silently claims every schema is empty. */
+const returnsRows = (sql: string): boolean => /^\s*(SELECT|WITH)\b/i.test(sql);
 
 const wrapRows = (sql: string): string =>
   `SELECT coalesce(json_agg(t), '[]'::json)::text FROM (${sql}) t;`;
@@ -94,7 +98,7 @@ export const makePsqlExecutor = (run: PsqlRunner, target: PsqlTarget): PgExecuto
         catch: (cause) =>
           new SqlError({ reason: new UnknownError({ cause, operation: 'psql inline params' }) }),
       });
-      const rows = isSelect(inlined);
+      const rows = returnsRows(inlined);
       const result = yield* Effect.tryPromise({
         try: () =>
           run({

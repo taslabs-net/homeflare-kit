@@ -103,6 +103,22 @@ export const roleExists = (pg: PgExecutor, role: string): Effect.Effect<boolean,
     (rows) => rows.length > 0,
   );
 
+const DATABASE_EXISTS_SQL = 'SELECT 1 AS present FROM pg_database WHERE datname = $1';
+
+/**
+ * Does one database of the cluster exist? `Postgres.Schema` runs this over the FAMILY
+ * connection (no `withPg` database override) before `read` and `delete`, so a declared
+ * database that does not exist yet answers "schema absent" instead of the transports' untyped
+ * connect failures (`ConnectionError` over psql, `UnknownError` 3D000 over the socket). The
+ * probe targets the maintenance database the family connection already points at, which a
+ * cold plan can always reach.
+ */
+export const databaseExists = (pg: PgExecutor, name: string): Effect.Effect<boolean, SqlError> =>
+  Effect.map(
+    pg.unsafe<{ readonly present: number }>(DATABASE_EXISTS_SQL, [name]),
+    (rows) => rows.length > 0,
+  );
+
 /** `datlocprovider` is Postgres's internal 1-byte `"char"` type, which this client decodes as
  * raw bytes rather than text (measured 2026-09-23 against the live socket — `docs/postgres.md`);
  * the `CASE` maps it to the same three words `pg_collation.h@REL_18_6#collprovider_name` returns
