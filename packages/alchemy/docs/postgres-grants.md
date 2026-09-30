@@ -80,6 +80,11 @@ the object's owner can revoke).
   `GRANT` the declared words — split into one plain grant and one
   `WITH GRANT OPTION` grant when the declaration mixes the two, because one option
   clause would grant the option to every listed privilege.
+- **A multi-word column grant repeats the synopsis per word:** `GRANT select ("col"),
+update ("col")` — one trailing column list binds only to the privilege it follows
+  (gram.y@REL_18_6), so `GRANT select, update ("col")` would be a table-level grant of
+  every word but the last; each word carries its own list, which puts all of them on the
+  column and nothing on the relation.
 - **A table revoke re-grants the table's declared columns in the same pass:** the
   server's table-level `REVOKE ALL` also clears the grantee's column entries on the
   table (measured on PG 18.6), so when a table's privileges change and the declaration
