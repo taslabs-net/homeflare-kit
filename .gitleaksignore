@@ -60,3 +60,13 @@ packages/distilled-litellm/src/services/team_management.ts:curl-auth-header:4311
 # entity's key. Regenerating this file can shift the line number; re-run `gitleaks protect
 # --staged --redact --no-banner` and update it below rather than reaching for --no-verify.
 packages/alchemy/src/ceph/ceph-key-leak-assert.ts:generic-api-key:19
+
+# role-provenance.test.ts anchors every Postgres fixture to the git blob object ID (SHA-1, from
+# `git hash-object`) of the vendor file it was committed from, so a fixture that drifts from
+# postgres@REL_18_6 fails the test by hash. The two constants below are those object IDs —
+# content digests of public upstream source, computed once, never credentials. The sibling
+# database-provenance.test.ts carries the same shape; only these two crossed generic-api-key's
+# entropy threshold. Moving the constants renumbers the lines; re-run `gitleaks protect --staged
+# --redact --no-banner` and update the fingerprints below rather than reaching for --no-verify.
+packages/alchemy/src/postgres/role-provenance.test.ts:generic-api-key:21
+packages/alchemy/src/postgres/role-provenance.test.ts:generic-api-key:22

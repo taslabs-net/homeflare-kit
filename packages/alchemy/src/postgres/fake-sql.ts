@@ -2,18 +2,23 @@
  * A recording fake `PgExecutor` (S28: "Tests use `bun:test`… a test never trusts the deploy's
  * own report" — here read back from the fake's own catalog, not from the statement list) for
  * every lifecycle test in this family. No socket, no `@effect/sql-pg` client — it is small
- * enough to re-derive the one thing this provider ever asks of a real one: three statement
- * shapes, matched by text, against an in-memory `pg_roles` set and `pg_database` map.
+ * enough to re-derive the one thing this provider ever asks of a real one: the statement shapes
+ * this family issues, matched by text, against an in-memory `pg_database` map and the role
+ * catalog `fake-role-sql.ts` applies.
  *
  * ⛔ IT PARSES ITS OWN OUTPUT, NOT SQL IN GENERAL. `parseCreate` below understands exactly the
  *   text `buildCreateDatabaseSql` (`database-sql.ts`) produces — quoted with `quoteIdent` /
  *   `quoteStringLiteral` — because that is the only `CREATE DATABASE` this family ever issues. A
- *   general SQL parser would hide a quoting bug instead of tripping over it.
+ *   general SQL parser would hide a quoting bug instead of tripping over it. The role half lives
+ *   in `fake-role-sql.ts` under the same rule.
  */
 import * as Effect from 'effect/Effect';
 import { SqlError, SqlSyntaxError } from 'effect/unstable/sql/SqlError';
 import type { PostgresDatabaseAttributes } from './database-attrs.ts';
+import type { PostgresRoleAttributes } from './role-attrs.ts';
 import type { PgExecutor } from './database-sql.ts';
+import { unquoteIdent, unquoteLiteral } from './fake-sql-quote.ts';
+import { type FakeRoleState, applyRoleStatement } from './fake-role-sql.ts';
 
 export interface RecordedStatement {
   readonly text: string;
@@ -25,19 +30,21 @@ export interface FakeSql extends PgExecutor {
   /** Mutable on purpose: a test seeds a row a "competing" statement would have produced (the
    * `42P04` race case) before the fake ever sees it. */
   readonly databases: Map<string, PostgresDatabaseAttributes>;
+  /** Mutable on purpose: a test seeds a live role (adoption, drift) or clears one (drop). */
+  readonly roleRows: Map<string, PostgresRoleAttributes>;
+  /** `member\0parent` pairs backing `pg_auth_members`; `GRANT`/`REVOKE` mutate it. */
+  readonly memberships: Set<string>;
 }
 
 export interface FakeSqlOptions {
   readonly roles?: ReadonlyArray<string>;
   readonly databases?: ReadonlyArray<PostgresDatabaseAttributes>;
+  readonly roleRows?: ReadonlyArray<PostgresRoleAttributes>;
   /** Fail the NEXT `CREATE DATABASE` with SQLSTATE `42P04` (duplicate_database), once, the way a
    * concurrent creator racing this reconcile would — classified exactly as
    * `@effect/sql-pg`'s own driver classifies it (`database-sql.ts`'s header). */
   readonly raceNextCreate?: boolean;
 }
-
-const unquoteIdent = (raw: string): string => raw.replace(/""/g, '"');
-const unquoteLiteral = (raw: string): string => raw.replace(/''/g, "'");
 
 /** Pull every field back out of exactly the text `buildCreateDatabaseSql` writes. */
 const parseCreate = (text: string): PostgresDatabaseAttributes => {
@@ -72,10 +79,22 @@ const parseCreate = (text: string): PostgresDatabaseAttributes => {
 
 export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   const statements: RecordedStatement[] = [];
-  const roles = new Set(options.roles ?? []);
+  const roleNames = new Set(options.roles ?? []);
+  const roleRows = new Map(options.roleRows?.map((r) => [r.name, r] as const) ?? []);
   const databases = new Map(options.databases?.map((d) => [d.name, d] as const) ?? []);
+  const memberships = new Set<string>();
   let raceRemaining = options.raceNextCreate === true ? 1 : 0;
   let oidCounter = 20000;
+  const roleState: FakeRoleState = {
+    roleNames,
+    roleRows,
+    memberships,
+    nextOid: () => {
+      const oid = oidCounter;
+      oidCounter += 1;
+      return oid;
+    },
+  };
 
   const unsafe = <A extends object>(
     text: string,
@@ -87,7 +106,9 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
       if (text.startsWith('SELECT 1 AS present FROM pg_roles')) {
         const role = params[0] as string;
         return Effect.succeed(
-          (roles.has(role) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
+          (roleNames.has(role) || roleRows.has(role)
+            ? [{ present: 1 }]
+            : []) as unknown as ReadonlyArray<A>,
         );
       }
 
@@ -110,14 +131,16 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
             }),
           );
         }
-        const row = { ...parseCreate(text), oid: oidCounter };
-        oidCounter += 1;
+        const row = { ...parseCreate(text), oid: roleState.nextOid() };
         databases.set(row.name, row);
         return Effect.succeed([] as unknown as ReadonlyArray<A>);
       }
 
+      const roleStatement = applyRoleStatement<A>(roleState, text, params);
+      if (roleStatement !== undefined) return roleStatement;
+
       throw new Error(`fake-sql: unrecognised statement: ${text}`);
     });
 
-  return { unsafe, statements, databases };
+  return { unsafe, statements, databases, roleRows, memberships };
 };
