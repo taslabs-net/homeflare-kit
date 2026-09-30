@@ -145,3 +145,14 @@ rule; the consuming stack's runner does.
 - Not covered: there is no `Postgres.Role` resource in the kit yet, so the owner role must
   exist (`PostgresDatabaseOwnerMissing` otherwise). NetBox's 11 lost triggers on `pg_restore`
   are a restore concern, out of this resource's scope.
+
+## `Postgres.Grants` (2026-09-30)
+
+The second resource on the same runner transport: one declarative grant set for one role
+in one schema of one database — schema `USAGE`/`CREATE`, per-table, per-column and
+default privileges for future tables, and an optional clear of PUBLIC — computed as a
+diff against the catalogs through `aclexplode` so a re-run with nothing changed writes
+nothing and drift is repaired. See `docs/postgres-grants.md` for the vocabularies (pinned
+against `acl.h` and `grant.sgml` at `REL_18_6`), the convergence proof, the per-seat
+example (a seat group role that writes its own schema in `agents` and selects only from
+the shared ledger view), and the refusal surface.
