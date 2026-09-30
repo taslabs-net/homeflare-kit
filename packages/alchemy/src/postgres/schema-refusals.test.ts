@@ -1,26 +1,23 @@
 /**
- * Every plan-time refusal for `Postgres.Schema`, checked without a client: name-byte precision,
- * quoting, the rename refusal, a sweep proving `diff` never answers `replace`, and the real
- * handler's drop path with its retain default.
+ * Every plan-time refusal for `Postgres.Schema`, checked without a client: name-byte
+ * precision, identifier and literal quoting, the rename and database-move refusals, and the
+ * sweep proving `diff` never answers `replace` — including the `cascade` flip compared against
+ * `olds` so the change reaches the persisted props. The real handlers over the runner transport
+ * live in `schema-handlers.test.ts`.
  */
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import * as Effect from 'effect/Effect';
 import { POSTGRES_NAME_MAX_BYTES, utf8ByteLength } from './database-attrs.ts';
 import { quoteIdent, quoteStringLiteral } from './database-sql.ts';
-import { postgresRunnerConnection } from './connection.ts';
 import { buildCommentSchemaSql, buildCreateSchemaSql } from './schema-sql.ts';
-import { type PsqlRunner } from './psql-executor.ts';
 import { schemaNameByteRefusal } from './schema-attrs.ts';
 import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
-import { diffPostgresSchema, postgresSchemaHandlers } from './schema.ts';
+import { diffPostgresSchema } from './schema-diff.ts';
 import {
-  PostgresSchemaDropNotEmptyError,
+  PostgresSchemaDatabaseRefused,
   PostgresSchemaNameRefused,
   PostgresSchemaRenameRefused,
 } from './schema-errors.ts';
-
-const ok = (stdout: string) => Promise.resolve({ code: 0, stdout, stderr: '' });
 
 describe('name byte length', () => {
   test('a 63-byte ASCII name is accepted', () => {
@@ -66,34 +63,49 @@ describe('quoting', () => {
   });
 
   test('buildCreateSchemaSql never string-concatenates an unescaped value', () => {
-    const sql = buildCreateSchemaSql({ name: 'sc"1', owner: 'ro"le' });
+    const sql = buildCreateSchemaSql({ name: 'sc"1', database: 'postgres', owner: 'ro"le' });
     expect(sql).toBe('CREATE SCHEMA IF NOT EXISTS "sc""1" AUTHORIZATION "ro""le"');
   });
 
   test('buildCommentSchemaSql never string-concatenates an unescaped comment', () => {
     const sql = buildCommentSchemaSql('sc"1', "it'; DROP");
-    expect(sql).toBe('COMMENT ON SCHEMA "sc""1" IS \'it\'\'; DROP\'');
+    expect(sql).toBe(`COMMENT ON SCHEMA "sc""1" IS 'it''; DROP'`);
   });
 });
 
 const sampleOutput: PostgresSchemaAttributes = {
   name: 'ledger',
+  database: 'postgres',
   oid: 1,
   owner: 'tim',
   comment: null,
 };
-const base: PostgresSchemaProps = { name: 'ledger', owner: 'tim' };
+const base: PostgresSchemaProps = { name: 'ledger', database: 'postgres', owner: 'tim' };
 
 describe('diff', () => {
   test('a rename is refused at plan, before reconcile ever runs', async () => {
     const error = await Effect.runPromise(
-      Effect.flip(diffPostgresSchema({ ...base, name: 'gadgets' }, sampleOutput)),
+      Effect.flip(diffPostgresSchema({ ...base, name: 'gadgets' }, sampleOutput, base)),
     );
     expect(error).toBeInstanceOf(PostgresSchemaRenameRefused);
   });
 
+  test('a database move is refused at plan, the same way a rename is', async () => {
+    const error = await Effect.runPromise(
+      Effect.flip(diffPostgresSchema({ ...base, database: 'agents' }, sampleOutput, base)),
+    );
+    expect(error).toBeInstanceOf(PostgresSchemaDatabaseRefused);
+  });
+
   test('an unchanged declaration answers noop', async () => {
-    const result = await Effect.runPromise(diffPostgresSchema(base, sampleOutput));
+    const result = await Effect.runPromise(diffPostgresSchema(base, sampleOutput, base));
+    expect(result).toEqual({ action: 'noop' });
+  });
+
+  test('an unchanged cascade answers noop even when the previous declaration carried it', async () => {
+    const result = await Effect.runPromise(
+      diffPostgresSchema({ ...base, cascade: true }, sampleOutput, { ...base, cascade: true }),
+    );
     expect(result).toEqual({ action: 'noop' });
   });
 
@@ -101,81 +113,32 @@ describe('diff', () => {
     const variants: ReadonlyArray<Partial<PostgresSchemaProps>> = [
       { owner: 'someone-else' },
       { comment: 'changed' },
+      { cascade: true },
     ];
     for (const variant of variants) {
       const result = await Effect.runPromise(
-        diffPostgresSchema({ ...base, ...variant }, sampleOutput),
+        diffPostgresSchema({ ...base, ...variant }, sampleOutput, base),
       );
       expect(result?.action, `variant ${JSON.stringify(variant)}`).toBe('update');
       expect(result).not.toEqual({ action: 'replace' });
     }
   });
-});
 
-describe('delete handler', () => {
-  // The handler's drop runs through `withPg`, which needs a PostgresConnection; the loopback
-  // runner transport provides one from a recording `PsqlRunner`, no live database involved —
-  // the same wiring `psql-executor.test.ts` drives `reconcileWithClient` through.
-  test('the real handler drops an empty schema over the runner transport, no CASCADE', async () => {
-    const stdins: string[] = [];
-    const run: PsqlRunner = ({ stdin }) => {
-      stdins.push(stdin);
-      if (stdin.includes('AS empty')) return ok('[{"empty":true}]');
-      return ok('');
-    };
-    await Effect.runPromise(
-      postgresSchemaHandlers
-        .delete({
-          id: 'x',
-          fqn: 'x',
-          instanceId: 'x',
-          olds: { name: 'ledger', owner: 'tim' },
-          output: sampleOutput,
-          session: undefined as never,
-          bindings: [] as never,
-        })
-        .pipe(
-          Effect.provide(
-            postgresRunnerConnection({ run, database: 'postgres', username: 'postgres' }),
-          ),
-        ),
+  test('a cascade flip answers update in BOTH directions — compared against olds, so the flip reaches the persisted props', async () => {
+    // The engine's noop branch commits the old props (Apply.ts), so a cascade flip that
+    // answered noop would leave the persisted props carrying the OLD value forever: a schema
+    // first declared cascade: true would keep dropping with CASCADE even after the
+    // declaration said false.
+    const down = await Effect.runPromise(
+      diffPostgresSchema(base, sampleOutput, { ...base, cascade: true }),
     );
-    expect(stdins.find((s) => s.startsWith('DROP SCHEMA'))).toBe('DROP SCHEMA IF EXISTS "ledger";');
-    expect(stdins.some((s) => s.includes('CASCADE'))).toBe(false);
+    expect(down?.action).toBe('update');
   });
 
-  test('the real handler refuses a non-empty schema over the runner transport, no DROP issued', async () => {
-    const stdins: string[] = [];
-    const run: PsqlRunner = ({ stdin }) => {
-      stdins.push(stdin);
-      if (stdin.includes('AS empty')) return ok('[{"empty":false}]');
-      return ok('');
-    };
-    const error = await Effect.runPromise(
-      Effect.flip(
-        postgresSchemaHandlers
-          .delete({
-            id: 'x',
-            fqn: 'x',
-            instanceId: 'x',
-            olds: { name: 'ledger', owner: 'tim' },
-            output: sampleOutput,
-            session: undefined as never,
-            bindings: [] as never,
-          })
-          .pipe(
-            Effect.provide(
-              postgresRunnerConnection({ run, database: 'postgres', username: 'postgres' }),
-            ),
-          ),
-      ),
+  test('a declared empty comment diffs as "no comment", never as a change against a NULL', async () => {
+    const result = await Effect.runPromise(
+      diffPostgresSchema({ ...base, comment: '' }, sampleOutput, base),
     );
-    expect(error).toBeInstanceOf(PostgresSchemaDropNotEmptyError);
-    expect(stdins.some((s) => s.startsWith('DROP SCHEMA'))).toBe(false);
-  });
-
-  test('defaultRemovalPolicy is retain (declared alongside PostgresSchema, checked in source)', () => {
-    const source = readFileSync(new URL('./schema.ts', import.meta.url), 'utf8');
-    expect(source).toContain("defaultRemovalPolicy: 'retain'");
+    expect(result).toEqual({ action: 'noop' });
   });
 });

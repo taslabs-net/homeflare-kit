@@ -33,25 +33,73 @@ const SELECT_SCHEMA_SQL = `SELECT
     n.oid AS oid,
     n.nspname AS name,
     pg_get_userbyid(n.nspowner) AS owner,
-    obj_description(n.oid, 'pg_namespace') AS comment
+    obj_description(n.oid, 'pg_namespace') AS comment,
+    current_database() AS database
   FROM pg_namespace n
   WHERE n.nspname = $1`;
 
-/** The read: one bound `SELECT` on `pg_namespace`. `undefined` when absent. */
+/** The read: one bound `SELECT` on `pg_namespace`. `undefined` when absent. The row carries
+ * `current_database()` as `database`, so every caller can prove where the statement ran. */
 export const selectSchema = (
   pg: PgExecutor,
   name: string,
 ): Effect.Effect<PostgresSchemaAttributes | undefined, SqlError> =>
   Effect.map(pg.unsafe<PostgresSchemaAttributes>(SELECT_SCHEMA_SQL, [name]), (rows) => rows[0]);
 
-const SCHEMA_EMPTY_SQL = `SELECT NOT EXISTS (
-    SELECT 1 FROM pg_class c
-    WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)
+const CURRENT_DATABASE_SQL = 'SELECT current_database() AS database';
+
+/** Which database this executor actually reaches — checked before any `CREATE` or `DROP SCHEMA`,
+ * so a schema declared for `agents` can never quietly land in the maintenance database the
+ * family connection points at. */
+export const currentDatabase = (pg: PgExecutor): Effect.Effect<string, SqlError> =>
+  Effect.map(
+    pg.unsafe<{ readonly database: string }>(CURRENT_DATABASE_SQL),
+    // current_database() always answers one row; an empty fallback can only compare unequal,
+    // failing closed into PostgresSchemaWrongDatabase.
+    (rows) => rows[0]?.database ?? '',
+  );
+
+/**
+ * "Empty" means no object of ANY kind the schema owns. Measured object kinds live in four
+ * catalogs: relations (tables, views, indexes, sequences — `pg_class`), functions and
+ * aggregates (`pg_proc`), types, domains and enums (`pg_type`), operators (`pg_operator`). A
+ * kind without a dedicated catalog (an extension's `extnamespace`, a collation) can still pass
+ * this check — and then the plain `DROP SCHEMA` answers `2BP01`, which `dropWithClient`
+ * classifies as the same typed refusal.
+ *
+ * ⚠️ THE FAKE (`fake-sql.ts`) ROUTES THIS STATEMENT BY `AS empty` + `pg_class` — keep both
+ *   markers in any rewrite, and keep this check matched BEFORE the plain `pg_namespace` branch
+ *   (this SQL contains `FROM pg_namespace` too, inside its `WITH`).
+ */
+const SCHEMA_EMPTY_SQL = `WITH ns AS (SELECT oid FROM pg_namespace WHERE nspname = $1)
+  SELECT NOT EXISTS (
+    SELECT 1 FROM pg_class c WHERE c.relnamespace = (SELECT oid FROM ns)
+  ) AND NOT EXISTS (
+    SELECT 1 FROM pg_proc p WHERE p.pronamespace = (SELECT oid FROM ns)
+  ) AND NOT EXISTS (
+    SELECT 1 FROM pg_type t WHERE t.typnamespace = (SELECT oid FROM ns)
+  ) AND NOT EXISTS (
+    SELECT 1 FROM pg_operator o WHERE o.oprnamespace = (SELECT oid FROM ns)
   ) AS empty`;
 
-/** `true` when the schema has no relations (used before `DROP SCHEMA` without `CASCADE`). */
+/** `true` when the schema holds none of the four object catalogs above (used before a
+ * non-cascade `DROP SCHEMA`). */
 export const schemaIsEmpty = (pg: PgExecutor, name: string): Effect.Effect<boolean, SqlError> =>
   Effect.map(
     pg.unsafe<{ readonly empty: boolean }>(SCHEMA_EMPTY_SQL, [name]),
     (rows) => rows[0]?.empty ?? true,
   );
+
+/** SQLSTATE `2BP01` (`dependent_objects_still_exist`): the non-cascade `DROP SCHEMA` refused
+ * because an object kind outside the emptiness check's four catalogs still exists. Measured at
+ * `internal/sqlError.ts@effect/sql-pg`: every SQLSTATE starting `42` classifies as
+ * `SqlSyntaxError` with the raw code on `reason.cause.code` — the same shape
+ * `isDuplicateDatabaseRace` (`database-sql.ts`) reads, and the runner transport's `failure()`
+ * (`psql-executor.ts`) produces. */
+export const isDependentObjectsError = (error: SqlError): boolean => {
+  if (error.reason._tag !== 'SqlSyntaxError') return false;
+  const cause = error.reason.cause;
+  return (
+    typeof cause === 'object' && cause !== null && (cause as { code?: unknown }).code === '2BP01'
+  );
+};

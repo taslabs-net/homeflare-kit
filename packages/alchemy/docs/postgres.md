@@ -148,4 +148,6 @@ rule; the consuming stack's runner does.
 
 `Postgres.Schema` ([postgres-schema.md](./postgres-schema.md)) rides the same two transports —
 `postgresProviders` and `postgresRunnerProviders` both merge its provider alongside
-`Postgres.Database`'s, so one connection serves the family.
+`Postgres.Database`'s, so one connection serves the family. Schema opens its own declared
+`database` on that connection (`withPg`'s database override) rather than the family's
+maintenance database, proven per statement via `current_database()`.

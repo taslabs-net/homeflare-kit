@@ -8,23 +8,34 @@
  *   implemented. An owner or comment mismatch against the live row is a typed
  *   `PostgresSchemaDrift` refusal, never an `ALTER SCHEMA` — same rule `Postgres.Database`
  *   applies to its own asserted props.
+ * ⛔ THE DECLARED `database` IS PROVEN, NEVER ASSUMED. The family connection points at a
+ *   maintenance database (a brand-new database cannot be connected to on a cold plan —
+ *   `docs/postgres.md#measured-path`), so the handlers below open `props.database` themselves
+ *   (`withPg`'s database override) and `reconcile`/`drop` first compare `current_database()`
+ *   against it (`PostgresSchemaWrongDatabase`). Without that proof a seat's schema would be
+ *   created in whatever database the single connection happened to target.
  * ⛔ `delete` DROPS ONLY WHEN SAFE. `DROP SCHEMA` refuses a non-empty schema unless
  *   `cascade: true` is declared (`PostgresSchemaDropNotEmptyError`); the `cascade` prop
  *   defaults to `false` (retain policy by default — see `defaultRemovalPolicy: 'retain'`).
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
-import { isResolved } from 'alchemy/Diff';
-import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
-import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
+import {
+  type PostgresSchemaAttributes,
+  type PostgresSchemaProps,
+  normalizedComment,
+} from './schema-attrs.ts';
 import { schemaNameByteRefusal } from './schema-attrs.ts';
+import { diffPostgresSchema } from './schema-diff.ts';
 import {
   buildCommentSchemaSql,
   buildCreateSchemaSql,
   buildDropSchemaSql,
+  currentDatabase,
+  isDependentObjectsError,
   schemaIsEmpty,
   selectSchema,
 } from './schema-sql.ts';
@@ -37,7 +48,7 @@ import {
   PostgresSchemaDropNotEmptyError,
   PostgresSchemaNameRefused,
   PostgresSchemaOwnerMissing,
-  PostgresSchemaRenameRefused,
+  PostgresSchemaWrongDatabase,
 } from './schema-errors.ts';
 
 export interface PostgresSchema extends Resource<
@@ -59,16 +70,56 @@ export const isPostgresSchema = (value: unknown): value is PostgresSchema =>
   value !== null &&
   (value as { Type?: unknown }).Type === 'Postgres.Schema';
 
-/** Owner and comment are the only asserted props: both compared against the live row. */
+/** Owner and comment are the only asserted props (beyond the database itself, proven by
+ * `current_database()` before any write): both compared against the live row. */
 const liveDrift = (props: PostgresSchemaProps, live: PostgresSchemaAttributes) => {
   if (props.owner !== undefined && props.owner !== live.owner) {
     return { prop: 'owner', declared: props.owner, live: live.owner };
   }
-  if (props.comment !== undefined && props.comment !== (live.comment ?? undefined)) {
-    return { prop: 'comment', declared: props.comment, live: live.comment };
+  const comment = normalizedComment(props.comment);
+  if (comment !== undefined && comment !== (live.comment ?? undefined)) {
+    return { prop: 'comment', declared: comment, live: live.comment };
   }
   return undefined;
 };
+
+/** Assert one just-read row against the declaration — the drift refusal every return path
+ * passes through, never trust: a concurrent creator can win the `IF NOT EXISTS` race (the
+ * `CREATE` then does nothing) and hand back a row this declaration never asked for. */
+const assertLive = (
+  props: PostgresSchemaProps,
+  row: PostgresSchemaAttributes,
+): Effect.Effect<PostgresSchemaAttributes, PostgresSchemaDrift> => {
+  const drift = liveDrift(props, row);
+  return drift === undefined
+    ? Effect.succeed(row)
+    : Effect.fail(
+        new PostgresSchemaDrift({
+          schema: props.name,
+          prop: drift.prop,
+          declared: drift.declared,
+          live: drift.live,
+        }),
+      );
+};
+
+/** The connected database, proven equal to the declaration or refused — the guard every write
+ * path in this family runs first. */
+const assertDatabase = (
+  props: PostgresSchemaProps,
+  pg: PgExecutor,
+): Effect.Effect<void, PostgresSchemaWrongDatabase | SqlError> =>
+  Effect.flatMap(currentDatabase(pg), (connected) =>
+    connected === props.database
+      ? Effect.void
+      : Effect.fail(
+          new PostgresSchemaWrongDatabase({
+            schema: props.name,
+            declared: props.database,
+            connected,
+          }),
+        ),
+  );
 
 /**
  * The core of `reconcile`, against any {@link PgExecutor} — the real pooled client through
@@ -79,9 +130,14 @@ export const reconcileWithClient = (
   props: PostgresSchemaProps,
 ): Effect.Effect<
   PostgresSchemaAttributes,
-  PostgresSchemaOwnerMissing | PostgresSchemaDrift | PostgresSchemaCreateVanished | SqlError
+  | PostgresSchemaWrongDatabase
+  | PostgresSchemaOwnerMissing
+  | PostgresSchemaDrift
+  | PostgresSchemaCreateVanished
+  | SqlError
 > =>
   Effect.gen(function* () {
+    yield* assertDatabase(props, pg);
     const observed = yield* selectSchema(pg, props.name);
     if (observed === undefined) {
       if (props.owner !== undefined) {
@@ -98,71 +154,53 @@ export const reconcileWithClient = (
       if (created === undefined) {
         return yield* Effect.fail(new PostgresSchemaCreateVanished({ schema: props.name }));
       }
-      if (props.comment !== undefined && props.comment !== (created.comment ?? undefined)) {
-        yield* pg.unsafe(buildCommentSchemaSql(props.name, props.comment)).pipe(Effect.asVoid);
+      const comment = normalizedComment(props.comment);
+      if (comment !== undefined && comment !== (created.comment ?? undefined)) {
+        yield* pg.unsafe(buildCommentSchemaSql(props.name, comment)).pipe(Effect.asVoid);
         const commented = yield* selectSchema(pg, props.name);
         if (commented === undefined) {
           return yield* Effect.fail(new PostgresSchemaCreateVanished({ schema: props.name }));
         }
-        return commented;
+        return yield* assertLive(props, commented);
       }
-      return created;
+      return yield* assertLive(props, created);
     }
-    const drift = liveDrift(props, observed);
-    if (drift !== undefined) {
-      return yield* Effect.fail(
-        new PostgresSchemaDrift({
-          schema: props.name,
-          prop: drift.prop,
-          declared: drift.declared,
-          live: drift.live,
-        }),
-      );
-    }
-    return observed;
+    return yield* assertLive(props, observed);
   });
 
 /** The core of `read`: one bound `SELECT`, no ownership branding. */
 export const readWithClient = (pg: PgExecutor, name: string) => selectSchema(pg, name);
 
-/** The core of `drop`, against any {@link PgExecutor}: refuses a non-empty schema without
- * `cascade`, then issues one idempotent `DROP SCHEMA`. */
+/** The core of `drop`, against any {@link PgExecutor}: proves the connected database, refuses a
+ * non-empty schema without `cascade`, then issues one idempotent `DROP SCHEMA` — with the
+ * server's own `2BP01` refusal classified as the same typed tag for an object kind the
+ * emptiness check's catalogs do not cover. */
 export const dropWithClient = (
   pg: PgExecutor,
   props: PostgresSchemaProps,
-): Effect.Effect<void, PostgresSchemaDropNotEmptyError | SqlError> =>
+): Effect.Effect<void, PostgresSchemaWrongDatabase | PostgresSchemaDropNotEmptyError | SqlError> =>
   Effect.gen(function* () {
+    yield* assertDatabase(props, pg);
     if (props.cascade !== true) {
       const empty = yield* schemaIsEmpty(pg, props.name);
       if (!empty) {
         return yield* Effect.fail(new PostgresSchemaDropNotEmptyError({ schema: props.name }));
       }
     }
-    yield* pg.unsafe(buildDropSchemaSql(props.name, props.cascade === true)).pipe(Effect.asVoid);
+    // The server's own `2BP01` refusal (an object kind the four catalogs miss) is classified
+    // into the same typed tag the emptiness check raises — one fail branch, classified before
+    // the fail, exactly as `database-sql.ts` classifies the `42P04` race.
+    const dropRefusal = (error: SqlError): PostgresSchemaDropNotEmptyError | SqlError =>
+      props.cascade !== true && isDependentObjectsError(error)
+        ? new PostgresSchemaDropNotEmptyError({ schema: props.name })
+        : error;
+    yield* pg.unsafe(buildDropSchemaSql(props.name, props.cascade === true)).pipe(
+      Effect.asVoid,
+      Effect.catchTag('SqlError', (error) => Effect.fail(dropRefusal(error))),
+    );
   });
 
-/** Plan-time only: rename refused, over-long name refused, any other change answers `update`
- * (which `reconcileWithClient` then applies as create, or refuses as drift on a live schema). */
-export const diffPostgresSchema = (
-  news: Input<PostgresSchemaProps>,
-  output: PostgresSchemaAttributes | undefined,
-) =>
-  Effect.gen(function* () {
-    if (output === undefined || !isResolved(news)) return undefined;
-    if (news.name !== output.name) {
-      return yield* Effect.fail(
-        new PostgresSchemaRenameRefused({ from: output.name, to: news.name }),
-      );
-    }
-    const nameRefusal = schemaNameByteRefusal(news.name);
-    if (nameRefusal !== undefined) {
-      return yield* Effect.fail(new PostgresSchemaNameRefused({ name: news.name, ...nameRefusal }));
-    }
-    const changed =
-      (news.owner !== undefined && news.owner !== output.owner) ||
-      (news.comment !== undefined && news.comment !== (output.comment ?? undefined));
-    return changed ? ({ action: 'update' } as const) : ({ action: 'noop' } as const);
-  });
+export { diffPostgresSchema } from './schema-diff.ts';
 
 /** The five lifecycle handlers. Exported on its own so a test drives the real implementation. */
 export const postgresSchemaHandlers = PostgresSchema.Provider.of({
@@ -173,11 +211,21 @@ export const postgresSchemaHandlers = PostgresSchema.Provider.of({
   read: ({ olds, output }) =>
     Effect.gen(function* () {
       const name = output?.name ?? olds.name;
-      const live = yield* withPg((pg) => readWithClient(pg, name));
+      const database = output?.database ?? olds.database;
+      const live = yield* withPg((pg) => readWithClient(pg, name), database);
+      if (live !== undefined && live.database !== database) {
+        return yield* Effect.fail(
+          new PostgresSchemaWrongDatabase({
+            schema: name,
+            declared: database,
+            connected: live.database,
+          }),
+        );
+      }
       return live === undefined ? undefined : Unowned(live);
     }),
 
-  diff: ({ news, output }) => diffPostgresSchema(news, output),
+  diff: ({ news, output, olds }) => diffPostgresSchema(news, output, olds),
 
   reconcile: ({ news }) =>
     Effect.gen(function* () {
@@ -187,10 +235,10 @@ export const postgresSchemaHandlers = PostgresSchema.Provider.of({
           new PostgresSchemaNameRefused({ name: news.name, ...nameRefusal }),
         );
       }
-      return yield* withPg((pg) => reconcileWithClient(pg, news));
+      return yield* withPg((pg) => reconcileWithClient(pg, news), news.database);
     }),
 
-  delete: ({ olds }) => withPg((pg) => dropWithClient(pg, olds)),
+  delete: ({ olds }) => withPg((pg) => dropWithClient(pg, olds), olds.database),
 });
 
 export const PostgresSchemaProvider = () =>

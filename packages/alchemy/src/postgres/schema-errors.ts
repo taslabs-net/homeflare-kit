@@ -77,7 +77,12 @@ export class PostgresSchemaCreateVanished extends Data.TaggedError('PostgresSche
   }
 }
 
-/** `delete` with `cascade: false` refuses a schema that still has relations. */
+/**
+ * `delete` with `cascade: false` refuses a schema that still has relations. The same refusal
+ * answers a plain `DROP SCHEMA` the server rejected with SQLSTATE `2BP01`
+ * (`dependent_objects_still_exist`) — an object kind the emptiness check's four catalogs do not
+ * cover (an extension, a collation) — so no "empty" path escapes the typed tag.
+ */
 export class PostgresSchemaDropNotEmptyError extends Data.TaggedError(
   'PostgresSchemaDropNotEmptyError',
 )<{
@@ -91,10 +96,49 @@ export class PostgresSchemaDropNotEmptyError extends Data.TaggedError(
   }
 }
 
+/** Every statement this resource issues must run against the DECLARED database. The family
+ * connection points at a maintenance database, so the schema handlers open `props.database`
+ * themselves (`withPg`'s database override); this failure means the server answered
+ * `current_database()` with something else — the override was ignored, and no read or write
+ * ran against the schema's real home. */
+export class PostgresSchemaWrongDatabase extends Data.TaggedError('PostgresSchemaWrongDatabase')<{
+  readonly schema: string;
+  readonly declared: string;
+  readonly connected: string;
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Schema "${this.schema}": declared in database "${this.declared}" but the ` +
+      `connection answers current_database() "${this.connected}". The handlers open the declared ` +
+      'database themselves, so this points at broken provider wiring — fix it before touching any ' +
+      'schema, or the next create would land in the wrong database.'
+    );
+  }
+}
+
+/** A logical id's `database` changed. A schema lives in one database and this family never
+ * moves one: `DROP SCHEMA` in the old database plus a new declaration is the only path. */
+export class PostgresSchemaDatabaseRefused extends Data.TaggedError(
+  'PostgresSchemaDatabaseRefused',
+)<{
+  readonly from: string;
+  readonly to: string;
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Schema: the declared database changed from "${this.from}" to "${this.to}". A ` +
+      'schema is never moved across databases — declare a new logical id in the new database and ' +
+      'remove the old one once its contents have moved.'
+    );
+  }
+}
+
 export type PostgresSchemaError =
   | PostgresSchemaNameRefused
   | PostgresSchemaRenameRefused
   | PostgresSchemaOwnerMissing
   | PostgresSchemaDrift
   | PostgresSchemaCreateVanished
-  | PostgresSchemaDropNotEmptyError;
+  | PostgresSchemaDropNotEmptyError
+  | PostgresSchemaWrongDatabase
+  | PostgresSchemaDatabaseRefused;

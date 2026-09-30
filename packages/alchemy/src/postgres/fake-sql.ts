@@ -11,8 +11,9 @@
  *   general SQL parser would hide a quoting bug instead of tripping over it.
  * ★ `schemas` mirrors the same rule for `Postgres.Schema`: it parses exactly the text
  *   `buildCreateSchemaSql` / `buildCommentSchemaSql` / `buildDropSchemaSql` (`schema-sql.ts`)
- *   issue, reads `pg_namespace` rows back from its own map, and answers `schemaIsEmpty` from a
- *   seeded relation set — never from parsing SQL in general.
+ *   issue, reads `pg_namespace` rows back from its own map (stamped with this fake's
+ *   `database`, the same `current_database()` a real server would answer), and answers
+ *   `schemaIsEmpty` from a seeded relation set — never from parsing SQL in general.
  */
 import * as Effect from 'effect/Effect';
 import { SqlError, SqlSyntaxError } from 'effect/unstable/sql/SqlError';
@@ -50,6 +51,13 @@ export interface FakeSqlOptions {
   /** Accept the NEXT `CREATE SCHEMA` (no error) but record nothing — the S10 case where the
    * write's own report is a lie and the immediate re-read finds nothing. */
   readonly swallowNextCreateSchema?: boolean;
+  /** What `current_database()` answers and every schema row is stamped with (a real server
+   * always reports the database its connection opened). Default `postgres`. */
+  readonly database?: string;
+  /** The NEXT `CREATE SCHEMA` "succeeds" but stores a row owned by THIS role instead — a
+   * concurrent creator won between the first `SELECT` and the `IF NOT EXISTS`, which then
+   * does nothing (the re-read row is asserted like any other). Consumed once. */
+  readonly raceNextCreateSchema?: string;
 }
 
 const unquoteIdent = (raw: string): string => raw.replace(/""/g, '"');
@@ -86,8 +94,9 @@ const parseCreate = (text: string): PostgresDatabaseAttributes => {
   };
 };
 
-/** Parse exactly the text `buildCreateSchemaSql` writes. */
-const parseCreateSchema = (text: string): PostgresSchemaAttributes => {
+/** Parse exactly the text `buildCreateSchemaSql` writes. The caller stamps `database` (this
+ * fake's `current_database()`) and `oid`. */
+const parseCreateSchema = (text: string): Omit<PostgresSchemaAttributes, 'database' | 'oid'> => {
   const match =
     /^CREATE SCHEMA IF NOT EXISTS "((?:[^"]|"")*)"(?: AUTHORIZATION "((?:[^"]|"")*)")?$/.exec(text);
   if (match === null) {
@@ -98,7 +107,6 @@ const parseCreateSchema = (text: string): PostgresSchemaAttributes => {
     // Postgres's own default when AUTHORIZATION is absent: the role running the statement.
     owner: match[2] === undefined ? 'postgres' : unquoteIdent(match[2] as string),
     comment: null,
-    oid: 0,
   };
 };
 
@@ -126,8 +134,10 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   const databases = new Map(options.databases?.map((d) => [d.name, d] as const) ?? []);
   const schemas = new Map(options.schemas?.map((s) => [s.name, s] as const) ?? []);
   const relationsIn = new Set(options.schemasWithRelations ?? []);
+  const database = options.database ?? 'postgres';
   let raceRemaining = options.raceNextCreate === true ? 1 : 0;
   let swallowSchemaRemaining = options.swallowNextCreateSchema === true ? 1 : 0;
+  let schemaRaceOwner = options.raceNextCreateSchema;
   let oidCounter = 20000;
 
   const unsafe = <A extends object>(
@@ -142,6 +152,13 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
         return Effect.succeed(
           (roles.has(role) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
         );
+      }
+
+      // ⚠️ startsWith, NOT includes: `SELECT_SCHEMA_SQL` (`schema-sql.ts`) also contains
+      //   `current_database() AS database` in its projection; only the standalone check starts
+      //   with it.
+      if (text.startsWith('SELECT current_database()')) {
+        return Effect.succeed([{ database }] as unknown as ReadonlyArray<A>);
       }
 
       if (text.includes('FROM pg_database')) {
@@ -162,7 +179,11 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
       if (text.includes('FROM pg_namespace')) {
         const name = params[0] as string;
         const row = schemas.get(name);
-        return Effect.succeed((row === undefined ? [] : [row]) as unknown as ReadonlyArray<A>);
+        // A real server answers `current_database()` for its own connection; stamp every row
+        // with this fake's database so a read row always carries the proof of where it ran.
+        return Effect.succeed(
+          (row === undefined ? [] : [{ ...row, database }]) as unknown as ReadonlyArray<A>,
+        );
       }
 
       if (text.startsWith('CREATE DATABASE')) {
@@ -189,9 +210,16 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
           swallowSchemaRemaining -= 1;
           return Effect.succeed([] as unknown as ReadonlyArray<A>);
         }
-        const row = { ...parseCreateSchema(text), oid: oidCounter };
+        const row = { ...parseCreateSchema(text), database, oid: oidCounter };
         oidCounter += 1;
-        schemas.set(row.name, row);
+        if (schemaRaceOwner !== undefined) {
+          // A concurrent creator won the race: our IF NOT EXISTS did nothing, their row is
+          // what the re-read finds.
+          schemas.set(row.name, { ...row, owner: schemaRaceOwner });
+          schemaRaceOwner = undefined;
+        } else {
+          schemas.set(row.name, row);
+        }
         return Effect.succeed([] as unknown as ReadonlyArray<A>);
       }
 
