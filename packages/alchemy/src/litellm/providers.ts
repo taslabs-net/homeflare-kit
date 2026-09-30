@@ -20,13 +20,25 @@
  */
 import { type Credentials, CredentialsFromEnv } from '@distilled.cloud/litellm/Credentials';
 import * as Layer from 'effect/Layer';
+import { LiteLLMAccessGroupProvider } from './access-group.ts';
 import { LiteLLMBudgetProvider } from './budget.ts';
 import { LiteLLMMCPServerProvider } from './mcp-server.ts';
 import { LiteLLMPassThroughEndpointProvider } from './pass-through-endpoint.ts';
+import { LiteLLMPolicyAttachmentProvider } from './policy-attachment.ts';
+import { LiteLLMPolicyProvider } from './policy.ts';
+import { LiteLLMTeamProvider } from './team.ts';
+import { LiteLLMToolPolicyProvider } from './tool-policy.ts';
+import { LiteLLMToolsetProvider } from './toolset.ts';
 
 export const litellmProviders = (creds: Layer.Layer<Credentials> = CredentialsFromEnv) =>
   Layer.mergeAll(
     LiteLLMPassThroughEndpointProvider(),
     LiteLLMBudgetProvider(),
     LiteLLMMCPServerProvider(),
+    LiteLLMAccessGroupProvider(),
+    LiteLLMToolsetProvider(),
+    LiteLLMToolPolicyProvider(),
+    LiteLLMPolicyProvider(),
+    LiteLLMPolicyAttachmentProvider(),
+    LiteLLMTeamProvider(),
   ).pipe(Layer.provideMerge(creds));
