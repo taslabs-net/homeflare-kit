@@ -12,8 +12,10 @@
  *   removing memberships; use GRANT and REVOKE").
  * ⛔ THE PASSWORD IS A REFERENCE, NEVER A VALUE (S25). It is declared as
  *   `{ fromEnv: 'PG_SEAT_WIDGET_PASSWORD' }`; the NAME lands in state, the value is resolved
- *   from the deploying process's environment at reconcile time, held as `Redacted`, and quoted
- *   into the one `ALTER ROLE … PASSWORD` statement that needs it. What state remembers is a
+ *   from the deploying process's environment at reconcile time, held as `Redacted`, and sent only
+ *   as the SCRAM-SHA-256 verifier inside the one `ALTER ROLE … PASSWORD` statement that needs it
+ *   (`role-scram.ts` — the statement text reaching spans, `pg_stat_statements` and a failed
+ *   `ALTER`'s server log never holds the plain value). What state remembers is a
  *   `scrypt:<salt>:<digest>` seal, so a reconcile sends the password only when the environment
  *   value differs from the one last written — a plan never re-sends a secret that already
  *   matches, and never stores one.
@@ -34,6 +36,7 @@ import { type Environment } from '../secrets/write-only.ts';
 import type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts';
 import { nameByteRefusal, validUntilRefusal } from './role-attrs.ts';
 import { passwordMatchesSeal, resolvePassword, sealPassword } from './role-secrets.ts';
+import { scramSha256Verifier } from './role-scram.ts';
 import {
   buildAlterRoleSql,
   buildCreateRoleSql,
@@ -113,7 +116,9 @@ export const reconcileWithClient = (
       yield* pg.unsafe(buildCreateRoleSql(props)).pipe(Effect.asVoid);
       if (resolved.value !== undefined) {
         yield* pg
-          .unsafe(buildSetPasswordSql(props.name, Redacted.value(resolved.value)))
+          .unsafe(
+            buildSetPasswordSql(props.name, scramSha256Verifier(Redacted.value(resolved.value))),
+          )
           .pipe(Effect.asVoid);
       }
       yield* syncMemberships(pg, props, []);
@@ -154,7 +159,9 @@ export const reconcileWithClient = (
       resolved.value !== undefined && passwordMatchesSeal(resolved.value, previousSeal);
     if (resolved.value !== undefined && !passwordMatched) {
       yield* pg
-        .unsafe(buildSetPasswordSql(props.name, Redacted.value(resolved.value)))
+        .unsafe(
+          buildSetPasswordSql(props.name, scramSha256Verifier(Redacted.value(resolved.value))),
+        )
         .pipe(Effect.asVoid);
     }
     yield* syncMemberships(pg, props, observed.memberOf ?? [], unsafeMemberships(observed));

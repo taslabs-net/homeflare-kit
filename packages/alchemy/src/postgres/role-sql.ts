@@ -5,10 +5,13 @@
  *   `gram.y@REL_18_6`: every option value in `CreateOptRoleStmt` is a `RoleSpec`, a signed
  *   `Iconst` or an `Sconst`, and none of those productions reaches `PARAM` (`$n`). Only the
  *   catalog reads below bind a role name (`$1`).
- * ⛔ THE PASSWORD IS THE ONE SECRET THIS FAMILY SENDS AS A LITERAL. Postgres has no bind form for
- *   it in `CREATE`/`ALTER ROLE`, and the point of the prop is to set one. It is quoted with
- *   `quoteStringLiteral` exactly like every other string value, and NEVER written to state —
- *   only its seal is (`role-attrs.ts`, `passwordSeal`).
+ * ⛔ THE PASSWORD NEVER CROSSES THE WIRE AS A PLAIN LITERAL. Postgres has no bind form for it in
+ *   `CREATE`/`ALTER ROLE`, so the statement carries the SCRAM-SHA-256 verifier `role-scram.ts`
+ *   computes client-side (what `psql \password` sends; stored as-is, never reversible): the
+ *   statement text that reaches the span attribute `db.query.text`, `pg_stat_statements` and a
+ *   failed `ALTER`'s server log holds no secret. It is quoted with `quoteStringLiteral` like every
+ *   other string value and NEVER written to state — only its seal is (`role-attrs.ts`,
+ *   `passwordSeal`).
  * ★ MEMBERSHIP IS TWO ONE-PARENT STATEMENTS (`GRANT` / `REVOKE`), never a multi-role list, so a
  *   partially-failed membership write is observable in the state that remains.
  */
@@ -94,8 +97,8 @@ export const readRoleWithClient = (
 
 /** The `WITH` options a create carries, in one place so `diff` and the fake agree on the text.
  * A create carries no PASSWORD clause — the password travels through
- * {@link buildSetPasswordSql}, so the one quoting path for secrets is exercised exactly once
- * and a `CREATE ROLE` never carries a credential in its log line. */
+ * {@link buildSetPasswordSql} as its SCRAM verifier, so the one quoting path is exercised exactly
+ * once and a `CREATE ROLE` never carries a credential in its log line. */
 const withOptions = (props: PostgresRoleProps): string => {
   const parts: string[] = [];
   parts.push(props.login ? 'LOGIN' : 'NOLOGIN');
@@ -135,8 +138,13 @@ export const buildAlterRoleSql = (
   }
 };
 
-export const buildSetPasswordSql = (name: string, password: string): string =>
-  `ALTER ROLE ${quoteIdent(name)} WITH PASSWORD ${quoteStringLiteral(password)}`;
+/** One dedicated `ALTER ROLE … PASSWORD`. It carries the SCRAM-SHA-256 verifier
+ * `role-scram.ts` computes, never the plain password: Postgres takes no bind parameter for a role
+ * password, but a string already in SCRAM verifier format is stored as-is (`create_role.sgml`),
+ * so the statement text that reaches the span, `pg_stat_statements` and a failed `ALTER`'s server
+ * log holds no secret. */
+export const buildSetPasswordSql = (name: string, verifier: string): string =>
+  `ALTER ROLE ${quoteIdent(name)} WITH PASSWORD ${quoteStringLiteral(verifier)}`;
 
 export const buildDropRoleSql = (name: string): string => `DROP ROLE IF EXISTS ${quoteIdent(name)}`;
 

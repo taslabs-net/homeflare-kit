@@ -17,12 +17,16 @@ run yourself. The `Postgres.Database` resource in this kit already binds `@effec
   (`PostgresRoleRenameRefused`); `diff` answers `update` or `noop`, never `replace`.
 - **The password is a reference, never a value.** Declared as `{ fromEnv: 'PG_SEAT_WIDGET_PASSWORD' }`.
   The variable name lands in state; the value is resolved from the deploying process's environment
-  at reconcile time, held as `Redacted`, and quoted into the one `ALTER ROLE … PASSWORD` statement
-  that needs it. State remembers only a `scrypt:<salt>:<digest>` seal, so a reconcile re-sends the
-  secret only when the environment value differs from the one last written — a plan never re-sends
-  a secret that already matches, and never stores one. A create that declares a password but whose
-  variable is unset refuses before any write (`PostgresRolePasswordEnvUnsetError`), including
-  the retry of a create whose password statement never sealed.
+  at reconcile time, held as `Redacted`, and sent only as a client-side SCRAM-SHA-256 verifier
+  (`SCRAM-SHA-256$4096:<salt>$<StoredKey>:<ServerKey>`, the form `psql \password` sends, which
+  PostgreSQL stores as-is) inside the one `ALTER ROLE … PASSWORD` statement — so the statement
+  text that reaches Effect's SQL span, `pg_stat_statements` and a failed `ALTER`'s server log never
+  holds the plain value. State remembers only a `scrypt:<salt>:<digest>` seal, so a reconcile
+  re-sends the secret only when the environment value differs from the one last written — a plan
+  never re-sends a secret that already matches, and never stores one. A create that declares a
+  password but whose variable is unset refuses before any write
+  (`PostgresRolePasswordEnvUnsetError`), including the retry of a create whose password statement
+  never sealed.
 - **Membership is `pg_auth_members`, compared as a sorted set.** `memberOf` omitted leaves live
   memberships alone; `[]` ensures none. Moves run through one-parent `GRANT`/`REVOKE`
   (`alter_role.sgml`: "there are no options for adding or removing memberships; use GRANT and

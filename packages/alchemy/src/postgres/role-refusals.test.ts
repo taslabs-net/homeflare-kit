@@ -209,7 +209,9 @@ describe('quoting', () => {
     expect(buildDropRoleSql('a"b')).toBe('DROP ROLE IF EXISTS "a""b"');
   });
 
-  test('the password is single-quote escaped exactly once, in the one statement that carries it', () => {
+  test('the value buildSetPasswordSql carries is single-quote escaped exactly once', () => {
+    // In production that value is a SCRAM verifier (`role-scram.ts`), which the base64 alphabet
+    // keeps free of `'`; the quoting property still holds for any string handed to the builder.
     expect(buildSetPasswordSql('seat-observability', "O'Brien; DROP")).toBe(
       "ALTER ROLE \"seat-observability\" WITH PASSWORD 'O''Brien; DROP'",
     );
