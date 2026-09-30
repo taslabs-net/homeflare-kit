@@ -13,9 +13,11 @@
  *   files, no file logger. Just the provider, an in-memory state store, and the stack's services.
  */
 import { credentials } from '@distilled.cloud/litellm/Credentials';
+import { Retry } from '@distilled.cloud/litellm/Retry';
 import * as Alchemy from 'alchemy';
 import { AdoptPolicy } from 'alchemy/AdoptPolicy';
 import { provideFreshArtifactStore } from 'alchemy/Artifacts';
+import { encodeState } from 'alchemy/State/StateEncoding';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
@@ -33,6 +35,11 @@ export type DeployOptions = { readonly adopt?: boolean };
 export interface FakeStack {
   /** Plan, then apply, `body`. Resolves to the plan; rejects with the apply's failure. */
   readonly deploy: (body: StackBody, options?: DeployOptions) => Promise<Planned>;
+  /**
+   * Everything the state store holds, as JSON, `Redacted` values REVEALED the way Alchemy persists
+   * them (`encodeState`). A test asserts a secret is nowhere in it.
+   */
+  readonly snapshot: () => string;
 }
 
 type Node = { readonly action: string };
@@ -66,8 +73,10 @@ export const fakeStack = (
   creds: { readonly apiKey: string; readonly baseUrl: string },
   fetchFn: typeof globalThis.fetch,
   name = 'PassThroughStack',
+  settings: { readonly noRetry?: boolean } = {},
 ): FakeStack => {
-  const state = Alchemy.inMemoryState();
+  const backing: Parameters<typeof Alchemy.inMemoryState>[0] = {};
+  const state = Alchemy.inMemoryState(backing);
   const providers = litellmProviders(credentials(creds));
   // ⚠️ THE CAST STAYS. `StackBody` is `Effect<unknown, unknown, unknown>` so a test can pass any
   //   declaration, and that channel is not a legal `Alchemy.Stack` body. The uncast construction
@@ -83,6 +92,11 @@ export const fakeStack = (
   ) => Effect.Effect<PlanView, unknown, never>;
   const apply = Alchemy.apply as unknown as (planned: PlanView) => Effect.Effect<unknown, unknown>;
 
+  // ★ `noRetry` IS FOR A TEST OF A TRANSIENT FAILURE: the SDK's default policy would sit out its
+  //   backoff before the failure the test wants to see propagates.
+  const retrying: <A, E, R>(io: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R> =
+    settings.noRetry === true ? Effect.provideService(Retry, { while: () => false }) : (io) => io;
+
   const deploy = (body: StackBody, options: DeployOptions = {}) =>
     Effect.gen(function* () {
       const compiled = yield* stack(name, { providers, state }, body);
@@ -94,6 +108,7 @@ export const fakeStack = (
     }).pipe(
       options.adopt === undefined ? (e) => e : Effect.provideService(AdoptPolicy, options.adopt),
       Effect.provideService(Alchemy.Stage, 'test'),
+      retrying,
       Effect.provide(FetchHttpClient.layer),
       Effect.provide(Layer.succeed(FetchHttpClient.Fetch, fetchFn)),
       Effect.scoped,
@@ -101,6 +116,7 @@ export const fakeStack = (
 
   return {
     deploy: (body, options) => Effect.runPromise(deploy(body, options) as Effect.Effect<Planned>),
+    snapshot: () => JSON.stringify(encodeState(backing)),
   };
 };
 
