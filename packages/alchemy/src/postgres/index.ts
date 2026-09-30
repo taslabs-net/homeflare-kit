@@ -1,6 +1,8 @@
 /**
  * PostgreSQL providers for Alchemy — `Postgres.Database`, create-and-assert over a self-hosted
- * cluster, walked against PostgreSQL 18.6. See `docs/postgres.md`.
+ * cluster, and `Postgres.Role`, create / adopt / alter / drop of a LOGIN or NOLOGIN role whose
+ * password is a reference, both walked against PostgreSQL 18.6. See `docs/postgres.md` and
+ * `docs/postgres-role.md`.
  *
  * ⛔ THIS BARREL IS THE PUBLIC API, deliberately smaller than the directory: `fake-sql.ts` is a
  *   test double, not something a consuming stack should import.
@@ -34,4 +36,36 @@ export {
   PostgresDatabaseRenameRefused,
   type PostgresDatabaseError,
 } from './errors.ts';
-export { postgresProviders, postgresRunnerProviders } from './providers.ts';
+export type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts';
+export { sameValidUntil, validUntilRefusal } from './role-attrs.ts';
+export {
+  buildAlterRoleSql,
+  buildCreateRoleSql,
+  buildDropRoleSql,
+  buildGrantMembershipSql,
+  buildRevokeMembershipSql,
+  buildSetPasswordSql,
+  membershipDrift,
+  scalarDrift,
+  selectRole,
+  selectRoleMemberships,
+} from './role-sql.ts';
+export { PostgresRole, isPostgresRole } from './role.ts';
+export { PostgresRoleProvider } from './role-provider.ts';
+export { resolvePassword } from './role-secrets.ts';
+export type { ResolvedPassword } from './role-secrets.ts';
+export type { FromEnv } from '../secrets/write-only.ts';
+export {
+  PostgresRoleCreateVanished,
+  PostgresRoleNameRefused,
+  PostgresRolePasswordEnvUnsetError,
+  PostgresRoleRenameRefused,
+  PostgresRoleValidUntilRefused,
+  type PostgresRoleError,
+} from './role-errors.ts';
+export {
+  postgresProviders,
+  postgresRoleProviders,
+  postgresRoleRunnerProviders,
+  postgresRunnerProviders,
+} from './providers.ts';

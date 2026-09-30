@@ -16,6 +16,7 @@ import {
   postgresRunnerConnection,
 } from './connection.ts';
 import { PostgresDatabaseProvider } from './database.ts';
+import { PostgresRoleProvider } from './role-provider.ts';
 
 // ⚠️ `Layer.provideMerge`, NEVER plain `Layer.provide`: the handlers' `withPg` reads
 //   `PostgresConnection` when the ENGINE later calls `read`/`reconcile`, and plain `provide`
@@ -27,3 +28,15 @@ export const postgresProviders = (config: PostgresConnectionConfig) =>
 /** The same provider over a command runner (`psql-executor.ts`) — for a loopback-only cluster. */
 export const postgresRunnerProviders = (config: PostgresRunnerConfig) =>
   PostgresDatabaseProvider().pipe(Layer.provideMerge(postgresRunnerConnection(config)));
+
+/**
+ * `Postgres.Role`'s provider, over the same socket transport and the same cluster parameter.
+ *
+ *     const providers = postgresRoleProviders({ host: '/opt/homeflare/postgres/sockets', database: 'postgres', username: 'tim' });
+ */
+export const postgresRoleProviders = (config: PostgresConnectionConfig) =>
+  PostgresRoleProvider().pipe(Layer.provideMerge(postgresConnection(config)));
+
+/** `Postgres.Role` over a command runner (`psql-executor.ts`) — for a loopback-only cluster. */
+export const postgresRoleRunnerProviders = (config: PostgresRunnerConfig) =>
+  PostgresRoleProvider().pipe(Layer.provideMerge(postgresRunnerConnection(config)));
