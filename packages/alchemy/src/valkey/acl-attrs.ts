@@ -5,7 +5,7 @@
  *   (see `secrets/write-only.ts`); the value exists only in the deploying process's memory and on
  *   the wire to the server. State stores a scrypt SEAL, so a later plan can check "is the value in
  *   my environment the one I wrote" without holding anything a reader could send to Valkey.
- * ★ THE KEY PREFIX IS THE ISOLATION. `~seat:<name>:*` limits each seat to its own keyspace; a seat
+ * ★ THE KEY PREFIX IS THE ISOLATION. `~<name>:*` limits each seat to its own keyspace; a seat
  *   gets `WRITE` only where its job writes. The deny list (`-scan -randomkey -dbsize -pubsub`)
  *   closes keyspace/channel enumeration, matching `homeflare-ct100/src/valkey-acl.ts`.
  * ★ THE COMMAND ALLOW-LIST IS A FIXED PROFILE, NOT A PROP. `profile: 'seat'` carries the seat

@@ -14,7 +14,8 @@ export interface ValkeyInstanceProps {
   readonly name: string;
   /** The TCP port the instance listens on (the Quadlet's `--port`). */
   readonly port: number;
-  /** `maxmemory` (`CONFIG GET maxmemory`), e.g. `"512mb"` or `"0"` for unlimited. */
+  /** `maxmemory` (`CONFIG GET maxmemory`). A declaration may be unit form (`"512mb"`);
+   * the live reply is the byte count. Compared with Valkey's `memtoull` rule. */
   readonly maxmemory?: string | undefined;
   /** `maxmemory-policy`, one of Valkey's eviction policies. */
   readonly maxmemoryPolicy?: string | undefined;
@@ -32,9 +33,11 @@ export interface ValkeyInstanceAttributes {
   readonly appendonly: string;
 }
 
-/** The subset of `INFO` fields `read` needs. */
+/** The subset of `INFO` fields `read` needs. `port` is `tcp_port`, not the declared prop:
+ * copying the declaration back would make a 6381 claim match a server on 6380. */
 export interface ValkeyInstanceInfo {
   readonly version: string;
+  readonly port: number;
 }
 
 /** The subset of `CONFIG GET` values `read` needs. */

@@ -10,6 +10,7 @@
  *   server would hide a protocol bug instead of tripping over it.
  */
 import * as Effect from 'effect/Effect';
+import { memoryBytes } from './instance-form.ts';
 import type { ValkeyExecutor, ValkeyReply } from './transport.ts';
 import type { ValkeyServerError } from './transport.ts';
 
@@ -39,6 +40,8 @@ export interface FakeValkeyOptions {
   readonly reAddAfterWrite?: { readonly name: string; readonly line: string };
   /** The version `INFO` reports — only the `redis_version:` line matters to `Instance`. */
   readonly version?: string;
+  /** `INFO` `tcp_port`. Defaults to 0, the reply a server that omitted the line would give. */
+  readonly port?: number;
 }
 
 /** Rebuild an `ACL LIST` line from a username and its fields — the fake stores the parsed fields,
@@ -92,12 +95,13 @@ export const makeFakeValkey = (options: FakeValkeyOptions = {}): FakeValkey => {
 
         case 'INFO': {
           const version = options.version ?? '8.1.10';
+          const port = options.port ?? 0;
           return reply(
             [
               '# Server',
               `redis_version:${version}`,
               'redis_mode:standalone',
-              'tcp_port:0',
+              `tcp_port:${String(port)}`,
               '# Persistence',
               'loading:0',
               '# Keyspace',
@@ -116,7 +120,15 @@ export const makeFakeValkey = (options: FakeValkeyOptions = {}): FakeValkey => {
           const out: Array<string | null> = [];
           for (const key of want) {
             out.push(key);
-            out.push(config.get(key) ?? null);
+            const raw = config.get(key) ?? null;
+            // `CONFIG GET maxmemory` is `ull2string` of the byte count, not the unit form
+            // the declaration (and a Quadlet `--maxmemory`) used.
+            if (key === 'maxmemory' && raw !== null) {
+              const bytes = memoryBytes(raw);
+              out.push(bytes === undefined ? raw : String(bytes));
+            } else {
+              out.push(raw);
+            }
           }
           return reply(out);
         }

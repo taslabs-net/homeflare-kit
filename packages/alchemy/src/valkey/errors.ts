@@ -98,6 +98,22 @@ export class ValkeyAclReadbackFailed extends Data.TaggedError('ValkeyAclReadback
   }
 }
 
+/** A declaration names `default` or the connection username. `ACL SETUSER` `reset` would replace
+ * the credential this kit authenticates with (`~* +@all`) with a profile that cannot run `ACL`,
+ * and the next `ACL LIST` answers `NOPERM`. Refused before any write. */
+export class ValkeyAclReservedUser extends Data.TaggedError('ValkeyAclReservedUser')<{
+  readonly instance: string;
+  readonly user: string;
+}> {
+  override get message(): string {
+    return (
+      `Valkey.AclFile "${this.instance}": refusing to manage ACL user "${this.user}". ` +
+      'That name is `default` or the connection username. ACL SETUSER reset would replace the ' +
+      'credential this kit authenticates with, and the next ACL LIST would answer NOPERM.'
+    );
+  }
+}
+
 /** A live or stored ACL user is keyed under one name but its line carries another — the parsed
  * `user` name disagrees with the record key this family stores it under. The record key is this
  * family's identity, so the mismatch means the ACL was changed by something else. */
@@ -122,4 +138,5 @@ export type ValkeyError =
   | ValkeyAclPasswordMissing
   | ValkeyAclReadbackFailed
   | ValkeyAclUserNameMismatch
+  | ValkeyAclReservedUser
   | ValkeyAuthPasswordMissing;

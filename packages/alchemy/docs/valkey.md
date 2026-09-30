@@ -56,13 +56,13 @@ export class SeatsAcl extends ValkeyAclFile('SeatsAcl', {
   users: {
     claude: {
       name: 'claude',
-      keyPrefix: 'seat:claude:*',
+      keyPrefix: 'claude:*',
       profile: 'seat',
       password: { fromEnv: 'VALKEY_CLAUDE_PW' },
     },
     grok: {
       name: 'grok',
-      keyPrefix: 'seat:grok:*',
+      keyPrefix: 'grok:*',
       profile: 'seat',
       password: { fromEnv: 'VALKEY_GROK_PW' },
     },
@@ -73,7 +73,8 @@ export class SeatsAcl extends ValkeyAclFile('SeatsAcl', {
 - **Password by reference (S25).** `password` is `{ fromEnv }`; the value exists only in the
   deploying process's memory and on the wire. State stores a scrypt **seal** so the next plan can
   tell whether the value changed, without holding anything a reader could send to Valkey.
-- **The key prefix is the isolation.** `~seat:claude:*` limits a seat to its own keyspace, and
+- **The key prefix is the isolation.** `~claude:*` limits a seat to its own keyspace — the
+  pattern `homeflare-ct100/src/valkey-acl.ts` already renders (`~${user}:*`) — and
   `resetchannels` plus `&<user>:*` limits pub/sub to its own channels (a `service` profile gets
   `allchannels` instead — the one consumer that owns a whole instance). A seat gets `WRITE` only
   where its job writes.
@@ -115,8 +116,9 @@ files ship `user default off`. Before the kit's first reconcile of an instance, 
 must put one admin user into that instance's ACL file — `user admin on ><pw> ~* +@all` — and pass
 its name and password to `valkeyProviders`. This family never manages that user: the connection's
 own username is skipped by name in every `ACL LIST` read (read, plan, and the reconcile's
-read-back), so a reconcile never removes it, and it is never declared in an `AclFile` (the
-`default` user is likewise never managed).
+read-back), so a reconcile never removes an undeclared admin. Declaring that name, or `default`,
+is refused before any write (`ValkeyAclReservedUser`): `ACL SETUSER` `reset` would replace
+`~* +@all` and the next `ACL LIST` would answer `NOPERM`.
 
 ## Activating the two dormant Quadlets
 
@@ -136,7 +138,7 @@ valkey-seats.service valkey-litellm.service`):
    ```sh
    valkey-cli -h 127.0.0.1 -p 6381 --user claude --pass "$VALKEY_CLAUDE_PW" PING
    # -> PONG, and a write outside the prefix is refused:
-   valkey-cli -h 127.0.0.1 -p 6381 --user claude --pass "$VALKEY_CLAUDE_PW" SET seat:grok:x 1
+   valkey-cli -h 127.0.0.1 -p 6381 --user claude --pass "$VALKEY_CLAUDE_PW" SET grok:x 1
    # -> (error) NOPERM this user has no permissions to access one of the keys used as arguments
    ```
 

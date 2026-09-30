@@ -37,6 +37,7 @@ import {
   ValkeyAclParseError,
   ValkeyAclPasswordMissing,
   ValkeyAclReadbackFailed,
+  ValkeyAclReservedUser,
   ValkeyAclUserNameMismatch,
   type ValkeyError,
 } from './errors.ts';
@@ -138,6 +139,14 @@ export const reconcileWithExecutor = (
             recordKey: key,
             user: user.name,
           }),
+        );
+      }
+      // ⛔ BEFORE ANY WRITE. Read hides `default` and the connection username so an undeclared
+      //   admin is not removed. A declaration of that name looks absent, and `ACL SETUSER reset`
+      //   would replace `~* +@all` with a profile that cannot run `ACL` — the next list is NOPERM.
+      if (user.name === 'default' || (self !== undefined && user.name === self)) {
+        return yield* Effect.fail(
+          new ValkeyAclReservedUser({ instance: props.instance, user: user.name }),
         );
       }
     }

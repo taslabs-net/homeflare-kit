@@ -45,15 +45,25 @@ describe('buildSetUserArgs', () => {
 
 describe('parseAclLine', () => {
   test('parses the measured ACL LIST echo shape', () => {
-    expect(parseAclLine('user claude on #hash ~claude:* &claude:* +@read +@write -scan')).toEqual({
+    // Seat echo after `reset`: `-@all` survives, and `resetchannels` is a marker, not a rule.
+    // A service user's `allchannels` echoes as `&*`.
+    const seat = parseAclLine(
+      'user claude on #hash ~claude:* resetchannels &claude:* -@all +@read +@write -scan',
+    );
+    expect(seat).toEqual({
       name: 'claude',
       on: true,
       nopass: false,
       hasPassword: true,
       keyPatterns: ['~claude:*'],
       channelPatterns: ['&claude:*'],
-      rules: ['+@read', '+@write', '-scan'],
+      rules: ['-@all', '+@read', '+@write', '-scan'],
     });
+    expect(seat.rules).toContain('-@all');
+    expect(seat.rules).not.toContain('resetchannels');
+    const service = parseAclLine('user litellm on #hash ~* &* +@all -@dangerous -scan');
+    expect(service.channelPatterns).toEqual(['&*']);
+    expect(service.rules).not.toContain('allchannels');
   });
 });
 

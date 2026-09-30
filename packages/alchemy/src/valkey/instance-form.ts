@@ -12,12 +12,49 @@ import type {
   ValkeyInstanceProps,
 } from './instance-attrs.ts';
 
-/** Parse the `INFO` bulk reply into the fields `Instance` cares about. */
+/** Parse the `INFO` bulk reply into the fields `Instance` cares about. A missing `tcp_port`
+ * is 0, so a declaration of a real port drifts rather than matching a reply that omitted it. */
 export const parseInfo = (value: string | null): ValkeyInstanceInfo => {
   const fallback = '0.0.0';
-  if (value === null) return { version: fallback };
+  if (value === null) return { version: fallback, port: 0 };
   const match = /redis_version:([0-9a-zA-Z._-]+)/.exec(value);
-  return { version: match?.[1] ?? fallback };
+  const port = /tcp_port:([0-9]+)/.exec(value);
+  return {
+    version: match?.[1] ?? fallback,
+    port: port?.[1] === undefined ? 0 : Number(port[1]),
+  };
+};
+
+/** Valkey `memtoull` (`src/util.c`, same on 8.1.10 and 9.1.1). `mb` is 1024², so `512mb` is
+ * 536870912 and `256mb` is 268435456 — the byte string `CONFIG GET` returns for `MEMORY_CONFIG`.
+ * Undefined on a parse error: a zero from the C function is "unlimited" only for the string `0`. */
+const MEMORY_UNITS: Readonly<Record<string, bigint>> = {
+  '': 1n,
+  b: 1n,
+  k: 1000n,
+  kb: 1024n,
+  m: 1_000_000n,
+  mb: 1024n * 1024n,
+  g: 1_000_000_000n,
+  gb: 1024n * 1024n * 1024n,
+};
+
+export const memoryBytes = (value: string): bigint | undefined => {
+  if (value.startsWith('-')) return undefined;
+  const match = /^(\d+)([a-z]*)$/i.exec(value);
+  if (match === null) return undefined;
+  const digits = match[1];
+  const unit = (match[2] ?? '').toLowerCase();
+  const mul = MEMORY_UNITS[unit];
+  if (digits === undefined || mul === undefined) return undefined;
+  return BigInt(digits) * mul;
+};
+
+/** Byte equality for `maxmemory`. An unparseable side does not match, so a typo still drifts. */
+const sameMemory = (declared: string, live: string): boolean => {
+  const left = memoryBytes(declared);
+  const right = memoryBytes(live);
+  return left !== undefined && right !== undefined && left === right;
 };
 
 /** Fill defaults for absent optional config so `diff` and drift checks compare a concrete string. */
@@ -34,7 +71,7 @@ export const buildAttributes = (
   config: Partial<ValkeyInstanceConfig>,
 ): ValkeyInstanceAttributes => ({
   name: props.name,
-  port: props.port,
+  port: info.port,
   version: info.version,
   ...defaultedConfig(config),
 });
@@ -52,9 +89,16 @@ export const firstDrift = (
     ['appendonly', props.appendonly, live.appendonly],
   ];
   for (const [prop, declared, liveValue] of checks) {
-    if (declared !== undefined && declared !== liveValue) {
-      return { prop, declared, live: liveValue };
+    if (declared === undefined) continue;
+    if (
+      prop === 'maxmemory' &&
+      typeof declared === 'string' &&
+      typeof liveValue === 'string' &&
+      sameMemory(declared, liveValue)
+    ) {
+      continue;
     }
+    if (declared !== liveValue) return { prop, declared, live: liveValue };
   }
   return undefined;
 };
