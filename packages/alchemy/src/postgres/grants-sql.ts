@@ -2,7 +2,9 @@
  * The statements `Postgres.Grants` ever ISSUES: ten builders, one statement each. The READ
  * half lives in `grants-read.ts` (it goes through `aclexplode`, never `aclitem` text); this
  * file is writes only. Every free-form value is bound (`$n`) or `quoteIdent`ed, never
- * hand-concatenated.
+ * hand-concatenated, and every privilege word is checked against the vocabularies before
+ * it is concatenated — the builders are exported API, so the check cannot live only in
+ * the resource path.
  *
  * ⛔ NO `CASCADE`, EVER: a revoke whose grantee re-granted onward is refused by the server
  *   rather than silently removing a third role's grant (the declaration does not name that
@@ -13,6 +15,7 @@
  *   some not): `planRepair` splits the words with `splitGrantWords` and issues two grants —
  *   the split is the only shape that cannot over-grant beyond the declaration.
  */
+import { ALL_GRANT_WORDS } from './grants-attrs.ts';
 import { quoteIdent } from './database-sql.ts';
 
 const splitParts = (
@@ -21,8 +24,18 @@ const splitParts = (
   const parts: string[] = [];
   let optionCount = 0;
   for (const word of words) {
+    const base = word.endsWith('*') ? word.slice(0, -1) : word;
+    // The builders are exported API, so the vocabulary check does not only live in the
+    // resource path: a word outside every class vocabulary (a bare `*`, an injected
+    // fragment) is refused here instead of concatenated into a GRANT clause.
+    if (!ALL_GRANT_WORDS.includes(base)) {
+      throw new Error(
+        `grants-sql: "${base}" is not a privilege this family can grant — see the three ` +
+          'vocabularies in grants-attrs.ts (traced to acl.h at REL_18_6)',
+      );
+    }
     if (word.endsWith('*')) optionCount += 1;
-    parts.push(word.endsWith('*') ? word.slice(0, -1) : word);
+    parts.push(base);
   }
   if (optionCount > 0 && optionCount < words.length) {
     throw new Error(

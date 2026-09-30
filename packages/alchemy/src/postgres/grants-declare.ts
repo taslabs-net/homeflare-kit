@@ -1,8 +1,10 @@
 /**
- * `Postgres.Grants`' declared shape, normalized: every default applied, every word validated,
- * every list sorted. Pure — no client, no `Effect` — so `reconcile`, the engine's `diff` and
- * the tests share one implementation. The comparison against live catalogs and the read-back
- * projection live in `grants-plan.ts`.
+ * `Postgres.Grants`' declared shape, normalized: every default applied, every list sorted,
+ * the names recovered from the persisted attributes, the cleared twin `delete` replays and
+ * the entries an update removed. Pure — no client, no `Effect` — so `reconcile`, the
+ * engine's `diff` and the tests share one implementation. Word validation and the refusals
+ * live in `grants-refuse.ts`; the comparison against live catalogs and the read-back
+ * projection in `grants-plan.ts` and `grants-diff.ts`.
  *
  * ★ WHAT THE RESOURCE OWNS, PRECISELY. For every object the declaration NAMES — the schema,
  *   each table, each column, each (`forRole`) default — the role's full privilege set is
@@ -10,12 +12,6 @@
  *   are touched only when `revokeFromPublic` says so, and only by clearing: this family
  *   never issues a `GRANT … TO PUBLIC`.
  */
-import {
-  COLUMN_PRIVILEGES,
-  SCHEMA_PRIVILEGES,
-  TABLE_PRIVILEGES,
-  grantsNameByteRefusal,
-} from './grants-attrs.ts';
 import type { PostgresGrantsAttributes, PostgresGrantsProps } from './grants-attrs.ts';
 
 /** The resolved declaration: every default applied, every word validated, every list
@@ -48,22 +44,6 @@ const cleanWords = (words: ReadonlyArray<string>): ReadonlyArray<string> =>
 
 export const baseWord = (word: string): string => (word.endsWith('*') ? word.slice(0, -1) : word);
 
-/** The first refusal inside one word list: a word outside the vocabulary (the base word of
- * a `*`-marked one, and a bare `*` is never a privilege). `undefined` when the list is
- * in scope. The refusal carries the word as declared, so the typed error names exactly
- * what the operator wrote. */
-const wordRefusal = (
-  words: ReadonlyArray<string>,
-  vocabulary: ReadonlyArray<string>,
-): string | undefined => {
-  for (const word of words) {
-    if (word === '*') return word;
-    const bare = baseWord(word);
-    if (!vocabulary.includes(bare as never)) return bare;
-  }
-  return undefined;
-};
-
 /** The one place defaults resolve to values: `schemaUsage` true, `schemaCreate` false, the
  * PUBLIC revokes false. Every caller — plan, reconcile, diff — normalizes through here so
  * the three never disagree on what an omitted prop means. */
@@ -91,53 +71,6 @@ export const resolveProps = (props: PostgresGrantsProps): DeclaredGrants => ({
   publicSchemaRevoked: props.revokeFromPublic === true,
   publicTablesRevoked: props.revokeFromPublic === true,
 });
-
-/** One refusal inside the resolved declaration, already discriminated for its typed error.
- * Words are checked against their vocabulary; names are checked for duplicates (two
- * entries for one table, one column pair, or one `forRole` would silently merge in the
- * sort and hide an operator's mistake). */
-export type DeclarationRefusal =
-  | { readonly kind: 'privilege'; readonly prop: string; readonly word: string }
-  | { readonly kind: 'duplicate'; readonly prop: string; readonly name: string };
-
-export const declarationRefusal = (declared: DeclaredGrants): DeclarationRefusal | undefined => {
-  const refused = wordRefusal(declared.schemaPrivileges, SCHEMA_PRIVILEGES);
-  if (refused !== undefined) return { kind: 'privilege', prop: 'schemaPrivileges', word: refused };
-  for (const table of declared.tables) {
-    const word = wordRefusal(table.privileges, TABLE_PRIVILEGES);
-    if (word !== undefined) {
-      return { kind: 'privilege', prop: `tables.${table.table}`, word };
-    }
-  }
-  for (const column of declared.columns) {
-    const word = wordRefusal(column.privileges, COLUMN_PRIVILEGES);
-    if (word !== undefined) {
-      return { kind: 'privilege', prop: `columnGrants.${column.table}.${column.column}`, word };
-    }
-  }
-  for (const entry of declared.defaults) {
-    const word = wordRefusal(entry.privileges, TABLE_PRIVILEGES);
-    if (word !== undefined) {
-      return { kind: 'privilege', prop: `defaultPrivileges.${entry.forRole}`, word };
-    }
-  }
-  const duplicate = (names: ReadonlyArray<string>): string | undefined => {
-    const seen = new Set<string>();
-    for (const name of names) {
-      if (seen.has(name)) return name;
-      seen.add(name);
-    }
-    return undefined;
-  };
-  const table = duplicate(declared.tables.map((entry) => entry.table));
-  if (table !== undefined) return { kind: 'duplicate', prop: 'tables', name: table };
-  const column = duplicate(declared.columns.map((entry) => `${entry.table}\0${entry.column}`));
-  if (column !== undefined)
-    return { kind: 'duplicate', prop: 'columnGrants', name: column.replace('\0', '.') };
-  const forRole = duplicate(declared.defaults.map((entry) => entry.forRole));
-  if (forRole !== undefined) return { kind: 'duplicate', prop: 'defaultPrivileges', name: forRole };
-  return undefined;
-};
 
 /** Split one validated word list by its grant-option mark: a mixed list cannot be a single
  * `GRANT` (one `WITH GRANT OPTION` clause would grant the option to every listed
@@ -183,28 +116,6 @@ export const namesFromAttrs = (attrs: PostgresGrantsAttributes): DeclaredNames =
   defaults: attrs.defaults.map((entry) => entry.forRole),
 });
 
-/** Refuse the first declared name the server would silently truncate — the grantee role,
- * the database, the schema, every table, every table-and-column pair, every `forRole`
- * (roles, schemas, tables and columns are all `NameData`; the same limit
- * `Postgres.Database` enforces). `undefined` when every name is in range. */
-export const grantsNamesRefusal = (
-  declared: DeclaredGrants,
-): { readonly name: string; readonly byteLength: number; readonly limit: number } | undefined => {
-  const names = [
-    declared.role,
-    declared.database,
-    declared.schema,
-    ...declared.tables.map((table) => table.table),
-    ...declared.columns.flatMap((column) => [column.table, column.column]),
-    ...declared.defaults.map((entry) => entry.forRole),
-  ];
-  for (const name of names) {
-    const refusal = grantsNameByteRefusal(name);
-    if (refusal !== undefined) return { name, ...refusal };
-  }
-  return undefined;
-};
-
 /** The `delete` twin of a declaration: the same names, every privilege list emptied, the
  * PUBLIC flags off. `planRepair` turns it into exactly the revoke set delete may issue —
  * one revoke per named object where live still shows the role words, nothing for PUBLIC
@@ -222,3 +133,38 @@ export const clearedDeclaration = (declared: DeclaredGrants): DeclaredGrants => 
   publicSchemaRevoked: false,
   publicTablesRevoked: false,
 });
+
+/** The entries an update REMOVED from the last applied declaration: the names in
+ * `output` (the persisted attributes) that the new declaration no longer names, every
+ * word list emptied — the input `grants-plan.ts#planRevocations` turns into the revoke set
+ * the reconcile runs before the new declaration's repair, so removing an entry takes the
+ * privilege away instead of silently retaining it. `undefined` when `output` is undefined
+ * (first apply) or nothing was removed. The `database`-mismatch and retarget guards run
+ * first, so the removed set can only ever hold tables, columns and defaults — the schema
+ * class never gains or loses an entry. */
+export const removedNames = (
+  output: PostgresGrantsAttributes | undefined,
+  declared: DeclaredGrants,
+): Pick<DeclaredGrants, 'schema' | 'role' | 'tables' | 'columns' | 'defaults'> | undefined => {
+  if (output === undefined) return undefined;
+  const keepTables = new Set(declared.tables.map((table) => table.table));
+  const keepColumns = new Set(
+    declared.columns.map((column) => `${column.table}\u0000${column.column}`),
+  );
+  const keepDefaults = new Set(declared.defaults.map((entry) => entry.forRole));
+  const tables = output.tables
+    .filter((table) => !keepTables.has(table.table))
+    .map((table) => ({ table: table.table, privileges: [] as ReadonlyArray<string> }));
+  const columns = output.columns
+    .filter((column) => !keepColumns.has(`${column.table}\u0000${column.column}`))
+    .map((column) => ({
+      table: column.table,
+      column: column.column,
+      privileges: [] as ReadonlyArray<string>,
+    }));
+  const defaults = output.defaults
+    .filter((entry) => !keepDefaults.has(entry.forRole))
+    .map((entry) => ({ forRole: entry.forRole, privileges: [] as ReadonlyArray<string> }));
+  if (tables.length === 0 && columns.length === 0 && defaults.length === 0) return undefined;
+  return { schema: declared.schema, role: declared.role, tables, columns, defaults };
+};

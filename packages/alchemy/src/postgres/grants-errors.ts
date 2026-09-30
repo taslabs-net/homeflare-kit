@@ -46,8 +46,11 @@ export class PostgresGrantsNameRefused extends Data.TaggedError('PostgresGrantsN
   }
 }
 
-/** Two declaration entries name the same object (one table twice, one column pair twice, one
- * `forRole` twice) — silently merging them would hide which entry the operator meant. */
+/** Two declaration entries name the same object (one table twice, one column pair twice,
+ * one `forRole` twice) — silently merging them would hide which entry the operator meant.
+ * The same refusal fires when one word list declares a base word both plain and
+ * `*`-marked: the server keeps ONE aclitem per grantee per grantor, so those two states
+ * can never both hold and the set would never converge. */
 export class PostgresGrantsDuplicateObject extends Data.TaggedError(
   'PostgresGrantsDuplicateObject',
 )<{
@@ -57,7 +60,9 @@ export class PostgresGrantsDuplicateObject extends Data.TaggedError(
   override get message(): string {
     return (
       `Postgres.Grants: "${this.prop}" declares "${this.name}" twice. Merge the entries into one — ` +
-      'the declaration must state each object at most once.'
+      'the declaration must state each object at most once, and each privilege word in exactly one ' +
+      'form: plain, or WITH GRANT OPTION (`select` and `select*` cannot both hold, the server keeps ' +
+      'one aclitem per grantee per grantor).'
     );
   }
 }

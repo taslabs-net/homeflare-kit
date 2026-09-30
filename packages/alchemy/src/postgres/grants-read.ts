@@ -1,7 +1,9 @@
 /**
  * The read half of `Postgres.Grants`: what the catalogs say the declared role and PUBLIC
  * may do on one schema, its relations, its columns and its default privileges — plus the
- * existence checks the plan refuses on before any statement runs.
+ * existence check the plan refuses on before any statement runs. The ownership facts
+ * (`nspowner`/`relowner`) live in `grants-ownership.ts`; the word vocabulary and the
+ * PUBLIC relkind set live in `grants-words.ts`.
  *
  * ★ READS GO THROUGH `aclexplode`, NOT THE `aclitem` TEXT. Measured at
  *   `func.sgml@REL_18_6` ("Access Privilege Inquiry Functions", committed as
@@ -25,25 +27,8 @@
 import * as Effect from 'effect/Effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
-
-/** One aclexplode row as it crosses the wire: lowercase declared word with `*` appended
- * when the privilege carries WITH GRANT OPTION (`is_grantable`). */
-export interface AclRow {
-  readonly public: boolean;
-  readonly privilege: string;
-  readonly grantable: boolean;
-}
-
-/** Lowercase word, `*` appended when the privilege carries WITH GRANT OPTION. */
-export const encodeWord = (row: {
-  readonly privilege: string;
-  readonly grantable: boolean;
-}): string => `${row.privilege.toLowerCase()}${row.grantable ? '*' : ''}`;
-
-/** Union of one grantee's distinct words over all its aclexplode rows, sorted — two reads
- * of the same state must compare equal, which the re-run-is-a-no-op rule needs. */
-export const wordsOf = (rows: ReadonlyArray<AclRow>, wantPublic: boolean): ReadonlyArray<string> =>
-  [...new Set(rows.filter((row) => row.public === wantPublic).map(encodeWord))].sort();
+import { readOwnedTables, readSchemaOwnership } from './grants-ownership.ts';
+import { type AclRow, encodeWord, wordsOf } from './grants-words.ts';
 
 const SCHEMA_PRESENT_SQL = 'SELECT 1 AS present FROM pg_namespace WHERE nspname = $1';
 
@@ -80,9 +65,14 @@ export const readSchemaAcl = (
   }));
 
 /** One row per relation in the schema that holds ANY acl entry for the declared role or
- * PUBLIC, with each grantee's words — sorted by table name. */
+ * PUBLIC, with each grantee's words and the relation's `relkind` — sorted by table name.
+ * The relkind is NOT a filter on what is read (see the header): it scopes the
+ * `revokeFromPublic` CHECK to the relations `REVOKE ALL ON ALL TABLES IN SCHEMA` actually
+ * reaches (measured on PG 18.6: a PUBLIC grant on a sequence survives that statement, so
+ * counting it would refuse to converge). */
 const TABLES_SQL = `SELECT
     c.relname AS table,
+    c.relkind AS relkind,
     a.grantee = 0 AS public,
     a.privilege_type AS privilege,
     a.is_grantable AS grantable
@@ -94,6 +84,7 @@ const TABLES_SQL = `SELECT
 
 export interface LiveTable {
   readonly table: string;
+  readonly relkind: string;
   readonly role: ReadonlyArray<string>;
   readonly public: ReadonlyArray<string>;
 }
@@ -103,21 +94,28 @@ export const readTableAcls = (
   schema: string,
   role: string,
 ): Effect.Effect<ReadonlyArray<LiveTable>, SqlError> =>
-  Effect.map(pg.unsafe<AclRow & { readonly table: string }>(TABLES_SQL, [schema, role]), (rows) => {
-    const byTable = new Map<string, { role: string[]; public: string[] }>();
-    for (const row of rows) {
-      const entry = byTable.get(row.table) ?? { role: [], public: [] };
-      entry[row.public ? 'public' : 'role'].push(encodeWord(row));
-      byTable.set(row.table, entry);
-    }
-    return [...byTable.entries()]
-      .map(([table, entry]) => ({
-        table,
-        role: [...new Set(entry.role)].sort(),
-        public: [...new Set(entry.public)].sort(),
-      }))
-      .sort((a, b) => a.table.localeCompare(b.table));
-  });
+  Effect.map(
+    pg.unsafe<AclRow & { readonly table: string; readonly relkind: string }>(TABLES_SQL, [
+      schema,
+      role,
+    ]),
+    (rows) => {
+      const byTable = new Map<string, { relkind: string; role: string[]; public: string[] }>();
+      for (const row of rows) {
+        const entry = byTable.get(row.table) ?? { relkind: row.relkind, role: [], public: [] };
+        entry[row.public ? 'public' : 'role'].push(encodeWord(row));
+        byTable.set(row.table, entry);
+      }
+      return [...byTable.entries()]
+        .map(([table, entry]) => ({
+          table,
+          relkind: entry.relkind,
+          role: [...new Set(entry.role)].sort(),
+          public: [...new Set(entry.public)].sort(),
+        }))
+        .sort((a, b) => a.table.localeCompare(b.table));
+    },
+  );
 
 /** One row per column ACL in the schema (user columns only: `attnum > 0`, not dropped),
  * for the declared role and PUBLIC — sorted by table then column. PUBLIC column rows are
@@ -220,13 +218,19 @@ export const readDefaultAcls = (
   );
 
 /** Everything the reconcile and diff paths need about one schema, read in one bounded
- * burst of parallel queries (one pool per operation — `withPg` opens and closes it). */
+ * burst of parallel queries (one pool per operation — `withPg` opens and closes it).
+ * `schemaOwnedByRole`/`ownedTables` are the ownership facts (pg_namespace.nspowner,
+ * pg_class.relowner, `grants-ownership.ts`) the repair needs so it can LEAVE objects the
+ * declared role owns alone: an owner holds every privilege implicitly, and a `REVOKE`
+ * cannot take that away (`grants-plan.ts`). */
 export interface LiveGrants {
   readonly schemaExists: boolean;
   readonly schema: LiveSchemaAcl;
   readonly tables: ReadonlyArray<LiveTable>;
   readonly columns: ReadonlyArray<LiveColumn>;
   readonly defaults: ReadonlyArray<LiveDefault>;
+  readonly schemaOwnedByRole: boolean;
+  readonly ownedTables: ReadonlyArray<string>;
 }
 
 export const readGrants = (
@@ -240,4 +244,6 @@ export const readGrants = (
     tables: readTableAcls(pg, schema, role),
     columns: readColumnAcls(pg, schema, role),
     defaults: readDefaultAcls(pg, schema, role),
+    schemaOwnedByRole: readSchemaOwnership(pg, schema, role),
+    ownedTables: readOwnedTables(pg, schema, role),
   });

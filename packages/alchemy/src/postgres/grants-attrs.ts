@@ -50,6 +50,11 @@ export type TablePrivilege = (typeof TABLE_PRIVILEGES)[number];
 export const COLUMN_PRIVILEGES = ['select', 'insert', 'update', 'references'] as const;
 export type ColumnPrivilege = (typeof COLUMN_PRIVILEGES)[number];
 
+/** Every word across the three vocabularies — the superset the statement builders
+ * (`grants-sql.ts`) validate each privilege against before it ever reaches a `GRANT`
+ * clause, so a word that no class declares can never be concatenated into SQL. */
+export const ALL_GRANT_WORDS: ReadonlyArray<string> = [...SCHEMA_PRIVILEGES, ...TABLE_PRIVILEGES];
+
 /** The `ACL_*_CHR` letters (`acl.h@REL_18_6`, lines 103-115 of the committed excerpt),
  * `_CHR` define name split into the word this family declares and the letter the server
  * stores. ⚠️ CASE IS MEANINGFUL: `C` is CREATE (schemas, the uppercase one) while `c` is
@@ -131,7 +136,11 @@ export interface PostgresGrantsProps {
  * set is restricted to the objects THIS declaration names (see `attributesOf` in
  * `grants-plan.ts`). `publicSchemaRevoked`/`publicTablesRevoked` record the one-directional
  * PUBLIC fact the catalogs answer: PUBLIC holds nothing on the schema itself / on any
- * relation or column in it. */
+ * relation or column in it. `schemaOwnedByRole`/`ownedTables` record the ownership facts
+ * the catalogs answer: the declared role OWNS the schema / those relations, so it holds
+ * every privilege on them implicitly — the projection records an empty word list for an
+ * owned object (the ACL rows say nothing) and the repair leaves owned objects' ACL rows
+ * alone, because a `REVOKE` cannot take an owner's implicit rights away. */
 export interface PostgresGrantsAttributes {
   readonly role: string;
   readonly database: string;
@@ -142,6 +151,8 @@ export interface PostgresGrantsAttributes {
   readonly defaults: ReadonlyArray<PostgresGrantsAttributesDefault>;
   readonly publicSchemaRevoked: boolean;
   readonly publicTablesRevoked: boolean;
+  readonly schemaOwnedByRole: boolean;
+  readonly ownedTables: ReadonlyArray<string>;
 }
 
 export interface PostgresGrantsAttributesTable {
