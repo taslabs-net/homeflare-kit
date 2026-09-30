@@ -28,11 +28,12 @@ Alchemy 78 adapted to rc.115 — that first row is why we used to pin 112, not a
 stay there. The override is still the only thing that holds the set together.
 
 ⛔ **`redis` (added 2026-09-30) is exact in `overrides` for the same class of gap.**
-`redis@6.3.0` hit npm at 11:03Z with its own exact dependency `@redis/time-series@6.3.0`
-never published (latest stays 6.2.1), so a lockfile-less install floating the
+`redis@6.3.0` hit npm at 11:03Z minutes before its own exact dependency
+`@redis/time-series@6.3.0` was published, so a lockfile-less install floating the
 `>=5.0.0 <7.0.0` peer of `@effect/platform-node`/`@effect/sql-pg` to the dist-tag latest
-failed outright. Pin 6.2.1 — the set this repo's own `bun.lock` resolves — and lift the
-pin only when upstream's 6.3.0 line is complete (every `@redis/*` sub-package published).
+failed outright for that window. The line completed the same hour — every `@redis/*`
+sub-package published at 6.3.0 (measured 11:12:19Z) — and the pin moved onto that complete
+set. The pin stays exact because the same class of gap can recur with any future redis minor.
 
 ⚠️ `@effect/platform-node` is **required, not optional**: Alchemy's module graph reaches
 `Cloudflare/Workers/WorkerBridge → @effect/platform-node/NodeServices` even when you only

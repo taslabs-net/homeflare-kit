@@ -60,12 +60,14 @@ const PINS = {
   //   install actually fetched (#37, five minutes earlier).
   rolldown: '1.2.8',
   // ⛔ Exact for the same class of upstream gap. Measured 2026-09-30 on #335's CI:
-  //   redis@6.3.0 hit npm at 11:03Z without its own exact dependency
-  //   `@redis/time-series@6.3.0` (latest stays 6.2.1), so a lockfile-less install
-  //   floating the `>=5.0.0 <7.0.0` peer of @effect/platform-node/@effect/sql-pg
-  //   to the dist-tag latest fails outright. 6.2.1 is the set this repo's own
-  //   bun.lock resolves; lift the pin when upstream's 6.3.0 line is complete.
-  redis: '6.2.1',
+  //   redis@6.3.0 hit npm at 11:03Z before its own exact dependency
+  //   `@redis/time-series@6.3.0`, so a lockfile-less install floating the
+  //   `>=5.0.0 <7.0.0` peer of @effect/platform-node/@effect/sql-pg to the
+  //   dist-tag latest failed outright for that window. The line completed at
+  //   11:12:19Z — every `@redis/*` sub-package published at 6.3.0 (measured npm
+  //   metadata) — so the pin moved onto the complete set; it stays exact because
+  //   the same class of gap can recur with any future redis minor.
+  redis: '6.3.0',
 };
 
 async function run(cmd: readonly string[], cwd: string): Promise<string> {

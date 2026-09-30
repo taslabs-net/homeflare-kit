@@ -78,11 +78,12 @@ describe('peer contract', () => {
   });
 
   test('overrides pin redis to the complete sub-package set, not a floating peer', () => {
-    // 🔴 Measured 2026-09-30 on #335's CI: redis@6.3.0 hit npm at 11:03Z without its
-    //   own exact dependency @redis/time-series@6.3.0 (latest stays 6.2.1); a
-    //   lockfile-less install floating the >=5.0.0 <7.0.0 peer of platform-node/sql-pg
-    //   to the dist-tag latest fails bun add outright.
-    expect(smoke).toMatch(/redis:\s*'6\.2\.1'/);
-    expect(readme).toContain('"redis": "6.2.1"');
+    // 🔴 Measured 2026-09-30 on #335's CI: redis@6.3.0 hit npm at 11:03Z before its
+    //   own exact dependency @redis/time-series@6.3.0; a lockfile-less install
+    //   floating the >=5.0.0 <7.0.0 peer of platform-node/sql-pg to the dist-tag
+    //   latest fails bun add outright. Line completed 11:12:19Z (all @redis/* at
+    //   6.3.0); the pin moved onto it and stays exact against the same class of gap.
+    expect(smoke).toMatch(/redis:\s*'6\.3\.0'/);
+    expect(readme).toContain('"redis": "6.3.0"');
   });
 });

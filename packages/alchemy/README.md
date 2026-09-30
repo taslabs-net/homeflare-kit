@@ -395,7 +395,7 @@ two copies load in one process.
     "@effect/platform-node-shared": "4.0.0-rc.115",
     "@effect/platform-bun": "4.0.0-rc.115",
     "rolldown": "1.2.8",
-    "redis": "6.2.1"
+    "redis": "6.3.0"
   }
 }
 ```
