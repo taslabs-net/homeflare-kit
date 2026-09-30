@@ -23,6 +23,12 @@
  * ★ `delete` NEVER RE-GRANTS, NEVER CASCADES. The `retain` policy is the default; the
  *   revokes are idempotent; a third grantor's grant that a revoke cannot clear survives as
  *   a raw driver error (`REVOKE … CASCADE` is never issued).
+ * ★ STATEMENTS RUN ONE COMMAND AT A TIME — NO WRAPPING TRANSACTION: the socket path's
+ *   prepared-statement `unsafe` cannot carry several commands in one call and the psql
+ *   runner is one process per statement, so a repair's revoke and grant are each their
+ *   own autocommitted command. A live grantee briefly holds nothing between a pair's
+ *   revoke and grant, and a mid-repair failure leaves the earlier revokes applied; the
+ *   persisted declaration drives the next apply, which re-plans and heals.
  */
 import type { Input } from 'alchemy/Input';
 import * as Effect from 'effect/Effect';

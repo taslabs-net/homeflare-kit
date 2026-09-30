@@ -99,6 +99,16 @@ IN SCHEMA … GRANT … ON TABLES`, for future tables only (`defaclobjtype = 'r'
 PUBLIC` when live reads still show PUBLIC holding something. Live PUBLIC privileges
   with the flag off are never drift; the attributes record the one-directional fact
   (`publicSchemaRevoked`, `publicTablesRevoked`).
+- **Statements run one command at a time** (`grants-ops.ts`): every `REVOKE`/`GRANT`
+  is its own autocommitted command — the socket path's prepared-statement protocol
+  cannot carry several commands in one call, and the runner transport is one `psql`
+  process per statement — so nothing wraps a repair in `BEGIN…COMMIT` today. A live
+  grantee therefore briefly holds nothing on an object between that object's
+  `REVOKE ALL` and its `GRANT`, and a statement that fails mid-repair leaves the
+  earlier revokes applied. Both are bounded by the convergence proof: the persisted
+  declaration drives the next apply, which re-plans and heals; an atomic repair needs
+  a batch or transaction path on the shared transport, which the family does not
+  have yet.
 
 The diff is offline against persisted attributes (no live connection at plan time),
 so it answers `update` or `noop` and never previews live drift by itself; the exact
