@@ -32,11 +32,20 @@ transport — only the statements differ.
   accepts. No role membership, no ownership, no `SUPERUSER`/`CREATEROLE`/`BYPASSRLS`, no
   sequence/function/database/type/schema-of-database grants — a word outside the
   vocabulary is refused at plan (`PostgresGrantsPrivilegeRefused`).
-- **An object's owner holds everything regardless of ACL rows.** This resource cannot
-  make anyone an owner, and cannot take an owner's implicit rights away.
-- **Exactly the declared objects are touched.** A table removed from the declaration
-  keeps its live grants (only `delete` revokes what the last declaration named). PUBLIC
-  is only ever cleared, only when `revokeFromPublic: true`, and never re-granted.
+- **Objects the declared role OWNS are left alone.** An owner holds every privilege
+  implicitly — the ACL rows are not what carries those rights — and the catalogs say
+  who owns what (`pg_namespace.nspowner`, `pg_class.relowner`). The repair and the
+  delete skip owned objects entirely (measured on PG 18.6: a `REVOKE ALL` on a table
+  the declared role owns strips its recorded ACL entries to `{}` while the owner's
+  rights continue, so repairing them would only churn rows the state can never
+  converge on). The projection records the ownership facts (`schemaOwnedByRole`,
+  `ownedTables`). This resource still cannot make anyone an owner.
+- **The declared objects are the whole write surface.** Objects the declaration does
+  not name are never granted to or revoked from — and removing an entry from the
+  declaration is itself a drift: the reconcile revokes the removed names (where the
+  catalogs still show the role's words) before running the new declaration's plan, so
+  taking an entry away takes the privilege away. PUBLIC is only ever cleared, only
+  when `revokeFromPublic: true`, and never re-granted.
 - **The declaration's `database` must match the connection's.** Every statement runs in
   the connected database; a mismatch is refused (`PostgresGrantsDatabaseMismatch`)
   rather than silently granting in the wrong one.
@@ -71,6 +80,11 @@ the object's owner can revoke).
   `GRANT` the declared words — split into one plain grant and one
   `WITH GRANT OPTION` grant when the declaration mixes the two, because one option
   clause would grant the option to every listed privilege.
+- **A table revoke re-grants the table's declared columns in the same pass:** the
+  server's table-level `REVOKE ALL` also clears the grantee's column entries on the
+  table (measured on PG 18.6), so when a table's privileges change and the declaration
+  also names columns, the plan re-grants those columns after the revoke — one pass
+  converges.
 - **Default privileges are per creator role:** `ALTER DEFAULT PRIVILEGES FOR ROLE …
 IN SCHEMA … GRANT … ON TABLES`, for future tables only (`defaclobjtype = 'r'`). A
   `forRole` is never inferred; every entry names the role whose future objects get the
@@ -80,6 +94,11 @@ IN SCHEMA … GRANT … ON TABLES`, for future tables only (`defaclobjtype = 'r'
 PUBLIC` when live reads still show PUBLIC holding something. Live PUBLIC privileges
   with the flag off are never drift; the attributes record the one-directional fact
   (`publicSchemaRevoked`, `publicTablesRevoked`).
+
+The diff is offline against persisted attributes (no live connection at plan time),
+so it answers `update` or `noop` and never previews live drift by itself; the exact
+GRANT/REVOKE statements appear at apply, and `alchemy drift` is the path that
+re-reads the live catalogs.
 
 `read` answers `Unowned` (a grant set carries no ownership mark) — a stack declaring
 already-live grants needs `adopt(true)`. Retargeting `role`, `database` or `schema` is
@@ -92,30 +111,39 @@ is about, so a new target is a new logical id.
 grants, and a destroy is a deliberate act. A `delete` revokes exactly what the last
 declaration named, via the same repair plan with every word list emptied: one
 `REVOKE ALL` per named object where the catalogs still show the role's words, nothing
-for PUBLIC, nothing for objects the declaration never named, never `CASCADE` (a revoke
-whose grantee re-granted onward surfaces as the server's own `2BP01`, a missing grantee
-or schema means there is nothing left to revoke and the delete is a no-op).
+for PUBLIC, nothing for objects the declaration never named, nothing for objects the
+declared role owns (an owner's implicit rights are not this resource's to revoke),
+never `CASCADE` (a revoke whose grantee re-granted onward surfaces as the server's own
+`2BP01`), and a missing grantee or schema means there is nothing left to revoke and
+the delete is a no-op.
 
 ## The per-seat shape (the example this family exists for)
 
 One seat, one group role, one schema it owns the keys to, and read-only sight of the
-shared ledger:
+shared ledger. The write half is OWNERSHIP, not ACL rows: the operator creates the
+schema (and its tables) with the seat as owner, so the seat holds `CREATE` on the
+schema and every privilege on its own tables implicitly — this resource recognizes
+the catalogs' ownership facts (`pg_namespace.nspowner`, `pg_class.relowner`), records
+them in state (`schemaOwnedByRole`, `ownedTables`), and issues nothing for those
+objects. What the seat needs ACL rows FOR is other people's objects:
 
 ```ts
 import { PostgresGrants, postgresProviders } from '@homeflare/alchemy/postgres';
 
 // …provide `postgresProviders(config)` alongside the stack's other providers.
 
-class SeatClaude2Grants extends PostgresGrants('grants/seat-claude2', {
+// The seat's own schema: the declarations below state the intent, and ownership
+// satisfies them — the repair and the delete skip the owned schema and `notes`
+// entirely (measured on PG 18.6: a REVOKE on them would strip the recorded ACL
+// entries to `{}` while the rights continue, converging on nothing). PUBLIC's
+// defaults are PUBLIC's, so the clear still runs:
+class SeatClaude2Own extends PostgresGrants('grants/seat-claude2-own', {
   role: 'seat_claude2', // NOLOGIN group role, membership owned by a human
   database: 'agents', // the CT100 agents database this grant set lives in
-  schema: 'claude2', // the seat's OWN schema — create objects freely
+  schema: 'claude2', // the seat's OWN schema — ownership carries the rights
   schemaUsage: true,
   schemaCreate: true,
   tables: [{ table: 'notes', privileges: ['select', 'insert', 'update', 'delete'] }],
-  defaultPrivileges: [
-    { forRole: 'seat_claude2', privileges: ['select', 'insert', 'update', 'delete'] },
-  ],
   revokeFromPublic: true, // nothing in the seat's schema is world-readable
 }) {}
 
@@ -132,11 +160,11 @@ class SeatClaude2LedgerRead extends PostgresGrants('grants/seat-claude2-ledger-r
 }) {}
 ```
 
-The seat group role can write its own `claude2` schema (schema `CREATE`, full DML on its
-own tables, default privileges so its future tables inherit the same set) and only
-SELECT from the shared ledger view. Column-level grants work the same way when a role
-must see one column of a wide table — the estate read role `hf_agent`'s column-level
-SELECT on `LiteLLM_SpendLogs` is the estate's own example.
+The seat group role can write its own `claude2` schema (it owns the schema and its
+tables — `SeatClaude2Own` records that in state) and only SELECT from the shared
+ledger view. Column-level grants work the same way when a role must see one column of
+a wide table — the estate read role `hf_agent`'s column-level SELECT on
+`LiteLLM_SpendLogs` is the estate's own example.
 
 ## Not covered
 
