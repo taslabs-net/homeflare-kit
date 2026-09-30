@@ -27,7 +27,8 @@ Measured at 1.100.0 (`schema.prisma`, `pass_through_endpoints.py`, and the mini'
 | Guardrail policies (`/policies`)                                                                        | Yes — `LiteLLM.Policy`, [litellm-policy.md](./litellm-policy.md)                                 |
 | Policy attachments (`/policies/attachments`)                                                            | Yes — `LiteLLM.PolicyAttachment`, [litellm-policy-attachment.md](./litellm-policy-attachment.md) |
 | Tool policies (`/v1/tool/policy`)                                                                       | Yes — `LiteLLM.ToolPolicy`, [litellm-tool-policy.md](./litellm-tool-policy.md)                   |
-| Models, virtual keys, credentials                                                                       | DB-backed, API-managed, but no kit resource yet                                                  |
+| Virtual keys (`/key/*`)                                                                                 | Yes — `LiteLLM.Key`, [litellm-key.md](./litellm-key.md)                                          |
+| Models, credentials                                                                                     | DB-backed, API-managed, but no kit resource yet                                                  |
 | `router_settings`, `litellm_settings`, `general_settings.master_key`/`database_url`/`store_model_in_db` | config-file only — read-only through the API                                                     |
 | A `config.yaml` pass-through entry (`is_from_config: true`)                                             | Read-only through this resource — see Refusals                                                   |
 
@@ -130,7 +131,7 @@ export class AiGateway extends LiteLLMPassThroughEndpoint('AiGateway', {
 
 ## Not covered
 
-- **Models, virtual keys, credentials.** DB-backed and API-managed at 1.100.0, but no kit resource yet
+- **Models, credentials.** DB-backed and API-managed at 1.100.0, but no kit resource yet
   — deferred; see the unit's own trigger notes. (Teams, unified access groups, MCP toolsets, policies,
   policy attachments and tool policies are the pages linked in the table above.)
 - **The Claude OAuth model/key/team slice.** Needs estate answers only Tim can give.

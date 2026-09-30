@@ -31,6 +31,31 @@ export class Forbidden
     [{ status: 403 }],
   ) {}
 
+/** The caller may not delete a key it named (it is not a proxy admin and not allowed to modify that key). LiteLLM answers 403 with the message `You are not authorized to delete this key`; the key was not deleted. */
+export class KeyDeleteForbidden
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<KeyDeleteForbidden>()("KeyDeleteForbidden", {
+      code: S.Number,
+      message: S.String,
+    }).pipe(C.withAuthError),
+    [
+      {
+        status: 403,
+        message: { includes: "not authorized to delete this key" },
+      },
+    ],
+  ) {}
+
+/** No key matches what /key/delete was asked to delete: the alias (or key) is absent, or another caller deleted it first. LiteLLM answers 404 with the message `No keys found`. Whether the key is still there is a question for /key/list, not for this error. */
+export class KeyNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<KeyNotFound>()("KeyNotFound", {
+      code: S.Number,
+      message: S.String,
+    }).pipe(C.withBadRequestError),
+    [{ status: 404, message: { includes: "No keys found" } }],
+  ) {}
+
 export class NotFound
   extends /*@__PURE__*/ T.applyErrorMatchers(
     /*@__PURE__*/ S.TaggedError<NotFound>()("NotFound", {
@@ -4030,6 +4055,8 @@ export const bulkUpdateTeamKeysTeamKeyBulkUpdatePost: API.OperationMethod<
 export type DeleteKeyFnKeyDeletePostError =
   | BadRequest
   | UnprocessableEntity
+  | KeyNotFound
+  | KeyDeleteForbidden
   | LitellmOpError;
 /** Delete Key Fn Delete a key from the key management system. Parameters:: - keys (List[str]): A list of keys or hashed keys to delete. Example {"keys": ["sk-QWrxEynunsNpV1zT48HIrw", "837e17519f44683334df5291321d97b8bf1098cd490e49e215f6fea935aa28be"]} - key_aliases (List[str]): A list of key aliases to delete. Can be passed instead of `keys`.Example {"key_aliases": ["alias1", "alias2"]} Returns: - deleted_keys (List[str]): A list of deleted keys. Example {"deleted_keys": ["sk-QWrxEynunsNpV1zT48HIrw", "837e17519f44683334df5291321d97b8bf1098cd490e49e215f6fea935aa28be"]} Example: ```bash curl --location 'http://0.0.0.0:4000/key/delete' --header 'Authorization: Bearer sk-1234' --header 'Content-Type: application/json' --data '{ "keys": ["sk-QWrxEynunsNpV1zT48HIrw"] }' ``` Raises: HTTPException: If an error occurs during key deletion. */
 export const deleteKeyFnKeyDeletePost: API.OperationMethod<
@@ -4040,7 +4067,7 @@ export const deleteKeyFnKeyDeletePost: API.OperationMethod<
 > = /*@__PURE__*/ API.make(() => ({
   input: DeleteKeyFnKeyDeletePostRequest,
   output: DeleteKeyFnKeyDeletePostResponse,
-  errors: [BadRequest, UnprocessableEntity],
+  errors: [BadRequest, UnprocessableEntity, KeyNotFound, KeyDeleteForbidden],
   protocol: LitellmProtocol,
   retry: Retry.Retry,
 }));
