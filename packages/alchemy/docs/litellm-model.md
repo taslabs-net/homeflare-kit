@@ -10,13 +10,17 @@ credentials and other refusals in [litellm.md](./litellm.md).
 
 Nothing hand-rolled: every call is one of these, through `model-operations.ts`.
 
-| step   | operation (`@distilled.cloud/litellm/model_management`) | route                  |
-| ------ | ------------------------------------------------------- | ---------------------- |
-| list   | `getModelInfoV1ModelInfo`                               | `GET /model/info`      |
-| read   | `getModelInfoV1ModelInfo` (`litellm_model_id` filter)   | `GET /model/info?id=…` |
-| create | `addNewModelModelNewPost`                               | `POST /model/new`      |
-| update | `updateModelModelUpdatePost`                            | `POST /model/update`   |
-| delete | `deleteModelModelDeletePost`                            | `POST /model/delete`   |
+| step   | operation (`@distilled.cloud/litellm/model_management`) | route                      |
+| ------ | ------------------------------------------------------- | -------------------------- |
+| list   | `getModelInfoV1ModelInfo`                               | `GET /model/info`          |
+| read   | `getModelInfoV1ModelInfo` (`litellm_model_id` filter)   | `GET /model/info?id=…`     |
+| create | `addNewModelModelNewPost`                               | `POST /model/new`          |
+| update | `updateModelModelUpdatePost`                            | `POST /model/update`       |
+| patch  | `patchModelModelModelIdUpdatePatch`                     | `PATCH /model/{id}/update` |
+| delete | `deleteModelModelDeletePost`                            | `POST /model/delete`       |
+
+A missing id on the by-id read is HTTP 400 at v1.100.0 and v1.103.0 (`model_info_v1`), and the same
+400 is also "no rights". Absence is a re-list that lacks the id, never the error text.
 
 The list is the table and one GET answers a name, an id and absence. The by-id read is kept only
 for the read-back of a row the list may not show yet (a create commits before the list refreshes)
@@ -58,19 +62,19 @@ Then provide `litellmProviders()` alongside the stack's other providers.
 
 ## Behaviour
 
-| Concern          | Rule                                                                                                                                                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| adopt            | By `modelName` (the live row whose group name matches), or by `id` to pin one. A name matching more than one listed row is refused, never guessed at. A live row with no state needs `--adopt`.                     |
-| default removal  | `retain` — removal takes the deployment out of its routing group for every key that reaches it; opt in with `.pipe(RemovalPolicy.destroy())`.                                                                       |
-| rename           | A changed `modelName` without a pinned `id` is a new group: the old row survives under `retain`, the new group gets a fresh id. With a pinned `id` the same row is renamed in place.                                |
-| changed `id`     | The id is identity: a different declared id is a `replace`, create-first, old row retained.                                                                                                                         |
-| credential       | `apiKey: { fromEnv: 'NAME' }` only — sent as LiteLLM's own `os.environ/NAME` reference, so the proxy resolves it in its own environment. Never a value (a value would land in Alchemy's unencrypted state).         |
-| omitted `apiKey` | An adopted row is never blanked: omitting `apiKey` sends no `api_key`, and the live credential stays. Declaring one is what moves the row onto `os.environ/NAME`.                                                   |
-| encrypted params | LiteLLM stores `litellm_params` encrypted and hides sensitive fields on read, so the comparison is the fields the read returns plus `paramsSeal`, a digest of the DECLARED values — never a digest of the live row. |
-| update scope     | Every update sends the full managed set of `litellm_params` this resource models; `model_name` moves only when it changed (a same-name body would collide with a sibling deployment in the group).                  |
-| read-back        | Every write is read back: a field the proxy did not apply fails the deploy (`LitellmModelNotConvergedError`) instead of claiming success. A row that cannot be found after a write fails it too.                    |
-| delete           | Idempotent by this resource, not by the vendor: a `BadRequest` re-lists, and only a genuinely-absent id counts as already deleted — a refused delete on a live row re-fails.                                        |
-| list             | Empty: adoption is an explicit act (`--adopt`), and no ownership mark exists to filter by.                                                                                                                          |
+| Concern          | Rule                                                                                                                                                                                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| adopt            | By `modelName` (the live row whose group name matches), or by `id` to pin one. A name matching more than one listed row is refused, never guessed at. A live row with no state needs `--adopt`.                                                                                                   |
+| default removal  | `retain` — removal takes the deployment out of its routing group for every key that reaches it; opt in with `.pipe(RemovalPolicy.destroy())`.                                                                                                                                                     |
+| rename           | A changed `modelName` without a pinned `id` is a new group: the old row survives under `retain`, the new group gets a fresh id. With a pinned `id` the same row is renamed in place.                                                                                                              |
+| changed `id`     | The id is identity: a different declared id is a `replace`, create-first, old row retained.                                                                                                                                                                                                       |
+| credential       | `apiKey: { fromEnv: 'NAME' }` only — sent as LiteLLM's own `os.environ/NAME` reference, so the proxy resolves it in its own environment. Never a value (a value would land in Alchemy's unencrypted state).                                                                                       |
+| omitted `apiKey` | An adopted row is never blanked: omitting `apiKey` sends no `api_key`, and the live credential stays. Declaring one is what moves the row onto `os.environ/NAME`.                                                                                                                                 |
+| encrypted params | LiteLLM stores `litellm_params` encrypted and hides sensitive fields on read, so the comparison is the fields the read returns plus `paramsSeal`, a digest of the DECLARED values — never a digest of the live row.                                                                               |
+| update scope     | `litellm_params` and a rename go to `POST /model/update` (v1.103.0 `update_model` writes those, and `model_name` only when it changed). `access_groups`, `mode` and `base_model` go to `PATCH /model/{id}/update`, the merge that writes `model_info`. The SDK is generated from OpenAPI 1.103.0. |
+| read-back        | Every write is read back: a field the proxy did not apply fails the deploy (`LitellmModelNotConvergedError`) instead of claiming success. A row that cannot be found after a write fails it too.                                                                                                  |
+| delete           | Idempotent by this resource, not by the vendor: a `BadRequest` re-lists, and only a genuinely-absent id counts as already deleted — a refused delete on a live row re-fails.                                                                                                                      |
+| list             | Empty: adoption is an explicit act (`--adopt`), and no ownership mark exists to filter by.                                                                                                                                                                                                        |
 
 ## Refusals
 
@@ -89,7 +93,7 @@ A plan is refused, before any write, when the declaration:
   asked for is the one tracked, and a read-back that cannot find it fails the deploy
   (`LitellmModelAbsentAfterWriteError`) rather than recording a row it cannot identify.
 - What the real proxy answers for a duplicate create, an update of a missing id, and a delete of a
-  missing id: the fake's 400s are its own choices, and every test that leans on one says so.
+  missing id: the fake's 400s there are its own choices, and every test that leans on one says so.
 - The rest of `litellm_params` (rpm/tpm, timeouts, fallbacks, wildcard routing, …), cost fields on
   `model_info` beyond what the read returns, `teams`, and config-file rows (`db_model: false`) are
   not modelled on purpose; an update to a duplicate name can shadow them.

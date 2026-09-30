@@ -6,10 +6,12 @@
  *
  * ★ A SEPARATE FILE FROM `fake-litellm.ts` ON PURPOSE: that fake carries the pass-through and
  *   budget routes and is at its size budget; a fake per route family keeps each one small.
- * ⚠️ SHAPES ARE FROM THE GENERATED 1.103.0 SCHEMA (`model_management.ts`), NOT A LIVE READ. What
- *   the real proxy answers on a duplicate create, an update of a missing id, and a delete of a
- *   missing id is UNMEASURED; the fake's 400s are its own choices, and every test that leans on
- *   one says so.
+ * ⚠️ SHAPES ARE FROM THE GENERATED 1.103.0 SCHEMA (`model_management.ts`), NOT A LIVE READ. A
+ *   missing id on the by-id read is HTTP 400, measured in `model_info_v1` at v1.100.0 and
+ *   v1.103.0. POST `/model/update` writes params and a rename; PATCH writes `model_info`
+ *   (`update_db_model`). What the real proxy answers on a duplicate create, an update of a
+ *   missing id, and a delete of a missing id is UNMEASURED; the fake's 400s there are its own
+ *   choices, and every test that leans on one says so.
  * ★ THE LIST IS THE TABLE, the way `GET /model/info` reads: a row is listed as soon as it is
  *   committed — no in-memory registry like the MCP server list. `listOmits` models the opposite,
  *   rows the list does not answer but the by-id read does, UNMEASURED, to exercise the read-back
@@ -45,6 +47,11 @@ export interface FakeModelOptions {
   readonly issuesOwnId?: boolean;
   /** Every `POST /model/delete` answers 400, whether or not the row exists (no rights). */
   readonly forbidDelete?: boolean;
+  /**
+   * Every by-id `GET /model/info` answers 400 even when the row is listed. Models "no rights" /
+   * a bad filter: a 400 is absence only when a re-list also lacks the id (model-operations.ts).
+   */
+  readonly byIdRefused?: boolean;
   /** `POST /model/update` drops a `false` and an empty list, like a truthiness check would. */
   readonly editIgnoresFalsy?: boolean;
   /** Ids committed to the table that the list omits; the by-id read still answers them. */
@@ -96,10 +103,15 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
       if (wanted === null) return json(200, { data: listed.map(readable) });
       const found =
         listed.find((row) => rowId(row) === wanted) ?? rows.find((row) => rowId(row) === wanted);
-      // ★ the same 404 the real proxy answers for a missing id: the SDK decodes it to NotFound
-      return found === undefined
-        ? json(404, { detail: { error: `ModelInfo with model_id: ${wanted} does not exist` } })
-        : json(200, { data: [readable(found)] });
+      // ★ v1.100.0 and v1.103.0 `model_info_v1` raise HTTP 400 when the router has no such
+      //   deployment (`proxy_server.py`, "Model id = … not found on litellm proxy"), not 404.
+      //   The SDK still decodes that undeclared 400 as BadRequest. A 400 is also "no rights".
+      if (options.byIdRefused === true || found === undefined) {
+        return json(400, {
+          detail: { error: `Model id = ${wanted} not found on litellm proxy` },
+        });
+      }
+      return json(200, { data: [readable(found)] });
     }
     if (url.pathname === '/model/new' && request.method === 'POST') {
       const body = (await request.json()) as Row;
@@ -119,13 +131,11 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
       const id = String(((body['model_info'] ?? {}) as Row)['id']);
       const at = rows.findIndex((row) => rowId(row) === id);
       if (at === -1) return json(400, { detail: { error: 'model not found' } });
-      // ⛔ PARTIAL UPDATE, LiteLLM's `update_model` at 1.103.0: only the keys PRESENT are
-      //   assigned (`exclude_unset` semantics, model-form.ts) — an omitted `api_base`, `api_key`
-      //   or `model_name` is a deliberate leave-alone, never a wipe. `editIgnoresFalsy` models a
-      //   proxy that REFUSES a `false` or an empty list: the edit never lands, so the row's
-      //   current value survives (model-form.ts merges the incoming entries first, so the
-      //   incoming falsy value must be dropped BEFORE the merge, not filtered out after —
-      //   filtering after the merge erases the field and hides the dropped edit from the read-back).
+      // ⛔ v1.103.0 `update_model` writes litellm_params (None keeps the stored value) and
+      //   model_name when it changed. It does not apply request model_info. `editIgnoresFalsy`
+      //   models a proxy that REFUSES a `false` or an empty list: the edit never lands, so the
+      //   row's current value survives. Drop the incoming falsy value BEFORE the merge —
+      //   filtering after the merge erases the field and hides the dropped edit.
       const dropFalsy = <T extends Row>(incoming: T): T =>
         options.editIgnoresFalsy === true
           ? (Object.fromEntries(
@@ -136,13 +146,38 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
           : incoming;
       const current = rows[at] as Row;
       const params = dropFalsy((body['litellm_params'] ?? {}) as Row);
-      const info = dropFalsy((body['model_info'] ?? {}) as Row);
       const merged: Row = {
         ...current,
         ...(body['model_name'] === undefined ? {} : { model_name: body['model_name'] }),
         ...(body['litellm_params'] === undefined
           ? {}
           : { litellm_params: { ...(current['litellm_params'] as Row), ...params } }),
+      };
+      rows = rows.map((row, i) => (i === at ? merged : row));
+      return json(200, {});
+    }
+    const patch = /^\/model\/([^/]+)\/update$/.exec(url.pathname);
+    if (patch !== null && request.method === 'PATCH') {
+      const body = (await request.json()) as Row;
+      bodies.push(body);
+      const id = decodeURIComponent(patch[1] ?? '');
+      const at = rows.findIndex((row) => rowId(row) === id);
+      if (at === -1) return json(400, { detail: { error: 'model not found' } });
+      // ★ v1.103.0 `update_db_model`: present model_info keys merge onto the stored row.
+      //   An empty access_groups clears the groups. editIgnoresFalsy drops that clear.
+      const dropFalsy = <T extends Row>(incoming: T): T =>
+        options.editIgnoresFalsy === true
+          ? (Object.fromEntries(
+              Object.entries(incoming).filter(
+                ([, value]) => value !== false && !(Array.isArray(value) && value.length === 0),
+              ),
+            ) as T)
+          : incoming;
+      const current = rows[at] as Row;
+      const info = dropFalsy((body['model_info'] ?? {}) as Row);
+      const merged: Row = {
+        ...current,
+        ...(body['model_name'] === undefined ? {} : { model_name: body['model_name'] }),
         ...(body['model_info'] === undefined
           ? {}
           : { model_info: { ...(current['model_info'] as Row), ...info } }),

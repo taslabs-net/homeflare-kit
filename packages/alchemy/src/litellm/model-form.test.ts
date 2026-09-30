@@ -10,6 +10,7 @@ import {
   declaredDigest,
   differing,
   firstProblem,
+  patchBody,
   toAttributes,
   updateBody,
 } from './model-form.ts';
@@ -116,7 +117,12 @@ describe('the wire bodies', () => {
       model: 'xai/grok-4.7',
     });
     expect('model_name' in sameName).toBe(false);
-    expect(sameName['model_info']).toEqual({ access_groups: [], id: 'FAKE-live-id' });
+    // POST names the row and does not carry the model_info edits (those are the PATCH body).
+    expect(sameName['model_info']).toEqual({ id: 'FAKE-live-id' });
+    expect(patchBody(props, live) as Row).toEqual({
+      model_id: 'FAKE-live-id',
+      model_info: { access_groups: [] },
+    });
 
     const renamed = updateBody({ ...props, modelName: 'grok-fast' }, live) as Row;
     expect(renamed['model_name']).toBe('grok-fast');
@@ -131,7 +137,12 @@ describe('the wire bodies', () => {
     const bare: ModelProps = { model: 'xai/grok-4.7', modelName: 'grok' };
     const body = updateBody(bare, live) as Row;
     expect(body['litellm_params']).toEqual({ model: 'xai/grok-4.7' });
-    expect(body['model_info']).toEqual({ access_groups: [], id: 'FAKE-live-id' });
+    expect(body['model_info']).toEqual({ id: 'FAKE-live-id' });
+    expect((patchBody(bare, live) as Row)['model_info']).toEqual({ access_groups: [] });
+    expect((patchBody({ ...bare, mode: 'chat' }, live) as Row)['model_info']).toEqual({
+      access_groups: [],
+      mode: 'chat',
+    });
   });
 });
 

@@ -33,13 +33,22 @@ import {
   LitellmModelInvalidError,
   LitellmModelNotConvergedError,
 } from './model-errors.ts';
-import { createBody, declaredDigest, differing, firstProblem, updateBody } from './model-form.ts';
+import {
+  createBody,
+  declaredDigest,
+  differing,
+  firstProblem,
+  infoDiffers,
+  patchBody,
+  updateBody,
+} from './model-form.ts';
 import { sealState } from './model-credential.ts';
 import { findLive, wantedId } from './model-locate.ts';
 import {
   createModel,
   deleteModel,
   listModels,
+  patchModel,
   readModelRow,
   updateModel,
 } from './model-operations.ts';
@@ -130,10 +139,16 @@ export const modelHandlers = {
         sealed = declaredDigest(news);
       } else {
         modelId = before.id;
-        if (differing(before, news).length > 0 || sealState(news, sealed) === 'stale') {
-          // ⛔ EVERY UPDATE SENDS THE FULL MANAGED SET (model-form.ts): an omitted api_base is a
-          //   deliberate leave-alone, and `model_name` moves only when it changed.
-          yield* updateModel(updateBody(news, before));
+        const drifted = differing(before, news);
+        if (drifted.length > 0 || sealState(news, sealed) === 'stale') {
+          // ⛔ PARAMS AND A RENAME GO TO POST (model-form.ts): an omitted api_base is a deliberate
+          //   leave-alone, and `model_name` moves only when it changed. POST does not write
+          //   model_info, so groups, mode and base_model go to PATCH when those differ.
+          const paramsMoved =
+            drifted.some((field) => field === 'model_name' || field === 'model') ||
+            sealState(news, sealed) === 'stale';
+          if (paramsMoved) yield* updateModel(updateBody(news, before));
+          if (infoDiffers(before, news)) yield* patchModel(patchBody(news, before));
           sealed = declaredDigest(news);
         }
       }

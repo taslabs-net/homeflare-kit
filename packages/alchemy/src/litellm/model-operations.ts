@@ -3,27 +3,36 @@
  * `@distilled.cloud/litellm/model_management` (LiteLLM 1.103.0; names verified in the generated
  * source, never guessed):
  *
- *   list    `getModelInfoV1ModelInfo`       GET   /model/info
- *   read    `getModelInfoV1ModelInfo`       GET   /model/info?litellm_model_id={id}
- *   create  `addNewModelModelNewPost`       POST  /model/new
- *   update  `updateModelModelUpdatePost`    POST  /model/update
- *   delete  `deleteModelModelDeletePost`    POST  /model/delete
+ *   list    `getModelInfoV1ModelInfo`            GET   /model/info
+ *   read    `getModelInfoV1ModelInfo`            GET   /model/info?litellm_model_id={id}
+ *   create  `addNewModelModelNewPost`            POST  /model/new
+ *   update  `updateModelModelUpdatePost`         POST  /model/update
+ *   patch   `patchModelModelModelIdUpdatePatch`  PATCH /model/{model_id}/update
+ *   delete  `deleteModelModelDeletePost`         POST  /model/delete
+ *
+ * The SDK is generated from LiteLLM OpenAPI **1.103.0** (`model_management.ts`'s header). At that
+ * tag, and at v1.100.0, `model_info_v1` raises HTTP 400 when the router has no such deployment
+ * (`proxy_server.py`, "Model id = … not found on litellm proxy"), not 404. The same 400 is also
+ * "no rights" or a bad filter. POST `/model/update` writes `litellm_params` and a rename;
+ * `model_info` (`access_groups`, `mode`, `base_model`) is applied by the PATCH route's
+ * `update_db_model`.
  *
  * ⛔ LIST-FIRST READS. One GET of the whole list answers a group, an id and absence unambiguously,
  *   the way `budget-operations.ts` reads. The by-id read is the same route with the
  *   `litellm_model_id` filter, used only where the list cannot decide (a write-back on a row the
  *   list may not show yet).
- * ⛔ NO MESSAGE SNIFFING (S21). The SDK declares `BadRequest`/`UnprocessableEntity` for the writes;
- *   a 404 still decodes at run time as the shared `NotFound` class (`HTTP_STATUS_MAP`), invisible
- *   to the type checker, so the by-id read tests that class with `instanceof` and nothing else.
- *   Absence is decided by a REAL READ, never by an error's text.
+ * ⛔ NO MESSAGE SNIFFING (S21). The by-id read's 400 is undeclared on the generated operation, so
+ *   it decodes at run time as the shared `BadRequest` class (`HTTP_STATUS_MAP`) and is matched
+ *   with `instanceof`, never by the error's text. A 400 is absence only when a re-list also lacks
+ *   the id — the rule `deleteModel` already uses. A 404, if a proxy ever answers one, is the same
+ *   absence. Any other failure propagates.
  * ⛔ THE ROW'S PARAMS ARE NEVER READ INTO STATE: `toAttributes` (model-form.ts) copies `model` only
  *   when `litellm_params` is an object, and never `api_base` or `api_key` — an encrypted row answers
  *   `"<encrypted>"` for the whole field. What was declared is remembered as a digest instead.
  * ⚠️ Unlike pass-through endpoints, each deployment is its own DB row: no semaphore.
  */
 import * as models from '@distilled.cloud/litellm/model_management';
-import { NotFound } from '@distilled.cloud/litellm/Errors';
+import { BadRequest, NotFound } from '@distilled.cloud/litellm/Errors';
 import * as Effect from 'effect/Effect';
 import { type LitellmOpContext, throughFetch } from './operations.ts';
 import { toAttributes } from './model-form.ts';
@@ -71,15 +80,28 @@ export const listModels = (): Effect.Effect<
 > => throughFetch(models.getModelInfoV1ModelInfo({})).pipe(Effect.flatMap(rowsOf));
 
 /**
- * One row by id, or `undefined` when the proxy has no such deployment. ⛔ ANY FAILURE OTHER THAN
- * `NotFound` PROPAGATES: a 401, a 500 or a dead network says nothing about whether the row exists,
- * and must never be read as absence. The id is re-checked on the answer: a proxy that ignored the
- * filter must not hand back some other row.
+ * One row by id, or `undefined` when the proxy has no such deployment.
+ *
+ * ⛔ A 400 IS NOT ABSENCE BY ITSELF. v1.103.0 `model_info_v1` raises 400 for a missing id, and the
+ *   same status is "no rights" or a bad filter. Re-list, and treat the id as absent only when the
+ *   list does not contain it (`deleteModel`'s rule). A 401, a 500 or a dead network says nothing
+ *   about whether the row exists and must never be read as absence. The id is re-checked on a
+ *   successful answer: a proxy that ignored the filter must not hand back some other row.
  */
 export const readModelRow = (modelId: string) =>
   throughFetch(models.getModelInfoV1ModelInfo({ litellm_model_id: modelId })).pipe(
     Effect.catch((error) =>
-      error instanceof NotFound ? Effect.succeed(undefined) : Effect.fail(error),
+      error instanceof NotFound
+        ? Effect.succeed(undefined)
+        : error instanceof BadRequest
+          ? listModels().pipe(
+              Effect.flatMap((rows) =>
+                rows.some((row) => row.id === modelId)
+                  ? Effect.fail(error)
+                  : Effect.succeed(undefined),
+              ),
+            )
+          : Effect.fail(error),
     ),
     Effect.flatMap((response) =>
       response === undefined
@@ -94,6 +116,17 @@ export const createModel = (body: models.AddNewModelModelNewPostRequest) =>
 
 export const updateModel = (body: models.UpdateModelModelUpdatePostRequest) =>
   throughFetch(models.updateModelModelUpdatePost(body)).pipe(Effect.asVoid);
+
+/**
+ * PATCH `/model/{model_id}/update`. This is the route whose merge writes `model_info`
+ * (`access_groups`, `mode`, `base_model`); POST `/model/update` does not (model-form.ts).
+ */
+export const patchModel = (body: Record<string, unknown>) =>
+  throughFetch(
+    models.patchModelModelModelIdUpdatePatch(
+      body as unknown as models.PatchModelModelModelIdUpdatePatchRequest,
+    ),
+  ).pipe(Effect.asVoid);
 
 /**
  * Idempotent BY THIS FUNCTION, not by the vendor. A `BadRequest` re-lists and is swallowed only

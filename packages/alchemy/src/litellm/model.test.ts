@@ -32,6 +32,13 @@ const grok: ModelProps = {
   modelName: 'grok',
 };
 
+test('a first create still reaches POST /model/new when the missing-id read is a 400', async () => {
+  const fake = startFakeModelLitellm({ masterKey: KEY });
+  expect(await stack(fake).deploy(declare(grok))).toEqual({ Grok: 'create' });
+  expect(writesOf(fake.requests())).toEqual(['POST /model/new']);
+  expect(fake.models()).toHaveLength(1);
+});
+
 test('creates a deployment that carries the reference credential, never a value', async () => {
   const fake = startFakeModelLitellm({ masterKey: KEY });
   expect(await stack(fake).deploy(declare(grok))).toEqual({ Grok: 'create' });
@@ -107,13 +114,34 @@ test('a live row is Unowned: refused without --adopt, adopted with one stamping 
   expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'adopted' });
   // ★ one update stamps the declaration the row cannot prove (paramsSeal '' → stale), and it
   //   sends exactly the managed set: the row's undeclared mode and credential are left alone.
+  // ★ the stamp is POST (params seal). Groups already match, so no PATCH.
   expect(writesOf(fake.requests())).toEqual(['POST /model/update']);
   expect(fake.bodies()[0]).toEqual({
     litellm_params: { model: 'xai/grok-4.7' },
-    model_info: { access_groups: ['FAKE-team'], id: 'FAKE-live-id' },
+    model_info: { id: 'FAKE-live-id' },
   });
   expect(fake.models()[0]?.['model_info'] as Row | undefined).toMatchObject({ mode: 'chat' });
   expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'noop' });
+});
+
+test('clearing groups reaches the PATCH route, which is what writes model_info', async () => {
+  // POST /model/update writes litellm_params and a rename only (v1.103.0 update_model).
+  // A fake that matches that leaves access_groups in place, and the read-back must not pass.
+  const fake = startFakeModelLitellm({
+    masterKey: KEY,
+    seed: [
+      modelRow({
+        litellm_params: { model: 'xai/grok-4.7' },
+        model_info: { access_groups: ['FAKE-team'], id: 'FAKE-live-id' },
+        model_name: 'grok',
+      }),
+    ],
+  });
+  const adopted: ModelProps = { model: 'xai/grok-4.7', modelName: 'grok' };
+  expect(await stack(fake).deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'adopted' });
+  const id = String((fake.models()[0]?.['model_info'] as Row | undefined)?.['id']);
+  expect(writesOf(fake.requests())).toContain(`PATCH /model/${id}/update`);
+  expect(fake.models()[0]?.['model_info'] as Row | undefined).toMatchObject({ access_groups: [] });
 });
 
 test('adopting a row whose groups the declaration omits clears them', async () => {

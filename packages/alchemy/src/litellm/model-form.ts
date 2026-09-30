@@ -17,12 +17,18 @@
  * ⛔ A LIVE `api_key` IS NEVER OVERWRITTEN BY AN ADOPTED ROW'S NOTHING. `apiKey` omitted on an
  *   adopted row sends no `api_key` and the live reference is kept; `differing` reports no drift
  *   for it. Declaring `apiKey` is what moves the row onto `os.environ/NAME`.
- * ⚠️ EVERY UPDATE SENDS THE FULL MANAGED SET of `litellm_params` this resource models, not only
- *   the fields that differ: `/model/update` is a partial update in LiteLLM's source
- *   (`update_model` at v1.103.0 assigns only the keys present — `exclude_unset` semantics), and
- *   sending all of it is what makes an omitted `api_base` a deliberate "leave it alone" rather
- *   than a guess. `model_name` is sent only when it changed, because a same-name update would
- *   otherwise collide with another deployment in the group (model.ts).
+ * ⚠️ PARAMS AND A RENAME GO TO POST `/model/update`. At the tag the SDK was generated from
+ *   (OpenAPI 1.103.0), `update_model` writes `litellm_params`, `updated_by`, and `model_name`
+ *   only when the name changed and `team_id` is None. It stores request `model_info` only when
+ *   `member_marker` is set, and it merges with `exclude_none`, not `exclude_unset`. Sending the
+ *   full managed `litellm_params` set is what makes an omitted `api_base` a deliberate
+ *   "leave it alone": a None value keeps the stored one. `model_name` is sent only when it
+ *   changed, because a same-name update would otherwise collide with another deployment in
+ *   the group (model.ts).
+ * ⚠️ GROUPS, MODE AND BASE MODEL GO TO PATCH `/model/{model_id}/update`. That route's
+ *   `update_db_model` is the merge that writes `model_info` (`access_groups`, `mode`,
+ *   `base_model`). POST does not, so a read-back of those fields would fail
+ *   (`LitellmModelNotConvergedError`) if they were sent there.
  */
 import type * as models from '@distilled.cloud/litellm/model_management';
 import {
@@ -163,8 +169,10 @@ export const createBody = (
 };
 
 /**
- * An update re-sends the managed set; `model_name` only when it changed (a same-name body would
- * collide with a sibling deployment in the group — model.ts). `model_info.id` names the row.
+ * POST `/model/update`: the managed `litellm_params`, and `model_name` only when it changed
+ * (a same-name body would collide with a sibling deployment in the group — model.ts).
+ * `model_info.id` names the row. This route does not apply `access_groups`, `mode` or
+ * `base_model` (v1.103.0 `update_model`); those travel on {@link patchBody}.
  */
 export const updateBody = (
   props: ModelProps,
@@ -173,8 +181,29 @@ export const updateBody = (
   const renamed = live.modelName !== props.modelName;
   const body: Record<string, unknown> = {
     litellm_params: managedParams(props),
-    model_info: { ...modelInfoOf(props), id: live.id },
+    model_info: { id: live.id },
     ...(renamed ? { model_name: props.modelName } : {}),
   };
   return body as unknown as models.UpdateModelModelUpdatePostRequest;
 };
+
+/**
+ * PATCH `/model/{model_id}/update`: the `model_info` fields POST does not write. `access_groups`
+ * is always present (an omitted list is "no groups" and must be able to clear). `mode` and
+ * `base_model` are present only when declared, so an omission leaves the live value. The id is
+ * the path parameter; the body does not repeat it, because a PATCH merge of `id` is not an edit
+ * this resource makes.
+ *
+ * ⚠️ `Record`, then a widening cast, for the same reason as {@link modelInfoOf}: the generated
+ *   1.103.0 `LitellmTypesRouterModelInfo` declares neither `access_groups` nor `mode`, while the
+ *   vendor model allows both (`extra="allow"`) and the read answers both.
+ */
+export const patchBody = (props: ModelProps, live: ModelAttributes): Record<string, unknown> => {
+  const info = modelInfoOf(props);
+  delete info['id'];
+  return { model_id: live.id, model_info: info };
+};
+
+/** Whether the declaration moves a `model_info` field only the PATCH route writes. */
+export const infoDiffers = (live: ModelAttributes, props: ModelProps): boolean =>
+  differing(live, props).some((field) => field !== 'model_name' && field !== 'model');

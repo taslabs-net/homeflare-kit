@@ -38,9 +38,22 @@ const live = modelRow({
 });
 
 describe('absence', () => {
-  test('a 404 by-id read is absence, never an error, and never a message sniff', async () => {
+  test('a missing id is a 400, re-listed, and absent only when the list lacks it', async () => {
     const fake = startFakeModelLitellm({ masterKey: KEY });
     await expect(run(fake.fetch, readModelRow('FAKE-never-existed'))).resolves.toBeUndefined();
+    expect(fake.requests().map((request) => request.path)).toEqual([
+      '/model/info?litellm_model_id=FAKE-never-existed',
+      '/model/info',
+    ]);
+  });
+
+  test('a 400 on an id the list still holds is not read as absence', async () => {
+    const fake = startFakeModelLitellm({
+      byIdRefused: true,
+      masterKey: KEY,
+      seed: [live],
+    });
+    await expect(run(fake.fetch, readModelRow('FAKE-live-id'))).rejects.toThrow();
   });
 
   test('a row the by-id read answers is the one asked for', async () => {

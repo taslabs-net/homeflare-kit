@@ -34,8 +34,10 @@ export interface ModelProps {
    * The group name callers use (`/chat/completions` `model: …`), one group = one or more
    * deployments. This is also how an existing row is ADOPTED: the live row whose `model_name`
    * equals it. ⛔ Renaming a group changes nothing upstream — LiteLLM keys deployments by id —
-   * so a different `modelName` with the same id is a REPLACE: create the new group, and the old
-   * name survives only under an opt-in `RemovalPolicy.destroy()`.
+   * so a changed `modelName` with no pinned `id` is a REPLACE: the new group gets a fresh id, and
+   * the old row survives under the default `RemovalPolicy.retain()` (opt in to `destroy()` to
+   * delete it). A pinned `id` is that row: the same deployment is renamed in place
+   * (`updateBody` sends `model_name`), and keys routing to the old name miss.
    */
   readonly modelName: string;
   /**
