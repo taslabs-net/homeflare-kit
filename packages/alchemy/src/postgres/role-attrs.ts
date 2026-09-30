@@ -114,7 +114,8 @@ export interface PostgresRoleAttributes {
   /**
    * The membership rows behind `memberOf`, including `admin_option` and `set_option`. Present
    * on a catalog read; absent on attributes the engine stored before this field existed, which
-   * is the safe case (nothing to re-grant). Not compared by `diff` — reconcile reads it live.
+   * is the safe case (nothing to re-grant). `diff` treats an `admin` or `set` row the way
+   * reconcile does: the name matched, the options did not, so the plan is `update`.
    */
   readonly memberships?: readonly {
     readonly parent: string;

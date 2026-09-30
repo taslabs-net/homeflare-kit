@@ -57,7 +57,14 @@ describe('adopted privilege flags', () => {
     fake.membershipOptions.set('seat-widget\0hf_agent', { admin: true, set: true });
     await run(reconcileWithClient(fake, baseProps));
     const texts = fake.statements.map((s) => s.text);
-    expect(texts).toContain('REVOKE "hf_agent" FROM "seat-widget"');
-    expect(texts).toContain('GRANT "hf_agent" TO "seat-widget" WITH SET FALSE');
+    // Upstream GRANT keeps an option the new GRANT omits, and SET defaults to TRUE, so a
+    // GRANT that does not clear ADMIN followed by REVOKE deletes the membership this
+    // declaration still wants. REVOKE must come first; the re-read must still contain it.
+    const revokeAt = texts.indexOf('REVOKE "hf_agent" FROM "seat-widget"');
+    const grantAt = texts.indexOf('GRANT "hf_agent" TO "seat-widget" WITH SET FALSE');
+    expect(revokeAt).toBeGreaterThanOrEqual(0);
+    expect(grantAt).toBeGreaterThan(revokeAt);
+    expect(fake.memberships.has('seat-widget\0hf_agent')).toBe(true);
+    expect(fake.membershipOptions.has('seat-widget\0hf_agent')).toBe(false);
   });
 });

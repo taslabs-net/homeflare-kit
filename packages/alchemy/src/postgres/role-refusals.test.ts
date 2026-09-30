@@ -1,8 +1,9 @@
 /**
  * Every plan-time refusal and offline comparison, checked without a client: name-byte precision
- * (the truncation trap `Postgres.Database` refuses), zone-free and unparseable `validUntil`, the
- * rename refusal, a full sweep proving `diff` answers `update` and never `replace`, per-field and
- * membership drift semantics, quoting, and the write-only password shape (S25).
+ * (the truncation trap `Postgres.Database` refuses), the rename refusal, a full sweep proving
+ * `diff` answers `update` and never `replace`, per-field and membership drift semantics,
+ * quoting, and the write-only password shape (S25). Zone-free and unparseable `validUntil`
+ * live in `role-valid-until.test.ts`.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -12,12 +13,7 @@ import { POSTGRES_NAME_MAX_BYTES } from './database-attrs.ts';
 import { diffPostgresRole, refuseAtPlan } from './role.ts';
 import { resolvePassword } from './role-secrets.ts';
 import { seal } from '../secrets/write-only.ts';
-import {
-  PostgresRoleNameRefused,
-  PostgresRoleRenameRefused,
-  PostgresRoleValidUntilRefused,
-} from './role-errors.ts';
-import { sameValidUntil, validUntilRefusal } from './role-attrs.ts';
+import { PostgresRoleNameRefused, PostgresRoleRenameRefused } from './role-errors.ts';
 import type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts';
 import {
   buildAlterRoleSql,
@@ -70,38 +66,6 @@ describe('name byte length', () => {
   });
 });
 
-describe('validUntil', () => {
-  test('a zone-carrying value passes; a zone-free or unparseable one is refused with its reason', () => {
-    expect(validUntilRefusal('2027-01-01T00:00:00Z')).toBeUndefined();
-    expect(validUntilRefusal('2027-01-01T02:00:00+02:00')).toBeUndefined();
-    expect(validUntilRefusal('2027-01-01T00:00:00')).toEqual({ reason: 'zone-free' });
-    expect(validUntilRefusal('2027-01-01')).toEqual({ reason: 'zone-free' });
-    expect(validUntilRefusal('not a timestamp')).toEqual({ reason: 'unparseable' });
-    // A zone suffix is not enough: Date.parse of these is NaN, and a plan that accepts them
-    // sends a VALID UNTIL PostgreSQL rejects or that never compares equal on read-back.
-    expect(validUntilRefusal('2027-13-01T00:00:00Z')).toEqual({ reason: 'unparseable' });
-    expect(validUntilRefusal('not-a-dateZ')).toEqual({ reason: 'unparseable' });
-  });
-
-  test('refuseAtPlan raises the typed tag for a zone-free value', async () => {
-    const error = await fails(refuseAtPlan({ ...base, validUntil: '2027-01-01' }));
-    expect(error).toBeInstanceOf(PostgresRoleValidUntilRefused);
-    expect((error as PostgresRoleValidUntilRefused).reason).toBe('zone-free');
-  });
-
-  test('diff refuses the same values, so reconcile and diff can never disagree', async () => {
-    const error = await fails(diffPostgresRole({ ...base, validUntil: '2027-01-01' }, output));
-    expect(error).toBeInstanceOf(PostgresRoleValidUntilRefused);
-  });
-
-  test('sameValidUntil compares instants, so the server\u2019s milliseconds never churn a plan', () => {
-    expect(sameValidUntil('2027-01-01T00:00:00Z', '2027-01-01T00:00:00.000Z')).toBe(true);
-    expect(sameValidUntil('2027-01-01T02:00:00+02:00', '2027-01-01T00:00:00.000Z')).toBe(true);
-    expect(sameValidUntil('2027-01-01T00:00:00Z', null)).toBe(false);
-    expect(sameValidUntil('2027-01-01T00:00:00Z', '2028-01-01T00:00:00.000Z')).toBe(false);
-  });
-});
-
 describe('diff', () => {
   test('a rename is refused at plan, before reconcile ever runs', async () => {
     const error = await fails(diffPostgresRole({ ...base, name: 'seat-logs' }, output));
@@ -130,6 +94,36 @@ describe('diff', () => {
       expect(result?.action, `variant ${JSON.stringify(variant)}`).toBe('update');
       expect(result).not.toEqual({ action: 'replace' });
     }
+  });
+
+  test('matching parent names with ADMIN or SET still answer update', async () => {
+    // read spreads the live membership rows into the object diff receives. Once the parent
+    // name matches, a name-only compare answers noop and reconcile — the only writer that
+    // clears admin_option / set_option — never runs.
+    const withUnsafe = {
+      ...output,
+      memberOf: ['hf_agent'],
+      memberships: [{ parent: 'hf_agent', admin: true, set: true }],
+    };
+    expect(await run(diffPostgresRole({ ...base, memberOf: ['hf_agent'] }, withUnsafe))).toEqual({
+      action: 'update',
+    });
+    expect(
+      await run(
+        diffPostgresRole(
+          { ...base, memberOf: ['hf_agent'] },
+          { ...withUnsafe, memberships: [{ parent: 'hf_agent', admin: false, set: true }] },
+        ),
+      ),
+    ).toEqual({ action: 'update' });
+    expect(
+      await run(
+        diffPostgresRole(
+          { ...base, memberOf: ['hf_agent'] },
+          { ...withUnsafe, memberships: [{ parent: 'hf_agent', admin: false, set: false }] },
+        ),
+      ),
+    ).toEqual({ action: 'noop' });
   });
 
   test('a rotated password answers update even with no other drift; a matching or unreadable one does not', async () => {

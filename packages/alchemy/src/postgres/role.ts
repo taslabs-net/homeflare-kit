@@ -219,7 +219,15 @@ export const diffPostgresRole = (
     }
     yield* refuseAtPlan(news);
     const scalars = scalarDrift(news, output);
-    const membership = membershipDrift(news.memberOf, output.memberOf ?? []);
+    // `read` spreads live membership rows into the object this receives. A name-only compare
+    // answers noop once the parent matches, so a later `GRANT … WITH ADMIN` (or a grant left
+    // at the upstream `SET TRUE` default) would never reach reconcile — the only writer that
+    // clears `admin_option` / `set_option`. Treat those rows the way reconcile does.
+    const membership = membershipDrift(
+      news.memberOf,
+      output.memberOf ?? [],
+      unsafeMemberships(output),
+    );
     // The seal is state-only, so diff is the only place a rotated environment value is noticed:
     // a resolved password that no longer matches the seal answers `update`, the same
     // staleness rule LiteLLM.MCPServer's `credentialState` applies. An unset variable is never

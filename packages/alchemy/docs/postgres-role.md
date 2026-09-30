@@ -34,7 +34,11 @@ run yourself. The `Postgres.Database` resource in this kit already binds `@effec
   client's `SqlError`. An adopt or alter that finds `SUPERUSER`, `CREATEROLE`, `CREATEDB`,
   `REPLICATION` or `BYPASSRLS` set refuses (`PostgresRolePrivilegedRefused`) before any write:
   those flags are not inherited, and `SET ROLE` to the parent exercises them. A seat `GRANT`
-  says `WITH SET FALSE`; a membership already granted `WITH ADMIN` is revoked and re-granted.
+  says `WITH SET FALSE`. A membership already granted `WITH ADMIN`, or left at the upstream
+  `SET TRUE` default, is revoked and then re-granted: upstream `GRANT` keeps an option the new
+  `GRANT` omits, so the revoke has to come first or it deletes the membership the declaration
+  still wants. `diff` treats those option rows the same way, so a later `GRANT … WITH ADMIN`
+  (or a grant left at `SET TRUE`) plans as `update` rather than a name-matched noop.
 
 ## Props → `CREATE ROLE` / `ALTER ROLE` → catalog mapping
 

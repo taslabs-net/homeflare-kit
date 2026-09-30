@@ -169,8 +169,8 @@ export const scalarDrift = (
   return changes;
 };
 
-/** Drop the observe-only membership options before attributes reach state. `diff` compares
- * `memberOf`; the options are read live on the next reconcile. */
+/** Drop the observe-only membership options before attributes reach state. `diff` and reconcile
+ * both read `memberships` off the live row; what state stores is the parent-name set. */
 export const storedAttributes = (
   live: Omit<PostgresRoleAttributes, 'passwordSeal'>,
 ): Omit<PostgresRoleAttributes, 'passwordSeal'> => {
@@ -180,7 +180,12 @@ export const storedAttributes = (
 
 /** Grant what the declaration wants and revoke what it does not. `undefined` leaves live alone;
  * answers the declared set (sorted, de-duplicated), or the live set when nothing was declared.
- * `unsafe` parents are revoked and granted again — their name matched, their options did not. */
+ *
+ * ⛔ REVOKE BEFORE GRANT. Upstream `GRANT` on an existing membership keeps any option the new
+ *   `GRANT` omits, and `SET` defaults to TRUE (`grant.sgml` at REL_18_6). A seat `GRANT …
+ *   WITH SET FALSE` therefore does not clear `ADMIN`. Issuing that `GRANT` and then `REVOKE`
+ *   for the same still-wanted parent deletes the row the declaration meant to keep. Revoke
+ *   first, then grant, so the repair ends on the safe grant. */
 export const syncMemberships = (
   pg: PgExecutor,
   props: PostgresRoleProps,
@@ -189,11 +194,11 @@ export const syncMemberships = (
 ): Effect.Effect<readonly string[], SqlError> =>
   Effect.gen(function* () {
     const { grants, revokes } = membershipDrift(props.memberOf, live, unsafe);
-    for (const parent of grants) {
-      yield* pg.unsafe(buildGrantMembershipSql(props.name, parent)).pipe(Effect.asVoid);
-    }
     for (const parent of revokes) {
       yield* pg.unsafe(buildRevokeMembershipSql(props.name, parent)).pipe(Effect.asVoid);
+    }
+    for (const parent of grants) {
+      yield* pg.unsafe(buildGrantMembershipSql(props.name, parent)).pipe(Effect.asVoid);
     }
     return props.memberOf === undefined ? live : [...new Set(props.memberOf)].sort();
   });
