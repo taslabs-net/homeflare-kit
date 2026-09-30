@@ -23,11 +23,19 @@
  *   and foreign tables"). A word the relkind cannot hold (e.g. INSERT on a sequence) is
  *   refused by the server itself as a statement error, never by a word check: deciding
  *   that at plan time would need a second relkind query this family does not read.
+ * ★ `relkind` IS CAST TO TEXT (`c.relkind::text`) BECAUSE THE COLUMN IS TYPE `"char"`
+ *   (OID 18), which `@effect/sql-pg`'s socket transport does not decode: `PgTypes` has
+ *   no codec for OID 18, so the raw `bytea`-shaped bytes arrive (a plain table reads as
+ *   `Uint8Array([114])`, never `'r'`) and `relkindIsPublicRevocable` (`grants-words.ts`)
+ *   would say PUBLIC holds nothing a `REVOKE ALL ON ALL TABLES IN SCHEMA` reaches.
+ *   `::text` returns OID 25, which decodes as a string. Same trap as the `datlocprovider`
+ *   CASE in `database-sql.ts`, which casts `"char"` columns to text for the same reason.
  */
 import * as Effect from 'effect/Effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 import { readOwnedTables, readSchemaOwnership } from './grants-ownership.ts';
+import { type LiveDefault, readDefaultAcls } from './grants-read-defaults.ts';
 import { type AclRow, encodeWord, wordsOf } from './grants-words.ts';
 
 const SCHEMA_PRESENT_SQL = 'SELECT 1 AS present FROM pg_namespace WHERE nspname = $1';
@@ -72,7 +80,7 @@ export const readSchemaAcl = (
  * counting it would refuse to converge). */
 const TABLES_SQL = `SELECT
     c.relname AS table,
-    c.relkind AS relkind,
+    c.relkind::text AS relkind,
     a.grantee = 0 AS public,
     a.privilege_type AS privilege,
     a.is_grantable AS grantable
@@ -174,46 +182,6 @@ export const readColumnAcls = (
           };
         })
         .sort((a, b) => a.table.localeCompare(b.table) || a.column.localeCompare(b.column));
-    },
-  );
-
-/** One row per default-privilege entry on relations (`defaclobjtype = 'r'`, the only
- * object type this family declares — `pg_default_acl.h@REL_18_6#DEFACLOBJ_RELATION`) in
- * the schema, with the declared role's words, whatever role created the entry. Sorted by
- * forRole so two reads of the same state compare equal. */
-const DEFAULTS_SQL = `SELECT
-    pg_get_userbyid(d.defaclrole) AS for_role,
-    a.privilege_type AS privilege,
-    a.is_grantable AS grantable
-  FROM pg_default_acl d
-  CROSS JOIN LATERAL aclexplode(d.defaclacl) AS a
-  WHERE d.defaclnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)
-    AND d.defaclobjtype = 'r'
-    AND a.grantee = (SELECT oid FROM pg_roles WHERE rolname = $2)
-  ORDER BY for_role`;
-
-export interface LiveDefault {
-  readonly forRole: string;
-  readonly role: ReadonlyArray<string>;
-}
-
-export const readDefaultAcls = (
-  pg: PgExecutor,
-  schema: string,
-  role: string,
-): Effect.Effect<ReadonlyArray<LiveDefault>, SqlError> =>
-  Effect.map(
-    pg.unsafe<{ readonly for_role: string } & AclRow>(DEFAULTS_SQL, [schema, role]),
-    (rows) => {
-      const byRole = new Map<string, string[]>();
-      for (const row of rows) {
-        const words = byRole.get(row.for_role) ?? [];
-        words.push(encodeWord(row));
-        byRole.set(row.for_role, words);
-      }
-      return [...byRole.entries()]
-        .map(([forRole, words]) => ({ forRole, role: [...new Set(words)].sort() }))
-        .sort((a, b) => a.forRole.localeCompare(b.forRole));
     },
   );
 

@@ -107,6 +107,16 @@ export const answerRead = <A extends object>(
     );
   }
   if (text.includes('aclexplode(c.relacl)')) {
+    // The relkind comes back shaped exactly as the query TEXT dictates: the production
+    // SQL casts `c.relkind::text` (OID 25, a string); without the cast the `"char"` OID 18
+    // column decodes to raw bytes on the socket transport (`PgTypes` has no OID 18 codec),
+    // so this fake hands back the same `Uint8Array` the real wire would — one byte per
+    // relkind letter — to keep a regression test honest.
+    const relkindFor = (object: AclObject): unknown => {
+      const relkind = model.relkinds.get(`${object.schema}\u0000${object.table ?? ''}`) ?? 'r';
+      if (text.includes('c.relkind::text')) return relkind;
+      return new Uint8Array(relkind.split('').map((ch) => ch.charCodeAt(0)));
+    };
     return Effect.succeed(
       rows(
         acl,
@@ -118,8 +128,7 @@ export const answerRead = <A extends object>(
         granteeFilter(role),
         (entry, marked) => ({
           table: entry.object.table,
-          relkind:
-            model.relkinds.get(`${entry.object.schema}\u0000${entry.object.table ?? ''}`) ?? 'r',
+          relkind: relkindFor(entry.object),
           public: entry.grantee === 'PUBLIC',
           ...aclShapeRow(marked),
         }),
