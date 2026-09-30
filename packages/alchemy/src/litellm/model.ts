@@ -116,8 +116,9 @@ export const modelHandlers = {
       if (news.modelName !== output.modelName && news.id === undefined) {
         return { action: 'replace', deleteFirst: false } as const;
       }
-      // A stale seal means the declaration's digest is not what the last write stamped:
-      // one update restamps it, whether or not a visible field moved (model-credential.ts).
+      // Visible drift, or a stale seal, is an update: api_base and api_key are not on the
+      // read, so the seal is the only signal they moved (model-credential.ts). Reconcile
+      // records a seal locally when nothing else moved — POST rewrites unmanaged params.
       return differing(output, news).length === 0 && sealState(news, output.paramsSeal) === 'match'
         ? ({ action: 'noop' } as const)
         : ({ action: 'update' } as const);
@@ -140,17 +141,24 @@ export const modelHandlers = {
       } else {
         modelId = before.id;
         const drifted = differing(before, news);
-        if (drifted.length > 0 || sealState(news, sealed) === 'stale') {
-          // ⛔ PARAMS AND A RENAME GO TO POST (model-form.ts): an omitted api_base is a deliberate
-          //   leave-alone, and `model_name` moves only when it changed. POST does not write
-          //   model_info, so groups, mode and base_model go to PATCH when those differ.
-          const paramsMoved =
+        const sealStale = sealState(news, sealed) === 'stale';
+        // ⛔ AN EMPTY SEAL IS NOT A WRITE. A live row starts `paramsSeal: ''` (model-form.ts),
+        //   and POST `/model/update` rewrites unmanaged `litellm_params`. Adopting a row whose
+        //   visible fields already match records the digest locally. A seal that EXISTS and no
+        //   longer matches is a declaration this resource already owns — `api_base` / `api_key`
+        //   are not on the read — so that one does POST, with nulls for the five non-`None`
+        //   defaults (model-form.ts).
+        const ownedSealMoved = sealStale && sealed !== '';
+        if (drifted.length > 0 || ownedSealMoved) {
+          if (
             drifted.some((field) => field === 'model_name' || field === 'model') ||
-            sealState(news, sealed) === 'stale';
-          if (paramsMoved) yield* updateModel(updateBody(news, before));
+            ownedSealMoved
+          ) {
+            yield* updateModel(updateBody(news, before));
+          }
           if (infoDiffers(before, news)) yield* patchModel(patchBody(news, before));
-          sealed = declaredDigest(news);
         }
+        if (drifted.length > 0 || sealStale) sealed = declaredDigest(news);
       }
 
       // ★ THE LIST FIRST, THEN BY ID: a row the list does not show yet (create commits, list

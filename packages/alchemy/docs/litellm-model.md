@@ -96,4 +96,9 @@ A plan is refused, before any write, when the declaration:
   missing id: the fake's 400s there are its own choices, and every test that leans on one says so.
 - The rest of `litellm_params` (rpm/tpm, timeouts, fallbacks, wildcard routing, …), cost fields on
   `model_info` beyond what the read returns, `teams`, and config-file rows (`db_model: false`) are
-  not modelled on purpose; an update to a duplicate name can shadow them.
+  not modelled on purpose. Every `POST /model/update` walks the parsed params model, not only
+  an update to a duplicate name: a `None` default keeps the stored value, and a non-`None`
+  default overwrites it. A matching adopt records `paramsSeal` locally and does not POST. A
+  real params write sends `null` for `use_in_pass_through`, `use_litellm_proxy`, `use_xai_oauth`,
+  `allow_client_keepalive_override` and `merge_reasoning_content_in_choices`, so those stored
+  values are kept, and it is a merge — an undeclared key on the row is left in place.

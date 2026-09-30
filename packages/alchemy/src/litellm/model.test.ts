@@ -82,10 +82,11 @@ test('removing a declared api_base leaves the live row its own base', async () =
   // ★ the read cannot see api_base (it is never copied, model-form.ts), so it is the SEAL that
   //   notices the declaration changed — and the update deliberately sends no api_base.
   expect(await same.deploy(declare(grok))).toEqual({ Grok: 'update' });
-  expect(fake.bodies().at(-1)?.['litellm_params']).toEqual({
+  expect(fake.bodies().at(-1)?.['litellm_params']).toMatchObject({
     api_key: 'os.environ/FAKE_XAI_KEY',
     model: 'xai/grok-4.7',
   });
+  expect(fake.bodies().at(-1)?.['litellm_params']).not.toHaveProperty('api_base');
   expect(fake.models()[0]?.['litellm_params']).toMatchObject({
     api_base: 'https://api.xai.example.com',
   });
@@ -112,14 +113,9 @@ test('a live row is Unowned: refused without --adopt, adopted with one stamping 
   await expect(engine.deploy(declare(adopted))).rejects.toThrow();
   expect(writesOf(fake.requests())).toEqual([]);
   expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'adopted' });
-  // ★ one update stamps the declaration the row cannot prove (paramsSeal '' → stale), and it
-  //   sends exactly the managed set: the row's undeclared mode and credential are left alone.
-  // ★ the stamp is POST (params seal). Groups already match, so no PATCH.
-  expect(writesOf(fake.requests())).toEqual(['POST /model/update']);
-  expect(fake.bodies()[0]).toEqual({
-    litellm_params: { model: 'xai/grok-4.7' },
-    model_info: { id: 'FAKE-live-id' },
-  });
+  // ★ A matching row records paramsSeal locally. POST `/model/update` rewrites unmanaged
+  //   litellm_params (model-form.ts), so a seal with nothing else moved is not a write.
+  expect(writesOf(fake.requests())).toEqual([]);
   expect(fake.models()[0]?.['model_info'] as Row | undefined).toMatchObject({ mode: 'chat' });
   expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'noop' });
 });

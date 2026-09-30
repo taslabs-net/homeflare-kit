@@ -113,8 +113,13 @@ describe('the wire bodies', () => {
     });
     const sameName = updateBody(props, live) as Row;
     expect(sameName['litellm_params']).toEqual({
+      allow_client_keepalive_override: null,
       api_key: 'os.environ/FAKE_XAI_KEY',
+      merge_reasoning_content_in_choices: null,
       model: 'xai/grok-4.7',
+      use_in_pass_through: null,
+      use_litellm_proxy: null,
+      use_xai_oauth: null,
     });
     expect('model_name' in sameName).toBe(false);
     // POST names the row and does not carry the model_info edits (those are the PATCH body).
@@ -136,7 +141,11 @@ describe('the wire bodies', () => {
     });
     const bare: ModelProps = { model: 'xai/grok-4.7', modelName: 'grok' };
     const body = updateBody(bare, live) as Row;
-    expect(body['litellm_params']).toEqual({ model: 'xai/grok-4.7' });
+    expect(body['litellm_params']).toMatchObject({
+      model: 'xai/grok-4.7',
+      use_in_pass_through: null,
+      use_xai_oauth: null,
+    });
     expect(body['model_info']).toEqual({ id: 'FAKE-live-id' });
     expect((patchBody(bare, live) as Row)['model_info']).toEqual({ access_groups: [] });
     expect((patchBody({ ...bare, mode: 'chat' }, live) as Row)['model_info']).toEqual({
@@ -153,7 +162,7 @@ describe('the declared seal', () => {
     expect(sealState(props, sealed)).toBe('match');
   });
 
-  test('an adopted row without a seal is stale, so one stamping write converges it', () => {
+  test('an adopted row without a seal is stale, so the next reconcile records it locally', () => {
     expect(sealState(props, '')).toBe('stale');
   });
 

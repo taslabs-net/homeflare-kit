@@ -54,12 +54,42 @@ export interface FakeModelOptions {
   readonly byIdRefused?: boolean;
   /** `POST /model/update` drops a `false` and an empty list, like a truthiness check would. */
   readonly editIgnoresFalsy?: boolean;
+  /**
+   * `POST /model/update` parses `litellm_params` the way v1.103.0 `updateLiteLLMParams` does:
+   * every unset field is filled with its pydantic default before the merge. `None` keeps the
+   * stored value; a non-`None` default (`false` on the five flags below) overwrites it. A key
+   * the model does not declare stays on the row — the write is a merge, not a replacement.
+   */
+  readonly fillsParamDefaults?: boolean;
   /** Ids committed to the table that the list omits; the by-id read still answers them. */
   readonly listOmits?: readonly string[];
 }
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' }, status });
+
+/**
+ * The five `litellm_params` fields whose pydantic default is `False`, not `None`
+ * (`litellm/types/router.py` at v1.103.0). `updateLiteLLMParams` fills every unset field with
+ * that default before `update_model` walks the parsed model, so an omitted key is written
+ * `false` and a stored `true` is clobbered. A JSON `null` is the `None` that keeps the stored
+ * value. Keys the model does not declare stay on the stored row.
+ */
+const NON_NONE_PARAM_DEFAULTS = [
+  'use_in_pass_through',
+  'use_litellm_proxy',
+  'use_xai_oauth',
+  'allow_client_keepalive_override',
+  'merge_reasoning_content_in_choices',
+] as const;
+
+const fillParamDefaults = (sent: Row): Row => {
+  const filled: Row = { ...sent };
+  for (const key of NON_NONE_PARAM_DEFAULTS) {
+    if (!(key in filled)) filled[key] = false;
+  }
+  return filled;
+};
 
 const ISSUED_ID = 'FAKE-issued-id-0001';
 
@@ -146,12 +176,19 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
           : incoming;
       const current = rows[at] as Row;
       const params = dropFalsy((body['litellm_params'] ?? {}) as Row);
+      const stored = { ...(current['litellm_params'] as Row) };
+      // ★ v1.103.0 `update_model` walks the PARSED model, not the keys the client sent.
+      //   `None` keeps the stored value and is not written. A default that is not `None` is
+      //   written. A key the parsed model does not declare stays: the write is a merge.
+      const parsed = options.fillsParamDefaults === true ? fillParamDefaults(params) : params;
+      const applied = Object.fromEntries(
+        Object.entries(parsed).filter(([, value]) => value !== null),
+      );
+      const rewritten: Row = { ...stored, ...applied };
       const merged: Row = {
         ...current,
         ...(body['model_name'] === undefined ? {} : { model_name: body['model_name'] }),
-        ...(body['litellm_params'] === undefined
-          ? {}
-          : { litellm_params: { ...(current['litellm_params'] as Row), ...params } }),
+        ...(body['litellm_params'] === undefined ? {} : { litellm_params: rewritten }),
       };
       rows = rows.map((row, i) => (i === at ? merged : row));
       return json(200, {});

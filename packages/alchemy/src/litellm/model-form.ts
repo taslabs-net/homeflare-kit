@@ -20,9 +20,14 @@
  * ⚠️ PARAMS AND A RENAME GO TO POST `/model/update`. At the tag the SDK was generated from
  *   (OpenAPI 1.103.0), `update_model` writes `litellm_params`, `updated_by`, and `model_name`
  *   only when the name changed and `team_id` is None. It stores request `model_info` only when
- *   `member_marker` is set, and it merges with `exclude_none`, not `exclude_unset`. Sending the
- *   full managed `litellm_params` set is what makes an omitted `api_base` a deliberate
- *   "leave it alone": a None value keeps the stored one. `model_name` is sent only when it
+ *   `member_marker` is set. The merge walks the PARSED model (`exclude_none`, not
+ *   `exclude_unset`): `updateLiteLLMParams` fills every unset field with its default first.
+ *   A `None` default (`api_base`, `api_key`) keeps the stored value. A default that is not
+ *   `None` (`false` on the five flags in `LEAVE_ALONE_PARAMS`) overwrites it. A key the model
+ *   does not declare is absent from that dump; this write is still a merge, so the stored key
+ *   stays. A params POST is never a stamp: when the visible fields already match, `paramsSeal`
+ *   is recorded locally (model.ts). A real params write sends `null` for those five flags.
+ *   `model_name` is sent only when it
  *   changed, because a same-name update would otherwise collide with another deployment in
  *   the group (model.ts).
  * ⚠️ GROUPS, MODE AND BASE MODEL GO TO PATCH `/model/{model_id}/update`. That route's
@@ -128,13 +133,36 @@ export const toAttributes = (row: Record<string, unknown>): ModelAttributes => {
   };
 };
 
-/** The managed `litellm_params` both writes send — with the credential in reference form. */
+/**
+ * `litellm_params` fields whose pydantic default is `False`, not `None` (`litellm/types/router.py`
+ * at v1.103.0). An omitted key is filled `false` and written; JSON `null` is the `None` that
+ * keeps the stored value. Create does not send them: a new row should take the vendor default.
+ */
+const LEAVE_ALONE_PARAMS = [
+  'allow_client_keepalive_override',
+  'merge_reasoning_content_in_choices',
+  'use_in_pass_through',
+  'use_litellm_proxy',
+  'use_xai_oauth',
+] as const;
+
+/** The managed `litellm_params` a create sends — with the credential in reference form. */
 const managedParams = (props: ModelProps) => {
   const params: Record<string, unknown> = { model: props.model };
   if (props.apiBase !== undefined) params['api_base'] = props.apiBase;
   if (props.apiKey !== undefined) params['api_key'] = `os.environ/${props.apiKey.fromEnv}`;
   return params;
 };
+
+/**
+ * The same set for POST `/model/update`, plus `null` for every non-`None` default this resource
+ * does not manage. The vendor merge keeps the stored value for `None` and drops a key it does
+ * not declare, so the nulls are what stop a params write clobbering those five flags.
+ */
+const updateParams = (props: ModelProps): Record<string, unknown> => ({
+  ...managedParams(props),
+  ...Object.fromEntries(LEAVE_ALONE_PARAMS.map((key) => [key, null])),
+});
 
 /**
  * ⚠️ `Record`, then a widening cast in the callers, ON PURPOSE: the generated 1.103.0 request
@@ -169,10 +197,12 @@ export const createBody = (
 };
 
 /**
- * POST `/model/update`: the managed `litellm_params`, and `model_name` only when it changed
- * (a same-name body would collide with a sibling deployment in the group — model.ts).
- * `model_info.id` names the row. This route does not apply `access_groups`, `mode` or
- * `base_model` (v1.103.0 `update_model`); those travel on {@link patchBody}.
+ * POST `/model/update`: the managed `litellm_params` (with `null` for the five non-`None`
+ * defaults this resource does not own), and `model_name` only when it changed (a same-name
+ * body would collide with a sibling deployment in the group — model.ts). `model_info.id`
+ * names the row. This route does not apply `access_groups`, `mode` or `base_model`
+ * (v1.103.0 `update_model`); those travel on {@link patchBody}. Not a seal stamp: a matching
+ * row records `paramsSeal` locally (model.ts).
  */
 export const updateBody = (
   props: ModelProps,
@@ -180,7 +210,7 @@ export const updateBody = (
 ): models.UpdateModelModelUpdatePostRequest => {
   const renamed = live.modelName !== props.modelName;
   const body: Record<string, unknown> = {
-    litellm_params: managedParams(props),
+    litellm_params: updateParams(props),
     model_info: { id: live.id },
     ...(renamed ? { model_name: props.modelName } : {}),
   };
