@@ -11,8 +11,9 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
-import { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/unstable/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
+import { classifyInstalled } from './installed-classifier.ts';
 import { postgresRunnerConnection } from './connection.ts';
 import { type PsqlRunner, makePsqlExecutor } from './psql-executor.ts';
 import { isDependentObjectsError } from './schema-sql.ts';
@@ -21,36 +22,6 @@ import { dropWithClient, postgresSchemaHandlers } from './schema.ts';
 import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
 
 const baseProps: PostgresSchemaProps = { name: 'ledger', database: 'postgres', owner: 'tim' };
-
-/**
- * The installed driver's own classifier. `@effect/sql-pg` nulls the `./internal/*` export,
- * so the public specifier cannot name it; the file URL is the same module `PgConnection.ts`
- * calls. `classifyFields` assigns the protocol fields onto the cause, then classifies.
- */
-const classifyInstalled = async (code: string): Promise<SqlError> => {
-  // `package.json` sets `"./internal/*": null`, so the specifier cannot name this file.
-  // `import.meta.resolve` finds the installed package; `src/internal/sqlError.ts` is the
-  // module `PgConnection.ts#classifyFields` calls.
-  const root = import.meta.resolve('@effect/sql-pg/package.json');
-  const href = new URL('./src/internal/sqlError.ts', root).href;
-  const mod = (await import(href)) as {
-    classifySqlState: (
-      code: string | undefined,
-      constraint: unknown,
-      props: { cause: unknown; message: string; operation: string },
-    ) => SqlError['reason'];
-  };
-  return new SqlError({
-    reason: mod.classifySqlState(code, undefined, {
-      cause: Object.assign(new Error('dependent objects still exist'), {
-        code,
-        message: 'dependent objects still exist',
-      }),
-      message: `ERROR:  ${code}: dependent objects still exist`,
-      operation: 'DROP SCHEMA',
-    }),
-  });
-};
 
 const socket2bp01 = (): Promise<SqlError> => classifyInstalled('2BP01');
 
@@ -117,12 +88,25 @@ describe('2BP01 classification', () => {
   });
 
   test('the real delete handler classifies a runner 2BP01 as the typed not-empty tag', async () => {
+    // Order is load-bearing (schema-handlers.test.ts#route): the probe must answer PRESENT so
+    // the absent-database short-circuit does not swallow the test, and the ownership re-read
+    // must answer the row the persisted output vouches for, so the delete reaches the DROP.
     const run: PsqlRunner = ({ stdin }) => {
-      if (stdin.includes('current_database()')) {
-        return Promise.resolve({ code: 0, stdout: '[{"database":"postgres"}]', stderr: '' });
-      }
       if (stdin.includes('AS empty')) {
         return Promise.resolve({ code: 0, stdout: '[{"empty":true}]', stderr: '' });
+      }
+      if (stdin.includes('FROM pg_namespace')) {
+        return Promise.resolve({
+          code: 0,
+          stdout: '[{"name":"ledger","oid":1,"owner":"tim"}]',
+          stderr: '',
+        });
+      }
+      if (stdin.includes('FROM pg_database')) {
+        return Promise.resolve({ code: 0, stdout: '[{"present":1}]', stderr: '' });
+      }
+      if (stdin.includes('current_database()')) {
+        return Promise.resolve({ code: 0, stdout: '[{"database":"postgres"}]', stderr: '' });
       }
       return Promise.resolve({
         code: 3,

@@ -8,7 +8,7 @@ lives under FORCE RLS (spec §5).
 
 ## The locked shape
 
-10Create-and-assert only. `CREATE SCHEMA IF NOT EXISTS` is the only create this family issues.
+Create-and-assert only. `CREATE SCHEMA IF NOT EXISTS` is the only create this family issues.
 There is no `ALTER SCHEMA` of any kind: Postgres's `ALTER SCHEMA` only renames or changes the
 owner, and neither is implemented — a name change is refused at plan
 (`PostgresSchemaRenameRefused`), a `database` change is refused the same way
@@ -18,16 +18,16 @@ props.
 
 ## Props and mapping
 
-20| prop | `CREATE SCHEMA` / statement | live source |
-| ---------- | ---------------------------------------------- | --------------------------------------- |
-| `name` | the schema name (single `ColId`, `quoteIdent`) | `pg_namespace.nspname` |
-| `database` | which database the handlers open | `SELECT current_database()` |
-| `owner` | `AUTHORIZATION` clause | `pg_get_userbyid(nspowner)` |
-| `comment` | `COMMENT ON SCHEMA … IS` | `obj_description(oid, 'pg_namespace')` |
+| prop       | `CREATE SCHEMA` / statement                    | live source                            |
+| ---------- | ---------------------------------------------- | -------------------------------------- |
+| `name`     | the schema name (single `ColId`, `quoteIdent`) | `pg_namespace.nspname`                 |
+| `database` | which database the handlers open               | `SELECT current_database()`            |
+| `owner`    | `AUTHORIZATION` clause                         | `pg_get_userbyid(nspowner)`            |
+| `comment`  | `COMMENT ON SCHEMA … IS`                       | `obj_description(oid, 'pg_namespace')` |
 
 `owner` and `comment` are the only asserted props; both are compared against the live row on
 every plan. `owner` must already exist as a role — checked with a `pg_roles` lookup before the
-30`CREATE SCHEMA`, so a missing role fails with `PostgresSchemaOwnerMissing` before any write.
+`CREATE SCHEMA`, so a missing role fails with `PostgresSchemaOwnerMissing` before any write.
 An omitted `owner` is not "leave the live owner alone": a fresh `CREATE SCHEMA` without
 `AUTHORIZATION` is owned by `current_user`, so the re-read compares `live.owner` to that role
 and drifts on a mismatch. That refuses a concurrent creator's row instead of adopting it — a
@@ -42,20 +42,26 @@ cold plan ([postgres.md](./postgres.md), measured path) — so the handlers open
 transport swaps the pool's `database`. The swap is proven, never trusted: every read row
 carries `current_database()`, `reconcile` and `delete` compare it against the declaration
 before any write, and a mismatch fails with `PostgresSchemaWrongDatabase` — so a seat schema
-40meant for `agents` can never be created, read or dropped in the maintenance database by a
+meant for `agents` can never be created, read or dropped in the maintenance database by a
 mis-wired connection. `read` refuses with the same tag when the row's own database differs.
 
 A change of `database` is refused at plan (`PostgresSchemaDatabaseRefused`): a schema is not
-moved between databases — declare a new resource instead. On a cold plan the declared database
-must already exist: declare it with `Postgres.Database` and wire `dependsOn`, otherwise the
-handlers cannot open it at all.
+moved between databases — declare a new resource instead. A schema's `database` must be the
+database it lives in, but on a cold plan that database may not exist yet. Pass it as an Output:
+`Postgres.Schema({ database: db.name, ... })` where `db` is the `Postgres.Database` resource.
+An unresolved Output makes a cold plan skip `read`'s live probe and plan a create, and Alchemy
+orders the `Database` create before the `Schema` because the declaration references it. A
+literal database name (`database: 'agents'`) is safe only when the database already exists:
+`read` and `delete` treat a missing declared database as "schema absent" (they probe
+`pg_database` over the family connection first, so the untyped connect never happens), but
+`reconcile` still requires it to exist.
 
 ## `name`
 
 At most 63 UTF-8 bytes (`NAMEDATALEN`), refused at plan with `PostgresSchemaNameRefused` —
 exactly the `nameByteRefusal` rule `Postgres.Database` uses, because the server would silently
 truncate past it (same `truncate_identifier` in `scansup.c`) and a later read would never find
-50the schema again.
+the schema again.
 
 ## `comment`
 
@@ -67,11 +73,18 @@ declares, nothing more). `COMMENT ON` is issued only after the re-read's owner h
 asserted. A race winner is refused first, so their schema is never commented: the kit role is
 superuser, the comment would land, and the drift failure does not roll it back.
 
-## `delete` — drop only when safe
+## `delete` — drop only what it can prove it created
 
 Unlike `Postgres.Database` (which never drops), a schema can be dropped — but only when it is
-60empty, or when `cascade: true` is declared.
+empty, or when `cascade: true` is declared.
 
+- Delete re-reads `pg_namespace` before any `DROP`. The engine does not re-read before a delete
+  that has state (alchemy `Apply.ts`), so `delete` receives the last asserted `oid` + `owner`
+  and nothing fresh. The handler matches the live row against that persisted proof: an absent
+  schema is idempotent success, and a live row whose `oid` or `owner` no longer matches fails
+  with `PostgresSchemaDeleteForeignRefused` — no `DROP` is issued, `CASCADE` included. This is
+  the guard for a schema dropped out of band and recreated under the same name by another
+  role, whose objects must survive the delete.
 - `cascade` defaults to `false`, so `DROP SCHEMA` refuses a non-empty schema with
   `PostgresSchemaDropNotEmptyError`. The emptiness check is one `SELECT` over four catalogs —
   `pg_class` (relations), `pg_proc` (functions), `pg_type` (types/enums/domains) and
@@ -94,8 +107,8 @@ Unlike `Postgres.Database` (which never drops), a schema can be dropped — but 
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity    | `name` is the logical id. A changed `name` or `database` is refused at plan (never `ALTER … RENAME`, never a silent move).                                                                                                                                                                                                                                      |
 | Adopt       | A schema carries no ownership mark (H1), so `read` answers `Unowned` for a match and an already-live schema needs `adopt(true)`.                                                                                                                                                                                                                                |
-| Removal     | `defaultRemovalPolicy: 'retain'`; opt in with `RemovalPolicy.destroy()`. Drop refuses non-empty without `cascade`.                                                                                                                                                                                                                                              |
-| Read        | One bound `SELECT` on `pg_namespace` (name, owner, comment, `oid`, `current_database() AS database`). `undefined` when absent.                                                                                                                                                                                                                                  |
+| Removal     | `defaultRemovalPolicy: 'retain'`; opt in with `RemovalPolicy.destroy()`. Delete re-reads before any `DROP`: absent is idempotent, and a live row whose `oid` or `owner` fails the persisted proof refuses the delete with `PostgresSchemaDeleteForeignRefused`. Drop refuses non-empty without `cascade`.                                                       |
+| Read        | One bound `SELECT` on `pg_namespace` (name, owner, comment, `oid`, `current_database() AS database`). `undefined` when absent — and a declared database missing from `pg_database`, probed over the family connection first, counts as absent.                                                                                                                  |
 | Write check | Re-reads after `CREATE` (S10): a schema still absent after a successful create fails with `PostgresSchemaCreateVanished`; every re-read row is asserted against the declaration (an omitted `owner` against `current_user`), so a concurrent creator winning the `IF NOT EXISTS` race is a drift refusal before any `COMMENT ON`, never a silently adopted row. |
 
 ## Not alterable, not modelled
@@ -103,4 +116,5 @@ Unlike `Postgres.Database` (which never drops), a schema can be dropped — but 
 `ALTER SCHEMA`'s two operations — rename and owner change — are deliberately absent (see above).
 No other `pg_namespace` property (`nspacl` access-control list) is asserted: grants are a separate
 seat resource (`Postgres.Grants`), not part of `Postgres.Schema`. The schema's `oid` is read back
-for provenance but never declared or asserted.
+for provenance but never declared or asserted; it and the asserted `owner` persist as the
+proof `delete` later matches a live row against.

@@ -15,6 +15,17 @@
  *   (`withPg`'s database override) and `reconcile`/`drop` first compare `current_database()`
  *   against it (`PostgresSchemaWrongDatabase`). Without that proof a seat's schema would be
  *   created in whatever database the single connection happened to target.
+ * ⛔ `delete` DROPS ONLY WHAT IT CAN PROVE IT CREATED. Before any `DROP`, the handler re-reads
+ *   the live row (`schema-delete.ts`) and matches it against the persisted `oid` + `owner`;
+ *   a mismatch is `PostgresSchemaDeleteForeignRefused`, never a `DROP` (`CASCADE` included) —
+ *   the schema under that name may be another role's, recreated out of band.
+ * ⛔ A MISSING DECLARED DATABASE IS "SCHEMA ABSENT" IN `read` AND `delete`. Both probe
+ *   `pg_database` over the family connection first (`database-sql.ts#databaseExists`), so a
+ *   cold plan against a not-yet-created database plans a create (`read` answers absent)
+ *   instead of failing untyped on connect (`ConnectionError` over psql, `UnknownError` 3D000
+ *   over the socket), and a delete of a dropped database stays idempotent. `reconcile` still
+ *   requires the database to exist — that ordering is the declaration's job (`docs/
+ *   postgres-schema.md`: pass `database: db.name`).
  * ⛔ `delete` DROPS ONLY WHEN SAFE. `DROP SCHEMA` refuses a non-empty schema unless
  *   `cascade: true` is declared (`PostgresSchemaDropNotEmptyError`); the `cascade` prop
  *   defaults to `false` (retain policy by default — see `defaultRemovalPolicy: 'retain'`).
@@ -31,24 +42,20 @@ import {
 } from './schema-attrs.ts';
 import { schemaNameByteRefusal } from './schema-attrs.ts';
 import { diffPostgresSchema } from './schema-diff.ts';
-import { assertLive, assertOwner } from './schema-assert.ts';
+import { assertDatabase, assertLive, assertOwner } from './schema-assert.ts';
 import {
   buildCommentSchemaSql,
   buildCreateSchemaSql,
-  buildDropSchemaSql,
-  currentDatabase,
   currentUser,
-  isDependentObjectsError,
-  schemaIsEmpty,
   selectSchema,
 } from './schema-sql.ts';
-import { roleExists } from './database-sql.ts';
+import { databaseExists, roleExists } from './database-sql.ts';
+import { deleteWithClient, dropWithClient } from './schema-delete.ts';
 import type { PgExecutor } from './database-sql.ts';
 import { type PostgresConnection, withPg } from './connection.ts';
 import {
   PostgresSchemaCreateVanished,
   type PostgresSchemaDrift,
-  PostgresSchemaDropNotEmptyError,
   PostgresSchemaNameRefused,
   PostgresSchemaOwnerMissing,
   PostgresSchemaWrongDatabase,
@@ -72,24 +79,6 @@ export const isPostgresSchema = (value: unknown): value is PostgresSchema =>
   (typeof value === 'object' || typeof value === 'function') &&
   value !== null &&
   (value as { Type?: unknown }).Type === 'Postgres.Schema';
-
-/** The connected database, proven equal to the declaration or refused — the guard every write
- * path in this family runs first. */
-const assertDatabase = (
-  props: PostgresSchemaProps,
-  pg: PgExecutor,
-): Effect.Effect<void, PostgresSchemaWrongDatabase | SqlError> =>
-  Effect.flatMap(currentDatabase(pg), (connected) =>
-    connected === props.database
-      ? Effect.void
-      : Effect.fail(
-          new PostgresSchemaWrongDatabase({
-            schema: props.name,
-            declared: props.database,
-            connected,
-          }),
-        ),
-  );
 
 /**
  * The core of `reconcile`, against any {@link PgExecutor} — the real pooled client through
@@ -146,36 +135,8 @@ export const reconcileWithClient = (
 /** The core of `read`: one bound `SELECT`, no ownership branding. */
 export const readWithClient = (pg: PgExecutor, name: string) => selectSchema(pg, name);
 
-/** The core of `drop`, against any {@link PgExecutor}: proves the connected database, refuses a
- * non-empty schema without `cascade`, then issues one idempotent `DROP SCHEMA` — with the
- * server's own `2BP01` refusal classified as the same typed tag for an object kind the
- * emptiness check's catalogs do not cover. */
-export const dropWithClient = (
-  pg: PgExecutor,
-  props: PostgresSchemaProps,
-): Effect.Effect<void, PostgresSchemaWrongDatabase | PostgresSchemaDropNotEmptyError | SqlError> =>
-  Effect.gen(function* () {
-    yield* assertDatabase(props, pg);
-    if (props.cascade !== true) {
-      const empty = yield* schemaIsEmpty(pg, props.name);
-      if (!empty) {
-        return yield* Effect.fail(new PostgresSchemaDropNotEmptyError({ schema: props.name }));
-      }
-    }
-    // The server's own `2BP01` refusal (an object kind the four catalogs miss) is classified
-    // into the same typed tag the emptiness check raises — one fail branch, classified before
-    // the fail, exactly as `database-sql.ts` classifies the `42P04` race.
-    const dropRefusal = (error: SqlError): PostgresSchemaDropNotEmptyError | SqlError =>
-      props.cascade !== true && isDependentObjectsError(error)
-        ? new PostgresSchemaDropNotEmptyError({ schema: props.name })
-        : error;
-    yield* pg.unsafe(buildDropSchemaSql(props.name, props.cascade === true)).pipe(
-      Effect.asVoid,
-      Effect.catchTag('SqlError', (error) => Effect.fail(dropRefusal(error))),
-    );
-  });
-
 export { diffPostgresSchema } from './schema-diff.ts';
+export { deleteWithClient, dropWithClient };
 
 /** The five lifecycle handlers. Exported on its own so a test drives the real implementation. */
 export const postgresSchemaHandlers = PostgresSchema.Provider.of({
@@ -187,6 +148,12 @@ export const postgresSchemaHandlers = PostgresSchema.Provider.of({
     Effect.gen(function* () {
       const name = output?.name ?? olds.name;
       const database = output?.database ?? olds.database;
+      // A declared database that does not exist IS a schema absent. The probe runs over the
+      // FAMILY connection (no override), which points at the maintenance database a cold plan
+      // can always reach — opening the declared database instead would fail untyped
+      // (`ConnectionError` over psql, `UnknownError` 3D000 over the socket).
+      const present = yield* withPg((pg) => databaseExists(pg, database));
+      if (!present) return undefined;
       const live = yield* withPg((pg) => readWithClient(pg, name), database);
       if (live !== undefined && live.database !== database) {
         return yield* Effect.fail(
@@ -213,7 +180,14 @@ export const postgresSchemaHandlers = PostgresSchema.Provider.of({
       return yield* withPg((pg) => reconcileWithClient(pg, news), news.database);
     }),
 
-  delete: ({ olds }) => withPg((pg) => dropWithClient(pg, olds), olds.database),
+  delete: ({ olds, output }) =>
+    Effect.gen(function* () {
+      // Same missing-database rule as `read`: an absent database is an absent schema, and the
+      // delete stays idempotent instead of failing untyped on connect.
+      const present = yield* withPg((pg) => databaseExists(pg, olds.database));
+      if (!present) return undefined;
+      return yield* withPg((pg) => deleteWithClient(pg, olds, output), olds.database);
+    }),
 });
 
 export const PostgresSchemaProvider = () =>

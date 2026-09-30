@@ -19,6 +19,7 @@ export type { PostgresDatabaseAttributes, PostgresDatabaseProps } from './databa
 export { POSTGRES_NAME_MAX_BYTES, nameByteRefusal, utf8ByteLength } from './database-attrs.ts';
 export {
   buildCreateDatabaseSql,
+  databaseExists,
   firstDrift,
   isDuplicateDatabaseRace,
   quoteIdent,
@@ -48,6 +49,7 @@ export {
 export {
   PostgresSchemaCreateVanished,
   PostgresSchemaDatabaseRefused,
+  PostgresSchemaDeleteForeignRefused,
   PostgresSchemaDrift,
   PostgresSchemaDropNotEmptyError,
   PostgresSchemaNameRefused,

@@ -116,6 +116,39 @@ export class PostgresSchemaWrongDatabase extends Data.TaggedError('PostgresSchem
   }
 }
 
+/**
+ * `delete` refuses to drop a live schema that is not the one this resource created. The
+ * engine hands `delete` the persisted state (`output`, with the `oid` and `owner` the last
+ * assert proved), and the provider re-reads `pg_namespace` before any `DROP` — a live row that
+ * no longer matches that proof is someone else's schema wearing the same name (the old row was
+ * dropped out of band and the name recreated), and `DROP SCHEMA` would remove their objects.
+ * Nothing is dropped: clear the out-of-band schema by hand, or adopt it.
+ */
+export class PostgresSchemaDeleteForeignRefused extends Data.TaggedError(
+  'PostgresSchemaDeleteForeignRefused',
+)<{
+  readonly schema: string;
+  readonly database: string;
+  readonly liveOid: number;
+  readonly liveOwner: string;
+  /** The proof the persisted state carries; both `undefined` when no state was handed over. */
+  readonly lastOid: number | undefined;
+  readonly lastOwner: string | undefined;
+}> {
+  override get message(): string {
+    const proof =
+      this.lastOid === undefined || this.lastOwner === undefined
+        ? 'delete carried no persisted oid/owner to prove ownership'
+        : `the persisted proof is oid ${String(this.lastOid)}, owner "${this.lastOwner}"`;
+    return (
+      `Postgres.Schema "${this.schema}": the live schema in database "${this.database}" (oid ` +
+      `${String(this.liveOid)}, owner "${this.liveOwner}") is not the one this resource created — ` +
+      `${proof}. No DROP was issued: a schema with this name was created out of band. Drop it by ` +
+      'hand, or adopt it on a resource whose declared props match it.'
+    );
+  }
+}
+
 /** A logical id's `database` changed. A schema lives in one database and this family never
  * moves one: `DROP SCHEMA` in the old database plus a new declaration is the only path. */
 export class PostgresSchemaDatabaseRefused extends Data.TaggedError(
@@ -140,5 +173,6 @@ export type PostgresSchemaError =
   | PostgresSchemaDrift
   | PostgresSchemaCreateVanished
   | PostgresSchemaDropNotEmptyError
+  | PostgresSchemaDeleteForeignRefused
   | PostgresSchemaWrongDatabase
   | PostgresSchemaDatabaseRefused;

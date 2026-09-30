@@ -110,6 +110,16 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
         return Effect.succeed([{ role: sessionRole }] as unknown as ReadonlyArray<A>);
       }
 
+      // ⚠️ startsWith, BEFORE the `FROM pg_database` branch: the full-row `SELECT_DATABASE_SQL`
+      //   also contains `FROM pg_database`, but starts with `SELECT d.oid` — only the
+      //   existence probe starts with `SELECT 1 AS present`.
+      if (text.startsWith('SELECT 1 AS present FROM pg_database')) {
+        const name = params[0] as string;
+        return Effect.succeed(
+          (databases.has(name) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
+        );
+      }
+
       if (text.includes('FROM pg_database')) {
         const name = params[0] as string;
         const row = databases.get(name);

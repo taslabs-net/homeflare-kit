@@ -9,13 +9,12 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import * as Effect from 'effect/Effect';
 import { postgresRunnerConnection } from './connection.ts';
-import { type PsqlRunner } from './psql-executor.ts';
+import type { PsqlRunner } from './psql-executor.ts';
 import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
 import { Unowned } from 'alchemy/AdoptPolicy';
 import { postgresSchemaHandlers } from './schema.ts';
 import { PostgresSchemaDropNotEmptyError, PostgresSchemaWrongDatabase } from './schema-errors.ts';
-
-const ok = (stdout: string) => Promise.resolve({ code: 0, stdout, stderr: '' });
+import { deleteArgs, ok, readArgs, route, router, runnerWith } from './schema-test-kit.ts';
 
 const sampleOutput: PostgresSchemaAttributes = {
   name: 'ledger',
@@ -26,54 +25,22 @@ const sampleOutput: PostgresSchemaAttributes = {
 };
 const base: PostgresSchemaProps = { name: 'ledger', database: 'postgres', owner: 'tim' };
 
-/** The handler inputs the engine passes. `output` is required on `delete` (the persisted state
- * is what delete drops) and optional on `read` (undefined is the adopt path). */
-const deleteArgs = (olds: PostgresSchemaProps, output: PostgresSchemaAttributes) => ({
-  id: 'x',
-  fqn: 'x',
-  instanceId: 'x',
-  olds,
-  output,
-  session: undefined as never,
-  bindings: [] as never,
-});
-const readArgs = (olds: PostgresSchemaProps) => ({
-  id: 'x',
-  fqn: 'x',
-  instanceId: 'x',
-  olds,
-  output: undefined,
-  session: undefined as never,
-  bindings: [] as never,
-});
-
 // `read` is optional on the service type; these tests drive the real one.
 if (postgresSchemaHandlers.read === undefined) {
   throw new Error('Postgres.Schema is missing its read handler');
 }
 const schemaRead = postgresSchemaHandlers.read;
-
-/** A recording `PsqlRunner`: every stdin is kept, each answered by `answers`. */
-const runnerWith = (answers: (stdin: string) => string): { run: PsqlRunner; stdins: string[] } => {
-  const stdins: string[] = [];
-  return {
-    run: ({ stdin }) => {
-      stdins.push(stdin);
-      return Promise.resolve({ code: 0, stdout: answers(stdin), stderr: '' });
-    },
-    stdins,
-  };
-};
 const proof = '[{"database":"postgres"}]';
 
 describe('delete handler (runner transport)', () => {
-  test('the real handler drops an empty schema over the runner transport, no CASCADE', async () => {
-    const { run, stdins } = runnerWith((stdin) =>
-      stdin.includes('current_database()')
-        ? proof
-        : stdin.includes('AS empty')
-          ? '[{"empty":true}]'
-          : '',
+  test('the real handler drops an empty schema over the runner transport, with CASCADE', async () => {
+    const { run, stdins, argvs } = runnerWith(
+      router({
+        probe: '[{"present":1}]',
+        schema: '[{"name":"ledger","oid":1,"owner":"tim"}]',
+        empty: '[{"empty":true}]',
+        proof,
+      }),
     );
     await Effect.runPromise(
       postgresSchemaHandlers
@@ -84,21 +51,46 @@ describe('delete handler (runner transport)', () => {
           ),
         ),
     );
-    expect(stdins.find((s) => s.startsWith('SELECT coalesce(json_agg'))).toContain(
-      'SELECT current_database()',
-    );
     expect(stdins.find((s) => s.startsWith('DROP SCHEMA'))).toBe(
       'DROP SCHEMA IF EXISTS "ledger" CASCADE;',
     );
+    // One `psql` argv per STATEMENT: probe, proof, ownership re-read, drop. The probe's argv
+    // targets the family database; the delete's argvs target the declared one — the `-d` value
+    // is the argv's last element.
+    expect(argvs.length).toBe(4);
+    expect(argvs[0]?.at(-1)).toBe('postgres');
+    expect(argvs.slice(1).every((argv) => argv.at(-1) === 'postgres')).toBe(true);
+  });
+
+  test('the real handler drops an empty schema without CASCADE — a plain DROP', async () => {
+    const { run, stdins } = runnerWith(
+      router({
+        probe: '[{"present":1}]',
+        schema: '[{"name":"ledger","oid":1,"owner":"tim"}]',
+        empty: '[{"empty":true}]',
+        proof,
+      }),
+    );
+    await Effect.runPromise(
+      postgresSchemaHandlers
+        .delete(deleteArgs(base, sampleOutput))
+        .pipe(
+          Effect.provide(
+            postgresRunnerConnection({ run, database: 'postgres', username: 'postgres' }),
+          ),
+        ),
+    );
+    expect(stdins.find((s) => s.startsWith('DROP SCHEMA'))).toBe('DROP SCHEMA IF EXISTS "ledger";');
   });
 
   test('the real handler refuses a non-empty schema over the runner transport, no DROP issued', async () => {
-    const { run, stdins } = runnerWith((stdin) =>
-      stdin.includes('current_database()')
-        ? proof
-        : stdin.includes('AS empty')
-          ? '[{"empty":false}]'
-          : '',
+    const { run, stdins } = runnerWith(
+      router({
+        probe: '[{"present":1}]',
+        schema: '[{"name":"ledger","oid":1,"owner":"tim"}]',
+        empty: '[{"empty":false}]',
+        proof,
+      }),
     );
     const error = await Effect.runPromise(
       Effect.flip(
@@ -117,9 +109,10 @@ describe('delete handler (runner transport)', () => {
 
   test('the real handler refuses a wrong connected database before any DROP', async () => {
     // The connection targets `postgres` while the declaration says `agents` — the proof must
-    // fail the delete before anything is dropped.
-    const { run, stdins } = runnerWith((stdin) =>
-      stdin.includes('current_database()') ? proof : '',
+    // fail the delete before anything is dropped. The database probe answers PRESENT, so the
+    // absent-database short-circuit does not swallow the wrong-database refusal.
+    const { run, stdins } = runnerWith(
+      router({ probe: '[{"present":1}]', proof: '[{"database":"postgres"}]' }),
     );
     const error = await Effect.runPromise(
       Effect.flip(
@@ -151,15 +144,13 @@ describe('delete handler (runner transport)', () => {
 describe('read handler (runner transport)', () => {
   test('answers Unowned for a live row — the adopt-path branding a stack needs', async () => {
     const run: PsqlRunner = ({ stdin }) => {
-      // The schema SELECT also projects `current_database() AS database`, so the row query is
-      // identified by `FROM pg_namespace` and the bare proof by its absence.
-      if (stdin.includes('FROM pg_namespace')) {
-        // `oid` crosses the runner as a JSON string; the executor normalizes it to a number.
-        return ok(
+      const r = route(stdin, {
+        probe: '[{"present":1}]',
+        schema:
           '[{"name":"ledger","oid":"16384","owner":"tim","comment":null,"database":"postgres"}]',
-        );
-      }
-      if (stdin.includes('current_database()')) return ok(proof);
+        proof,
+      });
+      if (r !== undefined) return ok(r);
       return ok('');
     };
     const result = await Effect.runPromise(
@@ -178,9 +169,13 @@ describe('read handler (runner transport)', () => {
     const run: PsqlRunner = ({ stdin }) =>
       Promise.resolve({
         code: 0,
-        stdout: stdin.includes('current_database()')
-          ? '[{"database":"agents"}]'
-          : '[{"name":"ledger","oid":"16384","owner":"tim","comment":null,"database":"agents"}]',
+        stdout:
+          route(stdin, {
+            probe: '[{"present":1}]',
+            schema:
+              '[{"name":"ledger","oid":"16384","owner":"tim","comment":null,"database":"agents"}]',
+            proof: '[{"database":"agents"}]',
+          }) ?? '',
         stderr: '',
       });
     const error = await Effect.runPromise(
