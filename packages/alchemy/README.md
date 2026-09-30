@@ -226,6 +226,14 @@ with `HostFile`; `caddyProviders()` provides the transport, `http://127.0.0.1:20
 `@effect/sql-pg` — the same client upstream's own `alchemy/SQL/Postgres` binding uses. No
 `ALTER DATABASE`, no password prop, and `delete` always refuses: [docs/postgres.md](./docs/postgres.md).
 
+## Valkey — `@homeflare/alchemy/valkey`
+
+`Valkey.Instance` (assert-and-read a running server, never create/reconfigure/stop) and
+`Valkey.AclFile` (the per-instance ACL users, each limited to a key prefix and a fixed command
+profile, passwords by reference — never in state). Both `retain` and `Unowned` on read, so a live
+instance and its ACL each need `adopt(true)`. Activation order for CT100's two dormant Quadlets is
+in [docs/valkey.md](./docs/valkey.md).
+
 ## Proxmox — `@homeflare/alchemy/proxmox`
 
 PVE and PBS objects over the PVE API, `ProxmoxLxc` for containers, and the provisioning baseline
