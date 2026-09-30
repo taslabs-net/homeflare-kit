@@ -72,7 +72,9 @@ grantee oid zero — never by parsing `aclitem` text (`func.sgml`, committed fix
 Reconcile is read → plan → execute → re-read → re-plan; an empty second plan is the
 proof the repair landed (`PostgresGrantsRepairRefused` carries the surviving statements
 when it did not — typically a grant made by a third grantor, which only that grantor or
-the object's owner can revoke).
+the object's owner can revoke). A destroy runs the same proof after its revokes: a grant
+the resource cannot revoke fails the delete loud with the same refusal instead of leaving
+the grantee holding privileges a delete claimed to take away.
 
 - **Re-run with nothing changed writes nothing.** Every class whose live set already
   equals the declaration contributes no statement.
@@ -130,8 +132,10 @@ declaration named, via the same repair plan with every word list emptied: one
 for PUBLIC, nothing for objects the declaration never named, nothing for objects the
 declared role owns (an owner's implicit rights are not this resource's to revoke),
 never `CASCADE` (a revoke whose grantee re-granted onward surfaces as the server's own
-`2BP01`), and a missing grantee or schema means there is nothing left to revoke and
-the delete is a no-op.
+`2BP01`), a missing grantee or schema means there is nothing left to revoke and the
+delete is a no-op, and the delete proves its revokes landed the same way `reconcile`
+does — re-read, re-plan, refuse with `PostgresGrantsRepairRefused` when a grant the
+resource cannot revoke (a third grantor's, say) survives the pass.
 
 ## The per-seat shape (the example this family exists for)
 

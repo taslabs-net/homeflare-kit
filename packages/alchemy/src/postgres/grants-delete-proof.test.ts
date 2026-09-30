@@ -1,0 +1,119 @@
+/**
+ * The delete-path convergence proof (S10): `delete` runs its revokes, then re-reads and
+ * re-plans the way `reconcile` does. A clean revoke converges silently; a third grantor's
+ * grant the executor's REVOKE cannot clear survives the pass and fails loud with the
+ * still-planned statements (`PostgresGrantsRepairRefused`) instead of reporting a delete
+ * that left the grantee holding privileges. The fake's server rule — `REVOKE ALL` removes
+ * only the executing role's own grants — is the survival the proof must catch.
+ */
+import { describe, expect, test } from 'bun:test';
+import * as Effect from 'effect/Effect';
+import { makeFakeGrants } from './fake-grants-sql.ts';
+import { deleteWithClient, reconcileWithClient } from './grants-ops.ts';
+import { PostgresGrantsRepairRefused } from './grants-errors.ts';
+import type { PgContext } from './connection.ts';
+import type { PostgresGrantsProps } from './grants-attrs.ts';
+
+const run = <A, E>(eff: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(eff);
+const fails = <A, E>(eff: Effect.Effect<A, E>): Promise<E> => Effect.runPromise(Effect.flip(eff));
+
+const isWrite = (text: string): boolean => /^(GRANT|REVOKE|ALTER)/.test(text);
+
+const context: PgContext = { database: 'agents' };
+
+const baseProps: PostgresGrantsProps = {
+  role: 'seat_writer',
+  database: 'agents',
+  schema: 'app',
+  schemaUsage: true,
+};
+
+/** The catalog a delete needs: the schema and grantee role exist, and one table with a
+ * column so table and column grants have a target. */
+const catalog = {
+  schemas: ['app'],
+  roles: ['postgres', 'seat_writer'],
+  tables: [{ schema: 'app', table: 'widgets', columns: ['id'] }],
+};
+
+describe('delete: the re-read proof', () => {
+  test('a clean delete runs the revokes and converges silently', async () => {
+    const fake = makeFakeGrants(catalog);
+    await run(
+      reconcileWithClient(
+        fake,
+        {
+          ...baseProps,
+          tables: [{ table: 'widgets', privileges: ['select'] }],
+        },
+        undefined,
+        context,
+      ),
+    );
+    const before = fake.statements.length;
+    await run(
+      deleteWithClient(
+        fake,
+        {
+          ...baseProps,
+          tables: [{ table: 'widgets', privileges: ['select'] }],
+        },
+        context,
+      ),
+    );
+    // Only the revokes, no re-grant, no second-pass writes: the re-read found nothing.
+    expect(
+      fake.statements
+        .slice(before)
+        .map((s) => s.text)
+        .filter(isWrite),
+    ).toEqual([
+      'REVOKE ALL ON SCHEMA "app" FROM "seat_writer"',
+      'REVOKE ALL ON "app"."widgets" FROM "seat_writer"',
+    ]);
+  });
+
+  test('a third grantor\u2019s surviving grant fails the delete as PostgresGrantsRepairRefused', async () => {
+    const fake = makeFakeGrants(catalog);
+    await run(
+      reconcileWithClient(
+        fake,
+        { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] },
+        undefined,
+        context,
+      ),
+    );
+    // The competing grant lands after the converge (a third grantor grants while the seat
+    // already holds the executor's grant): the delete's REVOKE clears only the executor's
+    // own grants, so this one survives the pass and the delete's re-read must catch it.
+    fake.acl.push({
+      object: { schema: 'app', table: 'widgets' },
+      grantee: 'seat_writer',
+      grantor: 'someone_else',
+      words: ['delete'],
+    });
+    const before = fake.statements.length;
+    const error = await fails(
+      deleteWithClient(
+        fake,
+        {
+          ...baseProps,
+          tables: [{ table: 'widgets', privileges: ['select'] }],
+        },
+        context,
+      ),
+    );
+    expect(error).toBeInstanceOf(PostgresGrantsRepairRefused);
+    // The third grantor's 'delete' survived the revoke, so the re-read still plans the
+    // table's REVOKE — that surviving statement is the refusal.
+    expect((error as PostgresGrantsRepairRefused).remaining).toContain(
+      'REVOKE ALL ON "app"."widgets" FROM "seat_writer"',
+    );
+    expect(
+      fake.statements
+        .slice(before)
+        .map((s) => s.text)
+        .filter(isWrite),
+    ).toContain('REVOKE ALL ON "app"."widgets" FROM "seat_writer"');
+  });
+});

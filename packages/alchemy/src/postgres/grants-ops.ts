@@ -21,8 +21,10 @@
  *   live). No role check — the aclexplode reads are missing-role-safe by construction
  *   (`grants-read.ts`).
  * ★ `delete` NEVER RE-GRANTS, NEVER CASCADES. The `retain` policy is the default; the
- *   revokes are idempotent; a third grantor's grant that a revoke cannot clear survives as
- *   a raw driver error (`REVOKE … CASCADE` is never issued).
+ *   revokes are idempotent; the delete then re-reads and re-plans like `reconcile` does
+ *   (S10), so a third grantor's grant that a revoke cannot clear fails loud with the
+ *   surviving statements (`PostgresGrantsRepairRefused`) instead of surviving silently
+ *   (`REVOKE … CASCADE` is never issued).
  * ★ STATEMENTS RUN ONE COMMAND AT A TIME — NO WRAPPING TRANSACTION: the socket path's
  *   prepared-statement `unsafe` cannot carry several commands in one call and the psql
  *   runner is one process per statement, so a repair's revoke and grant are each their
@@ -173,7 +175,7 @@ export const deleteWithClient = (
   pg: PgExecutor,
   props: PostgresGrantsProps,
   context: PgContext,
-): Effect.Effect<void, PostgresGrantsDatabaseMismatch | SqlError> =>
+): Effect.Effect<void, PostgresGrantsDatabaseMismatch | PostgresGrantsRepairRefused | SqlError> =>
   Effect.gen(function* () {
     if (context.database !== props.database) {
       return yield* Effect.fail(
@@ -189,6 +191,17 @@ export const deleteWithClient = (
     const live = yield* readGrants(pg, cleared.schema, cleared.role);
     for (const statement of planRepair(cleared, live)) {
       yield* pg.unsafe(statement).pipe(Effect.asVoid);
+    }
+    const after = yield* readGrants(pg, cleared.schema, cleared.role);
+    const remaining = planRepair(cleared, after);
+    if (remaining.length > 0) {
+      return yield* Effect.fail(
+        new PostgresGrantsRepairRefused({
+          schema: cleared.schema,
+          role: cleared.role,
+          remaining,
+        }),
+      );
     }
   });
 
