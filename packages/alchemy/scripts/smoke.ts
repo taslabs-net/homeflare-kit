@@ -133,7 +133,7 @@ import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement,
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
 import { PROVISION_PRIVILEGES, PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, ProxmoxNotificationMatcher, alertmanagerAlertBody, declareProvisionBaseline, provisionBootstrap } from '@homeflare/alchemy/proxmox';
 import { NETBOX_CONSTRAINTS_DIGEST, NetboxPrefix, bodyViolations, constraintsFor } from '@homeflare/alchemy/netbox';
-import { PostgresDatabase, isPostgresDatabase, nameByteRefusal, quoteIdent } from '@homeflare/alchemy/postgres';
+import { PostgresDatabase, PostgresGrants, isPostgresDatabase, isPostgresGrants, nameByteRefusal, quoteIdent } from '@homeflare/alchemy/postgres';
 import { HostFile, LaunchdJob, launchdProviders, renderPlist, sudoRunner } from '@homeflare/alchemy/launchd';
 import { PAPERLESS_CONSTRAINTS_DIGEST, Tag as PaperlessTag, bodyViolations as paperlessBodyViolations, constraintsFor as paperlessConstraintsFor } from '@homeflare/alchemy/paperless';
 import { HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, renderUnit, sshRunner } from '@homeflare/alchemy/linux';
@@ -155,6 +155,7 @@ for (const [name, value] of Object.entries({
   NetboxPrefix, bodyViolations, constraintsFor, NETBOX_CONSTRAINTS_DIGEST,
   PaperlessTag, paperlessBodyViolations, paperlessConstraintsFor, PAPERLESS_CONSTRAINTS_DIGEST,
   PostgresDatabase, isPostgresDatabase, nameByteRefusal, quoteIdent,
+  PostgresGrants, isPostgresGrants,
   HostDirectory, RemoteFile, SystemdTimer, SystemdUnit, linuxProviders, sshRunner, ReleaseBinary, releaseProviders,
   parseVerifyArgs, verifySession, verifyStack,
   litellmProviders,
@@ -370,6 +371,11 @@ if (!isPostgresDatabase(PostgresDatabase) || quoteIdent('a"b') !== '"a""b"') {
 }
 if (nameByteRefusal('a'.repeat(64))?.byteLength !== 64 || nameByteRefusal('a'.repeat(63)) !== undefined) {
   throw new Error('postgres subpath from dist lost the NAMEDATALEN byte-length refusal');
+}
+// ★ PostgresGrants from the PUBLISHED file: the resource's type guard and its retain policy,
+// so a Grants half that tree-shook away fails here, not in a stack.
+if (!isPostgresGrants(PostgresGrants) || isPostgresGrants({})) {
+  throw new Error('postgres subpath from dist lost isPostgresGrants');
 }
 
 console.log('all nineteen subpaths import and resolve');

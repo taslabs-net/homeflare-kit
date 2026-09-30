@@ -1,7 +1,7 @@
 /**
- * `Postgres.Database`'s provider, pre-wired to one cluster:
+ * The `Postgres.*` providers, pre-wired to one cluster:
  *
- *     const providers = postgresProviders({ host: '/opt/homeflare/postgres/sockets', database: 'postgres', username: 'tim' });
+ *     const providers = postgresProviders({ host: '/var/run/postgresql', database: 'postgres', username: 'tim' });
  *
  * ★ THE CLUSTER IS A PARAMETER, NOT A DEFAULT (S15, and `docs/postgres.md#path`). This kit is
  *   PUBLIC; the mini's socket directory, its user and its port are the CONSUMING stack's values,
@@ -16,14 +16,22 @@ import {
   postgresRunnerConnection,
 } from './connection.ts';
 import { PostgresDatabaseProvider } from './database.ts';
+import { PostgresGrantsProvider } from './grants.ts';
 
 // ⚠️ `Layer.provideMerge`, NEVER plain `Layer.provide`: the handlers' `withPg` reads
 //   `PostgresConnection` when the ENGINE later calls `read`/`reconcile`, and plain `provide`
 //   seals it away ("Service not found: Postgres.Connection" — measured for `caddyProviders`,
-//   see `caddy/providers.ts`).
+//   see `caddy/providers.ts`). Each resource provider merges its own connection in; the two
+//   results are merged per resource (`Layer.mergeAll`, the same shape `unifi/providers.ts`).
 export const postgresProviders = (config: PostgresConnectionConfig) =>
-  PostgresDatabaseProvider().pipe(Layer.provideMerge(postgresConnection(config)));
+  Layer.mergeAll(
+    PostgresDatabaseProvider().pipe(Layer.provideMerge(postgresConnection(config))),
+    PostgresGrantsProvider().pipe(Layer.provideMerge(postgresConnection(config))),
+  );
 
-/** The same provider over a command runner (`psql-executor.ts`) — for a loopback-only cluster. */
+/** The same providers over a command runner (`psql-executor.ts`) — for a loopback-only cluster. */
 export const postgresRunnerProviders = (config: PostgresRunnerConfig) =>
-  PostgresDatabaseProvider().pipe(Layer.provideMerge(postgresRunnerConnection(config)));
+  Layer.mergeAll(
+    PostgresDatabaseProvider().pipe(Layer.provideMerge(postgresRunnerConnection(config))),
+    PostgresGrantsProvider().pipe(Layer.provideMerge(postgresRunnerConnection(config))),
+  );

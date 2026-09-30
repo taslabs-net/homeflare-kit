@@ -44,9 +44,12 @@ export interface PostgresRunnerConfig {
   readonly template?: string;
 }
 
-/** What `withPg`'s callback learns about the transport beyond the client. */
+/** What `withPg`'s callback learns about the transport beyond the client. `database` is the
+ * database the statements run IN: `Postgres.Grants` refuses a declaration whose `database`
+ * prop names another one (its grants would land in the wrong database, silently). */
 export interface PgContext {
   readonly template?: string;
+  readonly database: string;
 }
 
 /** The lazy connection service. Its value is an `Effect` of the config, per S24 — see the file
@@ -87,10 +90,11 @@ export const withPg = <A, E>(
     if (isRunner(config)) {
       return yield* build(makePsqlExecutor(config.run, config), {
         template: config.template ?? 'template0',
+        database: config.database,
       });
     }
     return yield* Effect.provide(
-      Effect.flatMap(PgClient.PgClient, (pg) => build(pg, {})),
+      Effect.flatMap(PgClient.PgClient, (pg) => build(pg, { database: config.database })),
       PgClient.layer(config),
     );
   });
