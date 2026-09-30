@@ -85,11 +85,12 @@ update ("col")` — one trailing column list binds only to the privilege it foll
   (gram.y@REL_18_6), so `GRANT select, update ("col")` would be a table-level grant of
   every word but the last; each word carries its own list, which puts all of them on the
   column and nothing on the relation.
-- **A table revoke re-grants the table's declared columns in the same pass:** the
-  server's table-level `REVOKE ALL` also clears the grantee's column entries on the
-  table (measured on PG 18.6), so when a table's privileges change and the declaration
-  also names columns, the plan re-grants those columns after the revoke — one pass
-  converges.
+- **A table revoke re-grants the table's columns in the same pass:** the server's
+  table-level `REVOKE ALL` also clears the grantee's column entries on the table (measured
+  on PG 18.6) — every one of them, not only the columns the declaration names. So when a
+  table's privileges change, the plan re-grants the declared columns after the revoke, and
+  every column entry the declaration does NOT name is re-granted as it was read: a table
+  repair never strips a grant the declaration never mentioned. One pass converges.
 - **Default privileges are per creator role:** `ALTER DEFAULT PRIVILEGES FOR ROLE …
 IN SCHEMA … GRANT … ON TABLES`, for future tables only (`defaclobjtype = 'r'`). A
   `forRole` is never inferred; every entry names the role whose future objects get the

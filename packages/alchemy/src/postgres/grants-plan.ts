@@ -93,8 +93,15 @@ export const planRepair = (declared: DeclaredGrants, live: LiveGrants): Readonly
   // A table whose REVOKE is emitted ALSO loses the grantee's column privileges on it
   // (the header's measured rule), so every declared column of such a table is planned
   // against an empty column set: the declared words are re-granted after the table
-  // revoke in the SAME pass instead of surfacing as drift only on the re-read.
+  // revoke in the SAME pass instead of surfacing as drift only on the re-read. The
+  // server's collateral does not stop at the declaration's column list — every column
+  // entry on that table the declaration does NOT name is re-granted as it was read, so a
+  // table repair never strips a grant the declaration never mentioned ("an object the
+  // declaration does not name is NEVER touched", grants-declare.ts).
   const revokedTables = new Set<string>();
+  const declaredColumns = new Set(
+    declared.columns.map((column) => `${column.table}\u0000${column.column}`),
+  );
   for (const table of declared.tables) {
     if (ownedTables.has(table.table)) continue;
     if (wordsDiffer(table.privileges, liveTableWords(live, table.table))) {
@@ -105,6 +112,16 @@ export const planRepair = (declared: DeclaredGrants, live: LiveGrants): Readonly
           grantTableSql(declared.schema, table.table, declared.role, words),
         ),
       );
+      for (const column of live.columns) {
+        if (column.table !== table.table) continue;
+        if (declaredColumns.has(`${column.table}\u0000${column.column}`)) continue;
+        if (column.role.length === 0) continue;
+        statements.push(
+          ...grantStatements(column.role, (words) =>
+            grantColumnSql(declared.schema, column.table, column.column, declared.role, words),
+          ),
+        );
+      }
     }
   }
   for (const column of declared.columns) {
