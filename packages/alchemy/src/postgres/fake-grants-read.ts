@@ -37,6 +37,7 @@ export interface FakeCatalogTable {
 export interface FakeGrantsModel {
   readonly schemas: ReadonlySet<string>;
   readonly roles: ReadonlySet<string>;
+  readonly databases: ReadonlySet<string>;
   readonly tables: ReadonlyArray<FakeCatalogTable>;
   readonly acl: AclEntry[];
   readonly relkinds: ReadonlyMap<string, string>;
@@ -78,7 +79,7 @@ export const answerRead = <A extends object>(
   params: ReadonlyArray<unknown>,
   model: FakeGrantsModel,
 ): Effect.Effect<ReadonlyArray<A>, SqlError> | undefined => {
-  const { acl, schemas, roles, tables } = model;
+  const { acl, schemas, roles, databases, tables } = model;
 
   if (text.startsWith('SELECT 1 AS present FROM pg_roles')) {
     return Effect.succeed(
@@ -90,8 +91,42 @@ export const answerRead = <A extends object>(
       (schemas.has(params[0] as string) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
     );
   }
+  if (text.startsWith('SELECT 1 AS present FROM pg_database')) {
+    return Effect.succeed(
+      (databases.has(params[0] as string) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
+    );
+  }
 
   const [schema, role] = [params[0] as string, params[1] as string];
+  if (
+    text.includes('c.relname AS table') &&
+    text.includes('pg_class c') &&
+    text.includes('= ANY($2)') &&
+    !text.includes('pg_attribute')
+  ) {
+    const want = new Set(params[1] as ReadonlyArray<string>);
+    return Effect.succeed(
+      tables
+        .filter((t) => t.schema === schema && want.has(t.table))
+        .map((t) => ({ table: t.table })) as unknown as ReadonlyArray<A>,
+    );
+  }
+  if (
+    text.includes('a.attname AS column') &&
+    text.includes('pg_attribute a') &&
+    text.includes('= ANY($2)')
+  ) {
+    const want = new Set(params[1] as ReadonlyArray<string>);
+    return Effect.succeed(
+      tables
+        .filter((t) => t.schema === schema)
+        .flatMap((t) =>
+          (t.columns ?? [])
+            .filter((c) => want.has(`${t.table}.${c}`))
+            .map((c) => ({ table: t.table, column: c })),
+        ) as unknown as ReadonlyArray<A>,
+    );
+  }
   if (text.includes('aclexplode(n.nspacl)')) {
     return Effect.succeed(
       rows(

@@ -39,7 +39,7 @@ import * as Effect from 'effect/Effect';
 import { isResolved } from 'alchemy/Diff';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import type { PostgresGrantsAttributes, PostgresGrantsProps } from './grants-attrs.ts';
-import { roleExists } from './database-sql.ts';
+import { databaseExists, roleExists } from './database-sql.ts';
 import type { PgExecutor } from './database-sql.ts';
 import type { PgContext } from './connection.ts';
 import type { namesFromAttrs } from './grants-declare.ts';
@@ -50,6 +50,7 @@ import {
   grantsNamesRefusal,
 } from './grants-refuse.ts';
 import { attributesOf, grantsDiffer } from './grants-diff.ts';
+import { requireDeclaredObjectsExist } from './grants-existence.ts';
 import { planRepair, planRevocations } from './grants-plan.ts';
 import { readGrants, schemaExists } from './grants-read.ts';
 import {
@@ -120,6 +121,10 @@ export const reconcileWithClient = (
         return yield* Effect.fail(new PostgresGrantsRoleMissing({ role }));
       }
     }
+    // Declared relations and columns must exist before any statement: a GRANT/REVOKE on a
+    // missing object would fail raw after earlier statements had already landed, leaving
+    // the state row `creating` and the resume failing OwnedBySomeoneElse.
+    yield* requireDeclaredObjectsExist(pg, declared);
     const removed = removedNames(output, declared);
     let current = yield* readGrants(pg, declared.schema, declared.role);
     if (removed !== undefined) {
@@ -181,6 +186,7 @@ export const deleteWithClient = (
 ): Effect.Effect<void, PostgresGrantsDatabaseMismatch | PostgresGrantsRepairRefused | SqlError> =>
   Effect.gen(function* () {
     if (context.database !== props.database) {
+      if (!(yield* databaseExists(pg, props.database))) return;
       return yield* Effect.fail(
         new PostgresGrantsDatabaseMismatch({
           declared: props.database,

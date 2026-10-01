@@ -111,9 +111,9 @@ export interface PostgresGrantsDefault {
  * operator, or a role resource in this family once one lands); this resource only writes
  * ACL rows. `database` names the cluster-side database the statements run IN — never
  * `ALTER DATABASE` privileges, which this family does not issue — and `reconcile` refuses
- * a declaration whose `database` differs from the one the connection actually opened. `revokeFromPublic` strips PUBLIC's default
- * SELECT (PG18 stopped granting PUBLIC CREATE on `public`, `ddl.sgml@REL_18_6`; SELECT
- * remains, so a revoke is the only way a table is truly group-private).
+ * a declaration whose `database` differs from the one the connection actually opened. `revokeFromPublic` strips PUBLIC's default USAGE on schema `public`
+ * and any default SELECT that might exist (PG15 stopped granting PUBLIC CREATE on `public`,
+ * `ddl.sgml@REL_15_1`; PostgreSQL never grants PUBLIC SELECT on tables by default).
  */
 export interface PostgresGrantsProps {
   readonly role: string;

@@ -132,6 +132,36 @@ export class PostgresGrantsRoleMissing extends Data.TaggedError('PostgresGrantsR
   }
 }
 
+/** A declared table is not a relation in the schema. The resource refuses before any
+ * statement, because a GRANT/REVOKE on a missing relation would surface as a raw 42P01
+ * after earlier statements had already landed — and the state row would stay `creating`. */
+export class PostgresGrantsTableMissing extends Data.TaggedError('PostgresGrantsTableMissing')<{
+  readonly schema: string;
+  readonly table: string;
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Grants: table "${this.schema}"."${this.table}" does not exist. The declaration ` +
+      'names a relation before it is created; create the table (or fix the name) before granting.'
+    );
+  }
+}
+
+/** A declared column is not an attribute of its table. The resource refuses before any
+ * statement, matching the table-missing guard. */
+export class PostgresGrantsColumnMissing extends Data.TaggedError('PostgresGrantsColumnMissing')<{
+  readonly schema: string;
+  readonly table: string;
+  readonly column: string;
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Grants: column "${this.column}" of "${this.schema}"."${this.table}" does not ` +
+      'exist. Declare the column (or fix its name) before granting on it.'
+    );
+  }
+}
+
 /** The repair ran clean, but the immediate re-read (S10) still plans statements: a grant this
  * family cannot revoke survived (its grantor still holds the grant option, or the executing
  * role is neither the owner nor that grantor). Re-planning forever would hide it as silent
@@ -160,4 +190,6 @@ export type PostgresGrantsError =
   | PostgresGrantsDatabaseMismatch
   | PostgresGrantsSchemaMissing
   | PostgresGrantsRoleMissing
+  | PostgresGrantsTableMissing
+  | PostgresGrantsColumnMissing
   | PostgresGrantsRepairRefused;

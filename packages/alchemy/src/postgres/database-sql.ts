@@ -103,6 +103,15 @@ export const roleExists = (pg: PgExecutor, role: string): Effect.Effect<boolean,
     (rows) => rows.length > 0,
   );
 
+const DATABASE_EXISTS_SQL = 'SELECT 1 AS present FROM pg_database WHERE datname = $1';
+
+/** Check a database is in `pg_database` before an operation assumes it can connect there. */
+export const databaseExists = (pg: PgExecutor, name: string): Effect.Effect<boolean, SqlError> =>
+  Effect.map(
+    pg.unsafe<{ readonly present: number }>(DATABASE_EXISTS_SQL, [name]),
+    (rows) => rows.length > 0,
+  );
+
 /** `datlocprovider` is Postgres's internal 1-byte `"char"` type, which this client decodes as
  * raw bytes rather than text (measured 2026-09-23 against the live socket — `docs/postgres.md`);
  * the `CASE` maps it to the same three words `pg_collation.h@REL_18_6#collprovider_name` returns

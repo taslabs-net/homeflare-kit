@@ -44,6 +44,8 @@ export interface FakeGrantsOptions {
   readonly schemas?: ReadonlyArray<string>;
   /** Roles the existence check (`pg_roles`) answers yes for. */
   readonly roles?: ReadonlyArray<string>;
+  /** Databases the existence check (`pg_database`) answers yes for. */
+  readonly databases?: ReadonlyArray<string>;
   /** The catalog: every relation a table/column statement may name, with its columns,
    * relkind and owner (see `fake-grants-read.ts#FakeCatalogTable`). */
   readonly tables?: ReadonlyArray<FakeCatalogTable>;
@@ -77,6 +79,7 @@ export const makeFakeGrants = (options: FakeGrantsOptions = {}): FakeGrants => {
   const statements: RecordedStatement[] = [];
   const schemas = new Set(options.schemas ?? []);
   const roles = new Set(options.roles ?? []);
+  const databases = new Set(options.databases ?? []);
   const tables = options.tables ?? [];
   const executor = options.executor ?? 'postgres';
   const acl: AclEntry[] = (options.acl ?? []).map((seed) => ({ ...seed, words: [...seed.words] }));
@@ -93,7 +96,7 @@ export const makeFakeGrants = (options: FakeGrantsOptions = {}): FakeGrants => {
   }
   const schemaOwners = new Map<string, string>();
   for (const schema of schemas) schemaOwners.set(schema, schemaOwner);
-  const model = { schemas, roles, tables, acl, relkinds, tableOwners, schemaOwners };
+  const model = { schemas, roles, databases, tables, acl, relkinds, tableOwners, schemaOwners };
 
   const knownTable = (schema: string, table: string) =>
     tables.find((t) => t.schema === schema && t.table === table);

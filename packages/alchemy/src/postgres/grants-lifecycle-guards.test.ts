@@ -36,6 +36,7 @@ const baseProps: PostgresGrantsProps = {
 const ownedCatalog = {
   schemas: ['app'],
   roles: ['postgres', 'seat_writer'],
+  databases: ['agents'],
   tables: [
     { schema: 'app', table: 'notes', owner: 'seat_writer', columns: ['id'] },
     { schema: 'app', table: 'shared' },
@@ -146,8 +147,9 @@ describe('the connected database must be the declared one', () => {
     expect(readError).toBeInstanceOf(PostgresGrantsDatabaseMismatch);
     const deleteError = await fails(deleteWithClient(fake, baseProps, wrongDb));
     expect(deleteError).toBeInstanceOf(PostgresGrantsDatabaseMismatch);
-    // The guard is the first decision in all three paths: nothing was sent at all.
-    expect(fake.statements).toEqual([]);
+    // Reconcile and read refuse before touching the server. Delete now issues a single
+    // pg_database existence probe so it can stay idempotent when the database was dropped.
+    expect(fake.statements.map((s) => s.text).filter(isWrite)).toEqual([]);
   });
 });
 
