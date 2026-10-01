@@ -10,11 +10,14 @@ import type { PgExecutor } from './database-sql.ts';
 import type { DeclaredGrants } from './grants-declare.ts';
 import { PostgresGrantsColumnMissing, PostgresGrantsTableMissing } from './grants-errors.ts';
 
+/** One JSON string, never a JS array: the psql transport accepts only string parameters
+ * (`psql-executor.ts`). `json_array_elements_text` expands that array to text
+ * (`func.sgml@REL_18_6`). */
 const TABLES_PRESENT_SQL = `SELECT
     c.relname AS table
   FROM pg_class c
   WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)
-    AND c.relname = ANY($2)`;
+    AND c.relname::text IN (SELECT json_array_elements_text($2::json))`;
 
 const findMissingTable = (
   pg: PgExecutor,
@@ -24,13 +27,17 @@ const findMissingTable = (
   tables.length === 0
     ? Effect.succeed(undefined)
     : Effect.map(
-        pg.unsafe<{ readonly table: string }>(TABLES_PRESENT_SQL, [schema, tables]),
+        pg.unsafe<{ readonly table: string }>(TABLES_PRESENT_SQL, [schema, JSON.stringify(tables)]),
         (rows) => {
           const present = new Set(rows.map((row) => row.table));
           return tables.find((table) => !present.has(table));
         },
       );
 
+/** Pairs, not `relname || '.' || attname`. A table named `a.b` with column `c` and a
+ * table named `a` with column `b.c` are the same concatenated string and one of them
+ * would read as present. `->>` yields text (`func.sgml@REL_18_6`); the parameter is
+ * one JSON string so the psql transport accepts it. */
 const COLUMNS_PRESENT_SQL = `SELECT
     c.relname AS table,
     a.attname AS column
@@ -39,7 +46,9 @@ const COLUMNS_PRESENT_SQL = `SELECT
   WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)
     AND a.attnum > 0
     AND NOT a.attisdropped
-    AND (c.relname || '.' || a.attname) = ANY($2)`;
+    AND (c.relname, a.attname) IN (
+      SELECT x->>0, x->>1 FROM json_array_elements($2::json) x
+    )`;
 
 const findMissingColumn = (
   pg: PgExecutor,
@@ -51,11 +60,11 @@ const findMissingColumn = (
     : Effect.map(
         pg.unsafe<{ readonly table: string; readonly column: string }>(COLUMNS_PRESENT_SQL, [
           schema,
-          columns.map(({ table, column }) => `${table}.${column}`),
+          JSON.stringify(columns.map(({ table, column }) => [table, column])),
         ]),
         (rows) => {
-          const present = new Set(rows.map((row) => `${row.table}.${row.column}`));
-          return columns.find(({ table, column }) => !present.has(`${table}.${column}`));
+          const present = new Set(rows.map((row) => `${row.table}\u0000${row.column}`));
+          return columns.find(({ table, column }) => !present.has(`${table}\u0000${column}`));
         },
       );
 

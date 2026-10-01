@@ -2,13 +2,13 @@
  * The pure statement planners: `planRepair`'s per-class repair (no-op, drift, the
  * revoke-only delete twin, the grant-option split, the two PUBLIC clears), the measured
  * rules the convergence proof depends on (a table revoke clears its declared columns;
- * owned objects are left alone) and `planRevocations` (the entries an update removed).
+ * owned objects are left alone). Removal revokes live in `grants-plan-revocations.test.ts`.
  * `resolveProps` and the refusals live in `grants-plan.test.ts`.
  */
 import { describe, expect, test } from 'bun:test';
 import type { PostgresGrantsProps } from './grants-attrs.ts';
 import { resolveProps } from './grants-declare.ts';
-import { planRepair, planRevocations } from './grants-plan.ts';
+import { planRepair } from './grants-plan.ts';
 import type { LiveGrants } from './grants-read.ts';
 
 const props: PostgresGrantsProps = {
@@ -91,7 +91,9 @@ describe('planRepair', () => {
       live({
         schema: { role: ['usage'], public: [] },
         tables: [{ table: 'widgets', relkind: 'r', role: ['select'], public: [] }],
-        columns: [{ table: 'widgets', column: 'id', role: ['select'], public: [] }],
+        columns: [
+          { table: 'widgets', column: 'id', role: ['select'], public: [], restorable: ['select'] },
+        ],
       }),
     );
     expect(plan).toEqual([
@@ -171,7 +173,9 @@ describe('the PUBLIC clears', () => {
         declared,
         live({
           schema: { role: ['usage'], public: [] },
-          columns: [{ table: 'widgets', column: 'id', role: [], public: ['select'] }],
+          columns: [
+            { table: 'widgets', column: 'id', role: [], public: ['select'], restorable: [] },
+          ],
         }),
       ),
     ).toEqual(['REVOKE ALL ON ALL TABLES IN SCHEMA "app" FROM PUBLIC']);
@@ -192,49 +196,6 @@ describe('the PUBLIC clears', () => {
   test('without the flag, PUBLIC holds are never drift', () => {
     expect(
       planRepair(resolveProps(props), live({ schema: { role: ['usage'], public: ['usage'] } })),
-    ).toEqual([]);
-  });
-});
-
-describe('planRevocations (the entries an update removed)', () => {
-  const removed = {
-    schema: 'app',
-    role: 'seat_writer',
-    tables: [{ table: 'widgets', privileges: [] as ReadonlyArray<string> }],
-    columns: [{ table: 'widgets', column: 'id', privileges: [] as ReadonlyArray<string> }],
-    defaults: [{ forRole: 'owner_role', privileges: [] as ReadonlyArray<string> }],
-  };
-
-  test('a removed object still showing the role\u2019s words earns exactly one revoke', () => {
-    expect(
-      planRevocations(
-        removed,
-        live({
-          tables: [{ table: 'widgets', relkind: 'r', role: ['select'], public: [] }],
-          columns: [{ table: 'widgets', column: 'id', role: ['select'], public: [] }],
-          defaults: [{ forRole: 'owner_role', role: ['select'] }],
-        }),
-      ),
-    ).toEqual([
-      'REVOKE ALL ON "app"."widgets" FROM "seat_writer"',
-      'REVOKE ALL ("id") ON "app"."widgets" FROM "seat_writer"',
-      'ALTER DEFAULT PRIVILEGES FOR ROLE "owner_role" IN SCHEMA "app" REVOKE ALL ON TABLES FROM "seat_writer"',
-    ]);
-  });
-
-  test('a removed object the catalogs show empty for (revoked, or dropped) emits nothing', () => {
-    expect(planRevocations(removed, live())).toEqual([]);
-  });
-
-  test('a removed table the role OWNS emits nothing — the owner\u2019s implicit rights are not this resource\u2019s to revoke', () => {
-    expect(
-      planRevocations(
-        removed,
-        live({
-          ownedTables: ['widgets'],
-          tables: [{ table: 'widgets', relkind: 'r', role: ['select'], public: [] }],
-        }),
-      ),
     ).toEqual([]);
   });
 });

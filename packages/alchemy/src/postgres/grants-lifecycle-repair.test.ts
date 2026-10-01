@@ -15,14 +15,11 @@ import * as Effect from 'effect/Effect';
 import { makeFakeGrants } from './fake-grants-sql.ts';
 import { parseGrantStatement } from './fake-grants-parse.ts';
 import { reconcileWithClient } from './grants-ops.ts';
-import type { PgContext } from './connection.ts';
 import type { PostgresGrantsAttributes, PostgresGrantsProps } from './grants-attrs.ts';
 
 const run = <A, E>(eff: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(eff);
 
 const isWrite = (text: string): boolean => /^(GRANT|REVOKE|ALTER)/.test(text);
-
-const context: PgContext = { database: 'agents' };
 
 const baseProps: PostgresGrantsProps = {
   role: 'seat_writer',
@@ -55,14 +52,12 @@ describe('reconcile: a table revoke clears that grantee\u2019s column entries', 
       tables: [{ table: 'widgets', privileges }],
       columnGrants: [{ table: 'widgets', column: 'id', privileges: ['select'] }],
     });
-    const first = await run(reconcileWithClient(fake, declared(['select']), undefined, context));
+    const first = await run(reconcileWithClient(fake, declared(['select']), undefined));
     const writesBefore = fake.statements.filter((s) => isWrite(s.text)).length;
     // The table's words change while its column grant stays declared: the server's REVOKE
     // ALL also takes the column grant away, so the same pass must re-grant it — planned
     // against an empty column set — or the convergence re-read answers drift and refuses.
-    const again = await run(
-      reconcileWithClient(fake, declared(['select', 'insert']), first, context),
-    );
+    const again = await run(reconcileWithClient(fake, declared(['select', 'insert']), first));
     expect(writesOf(fake).slice(writesBefore)).toEqual([
       'REVOKE ALL ON "app"."widgets" FROM "seat_writer"',
       'GRANT insert, select ON "app"."widgets" TO "seat_writer"',
@@ -87,13 +82,12 @@ describe('reconcile: removal takes the privilege away', () => {
           defaultPrivileges: [{ forRole: 'owner_role', privileges: ['select'] }],
         },
         undefined,
-        context,
       ),
     );
     const writesBefore = fake.statements.filter((s) => isWrite(s.text)).length;
     // The operator deletes every entry: the seat keeps nothing the resource granted, and
     // the schema grant it still declares stays.
-    const after = await run(reconcileWithClient(fake, { ...baseProps }, first, context));
+    const after = await run(reconcileWithClient(fake, { ...baseProps }, first));
     expect(writesOf(fake).slice(writesBefore)).toEqual([
       'REVOKE ALL ON "app"."ledger" FROM "seat_writer"',
       'REVOKE ALL ("id") ON "app"."widgets" FROM "seat_writer"',
@@ -113,9 +107,7 @@ describe('reconcile: default privileges', () => {
       ...baseProps,
       defaultPrivileges: [{ forRole: 'owner_role', privileges: ['select'] }],
     };
-    const attrs: PostgresGrantsAttributes = await run(
-      reconcileWithClient(fake, props, undefined, context),
-    );
+    const attrs: PostgresGrantsAttributes = await run(reconcileWithClient(fake, props, undefined));
     expect(attrs.defaults).toEqual([{ forRole: 'owner_role', privileges: ['select'] }]);
     expect(writesOf(fake)).toEqual([
       'REVOKE ALL ON SCHEMA "app" FROM "seat_writer"',
@@ -124,7 +116,7 @@ describe('reconcile: default privileges', () => {
       'ALTER DEFAULT PRIVILEGES FOR ROLE "owner_role" IN SCHEMA "app" GRANT select ON TABLES TO "seat_writer"',
     ]);
     const writesBefore = fake.statements.filter((s) => isWrite(s.text)).length;
-    const again = await run(reconcileWithClient(fake, props, attrs, context));
+    const again = await run(reconcileWithClient(fake, props, attrs));
     expect(again.defaults).toEqual([{ forRole: 'owner_role', privileges: ['select'] }]);
     expect(fake.statements.filter((s) => isWrite(s.text)).length).toBe(writesBefore);
   });
@@ -144,7 +136,7 @@ describe('reconcile: PUBLIC on a sequence', () => {
       ],
     });
     const props: PostgresGrantsProps = { ...baseProps, revokeFromPublic: true };
-    const attrs = await run(reconcileWithClient(fake, props, undefined, context));
+    const attrs = await run(reconcileWithClient(fake, props, undefined));
     // REVOKE ALL ON ALL TABLES IN SCHEMA does not reach sequences (measured), so the
     // sequence's PUBLIC grant is never counted: the reconcile converges without any
     // PUBLIC statement, and the recorded fact stays relkind-scoped.
@@ -155,7 +147,7 @@ describe('reconcile: PUBLIC on a sequence', () => {
     expect(attrs.publicSchemaRevoked).toBe(true);
     expect(attrs.publicTablesRevoked).toBe(true);
     const writesBefore = fake.statements.filter((s) => isWrite(s.text)).length;
-    await run(reconcileWithClient(fake, props, attrs, context));
+    await run(reconcileWithClient(fake, props, attrs));
     expect(fake.statements.filter((s) => isWrite(s.text)).length).toBe(writesBefore);
   });
 });
@@ -167,7 +159,7 @@ describe('reconcile: multi-word column grants land on the column, not the table'
       ...baseProps,
       columnGrants: [{ table: 'widgets', column: 'id', privileges: ['select', 'update'] }],
     };
-    const attrs = await run(reconcileWithClient(fake, props, undefined, context));
+    const attrs = await run(reconcileWithClient(fake, props, undefined));
     // Each word carries its own column list, so `select` and `update` both land on the
     // column and nothing lands on the relation — the re-read projection proves it.
     expect(attrs.columns).toEqual([
@@ -181,7 +173,7 @@ describe('reconcile: multi-word column grants land on the column, not the table'
     );
     // A re-run with the projection back in is a no-op — the shape converges.
     const writesBefore = fake.statements.filter((s) => isWrite(s.text)).length;
-    await run(reconcileWithClient(fake, props, attrs, context));
+    await run(reconcileWithClient(fake, props, attrs));
     expect(fake.statements.filter((s) => isWrite(s.text)).length).toBe(writesBefore);
   });
 });

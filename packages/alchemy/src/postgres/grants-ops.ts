@@ -27,21 +27,24 @@
  *   (S10), so a third grantor's grant that a revoke cannot clear fails loud with the
  *   surviving statements (`PostgresGrantsRepairRefused`) instead of surviving silently
  *   (`REVOKE … CASCADE` is never issued).
- * ★ STATEMENTS RUN ONE COMMAND AT A TIME — NO WRAPPING TRANSACTION: the socket path's
- *   prepared-statement `unsafe` cannot carry several commands in one call and the psql
- *   runner is one process per statement, so a repair's revoke and grant are each their
- *   own autocommitted command. A live grantee briefly holds nothing between a pair's
- *   revoke and grant, and a mid-repair failure leaves the earlier revokes applied; the
- *   persisted declaration drives the next apply, which re-plans and heals.
+ * ★ THE REPAIR'S WRITES ARE ONE TRANSACTION. `unsafe` is still one command — the socket
+ *   path's prepared statement cannot carry several, and each psql `unsafe` is its own
+ *   process — but `pg.transaction` is `BEGIN`…`COMMIT` on both transports (one reserved
+ *   connection on the socket, one psql script on the runner; `psql-executor.ts`). GRANT
+ *   and REVOKE do not call `PreventInTransactionBlock` (`database-sql.ts` cites the same
+ *   rule for role membership). Removal revokes and the repair are planned together
+ *   against one read (`planReconcile`: removed tables count as revoked) and committed
+ *   together, so a live grantee never observes the gap between a `REVOKE ALL` and the
+ *   grants that restore it. The convergence re-read runs after that commit.
  */
 import type { Input } from 'alchemy/Input';
 import * as Effect from 'effect/Effect';
 import { isResolved } from 'alchemy/Diff';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import type { PostgresGrantsAttributes, PostgresGrantsProps } from './grants-attrs.ts';
-import { databaseExists, roleExists } from './database-sql.ts';
+import { roleExists } from './database-sql.ts';
 import type { PgExecutor } from './database-sql.ts';
-import type { PgContext } from './connection.ts';
+import { currentDatabase } from './schema-sql.ts';
 import type { namesFromAttrs } from './grants-declare.ts';
 import { clearedDeclaration, declaredNames, removedNames, resolveProps } from './grants-declare.ts';
 import {
@@ -51,7 +54,7 @@ import {
 } from './grants-refuse.ts';
 import { attributesOf, grantsDiffer } from './grants-diff.ts';
 import { requireDeclaredObjectsExist } from './grants-existence.ts';
-import { planRepair, planRevocations } from './grants-plan.ts';
+import { planReconcile, planRepair } from './grants-plan.ts';
 import { readGrants, schemaExists } from './grants-read.ts';
 import {
   PostgresGrantsDatabaseMismatch,
@@ -70,6 +73,18 @@ const failRefusal = (refusal: DeclarationRefusal) =>
     ? Effect.fail(new PostgresGrantsPrivilegeRefused({ prop: refusal.prop, word: refusal.word }))
     : Effect.fail(new PostgresGrantsDuplicateObject({ prop: refusal.prop, name: refusal.name }));
 
+/** The handlers open the declared database; this proves the session landed there.
+ * `current_database()` is the server's answer, not the override we asked `withPg` for. */
+const proveDatabase = (
+  pg: PgExecutor,
+  declared: string,
+): Effect.Effect<void, PostgresGrantsDatabaseMismatch | SqlError> =>
+  Effect.flatMap(currentDatabase(pg), (connected) =>
+    connected === declared
+      ? Effect.void
+      : Effect.fail(new PostgresGrantsDatabaseMismatch({ declared, connected })),
+  );
+
 const refuseNames = (props: PostgresGrantsProps) => {
   const declared = resolveProps(props);
   const names = grantsNamesRefusal(declared);
@@ -86,7 +101,6 @@ export const reconcileWithClient = (
   pg: PgExecutor,
   props: PostgresGrantsProps,
   output: PostgresGrantsAttributes | undefined,
-  context: PgContext,
 ): Effect.Effect<PostgresGrantsAttributes, PostgresGrantsError | SqlError> =>
   Effect.gen(function* () {
     const declared = resolveProps(props);
@@ -94,14 +108,6 @@ export const reconcileWithClient = (
     if (declRefusal !== undefined) return yield* failRefusal(declRefusal);
     const nameRefusal = refuseNames(props);
     if (nameRefusal !== undefined) return yield* Effect.fail(nameRefusal);
-    if (context.database !== declared.database) {
-      return yield* Effect.fail(
-        new PostgresGrantsDatabaseMismatch({
-          declared: declared.database,
-          connected: context.database,
-        }),
-      );
-    }
     for (const [prop, from, to] of [
       ['role', output?.role, declared.role],
       ['database', output?.database, declared.database],
@@ -111,6 +117,7 @@ export const reconcileWithClient = (
         return yield* Effect.fail(new PostgresGrantsRetargetRefused({ prop, from, to }));
       }
     }
+    yield* proveDatabase(pg, declared.database);
     if (!(yield* schemaExists(pg, declared.schema))) {
       return yield* Effect.fail(new PostgresGrantsSchemaMissing({ schema: declared.schema }));
     }
@@ -126,21 +133,11 @@ export const reconcileWithClient = (
     // the state row `creating` and the resume failing OwnedBySomeoneElse.
     yield* requireDeclaredObjectsExist(pg, declared);
     const removed = removedNames(output, declared);
-    let current = yield* readGrants(pg, declared.schema, declared.role);
-    if (removed !== undefined) {
-      for (const statement of planRevocations(removed, current)) {
-        yield* pg.unsafe(statement).pipe(Effect.asVoid);
-      }
-      current = yield* readGrants(pg, declared.schema, declared.role);
-    }
-    for (const statement of planRepair(declared, current)) {
-      yield* pg.unsafe(statement).pipe(Effect.asVoid);
-    }
+    const current = yield* readGrants(pg, declared.schema, declared.role);
+    const planned = planReconcile(declared, current, removed);
+    if (planned.length > 0) yield* pg.transaction(planned);
     const after = yield* readGrants(pg, declared.schema, declared.role);
-    const remaining = [
-      ...(removed !== undefined ? planRevocations(removed, after) : []),
-      ...planRepair(declared, after),
-    ];
+    const remaining = planReconcile(declared, after, removed);
     if (remaining.length > 0) {
       return yield* Effect.fail(
         new PostgresGrantsRepairRefused({
@@ -156,18 +153,10 @@ export const reconcileWithClient = (
 export const readWithClient = (
   pg: PgExecutor,
   names: ReturnType<typeof namesFromAttrs>,
-  context: PgContext,
   stored: boolean,
 ): Effect.Effect<PostgresGrantsAttributes | undefined, PostgresGrantsDatabaseMismatch | SqlError> =>
   Effect.gen(function* () {
-    if (context.database !== names.database) {
-      return yield* Effect.fail(
-        new PostgresGrantsDatabaseMismatch({
-          declared: names.database,
-          connected: context.database,
-        }),
-      );
-    }
+    yield* proveDatabase(pg, names.database);
     if (!(yield* schemaExists(pg, names.schema))) return undefined;
     const live = yield* readGrants(pg, names.schema, names.role);
     const projected = attributesOf(live, names);
@@ -182,25 +171,15 @@ export const readWithClient = (
 export const deleteWithClient = (
   pg: PgExecutor,
   props: PostgresGrantsProps,
-  context: PgContext,
 ): Effect.Effect<void, PostgresGrantsDatabaseMismatch | PostgresGrantsRepairRefused | SqlError> =>
   Effect.gen(function* () {
-    if (context.database !== props.database) {
-      if (!(yield* databaseExists(pg, props.database))) return;
-      return yield* Effect.fail(
-        new PostgresGrantsDatabaseMismatch({
-          declared: props.database,
-          connected: context.database,
-        }),
-      );
-    }
+    yield* proveDatabase(pg, props.database);
     if (!(yield* roleExists(pg, props.role))) return;
     if (!(yield* schemaExists(pg, props.schema))) return;
     const cleared = clearedDeclaration(resolveProps(props));
     const live = yield* readGrants(pg, cleared.schema, cleared.role);
-    for (const statement of planRepair(cleared, live)) {
-      yield* pg.unsafe(statement).pipe(Effect.asVoid);
-    }
+    const planned = planRepair(cleared, live);
+    if (planned.length > 0) yield* pg.transaction(planned);
     const after = yield* readGrants(pg, cleared.schema, cleared.role);
     const remaining = planRepair(cleared, after);
     if (remaining.length > 0) {

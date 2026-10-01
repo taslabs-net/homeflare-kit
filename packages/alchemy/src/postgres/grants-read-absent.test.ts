@@ -11,11 +11,8 @@ import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import { makeFakeGrants } from './fake-grants-sql.ts';
 import { readWithClient } from './grants-ops.ts';
-import type { PgContext } from './connection.ts';
 
 const run = <A, E>(eff: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(eff);
-
-const context: PgContext = { database: 'agents' };
 
 /** The seat model: `notes` (with its column) and its catalog are the seat's OWN objects;
  * `shared` is someone else's. The schema is still owned by the executor. */
@@ -42,7 +39,6 @@ describe('read: an empty target is absent', () => {
           columns: [{ table: 'notes', column: 'id' }],
           defaults: [],
         },
-        context,
         false,
       ),
     );
@@ -65,7 +61,6 @@ describe('read: an empty target is absent', () => {
           columns: [{ table: 'notes', column: 'id' }],
           defaults: [],
         },
-        context,
         true,
       ),
     );

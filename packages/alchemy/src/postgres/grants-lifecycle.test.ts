@@ -13,7 +13,6 @@ import * as Effect from 'effect/Effect';
 import { makeFakeGrants } from './fake-grants-sql.ts';
 import { deleteWithClient, readWithClient, reconcileWithClient } from './grants-ops.ts';
 import { namesFromAttrs } from './grants-declare.ts';
-import type { PgContext } from './connection.ts';
 import type { PostgresGrantsProps } from './grants-attrs.ts';
 import {
   PostgresGrantsRepairRefused,
@@ -25,8 +24,6 @@ const run = <A, E>(eff: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(ef
 const fails = <A, E>(eff: Effect.Effect<A, E>): Promise<E> => Effect.runPromise(Effect.flip(eff));
 
 const isWrite = (text: string): boolean => /^(GRANT|REVOKE|ALTER)/.test(text);
-
-const context: PgContext = { database: 'agents' };
 
 const baseProps: PostgresGrantsProps = {
   role: 'seat_writer',
@@ -55,7 +52,6 @@ describe('reconcile: greenfield', () => {
           columnGrants: [{ table: 'widgets', column: 'id', privileges: ['select'] }],
         },
         undefined,
-        context,
       ),
     );
     expect(attrs.role).toBe('seat_writer');
@@ -73,6 +69,8 @@ describe('reconcile: greenfield', () => {
       'REVOKE ALL ("id") ON "app"."widgets" FROM "seat_writer"',
       'GRANT select ("id") ON "app"."widgets" TO "seat_writer"',
     ]);
+    // One transaction: a live grantee never observes the revoke without the grant.
+    expect(fake.transactions).toEqual([writes]);
   });
 });
 
@@ -80,11 +78,11 @@ describe('reconcile: convergence', () => {
   test('a re-run with the previous output writes nothing', async () => {
     const fake = makeFakeGrants(catalog);
     const props = { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] };
-    const attrs = await run(reconcileWithClient(fake, props, undefined, context));
+    const attrs = await run(reconcileWithClient(fake, props, undefined));
     const writesBefore = fake.statements.filter((s) => isWrite(s.text)).length;
     // The engine's real update flow: `output` (the persisted attributes) is passed back in,
     // and its names are all still declared, so no removed-entries revocation may fire.
-    const again = await run(reconcileWithClient(fake, props, attrs, context));
+    const again = await run(reconcileWithClient(fake, props, attrs));
     expect(again.tables).toEqual([{ table: 'widgets', privileges: ['select'] }]);
     expect(fake.statements.filter((s) => isWrite(s.text)).length).toBe(writesBefore);
   });
@@ -100,10 +98,9 @@ describe('reconcile: convergence', () => {
           columnGrants: [{ table: 'widgets', column: 'id', privileges: ['select'] }],
         },
         undefined,
-        context,
       ),
     );
-    const live = await run(readWithClient(fake, namesFromAttrs(attrs), context, true));
+    const live = await run(readWithClient(fake, namesFromAttrs(attrs), true));
     expect(live?.tables).toEqual([{ table: 'widgets', privileges: ['select'] }]);
     expect(live?.columns).toEqual([{ table: 'widgets', column: 'id', privileges: ['select'] }]);
   });
@@ -125,7 +122,6 @@ describe('reconcile: convergence', () => {
         fake,
         { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] },
         undefined,
-        context,
       ),
     );
     expect(error).toBeInstanceOf(PostgresGrantsRepairRefused);
@@ -140,14 +136,14 @@ describe('reconcile: convergence', () => {
 describe('reconcile: guards', () => {
   test('refuses before any write when the grantee role is missing', async () => {
     const fake = makeFakeGrants({ ...catalog, roles: [] });
-    const error = await fails(reconcileWithClient(fake, baseProps, undefined, context));
+    const error = await fails(reconcileWithClient(fake, baseProps, undefined));
     expect(error).toBeInstanceOf(PostgresGrantsRoleMissing);
     expect(fake.statements.filter((s) => isWrite(s.text))).toEqual([]);
   });
 
   test('refuses when the schema does not exist', async () => {
     const fake = makeFakeGrants({ ...catalog, schemas: [] });
-    const error = await fails(reconcileWithClient(fake, baseProps, undefined, context));
+    const error = await fails(reconcileWithClient(fake, baseProps, undefined));
     expect(error).toBeInstanceOf(PostgresGrantsSchemaMissing);
   });
 });
@@ -164,16 +160,14 @@ describe('delete', () => {
           revokeFromPublic: true,
         },
         undefined,
-        context,
       ),
     );
     const before = fake.statements.length;
     await run(
-      deleteWithClient(
-        fake,
-        { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] },
-        context,
-      ),
+      deleteWithClient(fake, {
+        ...baseProps,
+        tables: [{ table: 'widgets', privileges: ['select'] }],
+      }),
     );
     const writes = fake.statements
       .slice(before)

@@ -114,7 +114,9 @@ describe('grantsDiffer', () => {
     const withColumn = attributesOf(
       live({
         ...baseline,
-        columns: [{ table: 'widgets', column: 'id', role: ['select'], public: [] }],
+        columns: [
+          { table: 'widgets', column: 'id', role: ['select'], public: [], restorable: ['select'] },
+        ],
       }),
       { ...names, columns: [{ table: 'widgets', column: 'id' }] },
     );

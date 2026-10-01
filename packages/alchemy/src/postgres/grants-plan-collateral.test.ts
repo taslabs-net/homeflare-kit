@@ -12,16 +12,13 @@
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import { makeFakeGrants } from './fake-grants-sql.ts';
-import { planRepair } from './grants-plan.ts';
+import { planReconcile, planRepair } from './grants-plan.ts';
 import { resolveProps } from './grants-declare.ts';
 import { readGrants } from './grants-read.ts';
 import { reconcileWithClient } from './grants-ops.ts';
-import type { PgContext } from './connection.ts';
 import type { PostgresGrantsProps } from './grants-attrs.ts';
 
 const run = <A, E>(eff: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(eff);
-
-const context: PgContext = { database: 'agents' };
 
 /** `widgets` carries an executor-granted UPDATE on column `qty` — the seat's own grant the
  * declaration never names, plus PUBLIC's — exactly what a table repair used to strip. */
@@ -70,7 +67,7 @@ describe('planRepair: a table revoke preserves the column grants it collaterally
 describe('reconcile: the undeclared column grant survives a table-words repair', () => {
   test('the repair converges in one pass and leaves the undeclared grant exactly as it was', async () => {
     const fake = makeFakeGrants(catalog);
-    const attrs = await run(reconcileWithClient(fake, props, undefined, context));
+    const attrs = await run(reconcileWithClient(fake, props, undefined));
 
     expect(fake.statements.map((s) => s.text).filter(isWrite)).toEqual([
       'REVOKE ALL ON SCHEMA "app" FROM "seat_writer"',
@@ -84,11 +81,122 @@ describe('reconcile: the undeclared column grant survives a table-words repair',
     expect(attrs.columns).toEqual([]);
     const after = await run(readGrants(fake, 'app', 'seat_writer'));
     expect(after.columns).toEqual([
-      { table: 'widgets', column: 'qty', role: ['update'], public: ['select'] },
+      {
+        table: 'widgets',
+        column: 'qty',
+        role: ['update'],
+        public: ['select'],
+        restorable: ['update'],
+      },
     ]);
 
     const writesBefore = fake.statements.filter((s) => isWrite(s.text)).length;
-    await run(reconcileWithClient(fake, props, attrs, context));
+    await run(reconcileWithClient(fake, props, attrs));
     expect(fake.statements.filter((s) => isWrite(s.text)).length).toBe(writesBefore);
+  });
+
+  test('a third grantor\u2019s column grant is left in place — re-granting would add an owner grant on top', async () => {
+    const fake = makeFakeGrants({
+      schemas: ['app'],
+      roles: ['postgres', 'seat_writer', 'someone_else'],
+      tables: [{ schema: 'app', table: 'widgets', columns: ['id', 'qty'] }],
+      acl: [
+        {
+          object: { schema: 'app', table: 'widgets', column: 'qty' },
+          grantee: 'seat_writer',
+          grantor: 'someone_else',
+          words: ['update'],
+        },
+      ],
+    });
+    await run(reconcileWithClient(fake, props, undefined));
+    expect(fake.statements.map((s) => s.text).filter(isWrite)).not.toContain(
+      'GRANT update ("qty") ON "app"."widgets" TO "seat_writer"',
+    );
+    expect(
+      fake.acl
+        .filter((entry) => entry.object.column === 'qty' && entry.grantee === 'seat_writer')
+        .map((entry) => entry.grantor),
+    ).toEqual(['someone_else']);
+  });
+});
+
+describe('removing a table restores the column grants its REVOKE clears', () => {
+  test('an out-of-band column grant survives dropping the table, in the same transaction', async () => {
+    const fake = makeFakeGrants({
+      schemas: ['app'],
+      roles: ['postgres', 'seat_writer'],
+      tables: [{ schema: 'app', table: 'widgets', columns: ['qty'] }],
+      acl: [
+        {
+          object: { schema: 'app' },
+          grantee: 'seat_writer',
+          grantor: 'postgres',
+          words: ['usage'],
+        },
+        {
+          object: { schema: 'app', table: 'widgets' },
+          grantee: 'seat_writer',
+          grantor: 'postgres',
+          words: ['select'],
+        },
+        {
+          object: { schema: 'app', table: 'widgets', column: 'qty' },
+          grantee: 'seat_writer',
+          grantor: 'postgres',
+          words: ['update'],
+        },
+      ],
+    });
+    const kept = await run(reconcileWithClient(fake, props, undefined));
+    const before = fake.transactions.length;
+    await run(reconcileWithClient(fake, { ...props, tables: [] }, kept));
+    const revoke = 'REVOKE ALL ON "app"."widgets" FROM "seat_writer"';
+    const grant = 'GRANT update ("qty") ON "app"."widgets" TO "seat_writer"';
+    expect(fake.transactions.slice(before)).toEqual([[revoke, grant]]);
+    const after = await run(readGrants(fake, 'app', 'seat_writer'));
+    expect(after.columns).toEqual([
+      { table: 'widgets', column: 'qty', role: ['update'], public: [], restorable: ['update'] },
+    ]);
+  });
+
+  test('the plan re-grants only restorable words, and not a column the update removed', () => {
+    const declared = resolveProps({ ...props, tables: [] });
+    const live = {
+      schemaExists: true,
+      schema: { role: ['usage'], public: [] },
+      tables: [{ table: 'widgets', relkind: 'r', role: ['select'], public: [] }],
+      columns: [
+        {
+          table: 'widgets',
+          column: 'qty',
+          role: ['update'],
+          public: [],
+          restorable: ['update'],
+        },
+        {
+          table: 'widgets',
+          column: 'id',
+          role: ['select'],
+          public: [],
+          restorable: ['select'],
+        },
+      ],
+      defaults: [],
+      schemaOwnedByRole: false,
+      ownedTables: [],
+    };
+    const removed = {
+      schema: 'app',
+      role: 'seat_writer',
+      tables: [{ table: 'widgets', privileges: [] as ReadonlyArray<string> }],
+      columns: [{ table: 'widgets', column: 'id', privileges: [] as ReadonlyArray<string> }],
+      defaults: [],
+    };
+    expect(planReconcile(declared, live, removed)).toEqual([
+      'REVOKE ALL ON "app"."widgets" FROM "seat_writer"',
+      'REVOKE ALL ("id") ON "app"."widgets" FROM "seat_writer"',
+      'GRANT update ("qty") ON "app"."widgets" TO "seat_writer"',
+    ]);
   });
 });

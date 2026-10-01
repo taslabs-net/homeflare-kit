@@ -6,7 +6,9 @@
 ## The per-seat shape (the example this family exists for)
 
 One seat, one group role, one schema it owns the keys to, and read-only sight of the
-shared ledger. The write half is OWNERSHIP, not ACL rows: the operator creates the
+shared ledger. The family connection may point at a maintenance database; each
+resource opens its `database` (`agents` below) and proves `current_database()` before
+writing. The write half is OWNERSHIP, not ACL rows: the operator creates the
 schema (and its tables) with the seat as owner, so the seat holds `CREATE` on the
 schema and every privilege on its own tables implicitly — this resource recognizes
 the catalogs' ownership facts (`pg_namespace.nspowner`, `pg_class.relowner`), records

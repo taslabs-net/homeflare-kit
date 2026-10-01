@@ -46,9 +46,11 @@ transport — only the statements differ.
   catalogs still show the role's words) before running the new declaration's plan, so
   taking an entry away takes the privilege away. PUBLIC is only ever cleared, only
   when `revokeFromPublic: true`, and never re-granted.
-- **The declaration's `database` must match the connection's.** Every statement runs in
-  the connected database; a mismatch is refused (`PostgresGrantsDatabaseMismatch`)
-  rather than silently granting in the wrong one.
+- **The declared database is opened, then proved.** The family connection points at a
+  maintenance database. `read` and `delete` probe `pg_database` there first: a database
+  that does not exist is absent (`read` returns nothing; `delete` is a no-op) instead of
+  a failed connect. When it exists, the handlers open it (`withPg`'s override) and refuse
+  unless `current_database()` is that name (`PostgresGrantsDatabaseMismatch`).
 
 ## Words, marks and letters
 
@@ -87,31 +89,28 @@ update ("col")` — one trailing column list binds only to the privilege it foll
   (gram.y@REL_18_6), so `GRANT select, update ("col")` would be a table-level grant of
   every word but the last; each word carries its own list, which puts all of them on the
   column and nothing on the relation.
-- **A table revoke re-grants the table's columns in the same pass:** the server's
-  table-level `REVOKE ALL` also clears the grantee's column entries on the table (measured
-  on PG 18.6) — every one of them, not only the columns the declaration names. So when a
-  table's privileges change, the plan re-grants the declared columns after the revoke, and
-  every column entry the declaration does NOT name is re-granted as it was read: a table
-  repair never strips a grant the declaration never mentioned. One pass converges.
+- **A table revoke re-grants the column entries it clears, in the same pass:** the
+  server's table-level `REVOKE ALL` also clears that grantee's column privileges
+  (revoke.sgml@REL_18_6) — including when the table is removed from the declaration.
+  Only entries the revoking role or the table's owner made are re-granted; a third
+  grantor's entry survives the revoke and is left as it was. Declared columns are
+  granted again after the revoke. One pass converges.
 - **Default privileges are per creator role:** `ALTER DEFAULT PRIVILEGES FOR ROLE …
 IN SCHEMA … GRANT … ON TABLES`, for future tables only (`defaclobjtype = 'r'`). A
   `forRole` is never inferred; every entry names the role whose future objects get the
   privileges.
-- **PUBLIC clearing is one-directional:** `revokeFromPublic: true` adds
+- **PUBLIC clearing is one-directional and schema-wide:** `revokeFromPublic: true` adds
   `REVOKE ALL ON SCHEMA … FROM PUBLIC` and `REVOKE ALL ON ALL TABLES IN SCHEMA … FROM
-PUBLIC` when live reads still show PUBLIC holding something. Live PUBLIC privileges
-  with the flag off are never drift; the attributes record the one-directional fact
+PUBLIC` when live reads still show PUBLIC holding something. That tables statement
+  clears PUBLIC on every table in the schema, including tables the declaration does not
+  name (and their column privileges — revoke.sgml@REL_18_6). Live PUBLIC privileges with
+  the flag off are never drift; the attributes record the one-directional fact
   (`publicSchemaRevoked`, `publicTablesRevoked`).
-- **Statements run one command at a time** (`grants-ops.ts`): every `REVOKE`/`GRANT`
-  is its own autocommitted command — the socket path's prepared-statement protocol
-  cannot carry several commands in one call, and the runner transport is one `psql`
-  process per statement — so nothing wraps a repair in `BEGIN…COMMIT` today. A live
-  grantee therefore briefly holds nothing on an object between that object's
-  `REVOKE ALL` and its `GRANT`, and a statement that fails mid-repair leaves the
-  earlier revokes applied. Both are bounded by the convergence proof: the persisted
-  declaration drives the next apply, which re-plans and heals; an atomic repair needs
-  a batch or transaction path on the shared transport, which the family does not
-  have yet.
+- **The repair's writes are one transaction.** Removal revokes and the new declaration's
+  grants are planned against one read and run in one `BEGIN`…`COMMIT` (`pg.transaction`):
+  one reserved connection on the socket, one `psql` script on the runner. A live grantee
+  does not observe the gap between a `REVOKE ALL` and the grants that restore it. The
+  convergence re-read runs after that commit.
 
 The diff is offline against persisted attributes (no live connection at plan time),
 so it answers `update` or `noop` and never previews live drift by itself; the exact
@@ -137,8 +136,9 @@ declaration named, via the same repair plan with every word list emptied: one
 for PUBLIC, nothing for objects the declaration never named, nothing for objects the
 declared role owns (an owner's implicit rights are not this resource's to revoke),
 never `CASCADE` (a revoke whose grantee re-granted onward surfaces as the server's own
-`2BP01`), a missing grantee or schema means there is nothing left to revoke and the
-delete is a no-op, and the delete proves its revokes landed the same way `reconcile`
+`2BP01`), a missing database (probed on the family connection), grantee or schema means
+there is nothing left to revoke and the delete is a no-op, and the delete proves its
+revokes landed the same way `reconcile`
 does — re-read, re-plan, refuse with `PostgresGrantsRepairRefused` when a grant the
 resource cannot revoke (a third grantor's, say) survives the pass.
 

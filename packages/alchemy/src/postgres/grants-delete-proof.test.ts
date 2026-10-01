@@ -11,15 +11,12 @@ import * as Effect from 'effect/Effect';
 import { makeFakeGrants } from './fake-grants-sql.ts';
 import { deleteWithClient, reconcileWithClient } from './grants-ops.ts';
 import { PostgresGrantsRepairRefused } from './grants-errors.ts';
-import type { PgContext } from './connection.ts';
 import type { PostgresGrantsProps } from './grants-attrs.ts';
 
 const run = <A, E>(eff: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(eff);
 const fails = <A, E>(eff: Effect.Effect<A, E>): Promise<E> => Effect.runPromise(Effect.flip(eff));
 
 const isWrite = (text: string): boolean => /^(GRANT|REVOKE|ALTER)/.test(text);
-
-const context: PgContext = { database: 'agents' };
 
 const baseProps: PostgresGrantsProps = {
   role: 'seat_writer',
@@ -47,19 +44,14 @@ describe('delete: the re-read proof', () => {
           tables: [{ table: 'widgets', privileges: ['select'] }],
         },
         undefined,
-        context,
       ),
     );
     const before = fake.statements.length;
     await run(
-      deleteWithClient(
-        fake,
-        {
-          ...baseProps,
-          tables: [{ table: 'widgets', privileges: ['select'] }],
-        },
-        context,
-      ),
+      deleteWithClient(fake, {
+        ...baseProps,
+        tables: [{ table: 'widgets', privileges: ['select'] }],
+      }),
     );
     // Only the revokes, no re-grant, no second-pass writes: the re-read found nothing.
     expect(
@@ -80,7 +72,6 @@ describe('delete: the re-read proof', () => {
         fake,
         { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] },
         undefined,
-        context,
       ),
     );
     // The competing grant lands after the converge (a third grantor grants while the seat
@@ -94,14 +85,10 @@ describe('delete: the re-read proof', () => {
     });
     const before = fake.statements.length;
     const error = await fails(
-      deleteWithClient(
-        fake,
-        {
-          ...baseProps,
-          tables: [{ table: 'widgets', privileges: ['select'] }],
-        },
-        context,
-      ),
+      deleteWithClient(fake, {
+        ...baseProps,
+        tables: [{ table: 'widgets', privileges: ['select'] }],
+      }),
     );
     expect(error).toBeInstanceOf(PostgresGrantsRepairRefused);
     // The third grantor's 'delete' survived the revoke, so the re-read still plans the

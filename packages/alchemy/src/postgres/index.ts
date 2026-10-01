@@ -108,6 +108,8 @@ export {
   PostgresGrantsRetargetRefused,
   PostgresGrantsRoleMissing,
   PostgresGrantsSchemaMissing,
+  PostgresGrantsTableMissing,
+  PostgresGrantsColumnMissing,
   type PostgresGrantsError,
 } from './grants-errors.ts';
 export type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts';

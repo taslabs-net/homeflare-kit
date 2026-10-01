@@ -34,6 +34,8 @@ export interface RecordedStatement {
 
 export interface FakeGrants extends PgExecutor {
   readonly statements: ReadonlyArray<RecordedStatement>;
+  /** Each `transaction` call, in order — the statement list that committed together. */
+  readonly transactions: ReadonlyArray<ReadonlyArray<string>>;
   /** Mutable on purpose: a test seeds a "competing" grant the same way `fake-sql.ts`'s
    * `databases` map is seeded before the reconcile ever runs. */
   readonly acl: AclEntry[];
@@ -53,9 +55,11 @@ export interface FakeGrantsOptions {
   readonly schemaOwner?: string;
   /** Seed grants, each carrying its own grantor (the third-grantor survival cases). */
   readonly acl?: ReadonlyArray<Omit<AclEntry, 'words'> & { readonly words: ReadonlyArray<string> }>;
-  /** The role the statements run AS — the grantor recorded on every write (default
-   * `postgres`, the owner the fixtures assume). */
+  /** The role the statements run AS — the grantor recorded on every write, and
+   * `current_user` on the column read (default `postgres`, the owner the fixtures assume). */
   readonly executor?: string;
+  /** What `current_database()` answers (default `agents`, the declaration the fixtures use). */
+  readonly connected?: string;
 }
 
 const failSql = (code: string, message: string, operation: string) =>
@@ -77,11 +81,13 @@ const sameObject = (a: AclObject, b: AclObject): boolean =>
 
 export const makeFakeGrants = (options: FakeGrantsOptions = {}): FakeGrants => {
   const statements: RecordedStatement[] = [];
+  const transactions: string[][] = [];
   const schemas = new Set(options.schemas ?? []);
   const roles = new Set(options.roles ?? []);
   const databases = new Set(options.databases ?? []);
   const tables = options.tables ?? [];
   const executor = options.executor ?? 'postgres';
+  const connected = options.connected ?? 'agents';
   const acl: AclEntry[] = (options.acl ?? []).map((seed) => ({ ...seed, words: [...seed.words] }));
 
   // The catalog as pg_class really holds it: relkind and owner per (schema, table), the
@@ -96,7 +102,18 @@ export const makeFakeGrants = (options: FakeGrantsOptions = {}): FakeGrants => {
   }
   const schemaOwners = new Map<string, string>();
   for (const schema of schemas) schemaOwners.set(schema, schemaOwner);
-  const model = { schemas, roles, databases, tables, acl, relkinds, tableOwners, schemaOwners };
+  const model = {
+    schemas,
+    roles,
+    databases,
+    tables,
+    acl,
+    relkinds,
+    tableOwners,
+    schemaOwners,
+    executor,
+    connected,
+  };
 
   const knownTable = (schema: string, table: string) =>
     tables.find((t) => t.schema === schema && t.table === table);
@@ -220,8 +237,9 @@ export const makeFakeGrants = (options: FakeGrantsOptions = {}): FakeGrants => {
 
   const transaction = (sqls: readonly string[]): Effect.Effect<void, SqlError> =>
     Effect.gen(function* () {
+      transactions.push([...sqls]);
       for (const sql of sqls) yield* unsafe(sql).pipe(Effect.asVoid);
     });
 
-  return { unsafe, transaction, statements, acl };
+  return { unsafe, transaction, statements, transactions, acl };
 };

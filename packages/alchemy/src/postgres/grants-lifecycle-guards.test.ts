@@ -12,7 +12,6 @@ import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import { makeFakeGrants } from './fake-grants-sql.ts';
 import { deleteWithClient, readWithClient, reconcileWithClient } from './grants-ops.ts';
-import type { PgContext } from './connection.ts';
 import type { PostgresGrantsAttributes, PostgresGrantsProps } from './grants-attrs.ts';
 import { PostgresGrantsDatabaseMismatch, PostgresGrantsRetargetRefused } from './grants-errors.ts';
 
@@ -20,9 +19,6 @@ const run = <A, E>(eff: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(ef
 const fails = <A, E>(eff: Effect.Effect<A, E>): Promise<E> => Effect.runPromise(Effect.flip(eff));
 
 const isWrite = (text: string): boolean => /^(GRANT|REVOKE|ALTER)/.test(text);
-
-const context: PgContext = { database: 'agents' };
-const wrongDb: PgContext = { database: 'other_db' };
 
 const baseProps: PostgresGrantsProps = {
   role: 'seat_writer',
@@ -72,7 +68,7 @@ describe('reconcile: objects the role owns are left alone', () => {
       ],
       columnGrants: [{ table: 'notes', column: 'id', privileges: ['select'] }],
     };
-    const attrs = await run(reconcileWithClient(fake, props, undefined, context));
+    const attrs = await run(reconcileWithClient(fake, props, undefined));
     // Only the NOT-owned table is repaired; the owned one records an empty word list and
     // its name in ownedTables (the owner holds everything implicitly, whatever the ACL says).
     expect(attrs.tables).toEqual([
@@ -91,7 +87,7 @@ describe('reconcile: objects the role owns are left alone', () => {
     // delete revokes the schema grant and `shared` only: stripping the owner's ACL would
     // strip rights that existed before this resource (the round-1 finding's empty relacl).
     const writesBefore = fake.statements.filter((s) => isWrite(s.text)).length;
-    await run(deleteWithClient(fake, props, context));
+    await run(deleteWithClient(fake, props));
     expect(writesOf(fake).slice(writesBefore)).toEqual([
       'REVOKE ALL ON SCHEMA "app" FROM "seat_writer"',
       'REVOKE ALL ON "app"."shared" FROM "seat_writer"',
@@ -106,29 +102,29 @@ describe('reconcile: objects the role owns are left alone', () => {
       tables: [{ schema: 'app', table: 'notes', owner: 'seat_writer' }],
     });
     const props: PostgresGrantsProps = { ...baseProps, schemaCreate: true };
-    const attrs = await run(reconcileWithClient(fake, props, undefined, context));
+    const attrs = await run(reconcileWithClient(fake, props, undefined));
     expect(attrs.schemaOwnedByRole).toBe(true);
     expect(attrs.schemaPrivileges).toEqual([]);
     // A revoke on the seat's own schema would leave it without USAGE on the very schema it
     // owns — the regression the round-1 review measured — so nothing runs at all.
     expect(writesOf(fake)).toEqual([]);
-    await run(deleteWithClient(fake, props, context));
+    await run(deleteWithClient(fake, props));
     expect(writesOf(fake)).toEqual([]);
   });
 });
 
-describe('the connected database must be the declared one', () => {
-  test('reconcile, read and delete each refuse before any statement', async () => {
-    const fake = makeFakeGrants(ownedCatalog);
+describe('current_database() must be the declared database', () => {
+  test('reconcile, read and delete each refuse before any write', async () => {
+    const fake = makeFakeGrants({ ...ownedCatalog, connected: 'other_db' });
     const reconcileError = await fails(
       reconcileWithClient(
         fake,
         { ...baseProps, tables: [{ table: 'shared', privileges: ['select'] }] },
         undefined,
-        wrongDb,
       ),
     );
     expect(reconcileError).toBeInstanceOf(PostgresGrantsDatabaseMismatch);
+    expect((reconcileError as PostgresGrantsDatabaseMismatch).connected).toBe('other_db');
     const readError = await fails(
       readWithClient(
         fake,
@@ -140,16 +136,14 @@ describe('the connected database must be the declared one', () => {
           columns: [],
           defaults: [],
         },
-        wrongDb,
         false,
       ),
     );
     expect(readError).toBeInstanceOf(PostgresGrantsDatabaseMismatch);
-    const deleteError = await fails(deleteWithClient(fake, baseProps, wrongDb));
+    const deleteError = await fails(deleteWithClient(fake, baseProps));
     expect(deleteError).toBeInstanceOf(PostgresGrantsDatabaseMismatch);
-    // Reconcile and read refuse before touching the server. Delete now issues a single
-    // pg_database existence probe so it can stay idempotent when the database was dropped.
     expect(fake.statements.map((s) => s.text).filter(isWrite)).toEqual([]);
+    expect(fake.statements.some((s) => s.text.startsWith('SELECT current_database()'))).toBe(true);
   });
 });
 
@@ -170,7 +164,7 @@ describe('reconcile: the retarget guard cannot be bypassed by an unresolved plan
       ['schema', applied({ schema: 'other_schema' })],
     ];
     for (const [prop, output] of variants) {
-      const error = await fails(reconcileWithClient(fake, props, output, context));
+      const error = await fails(reconcileWithClient(fake, props, output));
       expect(error, prop).toBeInstanceOf(PostgresGrantsRetargetRefused);
       expect((error as PostgresGrantsRetargetRefused).prop).toBe(prop);
     }
@@ -182,11 +176,10 @@ describe('delete: a no-op when the target is gone or holds nothing', () => {
   test('writes nothing when the grantee role no longer exists', async () => {
     const fake = makeFakeGrants({ ...ownedCatalog, roles: [] });
     await run(
-      deleteWithClient(
-        fake,
-        { ...baseProps, tables: [{ table: 'shared', privileges: ['select'] }] },
-        context,
-      ),
+      deleteWithClient(fake, {
+        ...baseProps,
+        tables: [{ table: 'shared', privileges: ['select'] }],
+      }),
     );
     expect(fake.statements.filter((s) => isWrite(s.text))).toEqual([]);
   });
@@ -194,11 +187,10 @@ describe('delete: a no-op when the target is gone or holds nothing', () => {
   test('writes nothing when the schema no longer exists', async () => {
     const fake = makeFakeGrants({ ...ownedCatalog, schemas: [] });
     await run(
-      deleteWithClient(
-        fake,
-        { ...baseProps, tables: [{ table: 'shared', privileges: ['select'] }] },
-        context,
-      ),
+      deleteWithClient(fake, {
+        ...baseProps,
+        tables: [{ table: 'shared', privileges: ['select'] }],
+      }),
     );
     expect(fake.statements.filter((s) => isWrite(s.text))).toEqual([]);
   });
@@ -206,11 +198,10 @@ describe('delete: a no-op when the target is gone or holds nothing', () => {
   test('writes nothing when the target holds no grants (the idempotent re-delete)', async () => {
     const fake = makeFakeGrants(ownedCatalog);
     await run(
-      deleteWithClient(
-        fake,
-        { ...baseProps, tables: [{ table: 'shared', privileges: ['select'] }] },
-        context,
-      ),
+      deleteWithClient(fake, {
+        ...baseProps,
+        tables: [{ table: 'shared', privileges: ['select'] }],
+      }),
     );
     expect(fake.statements.filter((s) => isWrite(s.text))).toEqual([]);
   });

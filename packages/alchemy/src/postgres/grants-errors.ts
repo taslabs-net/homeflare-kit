@@ -85,9 +85,10 @@ export class PostgresGrantsRetargetRefused extends Data.TaggedError(
   }
 }
 
-/** The declaration's `database` differs from the database the provider's connection actually
- * opened. Every statement this family issues runs in the CONNECTION's database; granting in
- * the wrong one would succeed silently and read back as drift forever. */
+/** `current_database()` is not the database the declaration names. The handlers open the
+ * declared database (`withPg`'s override — the family connection stays on the maintenance
+ * database); this fires when that open did not land there. Granting in the wrong database
+ * would succeed silently and read back as drift forever. */
 export class PostgresGrantsDatabaseMismatch extends Data.TaggedError(
   'PostgresGrantsDatabaseMismatch',
 )<{
@@ -96,9 +97,9 @@ export class PostgresGrantsDatabaseMismatch extends Data.TaggedError(
 }> {
   override get message(): string {
     return (
-      `Postgres.Grants: the declaration names database "${this.declared}" but the provider's ` +
-      `connection opened "${this.connected}". Every GRANT/REVOKE runs in the connected database — ` +
-      'fix the declaration or point the providers layer at the database the grants belong to.'
+      `Postgres.Grants: the declaration names database "${this.declared}" but ` +
+      `current_database() is "${this.connected}". The handlers open the declared database and ` +
+      'prove it before any GRANT or REVOKE — a mismatch means that open did not land there.'
     );
   }
 }

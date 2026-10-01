@@ -1,26 +1,20 @@
 /**
  * Existence guards: every declared table and column must exist before any statement runs.
  * Missing objects fail typed `PostgresGrantsTableMissing` / `PostgresGrantsColumnMissing`
- * without touching catalogs, and a dropped database makes `delete` idempotent.
+ * without touching catalogs. A dotted table name must not collide with a dotted column
+ * name: the existence query compares the pair, not `relname || '.' || attname`.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import type { PostgresGrantsProps } from './grants-attrs.ts';
-import type { PgContext } from './connection.ts';
 import { makeFakeGrants } from './fake-grants-sql.ts';
-import {
-  PostgresGrantsColumnMissing,
-  PostgresGrantsDatabaseMismatch,
-  PostgresGrantsTableMissing,
-} from './grants-errors.ts';
-import { deleteWithClient, reconcileWithClient } from './grants-ops.ts';
+import { PostgresGrantsColumnMissing, PostgresGrantsTableMissing } from './grants-errors.ts';
+import { reconcileWithClient } from './grants-ops.ts';
 
 const run = <A, E>(eff: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(eff);
 const fails = <A, E>(eff: Effect.Effect<A, E>): Promise<E> => Effect.runPromise(Effect.flip(eff));
 
 const isWrite = (text: string): boolean => /^(GRANT|REVOKE|ALTER)/.test(text);
-
-const context: PgContext = { database: 'agents' };
 
 const catalog = {
   schemas: ['app'],
@@ -49,7 +43,6 @@ describe('reconcile: declared objects must exist before statements run', () => {
           ],
         },
         undefined,
-        context,
       ),
     );
     expect(error).toBeInstanceOf(PostgresGrantsTableMissing);
@@ -68,7 +61,6 @@ describe('reconcile: declared objects must exist before statements run', () => {
           columnGrants: [{ table: 'widgets', column: 'qty', privileges: ['update'] }],
         },
         undefined,
-        context,
       ),
     );
     expect(error).toBeInstanceOf(PostgresGrantsColumnMissing);
@@ -87,35 +79,35 @@ describe('reconcile: declared objects must exist before statements run', () => {
           columnGrants: [{ table: 'widgets', column: 'id', privileges: ['update'] }],
         },
         undefined,
-        context,
       ),
     );
     expect(fake.statements.map((s) => s.text).some(isWrite)).toBe(true);
   });
 });
 
-describe('delete: idempotent when the database was dropped', () => {
-  test('a missing declared database is a silent no-op', async () => {
-    const fake = makeFakeGrants(catalog);
-    await run(
-      deleteWithClient(
-        fake,
-        { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] },
-        { database: 'postgres' },
-      ),
-    );
-    expect(fake.statements.map((s) => s.text).filter(isWrite)).toEqual([]);
-  });
-
-  test('a present but mismatched database still fails', async () => {
-    const fake = makeFakeGrants({ ...catalog, databases: ['agents'] });
+describe('column existence compares the (table, column) pair', () => {
+  test('table `a.b` column `c` does not make table `a` column `b.c` look present', async () => {
+    const fake = makeFakeGrants({
+      ...catalog,
+      tables: [
+        { schema: 'app', table: 'a.b', columns: ['c'] },
+        { schema: 'app', table: 'a', columns: ['id'] },
+      ],
+    });
     const error = await fails(
-      deleteWithClient(
+      reconcileWithClient(
         fake,
-        { ...baseProps, tables: [{ table: 'widgets', privileges: ['select'] }] },
-        { database: 'postgres' },
+        {
+          ...baseProps,
+          tables: [{ table: 'a', privileges: ['select'] }],
+          columnGrants: [{ table: 'a', column: 'b.c', privileges: ['select'] }],
+        },
+        undefined,
       ),
     );
-    expect(error).toBeInstanceOf(PostgresGrantsDatabaseMismatch);
+    expect(error).toBeInstanceOf(PostgresGrantsColumnMissing);
+    expect((error as PostgresGrantsColumnMissing).table).toBe('a');
+    expect((error as PostgresGrantsColumnMissing).column).toBe('b.c');
+    expect(fake.statements.map((s) => s.text).filter(isWrite)).toEqual([]);
   });
 });

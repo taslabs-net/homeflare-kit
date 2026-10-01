@@ -43,6 +43,10 @@ export interface FakeGrantsModel {
   readonly relkinds: ReadonlyMap<string, string>;
   readonly tableOwners: ReadonlyMap<string, string>;
   readonly schemaOwners: ReadonlyMap<string, string>;
+  /** `current_user` — the grantor a write records, and the revoker the column read reports. */
+  readonly executor: string;
+  /** What `SELECT current_database()` answers. */
+  readonly connected: string;
 }
 
 const aclShapeRow = (marked: string): { privilege: string; grantable: boolean } => ({
@@ -96,33 +100,42 @@ export const answerRead = <A extends object>(
       (databases.has(params[0] as string) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
     );
   }
+  if (text.startsWith('SELECT current_database()')) {
+    return Effect.succeed([{ database: model.connected }] as unknown as ReadonlyArray<A>);
+  }
+
+  const jsonNames = (value: unknown): unknown => {
+    if (typeof value !== 'string') {
+      throw new Error(
+        `fake-grants-read: existence param must be a JSON string, got ${typeof value}`,
+      );
+    }
+    return JSON.parse(value) as unknown;
+  };
 
   const [schema, role] = [params[0] as string, params[1] as string];
   if (
     text.includes('c.relname AS table') &&
     text.includes('pg_class c') &&
-    text.includes('= ANY($2)') &&
+    text.includes('json_array_elements_text') &&
     !text.includes('pg_attribute')
   ) {
-    const want = new Set(params[1] as ReadonlyArray<string>);
+    const want = new Set(jsonNames(params[1]) as ReadonlyArray<string>);
     return Effect.succeed(
       tables
         .filter((t) => t.schema === schema && want.has(t.table))
         .map((t) => ({ table: t.table })) as unknown as ReadonlyArray<A>,
     );
   }
-  if (
-    text.includes('a.attname AS column') &&
-    text.includes('pg_attribute a') &&
-    text.includes('= ANY($2)')
-  ) {
-    const want = new Set(params[1] as ReadonlyArray<string>);
+  if (text.includes('a.attname AS column') && text.includes('json_array_elements($2::json)')) {
+    const pairs = jsonNames(params[1]) as ReadonlyArray<readonly [string, string]>;
+    const want = new Set(pairs.map(([table, column]) => `${table}\u0000${column}`));
     return Effect.succeed(
       tables
         .filter((t) => t.schema === schema)
         .flatMap((t) =>
           (t.columns ?? [])
-            .filter((c) => want.has(`${t.table}.${c}`))
+            .filter((c) => want.has(`${t.table}\u0000${c}`))
             .map((c) => ({ table: t.table, column: c })),
         ) as unknown as ReadonlyArray<A>,
     );
@@ -180,6 +193,11 @@ export const answerRead = <A extends object>(
           table: entry.object.table,
           column: entry.object.column,
           public: entry.grantee === 'PUBLIC',
+          grantor: entry.grantor,
+          owner:
+            model.tableOwners.get(`${entry.object.schema}\u0000${entry.object.table ?? ''}`) ??
+            model.executor,
+          revoker: model.executor,
           ...aclShapeRow(marked),
         }),
       ) as unknown as ReadonlyArray<A>,

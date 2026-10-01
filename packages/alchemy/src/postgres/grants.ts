@@ -32,8 +32,9 @@ import {
   readWithClient,
   reconcileWithClient,
 } from './grants-ops.ts';
-import type { PgContext, PostgresConnection } from './connection.ts';
+import type { PostgresConnection } from './connection.ts';
 import { withPg } from './connection.ts';
+import { databaseExists } from './database-sql.ts';
 
 export interface PostgresGrants extends Resource<
   'Postgres.Grants',
@@ -66,8 +67,14 @@ export const postgresGrantsHandlers = PostgresGrants.Provider.of({
     Effect.gen(function* () {
       const names =
         output !== undefined ? namesFromAttrs(output) : declaredNames(resolveProps(olds));
-      const live = yield* withPg((pg, context) =>
-        readWithClient(pg, names, context, output !== undefined),
+      // Probe over the FAMILY connection. Opening a database that does not exist yet
+      // fails untyped (`ConnectionError` over psql, `UnknownError` 3D000 over the socket);
+      // absence is a first create, the same rule `Postgres.Schema` uses.
+      const present = yield* withPg((pg) => databaseExists(pg, names.database));
+      if (!present) return undefined;
+      const live = yield* withPg(
+        (pg) => readWithClient(pg, names, output !== undefined),
+        names.database,
       );
       return live === undefined ? undefined : Unowned(live);
     }),
@@ -75,9 +82,17 @@ export const postgresGrantsHandlers = PostgresGrants.Provider.of({
   diff: ({ news, output }) => diffPostgresGrants(news, output),
 
   reconcile: ({ news, output }) =>
-    withPg((pg, context: PgContext) => reconcileWithClient(pg, news, output, context)),
+    withPg((pg) => reconcileWithClient(pg, news, output), news.database),
 
-  delete: ({ olds }) => withPg((pg, context) => deleteWithClient(pg, olds, context)),
+  delete: ({ olds }) =>
+    Effect.gen(function* () {
+      // Same missing-database rule as `read`: the probe stays on the family connection,
+      // so a dropped database never becomes a connect failure. `deleteWithClient` then
+      // proves `current_database()` on the declared database.
+      const present = yield* withPg((pg) => databaseExists(pg, olds.database));
+      if (!present) return;
+      return yield* withPg((pg) => deleteWithClient(pg, olds), olds.database);
+    }),
 });
 
 export const PostgresGrantsProvider = () =>

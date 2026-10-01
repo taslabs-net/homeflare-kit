@@ -130,13 +130,21 @@ export const readTableAcls = (
  * read so `revokeFromPublic` converges on them too: `REVOKE ALL ON ALL TABLES IN SCHEMA`
  * clears them in the same statement, but only grants made by the revoking role or by the
  * owner (which holds every grant option) — a third grantor's grant would otherwise survive
- * past a repair with nothing re-read to notice it. */
+ * past a repair with nothing re-read to notice it.
+ *
+ * `grantor` is selected for the same rule on a table-level `REVOKE ALL` (revoke.sgml@REL_18_6:
+ * a role revokes only what it granted; a superuser's REVOKE is performed as the owner).
+ * `restorable` is those words — the collateral re-grant restores them and leaves a third
+ * grantor's entry where the revoke left it, instead of adding an owner grant on top. */
 const COLUMNS_SQL = `SELECT
     c.relname AS table,
     v.attname AS column,
     a.grantee = 0 AS public,
     a.privilege_type AS privilege,
-    a.is_grantable AS grantable
+    a.is_grantable AS grantable,
+    pg_get_userbyid(a.grantor) AS grantor,
+    pg_get_userbyid(c.relowner) AS owner,
+    current_user AS revoker
   FROM pg_attribute v
   JOIN pg_class c ON c.oid = v.attrelid
   CROSS JOIN LATERAL aclexplode(v.attacl) AS a
@@ -151,6 +159,9 @@ export interface LiveColumn {
   readonly column: string;
   readonly role: ReadonlyArray<string>;
   readonly public: ReadonlyArray<string>;
+  /** Role words granted by `current_user` or by the relation owner — what a table
+   * `REVOKE ALL` from this session clears. */
+  readonly restorable: ReadonlyArray<string>;
 }
 
 export const readColumnAcls = (
@@ -159,16 +170,28 @@ export const readColumnAcls = (
   role: string,
 ): Effect.Effect<ReadonlyArray<LiveColumn>, SqlError> =>
   Effect.map(
-    pg.unsafe<AclRow & { readonly table: string; readonly column: string }>(COLUMNS_SQL, [
-      schema,
-      role,
-    ]),
+    pg.unsafe<
+      AclRow & {
+        readonly table: string;
+        readonly column: string;
+        readonly grantor: string;
+        readonly owner: string;
+        readonly revoker: string;
+      }
+    >(COLUMNS_SQL, [schema, role]),
     (rows) => {
-      const byColumn = new Map<string, { role: string[]; public: string[] }>();
+      const byColumn = new Map<
+        string,
+        { role: string[]; public: string[]; restorable: string[] }
+      >();
       for (const row of rows) {
         const key = `${row.table}\u0000${row.column}`;
-        const entry = byColumn.get(key) ?? { role: [], public: [] };
-        entry[row.public ? 'public' : 'role'].push(encodeWord(row));
+        const entry = byColumn.get(key) ?? { role: [], public: [], restorable: [] };
+        const word = encodeWord(row);
+        entry[row.public ? 'public' : 'role'].push(word);
+        if (!row.public && (row.grantor === row.revoker || row.grantor === row.owner)) {
+          entry.restorable.push(word);
+        }
         byColumn.set(key, entry);
       }
       return [...byColumn.entries()]
@@ -179,6 +202,7 @@ export const readColumnAcls = (
             column: column as string,
             role: [...new Set(entry.role)].sort(),
             public: [...new Set(entry.public)].sort(),
+            restorable: [...new Set(entry.restorable)].sort(),
           };
         })
         .sort((a, b) => a.table.localeCompare(b.table) || a.column.localeCompare(b.column));
