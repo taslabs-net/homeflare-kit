@@ -144,7 +144,10 @@ export const keyHandlers = {
       // beta.79 Provider.ts:274-289 permits effectful diff, and Plan.ts:1503-1527 calls it
       // even for unchanged props. Refuse an immutable value mismatch before a false noop.
       if (hasKeyValue(news.key)) {
-        yield* verifyKeyValue(news.keyAlias, news.key, yield* readKeyToken(news.keyAlias));
+        const token = yield* readKeyToken(news.keyAlias);
+        // A dashboard deletion leaves stale output: recreate even without a settings change.
+        if (token === undefined) return { action: 'update' } as const;
+        yield* verifyKeyValue(news.keyAlias, news.key, token);
       }
       return differing(output, news).length === 0
         ? ({ action: 'noop' } as const)
@@ -176,7 +179,7 @@ export const keyHandlers = {
         //   is written about a mismatch (`/key/update` cannot change a key's value). No `key` declared
         //   means no extra read: `readKeyToken` is a `/key/list`, and an omitted value is never held.
         if (hasKeyValue(news.key)) {
-          yield* verifyKeyValue(alias, news.key, yield* readKeyToken(alias));
+          yield* verifyKeyValue(alias, news.key, (yield* readKeyToken(alias)) ?? null);
         }
         yield* refuseMetadata(news, before);
         if (differing(before, news).length > 0) yield* updateKey(updateBody(news, before));

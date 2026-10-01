@@ -90,13 +90,14 @@ const findKeyRowByAlias = (keyAlias: string) =>
   );
 
 /**
- * The row's `token` (the vendor's sha256 of the key), or `null` when the row carries none. Read
- * only for the in-memory mismatch check (`verifyKeyValue`); the hash is never persisted.
+ * The row's `token` (the vendor's sha256 of the key), `null` when the row carries none, or
+ * `undefined` when the alias is absent. Absence must plan recreation, not a value mismatch.
+ * Read only for the in-memory mismatch check (`verifyKeyValue`); the hash is never persisted.
  */
 export const readKeyToken = (
   keyAlias: string,
 ): Effect.Effect<
-  string | null,
+  string | null | undefined,
   | keys.ListKeysKeyListGetError
   | LitellmKeyUnreadableError
   | LitellmKeyAmbiguousAliasError
@@ -106,7 +107,9 @@ export const readKeyToken = (
   keyAlias.trim() === ''
     ? Effect.fail(new LitellmKeyAliasEmptyError())
     : findKeyRowByAlias(keyAlias).pipe(
-        Effect.map((row) => (typeof row?.['token'] === 'string' ? (row['token'] as string) : null)),
+        Effect.map((row) =>
+          row === undefined ? undefined : typeof row['token'] === 'string' ? row['token'] : null,
+        ),
       );
 
 /**

@@ -53,6 +53,7 @@ import {
   updateCredential,
 } from './credential-operations.ts';
 import type { CredentialAttributes, CredentialProps } from './credential-types.ts';
+import { rewriteCredential } from './credential-rewrite.ts';
 import { requireValues, resolveValues, sealValues, valuesState } from './credential-values.ts';
 
 export type { CredentialAttributes, CredentialProps };
@@ -173,8 +174,7 @@ export const credentialHandlers = {
         const valuesStale = valuesState(news, sealed) === 'stale';
         if (removed.length > 0) {
           yield* requireValues(news, resolved);
-          yield* deleteCredential(news.credentialName);
-          yield* createCredential(createBody(news, resolved));
+          yield* rewriteCredential(createBody(news, resolved));
           sealed = sealValues(resolved.values);
         } else if (infoDrift || valuesStale) {
           if (valuesStale) yield* requireValues(news, resolved);

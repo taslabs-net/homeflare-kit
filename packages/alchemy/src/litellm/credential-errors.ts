@@ -151,6 +151,23 @@ export class LitellmCredentialNotConvergedError extends Data.TaggedError(
   }
 }
 
+/** A rewrite deleted the old row before its POST failed. Keep only the failure tag. */
+export class LitellmCredentialRewriteError extends Data.TaggedError(
+  'LitellmCredentialRewriteError',
+)<{
+  readonly credentialName: string;
+  readonly reason: string;
+}> {
+  override get message(): string {
+    return (
+      `LiteLLM.Credential "${this.credentialName}": DELETE already ran, but the replacement ` +
+      `POST failed (${this.reason}). The next deploy recreates the row if absent; keep all ` +
+      'declared credential variables set. If the POST landed despite the failure, the next ' +
+      'deploy reads and reconciles that row.'
+    );
+  }
+}
+
 export type CredentialError =
   | credentials.CreateCredentialCredentialsPostError
   | credentials.GetCredentialByNameCredentialsByNameCredentialNameGetError
@@ -158,6 +175,7 @@ export type CredentialError =
   | credentials.DeleteCredentialCredentialsCredentialNameDeleteError
   | LitellmCredentialInvalidError
   | LitellmCredentialTransportError
+  | LitellmCredentialRewriteError
   | LitellmCredentialDebugLoggingError
   | LitellmCredentialEnvUnsetError
   | LitellmCredentialUnreadableError
