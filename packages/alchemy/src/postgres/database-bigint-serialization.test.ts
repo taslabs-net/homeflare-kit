@@ -90,6 +90,7 @@ const wireAccuratePg = (seed?: {
         }
         throw new Error(`wireAccuratePg: unrecognised statement: ${text}`);
       }) as Effect.Effect<ReadonlyArray<A>, SqlError>,
+    transaction: () => Effect.void,
   };
 };
 

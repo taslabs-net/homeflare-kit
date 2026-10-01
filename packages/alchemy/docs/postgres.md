@@ -142,18 +142,23 @@ rule; the consuming stack's runner does.
 - `CREATE DATABASE … TEMPLATE "template0"` is the runner default (`template` overrides):
   CT100's `template1` is ParadeDB's and would copy postgis/pg_ivm/paradedb objects. The socket
   path adds no `TEMPLATE` clause, unchanged.
-- Not covered: there is no `Postgres.Role` resource in the kit yet, so the owner role must
-  exist (`PostgresDatabaseOwnerMissing` otherwise). NetBox's 11 lost triggers on `pg_restore`
-  are a restore concern, out of this resource's scope.
+- `Postgres.Role` (`docs/postgres-role.md`) manages the roles themselves — declare the owner
+  role with it before `Postgres.Database` adopts a database it owns. NetBox's 11 lost triggers
+  on `pg_restore` are a restore concern, out of this resource's scope.
+
+`Postgres.Schema` ([postgres-schema.md](./postgres-schema.md)) rides the same two transports —
+`postgresProviders` and `postgresRunnerProviders` both merge its provider alongside
+`Postgres.Database`'s, so one connection serves the family. Schema opens its own declared
+`database` on that connection (`withPg`'s database override) rather than the family's
+maintenance database, proven per statement via `current_database()`.
 
 ## `Postgres.Grants` (2026-09-30)
 
-The second resource on the same runner transport: one declarative grant set for one role
-in one schema of one database — schema `USAGE`/`CREATE`, per-table, per-column and
-default privileges for future tables, and an optional clear of PUBLIC — computed as a
-diff against the catalogs through `aclexplode` so a re-run with nothing changed writes
-nothing and drift is repaired. See `docs/postgres-grants.md` for the vocabularies (pinned
-against `acl.h` and `grant.sgml` at `REL_18_6`), the convergence proof, and the refusal
-surface; the per-seat worked example (a seat group role that writes its own schema in
-`agents` and selects only from the shared ledger view) lives in
-`docs/postgres-grants-example.md`.
+A second resource on the same runner transport: one declarative grant set for one role in one
+schema of one database — schema `USAGE`/`CREATE`, per-table privileges, per-column privileges,
+default privileges for future tables, optional clearing of PUBLIC — computed as a diff against
+the catalogs through `aclexplode` so a re-run with nothing changed writes nothing and drift is
+repaired. See `docs/postgres-grants.md` for the vocabulary (pinned against `acl.h` and
+`grant.sgml` at `REL_18_6`), the convergence proof, and the refusal surface; a per-seat
+worked example (the `agents` group role writes its own schema and selects only from the
+shared ledger view) lives in `docs/postgres-grants-example.md`.

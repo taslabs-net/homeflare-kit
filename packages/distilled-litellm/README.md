@@ -36,6 +36,9 @@ re-measured against v1.103.0: every patched status is still raised, only the
 lines moved; see `../../litellm/docs/errors.md` and
 `../../litellm/docs/patch-reverification.md` in the distilled clone for the
 full account).
+`POST /key/delete` also types its 404 and 403 as resource-specific tags, `KeyNotFound` (message
+`No keys found`) and `KeyDeleteForbidden` (message `not authorized to delete this key`), each matched
+on the status and that phrase of LiteLLM's own message (`patches/key_management/delete_key_fn_key_delete_post.json`).
 `GenerateKeyResponse.key` and `NewUserResponse.key` — the literal virtual-key
 value `/key/generate`, `/key/regenerate` and `/user/new` return — decode to
 `Redacted.Redacted<string>` rather than a plain `string`.

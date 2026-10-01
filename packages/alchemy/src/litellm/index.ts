@@ -39,6 +39,21 @@ export {
   LitellmBudgetUnreadableError,
 } from './budget-errors.ts';
 export {
+  LiteLLMCredential,
+  LiteLLMCredentialProvider,
+  isLiteLLMCredential,
+  type CredentialAttributes,
+  type CredentialError,
+  type CredentialProps,
+} from './credential.ts';
+export {
+  LitellmCredentialAbsentAfterWriteError,
+  LitellmCredentialEnvUnsetError,
+  LitellmCredentialInvalidError,
+  LitellmCredentialNotConvergedError,
+  LitellmCredentialUnreadableError,
+} from './credential-errors.ts';
+export {
   LiteLLMMCPServer,
   LiteLLMMCPServerProvider,
   isLiteLLMMCPServer,
@@ -56,4 +71,93 @@ export {
   LitellmMcpServerUnreadableError,
 } from './mcp-server-errors.ts';
 export type { McpAuthType, McpStaticAuthType, McpTransport } from './mcp-server-types.ts';
+export {
+  LiteLLMAccessGroup,
+  LiteLLMAccessGroupProvider,
+  isLiteLLMAccessGroup,
+  type AccessGroupAttributes,
+  type AccessGroupError,
+  type AccessGroupProps,
+} from './access-group.ts';
+export {
+  LiteLLMPolicyAttachment,
+  LiteLLMPolicyAttachmentProvider,
+  isLiteLLMPolicyAttachment,
+  type PolicyAttachmentAttributes,
+  type PolicyAttachmentError,
+  type PolicyAttachmentProps,
+} from './policy-attachment.ts';
+export {
+  LiteLLMPolicy,
+  LiteLLMPolicyProvider,
+  isLiteLLMPolicy,
+  type PolicyAttributes,
+  type PolicyError,
+  type PolicyProps,
+} from './policy.ts';
+export {
+  LiteLLMTeam,
+  LiteLLMTeamProvider,
+  isLiteLLMTeam,
+  type TeamAttributes,
+  type TeamError,
+  type TeamMember,
+  type TeamMemberAttributes,
+  type TeamObjectPermission,
+  type TeamObjectPermissionAttributes,
+  type TeamProps,
+} from './team.ts';
+export {
+  LiteLLMToolPolicy,
+  LiteLLMToolPolicyProvider,
+  isLiteLLMToolPolicy,
+  type ToolInputPolicy,
+  type ToolOutputPolicy,
+  type ToolPolicyAttributes,
+  type ToolPolicyError,
+  type ToolPolicyProps,
+} from './tool-policy.ts';
+export {
+  LiteLLMToolset,
+  LiteLLMToolsetProvider,
+  isLiteLLMToolset,
+  type ToolsetAttributes,
+  type ToolsetError,
+  type ToolsetProps,
+} from './toolset.ts';
+export type { ToolsetTool } from './toolset-types.ts';
+export {
+  LitellmRegistryAbsentAfterWriteError,
+  LitellmRegistryAmbiguousError,
+  LitellmRegistryInvalidError,
+  LitellmRegistryNotConvergedError,
+  LitellmRegistryUnreadableError,
+  type RegistryError,
+} from './registry-errors.ts';
+export {
+  LiteLLMKey,
+  LiteLLMKeyProvider,
+  isLiteLLMKey,
+  type KeyAttributes,
+  type KeyError,
+  type KeyProps,
+} from './key.ts';
+export {
+  LitellmKeyAbsentAfterWriteError,
+  LitellmKeyAliasChangedError,
+  LitellmKeyAliasEmptyError,
+  LitellmKeyDebugLoggingError,
+  LitellmKeyAmbiguousAliasError,
+  LitellmKeyFieldNotAppliedError,
+  LitellmKeyTransportError,
+  LitellmKeyUnreadableError,
+  LitellmKeyValueMalformedError,
+  LitellmKeyValueMissingError,
+  LitellmKeyValueNotHonouredError,
+  LitellmKeyValueRequiredError,
+} from './key-errors.ts';
+export {
+  LitellmKeyCallbackMetadataDeclaredError,
+  LitellmKeyCallbackMetadataLiveError,
+} from './key-metadata-errors.ts';
 export { litellmProviders } from './providers.ts';

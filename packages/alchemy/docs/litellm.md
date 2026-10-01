@@ -16,14 +16,22 @@ against the tag's committed `schema.d.ts`; NOT a live read, because the referenc
 Measured at 1.100.0 (`schema.prisma`, `pass_through_endpoints.py`, and the mini's own
 `settings.yaml` `store_model_in_db: true`):
 
-| Family                                                                                                  | Managed by this resource?                                        |
-| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Pass-through endpoints                                                                                  | Yes — this package                                               |
-| Budgets (`/budget/*`)                                                                                   | Yes — `LiteLLM.Budget`, [litellm-budget.md](./litellm-budget.md) |
-| MCP servers (`/v1/mcp/server`)                                                                          | Yes — `LiteLLM.MCPServer`, [litellm-mcp.md](./litellm-mcp.md)    |
-| Models, virtual keys, teams, credentials, access groups                                                 | DB-backed, API-managed, but no kit resource yet                  |
-| `router_settings`, `litellm_settings`, `general_settings.master_key`/`database_url`/`store_model_in_db` | config-file only — read-only through the API                     |
-| A `config.yaml` pass-through entry (`is_from_config: true`)                                             | Read-only through this resource — see Refusals                   |
+| Family                                                                                                  | Managed by this resource?                                                                        |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Pass-through endpoints                                                                                  | Yes — this package                                                                               |
+| Budgets (`/budget/*`)                                                                                   | Yes — `LiteLLM.Budget`, [litellm-budget.md](./litellm-budget.md)                                 |
+| MCP servers (`/v1/mcp/server`)                                                                          | Yes — `LiteLLM.MCPServer`, [litellm-mcp.md](./litellm-mcp.md)                                    |
+| Teams (`/team/*`)                                                                                       | Yes — `LiteLLM.Team`, [litellm-team.md](./litellm-team.md)                                       |
+| Unified access groups (`/v1/unified_access_group`)                                                      | Yes — `LiteLLM.AccessGroup`, [litellm-access-group.md](./litellm-access-group.md)                |
+| MCP toolsets (`/v1/mcp/toolset`)                                                                        | Yes — `LiteLLM.Toolset`, [litellm-toolset.md](./litellm-toolset.md)                              |
+| Guardrail policies (`/policies`)                                                                        | Yes — `LiteLLM.Policy`, [litellm-policy.md](./litellm-policy.md)                                 |
+| Policy attachments (`/policies/attachments`)                                                            | Yes — `LiteLLM.PolicyAttachment`, [litellm-policy-attachment.md](./litellm-policy-attachment.md) |
+| Tool policies (`/v1/tool/policy`)                                                                       | Yes — `LiteLLM.ToolPolicy`, [litellm-tool-policy.md](./litellm-tool-policy.md)                   |
+| Virtual keys (`/key/*`)                                                                                 | Yes — `LiteLLM.Key`, [litellm-key.md](./litellm-key.md)                                          |
+| Models                                                                                                  | DB-backed, API-managed, but no kit resource yet                                                  |
+| Credentials (`/credentials/*`)                                                                          | Yes — `LiteLLM.Credential`, [litellm-credential.md](./litellm-credential.md)                     |
+| `router_settings`, `litellm_settings`, `general_settings.master_key`/`database_url`/`store_model_in_db` | config-file only — read-only through the API                                                     |
+| A `config.yaml` pass-through entry (`is_from_config: true`)                                             | Read-only through this resource — see Refusals                                                   |
 
 ## Credentials
 
@@ -124,8 +132,9 @@ export class AiGateway extends LiteLLMPassThroughEndpoint('AiGateway', {
 
 ## Not covered
 
-- **Models, virtual keys, teams, credentials, access groups.** DB-backed and API-managed at
-  1.100.0, but no kit resource yet — deferred; see the unit's own trigger notes.
+- **Models.** DB-backed and API-managed at 1.100.0, but no kit resource yet
+  — deferred; see the unit's own trigger notes. (Teams, unified access groups, MCP toolsets, policies,
+  policy attachments, tool policies and credentials are the pages linked in the table above.)
 - **The Claude OAuth model/key/team slice.** Needs estate answers only Tim can give.
 - **Runtime behaviour of a route forced into the schema for the dashboard.** The byte-identical
   cross-check proves the REQUEST/RESPONSE BODY SHAPES match the tag exactly. It does not prove

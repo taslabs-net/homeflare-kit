@@ -27,6 +27,7 @@
  *   fake now matches that measured vendor behaviour.
  */
 import type { PassThroughGenericEndpoint } from '@distilled.cloud/litellm/misc';
+import { type FakeKeys, type FakeKeysOptions, createFakeKeys } from './fake-keys.ts';
 
 /** RFC 2606 placeholder — never a real host. Shared across tests, like `../netbox/fake-netbox.ts`. */
 export const FAKE_BASE = 'https://litellm.example.com';
@@ -42,6 +43,8 @@ export interface FakeLitellm {
   readonly requests: () => readonly FakeRequest[];
   /** `/budget/*` rows, wire-shaped (`tpm_limit`/`rpm_limit` as decimal strings, like the real table). */
   readonly budgets: () => readonly Record<string, unknown>[];
+  /** `/key/*` rows and the writes they took — see fake-keys.ts. */
+  readonly keys: FakeKeys;
 }
 
 const RACE_WINDOW_MS = 15;
@@ -50,20 +53,25 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' }, status });
 
-export const startFakeLitellm = (options?: {
-  readonly masterKey?: string;
-  readonly seed?: readonly PassThroughGenericEndpoint[];
-  /** Every `DELETE` 400s `not_allowed_access`, whether or not the row exists — see the file header. */
-  readonly forbidDelete?: boolean;
-  readonly budgetSeed?: readonly Record<string, unknown>[];
-  /** `/budget/update` drops `null`s instead of writing them (an `exclude_none` merge). */
-  readonly budgetExcludeNone?: boolean;
-}): FakeLitellm => {
+export const startFakeLitellm = (
+  options?: {
+    readonly masterKey?: string;
+    readonly seed?: readonly PassThroughGenericEndpoint[];
+    /** Every `DELETE` 400s `not_allowed_access`, whether or not the row exists — see the file header. */
+    readonly forbidDelete?: boolean;
+    readonly budgetSeed?: readonly Record<string, unknown>[];
+    /** `/budget/update` drops `null`s instead of writing them (an `exclude_none` merge). */
+    readonly budgetExcludeNone?: boolean;
+  } & FakeKeysOptions,
+): FakeLitellm => {
   const masterKey = options?.masterKey ?? 'sk-test-master';
   const forbidDelete = options?.forbidDelete ?? false;
   let rows: PassThroughGenericEndpoint[] = [...(options?.seed ?? [])];
   const requests: FakeRequest[] = [];
   let budgets: Record<string, unknown>[] = [...(options?.budgetSeed ?? [])];
+  // ★ A KEY'S `budget_id` MUST NAME A LIVE BUDGET — the foreign key that makes `LiteLLM.Key` wait for
+  //   the `LiteLLM.Budget` it binds to. Read at call time: `budgets` is reassigned on every write.
+  const keys = createFakeKeys(options, (id) => budgets.some((row) => row['budget_id'] === id));
 
   /**
    * ⚠️ Shapes from the generated 1.100.0 schema (`budget_management.ts`), not a live 1.103.0 read.
@@ -110,6 +118,7 @@ export const startFakeLitellm = (options?: {
     const auth = request.headers.get('authorization');
     if (auth !== `Bearer ${masterKey}`) return json(401, { detail: 'invalid api key' });
     if (url.pathname.startsWith('/budget/')) return budgetRoute(request, url);
+    if (url.pathname.startsWith('/key/')) return keys.route(request, url);
     if (
       url.pathname !== '/config/pass_through_endpoint' &&
       !url.pathname.startsWith('/config/pass_through_endpoint/')
@@ -164,6 +173,7 @@ export const startFakeLitellm = (options?: {
   return {
     budgets: () => [...budgets],
     fetch,
+    keys,
     requests: () => [...requests],
     rows: () => [...rows],
   };

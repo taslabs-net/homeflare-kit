@@ -218,5 +218,10 @@ export const makeFakeGrants = (options: FakeGrantsOptions = {}): FakeGrants => {
       return applyWrite(text) as unknown as Effect.Effect<ReadonlyArray<A>, SqlError>;
     });
 
-  return { unsafe, statements, acl };
+  const transaction = (sqls: readonly string[]): Effect.Effect<void, SqlError> =>
+    Effect.gen(function* () {
+      for (const sql of sqls) yield* unsafe(sql).pipe(Effect.asVoid);
+    });
+
+  return { unsafe, transaction, statements, acl };
 };

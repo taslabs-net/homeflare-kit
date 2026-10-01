@@ -1,0 +1,26 @@
+# path: doc/src/sgml/ref/create_role.sgml
+# blob: cee23b1ea6b4dcf2d9d356d07a582e64808c2912
+# tag: REL_18_6 (commit 724edf9bde9d356724ad384a2e196edc3c9f80f7)
+# fetched: 2026-09-29 via gh api repos/postgres/postgres/contents/...?ref=724edf9bde9d356724ad384a2e196edc3c9f80f7
+# excerpt: the <synopsis> block only (the provenance test reads the option list); blob SHA is the full upstream file
+#
+<synopsis>
+CREATE ROLE <replaceable class="parameter">name</replaceable> [ [ WITH ] <replaceable class="parameter">option</replaceable> [ ... ] ]
+
+<phrase>where <replaceable class="parameter">option</replaceable> can be:</phrase>
+
+      SUPERUSER | NOSUPERUSER
+    | CREATEDB | NOCREATEDB
+    | CREATEROLE | NOCREATEROLE
+    | INHERIT | NOINHERIT
+    | LOGIN | NOLOGIN
+    | REPLICATION | NOREPLICATION
+    | BYPASSRLS | NOBYPASSRLS
+    | CONNECTION LIMIT <replaceable class="parameter">connlimit</replaceable>
+    | [ ENCRYPTED ] PASSWORD '<replaceable class="parameter">password</replaceable>' | PASSWORD NULL
+    | VALID UNTIL '<replaceable class="parameter">timestamp</replaceable>'
+    | IN ROLE <replaceable class="parameter">role_name</replaceable> [, ...]
+    | ROLE <replaceable class="parameter">role_name</replaceable> [, ...]
+    | ADMIN <replaceable class="parameter">role_name</replaceable> [, ...]
+    | SYSID <replaceable class="parameter">uid</replaceable>
+</synopsis>

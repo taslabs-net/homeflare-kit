@@ -4,6 +4,8 @@ import { postgresRunnerProviders } from './providers.ts';
 import { postgresRunnerConnection, withPg } from './connection.ts';
 import { reconcileWithClient } from './database.ts';
 import { buildCreateDatabaseSql, isDuplicateDatabaseRace } from './database-sql.ts';
+import { buildSetPasswordSql } from './role-sql.ts';
+import { scramSha256Verifier } from './role-scram.ts';
 import { type PsqlRunner, inlineParams, makePsqlExecutor } from './psql-executor.ts';
 
 const target = { database: 'postgres', username: 'postgres' };
@@ -30,6 +32,23 @@ describe('psql executor', () => {
     expect(calls[0]?.stdin).toContain("datname = 'x'");
   });
 
+  test('a WITH-led row query is wrapped in json_agg too, not discarded as a write', async () => {
+    // The schema emptiness check is `WITH ns AS (…) SELECT …` — unwrapped, its answer rows
+    // are dropped and the check reads the empty-table fallback ("every schema is empty").
+    const calls: { argv: readonly string[]; stdin: string }[] = [];
+    const run: PsqlRunner = (call) => {
+      calls.push(call);
+      return ok('[{"empty":false}]\n');
+    };
+    const rows = await Effect.runPromise(
+      makePsqlExecutor(run, target).unsafe(
+        'WITH ns AS (SELECT 1 AS oid) SELECT NOT EXISTS (SELECT 1 FROM pg_class) AS empty',
+      ),
+    );
+    expect(rows).toEqual([{ empty: false }]);
+    expect(calls[0]?.stdin).toContain('json_agg');
+  });
+
   test('a duplicate-database failure stays recognisable as the 42P04 race', async () => {
     const run: PsqlRunner = () =>
       Promise.resolve({
@@ -41,6 +60,31 @@ describe('psql executor', () => {
       Effect.flip(makePsqlExecutor(run, target).unsafe('CREATE DATABASE "x"')),
     );
     expect(isDuplicateDatabaseRace(error)).toBe(true);
+  });
+
+  test('a failed password statement carries the SCRAM verifier on stdin, never the plain password', async () => {
+    // The red-team finding: the statement text is what the runner inlines into `psql`'s stdin and
+    // what a failed `ALTER` echoes back through stderr into the error. Since the fix the text
+    // holds only the verifier, so both the stdin side and the error side stay secret-free.
+    const placeholder = 'placeholder-password';
+    const statement = buildSetPasswordSql('hf_agent', scramSha256Verifier(placeholder));
+    let stdin = '';
+    const run: PsqlRunner = async (call) => {
+      stdin = call.stdin;
+      return {
+        code: 3,
+        stdout: '',
+        stderr: `ERROR:  42501: permission denied\nSTATEMENT:  ${statement}\n`,
+      };
+    };
+    const error = await Effect.runPromise(
+      Effect.flip(makePsqlExecutor(run, target).unsafe(statement)),
+    );
+    const rendered = `${error.message}\n${String(error.reason.operation ?? '')}\n${JSON.stringify(error)}`;
+    expect(stdin).toContain('SCRAM-SHA-256$');
+    expect(stdin).not.toContain(placeholder);
+    expect(rendered).not.toContain(placeholder);
+    expect(rendered).not.toContain(`PASSWORD '${placeholder.slice(0, 3)}`);
   });
 
   test('a runner that never reached psql is a ConnectionError', async () => {
@@ -92,6 +136,23 @@ describe('runner transport through withPg', () => {
       withPg((pg, ctx) => reconcileWithClient(pg, props, ctx.template)).pipe(Effect.provide(layer)),
     );
     expect(stdins.slice(before).some((s) => s.startsWith('CREATE DATABASE'))).toBe(false);
+  });
+
+  test('transaction is one psql script from BEGIN through COMMIT', async () => {
+    const calls: string[] = [];
+    const run: PsqlRunner = (call) => {
+      calls.push(call.stdin);
+      return ok('');
+    };
+    await Effect.runPromise(
+      makePsqlExecutor(run, target).transaction([
+        'CREATE ROLE "a" WITH NOLOGIN',
+        'GRANT "p" TO "a" WITH SET FALSE',
+      ]),
+    );
+    expect(calls).toEqual([
+      'BEGIN;\nCREATE ROLE "a" WITH NOLOGIN;\nGRANT "p" TO "a" WITH SET FALSE;\nCOMMIT;',
+    ]);
   });
 
   test("postgresRunnerProviders keeps the connection live for the engine's later handler calls", async () => {
