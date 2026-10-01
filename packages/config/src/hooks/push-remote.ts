@@ -12,15 +12,64 @@
  *   this repository has, then reduced to the independent tips (`merge-base --independent`): a
  *   tip that is an ancestor of another adds nothing, and a hosted remote can advertise
  *   thousands of refs where a command line cannot carry them.
- * ⛔ A REMOTE THAT CANNOT BE ASKED WIDENS, NEVER NARROWS: `undefined` means "could not ask",
- *   and the caller then excludes nothing and scans everything.
+ * ⛔ A DESTINATION THAT CANNOT BE ASKED WIDENS, NEVER NARROWS: `undefined` means "could not
+ *   ask" — a failure or the timeout below — and the caller then excludes nothing and scans
+ *   every commit reachable from the pushed tips.
+ * ⛔ ONLY THAT DESTINATION. The URL git passes the pre-push hook (githooks(5), the second
+ *   argument) is the only address asked. `git ls-remote <remote name>` uses the fetch URL.
+ *   When `remote.<name>.pushurl` differs from `url`, the fetch side can advertise commits the
+ *   push destination lacks; excluding them publishes a secret the destination has never seen.
+ *   Measured 2026-10-01. There is no fallback.
  * ⚠️ NO PROMPT, AND A TIMEOUT. The hook runs mid-push with a pipe on stdin; a credential prompt
  *   from a second connection would hang it, so `GIT_TERMINAL_PROMPT=0` makes it fail and widen.
+ *   A timeout is the same failure (Bun reports exit 143, SIGTERM — measured 2026-10-01): no
+ *   tips, and the partial stdout is discarded.
  */
 import { withoutGitEnv } from './report.ts';
 
-/** How long to wait for a remote to list its refs before giving up and scanning wider. */
+/** How long to wait for the destination to list its refs before scanning wider. */
 const ASK_MS = 20_000;
+
+/**
+ * Repository-locating variables, and only those, dropped before `git ls-remote`.
+ *
+ * ★ THE LIST IS `git help git` FOR THE INSTALLED GIT, NOT A GUESS. `git version` here is
+ *   2.47.3; `git help git`, ENVIRONMENT VARIABLES, section "The Git Repository", names
+ *   exactly these twelve. They locate the repository git operates on. A hook exports
+ *   `GIT_DIR` (report.ts); leaving it set makes `-C` talk to the hook's repository. Every
+ *   other `GIT_*` stays. That is what carries the transport and the config git handed the
+ *   hook: `GIT_SSH`, `GIT_SSH_COMMAND`,
+ *   `GIT_SSH_VARIANT`, `GIT_ASKPASS`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`,
+ *   `GIT_CONFIG_KEY_*`, `GIT_CONFIG_VALUE_*`. Measured 2026-10-01 on git 2.47.3: a `git -c`
+ *   push puts that `-c` in `GIT_CONFIG_PARAMETERS` (`GIT_CONFIG_COUNT` stayed unset).
+ *   Stripping the block made `ls-remote` of the real push URL fail and the fetch-URL
+ *   fallback exclude a commit the destination did not have.
+ */
+const REPO_LOCATING: ReadonlySet<string> = new Set([
+  'GIT_INDEX_FILE',
+  'GIT_INDEX_VERSION',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_NAMESPACE',
+  'GIT_CEILING_DIRECTORIES',
+  'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+  'GIT_COMMON_DIR',
+  'GIT_DEFAULT_HASH',
+  'GIT_DEFAULT_REF_FORMAT',
+]);
+
+/** The hook environment minus the repository-locating variables, and no credential prompt. */
+function remoteAskEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value === undefined || REPO_LOCATING.has(name)) continue;
+    env[name] = value;
+  }
+  env['GIT_TERMINAL_PROMPT'] = '0';
+  return env;
+}
 
 export type GitResult = {
   readonly code: number;
@@ -28,14 +77,18 @@ export type GitResult = {
   readonly stderr: string;
 };
 
-/** Run git at `root` with the hook's inherited `GIT_*` dropped, capturing both streams. */
+/**
+ * Run git at `root`, capturing both streams.
+ * `transport` keeps the transport and config environment for `ls-remote` — see `remoteAskEnv`.
+ * Otherwise the hook's inherited `GIT_*` is dropped.
+ */
 export async function gitAt(
   root: string,
   args: readonly string[],
-  options: { stdin?: string; timeoutMs?: number; env?: Record<string, string> } = {},
+  options: { stdin?: string; timeoutMs?: number; transport?: boolean } = {},
 ): Promise<GitResult> {
   const proc = Bun.spawn(['git', '-C', root, ...args], {
-    env: { ...withoutGitEnv(), ...options.env },
+    env: options.transport ? remoteAskEnv() : withoutGitEnv(),
     stdin: options.stdin === undefined ? 'ignore' : new Blob([options.stdin]),
     stdout: 'pipe',
     stderr: 'pipe',
@@ -58,27 +111,26 @@ export type RemoteTips = {
 };
 
 /**
- * Ask each of `candidates` (the push URL git hands the hook, then the remote's name) which refs
- * it has, until one answers.
- * ★ THE URL FIRST: it is what is actually pushed to — a `pushurl` can differ from the fetch URL
- *   that `ls-remote <name>` would use.
+ * Ask `destination` — the URL the pre-push hook was given, and nothing else — which refs it has.
+ * A missing URL, a non-zero exit, or a timeout is "could not ask": no tips, no exclusion.
  */
 export async function knownRemoteTips(
   root: string,
-  candidates: readonly string[],
+  destination: string | undefined,
 ): Promise<RemoteTips> {
-  for (const candidate of candidates) {
-    const listed = await gitAt(root, ['ls-remote', candidate], {
-      env: { GIT_TERMINAL_PROMPT: '0' },
-      timeoutMs: ASK_MS,
-    });
-    if (listed.code !== 0) continue;
-    const advertised = lines(listed.stdout)
-      .map((line) => line.split('\t')[0] ?? '')
-      .filter((hash) => /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(hash));
-    return { tips: await localIndependentTips(root, [...new Set(advertised)]), via: candidate };
-  }
-  return { tips: [], via: undefined };
+  if (destination === undefined || destination === '') return { tips: [], via: undefined };
+  const listed = await gitAt(root, ['ls-remote', destination], {
+    transport: true,
+    timeoutMs: ASK_MS,
+  });
+  if (listed.code !== 0) return { tips: [], via: undefined };
+  const advertised = lines(listed.stdout)
+    .map((line) => line.split('\t')[0] ?? '')
+    .filter((hash) => /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(hash));
+  return {
+    tips: await localIndependentTips(root, [...new Set(advertised)]),
+    via: destination,
+  };
 }
 
 async function localIndependentTips(

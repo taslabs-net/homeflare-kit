@@ -20,14 +20,14 @@ afterEach(async () => {
 
 describe('what is scanned', () => {
   test('the commits this push adds: the tip, excluding what the REMOTE says it has', async () => {
-    const { repo } = await fixture();
+    const { repo, remote } = await fixture();
     const seed = await sha(repo, 'main');
     const tip = await commit(repo, 'a.txt', 'a\n');
     const path = await pathWith(0);
 
     const result = await repo.hook('pre-push', {
       env: { ...ENV, PATH: path },
-      args: ['origin', 'url'],
+      args: ['origin', remote],
       stdin: `refs/heads/feat ${tip} refs/heads/feat ${ZERO}\n`,
     });
 
@@ -59,7 +59,7 @@ describe('what is scanned', () => {
   });
 
   test('every pushed ref goes into ONE scan, and a deletion adds nothing to it', async () => {
-    const { repo } = await fixture();
+    const { repo, remote } = await fixture();
     const seed = await sha(repo, 'main');
     const one = await commit(repo, 'a.txt', 'a\n');
     const two = await commit(repo, 'b.txt', 'b\n');
@@ -67,7 +67,7 @@ describe('what is scanned', () => {
 
     await repo.hook('pre-push', {
       env: { ...ENV, PATH: path },
-      args: ['origin', 'url'],
+      args: ['origin', remote],
       stdin:
         `refs/heads/one ${one} refs/heads/one ${ZERO}\n` +
         `refs/heads/two ${two} refs/heads/two ${ZERO}\n` +
@@ -80,11 +80,11 @@ describe('what is scanned', () => {
   });
 
   test('a manual run, with nothing on stdin, scans HEAD', async () => {
-    const { repo } = await fixture();
+    const { repo, remote } = await fixture();
     const tip = await commit(repo, 'a.txt', 'a\n');
     const path = await pathWith(0);
 
-    await repo.hook('pre-push', { env: { ...ENV, PATH: path }, args: ['origin', 'url'] });
+    await repo.hook('pre-push', { env: { ...ENV, PATH: path }, args: ['origin', remote] });
 
     expect((await gitleaksCalls(path))[0]).toContain(`${tip} --not`);
   });
@@ -104,12 +104,12 @@ describe('what is scanned', () => {
   });
 
   test('a commit the remote already has is nothing to scan — and needs no gitleaks either', async () => {
-    const { repo } = await fixture();
+    const { repo, remote } = await fixture();
     const seed = await sha(repo, 'main');
 
     const result = await repo.hook('pre-push', {
       env: { ...ENV, PATH: await pathWith('absent') },
-      args: ['origin', 'url'],
+      args: ['origin', remote],
       stdin: `refs/tags/v0 ${seed} refs/tags/v0 ${ZERO}\n`,
     });
 
@@ -133,8 +133,10 @@ describe('when nothing of the push is known to be on the remote', () => {
       stdin: `refs/heads/feat ${tip} refs/heads/feat ${ZERO}\n`,
     });
 
-    expect(result.output).toContain('it could not be asked');
-    expect(result.output).toContain('all 2 reachable commit(s) are scanned');
+    expect(result.output).toContain(
+      'the destination could not be asked, so the full pushed history was scanned',
+    );
+    expect(result.output).toContain('scanned (2 commit(s))');
     expect(result.output).toContain('.gitleaksignore');
   });
 
@@ -158,12 +160,12 @@ describe('when nothing of the push is known to be on the remote', () => {
 
 describe('what it does about a finding, or no scanner', () => {
   test('a finding fails the push: remove it, rotate it, and no lane runs', async () => {
-    const { repo } = await fixture();
+    const { repo, remote } = await fixture();
     const tip = await commit(repo, 'a.txt', 'a\n');
 
     const result = await repo.hook('pre-push', {
       env: { ...ENV, PATH: await pathWith(1) },
-      args: ['origin', 'url'],
+      args: ['origin', remote],
       stdin: `refs/heads/feat ${tip} refs/heads/feat ${ZERO}\n`,
     });
 
@@ -176,12 +178,12 @@ describe('what it does about a finding, or no scanner', () => {
   });
 
   test('fails CLOSED when gitleaks is not installed — the pushed commits were NOT scanned', async () => {
-    const { repo } = await fixture();
+    const { repo, remote } = await fixture();
     const tip = await commit(repo, 'a.txt', 'a\n');
 
     const result = await repo.hook('pre-push', {
       env: { ...ENV, PATH: await pathWith('absent') },
-      args: ['origin', 'url'],
+      args: ['origin', remote],
       stdin: `refs/heads/feat ${tip} refs/heads/feat ${ZERO}\n`,
     });
 

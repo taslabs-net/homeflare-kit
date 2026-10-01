@@ -18,9 +18,10 @@
  * ⛔ THE RANGE IS LISTED BY GIT FIRST, AND A FAILURE THERE FAILS THE PUSH. gitleaks splits
  *   `--log-opts` on spaces, runs `git log`, and exits 0 with "no leaks found" when that dies
  *   (gitleaks.ts). Listing the same revisions with `git log` is the check it will not make.
- * ⛔ A REMOTE THAT CANNOT BE ASKED, OR HAS NOTHING WE HAVE, WIDENS to the whole history, says so
- *   with the commit count, and names `.gitleaksignore` — where a reviewed false positive in old
- *   history is recorded. It is never silent and never narrower.
+ * ⛔ A DESTINATION THAT CANNOT BE ASKED, OR HAS NOTHING WE HAVE, WIDENS to every commit
+ *   reachable from the pushed tips, says so, and names `.gitleaksignore` — where a reviewed
+ *   false positive in old history is recorded. It is never silent, never skipped, and never
+ *   narrower. The ask is only the push URL (push-remote.ts); a failure there excludes nothing.
  * ⚠️ ALL THE PUSHED REFS GO IN ONE SCAN, a deletion adds nothing to scan, and an annotated tag
  *   is peeled by `git log` itself. Output is `--redact`ed: a finding never prints the secret.
  */
@@ -59,9 +60,9 @@ export async function scanPushedSecrets(
   }
   if (shas.size === 0) return;
 
-  // The push URL git hands the hook first, then the remote's name — see knownRemoteTips.
-  const named = [args[1], args[0] ?? 'origin'].filter((arg): arg is string => !!arg);
-  const asked = await knownRemoteTips(root, [...new Set(named)]);
+  // ⛔ The second argument only. That is the URL being pushed to (githooks(5)). The name in
+  //   args[0] is the fetch URL when pushurl differs — see knownRemoteTips.
+  const asked = await knownRemoteTips(root, args[1]);
   const prefix = [MERGES, ...shas];
   const tips = fit([...prefix, '--not'].join(' ').length, asked.tips);
   const opts = tips.length > 0 ? [...prefix, '--not', ...tips] : prefix;
@@ -90,11 +91,14 @@ export async function scanPushedSecrets(
   }
   const widened = tips.length === 0;
   if (widened) {
-    const why =
-      asked.via === undefined ? 'it could not be asked' : 'it has none of these commits here';
-    note(
-      `pre-push: nothing of this push is known to be on the remote (${why}), so all ${String(count)} reachable commit(s) are scanned; a reviewed false positive in old history goes in .gitleaksignore`,
-    );
+    // ⛔ ONE LINE, AND IT IS THE FAILURE: a destination that could not be asked (or timed out)
+    //   scans the full pushed history. It does not skip the scan and it does not exclude tips
+    //   learned from anywhere else.
+    const said =
+      asked.via === undefined
+        ? `the destination could not be asked, so the full pushed history was scanned (${String(count)} commit(s))`
+        : `nothing of this push is known to be on the remote (it has none of these commits here), so all ${String(count)} reachable commit(s) are scanned`;
+    note(`pre-push: ${said}; a reviewed false positive in old history goes in .gitleaksignore`);
   }
   const logOpts = opts.join(' ');
   const result = await runGitleaks(

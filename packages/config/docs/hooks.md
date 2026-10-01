@@ -60,10 +60,14 @@ the door every commit goes through, so `gitleaks git --log-opts="--diff-merges=r
 "remove it, then ROTATE it", and a missing `gitleaks` fails too. A push that only deletes
 refs, or adds nothing the remote lacks, scans nothing.
 
-- **What the remote has comes from `git ls-remote`**, the push URL first, then the remote's
-  name, not from the remote-tracking refs. Those are a cache of the last fetch: a stale one
-  excluded a leaky branch the remote had deleted, and a push by URL or to a new remote has
-  none. The advertised commits this clone has are reduced to independent tips.
+- **What the remote has comes from `git ls-remote` of the push URL** git passes the hook
+  (its second argument), never the remote's name. The name uses the fetch URL, and when
+  `pushurl` differs from `url` that side can advertise commits the destination lacks.
+  Remote-tracking refs are not consulted either: they are a cache of the last fetch, and a
+  stale one excluded a leaky branch the remote had deleted. The `ls-remote` keeps the
+  transport and the `-c` environment git handed the hook, and drops only the
+  repository-locating variables. A failure or a timeout excludes nothing. The advertised
+  commits this clone has are reduced to independent tips.
 - **`--diff-merges=remerge`** makes a merge's own changes visible: `git log -p` shows a merge
   no diff, so a token added inside a hand-made merge went unscanned. A clean merge whose
   parent holds an already-published finding still passes. It needs git 2.36 or newer.
@@ -71,9 +75,10 @@ refs, or adds nothing the remote lacks, scans nothing.
   a path with a space (it splits `--log-opts` on spaces). So `git log` lists the range
   first and a failure there fails the push, and a `gitleaks` line at level `ERR`, `FTL` or
   `PNC`, or one mentioning `[git]`, fails the scan. That covers `pre-commit`'s scan too.
-- **When the remote cannot be asked, or has none of these commits**, the whole history is
-  scanned. It says so, with the commit count, and names `.gitleaksignore`, where a reviewed
-  false positive in old history is recorded.
+- **When the destination cannot be asked, or has none of these commits**, every commit
+  reachable from the pushed tips is scanned. It says so — the destination could not be asked,
+  so the full pushed history was scanned — with the commit count, and names `.gitleaksignore`,
+  where a reviewed false positive in old history is recorded. The scan is never skipped.
 
 🔴 **The working tree must be what is pushed.** The lanes run on the working tree, so
 `git status --porcelain` showing any change, untracked files included and ignored ones
