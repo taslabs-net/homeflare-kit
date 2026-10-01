@@ -80,6 +80,8 @@ const droppedPatch = (fake: Fake): Fake => ({
   fetch: (async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(String(input), init);
     if (request.method === 'PATCH' && new URL(request.url).pathname.startsWith('/credentials/')) {
+      const body = (await request.json()) as Record<string, unknown>;
+      expect(Object.keys((body.credential_values ?? {}) as object)).toEqual(['api_key']);
       throw new TypeError('fetch failed');
     }
     return fake.fetch(input, init);
@@ -104,7 +106,9 @@ const everyReadingOf = async (value: unknown): Promise<string> => {
   } catch {
     /* a value JSON cannot serialise leaks nothing that way */
   }
-  if (value instanceof Error) readings.push(value.message, String(value.stack));
+  if (typeof value === 'object' && value !== null && 'message' in value) {
+    readings.push(String(value.message), 'stack' in value ? String(value.stack) : '');
+  }
   return readings.join('\n');
 };
 
@@ -174,8 +178,7 @@ describe('a create that dies on the wire', () => {
 
 describe('an update that dies on the wire', () => {
   test('leaves the row in place, fails typed, holds no value', async () => {
-    // The row is seeded so the PATCH is an update on an owned row whose info drifts (the seal
-    // matches, so the PATCH carries no values — and the failure still leaves the row behind).
+    // The owned row has a stale seal: this failing PATCH MUST carry credential values.
     const fake = droppedPatch(
       startFakeCredentialLitellm({
         masterKey: KEY,
@@ -189,17 +192,14 @@ describe('an update that dies on the wire', () => {
       }),
     );
     const sealed = sealValues(resolveValues(props).values);
+    process.env[VARIABLE] = 'FAKE-key-rotated';
     const error = await Effect.runPromise(
       Effect.flip(
-        reconcileEffect(
-          fake,
-          { ...props, credentialInfo: { note: 'docs search v2' } },
-          {
-            credentialInfo: { note: 'docs search' },
-            credentialName: 'FAKE_api',
-            valuesSeal: sealed,
-          },
-        ),
+        reconcileEffect(fake, props, {
+          credentialInfo: { note: 'docs search' },
+          credentialName: 'FAKE_api',
+          valuesSeal: sealed,
+        }),
       ),
     );
     expect(error).toMatchObject({
@@ -208,7 +208,7 @@ describe('an update that dies on the wire', () => {
       reason: 'TransportError',
     });
     expect(Object.keys(error as object)).not.toContain('request');
-    expect(await everyReadingOf(error)).not.toContain(VALUE);
+    expect(await everyReadingOf(error)).not.toContain('FAKE-key-rotated');
     // ★ finding 3: a PATCH that dies leaves the row it was merging into — the old DELETE + POST
     //   rewrite left NO row when the POST failed after the DELETE.
     expect(fake.rows()).toHaveLength(1);
@@ -226,7 +226,7 @@ describe('a create while the SDK prints bodies', () => {
       _tag: 'LitellmCredentialDebugLoggingError',
       credentialName: 'FAKE_api',
     });
-    // The read-back GET is allowed; the create (the write that would print the values) is not.
+    // Refuse at the top of reconcile: even a read can expose unmasked non-sensitive values.
     expect(writesOf(fake.requests())).toEqual([]);
   });
 });

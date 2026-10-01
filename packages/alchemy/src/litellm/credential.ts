@@ -17,12 +17,11 @@
  * ⚠️ A RENAME IS A REPLACE: the name is the row's identity and its only address, so a changed
  *   `credentialName` creates the new row and the old one survives under 'retain' — never renamed
  *   in place.
- * ⚠️ A CHANGED ROW IS PATCHED, NOT REWRITTEN — a PATCH merges by key, so a value or `info` drift
- *   is an atomic merge that a failed call leaves the row behind (review finding 3: the old
- *   DELETE + POST left NO row when the POST failed after the DELETE). The ONE thing PATCH cannot
- *   do is REMOVE a key, so a declaration that drops a previously-declared `info` key is still a
- *   whole-row rewrite (the vendor's own delete, DB-authoritative and idempotent, then create).
- *   Every write reads back so a dropped field fails the deploy.
+ * ⚠️ A CHANGED ROW IS PATCHED, NOT REWRITTEN — PATCH merges values and normally replaces DB
+ *   info, but only merges in-memory info (1.103.0 credential_endpoints/endpoints.py:312-319,384-387).
+ *   A failed PATCH leaves the row behind (review finding 3: DELETE + POST left NO row when POST
+ *   failed). Dropping a value key OR an info key still requires DELETE + POST; both stores must
+ *   converge. All refusals run before the first write. Every write reads back to prove removal.
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
@@ -44,11 +43,13 @@ import {
   literalValues,
   patchBody,
   removedInfoKeys,
+  removedValueKeys,
 } from './credential-form.ts';
 import {
   createCredential,
   deleteCredential,
   readCredential,
+  refuseDebugLogging,
   updateCredential,
 } from './credential-operations.ts';
 import type { CredentialAttributes, CredentialProps } from './credential-types.ts';
@@ -98,6 +99,8 @@ export const credentialHandlers = {
    */
   read: ({ olds, output }: Args<{ olds: CredentialProps }>) =>
     Effect.gen(function* () {
+      // SDK debug logging prints responses too; non-sensitive value keys can be unmasked.
+      yield* refuseDebugLogging(olds.credentialName);
       const problem = output === undefined ? firstProblem(olds) : undefined;
       if (problem !== undefined) {
         return yield* Effect.die(
@@ -132,8 +135,8 @@ export const credentialHandlers = {
       //   is "not stale", the same shape mcp-server.ts uses, and the write below still demands
       //   the value when a write is actually being made.
       const state = valuesState(news, output.valuesSeal);
-      // A dropped info key is a removal the PATCH merge cannot do, so it plans an update too.
-      const removed = removedInfoKeys(output, news);
+      // PATCH cannot remove value keys or in-memory info keys. Names alone prove drift.
+      const removed = [...removedInfoKeys(output, news), ...removedValueKeys(output, news)];
       return differing(output, news).length === 0 && removed.length === 0 && state !== 'stale'
         ? ({ action: 'noop' } as const)
         : ({ action: 'update' } as const);
@@ -142,6 +145,7 @@ export const credentialHandlers = {
   reconcile: ({ fqn, instanceId, news, output }: Args<{ news: CredentialProps }>) =>
     Effect.gen(function* () {
       yield* refuse(news);
+      yield* refuseDebugLogging(news.credentialName);
       const resolved = resolveValues(news);
       const before = yield* readCredential(news.credentialName);
       let sealed = output?.valuesSeal ?? '';
@@ -161,12 +165,10 @@ export const credentialHandlers = {
           { fqn, instanceId, output },
           `LiteLLM.Credential ${news.credentialName}`,
         );
-        // ⛔ PATCH FOR A VALUE/INFO DRIFT, WHOLE-ROW REWRITE ONLY TO DROP A KEY. The PATCH merges by
-        //   key and leaves the row in place if it fails on the wire (finding 3). It cannot remove a
-        //   key, so a declaration that drops a previously-declared `info` key is the one case still
-        //   rewritten — and a rewrite that would send only half the declared values is refused
-        //   first (`requireValues`), the same guard a create takes.
-        const removed = removedInfoKeys(output, news);
+        // ⛔ PATCH FOR VALUE/INFO CHANGES, REWRITE TO DROP KEYS IN BOTH STORES. Unlike the
+        // old unconditional rewrite (finding 3), failed PATCH leaves the row behind. A rewrite
+        // still needs every declared value BEFORE DELETE so a partial environment cannot erase it.
+        const removed = [...removedInfoKeys(before, news), ...removedValueKeys(before, news)];
         const infoDrift = differing(before, news).length > 0;
         const valuesStale = valuesState(news, sealed) === 'stale';
         if (removed.length > 0) {
@@ -196,7 +198,11 @@ export const credentialHandlers = {
           new LitellmCredentialAbsentAfterWriteError({ credentialName: news.credentialName }),
         );
       }
-      const left = differing(after, news);
+      const left = [
+        ...differing(after, news),
+        ...removedInfoKeys(after, news).map((key) => `credential_info.${key}`),
+        ...removedValueKeys(after, news).map((key) => `credential_values.${key}`),
+      ];
       if (left.length > 0) {
         return yield* Effect.fail(
           new LitellmCredentialNotConvergedError({

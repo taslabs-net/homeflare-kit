@@ -6,22 +6,20 @@
  *   with SENSITIVE-keyed values masked (2 + `****` + 2, `*****` for a short string —
  *   `litellm_logging.py::_get_masked_values`, measured in the live 1.103.0 container) and
  *   `credential_info` in full:
- *   - `credential_info` is compared PER DECLARED KEY, with canonical-JSON deep equality — the
- *     PATCH route's merge assigns keys and never removes them (measured: `update_db_credential`,
- *     `merged_credential.credential_info.update(...)`), so a live key the declaration does not
- *     name is unmodelled and ignored rather than reported as drift — EXCEPT a key the PRIOR
- *     declaration named, which is a removal and must be dropped with a whole-row rewrite
- *     (`removedInfoKeys`, consumed by credential.ts). A declared key the row lacks IS drift.
+ *   - `credential_info` is the complete intended map, including on adoption. Nonempty PATCH
+ *     normally replaces DB info (`credential_endpoints/endpoints.py:314-319`, 1.103.0), while
+ *     memory merges (:385-387). Empty info leaves DB unchanged. Dropping a live info key therefore
+ *     requires a rewrite to converge both stores (`removedInfoKeys`). Every PATCH sends full info.
  *   - the values are compared only through the seal of the values this process RESOLVED
  *     (`valuesSeal`, credential-values.ts) — never against the masked fragments, which are
  *     partial secrets and are never copied into state.
- * ★ A CHANGED ROW IS PATCHED, NOT REWRITTEN. The vendor's PATCH merges by key
- *   (`update_db_credential`), so updating a value or an `info` entry is a PATCH carrying the
+ * ★ A CHANGED ROW IS PATCHED, NOT REWRITTEN. The vendor's PATCH merges VALUES by key
+ *   (`update_db_credential`:312), so updating a value or an `info` entry is a PATCH carrying the
  *   declared `credential_info` and (only when the values are stale) the resolved
  *   `credential_values`. A PATCH that fails on the wire leaves the row it was merging into — the
  *   fix for the review's finding 3, where a DELETE + POST rewrite left NO row when the POST failed
- *   after the DELETE. The one thing PATCH cannot do is REMOVE a key, so a declaration that drops
- *   a previously-declared `info` key is still a whole-row rewrite (credential.ts decides). The
+ *   after the DELETE. PATCH cannot REMOVE a value key or an in-memory info key, so dropping either
+ *   is still a whole-row rewrite (credential.ts decides). Names from the read prove removal. The
  *   PATCH body carries `credential_name` IN THE BODY as a second member (`credential_name_body`,
  *   wire-named `credential_name`) because the vendor's `UpdateCredentialItem` requires it and a
  *   Smithy member has one binding — the path label can't also be the body field; the distilled
@@ -129,6 +127,8 @@ export const toAttributes = (row: Record<string, unknown>): CredentialAttributes
   return {
     credentialInfo: mirrored,
     credentialName: String(row['credential_name'] ?? ''),
+    valueKeys: Object.keys((row['credential_values'] ?? {}) as Record<string, unknown>).sort(),
+    infoKeys: Object.keys(info).sort(),
     valuesSeal: '',
   };
 };
@@ -165,7 +165,7 @@ export const createBody = (
 
 /**
  * The body `PATCH /credentials/{name}` carries — the declared `credential_info` always (the
- * vendor's `UpdateCredentialItem` REQUIRES it, and the merge assigns every declared key), the
+ * vendor's `UpdateCredentialItem` REQUIRES it, and the DB normally replaces the info map), the
  * resolved `credential_values` only when the caller passes them (a values-stale write; an
  * info-only drift sends none, so it never demands a value the environment does not hold).
  *
@@ -189,11 +189,8 @@ export const patchBody = (
 };
 
 /**
- * The `credential_info` keys the PRIOR declaration named and this one does not — a key the PATCH
- * merge cannot remove, so a whole-row rewrite is the only way to drop it. `undefined` prior (an
- * adopt or a first write) has no prior declaration to drop keys from, so nothing is removed.
- * Sensitive-keyed entries are never mirrored into attributes (toAttributes skips them), so they
- * can never be removed here either — and they were refused at plan time, so none was declared.
+ * All live info keys absent from the intended map, including on adoption. DB replacement alone
+ * cannot clear memory, so these require a rewrite. Only names of sensitive info are remembered.
  */
 export const removedInfoKeys = (
   prior: CredentialAttributes | undefined,
@@ -201,5 +198,14 @@ export const removedInfoKeys = (
 ): readonly string[] => {
   if (prior === undefined) return [];
   const declared = props.credentialInfo ?? {};
-  return Object.keys(prior.credentialInfo).filter((key) => !(key in declared));
+  return (prior.infoKeys ?? Object.keys(prior.credentialInfo)).filter(
+    (key) => !Object.hasOwn(declared, key),
+  );
 };
+
+/** Values merge in BOTH stores, so dropped names from the masked read require a rewrite. */
+export const removedValueKeys = (
+  live: CredentialAttributes | undefined,
+  props: CredentialProps,
+): readonly string[] =>
+  (live?.valueKeys ?? []).filter((key) => !Object.hasOwn(props.credentialValues, key));

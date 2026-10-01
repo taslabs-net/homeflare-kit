@@ -68,7 +68,7 @@ describe('create returns the key Redacted, and it goes nowhere else', () => {
 });
 
 describe('a read-only plan never reveals or needs the key', () => {
-  test('diff does not read the environment and makes no request', async () => {
+  test('diff with an unset variable makes no verification request', async () => {
     const fake = newFake();
     const attributes = await withEnv({ [VAR]: FAKE_KEY }, () => runAgainst(fake, reconcile(seat)));
     const before = fake.requests().length;

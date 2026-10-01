@@ -27,7 +27,8 @@
  *   (`prepare_key_update_data` pops it, `key_management_endpoints.py:2469`), so it cannot change a
  *   key's value, and `/key/regenerate` is an Enterprise feature (its docstring, :5673) — so the
  *   operator fixes the variable or drops the `key`. A changed variable changes nothing on an
- *   existing key: rotate by declaring a new alias.
+ *   existing key: rotate by declaring a new alias. Plan and reconcile both check a set variable;
+ *   an unset or empty variable skips verification so a deployer need not hold the seat key.
  * ⚠️ A PROXY MAY REFUSE THE WHOLE APPROACH: with the dashboard's `disable_custom_api_keys` setting
  *   on, `/key/generate` answers 403 to ANY user-defined key ("Keys must be auto-generated",
  *   `_check_custom_key_allowed`, :485-496). That surfaces as the SDK's typed `Forbidden`. UNVERIFIED
@@ -106,12 +107,12 @@ export const verifyKeyValue = (
   keyAlias: string,
   ref: FromEnv | undefined,
   token: string | null,
-): Effect.Effect<void, LitellmKeyValueMissingError | LitellmKeyValueMismatchError> =>
+): Effect.Effect<void, LitellmKeyValueMismatchError> =>
   Effect.gen(function* () {
     if (ref === undefined) return;
     const variable = ref.fromEnv;
     const value = resolveAll({ key: ref }).values['key'];
-    if (value === undefined) return yield* new LitellmKeyValueMissingError({ keyAlias, variable });
+    if (value === undefined) return;
     if (token === null || sha256(value) !== token) {
       return yield* new LitellmKeyValueMismatchError({ keyAlias, variable });
     }
@@ -130,3 +131,7 @@ export const refuseDebugLogging = (
   (globalThis.process?.env?.['DISTILLED_DEBUG_HTTP'] ?? '') !== ''
     ? Effect.fail(new LitellmKeyDebugLoggingError({ keyAlias }))
     : Effect.void;
+
+/** Whether verification can run; unset/empty variables skip the check, never a create. */
+export const hasKeyValue = (ref: FromEnv | undefined): boolean =>
+  ref !== undefined && resolveAll({ key: ref }).values['key'] !== undefined;

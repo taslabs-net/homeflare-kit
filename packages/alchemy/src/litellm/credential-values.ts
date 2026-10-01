@@ -24,8 +24,8 @@
  * ⚠️ ALL-OR-NOTHING RESOLUTION: a write sends `credential_values` only when EVERY declared
  *   variable resolves — the values-stale PATCH and the whole-row create both demand every value
  *   (`requireValues`, credential.ts), because sending the resolved half would store a row whose
- *   unset half was silently blanked. When any variable is missing the state is `unknown` and no
- *   write is attempted.
+ *   unset half was silently blanked. When any variable is missing the state is `unknown`: an
+ *   info-only PATCH can proceed, but a required rewrite refuses before DELETE.
  * ⚠️ A SEAL OF A GUESSABLE SECRET IS STILL GUESSABLE (secrets/write-only.ts). Use a random token.
  */
 import * as Effect from 'effect/Effect';
@@ -77,9 +77,8 @@ export const valuesState = (
 
 /**
  * Fails naming the missing variables when this write has to send the values and the deploying
- * process does not hold them all. Every write this resource makes is a whole-row create
- * (credential.ts), so there is no write that can leave the values alone — `unknown` may hold for
- * a plan, never for a reconcile.
+ * process does not hold them all. Creates, rewrites and value-stale PATCHes need every value;
+ * an info-only PATCH leaves values alone and does not need this guard (credential.ts).
  */
 export const requireValues = (
   props: CredentialProps,
