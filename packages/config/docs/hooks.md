@@ -76,6 +76,15 @@ The lanes are the repo's own `check`, read as an `&&` chain:
 - A push that changes a `package.json`, `bun.lock`, `bunfig.toml` or `tsconfig*.json`
   runs the tests in full. Imports cannot see those files, but every test runs on them.
 
+⛔ **The test lane runs with `TMPDIR` set to a fresh directory.** After it, anything left
+in that directory fails the push. The failure lists leftover top-level names by prefix
+and count (`enables-cfg- 2`), then removes the directory. Lint and type lanes are not
+wrapped. Bun 1.4.0 `os.tmpdir()` reads `TMPDIR` then `TMP` then `TEMP` then `/tmp`
+(`src/js/node/os.ts`). `fs.mkdtemp` only appends to the prefix it was given, so
+`mkdtemp(join(tmpdir(), …))` is caught and a hardcoded `/tmp/…` is not. A test file that
+contains a `/tmp` path fails the same hook unless that line, or the line above, carries
+`tmp-allow:` and a reason. An empty reason does not count.
+
 ⛔ **It never calls `verify` by name.** In `homeflare-proxmox`, `verify` is a live
 adoption verifier. The hook follows `verify` only when `check` itself delegates to it,
 because then `verify` is what CI runs.

@@ -82,9 +82,14 @@ export async function probe(cmd: readonly string[]): Promise<{ code: number; std
  *   script would otherwise be "command not found" on a machine without a global copy.
  * 🔴 AND WITHOUT THE HOOK'S `GIT_*` — see `withoutGitEnv`.
  */
-export async function runLane(command: string, root: string): Promise<number> {
+export async function runLane(
+  command: string,
+  root: string,
+  extra?: Readonly<Record<string, string>>,
+): Promise<number> {
   const env = withoutGitEnv();
   env['PATH'] = `${root}/node_modules/.bin:${env['PATH'] ?? ''}`;
+  if (extra !== undefined) Object.assign(env, extra);
   const proc = Bun.spawn(['sh', '-c', command], {
     cwd: root,
     env,

@@ -49,6 +49,7 @@ const fakeClient = {
 
 // The pool factory is provided to this Effect only; other suites keep the real driver.
 const socket = Layer.merge(
+  // tmp-allow: unix socket directory the driver joins a socket name onto, not a directory this test creates
   postgresConnection({ host: '/tmp', database: 'postgres', username: 'postgres' }),
   Layer.succeed(PostgresPool, (config) => {
     pools.push(config);

@@ -11,6 +11,7 @@
  *   committed HERE instead — `cwd` is ignored once `GIT_DIR` is set. Identity, signing and
  *   hooks are passed with `-c` for the same reason: `git config` wrote into the real repo.
  */
+import { rmSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -111,8 +112,17 @@ export async function scratchRepo(prefix = 'hf-hook-repo-'): Promise<Scratch> {
  *   `#!/usr/bin/env node` launcher, so a PATH without node would fail the formatter, not the
  *   thing under test. `'absent'` can drop it because the hook stops before formatting.
  */
+const bins: string[] = [];
+
+/** Drop every PATH shim `pathWith` created. An exit hook covers a test that never reaches `afterAll`. */
+function removeBins(): void {
+  for (const dir of bins.splice(0)) rmSync(dir, { recursive: true, force: true });
+}
+
 export async function pathWith(gitleaks: number | 'absent'): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'hf-hook-bin-'));
+  bins.push(dir);
+  if (bins.length === 1) process.on('exit', removeBins);
   const git = Bun.which('git');
   if (git !== null) await symlink(git, join(dir, 'git'));
   await symlink(process.execPath, join(dir, 'bun'));

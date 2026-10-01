@@ -208,7 +208,7 @@ describe('K-A4 finding 4: configValueProblem never accepts a flag-shaped value',
     ['a short flag', '-n'],
     ['a file-overwrite flag glued to its argument', '-o/etc/ceph/ceph.conf'],
     ['a long flag with =', '--admin-daemon=/var/run/ceph/ceph-mon.a.asok'],
-    ['another long flag', '--conf=/tmp/x'],
+    ['another long flag', '--conf=/tmp/x'], // tmp-allow: refused argv, not a directory this test creates
     ['the empty string', ''],
     ['a bare dash', '-'],
   ])('refuses %s (%j)', (_name, value) => {
