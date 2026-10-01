@@ -33,7 +33,12 @@ const NON_NONE_PARAM_DEFAULTS = [
   'merge_reasoning_content_in_choices',
 ] as const;
 
-const fillParamDefaults = (sent: Row): Row => {
+/**
+ * v1.103.0 `updateLiteLLMParams`: an omitted field takes its pydantic default. The five flags
+ * default to `False`, not `None`. An explicit `null` stays `null` (it was set, not omitted) so a
+ * later `exclude_none` can drop it and keep the stored value.
+ */
+export const withOmittedFalseDefaults = (sent: Row): Row => {
   const filled: Row = { ...sent };
   for (const key of NON_NONE_PARAM_DEFAULTS) {
     if (!(key in filled)) filled[key] = false;
@@ -83,7 +88,7 @@ export const handlePostModelUpdate = (args: {
   const current = rows[at] as Row;
   const sent = dropFalsy((body['litellm_params'] ?? {}) as Row);
   const stored = { ...(current['litellm_params'] as Row) };
-  const parsed = options.fillsParamDefaults === true ? fillParamDefaults(sent) : sent;
+  const parsed = options.fillsParamDefaults === true ? withOmittedFalseDefaults(sent) : sent;
   // `None` keeps the stored value; every other field is the parsed model's — nothing else
   // of the stored row survives the rebuild (undeclared keys are dropped).
   const rewritten = Object.fromEntries(

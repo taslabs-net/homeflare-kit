@@ -10,9 +10,9 @@
  *   missing id on the by-id read is HTTP 400, measured in `model_info_v1` at v1.100.0 and
  *   v1.103.0. POST `/model/update` REBUILDS `litellm_params` from the parsed request model and
  *   REPLACES the column (deleting stored keys the model does not declare); PATCH merges
- *   (`update_db_model`). What the real proxy answers on a duplicate create, an update of a
- *   missing id, and a delete of a missing id is UNMEASURED; the fake's 400s there are its own
- *   choices, and every test that leans on one says so.
+ *   (`update_db_model`) after `updateLiteLLMParams` and `exclude_none`. A PATCH of a missing id
+ *   is HTTP 404 (`patch_model` at v1.103.0). A duplicate create and a delete of a missing id
+ *   stay the fake's own 400s, and every test that leans on one says so.
  * ★ THE LIST IS THE TABLE, the way `GET /model/info` reads: a row is listed as soon as it is
  *   committed — no in-memory registry like the MCP server list. `listOmits` models the opposite,
  *   rows the list does not answer but the by-id read does, UNMEASURED, to exercise the read-back
@@ -22,7 +22,10 @@
  *   keeps every key it was sent, so `models()` still asserts what a resource SENT.
  * ★ `FAKE-*` VALUES ONLY. Nothing here is, or looks like, a real credential.
  */
-import { handlePostModelUpdate } from './fake-model-litellm-post-update.ts';
+import {
+  handlePostModelUpdate,
+  withOmittedFalseDefaults,
+} from './fake-model-litellm-post-update.ts';
 
 /** One request that reached the fake. Its own type, so this file depends on no other fake. */
 export interface FakeModelRequest {
@@ -39,6 +42,11 @@ export interface FakeModelLitellm {
   readonly requests: () => readonly FakeModelRequest[];
   /** The JSON bodies of every `POST`, in order. */
   readonly bodies: () => readonly Row[];
+  /**
+   * The next `count` successful `POST /model/new` calls each make the following `GET /model/info`
+   * answer 500 once — a read-back that fails after the row is committed.
+   */
+  readonly failNextReadBacks: (count: number) => void;
 }
 
 export interface FakeModelOptions {
@@ -56,11 +64,11 @@ export interface FakeModelOptions {
   /** `POST /model/update` drops a `false` and an empty list, like a truthiness check would. */
   readonly editIgnoresFalsy?: boolean;
   /**
-   * `POST /model/update` parses `litellm_params` the way v1.103.0 `updateLiteLLMParams` does:
-   * every unset field is filled with its pydantic default before the write. `None` keeps the
-   * stored value; a non-`None` default (`false` on the five flags below) overwrites it. POST then
-   * REPLACES the column — a key the parsed model does not declare is DELETED from the stored row —
-   * while PATCH merges: a key the request does not carry survives (both handlers below).
+   * `POST /model/update` and `PATCH /model/{id}/update` parse `litellm_params` the way v1.103.0
+   * `updateLiteLLMParams` does: every unset field is filled with its pydantic default before the
+   * write. `None` keeps the stored value; a non-`None` default (`false` on the five flags) overwrites
+   * it. POST then REPLACES the column. PATCH merges after `exclude_none`, so an explicit JSON `null`
+   * is dropped and the stored value survives, while an omitted flag is written `false`.
    */
   readonly fillsParamDefaults?: boolean;
   /** Ids committed to the table that the list omits; the by-id read still answers them. */
@@ -92,6 +100,8 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
   const requests: FakeModelRequest[] = [];
   const bodies: Row[] = [];
   const omitted = new Set(options.listOmits ?? []);
+  let readBacksLeft = 0;
+  let failNextGet = false;
 
   /**
    * The measured 1.103.0 read: `litellm_params` decrypted but with `api_key` stripped — never a
@@ -112,6 +122,10 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
       return json(401, { detail: 'invalid api key' });
     }
     if (url.pathname === '/model/info' && request.method === 'GET') {
+      if (failNextGet) {
+        failNextGet = false;
+        return json(500, { detail: { error: 'injected read-back failure' } });
+      }
       const wanted = url.searchParams.get('litellm_model_id');
       const listed = rows.filter((row) => !omitted.has(rowId(row)));
       if (wanted === null) return json(200, { data: listed.map(readable) });
@@ -137,6 +151,10 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
         return json(400, { detail: { error: `Model with id ${id} already exists` } });
       }
       rows = [...rows, modelRow({ ...body, model_info: info })];
+      if (readBacksLeft > 0) {
+        readBacksLeft -= 1;
+        failNextGet = true;
+      }
       return json(200, {});
     }
     if (url.pathname === '/model/update' && request.method === 'POST') {
@@ -154,12 +172,12 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
       bodies.push(body);
       const id = decodeURIComponent(patch[1] ?? '');
       const at = rows.findIndex((row) => rowId(row) === id);
-      if (at === -1) return json(400, { detail: { error: 'model not found' } });
-      // ★ v1.103.0 `update_db_model` MERGES: present `model_info` keys land on the stored row,
-      //   present `litellm_params` keys land on the stored params (a JSON `null` keeps the
-      //   stored value), and every key the request does not carry is preserved — the opposite
-      //   of POST's rebuild (above). An empty access_groups clears the groups.
-      //   editIgnoresFalsy drops that clear.
+      // ★ v1.103.0 `patch_model` answers 404 when the table has no such id
+      //   (`model_management_endpoints.py`, `HTTP_404_NOT_FOUND`), not 400.
+      if (at === -1) return json(404, { detail: { error: `Model ${id} not found on proxy.` } });
+      // ★ v1.103.0 `update_db_model` MERGES onto the stored row (the opposite of POST's rebuild).
+      //   An empty access_groups clears the groups. editIgnoresFalsy drops that clear. The
+      //   params parse below is `updateLiteLLMParams` plus `exclude_none` when the flag is on.
       const dropFalsy = <T extends Row>(incoming: T): T =>
         options.editIgnoresFalsy === true
           ? (Object.fromEntries(
@@ -172,8 +190,11 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
       const info = dropFalsy((body['model_info'] ?? {}) as Row);
       const sent = dropFalsy((body['litellm_params'] ?? {}) as Row);
       const stored = { ...(current['litellm_params'] as Row) };
-      // A JSON `null` is not applied at all, so the stored value survives under it.
-      const applied = Object.fromEntries(Object.entries(sent).filter(([, v]) => v !== null));
+      // ★ v1.103.0 parses `litellm_params` as `updateLiteLLMParams` (omitted flags become
+      //   `false`) and then `model_dump(exclude_none=True)`. An explicit JSON `null` is `None`
+      //   and is dropped, so the stored value survives; an omitted flag is written `false`.
+      const parsed = options.fillsParamDefaults === true ? withOmittedFalseDefaults(sent) : sent;
+      const applied = Object.fromEntries(Object.entries(parsed).filter(([, v]) => v !== null));
       const params: Row = { ...stored, ...applied };
       const merged: Row = {
         ...current,
@@ -202,6 +223,9 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
 
   return {
     bodies: () => [...bodies],
+    failNextReadBacks: (count) => {
+      readBacksLeft = count;
+    },
     fetch,
     models: () => rows.map((row) => ({ ...row })),
     requests: () => [...requests],

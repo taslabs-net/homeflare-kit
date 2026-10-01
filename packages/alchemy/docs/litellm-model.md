@@ -75,6 +75,12 @@ Then provide `litellmProviders()` alongside the stack's other providers.
 | delete           | Idempotent by this resource, not by the vendor: a `BadRequest` re-lists, and only a genuinely-absent id counts as already deleted — a refused delete on a live row re-fails.                                                                                                                                                                                                          |
 | list             | Empty: adoption is an explicit act (`--adopt`), and no ownership mark exists to filter by.                                                                                                                                                                                                                                                                                            |
 
+A refused unpinned rename leaves a `replacing` row. Reverting the name finds this stack's own
+still-serving deployment and refuses with `LitellmModelPriorGenerationError`: drop the state row
+(`alchemy state rm`, which leaves the deployment) and deploy with `--adopt`. Do not delete the live
+row — under `destroy()`, garbage collection deletes the old generation by that same id. A declared-id
+replace whose read-back fails after `POST /model/new` resumes on the next deploy with `--adopt`.
+
 ## Refusals
 
 A plan is refused, before any write, when the declaration:
@@ -91,8 +97,8 @@ A plan is refused, before any write, when the declaration:
 - Whether `/model/new` honours a supplied `model_info.id`: the answer is an untyped body, so the id
   asked for is the one tracked, and a read-back that cannot find it fails the deploy
   (`LitellmModelAbsentAfterWriteError`) rather than recording a row it cannot identify.
-- What the real proxy answers for a duplicate create, an update of a missing id, and a delete of a
-  missing id: the fake's 400s there are its own choices, and every test that leans on one says so.
+- What the real proxy answers for a duplicate create and a delete of a missing id: the fake's 400s
+  there are its own choices. A PATCH of a missing id is HTTP 404 (`patch_model` at v1.103.0).
 - The rest of `litellm_params` (rpm/tpm, timeouts, fallbacks, wildcard routing, …), cost fields on
   `model_info` beyond what the read returns, `teams`, and config-file rows (`db_model: false`) are
   not modelled on purpose. v1.103.0 fills every unset `litellm_params` field with its pydantic

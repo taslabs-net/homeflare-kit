@@ -85,6 +85,33 @@ test('an unpinned rename onto a foreign row is refused even with --adopt', async
   expect(writesOf(fake.requests().slice(before))).toEqual([]);
 });
 
+test('reverting an unpinned rename that hit a foreign row names a state recovery', async () => {
+  const fake = startFakeModelLitellm({ masterKey: KEY, seed: [foreign] });
+  const engine = stack(fake);
+  expect(await engine.deploy(declare({ ...grok, modelName: 'old-name' }))).toEqual({
+    Grok: 'create',
+  });
+  // The refusal is right, and Apply has already committed the `replacing` row.
+  await expect(engine.deploy(declare(grok))).rejects.toThrow(/--adopt does not cover/);
+  const before = fake.requests().length;
+  // The engine resumes that same replacement. Reconcile finds the stack's own serving row by
+  // the old name. Its id is the previous generation's, not this instance's physical name.
+  await expect(engine.deploy(declare({ ...grok, modelName: 'old-name' }))).rejects.toThrow(
+    /older generation/,
+  );
+  await expect(
+    engine.deploy(declare({ ...grok, modelName: 'old-name' }), { adopt: true }),
+  ).rejects.toThrow(/alchemy state rm/);
+  expect(writesOf(fake.requests().slice(before))).toEqual([]);
+  expect(rowAt(fake, 'FAKE-foreign-id')).toMatchObject({
+    litellm_params: { model: 'xai/grok-4.6' },
+    model_name: 'grok',
+  });
+  const serving = fake.models().find((row) => row['model_name'] === 'old-name');
+  if (serving === undefined) throw new Error("the stack's own row is gone");
+  expect((serving['model_info'] as Row)['id']).not.toBe('FAKE-foreign-id');
+});
+
 test('a changed declared id pointing at a foreign row is refused, the row untouched', async () => {
   const fake = startFakeModelLitellm({ masterKey: KEY, seed: [foreign] });
   const engine = stack(fake);

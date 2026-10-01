@@ -4,8 +4,8 @@
  *
  * ⛔ WHAT IS COMPARED, WITH ENCRYPTION IN MIND. LiteLLM stores `litellm_params` encrypted when the
  *   proxy runs with a database master key (`prisma_client.py`, `encrypt_value`, tag v1.103.0) and
- *   answers a row whose `litellm_params` are ciphertext or whose sensitive fields are omitted —
- *   `/v2/model/info`'s own docstring says api keys and api_base are left out. So:
+ *   answers a row whose `litellm_params` are decrypted, with `api_key` stripped (measured at
+ *   v1.103.0) — `/v2/model/info`'s docstring still says api keys and api_base are left out. So:
  *   - `model_name`, `model_info.id`, `mode`, `base_model` and `access_groups` are compared from
  *     the fields the read returns.
  *   - `model`, `api_base` and `api_key` are compared through a DIGEST of the DECLARED values
@@ -181,7 +181,7 @@ const modelInfoOf = (props: ModelProps): Record<string, unknown> => ({
   id: null,
 });
 
-/** A create names the group and pins nothing: the id is in the URL-less POST body's model_info. */
+/** A create names the group and pins the id it asked for on `model_info` of the POST body. */
 export const createBody = (
   props: ModelProps,
   modelId: string,

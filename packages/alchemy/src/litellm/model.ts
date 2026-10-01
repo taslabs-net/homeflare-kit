@@ -26,19 +26,18 @@ import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
+import { createPhysicalName } from 'alchemy/PhysicalName';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import * as Predicate from 'effect/Predicate';
-import { adoptsAtApply } from '../ownership/adopt.ts';
-import { adopting } from '../ownership/adopting.ts';
-import { isCreate } from '../ownership/rows.ts';
+import { noteUnfinished } from '../ownership/resume.ts';
 import {
   LitellmModelAbsentAfterWriteError,
   LitellmModelConfigFileRowError,
-  LitellmModelForeignRowError,
   LitellmModelInvalidError,
   LitellmModelNotConvergedError,
 } from './model-errors.ts';
+import { claimStatelessRow } from './model-claim.ts';
 import { createBody, declaredDigest, differing, firstProblem, patchBody } from './model-form.ts';
 import { sealState } from './model-credential.ts';
 import { findLive, wantedId } from './model-locate.ts';
@@ -83,8 +82,8 @@ export const modelHandlers = {
    * ⛔ WITH NO `output` THIS IS ALCHEMY'S ADOPTION PROBE, AND THE ONLY PLAN-TIME HOOK A NEW MODEL
    *   GETS — so the refusals run here too, as a defect (mcp-server.ts: the cold-start probe must
    *   fail the plan, and a recovery read must degrade to "nothing recovered", which only a defect
-   *   does). The stored params are unreadable ciphertext, so a URL or credential value that would
-   *   land in unencrypted state is refused here, before Apply commits the props.
+   *   does). The v1.103.0 read answers params decrypted with `api_key` stripped, so this refusal
+   *   is the declaration's (`firstProblem`), before Apply commits props into unencrypted state.
    */
   read: ({ id, instanceId, olds, output }: Args<{ olds: ModelProps }>) =>
     Effect.gen(function* () {
@@ -97,15 +96,38 @@ export const modelHandlers = {
       // ★ THE LIST FIRST: one GET answers a name, an id and absence (model-locate.ts).
       const found = yield* findLive(id, instanceId, olds, output);
       if (found === undefined) return undefined;
+      // ★ AN INTERRUPTED UNPINNED CREATE. The recovery read reuses the `creating` row's instance
+      //   id, which is the one `POST /model/new` was given, so the live id matches the physical
+      //   name. The probe's instance id is minted fresh (Plan.ts `generateInstanceId`) and cannot
+      //   match a row this declaration created. A declared id can collide, so it stays `Unowned`.
+      if (output === undefined && olds.id === undefined) {
+        const physical = yield* createPhysicalName({
+          id,
+          instanceId,
+          lowercase: true,
+          maxLength: 64,
+        });
+        if (found.id === physical) return found;
+      }
       // The row cannot supply a digest of what was declared; state can (model-form.ts).
       return output === undefined ? Unowned(found) : { ...found, paramsSeal: output.paramsSeal };
     }),
 
-  diff: ({ news, output }: { news: Input<ModelProps>; output: ModelAttributes | undefined }) =>
+  diff: ({
+    instanceId,
+    news,
+    output,
+  }: {
+    instanceId: string;
+    news: Input<ModelProps>;
+    output: ModelAttributes | undefined;
+  }) =>
     Effect.gen(function* () {
       if (!isResolved(news)) return undefined;
       yield* refuse(news);
-      if (output === undefined) return undefined;
+      // ★ No attributes: an unfinished generation of our own. `--adopt` may resume it
+      //   (ownership/resume.ts). A fresh replace's new instance is never diffed this way.
+      if (output === undefined) return yield* noteUnfinished(instanceId);
       // The id is identity: a different declared id is a different row.
       if (news.id !== undefined && news.id !== output.id) {
         return { action: 'replace', deleteFirst: false } as const;
@@ -147,35 +169,22 @@ export const modelHandlers = {
             new LitellmModelConfigFileRowError({ id: before.id, modelName: news.modelName }),
           );
         }
-        // ⛔ NOTHING IS WRITTEN OVER A ROW THIS STACK HOLDS NO STATE FOR, unless `--adopt`
-        //   authorizes this generation (ownership/adopt.ts: a create, or an unfinished
-        //   generation of our own — never a replace's new identity). A replace reconciles with
-        //   no attributes and a live row under its name may belong to another deployment: only
-        //   a row whose id is the one this declaration would create is ours by construction.
-        //   `output` may be the live attributes the plan stripped from `Unowned(found)` (its
-        //   `paramsSeal` is the empty string when no successful deploy committed a seal), so the
-        //   gate runs both when output is undefined and when it is only a probe result.
+        // ⛔ NOTHING IS WRITTEN OVER A ROW THIS STACK HOLDS NO STATE FOR, unless the gate says
+        //   so (model-claim.ts): a deterministic id is ours, an older generation's id is refused
+        //   with a state-level recovery, and anything else needs `--adopt` on a create or an
+        //   unfinished generation. `output` may be the live attributes the plan stripped from
+        //   `Unowned(found)` (`paramsSeal` is empty until a deploy commits a seal), so the gate
+        //   runs both when output is undefined and when it is only a probe result.
         const stateless = output === undefined || output.paramsSeal === '';
         if (stateless) {
-          const wanted = yield* wantedId(id, instanceId, news, output);
-          // ⛔ ONLY A DETERMINISTIC ID IS OURS BY CONSTRUCTION. With no declared id, `wanted`
-          //   is the physical name this declaration would create, so the one row that counts as
-          //   already-existing is that exact id (a coincidence is impossible: the id carries a
-          //   16-byte instance suffix). A DECLARED id is a name a human chose and could collide
-          //   with a foreign row, so it always goes through the adoption gate.
-          const ours = news.id === undefined && before.id === wanted;
-          const isAdoption = yield* adopting({ fqn, instanceId, output }, () =>
-            Effect.succeed(false),
-          );
-          if (!ours && !isAdoption && !(yield* adoptsAtApply({ fqn, instanceId, output }))) {
-            return yield* Effect.fail(
-              new LitellmModelForeignRowError({
-                id: before.id,
-                modelName: news.modelName,
-                replace: !(yield* isCreate(fqn, instanceId)),
-              }),
-            );
-          }
+          yield* claimStatelessRow({
+            beforeId: before.id,
+            fqn,
+            instanceId,
+            news,
+            output,
+            wanted: yield* wantedId(id, instanceId, news, output),
+          });
         }
         modelId = before.id;
         const drifted = differing(before, news);

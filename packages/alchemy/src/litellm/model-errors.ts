@@ -65,9 +65,9 @@ export class LitellmModelAbsentAfterWriteError extends Data.TaggedError(
 }
 
 /**
- * The write returned no error but the deployment still differs from the declaration. `/model/update`
- * is a partial update (assigned keys only, read from the 1.103.0 source), so what did not land is
- * refused here instead of being reported as converged.
+ * The write returned no error but the deployment still differs from the declaration. The PATCH
+ * merge writes the keys it was sent (`update_db_model` at v1.103.0); a field the read-back still
+ * shows different is refused here instead of being reported as converged.
  */
 export class LitellmModelNotConvergedError extends Data.TaggedError(
   'LitellmModelNotConvergedError',
@@ -110,6 +110,32 @@ export class LitellmModelForeignRowError extends Data.TaggedError('LitellmModelF
  * The row a reconcile found is served from the proxy's config file (`model_info.db_model: false`),
  * not from the database, so the DB API cannot manage it. Remove it from the config file first.
  */
+/**
+ * The live row a stateless reconcile found is an OLDER generation of this FQN's own state chain
+ * (`attr.id` walked through `old`). It is still the serving deployment: the replacement that
+ * followed it never committed. Taking the row over would store that id on the new generation, and
+ * `destroy()` then deletes the old generation by the same id.
+ * ⛔ THE RECOVERY IS STATE, NOT THE ROW. `alchemy state rm` deletes the state record and leaves the
+ *   deployment; deleting the live row takes the serving model out of its group.
+ */
+export class LitellmModelPriorGenerationError extends Data.TaggedError(
+  'LitellmModelPriorGenerationError',
+)<{
+  readonly modelName: string;
+  readonly id: string;
+  readonly fqn: string;
+}> {
+  override get message(): string {
+    return (
+      `LiteLLM.Model "${this.modelName}": the live row ${this.id} is an older generation still ` +
+      `recorded on ${this.fqn}. Nothing was written. Taking it over would store that id on the ` +
+      'in-flight replacement, and destroy() then deletes the old generation by the same id. ' +
+      "Drop this resource's state row (alchemy state rm, which leaves the deployment) and " +
+      'deploy again with --adopt. Do not delete the live row.'
+    );
+  }
+}
+
 export class LitellmModelConfigFileRowError extends Data.TaggedError(
   'LitellmModelConfigFileRowError',
 )<{
@@ -138,4 +164,5 @@ export type ModelError =
   | LitellmModelAbsentAfterWriteError
   | LitellmModelNotConvergedError
   | LitellmModelForeignRowError
+  | LitellmModelPriorGenerationError
   | LitellmModelConfigFileRowError;

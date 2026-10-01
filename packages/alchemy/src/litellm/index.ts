@@ -139,6 +139,7 @@ export {
   LitellmModelAmbiguousNameError,
   LitellmModelInvalidError,
   LitellmModelNotConvergedError,
+  LitellmModelPriorGenerationError,
   LitellmModelUnreadableError,
 } from './model-errors.ts';
 export {

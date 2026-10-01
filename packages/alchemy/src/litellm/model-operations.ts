@@ -23,10 +23,10 @@
  *   `litellm_model_id` filter, used only where the list cannot decide (a write-back on a row the
  *   list may not show yet).
  * ⛔ NO MESSAGE SNIFFING (S21). The by-id read's 400 is undeclared on the generated operation, so
- *   it decodes at run time as the shared `BadRequest` class (`HTTP_STATUS_MAP`) and is matched
- *   with `instanceof`, never by the error's text. A 400 is absence only when a re-list also lacks
- *   the id — the rule `deleteModel` already uses. A 404, if a proxy ever answers one, is the same
- *   absence. Any other failure propagates.
+ *   it decodes at run time as the shared `BadRequest` (`HTTP_STATUS_MAP`). `catchTag` matches the
+ *   tag — the same match `deleteModel` uses — so a later declared class with that tag is still
+ *   seen. A 400 is absence only when a re-list also lacks the id. A 404 is the same absence.
+ *   Any other failure propagates.
  * ⛔ THE ROW'S PARAMS ARE NEVER READ INTO STATE: `toAttributes` (model-form.ts) copies `model`
  *   only when `litellm_params` is an object, and never `api_base` or `api_key` — the v1.103.0
  *   read answers params DECRYPTED but STRIPS `api_key` (measured). What was declared is
@@ -34,7 +34,7 @@
  * ⚠️ Unlike pass-through endpoints, each deployment is its own DB row: no semaphore.
  */
 import * as models from '@distilled.cloud/litellm/model_management';
-import { BadRequest, NotFound } from '@distilled.cloud/litellm/Errors';
+import type { BadRequest, NotFound } from '@distilled.cloud/litellm/Errors';
 import * as Effect from 'effect/Effect';
 import { type LitellmOpContext, throughFetch } from './operations.ts';
 import { toAttributes } from './model-form.ts';
@@ -89,21 +89,21 @@ export const listModels = (): Effect.Effect<
  *   list does not contain it (`deleteModel`'s rule). A 401, a 500 or a dead network says nothing
  *   about whether the row exists and must never be read as absence. The id is re-checked on a
  *   successful answer: a proxy that ignored the filter must not hand back some other row.
+ * ⚠️ 400 and 404 are undeclared on this GET, so they are not in its error union, but the status
+ *   map still produces those tags. Widening here is what lets `catchTag` see them.
  */
+type ModelInfoFailure = models.GetModelInfoV1ModelInfoError | BadRequest | NotFound;
+
 export const readModelRow = (modelId: string) =>
   throughFetch(models.getModelInfoV1ModelInfo({ litellm_model_id: modelId })).pipe(
-    Effect.catch((error) =>
-      error instanceof NotFound
-        ? Effect.succeed(undefined)
-        : error instanceof BadRequest
-          ? listModels().pipe(
-              Effect.flatMap((rows) =>
-                rows.some((row) => row.id === modelId)
-                  ? Effect.fail(error)
-                  : Effect.succeed(undefined),
-              ),
-            )
-          : Effect.fail(error),
+    Effect.mapError((error): ModelInfoFailure => error),
+    Effect.catchTag('NotFound', () => Effect.succeed(undefined)),
+    Effect.catchTag('BadRequest', (error) =>
+      listModels().pipe(
+        Effect.flatMap((rows) =>
+          rows.some((row) => row.id === modelId) ? Effect.fail(error) : Effect.succeed(undefined),
+        ),
+      ),
     ),
     Effect.flatMap((response) =>
       response === undefined

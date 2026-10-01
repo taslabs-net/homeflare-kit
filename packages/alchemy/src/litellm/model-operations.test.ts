@@ -3,8 +3,8 @@
  * failures are allowed to be swallowed. The rule under test is S21's — never decide absence from
  * an error's text, only from a read.
  *
- * ⚠️ The fake's 400s (a delete of a missing id, an update of a missing id) are its own choices, not
- *   a measurement of LiteLLM 1.103.0 (fake-model-litellm.ts).
+ * ⚠️ The fake's 400 on a delete of a missing id is its own choice, not a measurement of LiteLLM
+ *   1.103.0. A PATCH of a missing id is the measured 404 (fake-model-litellm.ts).
  */
 import { credentials } from '@distilled.cloud/litellm/Credentials';
 import { describe, expect, test } from 'bun:test';
