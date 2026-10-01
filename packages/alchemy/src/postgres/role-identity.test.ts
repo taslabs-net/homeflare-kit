@@ -12,6 +12,7 @@ import { Stack } from 'alchemy/Stack';
 import * as Effect from 'effect/Effect';
 import { unfinished } from '../ownership/resume.ts';
 import { postgresRunnerConnection } from './connection.ts';
+import { parseLiteral } from './fake-sql-quote.ts';
 import { makeFakeSql } from './fake-sql.ts';
 import { type PsqlRunner } from './psql-executor.ts';
 import { PostgresRoleIdentityRefused } from './role-errors.ts';
@@ -44,9 +45,9 @@ const runnerFor =
       stdin,
     );
     const body = (wrapped?.[1] ?? stdin).replace(/;\s*$/, '');
-    const bound = /^([\s\S]*) = '((?:[^']|'')*)'$/.exec(body);
+    const bound = /^([\s\S]*) = (E'[\s\S]*')$/.exec(body);
     const sql = bound === null ? body : `${bound[1]} = $1`;
-    const params = bound === null ? [] : [bound[2]?.replace(/''/g, "'")];
+    const params = bound === null ? [] : [parseLiteral(bound[2] as string)];
     const rows = await Effect.runPromise(fake.unsafe(sql, params));
     return { code: 0, stdout: JSON.stringify(rows), stderr: '' };
   };

@@ -5,17 +5,16 @@
 import type { PostgresDatabaseAttributes } from './database-attrs.ts';
 import type { PostgresSchemaAttributes } from './schema-attrs.ts';
 
-const unquoteIdent = (raw: string): string => raw.replace(/""/g, '"');
-const unquoteLiteral = (raw: string): string => raw.replace(/''/g, "'");
+import { parseLiteral, unquoteIdent, unquoteLiteral } from './fake-sql-quote.ts';
 
 /** Pull every field back out of exactly the text `buildCreateDatabaseSql` writes. */
 export const parseCreate = (text: string): PostgresDatabaseAttributes => {
   const name = /^CREATE DATABASE "((?:[^"]|"")*)" WITH /.exec(text);
   const owner = /OWNER "((?:[^"]|"")*)"/.exec(text);
-  const encoding = /ENCODING '((?:[^']|'')*)'/.exec(text);
-  const localeProvider = /LOCALE_PROVIDER '((?:[^']|'')*)'/.exec(text);
-  const lcCollate = /LC_COLLATE '((?:[^']|'')*)'/.exec(text);
-  const lcCtype = /LC_CTYPE '((?:[^']|'')*)'/.exec(text);
+  const encoding = /ENCODING E'((?:[^']|'')*)'/.exec(text);
+  const localeProvider = /LOCALE_PROVIDER E'((?:[^']|'')*)'/.exec(text);
+  const lcCollate = /LC_COLLATE E'((?:[^']|'')*)'/.exec(text);
+  const lcCtype = /LC_CTYPE E'((?:[^']|'')*)'/.exec(text);
   const tablespace = /TABLESPACE "((?:[^"]|"")*)"/.exec(text);
   const allowConnections = /ALLOW_CONNECTIONS (true|false)/.exec(text);
   const connectionLimit = /CONNECTION LIMIT (-?\d+)/.exec(text);
@@ -47,7 +46,9 @@ export const parseCreateSchema = (
   executingRole: string,
 ): Omit<PostgresSchemaAttributes, 'database' | 'oid'> => {
   const match =
-    /^CREATE SCHEMA IF NOT EXISTS "((?:[^"]|"")*)"(?: AUTHORIZATION "((?:[^"]|"")*)")?$/.exec(text);
+    /^CREATE SCHEMA(?: IF NOT EXISTS)? "((?:[^"]|"")*)"(?: AUTHORIZATION "((?:[^"]|"")*)")?$/.exec(
+      text,
+    );
   if (match === null) {
     throw new Error(`fake-sql: could not parse a generated CREATE SCHEMA statement: ${text}`);
   }
@@ -61,12 +62,16 @@ export const parseCreateSchema = (
 /** Parse exactly the text `buildCommentSchemaSql` writes. */
 export const parseCommentSchema = (
   text: string,
+  standardConformingStrings = true,
 ): { readonly name: string; readonly comment: string } => {
-  const match = /^COMMENT ON SCHEMA "((?:[^"]|"")*)" IS '((?:[^']|'')*)'$/.exec(text);
+  const match = /^COMMENT ON SCHEMA "((?:[^"]|"")*)" IS ([\s\S]+)$/.exec(text);
   if (match === null) {
     throw new Error(`fake-sql: could not parse a generated COMMENT ON SCHEMA statement: ${text}`);
   }
-  return { name: unquoteIdent(match[1] as string), comment: unquoteLiteral(match[2] as string) };
+  return {
+    name: unquoteIdent(match[1] as string),
+    comment: parseLiteral(match[2] as string, standardConformingStrings),
+  };
 };
 
 /** Parse exactly the text `buildDropSchemaSql` writes. */

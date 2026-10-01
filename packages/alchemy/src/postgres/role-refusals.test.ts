@@ -213,7 +213,7 @@ describe('quoting', () => {
     // In production that value is a SCRAM verifier (`role-scram.ts`), which the base64 alphabet
     // keeps free of `'`; the quoting property still holds for any string handed to the builder.
     expect(buildSetPasswordSql('seat-observability', "O'Brien; DROP")).toBe(
-      "ALTER ROLE \"seat-observability\" WITH PASSWORD 'O''Brien; DROP'",
+      "ALTER ROLE \"seat-observability\" WITH PASSWORD E'O''Brien; DROP'",
     );
   });
 });
