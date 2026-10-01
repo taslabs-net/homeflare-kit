@@ -22,6 +22,7 @@ import { type Credentials, CredentialsFromEnv } from '@distilled.cloud/litellm/C
 import * as Layer from 'effect/Layer';
 import { LiteLLMAccessGroupProvider } from './access-group.ts';
 import { LiteLLMBudgetProvider } from './budget.ts';
+import { LiteLLMCredentialProvider } from './credential.ts';
 import { LiteLLMMCPServerProvider } from './mcp-server.ts';
 import { LiteLLMKeyProvider } from './key.ts';
 import { LiteLLMPassThroughEndpointProvider } from './pass-through-endpoint.ts';
@@ -35,6 +36,7 @@ export const litellmProviders = (creds: Layer.Layer<Credentials> = CredentialsFr
   Layer.mergeAll(
     LiteLLMPassThroughEndpointProvider(),
     LiteLLMBudgetProvider(),
+    LiteLLMCredentialProvider(),
     LiteLLMMCPServerProvider(),
     LiteLLMAccessGroupProvider(),
     LiteLLMToolsetProvider(),

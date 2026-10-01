@@ -32,6 +32,23 @@ describe('psql executor', () => {
     expect(calls[0]?.stdin).toContain("datname = 'x'");
   });
 
+  test('a WITH-led row query is wrapped in json_agg too, not discarded as a write', async () => {
+    // The schema emptiness check is `WITH ns AS (…) SELECT …` — unwrapped, its answer rows
+    // are dropped and the check reads the empty-table fallback ("every schema is empty").
+    const calls: { argv: readonly string[]; stdin: string }[] = [];
+    const run: PsqlRunner = (call) => {
+      calls.push(call);
+      return ok('[{"empty":false}]\n');
+    };
+    const rows = await Effect.runPromise(
+      makePsqlExecutor(run, target).unsafe(
+        'WITH ns AS (SELECT 1 AS oid) SELECT NOT EXISTS (SELECT 1 FROM pg_class) AS empty',
+      ),
+    );
+    expect(rows).toEqual([{ empty: false }]);
+    expect(calls[0]?.stdin).toContain('json_agg');
+  });
+
   test('a duplicate-database failure stays recognisable as the 42P04 race', async () => {
     const run: PsqlRunner = () =>
       Promise.resolve({

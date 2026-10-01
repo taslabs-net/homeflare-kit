@@ -1,24 +1,25 @@
 /**
  * A recording fake `PgExecutor` (S28: "Tests use `bun:test`… a test never trusts the deploy's
  * own report" — here read back from the fake's own catalog, not from the statement list) for
- * every lifecycle test in this family. No socket, no `@effect/sql-pg` client — it is small
- * enough to re-derive the one thing this provider ever asks of a real one: the statement shapes
- * this family issues, matched by text, against an in-memory `pg_database` map and the role
- * catalog `fake-role-sql.ts` applies.
+ * every lifecycle test in this family. No socket, no `@effect/sql-pg` client — it matches the
+ * statement shapes this family issues, by text, against an in-memory `pg_database` map. The
+ * role catalog is `fake-role-sql.ts`; the schema catalog is `fake-schema-sql.ts`.
  *
- * ⛔ IT PARSES ITS OWN OUTPUT, NOT SQL IN GENERAL. `parseCreate` below understands exactly the
- *   text `buildCreateDatabaseSql` (`database-sql.ts`) produces — quoted with `quoteIdent` /
+ * ⛔ IT PARSES ITS OWN OUTPUT, NOT SQL IN GENERAL. `parseCreate` (`fake-sql-parse.ts`) understands
+ *   exactly the text `buildCreateDatabaseSql` produces — quoted with `quoteIdent` /
  *   `quoteStringLiteral` — because that is the only `CREATE DATABASE` this family ever issues. A
- *   general SQL parser would hide a quoting bug instead of tripping over it. The role half lives
- *   in `fake-role-sql.ts` under the same rule.
+ *   general SQL parser would hide a quoting bug instead of tripping over it. The role and schema
+ *   halves live in their own files under the same rule.
  */
 import * as Effect from 'effect/Effect';
 import { SqlError, SqlSyntaxError, UnknownError } from 'effect/unstable/sql/SqlError';
 import type { PostgresDatabaseAttributes } from './database-attrs.ts';
-import type { PostgresRoleAttributes } from './role-attrs.ts';
 import type { PgExecutor } from './database-sql.ts';
-import { unquoteIdent, unquoteLiteral } from './fake-sql-quote.ts';
+import { parseCreate } from './fake-sql-parse.ts';
 import { type FakeRoleState, applyRoleStatement } from './fake-role-sql.ts';
+import { type FakeSchemaState, applySchemaStatement } from './fake-schema-sql.ts';
+import type { PostgresRoleAttributes } from './role-attrs.ts';
+import type { PostgresSchemaAttributes } from './schema-attrs.ts';
 
 export interface RecordedStatement {
   readonly text: string;
@@ -40,6 +41,11 @@ export interface FakeSql extends PgExecutor {
   /** Options on a membership the name alone hides, keyed `member\0parent\0grantor`. Absent
    * means neither ADMIN nor SET. */
   readonly membershipOptions: Map<string, { readonly admin: boolean; readonly set: boolean }>;
+  /** Mutable on purpose: a test seeds a live schema (adoption, drift) or clears one (drop). */
+  readonly schemas: Map<string, PostgresSchemaAttributes>;
+  /** Mutable on purpose: names of schemas this fake pretends hold at least one relation, so a
+   * `cascade: false` drop refusal has something to refuse. */
+  readonly relationsIn: Set<string>;
 }
 
 export interface FakeSqlOptions {
@@ -53,38 +59,24 @@ export interface FakeSqlOptions {
   /** Fail the next statement whose text starts with this prefix, once, without applying it.
    * A `transaction` that included earlier statements rolls them back. */
   readonly failNext?: string;
+  readonly schemas?: ReadonlyArray<PostgresSchemaAttributes>;
+  /** Names of schemas the fake answers `schemaIsEmpty` with `false` for. */
+  readonly schemasWithRelations?: ReadonlyArray<string>;
+  /** Accept the NEXT `CREATE SCHEMA` (no error) but record nothing — the S10 case where the
+   * write's own report is a lie and the immediate re-read finds nothing. */
+  readonly swallowNextCreateSchema?: boolean;
+  /** What `current_database()` answers and every schema row is stamped with (a real server
+   * always reports the database its connection opened). Default `postgres`. */
+  readonly database?: string;
+  /** The NEXT `CREATE SCHEMA` "succeeds" but stores a row owned by THIS role instead — a
+   * concurrent creator won between the first `SELECT` and the `IF NOT EXISTS`, which then
+   * does nothing (the re-read row is asserted like any other). Consumed once. */
+  readonly raceNextCreateSchema?: string;
+  /** What `current_user` answers, and the owner a `CREATE SCHEMA` without `AUTHORIZATION`
+   * stores. Default `postgres`. A test that sets this pins the omitted-owner comparison
+   * against the session role, not a hardcoded name. */
+  readonly currentUser?: string;
 }
-
-/** Pull every field back out of exactly the text `buildCreateDatabaseSql` writes. */
-const parseCreate = (text: string): PostgresDatabaseAttributes => {
-  const name = /^CREATE DATABASE "((?:[^"]|"")*)" WITH /.exec(text);
-  const owner = /OWNER "((?:[^"]|"")*)"/.exec(text);
-  const encoding = /ENCODING '((?:[^']|'')*)'/.exec(text);
-  const localeProvider = /LOCALE_PROVIDER '((?:[^']|'')*)'/.exec(text);
-  const lcCollate = /LC_COLLATE '((?:[^']|'')*)'/.exec(text);
-  const lcCtype = /LC_CTYPE '((?:[^']|'')*)'/.exec(text);
-  const tablespace = /TABLESPACE "((?:[^"]|"")*)"/.exec(text);
-  const allowConnections = /ALLOW_CONNECTIONS (true|false)/.exec(text);
-  const connectionLimit = /CONNECTION LIMIT (-?\d+)/.exec(text);
-  const isTemplate = /IS_TEMPLATE (true|false)/.exec(text);
-  if (name === null || owner === null) {
-    throw new Error(`fake-sql: could not parse a generated CREATE DATABASE statement: ${text}`);
-  }
-  return {
-    name: unquoteIdent(name[1] as string),
-    oid: 0,
-    owner: unquoteIdent(owner[1] as string),
-    encoding: encoding === null ? 'UTF8' : unquoteLiteral(encoding[1] as string),
-    localeProvider:
-      localeProvider === null ? 'libc' : (unquoteLiteral(localeProvider[1] as string) as 'libc'),
-    collate: lcCollate === null ? 'C' : unquoteLiteral(lcCollate[1] as string),
-    ctype: lcCtype === null ? 'C' : unquoteLiteral(lcCtype[1] as string),
-    tablespace: tablespace === null ? 'pg_default' : unquoteIdent(tablespace[1] as string),
-    allowConnections: allowConnections === null ? true : allowConnections[1] === 'true',
-    connectionLimit: connectionLimit === null ? -1 : Number(connectionLimit[1]),
-    isTemplate: isTemplate === null ? false : isTemplate[1] === 'true',
-  };
-};
 
 export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   const statements: RecordedStatement[] = [];
@@ -93,19 +85,31 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   const databases = new Map(options.databases?.map((d) => [d.name, d] as const) ?? []);
   const memberships = new Set<string>();
   const membershipOptions = new Map<string, { readonly admin: boolean; readonly set: boolean }>();
+  const schemas = new Map(options.schemas?.map((s) => [s.name, s] as const) ?? []);
+  const relationsIn = new Set(options.schemasWithRelations ?? []);
   let raceRemaining = options.raceNextCreate === true ? 1 : 0;
   let failNext = options.failNext;
   let oidCounter = 20000;
+  const nextOid = (): number => {
+    const oid = oidCounter;
+    oidCounter += 1;
+    return oid;
+  };
   const roleState: FakeRoleState = {
     roleNames,
     roleRows,
     memberships,
     membershipOptions,
-    nextOid: () => {
-      const oid = oidCounter;
-      oidCounter += 1;
-      return oid;
-    },
+    nextOid,
+  };
+  const schemaState: FakeSchemaState = {
+    schemas,
+    relationsIn,
+    database: options.database ?? 'postgres',
+    sessionRole: options.currentUser ?? 'postgres',
+    swallowRemaining: options.swallowNextCreateSchema === true ? 1 : 0,
+    raceOwner: options.raceNextCreateSchema,
+    nextOid,
   };
 
   const unsafe = <A extends object>(
@@ -137,6 +141,16 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
         );
       }
 
+      // ⚠️ startsWith, BEFORE the `FROM pg_database` branch: the full-row select also contains
+      //   `FROM pg_database`, but starts with `SELECT d.oid` — only the existence probe starts
+      //   with `SELECT 1 AS present`.
+      if (text.startsWith('SELECT 1 AS present FROM pg_database')) {
+        const name = params[0] as string;
+        return Effect.succeed(
+          (databases.has(name) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
+        );
+      }
+
       if (text.includes('FROM pg_database')) {
         const name = params[0] as string;
         const row = databases.get(name);
@@ -156,10 +170,13 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
             }),
           );
         }
-        const row = { ...parseCreate(text), oid: roleState.nextOid() };
+        const row = { ...parseCreate(text), oid: nextOid() };
         databases.set(row.name, row);
         return Effect.succeed([] as unknown as ReadonlyArray<A>);
       }
+
+      const schemaStatement = applySchemaStatement<A>(schemaState, text, params);
+      if (schemaStatement !== undefined) return schemaStatement;
 
       const roleStatement = applyRoleStatement<A>(roleState, text, params);
       if (roleStatement !== undefined) return roleStatement;
@@ -173,6 +190,10 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
     memberships: new Set(memberships),
     membershipOptions: new Map(membershipOptions),
     databases: new Map(databases),
+    schemas: new Map(schemas),
+    relationsIn: new Set(relationsIn),
+    swallowRemaining: schemaState.swallowRemaining,
+    raceOwner: schemaState.raceOwner,
     oid: oidCounter,
   });
   const restore = (snap: ReturnType<typeof snapshot>) => {
@@ -186,6 +207,12 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
     for (const [key, value] of snap.membershipOptions) membershipOptions.set(key, value);
     databases.clear();
     for (const [key, value] of snap.databases) databases.set(key, value);
+    schemas.clear();
+    for (const [key, value] of snap.schemas) schemas.set(key, value);
+    relationsIn.clear();
+    for (const name of snap.relationsIn) relationsIn.add(name);
+    schemaState.swallowRemaining = snap.swallowRemaining;
+    schemaState.raceOwner = snap.raceOwner;
     oidCounter = snap.oid;
   };
   const transaction = (sqls: readonly string[]): Effect.Effect<void, SqlError> => {
@@ -195,5 +222,15 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
     }).pipe(Effect.onError(() => Effect.sync(() => restore(snap))));
   };
 
-  return { unsafe, transaction, statements, databases, roleRows, memberships, membershipOptions };
+  return {
+    unsafe,
+    transaction,
+    statements,
+    databases,
+    roleRows,
+    memberships,
+    membershipOptions,
+    schemas,
+    relationsIn,
+  };
 };
