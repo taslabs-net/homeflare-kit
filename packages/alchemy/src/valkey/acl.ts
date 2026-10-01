@@ -127,7 +127,7 @@ export const makeValkeyAclFileHandlers = (
         news.instance,
       ).pipe(Effect.catchTag('ValkeySocketError', aclUnreachable(news.instance))),
 
-    delete: ({ olds }) =>
+    delete: ({ olds, output }) =>
       connect(
         (ex, config) =>
           Effect.gen(function* () {
@@ -143,8 +143,16 @@ export const makeValkeyAclFileHandlers = (
             // when a human opts out of retain); the instance itself is untouched, and undeclared
             // users are preserved (F1). `ACL DELUSER` ignores absent names (Valkey docs);
             // reading first also avoids an empty DELUSER command on a repeated delete (S14).
+            // ★ OWNERSHIP IS THE STORED RECORD, THE SAME HELPER REVOCATION USES. `olds` is the last
+            //   declaration the engine committed — it is written BEFORE reconcile runs, so after a
+            //   failed update it names users this resource never managed — and `output.users` is
+            //   every observed user. `managedUserNames` reads `output.managedUsers` (written only by
+            //   a successful reconcile) and falls back to `olds` for state that predates it. `live`
+            //   already hides `default` and the connection user, so neither can be a target.
             const live = yield* readParsedUsers(ex, config.username);
-            const targets = Object.keys(olds.users).filter((name) => live[name] !== undefined);
+            const targets = managedUserNames(output, olds).filter(
+              (name) => live[name] !== undefined,
+            );
             if (targets.length === 0) return;
             const reply = yield* ex.send(buildDelUserArgs(targets));
             if (reply.kind === 'error') {
