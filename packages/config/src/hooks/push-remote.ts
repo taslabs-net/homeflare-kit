@@ -22,9 +22,11 @@
  *   Measured 2026-10-01. There is no fallback.
  * ⚠️ NO PROMPT, AND A TIMEOUT. The hook runs mid-push with a pipe on stdin; a credential prompt
  *   from a second connection would hang it, so `GIT_TERMINAL_PROMPT=0` makes it fail and widen.
- *   A timeout is the same failure (Bun reports exit 143, SIGTERM — measured 2026-10-01): no
- *   tips, and the partial stdout is discarded.
+ *   A timeout is the same failure: no tips, and the partial stdout is discarded. The original
+ *   Bun timeout reported exit 143, SIGTERM (measured 2026-10-01); git-output.ts now owns the
+ *   deadline so a rejected exit or a pipe left open after a kill cannot hang the fallback.
  */
+import { type GitResult, gitOutput } from './git-output.ts';
 import { withoutGitEnv } from './report.ts';
 
 /** How long to wait for the destination to list its refs before scanning wider. */
@@ -71,11 +73,7 @@ function remoteAskEnv(): Record<string, string> {
   return env;
 }
 
-export type GitResult = {
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-};
+export type { GitResult } from './git-output.ts';
 
 /**
  * Run git at `root`, capturing both streams.
@@ -87,18 +85,17 @@ export async function gitAt(
   args: readonly string[],
   options: { stdin?: string; timeoutMs?: number; transport?: boolean } = {},
 ): Promise<GitResult> {
-  const proc = Bun.spawn(['git', '-C', root, ...args], {
-    env: options.transport ? remoteAskEnv() : withoutGitEnv(),
-    stdin: options.stdin === undefined ? 'ignore' : new Blob([options.stdin]),
-    stdout: 'pipe',
-    stderr: 'pipe',
-    ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
-  });
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  return { code: await proc.exited, stdout, stderr };
+  try {
+    const proc = Bun.spawn(['git', '-C', root, ...args], {
+      env: options.transport ? remoteAskEnv() : withoutGitEnv(),
+      stdin: options.stdin === undefined ? 'ignore' : new Blob([options.stdin]),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    return await gitOutput(proc, options.timeoutMs);
+  } catch {
+    return { code: -1, stdout: '', stderr: '' };
+  }
 }
 
 const lines = (text: string): readonly string[] => text.split('\n').filter((line) => line !== '');
@@ -108,6 +105,8 @@ export type RemoteTips = {
   readonly tips: readonly string[];
   /** Which of the candidates answered; `undefined` when none could be asked. */
   readonly via: string | undefined;
+  /** Fetch-direction URL rewriting prevents asking the actual push destination. */
+  readonly rewritten?: boolean;
 };
 
 /**
@@ -119,6 +118,23 @@ export async function knownRemoteTips(
   destination: string | undefined,
 ): Promise<RemoteTips> {
   if (destination === undefined || destination === '') return { tips: [], via: undefined };
+  // ⛔ VERIFIED AGAINST THE INSTALLED GIT 2.47.3 MANUALS, 2026-10-01:
+  //   `git help ls-remote`, OPTIONS, --get-url: expands url.<base>.insteadOf without
+  //   contacting the remote. `git help config`, url.<base>.insteadOf / pushInsteadOf:
+  //   insteadOf rewrites matching URL prefixes (longest wins); pushInsteadOf is push-only
+  //   and ignored for a remote with explicit pushurl. Thus even the hook's already-resolved
+  //   push URL can be rewritten AGAIN in the fetch direction by ls-remote. A different repo's
+  //   tips could hide a secret. Probe with the SAME transport/config environment and refuse
+  //   any changed URL; do not ask the rewritten destination or fall back to a remote name.
+  const expanded = await gitAt(root, ['ls-remote', '--get-url', destination], {
+    transport: true,
+    timeoutMs: ASK_MS,
+  });
+  if (expanded.code !== 0) return { tips: [], via: undefined };
+  // Compare exactly, including git's terminating newline: whitespace can belong to a URL.
+  if (expanded.stdout !== `${destination}\n`) {
+    return { tips: [], via: undefined, rewritten: true };
+  }
   const listed = await gitAt(root, ['ls-remote', destination], {
     transport: true,
     timeoutMs: ASK_MS,

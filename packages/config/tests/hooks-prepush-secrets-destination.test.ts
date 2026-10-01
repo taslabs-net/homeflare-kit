@@ -95,6 +95,7 @@ describe.skipIf(Bun.which('gitleaks') === null)(
       expectCaught(result.output, result.code);
       expect(result.output).not.toContain('already on the remote');
       expect(result.output).not.toContain('could not be asked');
+      expect(result.output).toContain('destination URL is rewritten by insteadOf');
     });
 
     test('an unreachable push URL scans the full pushed history and still catches the secret', async () => {
@@ -168,6 +169,7 @@ describe('what ls-remote inherits', () => {
 
     const seen = await Bun.file(record).text();
     expect(seen).toContain(`ARGS=-C ${repo.dir} ls-remote ${destUrl}`);
+    expect(seen).toContain(`ARGS=-C ${repo.dir} ls-remote --get-url ${destUrl}`);
     expect(seen).not.toContain('ls-remote origin');
     expect(seen).toContain('GIT_SSH_COMMAND=hf-ssh-marker');
     expect(seen).toContain('GIT_SSH=hf-ssh-binary');

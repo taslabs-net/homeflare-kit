@@ -94,8 +94,9 @@ export async function scanPushedSecrets(
     // ⛔ ONE LINE, AND IT IS THE FAILURE: a destination that could not be asked (or timed out)
     //   scans the full pushed history. It does not skip the scan and it does not exclude tips
     //   learned from anywhere else.
-    const said =
-      asked.via === undefined
+    const said = asked.rewritten
+      ? `the destination URL is rewritten by insteadOf, so it was not asked; the full pushed history was scanned (${String(count)} commit(s))`
+      : asked.via === undefined
         ? `the destination could not be asked, so the full pushed history was scanned (${String(count)} commit(s))`
         : `nothing of this push is known to be on the remote (it has none of these commits here), so all ${String(count)} reachable commit(s) are scanned`;
     note(`pre-push: ${said}; a reviewed false positive in old history goes in .gitleaksignore`);
