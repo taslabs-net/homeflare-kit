@@ -17,23 +17,18 @@
  * ⛔ A LIVE `api_key` IS NEVER OVERWRITTEN BY AN ADOPTED ROW'S NOTHING. `apiKey` omitted on an
  *   adopted row sends no `api_key` and the live reference is kept; `differing` reports no drift
  *   for it. Declaring `apiKey` is what moves the row onto `os.environ/NAME`.
- * ⚠️ PARAMS AND A RENAME GO TO POST `/model/update`. At the tag the SDK was generated from
- *   (OpenAPI 1.103.0), `update_model` writes `litellm_params`, `updated_by`, and `model_name`
- *   only when the name changed and `team_id` is None. It stores request `model_info` only when
- *   `member_marker` is set. The merge walks the PARSED model (`exclude_none`, not
- *   `exclude_unset`): `updateLiteLLMParams` fills every unset field with its default first.
- *   A `None` default (`api_base`, `api_key`) keeps the stored value. A default that is not
- *   `None` (`false` on the five flags in `LEAVE_ALONE_PARAMS`) overwrites it. A key the model
- *   does not declare is absent from that dump; this write is still a merge, so the stored key
- *   stays. A params POST is never a stamp: when the visible fields already match, `paramsSeal`
- *   is recorded locally (model.ts). A real params write sends `null` for those five flags.
- *   `model_name` is sent only when it
- *   changed, because a same-name update would otherwise collide with another deployment in
- *   the group (model.ts).
- * ⚠️ GROUPS, MODE AND BASE MODEL GO TO PATCH `/model/{model_id}/update`. That route's
- *   `update_db_model` is the merge that writes `model_info` (`access_groups`, `mode`,
- *   `base_model`). POST does not, so a read-back of those fields would fail
- *   (`LitellmModelNotConvergedError`) if they were sent there.
+ * ⛔ EVERYTHING AN EXISTING ROW NEEDS GOES TO ONE PATCH `/model/{model_id}/update`. At the tag
+ *   the SDK was generated from (OpenAPI 1.103.0), POST `/model/update`'s `update_model` REBUILDS
+ *   `litellm_params` from the parsed request model and REPLACES the column: a key the model does
+ *   not declare (`extra_headers`, `weight`, `order`) is DELETED from the stored row, and a
+ *   non-`None` pydantic default (`false` on the five flags in `LEAVE_ALONE_PARAMS`) overwrites
+ *   it — measured on a throwaway 1.103.0 proxy, and the reason a params POST is never sent. The
+ *   PATCH route's `update_db_model` instead MERGES: sent keys land, the rest of the row is
+ *   preserved, and a JSON `null` keeps the stored value. So one PATCH carries the managed
+ *   `litellm_params` (with `null` for those five flags), the `model_name` when it changed, and
+ *   the `model_info` fields — `access_groups`, `mode`, `base_model`, and the row's own `id`, so
+ *   an adopt-by-id re-affirms the row it pinned. `model_name` is sent only when it changed,
+ *   because a same-name write would collide with another deployment in the group (model.ts).
  */
 import type * as models from '@distilled.cloud/litellm/model_management';
 import {
@@ -107,10 +102,11 @@ export const differing = (live: ModelAttributes, props: ModelProps): readonly st
 
 /**
  * One row of `/model/info`, as attributes. ⛔ Copies no `litellm_params` field but `model`, and
- * only when the read returns an OBJECT: an encrypted row's `litellm_params` is a ciphertext STRING
- * (`"<encrypted>"`), so it reads as absent, and the fields a row hides are never mistaken for
- * declared values — `api_base` and any `api_key` are never copied at all. The digest is the
- * caller's (model.ts fills `paramsSeal` from state, a row cannot supply one).
+ * only when the read returns an OBJECT: the fields a row hides (`api_key` is stripped at
+ * v1.103.0) are never mistaken for declared values — `api_base` and any `api_key` are never
+ * copied at all. `dbModel` records `model_info.db_model` (false = served from the proxy's config
+ * file), defaulting to true when the read omits it. The digest is the caller's (model.ts fills
+ * `paramsSeal` from state, a row cannot supply one).
  */
 export const toAttributes = (row: Record<string, unknown>): ModelAttributes => {
   const info = (row['model_info'] ?? {}) as Record<string, unknown>;
@@ -125,6 +121,7 @@ export const toAttributes = (row: Record<string, unknown>): ModelAttributes => {
       ? (info['access_groups'] as string[]).map(String)
       : [],
     baseModel: typeof info['base_model'] === 'string' ? info['base_model'] : null,
+    dbModel: info['db_model'] === false ? false : true,
     id: String(id),
     mode: typeof info['mode'] === 'string' ? info['mode'] : null,
     model: typeof carriedModel === 'string' ? redactUrl(carriedModel) : null,
@@ -135,8 +132,9 @@ export const toAttributes = (row: Record<string, unknown>): ModelAttributes => {
 
 /**
  * `litellm_params` fields whose pydantic default is `False`, not `None` (`litellm/types/router.py`
- * at v1.103.0). An omitted key is filled `false` and written; JSON `null` is the `None` that
- * keeps the stored value. Create does not send them: a new row should take the vendor default.
+ * at v1.103.0). A params write parses the request model, which fills every unset field, so an
+ * omitted key is written `false`; JSON `null` is the `None` that keeps the stored value. Create
+ * does not send them: a new row should take the vendor default.
  */
 const LEAVE_ALONE_PARAMS = [
   'allow_client_keepalive_override',
@@ -155,11 +153,11 @@ const managedParams = (props: ModelProps) => {
 };
 
 /**
- * The same set for POST `/model/update`, plus `null` for every non-`None` default this resource
- * does not manage. The vendor merge keeps the stored value for `None` and drops a key it does
- * not declare, so the nulls are what stop a params write clobbering those five flags.
+ * The same set for a PATCH, plus `null` for every non-`None` default this resource does not own.
+ * The PATCH merge keeps the stored value for `None`, so the nulls are what stop a params write
+ * clobbering those five flags.
  */
-const updateParams = (props: ModelProps): Record<string, unknown> => ({
+const patchParams = (props: ModelProps): Record<string, unknown> => ({
   ...managedParams(props),
   ...Object.fromEntries(LEAVE_ALONE_PARAMS.map((key) => [key, null])),
 });
@@ -197,43 +195,29 @@ export const createBody = (
 };
 
 /**
- * POST `/model/update`: the managed `litellm_params` (with `null` for the five non-`None`
- * defaults this resource does not own), and `model_name` only when it changed (a same-name
- * body would collide with a sibling deployment in the group — model.ts). `model_info.id`
- * names the row. This route does not apply `access_groups`, `mode` or `base_model`
- * (v1.103.0 `update_model`); those travel on {@link patchBody}. Not a seal stamp: a matching
- * row records `paramsSeal` locally (model.ts).
- */
-export const updateBody = (
-  props: ModelProps,
-  live: ModelAttributes,
-): models.UpdateModelModelUpdatePostRequest => {
-  const renamed = live.modelName !== props.modelName;
-  const body: Record<string, unknown> = {
-    litellm_params: updateParams(props),
-    model_info: { id: live.id },
-    ...(renamed ? { model_name: props.modelName } : {}),
-  };
-  return body as unknown as models.UpdateModelModelUpdatePostRequest;
-};
-
-/**
- * PATCH `/model/{model_id}/update`: the `model_info` fields POST does not write. `access_groups`
- * is always present (an omitted list is "no groups" and must be able to clear). `mode` and
- * `base_model` are present only when declared, so an omission leaves the live value. The id is
- * the path parameter; the body does not repeat it, because a PATCH merge of `id` is not an edit
- * this resource makes.
+ * PATCH `/model/{model_id}/update`: everything an existing row needs, in the ONE write a
+ * converge fires (model.ts). `update_db_model` MERGES (v1.103.0, measured), so:
+ *   - `litellm_params` carries the managed keys (with `null` for the five non-`None` defaults
+ *     this resource does not own); the merge keeps every stored key the declaration does not
+ *     own (`extra_headers`, `weight`, `order`), which is exactly what POST `/model/update`
+ *     would DELETE by rebuilding the column.
+ *   - `model_info` carries `access_groups` (always present: an omitted list is "no groups" and
+ *     must be able to clear), `mode` and `base_model` only when declared, and the row's own
+ *     `id`, so an adopt-by-id re-affirms the row it pinned.
+ *   - `model_name` only when it changed: a same-name write would collide with a sibling
+ *     deployment in the group (model.ts). Not a seal stamp: a matching row records `paramsSeal`
+ *     locally (model.ts).
  *
  * ⚠️ `Record`, then a widening cast, for the same reason as {@link modelInfoOf}: the generated
  *   1.103.0 `LitellmTypesRouterModelInfo` declares neither `access_groups` nor `mode`, while the
  *   vendor model allows both (`extra="allow"`) and the read answers both.
  */
 export const patchBody = (props: ModelProps, live: ModelAttributes): Record<string, unknown> => {
-  const info = modelInfoOf(props);
-  delete info['id'];
-  return { model_id: live.id, model_info: info };
+  const renamed = live.modelName !== props.modelName;
+  return {
+    model_id: live.id,
+    litellm_params: patchParams(props),
+    model_info: { ...modelInfoOf(props), id: live.id },
+    ...(renamed ? { model_name: props.modelName } : {}),
+  };
 };
-
-/** Whether the declaration moves a `model_info` field only the PATCH route writes. */
-export const infoDiffers = (live: ModelAttributes, props: ModelProps): boolean =>
-  differing(live, props).some((field) => field !== 'model_name' && field !== 'model');

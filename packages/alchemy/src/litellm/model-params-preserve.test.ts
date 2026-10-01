@@ -1,10 +1,11 @@
 /**
  * Adopt and a later params write must not clobber `litellm_params` this resource does not own.
  *
- * ⚠️ `fillsParamDefaults` models v1.103.0 `updateLiteLLMParams` plus `update_model`'s merge
- *   (`model_management_endpoints.py`): the parsed model fills every unset field, a non-`None`
- *   default (`false`) overwrites the stored value, and a key the model does not declare is
- *   dropped. The plain fake merge hides that, so this file is what pins it.
+ * ⚠️ `fillsParamDefaults` models v1.103.0 `updateLiteLLMParams`: the parsed model fills every
+ *   unset field with its pydantic default before the write, a non-`None` default (`false`)
+ *   overwrites the stored value, and JSON `null` is the `None` that keeps the stored value. The
+ *   real PATCH route merges — sent keys land, the rest of the row survives — which is exactly
+ *   what stops the write clobbering keys the declaration does not own. This file pins that.
  */
 import { expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
@@ -48,7 +49,7 @@ test('adopting a matching row stamps the seal locally and leaves unmanaged param
   const adopted: ModelProps = { model: 'xai/grok-4.7', modelName: 'grok' };
   const engine = stack(fake);
   expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'adopted' });
-  expect(writesOf(fake.requests())).not.toContain('POST /model/update');
+  expect(writesOf(fake.requests())).not.toContain('PATCH /model/FAKE-live-id/update');
   expect(fake.models()[0]?.['litellm_params']).toEqual(liveParams);
   expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'noop' });
 });
@@ -78,7 +79,7 @@ test('adopting a matching row still converges a DECLARED credential, flags intac
   };
   const engine = stack(fake);
   expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'adopted' });
-  expect(writesOf(fake.requests())).toContain('POST /model/update');
+  expect(writesOf(fake.requests())).toContain('PATCH /model/FAKE-live-id/update');
   expect(fake.models()[0]?.['litellm_params']).toMatchObject({
     api_key: 'os.environ/FAKE_NEW_KEY',
     model: 'xai/grok-4.7',
@@ -101,8 +102,8 @@ test('a real params write sends null for the non-None defaults and keeps extra k
   });
   const adopted: ModelProps = { model: 'xai/grok-4.6', modelName: 'grok' };
   expect(await stack(fake).deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'adopted' });
-  const posted = fake.bodies().find((body) => body['litellm_params'] !== undefined);
-  const sent = posted?.['litellm_params'] as Row;
+  const patched = fake.bodies().find((body) => body['litellm_params'] !== undefined);
+  const sent = patched?.['litellm_params'] as Row;
   expect(sent['model']).toBe('xai/grok-4.6');
   expect(sent['use_in_pass_through']).toBeNull();
   expect(sent['use_litellm_proxy']).toBeNull();

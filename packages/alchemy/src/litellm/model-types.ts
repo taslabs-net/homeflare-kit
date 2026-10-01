@@ -8,17 +8,17 @@
  *   reference form `os.environ/NAME` — so the PROXY reads it from ITS environment at call time and
  *   the proxy's own DB row never carries a literal either. A `Redacted` prop would still land in
  *   state as plaintext (mcp-server-types.ts's reasoning, same store).
- * ⛔ THE LIVE ROW'S `litellm_params` ARE NEVER MIRRORED INTO ATTRIBUTES. LiteLLM stores
- *   `litellm_params` ENCRYPTED when the proxy holds a database master key (`prisma_client.py`
- *   wraps them with `encrypt_value` at tag v1.103.0) and returns a row whose `litellm_params` are
- *   ciphertext (`litellm_params`: "<encrypted>") or omits fields; `/v2/model/info`'s own docstring
- *   says sensitive fields such as api keys and api_base are omitted. So a read can only compare
- *   the fields the proxy returns, and this resource's own attributes carry a DIGEST of the
- *   DECLARED values (`paramsSeal`), never the values.
+ * ⛔ THE LIVE ROW'S `litellm_params` ARE NEVER MIRRORED INTO ATTRIBUTES. At v1.103.0 the read
+ *   answers the stored params DECRYPTED but STRIPS `api_key` (measured on a live 1.103.0 proxy),
+ *   and anything mirrored would land in state as plaintext — Alchemy persists attributes
+ *   unencrypted. So a read compares only the visible fields the proxy returns, and this
+ *   resource's own attributes carry a DIGEST of the DECLARED values (`paramsSeal`), never the
+ *   values: that is how a plan notices a declared credential moved when the read cannot show it.
  * ⚠️ NOT MODELLED, on purpose: the rest of `litellm_params` (rpm/tpm, timeouts, fallbacks,
  *   wildcard routing params, `mock_response`, vertex/aws credential blobs, …), cost fields on
  *   `model_info` beyond what the read returns, `teams`, and the config-file-only rows
- *   (`db_model: false`), which an update to a duplicate name can shadow — see model-form.ts.
+ *   (`db_model: false`) — a reconcile that finds one REFUSES it (model-errors.ts): the DB
+ *   API cannot manage what the proxy serves from its config file.
  */
 import type { FromEnv } from '../secrets/write-only.ts';
 
@@ -37,7 +37,7 @@ export interface ModelProps {
    * so a changed `modelName` with no pinned `id` is a REPLACE: the new group gets a fresh id, and
    * the old row survives under the default `RemovalPolicy.retain()` (opt in to `destroy()` to
    * delete it). A pinned `id` is that row: the same deployment is renamed in place
-   * (`updateBody` sends `model_name`), and keys routing to the old name miss.
+   * (`patchBody` sends `model_name`), and keys routing to the old name miss.
    */
   readonly modelName: string;
   /**
@@ -71,6 +71,8 @@ export interface ModelProps {
 export interface ModelAttributes {
   readonly id: string;
   readonly modelName: string;
+  /** Whether the row is served from the database (`model_info.db_model`); false = config-file row. */
+  readonly dbModel: boolean;
   /** The provider-prefixed path as the live row carries it (null when the read omits it). */
   readonly model: string | null;
   readonly mode: string | null;
@@ -79,8 +81,8 @@ export interface ModelAttributes {
   /**
    * Digest of the DECLARED params this write would send (`scrypt:<salt>:<digest>`), or `''`.
    * ⛔ Never the values, never a digest of the LIVE row. This is how a plan notices that the
-   * environment variable behind `apiKey` rotated: the proxy cannot return the stored params to
-   * compare with (model-form.ts's `declaredDigest`).
+   * environment variable behind `apiKey` rotated: the read strips `api_key`, so the seal is the
+   * only signal a declared credential moved (model-form.ts's `declaredDigest`).
    */
   readonly paramsSeal: string;
 }

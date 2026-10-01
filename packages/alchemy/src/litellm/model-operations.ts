@@ -6,16 +6,17 @@
  *   list    `getModelInfoV1ModelInfo`            GET   /model/info
  *   read    `getModelInfoV1ModelInfo`            GET   /model/info?litellm_model_id={id}
  *   create  `addNewModelModelNewPost`            POST  /model/new
- *   update  `updateModelModelUpdatePost`         POST  /model/update
  *   patch   `patchModelModelModelIdUpdatePatch`  PATCH /model/{model_id}/update
  *   delete  `deleteModelModelDeletePost`         POST  /model/delete
  *
  * The SDK is generated from LiteLLM OpenAPI **1.103.0** (`model_management.ts`'s header). At that
  * tag, and at v1.100.0, `model_info_v1` raises HTTP 400 when the router has no such deployment
  * (`proxy_server.py`, "Model id = … not found on litellm proxy"), not 404. The same 400 is also
- * "no rights" or a bad filter. POST `/model/update` writes `litellm_params` and a rename;
- * `model_info` (`access_groups`, `mode`, `base_model`) is applied by the PATCH route's
- * `update_db_model`.
+ * "no rights" or a bad filter. The PATCH route's `update_db_model` MERGES: `litellm_params`,
+ * `model_name` and `model_info` (`access_groups`, `mode`, `base_model`) all land without
+ * rebuilding the column, which is the one write `LiteLLM.Model` converges with (model-form.ts).
+ * POST `/model/update` REBUILDS `litellm_params` and deletes stored keys the request model does
+ * not declare, so this resource never sends it.
  *
  * ⛔ LIST-FIRST READS. One GET of the whole list answers a group, an id and absence unambiguously,
  *   the way `budget-operations.ts` reads. The by-id read is the same route with the
@@ -26,9 +27,10 @@
  *   with `instanceof`, never by the error's text. A 400 is absence only when a re-list also lacks
  *   the id — the rule `deleteModel` already uses. A 404, if a proxy ever answers one, is the same
  *   absence. Any other failure propagates.
- * ⛔ THE ROW'S PARAMS ARE NEVER READ INTO STATE: `toAttributes` (model-form.ts) copies `model` only
- *   when `litellm_params` is an object, and never `api_base` or `api_key` — an encrypted row answers
- *   `"<encrypted>"` for the whole field. What was declared is remembered as a digest instead.
+ * ⛔ THE ROW'S PARAMS ARE NEVER READ INTO STATE: `toAttributes` (model-form.ts) copies `model`
+ *   only when `litellm_params` is an object, and never `api_base` or `api_key` — the v1.103.0
+ *   read answers params DECRYPTED but STRIPS `api_key` (measured). What was declared is
+ *   remembered as a digest instead.
  * ⚠️ Unlike pass-through endpoints, each deployment is its own DB row: no semaphore.
  */
 import * as models from '@distilled.cloud/litellm/model_management';
@@ -114,12 +116,9 @@ export const readModelRow = (modelId: string) =>
 export const createModel = (body: models.AddNewModelModelNewPostRequest) =>
   throughFetch(models.addNewModelModelNewPost(body)).pipe(Effect.asVoid);
 
-export const updateModel = (body: models.UpdateModelModelUpdatePostRequest) =>
-  throughFetch(models.updateModelModelUpdatePost(body)).pipe(Effect.asVoid);
-
 /**
- * PATCH `/model/{model_id}/update`. This is the route whose merge writes `model_info`
- * (`access_groups`, `mode`, `base_model`); POST `/model/update` does not (model-form.ts).
+ * PATCH `/model/{model_id}/update`. The ONE write a converge of an existing row fires: its merge
+ * carries `litellm_params`, `model_name` and `model_info` together (model-form.ts).
  */
 export const patchModel = (body: Record<string, unknown>) =>
   throughFetch(

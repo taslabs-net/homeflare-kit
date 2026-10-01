@@ -67,9 +67,9 @@ test('a declared id pins one of two same-named rows', async () => {
   const pinned: ModelProps = { ...grok, id: 'FAKE-live-id-b' };
   expect(await stack(fake).deploy(declare(pinned), { adopt: true })).toEqual({ Grok: 'adopted' });
   // The pin's declaration manages a credential the read never shows, so adopt converges it with
-  // one params POST (the five nulls keep unmanaged flags — model-form.ts). The sibling with the
+  // one params PATCH (the five nulls keep unmanaged flags — model-form.ts). The sibling with the
   // same group name is left alone: the adopted row is the one the id named.
-  expect(writesOf(fake.requests())).toContain('POST /model/update');
+  expect(writesOf(fake.requests())).toContain('PATCH /model/FAKE-live-id-b/update');
   expect(fake.models().map((row) => (row['model_info'] as Row)['id'])).toEqual([
     'FAKE-live-id-a',
     'FAKE-live-id-b',

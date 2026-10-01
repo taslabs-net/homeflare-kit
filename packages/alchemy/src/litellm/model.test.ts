@@ -93,7 +93,7 @@ test('removing a declared api_base leaves the live row its own base', async () =
   expect(await same.deploy(declare(grok))).toEqual({ Grok: 'noop' });
 });
 
-test('a live row is Unowned: refused without --adopt, adopted with one stamping write', async () => {
+test('a live row is Unowned: refused without --adopt, adopted with no write when nothing differs', async () => {
   const fake = startFakeModelLitellm({
     masterKey: KEY,
     seed: [
@@ -113,16 +113,18 @@ test('a live row is Unowned: refused without --adopt, adopted with one stamping 
   await expect(engine.deploy(declare(adopted))).rejects.toThrow();
   expect(writesOf(fake.requests())).toEqual([]);
   expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'adopted' });
-  // ★ A matching row records paramsSeal locally. POST `/model/update` rewrites unmanaged
-  //   litellm_params (model-form.ts), so a seal with nothing else moved is not a write.
+  // ★ A matching row records paramsSeal locally. The read strips `api_key`, so a same-shaped
+  //   row could carry a DIFFERENT stored reference — but nothing was declared that manages an
+  //   invisible param, and nothing else drifted, so no PATCH fires (model.ts).
   expect(writesOf(fake.requests())).toEqual([]);
   expect(fake.models()[0]?.['model_info'] as Row | undefined).toMatchObject({ mode: 'chat' });
   expect(await engine.deploy(declare(adopted), { adopt: true })).toEqual({ Grok: 'noop' });
 });
 
-test('clearing groups reaches the PATCH route, which is what writes model_info', async () => {
-  // POST /model/update writes litellm_params and a rename only (v1.103.0 update_model).
-  // A fake that matches that leaves access_groups in place, and the read-back must not pass.
+test('clearing groups reaches the PATCH route, the only write model_info supports', async () => {
+  // POST /model/update is never sent: v1.103.0 update_model rebuilds litellm_params and does not
+  // write model_info, so a fake that matched that would leave access_groups in place, and the
+  // read-back must not pass.
   const fake = startFakeModelLitellm({
     masterKey: KEY,
     seed: [
@@ -174,10 +176,22 @@ test('a proxy that drops an edit it cannot apply fails the deploy instead of cla
   await expect(stack(fake).deploy(declare(adopted), { adopt: true })).rejects.toThrow();
 });
 
-test('an encrypted row is judged by the declared seal, never by the ciphertext', async () => {
-  const fake = startFakeModelLitellm({ encryptParams: true, masterKey: KEY });
+test('the read strips api_key; the seal, not the read, proves convergence', async () => {
+  const fake = startFakeModelLitellm({ masterKey: KEY });
   const same = stack(fake);
   await same.deploy(declare(grok));
+  // ★ measured at v1.103.0: the read answers params decrypted but strips `api_key` (the fake
+  //   models exactly that), while the stored row keeps the reference — the wire, not the table.
+  const read = (await (
+    await fake.fetch(`${FAKE_BASE}/model/info`, {
+      headers: { authorization: `Bearer ${KEY}` },
+    })
+  ).json()) as { data: readonly Row[] };
+  expect(read.data[0]?.['litellm_params']).toEqual({ model: 'xai/grok-4.7' });
+  expect(fake.models()[0]?.['litellm_params']).toMatchObject({
+    api_key: 'os.environ/FAKE_XAI_KEY',
+  });
+  // The read can never carry the credential, so a matching seal is what makes this a noop.
   const before = fake.requests().length;
   expect(await same.deploy(declare(grok))).toEqual({ Grok: 'noop' });
   expect(writesOf(fake.requests().slice(before))).toEqual([]);

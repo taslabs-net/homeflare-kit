@@ -4,6 +4,7 @@
  * ⛔ NO MESSAGE HERE MAY CARRY A CREDENTIAL: only names, ids, field names and the NAME of an
  *   environment variable, exactly like mcp-server-errors.ts.
  */
+import type { BadRequest, NotFound } from '@distilled.cloud/litellm/Errors';
 import type * as models from '@distilled.cloud/litellm/model_management';
 import * as Data from 'effect/Data';
 
@@ -83,13 +84,58 @@ export class LitellmModelNotConvergedError extends Data.TaggedError(
   }
 }
 
+/**
+ * A reconcile with no state found a live row under the declared name whose id is not the one this
+ * declaration would create, and nothing vouchsafes it: writing over it would take over another
+ * owner's deployment. `replace` says whether this generation is a replace's new identity (a changed
+ * declared id), which `--adopt` does not cover — the object must be removed first.
+ */
+export class LitellmModelForeignRowError extends Data.TaggedError('LitellmModelForeignRowError')<{
+  readonly modelName: string;
+  readonly id: string;
+  readonly replace: boolean;
+}> {
+  override get message(): string {
+    const remedy = this.replace
+      ? 'It is the new identity of a replace, which --adopt does not cover: remove it first.'
+      : 'Deploy with --adopt to take it over, or remove it first.';
+    return (
+      `LiteLLM.Model "${this.modelName}": the live row ${this.id} already exists and this stack ` +
+      `holds no state for it. Nothing was written. ${remedy}`
+    );
+  }
+}
+
+/**
+ * The row a reconcile found is served from the proxy's config file (`model_info.db_model: false`),
+ * not from the database, so the DB API cannot manage it. Remove it from the config file first.
+ */
+export class LitellmModelConfigFileRowError extends Data.TaggedError(
+  'LitellmModelConfigFileRowError',
+)<{
+  readonly modelName: string;
+  readonly id: string;
+}> {
+  override get message(): string {
+    return (
+      `LiteLLM.Model "${this.modelName}": the live row ${this.id} is served from the proxy's ` +
+      'config file (db_model: false), not from the database, so the DB API cannot manage it. ' +
+      'Remove it from the config file first.'
+    );
+  }
+}
+
 export type ModelError =
   | models.AddNewModelModelNewPostError
   | models.DeleteModelModelDeletePostError
   | models.GetModelInfoV1ModelInfoError
-  | models.UpdateModelModelUpdatePostError
+  | models.PatchModelModelModelIdUpdatePatchError
+  | BadRequest
+  | NotFound
   | LitellmModelInvalidError
   | LitellmModelAmbiguousNameError
   | LitellmModelUnreadableError
   | LitellmModelAbsentAfterWriteError
-  | LitellmModelNotConvergedError;
+  | LitellmModelNotConvergedError
+  | LitellmModelForeignRowError
+  | LitellmModelConfigFileRowError;

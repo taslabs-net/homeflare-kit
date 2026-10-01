@@ -7,16 +7,17 @@
  *   time, and neither the row it writes nor the wire body ever carries the value. So this module
  *   never reads `process.env` — there is no value here to read, and a digest of a value that lives
  *   on another host would be false drift on every plan whose deploying environment differed.
- * ⛔ THE SEAL COVERS THE DECLARED VALUES ONLY. LiteLLM stores `litellm_params` encrypted and
- *   answers a row whose sensitive fields are omitted (model-types.ts), so the live row can never
- *   contribute to this comparison: attributes carry the digest of what was DECLARED, `paramsSeal`,
- *   and a plan that changes any of `model`, `apiBase` or the variable behind `apiKey` sees the
- *   digest change and updates. What was last written is remembered exactly; a row whose params the
- *   proxy hides stays quiet because the comparison never involves them.
+ * ⛔ THE SEAL COVERS THE DECLARED VALUES ONLY. At v1.103.0 the read answers the stored params
+ *   DECRYPTED but STRIPS `api_key` (model-types.ts), and a credential that did come back would
+ *   only be a plaintext in state — so the live row never contributes to this comparison:
+ *   attributes carry the digest of what was DECLARED, `paramsSeal`, and a plan that changes any
+ *   of `model`, `apiBase` or the variable behind `apiKey` sees the digest change and updates.
+ *   What was last written is remembered exactly; a value the proxy strips stays quiet because
+ *   the comparison never involves it.
  * ⛔ ADOPTED OR FOREIGN ROWS START `paramsSeal: ''` (a row cannot supply a digest of values it
  *   hides), which reads as `stale`. A bare adopt of a visibly matching row records the digest
  *   locally with no write; a stale seal on a declaration that manages a param the read never
- *   shows (`api_key`, `api_base`) forces one stamping POST, so a different stored reference is
+ *   shows (`api_key`, `api_base`) forces one stamping PATCH, so a different stored reference is
  *   never sealed over. After that the seal is stable. `seals/write-only.ts` carries the scrypt
  *   rules; see also mcp-server-credential.ts for the credential that LiteLLM STORES (this one is
  *   only referenced).

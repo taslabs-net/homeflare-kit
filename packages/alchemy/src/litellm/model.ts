@@ -11,8 +11,9 @@
  * ⛔ THE CREDENTIAL IS `{ fromEnv: 'NAME' }`, NEVER A VALUE (S25): it is sent in LiteLLM's own
  *   reference form `os.environ/NAME` and the proxy resolves it in its own environment — nothing
  *   here reads `process.env` (model-credential.ts), so a value could never be sealed truthfully.
- *   A row's stored params are encrypted and unreadable, so a plan compares the visible fields and
- *   a digest of the DECLARED values (`paramsSeal`); it never compares the ciphertext (model-form.ts).
+ *   A row's stored params come back DECRYPTED at v1.103.0 but with `api_key` STRIPPED (measured),
+ *   so a plan compares the visible fields plus a digest of the DECLARED values (`paramsSeal`) —
+ *   never the values themselves, which belong in the proxy's DB only (model-form.ts).
  * ⚠️ A RENAME IS A NEW GROUP when the id is not pinned: the old row survives under 'retain', the
  *   new group gets a fresh deterministic id. With a pinned id the SAME row is renamed — the caller
  *   chose the row (model-types.ts).
@@ -28,20 +29,17 @@ import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import * as Predicate from 'effect/Predicate';
+import { adoptsAtApply } from '../ownership/adopt.ts';
+import { adopting } from '../ownership/adopting.ts';
+import { isCreate } from '../ownership/rows.ts';
 import {
   LitellmModelAbsentAfterWriteError,
+  LitellmModelConfigFileRowError,
+  LitellmModelForeignRowError,
   LitellmModelInvalidError,
   LitellmModelNotConvergedError,
 } from './model-errors.ts';
-import {
-  createBody,
-  declaredDigest,
-  differing,
-  firstProblem,
-  infoDiffers,
-  patchBody,
-  updateBody,
-} from './model-form.ts';
+import { createBody, declaredDigest, differing, firstProblem, patchBody } from './model-form.ts';
 import { sealState } from './model-credential.ts';
 import { findLive, wantedId } from './model-locate.ts';
 import {
@@ -50,7 +48,6 @@ import {
   listModels,
   patchModel,
   readModelRow,
-  updateModel,
 } from './model-operations.ts';
 import type { ModelAttributes, ModelProps } from './model-types.ts';
 
@@ -74,6 +71,7 @@ const refuse = (props: ModelProps) => {
 };
 
 type Args<P> = {
+  fqn: string;
   id: string;
   instanceId: string;
   output: ModelAttributes | undefined;
@@ -116,16 +114,17 @@ export const modelHandlers = {
       if (news.modelName !== output.modelName && news.id === undefined) {
         return { action: 'replace', deleteFirst: false } as const;
       }
-      // Visible drift, or a stale seal, is an update: api_base and api_key are not on the
-      // read, so the seal is the only signal they moved (model-credential.ts). Reconcile
-      // then decides the writes: a bare matching adopt records its seal locally, and a
-      // declaration that manages an invisible param POSTs once to converge it.
+      // Visible drift, or a stale seal, is an update: the read strips `api_key`, so the
+      // seal is the only signal a declared credential moved (model-credential.ts).
+      // Reconcile then decides the write: a bare matching adopt records its seal
+      // locally, and a declaration that manages an invisible param PATCHes once to
+      // converge it.
       return differing(output, news).length === 0 && sealState(news, output.paramsSeal) === 'match'
         ? ({ action: 'noop' } as const)
         : ({ action: 'update' } as const);
     }),
 
-  reconcile: ({ id, instanceId, news, output }: Args<{ news: ModelProps }>) =>
+  reconcile: ({ fqn, id, instanceId, news, output }: Args<{ news: ModelProps }>) =>
     Effect.gen(function* () {
       yield* refuse(news);
       const before = yield* findLive(id, instanceId, news, output);
@@ -140,27 +139,59 @@ export const modelHandlers = {
         modelId = wanted;
         sealed = declaredDigest(news);
       } else {
+        // ⛔ CONFIG-FILE ROWS ARE ALWAYS REFUSED. The DB API cannot manage a row the proxy
+        //   serves from its config file (`model_info.db_model: false`), regardless of whether
+        //   this stack already holds state for it.
+        if (before.dbModel === false) {
+          return yield* Effect.fail(
+            new LitellmModelConfigFileRowError({ id: before.id, modelName: news.modelName }),
+          );
+        }
+        // ⛔ NOTHING IS WRITTEN OVER A ROW THIS STACK HOLDS NO STATE FOR, unless `--adopt`
+        //   authorizes this generation (ownership/adopt.ts: a create, or an unfinished
+        //   generation of our own — never a replace's new identity). A replace reconciles with
+        //   no attributes and a live row under its name may belong to another deployment: only
+        //   a row whose id is the one this declaration would create is ours by construction.
+        //   `output` may be the live attributes the plan stripped from `Unowned(found)` (its
+        //   `paramsSeal` is the empty string when no successful deploy committed a seal), so the
+        //   gate runs both when output is undefined and when it is only a probe result.
+        const stateless = output === undefined || output.paramsSeal === '';
+        if (stateless) {
+          const wanted = yield* wantedId(id, instanceId, news, output);
+          // ⛔ ONLY A DETERMINISTIC ID IS OURS BY CONSTRUCTION. With no declared id, `wanted`
+          //   is the physical name this declaration would create, so the one row that counts as
+          //   already-existing is that exact id (a coincidence is impossible: the id carries a
+          //   16-byte instance suffix). A DECLARED id is a name a human chose and could collide
+          //   with a foreign row, so it always goes through the adoption gate.
+          const ours = news.id === undefined && before.id === wanted;
+          const isAdoption = yield* adopting({ fqn, instanceId, output }, () =>
+            Effect.succeed(false),
+          );
+          if (!ours && !isAdoption && !(yield* adoptsAtApply({ fqn, instanceId, output }))) {
+            return yield* Effect.fail(
+              new LitellmModelForeignRowError({
+                id: before.id,
+                modelName: news.modelName,
+                replace: !(yield* isCreate(fqn, instanceId)),
+              }),
+            );
+          }
+        }
         modelId = before.id;
         const drifted = differing(before, news);
         const sealStale = sealState(news, sealed) === 'stale';
         // ⛔ A STAMPING ADOPT, AND ONE MORE REASON TO WRITE. A live row starts `paramsSeal: ''`
-        //   (model-form.ts), and POST `/model/update` rewrites unmanaged `litellm_params`: a bare
+        //   (model-form.ts), and the PATCH merge rewrites the managed `litellm_params`: a bare
         //   adopt of an already-matching row records the digest locally and writes nothing. A
         //   declaration that manages an invisible param (`apiKey` / `apiBase` — never on the
-        //   read) must still POST once: a matching-looking row can carry a DIFFERENT stored
+        //   read) must still write once: a matching-looking row can carry a DIFFERENT stored
         //   reference, and a local seal over it would freeze that divergence forever. A seal
         //   that EXISTS and no longer matches is a declaration this resource already owns —
-        //   that one POSTs too, with nulls for the five non-`None` defaults (model-form.ts).
+        //   that one writes too, with nulls for the five non-`None` defaults (model-form.ts).
         const sealNeedsStamp =
           sealStale && (sealed !== '' || news.apiKey !== undefined || news.apiBase !== undefined);
         if (drifted.length > 0 || sealNeedsStamp) {
-          if (
-            drifted.some((field) => field === 'model_name' || field === 'model') ||
-            sealNeedsStamp
-          ) {
-            yield* updateModel(updateBody(news, before));
-          }
-          if (infoDiffers(before, news)) yield* patchModel(patchBody(news, before));
+          yield* patchModel(patchBody(news, before));
         }
         if (drifted.length > 0 || sealStale) sealed = declaredDigest(news);
       }

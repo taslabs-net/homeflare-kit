@@ -12,7 +12,6 @@ import {
   firstProblem,
   patchBody,
   toAttributes,
-  updateBody,
 } from './model-form.ts';
 import type { ModelProps } from './model-types.ts';
 
@@ -105,13 +104,13 @@ describe('the wire bodies', () => {
     });
   });
 
-  test('an update re-sends the managed set and the group name only when it changed', () => {
+  test('a patch re-sends the managed set, the row id, and the group name only when it changed', () => {
     const live = toAttributes({
       litellm_params: { model: 'xai/grok-4.7' },
       model_info: { id: 'FAKE-live-id' },
       model_name: 'grok',
     });
-    const sameName = updateBody(props, live) as Row;
+    const sameName = patchBody(props, live) as Row;
     expect(sameName['litellm_params']).toEqual({
       allow_client_keepalive_override: null,
       api_key: 'os.environ/FAKE_XAI_KEY',
@@ -122,14 +121,11 @@ describe('the wire bodies', () => {
       use_xai_oauth: null,
     });
     expect('model_name' in sameName).toBe(false);
-    // POST names the row and does not carry the model_info edits (those are the PATCH body).
-    expect(sameName['model_info']).toEqual({ id: 'FAKE-live-id' });
-    expect(patchBody(props, live) as Row).toEqual({
-      model_id: 'FAKE-live-id',
-      model_info: { access_groups: [] },
-    });
+    // ★ The row's own id rides the body: an adopt-by-id re-affirms the row it pinned.
+    expect(sameName['model_info']).toEqual({ access_groups: [], id: 'FAKE-live-id' });
+    expect(sameName['model_id']).toBe('FAKE-live-id');
 
-    const renamed = updateBody({ ...props, modelName: 'grok-fast' }, live) as Row;
+    const renamed = patchBody({ ...props, modelName: 'grok-fast' }, live) as Row;
     expect(renamed['model_name']).toBe('grok-fast');
   });
 
@@ -140,16 +136,16 @@ describe('the wire bodies', () => {
       model_name: 'grok',
     });
     const bare: ModelProps = { model: 'xai/grok-4.7', modelName: 'grok' };
-    const body = updateBody(bare, live) as Row;
+    const body = patchBody(bare, live) as Row;
     expect(body['litellm_params']).toMatchObject({
       model: 'xai/grok-4.7',
       use_in_pass_through: null,
       use_xai_oauth: null,
     });
-    expect(body['model_info']).toEqual({ id: 'FAKE-live-id' });
-    expect((patchBody(bare, live) as Row)['model_info']).toEqual({ access_groups: [] });
+    expect(body['model_info']).toEqual({ access_groups: [], id: 'FAKE-live-id' });
     expect((patchBody({ ...bare, mode: 'chat' }, live) as Row)['model_info']).toEqual({
       access_groups: [],
+      id: 'FAKE-live-id',
       mode: 'chat',
     });
   });

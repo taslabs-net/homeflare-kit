@@ -8,7 +8,8 @@
  *   budget routes and is at its size budget; a fake per route family keeps each one small.
  * ⚠️ SHAPES ARE FROM THE GENERATED 1.103.0 SCHEMA (`model_management.ts`), NOT A LIVE READ. A
  *   missing id on the by-id read is HTTP 400, measured in `model_info_v1` at v1.100.0 and
- *   v1.103.0. POST `/model/update` writes params and a rename; PATCH writes `model_info`
+ *   v1.103.0. POST `/model/update` REBUILDS `litellm_params` from the parsed request model and
+ *   REPLACES the column (deleting stored keys the model does not declare); PATCH merges
  *   (`update_db_model`). What the real proxy answers on a duplicate create, an update of a
  *   missing id, and a delete of a missing id is UNMEASURED; the fake's 400s there are its own
  *   choices, and every test that leans on one says so.
@@ -16,18 +17,20 @@
  *   committed — no in-memory registry like the MCP server list. `listOmits` models the opposite,
  *   rows the list does not answer but the by-id read does, UNMEASURED, to exercise the read-back
  *   fallback (model-operations.ts).
- * ★ `encryptParams` MODELS A PROXY RUNNING WITH A DATABASE MASTER KEY: the read answers the whole
- *   `litellm_params` field as the ciphertext string `"<encrypted>"` (model-form.ts's rule) while
- *   the stored row keeps what was sent, so `models()` still asserts what a resource SENT.
+ * ★ THE READ ANSWERS THE MEASURED 1.103.0 SHAPE: `litellm_params` DECRYPTED but with `api_key`
+ *   STRIPPED (measured on a live proxy; see the comment on `readable`), while the stored row
+ *   keeps every key it was sent, so `models()` still asserts what a resource SENT.
  * ★ `FAKE-*` VALUES ONLY. Nothing here is, or looks like, a real credential.
  */
+import { handlePostModelUpdate } from './fake-model-litellm-post-update.ts';
+
 /** One request that reached the fake. Its own type, so this file depends on no other fake. */
 export interface FakeModelRequest {
   readonly method: string;
   readonly path: string;
 }
 
-type Row = Record<string, unknown>;
+export type Row = Record<string, unknown>;
 
 export interface FakeModelLitellm {
   readonly fetch: typeof globalThis.fetch;
@@ -41,8 +44,6 @@ export interface FakeModelLitellm {
 export interface FakeModelOptions {
   readonly masterKey?: string;
   readonly seed?: readonly Row[];
-  /** The read answers `litellm_params: "<encrypted>"` (a proxy with a database master key). */
-  readonly encryptParams?: boolean;
   /** `POST /model/new` ignores the supplied `model_info.id` and issues its own. */
   readonly issuesOwnId?: boolean;
   /** Every `POST /model/delete` answers 400, whether or not the row exists (no rights). */
@@ -56,9 +57,10 @@ export interface FakeModelOptions {
   readonly editIgnoresFalsy?: boolean;
   /**
    * `POST /model/update` parses `litellm_params` the way v1.103.0 `updateLiteLLMParams` does:
-   * every unset field is filled with its pydantic default before the merge. `None` keeps the
-   * stored value; a non-`None` default (`false` on the five flags below) overwrites it. A key
-   * the model does not declare stays on the row — the write is a merge, not a replacement.
+   * every unset field is filled with its pydantic default before the write. `None` keeps the
+   * stored value; a non-`None` default (`false` on the five flags below) overwrites it. POST then
+   * REPLACES the column — a key the parsed model does not declare is DELETED from the stored row —
+   * while PATCH merges: a key the request does not carry survives (both handlers below).
    */
   readonly fillsParamDefaults?: boolean;
   /** Ids committed to the table that the list omits; the by-id read still answers them. */
@@ -67,29 +69,6 @@ export interface FakeModelOptions {
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' }, status });
-
-/**
- * The five `litellm_params` fields whose pydantic default is `False`, not `None`
- * (`litellm/types/router.py` at v1.103.0). `updateLiteLLMParams` fills every unset field with
- * that default before `update_model` walks the parsed model, so an omitted key is written
- * `false` and a stored `true` is clobbered. A JSON `null` is the `None` that keeps the stored
- * value. Keys the model does not declare stay on the stored row.
- */
-const NON_NONE_PARAM_DEFAULTS = [
-  'use_in_pass_through',
-  'use_litellm_proxy',
-  'use_xai_oauth',
-  'allow_client_keepalive_override',
-  'merge_reasoning_content_in_choices',
-] as const;
-
-const fillParamDefaults = (sent: Row): Row => {
-  const filled: Row = { ...sent };
-  for (const key of NON_NONE_PARAM_DEFAULTS) {
-    if (!(key in filled)) filled[key] = false;
-  }
-  return filled;
-};
 
 const ISSUED_ID = 'FAKE-issued-id-0001';
 
@@ -114,10 +93,15 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
   const bodies: Row[] = [];
   const omitted = new Set(options.listOmits ?? []);
 
-  const readable = (row: Row): Row => ({
-    ...row,
-    litellm_params: options.encryptParams === true ? '<encrypted>' : row['litellm_params'],
-  });
+  /**
+   * The measured 1.103.0 read: `litellm_params` decrypted but with `api_key` stripped — never a
+   * ciphertext object, never the credential reference. The stored row keeps everything
+   * (`models()`), so what was SENT stays assertable.
+   */
+  const readable = (row: Row): Row => {
+    const { api_key: _stripped, ...params } = row['litellm_params'] as Row;
+    return { ...row, litellm_params: params };
+  };
 
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const request =
@@ -158,40 +142,11 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
     if (url.pathname === '/model/update' && request.method === 'POST') {
       const body = (await request.json()) as Row;
       bodies.push(body);
-      const id = String(((body['model_info'] ?? {}) as Row)['id']);
-      const at = rows.findIndex((row) => rowId(row) === id);
-      if (at === -1) return json(400, { detail: { error: 'model not found' } });
-      // ⛔ v1.103.0 `update_model` writes litellm_params (None keeps the stored value) and
-      //   model_name when it changed. It does not apply request model_info. `editIgnoresFalsy`
-      //   models a proxy that REFUSES a `false` or an empty list: the edit never lands, so the
-      //   row's current value survives. Drop the incoming falsy value BEFORE the merge —
-      //   filtering after the merge erases the field and hides the dropped edit.
-      const dropFalsy = <T extends Row>(incoming: T): T =>
-        options.editIgnoresFalsy === true
-          ? (Object.fromEntries(
-              Object.entries(incoming).filter(
-                ([, value]) => value !== false && !(Array.isArray(value) && value.length === 0),
-              ),
-            ) as T)
-          : incoming;
-      const current = rows[at] as Row;
-      const params = dropFalsy((body['litellm_params'] ?? {}) as Row);
-      const stored = { ...(current['litellm_params'] as Row) };
-      // ★ v1.103.0 `update_model` walks the PARSED model, not the keys the client sent.
-      //   `None` keeps the stored value and is not written. A default that is not `None` is
-      //   written. A key the parsed model does not declare stays: the write is a merge.
-      const parsed = options.fillsParamDefaults === true ? fillParamDefaults(params) : params;
-      const applied = Object.fromEntries(
-        Object.entries(parsed).filter(([, value]) => value !== null),
-      );
-      const rewritten: Row = { ...stored, ...applied };
-      const merged: Row = {
-        ...current,
-        ...(body['model_name'] === undefined ? {} : { model_name: body['model_name'] }),
-        ...(body['litellm_params'] === undefined ? {} : { litellm_params: rewritten }),
-      };
-      rows = rows.map((row, i) => (i === at ? merged : row));
-      return json(200, {});
+      const update = handlePostModelUpdate({ body, json, options, rowId, rows });
+      if (update.at !== -1) {
+        rows = rows.map((row, i) => (i === update.at ? update.merged : row));
+      }
+      return update.response;
     }
     const patch = /^\/model\/([^/]+)\/update$/.exec(url.pathname);
     if (patch !== null && request.method === 'PATCH') {
@@ -200,8 +155,11 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
       const id = decodeURIComponent(patch[1] ?? '');
       const at = rows.findIndex((row) => rowId(row) === id);
       if (at === -1) return json(400, { detail: { error: 'model not found' } });
-      // ★ v1.103.0 `update_db_model`: present model_info keys merge onto the stored row.
-      //   An empty access_groups clears the groups. editIgnoresFalsy drops that clear.
+      // ★ v1.103.0 `update_db_model` MERGES: present `model_info` keys land on the stored row,
+      //   present `litellm_params` keys land on the stored params (a JSON `null` keeps the
+      //   stored value), and every key the request does not carry is preserved — the opposite
+      //   of POST's rebuild (above). An empty access_groups clears the groups.
+      //   editIgnoresFalsy drops that clear.
       const dropFalsy = <T extends Row>(incoming: T): T =>
         options.editIgnoresFalsy === true
           ? (Object.fromEntries(
@@ -212,9 +170,15 @@ export const startFakeModelLitellm = (options: FakeModelOptions = {}): FakeModel
           : incoming;
       const current = rows[at] as Row;
       const info = dropFalsy((body['model_info'] ?? {}) as Row);
+      const sent = dropFalsy((body['litellm_params'] ?? {}) as Row);
+      const stored = { ...(current['litellm_params'] as Row) };
+      // A JSON `null` is not applied at all, so the stored value survives under it.
+      const applied = Object.fromEntries(Object.entries(sent).filter(([, v]) => v !== null));
+      const params: Row = { ...stored, ...applied };
       const merged: Row = {
         ...current,
         ...(body['model_name'] === undefined ? {} : { model_name: body['model_name'] }),
+        ...(body['litellm_params'] === undefined ? {} : { litellm_params: params }),
         ...(body['model_info'] === undefined
           ? {}
           : { model_info: { ...(current['model_info'] as Row), ...info } }),
