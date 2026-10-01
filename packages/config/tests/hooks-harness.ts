@@ -114,8 +114,12 @@ export async function scratchRepo(prefix = 'hf-hook-repo-'): Promise<Scratch> {
  */
 const bins: string[] = [];
 
-/** Drop every PATH shim `pathWith` created. An exit hook covers a test that never reaches `afterAll`. */
-function removeBins(): void {
+/**
+ * Drop every PATH shim `pathWith` created. Every test file that calls `pathWith` registers
+ * `afterAll(removeBins)`: the exit hook alone runs after the pre-push tmp guard has already
+ * counted the leftovers (measured 2026-10-01: 4 hf-hook-bin- dirs left). It stays as a backstop.
+ */
+export function removeBins(): void {
   for (const dir of bins.splice(0)) rmSync(dir, { recursive: true, force: true });
 }
 

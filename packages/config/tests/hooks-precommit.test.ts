@@ -8,7 +8,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ENV, type Scratch, pathWith, scratchRepo } from './hooks-harness.ts';
+import { ENV, type Scratch, pathWith, removeBins, scratchRepo } from './hooks-harness.ts';
+
+afterAll(removeBins);
 
 const UGLY = 'export const value  =   {a:1,   b:2}\n';
 
