@@ -17,7 +17,7 @@ import type {
 export const parseInfo = (value: string | null): ValkeyInstanceInfo => {
   const fallback = '0.0.0';
   if (value === null) return { version: fallback, port: 0 };
-  const match = /redis_version:([0-9a-zA-Z._-]+)/.exec(value);
+  const match = /valkey_version:([0-9a-zA-Z._-]+)/.exec(value);
   const port = /tcp_port:([0-9]+)/.exec(value);
   return {
     version: match?.[1] ?? fallback,

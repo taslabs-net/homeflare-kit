@@ -3,9 +3,9 @@
 Two resources for the seat-wiring data plane (seat-wiring-spec §5), built 2026-09-29, walked
 against Valkey 8.1.10 (the image already pinned on CT100) and 9.1.1 (the scratch instance used to
 prove the ACL rules). There is no `@distilled.cloud/valkey` package (registry 404, checked
-2026-09-29) and `effect` ships no Valkey/Redis client, so this family hand-rolls the handful of
-RESP commands it issues (`INFO`, `CONFIG GET`, `ACL LIST`, `ACL SETUSER`, `ACL DELUSER`, `AUTH`,
-`PING`) over `node:net` — see `src/valkey/transport.ts`.
+2026-09-29). The bounded RESP client remains intentionally separate from `alchemy/Redis` at
+beta.79: upstream has no configurable deadlines or provider-sized reply caps, and its auth API
+requires a password-bearing URL. See [the source audit and executable cap evidence](./valkey-transport.md).
 
 - `Valkey.Instance` — **assert-and-read** a running server. It never creates, never reconfigures,
   and never stops one.
@@ -37,16 +37,21 @@ export class Seats extends ValkeyInstance('Seats', {
 
 Asserted props are `port`, `maxmemory`, `maxmemoryPolicy`, `appendonly`; omitted props are not
 checked. `diff` reports an update on the first drift; `reconcile` re-reads and raises
-`ValkeyInstanceDrift` naming the prop. The version line (`redis_version:` in `INFO`) is read into
+`ValkeyInstanceDrift` naming the prop. The version line (`valkey_version:` in `INFO`, not the Redis compatibility version) is read into
 attributes but never asserted.
 
 ## `Valkey.AclFile`: seat users, key-prefix scoped
 
-One `Valkey.AclFile` per instance, holding **every non-default user** that instance has. The
+One `Valkey.AclFile` per instance, holding the users the declaration manages. The
 header comment in `src/valkey/acl.ts` states the constraint: a shared file would let a seat user
 exist on the LiteLLM cache (`:6380`) and `litellm` on the seat store (`:6381`) — every seat could
 poison the response cache. `valkey-seats` carries the seat users; `valkey-litellm` carries the
-single `litellm` user.
+single `litellm` application user. Both can also carry the key-less `monitor` exporter user.
+
+Undeclared users are **preserved and reported** by default. Only `exclusive: true` allows
+reconcile to delete them. `default` and the connection username are always protected. Removing
+a user from a non-exclusive declaration leaves it live; use an explicit administrative removal
+or opt into whole-instance exclusive ownership when that is intended.
 
 ```ts
 import { ValkeyAclFile } from '@homeflare/alchemy/valkey';
@@ -71,23 +76,28 @@ export class SeatsAcl extends ValkeyAclFile('SeatsAcl', {
 ```
 
 - **Password by reference (S25).** `password` is `{ fromEnv }`; the value exists only in the
-  deploying process's memory and on the wire. State stores a scrypt **seal** so the next plan can
+  deploying process's memory; SETUSER sends only `#<sha256>`. State stores a scrypt **seal** so the next plan can
   tell whether the value changed, without holding anything a reader could send to Valkey.
 - **The key prefix is the isolation.** `~claude:*` limits a seat to its own keyspace — the
   pattern `homeflare-ct100/src/valkey-acl.ts` already renders (`~${user}:*`) — and
-  `resetchannels` plus `&<user>:*` limits pub/sub to its own channels (a `service` profile gets
-  `allchannels` instead — the one consumer that owns a whole instance). A seat whose
+  `resetchannels` plus `&<user>:*` limits pub/sub to its own channels. A `service` defaults
+  to `&<keyPrefix>`; `channelPatterns: ['namespace:*']` declares separate channel globs
+  (without `&`), and `[]` grants none. No unconditional `allchannels` rule replaces the declared scope. A seat whose
   `keyPrefix` is not `<name>:*` is refused before any write (`ValkeyAclSeatKeyPrefix`); `*`
-  is a `service` pattern only. A seat gets `WRITE` only where its job writes.
+  is a `service` pattern only. Glob characters in usernames are rejected. A seat gets `WRITE` only where its job writes.
 - **Fixed command allow-list, not a prop.** A seat gets `+@read +@write` plus the data-type
   categories, and is denied `-@dangerous -@admin` plus the keyless/admin commands
   (`-keys -flushall -flushdb -monitor -acl -config -shutdown -debug`) and
   `-scan -randomkey -dbsize -pubsub` (keyspace/channel enumeration). This mirrors
   `homeflare-ct100/src/valkey-acl.ts`'s `SEAT_COMMANDS`; it is not a per-declaration surface
   because widening it would let a seat request `FLUSHALL` or `ACL SETUSER`.
+- **Monitor profile.** `profile: 'monitor'` with no key prefix or channels matches ct100#117:
+  `-@all +ping +client|setname +info +command|info +commandlog|len +config|get`
+  `+latency|latest +latency|histogram +slowlog|get +slowlog|len`. It grants no key access,
+  pub/sub, configuration writes or ACL administration.
 - **Reconcile re-reads (S10).** After `ACL SETUSER`/`ACL DELUSER`, it reads `ACL LIST` back and
-  fails `ValkeyAclReadbackFailed` if a declared user's prefix is wrong or an undeclared user
-  remains. `delete` removes every declared user (the engine runs it only when a human opts out of
+  fails `ValkeyAclReadbackFailed` if a declared user's rules, flags or patterns disagree, or an undeclared
+  user remains under `exclusive: true`. `delete` removes every declared user (the engine runs it only when a human opts out of
   retain); the instance is untouched.
 
 ## Connection
@@ -111,21 +121,39 @@ const providers = valkeyProviders({
 });
 ```
 
-⛔ **The admin user is a prerequisite, not something this kit creates.** No user a fresh
-`--aclfile` instance starts with can run `ACL SETUSER`: a `seat` user is denied `-acl`, a
-`service` user is denied `-@dangerous` (which contains the ACL commands), and the rendered ACL
-files ship `user default off`. Before the kit's first reconcile of an instance, the orchestrator
-must put one admin user into that instance's ACL file — `user admin on ><pw> ~* +@all` — and pass
-its name and password to `valkeyProviders`. This family never manages that user: the connection's
-own username is skipped by name in every `ACL LIST` read (read, plan, and the reconcile's
-read-back), so a reconcile never removes an undeclared admin. Declaring that name, or `default`,
-is refused before any write (`ValkeyAclReservedUser`): `ACL SETUSER` `reset` would replace
-`~* +@all` and the next `ACL LIST` would answer `NOPERM`.
+⛔ **The admin user is a prerequisite, not something this kit creates.** The connection needs
+`INFO`, `CONFIG GET`, `ACL LIST`, `ACL SETUSER` and `ACL DELUSER`. Seat/service/monitor profiles
+cannot administer ACLs. The admin is provisioned separately and skipped in every ACL read;
+declaring its name or `default` raises `ValkeyAclReservedUser` before writes. Wrong AUTH,
+missing credentials, protocol and connection failures propagate as typed failures from `read`;
+none means “not found” or permits the engine to skip adoption.
 
-## Activating the two dormant Quadlets
+## Source of truth and drift
 
-The containers are declared `started: false` in `homeflare-ct100/src/valkey.ts`; this kit only
-declares the resources. The orchestrator's activation order, in the order each step depends on:
+**Configured ACL file ⇒ read-only resource.** Before reconcile or delete, `CONFIG GET aclfile`
+is checked. Any non-empty path raises `ValkeyAclFileRendered` before mutation. RESP cannot
+reliably distinguish a writable file from a read-only mount or a competing renderer, so this
+conservative gate refuses **all** configured files. This includes CT100's read-only OpenBao
+files: add users to that rendering template, then use its ACL LOAD/restart workflow. Adding an
+admin does not bypass the gate. Instance assertions and ACL reads remain available.
+
+**No ACL file ⇒ runtime-only management.** SETUSER/DELUSER change the live ACL. No ACL SAVE is
+issued: it requires a configured ACL file. This mode is for instances whose operator accepts
+that ACLs must be reapplied after restart; AOF persistence does not persist this ACL declaration.
+A deployment with unchanged props is not proof that credentials survived a restart.
+
+**Ordinary plan diff uses stored attributes**, not a fresh live ACL or the ACL file. Only
+`alchemy drift` automatically calls `read` on an already managed resource (beta.79 `Drift.ts`),
+then compares live attributes and reconciles to persisted props. Reconcile itself always reads
+live state. A drift run needs the declared password variables to recreate missing users. Drift
+against a configured file fails the write gate; fix its owning template instead.
+See [Valkey ACL persistence](https://valkey.io/topics/acl/#use-an-external-acl-file) and
+[ACL SAVE](https://valkey.io/commands/acl-save/).
+
+## Historical CT100 activation evidence (2026-09-29)
+
+At that measurement the containers were declared `started: false` in `homeflare-ct100/src/valkey.ts`; this kit only
+declared the resources. This is historical context, not an activation instruction for this provider. The orchestrator's activation order, in the order each step depends on:
 
 1. **Secrets in OpenBao.** `kv/data/apps/valkey/seats` with fields `claude_password`,
    `claude2_password`, `grok_password`, `cf_harness_password`; `kv/data/apps/valkey/litellm` with

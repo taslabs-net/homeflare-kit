@@ -55,7 +55,9 @@ describe('read', () => {
 
 describe('parseInfo', () => {
   test('extracts the version line and falls back on garbage', () => {
-    expect(parseInfo('redis_version:8.1.10\nredis_mode:standalone').version).toBe('8.1.10');
+    expect(
+      parseInfo('redis_version:7.2.4\nvalkey_version:8.1.10\nredis_mode:standalone').version,
+    ).toBe('8.1.10');
     expect(parseInfo(null).version).toBe('0.0.0');
     expect(parseInfo('nothing here').version).toBe('0.0.0');
   });

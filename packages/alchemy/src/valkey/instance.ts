@@ -19,8 +19,8 @@ import { isResolved } from 'alchemy/Diff';
 import * as Provider from 'alchemy/Provider';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
-import { withValkey } from './connection.ts';
-import { type ValkeyError, ValkeyInstanceDrift, ValkeyInstanceUnreachable } from './errors.ts';
+import { type ValkeyConnection, withValkey } from './connection.ts';
+import { type ValkeyError, ValkeyInstanceDrift } from './errors.ts';
 import { type ValkeyInstanceAttributes, type ValkeyInstanceProps } from './instance-attrs.ts';
 import { buildAttributes, firstDrift, parseInfo } from './instance-form.ts';
 import {
@@ -94,62 +94,65 @@ export const readWithExecutor = (
  * `valkeyInstanceHandlers.read(...)` directly against the real implementation without standing up
  * the engine's provider machinery.
  */
-export const valkeyInstanceHandlers = ValkeyInstance.Provider.of({
-  // ⚠️ EMPTY, NOT A LIVE SWEEP. A Valkey has no instance enumeration; adoption is one
-  //   declaration at a time, matching `Postgres.Database`.
-  list: () => Effect.succeed([]),
-  nuke: { skip: true },
+export const makeValkeyInstanceHandlers = (
+  connect: typeof withValkey = withValkey,
+): Provider.ProviderService<
+  ValkeyInstance,
+  ValkeyConnection,
+  never,
+  never,
+  ValkeyConnection,
+  ValkeyConnection
+> =>
+  ValkeyInstance.Provider.of({
+    // ⚠️ EMPTY, NOT A LIVE SWEEP. A Valkey has no instance enumeration; adoption is one
+    //   declaration at a time, matching `Postgres.Database`.
+    list: () => Effect.succeed([]),
+    nuke: { skip: true },
 
-  read: ({ output, olds }) =>
-    Effect.gen(function* () {
-      const props = output ?? olds;
-      // A failure (unreachable or unauthenticated) answers `undefined` so the engine reports a
-      // create, which `reconcile` then turns into the typed `ValkeyInstanceUnreachable`.
-      return yield* withValkey((ex) =>
-        Effect.map(readWithExecutor(ex, { name: props.name, port: props.port }), Unowned),
-      ).pipe(Effect.orElseSucceed(() => undefined));
-    }),
-
-  diff: ({ news, output }) =>
-    Effect.sync(() => {
-      if (!isResolved(news)) return undefined;
-      if (output === undefined) return undefined;
-      const drift = firstDrift(news, output);
-      return drift !== undefined ? ({ action: 'update' } as const) : ({ action: 'noop' } as const);
-    }),
-
-  reconcile: ({ news }) =>
-    Effect.gen(function* () {
-      const live = yield* withValkey((ex) =>
-        readWithExecutor(ex, { name: news.name, port: news.port }),
-      ).pipe(
-        // The engine runs reconcile after `read` answered `undefined`, so an instance that
-        // cannot be verified here is what the plan surfaces. The failure is mapped to the
-        // typed error rather than leaked, keeping `read`-undefined ⇄ reconcile-failure one
-        // contract. The host is the connection layer's value, not the instance's (instance-attrs.ts).
-        Effect.catchTag('ValkeyServerError', () =>
-          Effect.fail(new ValkeyInstanceUnreachable({ instance: news.name, port: news.port })),
-        ),
-        Effect.catchTag('ValkeySocketError', () =>
-          Effect.fail(new ValkeyInstanceUnreachable({ instance: news.name, port: news.port })),
-        ),
-      );
-      const drift = firstDrift(news, live);
-      if (drift !== undefined) {
-        return yield* Effect.fail(
-          new ValkeyInstanceDrift({
-            instance: news.name,
-            prop: drift.prop,
-            declared: drift.declared,
-            live: drift.live,
-          }),
+    read: ({ output, olds }) =>
+      Effect.gen(function* () {
+        const props = output ?? olds;
+        // Neither AUTH failure nor an unreachable endpoint proves absence. Propagate the
+        // typed failure so Plan.ts cannot bypass the adoption gate with a CREATE.
+        return yield* connect((ex) =>
+          Effect.map(readWithExecutor(ex, { name: props.name, port: props.port }), Unowned),
         );
-      }
-      return live;
-    }),
+      }),
 
-  delete: ({ olds }) => Effect.fail(new ValkeyInstanceDeleteRefused({ instance: olds.name })),
-});
+    diff: ({ news, output }) =>
+      Effect.sync(() => {
+        if (!isResolved(news)) return undefined;
+        if (output === undefined) return undefined;
+        const drift = firstDrift(news, output);
+        return drift !== undefined
+          ? ({ action: 'update' } as const)
+          : ({ action: 'noop' } as const);
+      }),
+
+    reconcile: ({ news }) =>
+      Effect.gen(function* () {
+        const live = yield* connect((ex) =>
+          readWithExecutor(ex, { name: news.name, port: news.port }),
+        );
+        const drift = firstDrift(news, live);
+        if (drift !== undefined) {
+          return yield* Effect.fail(
+            new ValkeyInstanceDrift({
+              instance: news.name,
+              prop: drift.prop,
+              declared: drift.declared,
+              live: drift.live,
+            }),
+          );
+        }
+        return live;
+      }),
+
+    delete: ({ olds }) => Effect.fail(new ValkeyInstanceDeleteRefused({ instance: olds.name })),
+  });
+
+export const valkeyInstanceHandlers = makeValkeyInstanceHandlers();
 
 export const ValkeyInstanceProvider = () =>
   Provider.succeed(ValkeyInstance, valkeyInstanceHandlers);

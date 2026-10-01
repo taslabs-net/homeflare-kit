@@ -5,14 +5,14 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
-import { reconcileWithExecutor } from './acl-ops.ts';
+import { reconcileWithExecutor } from './acl-reconcile.ts';
 import { ValkeyAclReservedUser } from './errors.ts';
 import { makeFakeValkey } from './fake-valkey.ts';
 import type { ValkeyAclUser } from './acl-attrs.ts';
 
 const fails = <A, E>(eff: Effect.Effect<A, E>): Promise<E> => Effect.runPromise(Effect.flip(eff));
 
-const env = { CLAUDE_PW: 'hunter2' };
+const env = { CLAUDE_PW: 'FAKE-seat-password' };
 const claude: ValkeyAclUser = {
   name: 'claude',
   keyPrefix: 'claude:*',
@@ -25,7 +25,7 @@ const setuser = (fake: ReturnType<typeof makeFakeValkey>): ReadonlyArray<unknown
 
 describe('reserved ACL names', () => {
   test('refuses to declare the connection username before any SETUSER', async () => {
-    const fake = makeFakeValkey({ acl: { admin: 'user admin on >h ~* +@all' } });
+    const fake = makeFakeValkey({ acl: { admin: 'user admin on >FAKE-seed ~* +@all' } });
     const admin: ValkeyAclUser = {
       name: 'admin',
       keyPrefix: 'admin:*',
@@ -43,7 +43,7 @@ describe('reserved ACL names', () => {
     );
     expect(setuser(fake)).toEqual([]);
     expect(error).toBeInstanceOf(ValkeyAclReservedUser);
-    expect(fake.acl.get('admin')).toContain('~* +@all');
+    expect(fake.acl.get('admin')).toContain('~* resetchannels +@all');
   });
 
   test('refuses to declare default before any SETUSER', async () => {

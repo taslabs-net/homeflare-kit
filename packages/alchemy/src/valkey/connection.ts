@@ -118,7 +118,7 @@ const openSocket = (
 /** `AUTH` when the config carries a password, resolved at call time; a missing or empty variable
  * is the typed `ValkeyAuthPasswordMissing` (S21: a fact this family checked, not a sniffed server
  * reply). A password without a username authenticates as `default`. */
-const auth = (
+export const auth = (
   executor: ValkeyExecutor,
   config: ValkeyConnectionConfig,
   env: Environment,
@@ -137,7 +137,7 @@ const auth = (
       username === undefined ? ['AUTH', value] : ['AUTH', username, value],
     );
     if (reply.kind === 'error')
-      return yield* Effect.fail(new ValkeyServerError({ detail: reply.message }));
+      return yield* Effect.fail(new ValkeyServerError({ detail: 'Valkey AUTH was refused' }));
   });
 };
 

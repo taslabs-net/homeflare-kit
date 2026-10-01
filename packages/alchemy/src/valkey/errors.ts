@@ -43,12 +43,16 @@ export class ValkeyInstanceUnreachable extends Data.TaggedError('ValkeyInstanceU
   }
 }
 
-/** An `ACL LIST` line could not be parsed into the fields this family understands. */
+/** An ACL LIST line could not be parsed. Neither the message nor error data retain the
+ * raw line: error serialization must not expose its password hash. */
 export class ValkeyAclParseError extends Data.TaggedError('ValkeyAclParseError')<{
-  readonly line: string;
+  // No raw ACL data.
 }> {
   override get message(): string {
-    return `Valkey.AclFile: cannot parse ACL LIST line: ${this.line}`;
+    return (
+      'Valkey.AclFile: cannot parse an ACL LIST line. The line is withheld from this message ' +
+      'because it can carry a password hash.'
+    );
   }
 }
 
@@ -158,4 +162,78 @@ export type ValkeyError =
   | ValkeyAclUserNameMismatch
   | ValkeyAclReservedUser
   | ValkeyAclSeatKeyPrefix
+  | ValkeyAclMonitorKeyPrefix
+  | ValkeyAclNameGlob
+  | ValkeyAclChannelPatterns
+  | ValkeyAclFileRendered
   | ValkeyAuthPasswordMissing;
+
+/** A `monitor`-profile user was declared with a key prefix. The monitor profile exists for the
+ * key-less `redis_exporter` identity (ct100#117): its rules carry `resetkeys`, and a `~` pattern
+ * next to them would contradict the key-less shape the profile is fixed to. Refused before any
+ * write. */
+export class ValkeyAclMonitorKeyPrefix extends Data.TaggedError('ValkeyAclMonitorKeyPrefix')<{
+  readonly instance: string;
+  readonly user: string;
+  readonly keyPrefix: string;
+}> {
+  override get message(): string {
+    return (
+      `Valkey.AclFile "${this.instance}": ACL user "${this.user}" declares profile "monitor" ` +
+      `with key prefix "${this.keyPrefix}". The monitor profile is key-less (resetkeys); omit ` +
+      'the keyPrefix.'
+    );
+  }
+}
+
+/** A username carries glob characters (`*`, `?`, `[`, `]`). Names are interpolated into key and
+ * channel patterns (`~<name>:*`, `&<name>:*`), so a glob in the name would widen the patterns
+ * the profile is fixed to — `seat*` would reach `seat2:*`. Refused before any write. */
+export class ValkeyAclNameGlob extends Data.TaggedError('ValkeyAclNameGlob')<{
+  readonly instance: string;
+  readonly user: string;
+  readonly chars: string;
+}> {
+  override get message(): string {
+    return (
+      `Valkey.AclFile "${this.instance}": ACL user "${this.user}" contains glob characters ` +
+      `(${this.chars}). A name is interpolated into key and channel patterns, so a glob would ` +
+      'widen the isolation the profile fixes. Use a glob-free name.'
+    );
+  }
+}
+
+/** The instance renders its ACL from a file (`--aclfile`, answered by `CONFIG GET aclfile`), so
+ * the FILE is the source of truth and this family cannot manage it: the kit speaks RESP only, it
+ * can neither write the file nor outlast the renderer that owns it (CT100: openbao-agent renders
+ * `/etc/valkey/*-acl.conf` and mounts it read-only — a runtime `ACL SETUSER` there is reverted by
+ * the next render/restart, measured 2026-09-30 as a WRONGPASS seat). Declare those users in the
+ * rendering template instead, or point this family at an instance whose ACL it can persist. */
+export class ValkeyAclFileRendered extends Data.TaggedError('ValkeyAclFileRendered')<{
+  readonly instance: string;
+  readonly path: string;
+}> {
+  override get message(): string {
+    return (
+      `Valkey.AclFile "${this.instance}": the instance loads its ACL from "${this.path}" ` +
+      '(CONFIG GET aclfile), so the file — not this family — is the source of truth. The kit ' +
+      'speaks RESP only and can neither write that file nor survive the renderer that owns it; ' +
+      'a runtime ACL SETUSER there is reverted on the next render or restart. Declare the users ' +
+      'in the rendering template. Reads still work: plan-time diff sees stored attributes, and ' +
+      'alchemy drift re-reads the live ACL.'
+    );
+  }
+}
+
+/** A fixed profile cannot widen its channel boundary by declaration. */
+export class ValkeyAclChannelPatterns extends Data.TaggedError('ValkeyAclChannelPatterns')<{
+  readonly instance: string;
+  readonly user: string;
+}> {
+  override get message(): string {
+    return (
+      `Valkey.AclFile "${this.instance}": invalid channel patterns for "${this.user}". ` +
+      'Seats require <name>:*; monitors require no channels.'
+    );
+  }
+}

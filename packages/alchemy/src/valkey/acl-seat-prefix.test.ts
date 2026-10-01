@@ -7,20 +7,20 @@
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import type { ValkeyAclUser } from './acl-attrs.ts';
-import { reconcileWithExecutor } from './acl-ops.ts';
+import { reconcileWithExecutor } from './acl-reconcile.ts';
 import { ValkeyAclSeatKeyPrefix } from './errors.ts';
 import { makeFakeValkey } from './fake-valkey.ts';
 
 const fails = <A, E>(eff: Effect.Effect<A, E>): Promise<E> => Effect.runPromise(Effect.flip(eff));
 
-const env = { CLAUDE_PW: 'hunter2', LITELLM_PW: 'cachepw' };
+const env = { CLAUDE_PW: 'FAKE-seat-password', LITELLM_PW: 'FAKE-cache-password' };
 
 const setuser = (fake: ReturnType<typeof makeFakeValkey>): ReadonlyArray<unknown> =>
   fake.commands.filter((command) => command.args[0] === 'ACL' && command.args[1] === 'SETUSER');
 
 describe('seat key prefix', () => {
   test("a seat keyPrefix of '*' issues no SETUSER", async () => {
-    const fake = makeFakeValkey({ acl: { admin: 'user admin on >h ~* +@all' } });
+    const fake = makeFakeValkey({ acl: { admin: 'user admin on >FAKE-seed ~* +@all' } });
     const claude: ValkeyAclUser = {
       name: 'claude',
       keyPrefix: '*',
@@ -91,7 +91,7 @@ describe('seat key prefix', () => {
       profile: 'service',
       password: { fromEnv: 'LITELLM_PW' },
     };
-    const error = await Effect.runPromise(
+    const output = await Effect.runPromise(
       reconcileWithExecutor(
         fake,
         { instance: 'valkey-litellm', users: { litellm } },
@@ -99,13 +99,9 @@ describe('seat key prefix', () => {
         env,
         'admin',
       ),
-    ).then(
-      () => undefined,
-      (cause: unknown) => cause,
     );
-    // The fake stores `allchannels` rather than the live `&*` echo, so read-back can fail.
-    // The refusal under test is the one that must not have fired: SETUSER ran, with `~*`.
-    expect(error).not.toBeInstanceOf(ValkeyAclSeatKeyPrefix);
+    // The fake now echoes &*, matching the measured live echo; read-back must succeed.
+    expect(output.users.litellm?.profile).toBe('service');
     const wrote = fake.commands.filter(
       (command) => command.args[0] === 'ACL' && command.args[1] === 'SETUSER',
     );

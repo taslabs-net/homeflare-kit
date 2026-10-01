@@ -4,6 +4,9 @@
  * 2026-09-29), and `effect@4.0.0-rc.115` ships no Valkey/Redis client, so the family declares a
  * `ValkeyExecutor` seam — the real socket client below, or `fake-valkey.ts` in tests — and every
  * lifecycle function depends only on that small interface, never on `node:net`.
+ * ★ Alchemy beta.79 DOES ship Redis.connect. Its internal parser/queue cannot enforce our
+ *   reply caps before allocating, and it exposes no deadline settings. The audited exception
+ *   and executable measurements are in `docs/valkey-transport.md`.
  *
  * ⛔ RESP, NOT A TAG TO VALKEY'S C VERSION. The protocol is line-and-prefix oriented and stable
  *   across Valkey's releases; the commands this family issues (`INFO`, `CONFIG GET`, `ACL LIST`,

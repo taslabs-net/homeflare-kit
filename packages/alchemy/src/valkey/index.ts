@@ -18,6 +18,10 @@ export { ValkeyAclFile, ValkeyAclFileProvider, isValkeyAclFile } from './acl.ts'
 export type { ValkeyConnectionConfig } from './connection.ts';
 export { ValkeyConnection, valkeyConnection, withValkey } from './connection.ts';
 export {
+  ValkeyAclChannelPatterns,
+  ValkeyAclFileRendered,
+  ValkeyAclMonitorKeyPrefix,
+  ValkeyAclNameGlob,
   ValkeyAclPasswordMissing,
   ValkeyAclParseError,
   ValkeyAclReadbackFailed,

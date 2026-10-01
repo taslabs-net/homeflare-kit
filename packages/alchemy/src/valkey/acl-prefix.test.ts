@@ -6,13 +6,14 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
+import * as Effect from 'effect/Effect';
 import { buildSetUserArgs } from './acl-form.ts';
 import type { ValkeyAclUser } from './acl-attrs.ts';
 
 const templatePattern = (user: string): string => `~${user}:*`;
 
 describe('published key prefix', () => {
-  test("example declaration's ~ pattern equals the CT100 seat template", () => {
+  test("example declaration's ~ pattern equals the CT100 seat template", async () => {
     const doc = readFileSync(new URL('../../docs/valkey.md', import.meta.url), 'utf8');
     const examples = [...doc.matchAll(/name: '(\w+)',\s*\n\s*keyPrefix: '([^']+)'/g)].map(
       (match) => ({ name: match[1] ?? '', keyPrefix: match[2] ?? '' }),
@@ -28,7 +29,9 @@ describe('published key prefix', () => {
         profile: 'seat',
         password: { fromEnv: 'X' },
       };
-      expect(buildSetUserArgs(user, 'pw')).toContain(templatePattern(example.name));
+      expect(await Effect.runPromise(buildSetUserArgs(user, 'FAKE-password'))).toContain(
+        templatePattern(example.name),
+      );
       expect(`~${example.keyPrefix}`).toBe(templatePattern(example.name));
     }
   });
