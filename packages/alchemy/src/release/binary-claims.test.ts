@@ -7,16 +7,16 @@
  *   `vmalert: noop, vmalert-logs: delete` — and the file `vmalert` still declared was gone.
  */
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { VMALERT_TEXT, realEngine } from './fake-engine.ts';
+import { VMALERT_TEXT, makeBinaryDirectory, realEngine } from './fake-engine.ts';
 import { VMUTILS_URL } from './fake-release.ts';
 
 let dir = '';
 beforeEach(async () => {
   dir = join(await mkdtemp(join(tmpdir(), 'hf-claims-')), 'vmutils-1.151.0');
-  await mkdir(dir);
+  await makeBinaryDirectory(dir);
 });
 afterEach(async () => {
   await rm(join(dir, '..'), { force: true, recursive: true });

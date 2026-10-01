@@ -6,6 +6,7 @@
  * ⛔ TEST-ONLY, like fake-release.ts: no provider imports it and it is not on the barrel. Every
  *   directory a test passes must be under its own `mkdtemp`; nothing here chooses a path.
  */
+import { mkdir } from 'node:fs/promises';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
@@ -19,6 +20,20 @@ import { BINARY, VMALERT_REQUEST, VMUTILS_URL, syntheticRelease } from './fake-r
 
 /** vmalert's bytes as text, to compare with what a test reads off the disk. */
 export const VMALERT_TEXT = new TextDecoder().decode(BINARY.vmalert);
+
+/**
+ * A directory Release.Binary accepts, whatever the process umask. The resource refuses a directory
+ * its group or others may write (binary-lifecycle.ts `directoryReady`), and a bare `mkdir` asks for
+ * 0777 and loses the umask's bits: 0775 under the 0002 a CT100 login shell has, so the suite
+ * passed under 022 and failed six tests under 0002 (measured 2026-10-01). A umask only ever takes
+ * bits away, so asking for 0755 outright can come out no wider than 0755 under any mask; the
+ * directories made on the way (`recursive`) get the same mode. Every test directory goes through
+ * here; the resource's refusal is right and stays as it is.
+ */
+export const makeBinaryDirectory = async (path: string): Promise<string> => {
+  await mkdir(path, { mode: 0o755, recursive: true });
+  return path;
+};
 
 /** One stack over localRunner; `deploy` takes logical id → directory; `gets` counts downloads. */
 export const realEngine = () => {
