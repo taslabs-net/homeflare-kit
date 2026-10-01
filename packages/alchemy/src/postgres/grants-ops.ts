@@ -22,11 +22,15 @@
  *   — an all-empty projection is a real answer (the grantee owns everything outright, so
  *   `aclexplode` has no rows) and is returned as the projection, not as absent. No role
  *   check — the aclexplode reads are missing-role-safe by construction (`grants-read.ts`).
- * ★ `delete` NEVER RE-GRANTS, NEVER CASCADES. The `retain` policy is the default; the
- *   revokes are idempotent; the delete then re-reads and re-plans like `reconcile` does
- *   (S10), so a third grantor's grant that a revoke cannot clear fails loud with the
- *   surviving statements (`PostgresGrantsRepairRefused`) instead of surviving silently
- *   (`REVOKE … CASCADE` is never issued).
+ * ★ `delete` NEVER RE-GRANTS THE DECLARATION, NEVER CASCADES. The `retain` policy is the
+ *   default; the revokes are idempotent; the delete then re-reads and re-plans like
+ *   `reconcile` does (S10), so a third grantor's grant that a revoke cannot clear fails loud
+ *   with the surviving statements (`PostgresGrantsRepairRefused`) instead of surviving
+ *   silently (`REVOKE … CASCADE` is never issued). The one re-grant a delete still makes is
+ *   the collateral a table `REVOKE ALL` clears on columns the declaration never named (a
+ *   DBA's or another Grants resource's column grant): `planRepair` restores those as it does
+ *   on the reconcile path (`grants.ts:17-18`, `grants-plan.ts:12-14`), so a delete takes
+ *   away what the declaration managed and leaves everything else exactly as it was.
  * ★ THE REPAIR'S WRITES ARE ONE TRANSACTION. `unsafe` is still one command — the socket
  *   path's prepared statement cannot carry several, and each psql `unsafe` is its own
  *   process — but `pg.transaction` is `BEGIN`…`COMMIT` on both transports (one reserved

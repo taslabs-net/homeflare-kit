@@ -15,8 +15,6 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ENV, type Scratch, pathWith, removeBins, scratchRepo } from './hooks-harness.ts';
 
-afterAll(removeBins);
-
 let active: Scratch | undefined;
 
 /**
@@ -37,6 +35,8 @@ afterEach(async () => {
   await active?.remove();
   active = undefined;
 });
+
+afterAll(removeBins);
 
 async function repoWithoutDefaultConfig(): Promise<Scratch> {
   const repo = await scratchRepo('hf-hook-config-');

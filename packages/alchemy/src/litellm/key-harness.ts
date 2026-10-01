@@ -22,6 +22,10 @@ export const FAKE_KEY = 'sk-FAKE-seat-key-000000000001';
 export const OTHER_FAKE_KEY = 'sk-FAKE-seat-key-000000000002';
 export const VAR = 'FAKE_LITELLM_SEAT_KEY';
 
+/** The row's `token` for a value, the same sha256 the fake and the vendor store (`hash_token`). */
+export const tokenFor = (value: string): string =>
+  new Bun.CryptoHasher('sha256').update(value).digest('hex');
+
 export type Fake = ReturnType<typeof startFakeLitellm>;
 
 export const newFake = (options?: Parameters<typeof startFakeLitellm>[0]): Fake =>

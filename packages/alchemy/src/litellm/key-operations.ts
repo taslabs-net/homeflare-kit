@@ -57,6 +57,18 @@ export const findKey = (
   keyAlias.trim() === '' ? Effect.fail(new LitellmKeyAliasEmptyError()) : findKeyByAlias(keyAlias);
 
 const findKeyByAlias = (keyAlias: string) =>
+  findKeyRowByAlias(keyAlias).pipe(
+    Effect.map((row) => (row === undefined ? undefined : toAttributes(row))),
+  );
+
+/**
+ * The one live key with this alias, as the raw `/key/list` row — the shape `toAttributes` reads
+ * and drops the `token` from. `findKey` maps it to `KeyAttributes`; `readKeyToken` reads the raw
+ * row because the row's `token` (the vendor's sha256 of the key) is what key-secret.ts's
+ * `verifyKeyValue` compares a declared value against, and it must not pass through `toAttributes`
+ * (which would put the hash in state).
+ */
+const findKeyRowByAlias = (keyAlias: string) =>
   throughFetch(keys.listKeysKeyListGet({ key_alias: keyAlias, return_full_object: true })).pipe(
     Effect.flatMap((response) =>
       Effect.gen(function* () {
@@ -72,10 +84,33 @@ const findKeyByAlias = (keyAlias: string) =>
         if (mine.length > 1) {
           return yield* new LitellmKeyAmbiguousAliasError({ count: mine.length, keyAlias });
         }
-        return mine[0] === undefined ? undefined : toAttributes(mine[0]);
+        return mine[0];
       }),
     ),
   );
+
+/**
+ * The row's `token` (the vendor's sha256 of the key), `null` when the row carries none, or
+ * `undefined` when the alias is absent. Absence must plan recreation, not a value mismatch.
+ * Read only for the in-memory mismatch check (`verifyKeyValue`); the hash is never persisted.
+ */
+export const readKeyToken = (
+  keyAlias: string,
+): Effect.Effect<
+  string | null | undefined,
+  | keys.ListKeysKeyListGetError
+  | LitellmKeyUnreadableError
+  | LitellmKeyAmbiguousAliasError
+  | LitellmKeyAliasEmptyError,
+  LitellmOpContext
+> =>
+  keyAlias.trim() === ''
+    ? Effect.fail(new LitellmKeyAliasEmptyError())
+    : findKeyRowByAlias(keyAlias).pipe(
+        Effect.map((row) =>
+          row === undefined ? undefined : typeof row['token'] === 'string' ? row['token'] : null,
+        ),
+      );
 
 /**
  * Whether `value` holds the request it answers. An `HttpClientError` does, through `reason.request`

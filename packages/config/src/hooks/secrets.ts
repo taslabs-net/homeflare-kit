@@ -14,9 +14,11 @@
  * ⚠️ `git --staged`, NOT `protect`. Measured 2026-09-15 on gitleaks 8.30.1: `protect` still
  *   runs, but the documented surface is `gitleaks git` / `dir` / `stdin`.
  */
-import { fail, ok, run } from './report.ts';
+import { runGitleaks } from './gitleaks.ts';
+import { fail, ok } from './report.ts';
 
-const INSTALL = 'brew install gitleaks — Linux: https://github.com/gitleaks/gitleaks/releases';
+export const INSTALL =
+  'brew install gitleaks — Linux: https://github.com/gitleaks/gitleaks/releases';
 
 export async function scanStagedSecrets(): Promise<void> {
   // ⛔ NOT A SILENT SKIP. A secret scan that quietly does nothing is worse than none: it
@@ -30,8 +32,16 @@ export async function scanStagedSecrets(): Promise<void> {
   }
   // `--redact`, so a real finding never prints the secret into a scrollback, a CI log, or an
   // agent's context.
-  const code = await run(['gitleaks', 'git', '--staged', '--redact', '--no-banner', '.']);
-  if (code !== 0) {
+  const result = await runGitleaks(['git', '--staged', '--redact', '--no-banner', '.']);
+  // 🔴 AN EXIT CODE ALONE IS NOT A SCAN: gitleaks exits 0 when its own `git` fails (gitleaks.ts).
+  if (result.broke !== undefined) {
+    fail(
+      'pre-commit',
+      `gitleaks reported an error, so the staged changes were NOT reliably scanned (${result.broke})`,
+      'run gitleaks git --staged --redact --no-banner . and fix what it reports',
+    );
+  }
+  if (result.code !== 0) {
     fail(
       'pre-commit',
       'gitleaks found a secret in the staged changes',

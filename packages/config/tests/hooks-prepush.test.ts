@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ENV, type Scratch, scratchRepo, spawn } from './hooks-harness.ts';
+import { ENV, type Scratch, pathWith, removeBins, scratchRepo, spawn } from './hooks-harness.ts';
 
 const ZERO = '0'.repeat(40);
 
@@ -38,6 +38,8 @@ function testFile(name: string): string {
 
 const repo: Scratch = await scratchRepo('hf-push-repo-');
 const remote = await mkdtemp(join(tmpdir(), 'hf-push-remote-'));
+// ⚠️ A gitleaks that finds nothing: pre-push scans what it pushes now, and CI has no gitleaks.
+const clean = { ...ENV, PATH: await pathWith(0) };
 
 async function sha(ref = 'HEAD'): Promise<string> {
   return (await repo.git('rev-parse', ref)).trim();
@@ -51,7 +53,7 @@ async function commit(path: string, text: string): Promise<string> {
 }
 
 const push = (stdin: string, remoteName = 'origin') =>
-  repo.hook('pre-push', { args: [remoteName, remote], stdin: `${stdin}\n` });
+  repo.hook('pre-push', { args: [remoteName, remote], stdin: `${stdin}\n`, env: clean });
 
 beforeAll(async () => {
   await spawn(['git', 'init', '--quiet', '--bare', remote], remote);
@@ -69,6 +71,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await removeBins();
   await repo.remove();
   await rm(remote, { recursive: true, force: true });
 });
@@ -132,15 +135,19 @@ describe('what a push is measured from', () => {
     }
   });
 
-  test('a branch that is not checked out is reported NOT CHECKED — never passed', async () => {
+  test('a branch that is not checked out FAILS the push, naming the checkout — never passed', async () => {
     // 🔴 Found in review: the lanes run on the working tree, so a push of another ref used to
     //   run `bun test --changed` against the checkout, find nothing, and print "passed".
+    //   Then it printed "NOT CHECKED" and exited 0, which still let the push through; the
+    //   hook fails closed now (Tim, 2026-10-01), so the push stops and says how to make it
+    //   checkable.
     const other = (
       await repo.git('commit-tree', '-p', 'HEAD', '-m', 'elsewhere', 'HEAD^{tree}')
     ).trim();
     const result = await push(`refs/heads/other ${other} refs/heads/other ${ZERO}`);
-    expect(result.code).toBe(0);
-    expect(result.output).toContain('NOT CHECKED');
+    expect(result.code).toBe(1);
+    expect(result.output).toContain('the working tree is not what is being pushed');
+    expect(result.output).toContain('fix:    check out other and push from there');
     expect(result.output).not.toContain('LINT-LANE-RAN');
     expect(result.output).not.toContain('passed');
   });
@@ -156,30 +163,48 @@ describe('what a push is measured from', () => {
 });
 
 describe('what a push reports', () => {
-  test('a failing lane fails the push, names the lane, the fix and the bypass', async () => {
-    await repo.write(
+  test('a failing lane fails the push, names the lane and the fix — and offers no bypass', async () => {
+    // Committed: the working tree must be the commit (hooks-prepush-real.test.ts).
+    const tip = await commit(
       'package.json',
       JSON.stringify({ scripts: { check: 'bun run lint', lint: 'exit 3' } }),
     );
-    const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`, 'nowhere');
+    const result = await push(`refs/heads/feat ${tip} refs/heads/feat ${ZERO}`, 'nowhere');
     expect(result.code).toBe(1);
     expect(result.output).toContain('`bun run lint` failed');
-    expect(result.output).toContain('git push --no-verify');
+    expect(result.output).toContain('fix:    bun run lint');
+    expect(result.output).not.toContain('--no-verify');
   });
 
-  test('in a worktree nobody has installed: skipped out loud, not failed', async () => {
+  test('in a worktree nobody has installed: the push FAILS with the fix, never skipped', async () => {
     await rm(join(repo.dir, 'node_modules'), { recursive: true, force: true });
-    const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`);
-    expect(result.code).toBe(0);
-    expect(result.output).toContain("run 'bun install'");
-    await mkdir(join(repo.dir, 'node_modules'));
+    try {
+      const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`);
+      expect(result.code).toBe(1);
+      expect(result.output).toContain('no node_modules');
+      expect(result.output).toContain("fix:    run 'bun install' in this worktree");
+      expect(result.output).not.toContain('LINT-LANE-RAN');
+    } finally {
+      await mkdir(join(repo.dir, 'node_modules'));
+    }
   });
 
-  test('is a no-op when the repo declares no check script', async () => {
+  test('a repo that declares no check script FAILS the push — no checks is no gate', async () => {
+    // ⛔ It used to say "nothing to run" and exit 0, which read as a pass on a repo with no
+    //   checks at all. Hooks fail closed (Tim, 2026-10-01).
     await repo.write('package.json', JSON.stringify({ name: 'probe' }));
     const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`);
-    expect(result.code).toBe(0);
-    expect(result.output).toContain('no `check` script');
+    expect(result.code).toBe(1);
+    expect(result.output).toContain('this repo has no `check` script');
+    expect(result.output).toContain('fix:    add one to package.json');
+    expect(result.output).not.toContain('--no-verify');
+  });
+
+  test('a repo with no package.json at all fails the same way', async () => {
+    await rm(join(repo.dir, 'package.json'), { force: true });
+    const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`);
+    expect(result.code).toBe(1);
+    expect(result.output).toContain('this repo has no `check` script');
   });
 
   test('strips the GIT_* a real hook exports before running a lane', async () => {
@@ -187,13 +212,13 @@ describe('what a push reports', () => {
     //   `check` runs the tests, and a test building a throwaway repository then commits into
     //   the repository being pushed — cwd is ignored once GIT_DIR is set.
     // ⚠️ `$GIT_DIR`, not the `${…}` form — oxlint reads that as a botched template literal.
-    await repo.write(
+    await commit(
       'package.json',
       JSON.stringify({ scripts: { check: 'echo "GIT_DIR=[$GIT_DIR]"' } }),
     );
     const result = await repo.hook('pre-push', {
       args: ['origin', remote],
-      env: { ...ENV, GIT_DIR: '/somewhere/else/.git' },
+      env: { ...clean, GIT_DIR: '/somewhere/else/.git' },
     });
     expect(result.code).toBe(0);
     expect(result.output).toContain('GIT_DIR=[]');

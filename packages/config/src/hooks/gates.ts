@@ -5,16 +5,20 @@
  *   format and lint — and is measured in hundreds of milliseconds, so it can run on every
  *   commit without anyone resenting it. `pre-push` runs the repository's own `check`
  *   narrowed to what the push can affect (push-plan.ts): seconds, once per push.
- * ⚠️ NEITHER IS A GATE. Both are skippable with `--no-verify`, and a worktree has them only
- *   once `bun install` has run there. The required checks on `main` stay the gate — CI
- *   runs the whole `check`, every test, the build and the smoke test on every pull request.
+ * ⛔ BOTH FAIL CLOSED (Tim, 2026-10-01). A hook that cannot do its job — no `node_modules`, no
+ *   gitleaks, a push it cannot check — stops the commit or push and names the fix. A gate
+ *   that cannot run is fixed, never skipped, and no message here offers a way round it.
+ *   CI is still the full gate: it runs the whole `check`, every test, the build and the
+ *   smoke test on every pull request.
  */
-import { existsSync } from 'node:fs';
 import { resolveOxfmtConfig } from './oxfmt-config.ts';
+import { requireCleanTree, requireInstalled } from './preconditions.ts';
+import { checkoutFix } from './push-fix.ts';
 import { planLanes } from './push-plan.ts';
-import { runPlannedLanes } from './push-run.ts';
 import { changesEverything, parsePushRefs, pushScope } from './push-range.ts';
+import { scanPushedSecrets } from './push-secrets.ts';
 import { fail, note, ok, run, runCaptured, tool } from './report.ts';
+import { runPlannedLanes } from './push-run.ts';
 import { scanStagedSecrets } from './secrets.ts';
 import { fingerprints, staged } from './staged.ts';
 
@@ -37,26 +41,11 @@ function matchedFileCount(stdout: string): number | null {
  *   happens. Without the restage, oxfmt would fix the worktree while the commit kept
  *   the unformatted bytes — CI then fails on a file that reads as correct locally.
  */
-/**
- * Has `bun install` run in this worktree?
- *
- * ⚠️ WITHOUT IT, SKIP — LOUDLY — RATHER THAN IMPROVISE. A fresh worktree now runs its hooks
- *   (activate.ts), and in the repo that HOSTS this package they are reached by workspace
- *   path, not through node_modules. There `tool()` would fall back to `bunx`, fetching an
- *   unpinned oxfmt mid-commit, and a pre-push lane would die on "command not found". The
- *   wrapper every other repo commits makes the same call one step earlier (install.ts).
- */
-function installed(root: string, hook: 'pre-commit' | 'pre-push'): boolean {
-  if (existsSync(`${root}/node_modules`)) return true;
-  note(`${hook}: no node_modules in this worktree — run 'bun install'; skipping the rest`);
-  return false;
-}
-
 export async function preCommit(root: string): Promise<void> {
   // ⛔ SECRETS FIRST, before anything can rewrite or pass — see secrets.ts. It needs only the
   //   gitleaks binary, so it runs even in a worktree nobody has installed yet.
   await scanStagedSecrets();
-  if (!installed(root, 'pre-commit')) return;
+  requireInstalled(root, 'pre-commit');
 
   const { formattable, code, partial } = await staged();
 
@@ -154,37 +143,50 @@ export async function preCommit(root: string): Promise<void> {
  *
  * ★ `args` ARE GIT'S: the remote name and URL. `stdin` is git's ref list — see
  *   push-range.ts for how the base is chosen and why it never narrows to nothing.
+ * ⛔ A REPO WITH NO `check` SCRIPT FAILS: with nothing to run there is no gate to pass. So does a
+ *   push whose lanes were all skipped, and one made from a working tree that is not the
+ *   commit (preconditions.ts); and the commits it carries are scanned for secrets first.
  * ⛔ IT DOES NOT CERTIFY WHAT CI WILL SAY. It certifies that `check`'s own lint and type
  *   lanes pass and that every test the pushed files can reach passes. The build, the smoke
  *   test and the unreachable tests are CI's, and the success line says so.
  */
 export async function prePush(root: string, args: readonly string[], stdin: string): Promise<void> {
+  const remote = args[0] ?? 'origin';
+  const refs = parsePushRefs(stdin);
+  // ⛔ SECRETS FIRST, as in pre-commit — see push-secrets.ts for why the push scans too.
+  await scanPushedSecrets(root, args, refs);
+
   const manifest = Bun.file(`${root}/package.json`);
   const pkg = (await manifest.exists())
     ? ((await manifest.json()) as { scripts?: Record<string, string> })
     : {};
   const scripts = pkg.scripts ?? {};
   if (scripts['check'] === undefined) {
-    note('pre-push: no `check` script declared in package.json; nothing to run');
-    return;
+    // ⛔ NO `check` IS NO GATE, SO IT FAILS (Tim, 2026-10-01). It used to say "nothing to run"
+    //   and exit 0, which read as a pass on a repo that had no checks at all.
+    fail(
+      'pre-push',
+      'this repo has no `check` script, so pre-push has nothing to run',
+      'add one to package.json — the lint, type and test lanes CI runs — and push again',
+    );
   }
-  if (!installed(root, 'pre-push')) return;
+  requireInstalled(root, 'pre-push');
 
-  const scope = await pushScope(root, args[0] ?? 'origin', parsePushRefs(stdin));
+  const scope = await pushScope(root, remote, refs);
   if (scope.kind === 'empty') {
     ok(`pre-push: ${scope.why} — nothing to check`);
     return;
   }
   if (scope.kind === 'elsewhere') {
-    // ⛔ NOT A PASS, AND IT DOES NOT SAY ONE. The working tree is another commit; running the
-    //   lanes would certify content nobody checked. Failing would teach `--no-verify` for an
-    //   ordinary push, so it says what it did not do, and CI checks the ref.
-    note(`pre-push: ${scope.why} — the working tree is not what is being pushed`);
-    note(
-      '  NOT CHECKED here; CI checks it. To check it locally, check it out and push from there.',
-    );
-    return;
+    // ⛔ IT CANNOT CHECK THIS PUSH, SO IT FAILS (Tim, 2026-10-01). A pushed commit is not the
+    //   working tree; running the lanes would certify content nobody checked, and reporting
+    //   "not checked" while exiting 0 let exactly that content through. That holds for ONE
+    //   such ref in a push of several, even with the checked-out one alongside it. A gate
+    //   that cannot run is fixed, never skipped: the fix is a checkout per ref (push-fix.ts).
+    fail('pre-push', scope.why, checkoutFix(scope.refs, scope.here));
   }
+  // 🔴 THE LANES RUN ON THE WORKING TREE, so it must be what is being pushed (preconditions.ts).
+  await requireCleanTree(root);
   let base: string | undefined;
   if (scope.kind === 'unscoped') {
     note(`pre-push: ${scope.why} — every lane runs, tests in full`);

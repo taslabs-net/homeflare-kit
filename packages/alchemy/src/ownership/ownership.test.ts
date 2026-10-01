@@ -12,7 +12,7 @@ import * as Effect from 'effect/Effect';
 import { refuseTakeover } from './adopt.ts';
 import { ownedRead } from './probe.ts';
 import { noteResume, noteUnfinished, resumes } from './resume.ts';
-import { forgetRefusedCreate, isCreate, recordedInstance } from './rows.ts';
+import { forgetRefusedCreate, isCreate, olderGenerationIds, recordedInstance } from './rows.ts';
 import { row, withStore } from './store-fixture.ts';
 
 describe('recordedInstance', () => {
@@ -47,6 +47,38 @@ describe('isCreate', () => {
     expect(await withStore(rows, isCreate('B', 'new'))).toBe(false);
     expect(await withStore(rows, isCreate('A', 'other'))).toBe(false);
     expect(await Effect.runPromise(isCreate('A', 'mine'))).toBe(false);
+  });
+});
+
+describe('olderGenerationIds', () => {
+  test('collects attr.id from every generation older than the instance, through the old chain', async () => {
+    const rows = {
+      A: {
+        ...row('A', 'new', { ...row('A', 'older'), attr: { id: 'older-id' } }),
+        attr: { id: 'new-id' },
+      },
+    };
+    expect(await withStore(rows, olderGenerationIds('A', 'new'))).toEqual(['older-id']);
+  });
+
+  test('walks a former FQN the instance moved away from (renamedFrom)', async () => {
+    // Z is declared renamedFrom('X'). beta.79 moves the row (preserving instanceId) and deletes
+    // the former FQN; while a pre-move row still sits at X, the FormerFqns walk finds it and
+    // collects the older generation it holds.
+    const rows = {
+      Z: row('Z', 'new'),
+      X: {
+        ...row('X', 'new', { ...row('X', 'older'), attr: { id: 'older-id' } }),
+        attr: { id: 'new-id' },
+      },
+    };
+    expect(await withStore(rows, olderGenerationIds('Z', 'new'))).toEqual(['older-id']);
+  });
+
+  test('the current generation itself is skipped, and an empty store answers nothing', async () => {
+    const rows = { A: { ...row('A', 'new'), attr: { id: 'new-id' } } };
+    expect(await withStore(rows, olderGenerationIds('A', 'new'))).toEqual([]);
+    expect(await Effect.runPromise(olderGenerationIds('A', 'new'))).toEqual([]);
   });
 });
 

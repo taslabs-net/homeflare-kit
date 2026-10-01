@@ -102,15 +102,17 @@ the moment it is pushed.
 loudly if it is missing rather than skipping: a secret scan that quietly does nothing is
 worse than none, because it reads as coverage.
 
-⚠️ **actionlint is also a Go binary** (`brew install actionlint`), but unlike gitleaks the
-hook SKIPS when it is missing rather than failing. The asymmetry is deliberate: a missed
-workflow typo costs one red CI run; a missed secret costs a rotation. CI runs actionlint
-unconditionally either way.
+⚠️ **actionlint is also a Go binary** (`brew install actionlint`; on Linux the
+[rhysd/actionlint 1.7.12 release](https://github.com/rhysd/actionlint/releases/tag/v1.7.12),
+the same pin as homeflare-mini's CI). Like gitleaks, the hook fails when it is missing and
+a workflow is staged: a lint that quietly does nothing reads as coverage. A commit that
+stages no workflow does not need it. CI runs actionlint unconditionally as well.
 ⛔ The npm package named `actionlint` is an unrelated wasm port with no binary — measured
 2026-09-15. The real tool is [rhysd/actionlint](https://github.com/rhysd/actionlint).
 
-★ `--no-verify` exists and is occasionally right. It skips the secret scan too, so prefer
-fixing the thing it is complaining about.
+★ **Hooks fail closed** (Tim, 2026-10-01), and no message here offers a way round one. A
+hook that cannot run (no `node_modules`, no gitleaks, no actionlint) fails and names the
+fix, such as `bun install`, so fix the cause.
 
 ## The gates, and why each one exists
 

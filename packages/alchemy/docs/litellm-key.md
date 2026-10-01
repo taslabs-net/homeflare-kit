@@ -36,7 +36,7 @@ Then provide `litellmProviders()` alongside the stack's other providers, as
 | where the value is         | it is                                                                                                                                                            |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | the declaration / state    | never: the state row holds `{ fromEnv: 'HF_SEAT_A_KEY' }`, the NAME                                                                                              |
-| `diff`, `read`, a plan     | never read: a plan needs no secret and runs without the variable                                                                                                 |
+| `diff`, a plan             | a set variable is checked against the live token in memory; unset/empty skips verification                                                                       |
 | `/key/generate`'s body     | once, on create, unwrapped in `createBody` and nowhere else                                                                                                      |
 | `/key/generate`'s response | `Redacted` (the SDK's `T.SensitiveValue`); compared with what was sent                                                                                           |
 | an attribute, error or log | never: errors name the alias, the variable and the rule, not the value; a failed create is `LitellmKeyTransportError`, never the SDK's `HttpClientError` (below) |
@@ -47,10 +47,12 @@ state in the clear, or nowhere, and LiteLLM never shows the plaintext again (onl
 minted and dropped is a row nobody can use. `/key/generate`'s own docstring supports a caller-chosen
 value: "Must start with 'sk-' and be at least 16 characters long."
 
-- **The value is create-only.** An existing key is never sent one, never compared with one. LiteLLM
-  keeps `sha256(key)` (`hash_token`), so a check is possible, but `/key/update` cannot change a
-  key's value (it drops `key` from the body) and `/key/regenerate` is an Enterprise feature.
-  **Rotate by declaring a new alias**; a changed variable changes nothing on an existing key.
+- **The value is sent only on create.** For an existing key, plan and reconcile compare a set
+  variable's sha256 with the live row's `token`, only in memory. A mismatch is a typed
+  `LitellmKeyValueMismatchError`, even when every prop is unchanged. `/key/update` drops `key`
+  and cannot rotate it; `/key/regenerate` is an Enterprise feature. **Rotate with a new alias.**
+- **Unset or empty variables skip verification on existing keys**, including ordinary settings
+  updates. A deployer need not hold the seat key. Creation still requires the declared value.
 - **Adopting needs no value.** Omit `key` to manage an existing key's settings. A create with no `key`
   is refused (`LitellmKeyValueRequiredError`): it would mint a value nobody holds.
 - **A malformed value is refused before any write**: not `sk-…`, under 16 characters (both LiteLLM's
@@ -74,6 +76,13 @@ value: "Must start with 'sk-' and be at least 16 characters long."
 - **A proxy that ignores the value** and mints its own would leave a key nobody can use, reported as
   a success. `/key/generate` echoes the key; a different one is deleted again and refused
   (`LitellmKeyValueNotHonouredError`). UNVERIFIED that any proxy does this.
+
+Measured against the installed `alchemy@2.0.0-beta.79`: `src/Provider.ts:274–289` declares
+`diff` as `Effect<Diff | void, any, DiffReq>`. `src/Plan.ts:1503–1527` invokes it before falling
+back to props equality, so unchanged props do not bypass verification; `:750–765` also calls it
+for stable-reference evaluation. The check reads the live token each time and persists neither
+value nor hash. Unresolved props defer to reconcile. `key-rotation.test.ts` exercises real
+Plan/Apply with only the environment changed, no adoption and no other drift.
 
 ## Props
 

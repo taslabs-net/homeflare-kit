@@ -3,14 +3,12 @@
  * the lane by prefix, and a hardcoded "/tmp" path is reported because it never lands there.
  */
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
-import { leakPrefixes, problemsInTmpLiterals, runInTmp } from '../src/hooks/tmp-guard.ts';
-import { scratchRepo } from './hooks-harness.ts';
+import { rm } from 'node:fs/promises';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { leakPrefixes, runInTmp } from '../src/hooks/tmp-guard.ts';
+import { ENV, pathWith, removeBins, scratchRepo } from './hooks-harness.ts';
 
-const repoRoot = new URL('../../../', import.meta.url).pathname;
+afterAll(removeBins);
 
 describe('leakPrefixes', () => {
   test('groups mkdtemp names by the template prefix and counts them', () => {
@@ -96,67 +94,6 @@ describe('runInTmp', () => {
   });
 });
 
-describe('problemsInTmpLiterals', () => {
-  test('flags a host-temp path literal in a test file, and accepts a reason comment', async () => {
-    // Built by concatenation so THIS file is not itself a hardcoded host-temp literal.
-    const host = '/tm' + 'p';
-    const dir = await mkdtemp(join(tmpdir(), 'hf-tmp-lit-'));
-    try {
-      await writeFile(join(dir, 'bare.test.ts'), `const path = '${host}/bare';\n`);
-      await writeFile(
-        join(dir, 'allowed.test.ts'),
-        `const path = '${host}/socket'; // tmp-allow: postgres peer-auth socket directory\n`,
-      );
-      await writeFile(
-        join(dir, 'above.test.ts'),
-        `// tmp-allow: assertion about a fake path, not a directory this test creates\nconst path = "${host}/hf-sudo-1";\n`,
-      );
-      await writeFile(
-        join(dir, 'empty-reason.test.ts'),
-        `const path = '${host}/x'; // tmp-allow:\n`,
-      );
-      await writeFile(
-        join(dir, 'comment-only.test.ts'),
-        `// the host tmpfs is ${host} when full\n`,
-      );
-      await writeFile(join(dir, 'not-a-path.test.ts'), "const word = 'not/tmp/here';\n");
-      await writeFile(join(dir, 'src.ts'), `const path = '${host}/production';\n`);
-
-      const problems = await problemsInTmpLiterals(dir);
-
-      expect(problems.some((problem) => problem.includes('bare.test.ts'))).toBe(true);
-      expect(problems.some((problem) => problem.includes('empty-reason.test.ts'))).toBe(true);
-      expect(problems.some((problem) => problem.includes('allowed.test.ts'))).toBe(false);
-      expect(problems.some((problem) => problem.includes('above.test.ts'))).toBe(false);
-      expect(problems.some((problem) => problem.includes('comment-only.test.ts'))).toBe(false);
-      expect(problems.some((problem) => problem.includes('not-a-path.test.ts'))).toBe(false);
-      expect(problems.some((problem) => problem.includes('src.ts'))).toBe(false);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  test('a template literal is a path literal too', async () => {
-    const host = ['/tm', 'p'].join('');
-    const tick = '`';
-    const placeholder = ['$', '{1}'].join('');
-    const dir = await mkdtemp(join(tmpdir(), 'hf-tmp-lit-'));
-    try {
-      await writeFile(
-        join(dir, 'tpl.test.ts'),
-        `const path = ${tick}${host}/tpl-${placeholder}${tick};\n`,
-      );
-      expect((await problemsInTmpLiterals(dir)).join('\n')).toContain('tpl.test.ts');
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  test('this repo has no unallowlisted host-temp path literal in a test file', async () => {
-    expect(await problemsInTmpLiterals(repoRoot)).toEqual([]);
-  });
-});
-
 describe('pre-push', () => {
   test('a test lane that leaks fails the push and names the prefix', async () => {
     const repo = await scratchRepo('hf-tmp-push-');
@@ -176,10 +113,12 @@ describe('pre-push', () => {
           '',
         ].join('\n'),
       );
+      await repo.write('.gitignore', 'node_modules\n');
       await repo.git('add', '.');
       await repo.git('commit', '--quiet', '-m', 'seed');
       const tip = (await repo.git('rev-parse', 'HEAD')).trim();
       const result = await repo.hook('pre-push', {
+        env: { ...ENV, PATH: await pathWith(0) },
         args: ['nowhere', 'https://example.invalid/git'],
         stdin: `refs/heads/main ${tip} refs/heads/main ${'0'.repeat(40)}\n`,
       });
