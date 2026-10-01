@@ -44,9 +44,12 @@ export interface PostgresRunnerConfig {
   readonly template?: string;
 }
 
-/** What `withPg`'s callback learns about the transport beyond the client. */
+/** What `withPg`'s callback learns about the transport beyond the client. `database` is the
+ * database the statements run IN: the family connection's, or the override `Postgres.Schema`
+ * and `Postgres.Grants` pass so they open their declared database and then prove it. */
 export interface PgContext {
   readonly template?: string;
+  readonly database: string;
 }
 
 /** The lazy connection service. Its value is an `Effect` of the config, per S24 — see the file
@@ -78,12 +81,12 @@ const isRunner = (c: PostgresConnectionConfig | PostgresRunnerConfig): c is Post
  * then a re-read shares one pool and closes it once, while a plan-only `read` still opens and
  * closes its own.
  *
- * `database` overrides which database of the SAME cluster the pool opens — the schema
- * resource's declared `database`. The family connection is pointed at a maintenance database
- * (a brand-new database cannot be connected to on a cold plan), so `Postgres.Schema` passes its
- * declared database here: the runner transport swaps the `psql -d` target, the socket path
- * swaps the pool's `database`. The swap is proven per statement, not trusted: every read row
- * carries `current_database()` (`schema-sql.ts`), and reconcile/drop compare it before writing.
+ * `database` overrides which database of the SAME cluster the pool opens — the declared
+ * database of `Postgres.Schema` and `Postgres.Grants`. The family connection is pointed at a
+ * maintenance database (a brand-new database cannot be connected to on a cold plan), so those
+ * resources pass their declared database here: the runner transport swaps the `psql -d` target,
+ * the socket path swaps the pool's `database`. The swap is proven, not trusted: schema rows
+ * carry `current_database()` (`schema-sql.ts`) and grants calls the same function before writing.
  */
 export const withPg = <A, E>(
   build: (pg: PgExecutor, context: PgContext) => Effect.Effect<A, E>,
@@ -97,6 +100,7 @@ export const withPg = <A, E>(
     if (isRunner(target)) {
       return yield* build(makePsqlExecutor(target.run, target), {
         template: target.template ?? 'template0',
+        database: target.database,
       });
     }
     return yield* Effect.provide(
@@ -113,7 +117,7 @@ export const withPg = <A, E>(
                 }),
               ),
           },
-          {},
+          { database: target.database },
         ),
       ),
       PgClient.layer(target),

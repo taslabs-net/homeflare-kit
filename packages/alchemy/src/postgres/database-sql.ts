@@ -29,9 +29,9 @@ import type { PostgresDatabaseAttributes, PostgresDatabaseProps } from './databa
 
 /** What every function in this file needs from a client — real (`PgClient.PgClient`) or fake
  * (`fake-sql.ts`). Deliberately smaller than `SqlClient`: nothing here needs the tagged template
- * or streaming. `transaction` is the one exception, and only `Postgres.Role`'s create uses it:
- * role DDL commits per statement unless the statements share a transaction, and a `GRANT` that
- * fails after `CREATE ROLE` would leave a LOGIN role behind. */
+ * or streaming. `transaction` is the exception `Postgres.Role`'s create and `Postgres.Grants`'
+ * repair share: role DDL commits per statement unless the statements share a transaction, and
+ * a grants repair's `REVOKE` must not autocommit apart from the `GRANT`s that restore it. */
 export interface PgExecutor {
   readonly unsafe: <A extends object>(
     sql: string,

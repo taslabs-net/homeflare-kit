@@ -1,0 +1,157 @@
+# PostgreSQL grants — `@homeflare/alchemy/postgres` `Postgres.Grants`
+
+One declarative grant set: one role, one schema, in one database of a cluster you run
+yourself. Schema `USAGE`/`CREATE`, per-table privileges, per-column privileges, default
+privileges for future tables per creator role, and an optional clear of PUBLIC — nothing
+else. Walked against PostgreSQL 18.6 (`REL_18_6`, commit `724edf9b`); every vocabulary
+and statement shape is pinned by committed fixtures in
+`src/postgres/fixtures/` (`grants-provenance.test.ts`, `grants-acl.test.ts`).
+
+## Why the kit builds this
+
+The seat-wiring spec (landscape `docs/plans/2026-09-29-seat-wiring-spec.md`, B12) needs
+one resource that states, in one place, what a seat's group role may do in Postgres —
+today that is `bash` run by hand, unversioned and unreviewable. Upstream
+`alchemy@2.0.0-beta.79` has no self-hosted Postgres grant resource (only vendor-API
+Postgres), and no `@distilled.cloud/postgres` package exists (registry 404, checked
+2026-09-23). This family rides the same runner transport `Postgres.Database` shipped
+in kit#324: same `withPg` pooled socket path, same `postgresRunnerProviders` psql
+transport — only the statements differ.
+
+## Scope
+
+`Postgres.Grants` writes ACL rows and nothing else. What that means operationally:
+
+- **Objects are containers that already exist.** The grantee role (and every
+  default-privileges `forRole`) must be in `pg_roles`, and the schema in `pg_namespace`
+  (`PostgresGrantsRoleMissing` / `PostgresGrantsSchemaMissing` otherwise). Roles come
+  from the operator or a future role resource; this family creates nothing.
+- **Only the three table-class vocabularies are expressible.** Schema grants are
+  `USAGE`/`CREATE` (`ACL_ALL_RIGHTS_SCHEMA`), table grants the eight relation words
+  (`ACL_ALL_RIGHTS_RELATION`), column grants the four words the synopsis' column form
+  accepts. No role membership, no ownership, no `SUPERUSER`/`CREATEROLE`/`BYPASSRLS`, no
+  sequence/function/database/type/schema-of-database grants — a word outside the
+  vocabulary is refused at plan (`PostgresGrantsPrivilegeRefused`).
+- **Objects the declared role OWNS are left alone.** An owner holds every privilege
+  implicitly — the ACL rows are not what carries those rights — and the catalogs say
+  who owns what (`pg_namespace.nspowner`, `pg_class.relowner`). The repair and the
+  delete skip owned objects entirely (measured on PG 18.6: a `REVOKE ALL` on a table
+  the declared role owns strips its recorded ACL entries to `{}` while the owner's
+  rights continue, so repairing them would only churn rows the state can never
+  converge on). The projection records the ownership facts (`schemaOwnedByRole`,
+  `ownedTables`). This resource still cannot make anyone an owner.
+- **The declared objects are the whole write surface.** Objects the declaration does
+  not name are never granted to or revoked from — and removing an entry from the
+  declaration is itself a drift: the reconcile revokes the removed names (where the
+  catalogs still show the role's words) before running the new declaration's plan, so
+  taking an entry away takes the privilege away. PUBLIC is only ever cleared, only
+  when `revokeFromPublic: true`, and never re-granted.
+- **The declared database is opened, then proved.** The family connection points at a
+  maintenance database. `read` and `delete` probe `pg_database` there first: a database
+  that does not exist is absent (`read` returns nothing; `delete` is a no-op) instead of
+  a failed connect. When it exists, the handlers open it (`withPg`'s override) and refuse
+  unless `current_database()` is that name (`PostgresGrantsDatabaseMismatch`).
+
+## Words, marks and letters
+
+A privilege is a lowercase word: `select`, `insert`, `update`, `delete`, `truncate`,
+`references`, `trigger`, `maintain` (tables); `usage`, `create` (schemas); `select`,
+`insert`, `update`, `references` (columns). A trailing `*` marks WITH GRANT OPTION for
+that word — `select*` and `select` are different states, and the repair converges on the
+declared one. The letters the server actually stores (`acl.h`'s `ACL_*_CHR` defines)
+live only in code and tests: attributes record words, so a persisted state file reads as
+what was declared. Case is meaningful in the letter map — `C` is CREATE (schemas), `c` is
+CONNECT (databases, out of scope).
+
+A declaration may not name the same table, column pair or `forRole` twice
+(`PostgresGrantsDuplicateObject`), and every name must fit `NAMEDATALEN`'s 63 UTF-8
+bytes (`PostgresGrantsNameRefused` — the server would truncate and only NOTICE).
+
+## Convergence: diff against the catalogs
+
+Live state is read through `aclexplode` — one row per granted privilege, PUBLIC at
+grantee oid zero — never by parsing `aclitem` text (`func.sgml`, committed fixture).
+Reconcile is read → plan → execute → re-read → re-plan; an empty second plan is the
+proof the repair landed (`PostgresGrantsRepairRefused` carries the surviving statements
+when it did not — typically a grant made by a third grantor, which only that grantor or
+the object's owner can revoke). A destroy runs the same proof after its revokes: a grant
+the resource cannot revoke fails the delete loud with the same refusal instead of leaving
+the grantee holding privileges a delete claimed to take away.
+
+- **Re-run with nothing changed writes nothing.** Every class whose live set already
+  equals the declaration contributes no statement.
+- **Drift is repaired per class:** `REVOKE ALL` (clears extras and grant options), then
+  `GRANT` the declared words — split into one plain grant and one
+  `WITH GRANT OPTION` grant when the declaration mixes the two, because one option
+  clause would grant the option to every listed privilege.
+- **A multi-word column grant repeats the synopsis per word:** `GRANT select ("col"),
+update ("col")` — one trailing column list binds only to the privilege it follows
+  (gram.y@REL_18_6), so `GRANT select, update ("col")` would be a table-level grant of
+  every word but the last; each word carries its own list, which puts all of them on the
+  column and nothing on the relation.
+- **A table revoke re-grants the column entries it clears, in the same pass:** the
+  server's table-level `REVOKE ALL` also clears that grantee's column privileges
+  (revoke.sgml@REL_18_6) — including when the table is removed from the declaration.
+  Only entries the revoking role or the table's owner made are re-granted; a third
+  grantor's entry survives the revoke and is left as it was. Declared columns are
+  granted again after the revoke. One pass converges.
+- **Default privileges are per creator role:** `ALTER DEFAULT PRIVILEGES FOR ROLE …
+IN SCHEMA … GRANT … ON TABLES`, for future tables only (`defaclobjtype = 'r'`). A
+  `forRole` is never inferred; every entry names the role whose future objects get the
+  privileges.
+- **PUBLIC clearing is one-directional and schema-wide:** `revokeFromPublic: true` adds
+  `REVOKE ALL ON SCHEMA … FROM PUBLIC` and `REVOKE ALL ON ALL TABLES IN SCHEMA … FROM
+PUBLIC` when live reads still show PUBLIC holding something. That tables statement
+  clears PUBLIC on every table in the schema, including tables the declaration does not
+  name (and their column privileges — revoke.sgml@REL_18_6). Live PUBLIC privileges with
+  the flag off are never drift; the attributes record the one-directional fact
+  (`publicSchemaRevoked`, `publicTablesRevoked`).
+- **The repair's writes are one transaction.** Removal revokes and the new declaration's
+  grants are planned against one read and run in one `BEGIN`…`COMMIT` (`pg.transaction`):
+  one reserved connection on the socket, one `psql` script on the runner. A live grantee
+  does not observe the gap between a `REVOKE ALL` and the grants that restore it. The
+  convergence re-read runs after that commit.
+
+The diff is offline against persisted attributes (no live connection at plan time),
+so it answers `update` or `noop` and never previews live drift by itself; the exact
+GRANT/REVOKE statements appear at apply, and `alchemy drift` is the path that
+re-reads the live catalogs.
+
+`read` answers `Unowned` (a grant set carries no ownership mark) — a stack declaring
+already-live grants needs `adopt(true)`. With no stored output, an all-empty read is
+`undefined` too: that is a first create, never the adoption of an empty schema (H1 —
+only grants mark a target as live). When the resource already has applied state, the
+same all-empty read is a real projection: the grantee may own everything outright, so
+`aclexplode` has no rows to report, and answering `undefined` there would flip the next
+apply into a first create. Retargeting `role`, `database` or `schema` is
+refused at plan (`PostgresGrantsRetargetRefused`): those three name what the grant set
+is about, so a new target is a new logical id.
+
+## Delete
+
+`defaultRemovalPolicy` is `retain` — most grant sets manage adopted, already-live
+grants, and a destroy is a deliberate act. A `delete` revokes exactly what the last
+declaration named, via the same repair plan with every word list emptied: one
+`REVOKE ALL` per named object where the catalogs still show the role's words, nothing
+for PUBLIC, nothing for objects the declaration never named, nothing for objects the
+declared role owns (an owner's implicit rights are not this resource's to revoke),
+never `CASCADE` (a revoke whose grantee re-granted onward surfaces as the server's own
+`2BP01`), a missing database (probed on the family connection), grantee or schema means
+there is nothing left to revoke and the delete is a no-op, and the delete proves its
+revokes landed the same way `reconcile`
+does — re-read, re-plan, refuse with `PostgresGrantsRepairRefused` when a grant the
+resource cannot revoke (a third grantor's, say) survives the pass.
+
+## The per-seat shape (the example this family exists for)
+
+The worked example — one seat, one group role, its own schema, read-only sight of the
+shared ledger — lives in [`postgres-grants-example.md`](./postgres-grants-example.md).
+
+## Not covered
+
+Sequences, functions, databases, large objects and types are out of scope by name
+(each with its synopsis reason, asserted in `grants-provenance.test.ts`); `Postgres.Role`
+and `Postgres.Schema` do not exist yet, so the grantee role and the schema must come
+from the operator; RLS policies are table structure, not ACL rows, so they belong to the
+schema/table family and to migrations — `FORCE RLS` is declared where the ledger table
+is created, never here.

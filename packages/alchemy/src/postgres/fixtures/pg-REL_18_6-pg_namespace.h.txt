@@ -1,0 +1,28 @@
+# path: src/include/catalog/pg_namespace.h
+# blob: affb36f11407eada553d5cf27675386e1bbe17af
+# tag: REL_18_6 (commit 724edf9bde9d356724ad384a2e196edc3c9f80f7)
+# fetched: 2026-09-30 via gh api repos/postgres/postgres/contents/...?ref=724edf9bde9d356724ad384a2e196edc3c9f80f7
+# excerpt: the CATALOG(pg_namespace...) struct (lines 27-48 of the full file)
+#
+ *
+ *		cpp turns this into typedef struct FormData_pg_namespace
+ *
+ *	nspname				name of the namespace
+ *	nspowner			owner (creator) of the namespace
+ *	nspacl				access privilege list
+ * ----------------------------------------------------------------
+ */
+CATALOG(pg_namespace,2615,NamespaceRelationId)
+{
+	Oid			oid;			/* oid */
+
+	NameData	nspname;
+	Oid			nspowner BKI_DEFAULT(POSTGRES) BKI_LOOKUP(pg_authid);
+
+#ifdef CATALOG_VARLEN			/* variable-length fields start here */
+	aclitem		nspacl[1];
+#endif
+} FormData_pg_namespace;
+
+/* ----------------
+ *		Form_pg_namespace corresponds to a pointer to a tuple with

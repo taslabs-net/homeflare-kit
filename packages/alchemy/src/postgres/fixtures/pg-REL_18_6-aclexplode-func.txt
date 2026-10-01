@@ -1,0 +1,31 @@
+# path: doc/src/sgml/func.sgml
+# blob: b57f161f53c8833c721dede3d48121490dc15f12
+# tag: REL_18_6 (commit 724edf9bde9d356724ad384a2e196edc3c9f80f7)
+# fetched: 2026-09-30 via gh api repos/postgres/postgres/contents/...?ref=724edf9bde9d356724ad384a2e196edc3c9f80f7
+# excerpt: the aclexplode row of "Access Privilege Inquiry Functions" (lines 25843-25867 of the full file)
+#
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>aclexplode</primary>
+        </indexterm>
+        <function>aclexplode</function> ( <type>aclitem[]</type> )
+        <returnvalue>setof record</returnvalue>
+        ( <parameter>grantor</parameter> <type>oid</type>,
+        <parameter>grantee</parameter> <type>oid</type>,
+        <parameter>privilege_type</parameter> <type>text</type>,
+        <parameter>is_grantable</parameter> <type>boolean</type> )
+       </para>
+       <para>
+        Returns the <type>aclitem</type> array as a set of rows.
+        If the grantee is the pseudo-role PUBLIC, it is represented by zero in
+        the <parameter>grantee</parameter> column.  Each granted privilege is
+        represented as <literal>SELECT</literal>, <literal>INSERT</literal>,
+        etc (see <xref linkend="privilege-abbrevs-table"/> for a full list).
+        Note that each privilege is broken out as a separate row, so
+        only one keyword appears in the <parameter>privilege_type</parameter>
+        column.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">

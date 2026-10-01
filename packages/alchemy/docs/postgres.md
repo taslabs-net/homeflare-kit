@@ -151,3 +151,14 @@ rule; the consuming stack's runner does.
 `Postgres.Database`'s, so one connection serves the family. Schema opens its own declared
 `database` on that connection (`withPg`'s database override) rather than the family's
 maintenance database, proven per statement via `current_database()`.
+
+## `Postgres.Grants` (2026-09-30)
+
+A second resource on the same runner transport: one declarative grant set for one role in one
+schema of one database — schema `USAGE`/`CREATE`, per-table privileges, per-column privileges,
+default privileges for future tables, optional clearing of PUBLIC — computed as a diff against
+the catalogs through `aclexplode` so a re-run with nothing changed writes nothing and drift is
+repaired. See `docs/postgres-grants.md` for the vocabulary (pinned against `acl.h` and
+`grant.sgml` at `REL_18_6`), the convergence proof, and the refusal surface; a per-seat
+worked example (the `agents` group role writes its own schema and selects only from the
+shared ledger view) lives in `docs/postgres-grants-example.md`.
