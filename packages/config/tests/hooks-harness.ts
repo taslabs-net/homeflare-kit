@@ -18,6 +18,8 @@ import { installHooks } from '../src/hooks.ts';
 
 export const RUNNER: string = new URL('../bin/hooks.ts', import.meta.url).pathname;
 const PACKAGE = new URL('../', import.meta.url).pathname;
+/** The real git, resolved once from this process's PATH: a test may put a shim in front of it. */
+const GIT = Bun.which('git') ?? 'git';
 const BIN = new URL('../../../node_modules/.bin/', import.meta.url).pathname;
 
 /** This process's environment, minus anything a hook exported. */
@@ -121,7 +123,10 @@ export async function removeBins(): Promise<void> {
  *   `#!/usr/bin/env node` launcher, so a PATH without node would fail the formatter, not the
  *   thing under test. `'absent'` can drop it because the hook stops before formatting.
  */
-export async function pathWith(gitleaks: number | 'absent'): Promise<string> {
+export async function pathWith(
+  gitleaks: number | 'absent',
+  options: { say?: string } = {},
+): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'hf-hook-bin-'));
   binDirs.push(dir);
   const git = Bun.which('git');
@@ -132,10 +137,43 @@ export async function pathWith(gitleaks: number | 'absent'): Promise<string> {
   //   can say WHAT was scanned (see `gitleaksCalls`), not only that a scan happened.
   await Bun.write(
     join(dir, 'gitleaks'),
-    `#!/bin/sh\nprintf '%s\\n' "$*" >> "$(dirname "$0")/gitleaks.log"\nexit ${String(gitleaks)}\n`,
+    [
+      '#!/bin/sh',
+      `printf '%s\\n' "$*" >> "$(dirname "$0")/gitleaks.log"`,
+      `[ -f "$(dirname "$0")/gitleaks.say" ] && cat "$(dirname "$0")/gitleaks.say" >&2`,
+      `exit ${String(gitleaks)}`,
+      '',
+    ].join('\n'),
   );
   await chmod(join(dir, 'gitleaks'), 0o755);
+  // `say`: what the shim writes to STDERR before it exits — a gitleaks that logs an error and
+  // still exits 0, which is what 8.30.1 does when its own `git` fails (gitleaks.ts).
+  if (options.say !== undefined) await Bun.write(join(dir, 'gitleaks.say'), `${options.say}\n`);
   return `${dir}:${process.env['PATH'] ?? ''}`;
+}
+
+/**
+ * Make the repository's hook run an "old git": a `git` that refuses `--diff-merges=…` (git before
+ * 2.36 does) and otherwise IS the real git, put first on the PATH of the hook alone — the push
+ * itself still runs the real one. The hook file is rewritten and committed (hooks off).
+ * ⚠️ NOT A SHIM IN FRONT OF THE CALLER'S PATH: git prepends its own exec-path to a hook's PATH,
+ *   and that directory holds a `git`, so the only place to win is inside the hook file.
+ */
+export async function useOldGit(repo: Scratch): Promise<void> {
+  const dir = await mkdtemp(join(tmpdir(), 'hf-hook-bin-'));
+  binDirs.push(dir);
+  const refuse = 'echo "fatal: unrecognized argument: $a" >&2; exit 129';
+  await Bun.write(
+    join(dir, 'git'),
+    `#!/bin/sh\nfor a in "$@"; do case "$a" in --diff-merges=*) ${refuse};; esac; done\nexec "${GIT}" "$@"\n`,
+  );
+  await chmod(join(dir, 'git'), 0o755);
+  const hook = join(repo.dir, '.husky/pre-push');
+  const runner = 'node_modules/@homeflare/config/bin/hooks.ts';
+  await Bun.write(hook, `PATH="${dir}:$PATH"\nexport PATH\nexec bun ${runner} pre-push "$@"\n`);
+  await chmod(hook, 0o755);
+  await repo.git('add', '.husky/pre-push');
+  await repo.git('commit', '--quiet', '-m', 'an old git in the hook PATH');
 }
 
 /** The argument lines the shim in `path` (from `pathWith`) was called with, oldest first. */
@@ -170,7 +208,7 @@ export async function realPush(
 ): Promise<Result> {
   const config = ['-c', 'user.name=Probe', '-c', 'user.email=probe@example.invalid'];
   return await spawn(
-    ['git', '-C', repo.dir, ...config, '-c', 'core.hooksPath=.husky', 'push', ...args],
+    [GIT, '-C', repo.dir, ...config, '-c', 'core.hooksPath=.husky', 'push', ...args],
     repo.dir,
     env,
   );

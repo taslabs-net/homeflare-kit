@@ -162,7 +162,7 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
   const remote = args[0] ?? 'origin';
   const refs = parsePushRefs(stdin);
   // ⛔ SECRETS FIRST, as in pre-commit — see push-secrets.ts for why the push scans too.
-  await scanPushedSecrets(root, remote, refs);
+  await scanPushedSecrets(root, args, refs);
 
   const manifest = Bun.file(`${root}/package.json`);
   const pkg = (await manifest.exists())

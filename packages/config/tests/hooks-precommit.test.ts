@@ -69,6 +69,19 @@ describe('the secret scan', () => {
     }
   });
 
+  test('gitleaks that says ERR and exits 0 FAILS the commit — the staged changes may have gone unread', async () => {
+    // 🔴 8.30.1 exits 0 and ends "no leaks found" when its own `git` fails (gitleaks.ts).
+    const say = '2:30PM ERR [git] fatal: bad object x\n2:30PM ERR error="stderr is not empty"';
+    const result = await repo.hook('pre-commit', {
+      env: { ...ENV, PATH: await pathWith(0, { say }) },
+    });
+    expect(result.code).toBe(1);
+    expect(result.output).toContain('gitleaks reported an error');
+    expect(result.output).toContain('NOT reliably scanned');
+    expect(result.output).toContain('fix:    run gitleaks git --staged --redact --no-banner .');
+    expect(result.output).not.toContain('--no-verify');
+  });
+
   test('a clean scan says so and lets the commit continue', async () => {
     const result = await repo.hook('pre-commit', { env: clean });
     expect(result.code).toBe(0);

@@ -55,11 +55,25 @@ than guess which one governs — see `src/hooks/oxfmt-config.ts`.
 ⛔ **It scans what it pushes for secrets, first.** git runs no `pre-commit` for a
 cherry-pick, merge, rebase or `am`, so a credential committed with hooks off on a side
 branch and cherry-picked onto `main` was never scanned (measured 2026-10-01). The push is
-the door every commit goes through, so `gitleaks git --log-opts="<shas> --not
---remotes=<remote>"` scans every commit the push adds: the ones on no ref of that remote.
-A remote with no tracking refs (a push by URL) scans the whole history: wider, never
-silent. A finding fails with "remove it, then ROTATE it", and a missing `gitleaks` fails
-too. A push that only deletes refs scans nothing.
+the door every commit goes through, so `gitleaks git --log-opts="--diff-merges=remerge
+<shas> --not <the remote's tips>"` scans every commit the push adds. A finding fails with
+"remove it, then ROTATE it", and a missing `gitleaks` fails too. A push that only deletes
+refs, or adds nothing the remote lacks, scans nothing.
+
+- **What the remote has comes from `git ls-remote`**, the push URL first, then the remote's
+  name, not from the remote-tracking refs. Those are a cache of the last fetch: a stale one
+  excluded a leaky branch the remote had deleted, and a push by URL or to a new remote has
+  none. The advertised commits this clone has are reduced to independent tips.
+- **`--diff-merges=remerge`** makes a merge's own changes visible: `git log -p` shows a merge
+  no diff, so a token added inside a hand-made merge went unscanned. A clean merge whose
+  parent holds an already-published finding still passes. It needs git 2.36 or newer.
+- **`gitleaks` exits 0 and says "no leaks found" when its own `git` fails**, as it does for
+  a path with a space (it splits `--log-opts` on spaces). So `git log` lists the range
+  first and a failure there fails the push, and a `gitleaks` line at level `ERR`, `FTL` or
+  `PNC`, or one mentioning `[git]`, fails the scan. That covers `pre-commit`'s scan too.
+- **When the remote cannot be asked, or has none of these commits**, the whole history is
+  scanned. It says so, with the commit count, and names `.gitleaksignore`, where a reviewed
+  false positive in old history is recorded.
 
 🔴 **The working tree must be what is pushed.** The lanes run on the working tree, so
 `git status --porcelain` showing any change, untracked files included and ignored ones

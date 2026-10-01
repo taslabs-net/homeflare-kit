@@ -95,10 +95,10 @@ describe('the runner and a stale wrapper', () => {
 
       expect(result.code).toBe(1);
       expect(result.output).toContain(`.husky/${hook} is an out-of-date or edited`);
+      // The whole fix line: the exact command, and that the two files must then be COMMITTED.
       expect(result.output).toContain(
-        'fix:    bun node_modules/@homeflare/config/bin/hooks.ts install',
+        'fix:    bun node_modules/@homeflare/config/bin/hooks.ts install — then commit .husky/pre-commit and .husky/pre-push',
       );
-      expect(result.output).toContain('then commit .husky/pre-commit and .husky/pre-push');
       expect(result.output).not.toContain('--no-verify');
     });
   }
