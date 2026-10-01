@@ -6,15 +6,23 @@
  *   one — so the message is the whole product: what failed, and the command that fixes it.
  */
 
-/** Files staged for commit, excluding deletions (nothing to check in a deleted file). */
+/**
+ * Files staged for commit, excluding deletions (nothing to check in a deleted file).
+ *
+ * 🔴 `-z`, AND SPLIT ON NUL, for the reason staged.ts measured on 2026-09-22: without it git
+ *   applies `core.quotePath`, and a workflow named `.github/workflows/café.yml` comes back as
+ *   the quoted, octal-escaped `".github/workflows/caf\303\251.yml"`. That string does not start
+ *   with `.github/workflows/`, so actionlint.ts read it as "no workflow changes" and a hook
+ *   that fails closed passed a workflow it never linted. Every script here shares this one.
+ */
 export async function stagedFiles(): Promise<readonly string[]> {
-  const proc = Bun.spawn(['git', 'diff', '--cached', '--name-only', '--diff-filter=ACMR'], {
+  const proc = Bun.spawn(['git', 'diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR'], {
     stdout: 'pipe',
   });
   const out = await new Response(proc.stdout).text();
   await proc.exited;
 
-  return out.split('\n').filter((line) => line.length > 0);
+  return out.split('\0').filter((line) => line.length > 0);
 }
 
 /**

@@ -30,6 +30,8 @@ export const PREPARE: string = `bun ${RUNNER} activate`;
  *   of letting it through unchecked. It used to exit 0 there, on the argument that a hook
  *   is a convenience and CI is the gate; that left every fresh worktree committing with
  *   no checks at all, which is the exact gap `core.hooksPath` exists to close (activate.ts).
+ * ⛔ IT ALSO EXITS 1 WHEN `bun` IS NOT ON PATH. Without that check the shell's own "exec: bun: not
+ *   found" was the whole message — no fix line, on a machine whose fix is installing bun.
  * ★ `"$@"` AND STDIN PASS THROUGH. `pre-push` reads the remote name from its first argument
  *   and the pushed refs from stdin (push-range.ts); `exec` keeps both.
  * ⚠️ NO SHEBANG, AND THAT IS MEASURED, NOT FORGOTTEN: git 2.55 runs an executable hook that
@@ -45,12 +47,51 @@ export const HUSKY_HOOK: string = `# HomeFlare shared git hook. The behaviour li
 #
 # Regenerate this file with: bun ${RUNNER} install
 hook="${RUNNER}"
+if ! command -v bun >/dev/null 2>&1; then
+  echo "homeflare hooks: bun is not on PATH — install bun (https://bun.sh), then run 'bun install' in this worktree" >&2
+  exit 1
+fi
 if [ ! -f "$hook" ]; then
   echo "homeflare hooks: $hook is missing — run 'bun install' in this worktree" >&2
   exit 1
 fi
 exec bun "$hook" "$(basename "$0")" "$@"
 `;
+
+/**
+ * The first line of every wrapper this package has written — the first release's, the
+ * every-worktree one's, and this one's. It is how the runner tells "our wrapper, out of date"
+ * from "a hook file this repo wrote for itself".
+ */
+export const WRAPPER_MARKER = '# HomeFlare shared git hook';
+
+/**
+ * Is this project's committed `.husky/<name>` one of OUR wrappers that is not the current one?
+ * Returns the failure to print, or `undefined` when there is nothing to say.
+ *
+ * ⛔ A STALE WRAPPER IS THE ROLLOUT HOLE, and nothing else closes it. A consumer picks up a new
+ *   `@homeflare/config` through the version bumper, which refreshes the dependency and not
+ *   `.husky/*`, so the committed copy keeps its old bytes — an old wrapper that exited 0 with
+ *   no `node_modules` — until a person happens to run `install`. The runner calls this on every
+ *   commit and push, so the first one after the upgrade stops and says how to refresh it.
+ * ⚠️ ONLY A FILE THAT STARTS WITH THE MARKER IS COMPARED. This repository's own `.husky/`
+ *   files are written by hand — they run the shared runner and then kit-only scripts — and
+ *   `install` would overwrite them with the wrapper, losing those scripts. A hook file a repo
+ *   wrote for itself is its own business; `problemsInHooks` is where a repo opts into the rest.
+ */
+export async function wrapperDrift(
+  projectDir: string,
+  name: (typeof HOOK_NAMES)[number],
+): Promise<{ readonly what: string; readonly fix: string } | undefined> {
+  const file = Bun.file(`${projectDir}/.husky/${name}`);
+  if (!(await file.exists())) return undefined;
+  const text = await file.text();
+  if (!text.startsWith(WRAPPER_MARKER) || text === HUSKY_HOOK) return undefined;
+  return {
+    what: `.husky/${name} is an out-of-date or edited @homeflare/config wrapper`,
+    fix: `bun ${RUNNER} install — then commit .husky/pre-commit and .husky/pre-push`,
+  };
+}
 
 /** Write the wrapper into `.husky/`. Returns the paths written, relative to the project. */
 export async function installHooks(projectDir: string): Promise<readonly string[]> {

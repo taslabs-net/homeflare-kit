@@ -16,7 +16,8 @@
  */
 import { fail, ok, run } from './report.ts';
 
-const INSTALL = 'brew install gitleaks — Linux: https://github.com/gitleaks/gitleaks/releases';
+export const INSTALL =
+  'brew install gitleaks — Linux: https://github.com/gitleaks/gitleaks/releases';
 
 export async function scanStagedSecrets(): Promise<void> {
   // ⛔ NOT A SILENT SKIP. A secret scan that quietly does nothing is worse than none: it

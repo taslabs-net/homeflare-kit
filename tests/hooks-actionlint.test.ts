@@ -129,4 +129,25 @@ describe('actionlint, run by the kit pre-commit', () => {
     expect(result.output).toContain('fix:');
     expect(result.output).not.toContain('--no-verify');
   });
+
+  // 🔴 `-z` in lib.ts stagedFiles. Without it git quotes and octal-escapes a non-ASCII path
+  //   (`".github/workflows/caf\303\251.yml"`), which does not start with `.github/workflows/`,
+  //   so the hook read "no workflow changes" and a gate that fails closed passed an unlinted file.
+  test('a workflow with a non-ASCII name is still seen — missing binary FAILS, not "no changes"', async () => {
+    const { dir, path } = await sandbox(['.github/workflows/café.yml'], 'absent');
+    const result = await run(dir, path);
+
+    expect(result.code).toBe(1);
+    expect(result.output).toContain('NOT linted');
+    expect(result.output).not.toContain('no workflow changes');
+  });
+
+  test('a non-ASCII workflow name is linted when actionlint is there', async () => {
+    const { dir, path } = await sandbox(['.github/workflows/café.yml'], 0);
+    const result = await run(dir, path);
+
+    expect(result.code).toBe(0);
+    expect(result.output).toContain('shim ran: -color');
+    expect(result.output).toContain('1 workflow file(s) clean');
+  });
 });

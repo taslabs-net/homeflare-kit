@@ -11,20 +11,24 @@
  *   on a checked one. Two refs AT `HEAD` are both checked, so that case must still pass.
  */
 import { afterAll, describe, expect, test } from 'bun:test';
-import { type Scratch, scratchRepo } from './hooks-harness.ts';
+import { checkoutFix } from '../src/hooks/push-fix.ts';
+import { ENV, type Scratch, pathWith, removeBins, scratchRepo } from './hooks-harness.ts';
 
 const ZERO = '0'.repeat(40);
 
 const repo: Scratch = await scratchRepo('hf-push-refs-');
+// ⚠️ A gitleaks that finds nothing: pre-push scans what it pushes now, and CI has no gitleaks.
+const clean = { ...ENV, PATH: await pathWith(0) };
 
 afterAll(async () => {
+  await removeBins();
   await repo.remove();
 });
 
 const sha = async (ref: string): Promise<string> => (await repo.git('rev-parse', ref)).trim();
 
 const push = (...lines: string[]) =>
-  repo.hook('pre-push', { args: ['nowhere', 'url'], stdin: `${lines.join('\n')}\n` });
+  repo.hook('pre-push', { args: ['nowhere', 'url'], stdin: `${lines.join('\n')}\n`, env: clean });
 
 /** A commit that is not `HEAD`, without moving `HEAD`. */
 async function elsewhere(message: string): Promise<string> {
@@ -33,8 +37,10 @@ async function elsewhere(message: string): Promise<string> {
 
 describe('what counts as checked out', () => {
   test('an annotated tag at HEAD is checked: its commit is compared, not the tag object', async () => {
+    // Everything committed, `node_modules` ignored: the working tree must be the commit.
     await repo.write('package.json', JSON.stringify({ scripts: { check: 'echo CHECK-RAN' } }));
-    await repo.git('add', 'package.json');
+    await repo.write('.gitignore', 'node_modules\n');
+    await repo.git('add', '-A');
     await repo.git('commit', '--quiet', '-m', 'seed');
     await repo.git('tag', '-a', 'v1', '-m', 'v1');
 
@@ -136,5 +142,28 @@ describe('a mixed push: the checked-out ref together with one that is not', () =
 
     expect(result.code).toBe(0);
     expect(result.output).toContain('CHECK-RAN');
+  });
+});
+
+describe('the fix text', () => {
+  // 🔴 Measured by the red team with `git push --mirror`: several refs can be the checkout at
+  //   once (a branch, a remote-tracking ref, a tag), and "push a, b, c on its own" read as a slip.
+  test('says "on its own" for one ref and "on their own" for several', () => {
+    const there = ['refs/heads/other'];
+    expect(checkoutFix(there, ['refs/heads/main'])).toBe(
+      'push main on its own, then check out other and push from there',
+    );
+    expect(checkoutFix(there, ['refs/heads/main', 'refs/remotes/origin/det', 'refs/tags/v1'])).toBe(
+      'push main, refs/remotes/origin/det and refs/tags/v1 on their own, then check out other and push from there',
+    );
+    expect(checkoutFix(there, ['refs/heads/a', 'refs/heads/b'])).toBe(
+      'push a and b on their own, then check out other and push from there',
+    );
+  });
+
+  test('is only the checkout when nothing is checked out', () => {
+    expect(checkoutFix(['refs/heads/a', 'refs/heads/b'], [])).toBe(
+      'check out each of a, b and push it from there, one at a time',
+    );
   });
 });

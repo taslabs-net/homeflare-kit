@@ -18,10 +18,10 @@ A repo that used husky drops it: remove `husky` from `prepare` and from
 
 ## What runs
 
-| hook         | runs                                                                                  | cost       |
-| ------------ | ------------------------------------------------------------------------------------- | ---------- |
-| `pre-commit` | `gitleaks git --staged`, then `oxfmt` + `oxlint --deny-warnings` on staged files      | sub-second |
-| `pre-push`   | the repo's own `check`, with `bun test` narrowed to the push, `build`/`smoke` skipped | seconds    |
+| hook         | runs                                                                                                                           | cost       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ | ---------- |
+| `pre-commit` | `gitleaks git --staged`, then `oxfmt` + `oxlint --deny-warnings` on staged files                                               | sub-second |
+| `pre-push`   | `gitleaks` over the pushed commits, then the repo's own `check`, with `bun test` narrowed to the push, `build`/`smoke` skipped | seconds    |
 
 ⛔ **The secret scan is first and fails closed.** A missing `gitleaks` fails the commit
 with the install line (`brew install gitleaks`). It does not skip: a scan that quietly
@@ -52,6 +52,20 @@ than guess which one governs — see `src/hooks/oxfmt-config.ts`.
 
 ## pre-push, scoped to the push
 
+⛔ **It scans what it pushes for secrets, first.** git runs no `pre-commit` for a
+cherry-pick, merge, rebase or `am`, so a credential committed with hooks off on a side
+branch and cherry-picked onto `main` was never scanned (measured 2026-10-01). The push is
+the door every commit goes through, so `gitleaks git --log-opts="<shas> --not
+--remotes=<remote>"` scans every commit the push adds: the ones on no ref of that remote.
+A remote with no tracking refs (a push by URL) scans the whole history: wider, never
+silent. A finding fails with "remove it, then ROTATE it", and a missing `gitleaks` fails
+too. A push that only deletes refs scans nothing.
+
+🔴 **The working tree must be what is pushed.** The lanes run on the working tree, so
+`git status --porcelain` showing any change, untracked files included and ignored ones
+not, fails the push with `commit or git stash -u, then push`. Before this, a committed
+break with the old value restored uncommitted pushed green (measured 2026-10-01).
+
 The base comes from git. The hook reads the pushed refs on stdin:
 
 - **Second push to a branch**: measured from what the remote already has, so only
@@ -75,6 +89,8 @@ The lanes are the repo's own `check`, read as an `&&` chain:
   or `node --test`, runs in full and is labelled `(IN FULL)`.
 - A push that changes a `package.json`, `bun.lock`, `bunfig.toml` or `tsconfig*.json`
   runs the tests in full. Imports cannot see those files, but every test runs on them.
+- ⛔ A `check` whose every lane is skipped, such as only `build`, **fails** the push. It
+  used to print "0 lane(s) passed" and exit 0.
 
 ⛔ **It never calls `verify` by name.** In `homeflare-proxmox`, `verify` is a live
 adoption verifier. The hook follows `verify` only when `check` itself delegates to it,
@@ -95,8 +111,24 @@ had no hooks at all. In an uninstalled worktree, the wrapper prints that `bun in
 needed and exits 1. ⛔ **It fails closed** (Tim, 2026-10-01): a gate that cannot run is
 fixed, never skipped, and no hook message offers a way round it. `pre-commit` and
 `pre-push` fail the same way when `node_modules` is missing, after the secret scan has run.
-Re-run `bun node_modules/@homeflare/config/bin/hooks.ts install` in a repo that adopted
-earlier: its committed wrapper still has the old bytes, and `problemsInHooks` reports it.
+The wrapper also fails, naming the install, when `bun` is not on `PATH`. Without that
+check the shell's own `exec: bun: not found` was the whole message.
+
+🔴 **A repo that adopted earlier keeps its old wrapper, and the runner stops it.** The
+version bumper refreshes the dependency and never `.husky/*`, so a consumer's committed
+copy keeps the old bytes (one that exited 0 with no `node_modules`) until someone runs
+`install`. On every `pre-commit` and `pre-push` the runner compares `.husky/<hook>` with
+the current wrapper and fails with `bun node_modules/@homeflare/config/bin/hooks.ts
+install`, then commit the two files. `problemsInHooks` reports the same drift.
+Only a file that starts with `# HomeFlare shared git hook` is compared. A hook file a repo
+wrote for itself, such as this repository's own `.husky/`, which runs kit-only scripts
+after the shared runner, is not, and `install` would overwrite it.
+
+⚠️ **A package in a subdirectory is not supported.** The wrapper and the `node_modules`
+check look for `node_modules` at the repository root, because git runs a hook there. A
+layout whose package lives in a subdirectory with its own `node_modules` would fail with
+"run `bun install`" and no way for that to fix it. No estate repo has that layout, so it
+is stated and not handled.
 
 `activate` does nothing under `CI`, or outside a git work tree. It never fails, because it
 runs inside `bun install`.

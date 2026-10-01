@@ -21,5 +21,15 @@ export function checkoutFix(refs: readonly string[], here: readonly string[]): s
     names.length === 1
       ? `check out ${names[0] ?? 'the ref'} and push from there`
       : `check out each of ${names.join(', ')} and push it from there, one at a time`;
-  return here.length === 0 ? there : `push ${here.map(named).join(', ')} on its own, then ${there}`;
+  return here.length === 0 ? there : `push ${alone(here.map(named))}, then ${there}`;
+}
+
+/**
+ * ⚠️ `main on its own`, but `main and refs/tags/v1 on their own`: several refs can be the
+ * checkout at once (`--mirror` and `--all` push whatever points at it), and "on its own"
+ * after a comma list read as a slip.
+ */
+function alone(names: readonly string[]): string {
+  if (names.length === 1) return `${names[0] ?? 'the ref'} on its own`;
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''} on their own`;
 }

@@ -50,6 +50,9 @@ export type PushScope =
 /** git's "no such ref" sentinel — 40 zeros (64 under SHA-256). */
 const ZERO = /^0+$/;
 
+/** A deletion has no local commit: git writes the sentinel where the sha would be. */
+export const isNullSha = (sha: string): boolean => ZERO.test(sha);
+
 export function parsePushRefs(stdin: string): readonly PushRef[] {
   const refs: PushRef[] = [];
   for (const line of stdin.split('\n')) {

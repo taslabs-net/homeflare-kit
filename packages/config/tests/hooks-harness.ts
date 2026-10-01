@@ -13,9 +13,11 @@
  */
 import { chmod, mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { installHooks } from '../src/hooks.ts';
 
 export const RUNNER: string = new URL('../bin/hooks.ts', import.meta.url).pathname;
+const PACKAGE = new URL('../', import.meta.url).pathname;
 const BIN = new URL('../../../node_modules/.bin/', import.meta.url).pathname;
 
 /** This process's environment, minus anything a hook exported. */
@@ -126,7 +128,50 @@ export async function pathWith(gitleaks: number | 'absent'): Promise<string> {
   if (git !== null) await symlink(git, join(dir, 'git'));
   await symlink(process.execPath, join(dir, 'bun'));
   if (gitleaks === 'absent') return [dir, '/usr/bin', '/bin'].join(':');
-  await Bun.write(join(dir, 'gitleaks'), `#!/bin/sh\nexit ${String(gitleaks)}\n`);
+  // ★ THE SHIM RECORDS EVERY CALL, one line of arguments, in `gitleaks.log` beside it — so a test
+  //   can say WHAT was scanned (see `gitleaksCalls`), not only that a scan happened.
+  await Bun.write(
+    join(dir, 'gitleaks'),
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> "$(dirname "$0")/gitleaks.log"\nexit ${String(gitleaks)}\n`,
+  );
   await chmod(join(dir, 'gitleaks'), 0o755);
   return `${dir}:${process.env['PATH'] ?? ''}`;
+}
+
+/** The argument lines the shim in `path` (from `pathWith`) was called with, oldest first. */
+export async function gitleaksCalls(path: string): Promise<readonly string[]> {
+  const log = Bun.file(join(path.split(':')[0] ?? '', 'gitleaks.log'));
+  return (await log.exists()) ? (await log.text()).split('\n').filter((line) => line !== '') : [];
+}
+
+/** `path` with the directory holding this process's `bun` in front, as a hook's PATH needs. */
+export const withBun = (path: string): string => `${dirname(process.execPath)}:${path}`;
+
+/**
+ * The repository as a consumer has it: the REAL wrapper installed and committed-able, the
+ * package linked at `node_modules/@homeflare/config`, `node_modules` ignored. With
+ * `core.hooksPath=.husky` (see `realPush`), git then runs exactly what it runs in the estate.
+ */
+export async function wireHooks(repo: Scratch): Promise<void> {
+  await installHooks(repo.dir);
+  await mkdir(join(repo.dir, 'node_modules/@homeflare'), { recursive: true });
+  await symlink(PACKAGE, join(repo.dir, 'node_modules/@homeflare/config'));
+  await repo.write('.gitignore', 'node_modules\n');
+}
+
+/**
+ * A REAL `git push`, hooks ON: `core.hooksPath=.husky`, so git runs the wrapper, which runs
+ * the runner. `env` must give it a PATH with `bun` and a `gitleaks` (see `withBun`).
+ */
+export async function realPush(
+  repo: Scratch,
+  env: Record<string, string | undefined>,
+  ...args: readonly string[]
+): Promise<Result> {
+  const config = ['-c', 'user.name=Probe', '-c', 'user.email=probe@example.invalid'];
+  return await spawn(
+    ['git', '-C', repo.dir, ...config, '-c', 'core.hooksPath=.husky', 'push', ...args],
+    repo.dir,
+    env,
+  );
 }

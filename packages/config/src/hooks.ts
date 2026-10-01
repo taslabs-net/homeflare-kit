@@ -20,9 +20,16 @@
  */
 import { activateHooks } from './hooks/activate.ts';
 import { preCommit, prePush } from './hooks/gates.ts';
-import { HOOK_NAMES, HUSKY_HOOK, PREPARE, installHooks, problemsInHooks } from './hooks/install.ts';
+import {
+  HOOK_NAMES,
+  HUSKY_HOOK,
+  PREPARE,
+  installHooks,
+  problemsInHooks,
+  wrapperDrift,
+} from './hooks/install.ts';
 import { type Lane, planLanes } from './hooks/push-plan.ts';
-import { type Hook, note, ok } from './hooks/report.ts';
+import { type Hook, fail, note, ok } from './hooks/report.ts';
 
 export { HOOK_NAMES, HUSKY_HOOK, PREPARE, activateHooks, installHooks, planLanes, problemsInHooks };
 export type { Hook, Lane };
@@ -59,6 +66,10 @@ export async function runCommand(
     (result.active ? ok : note)(`homeflare hooks: ${result.message}`);
     return;
   }
+  // ⛔ A STALE WRAPPER STOPS THE HOOK — see `wrapperDrift`: the bumper never refreshes `.husky/`,
+  //   so this is the only place a consumer finds out its committed copy is out of date.
+  const drift = await wrapperDrift(root, command);
+  if (drift !== undefined) fail(command, drift.what, drift.fix);
   if (command === 'pre-commit') return await preCommit(root);
   return await prePush(root, args, stdin);
 }

@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ENV, type Scratch, scratchRepo, spawn } from './hooks-harness.ts';
+import { ENV, type Scratch, pathWith, removeBins, scratchRepo, spawn } from './hooks-harness.ts';
 
 const ZERO = '0'.repeat(40);
 
@@ -38,6 +38,8 @@ function testFile(name: string): string {
 
 const repo: Scratch = await scratchRepo('hf-push-repo-');
 const remote = await mkdtemp(join(tmpdir(), 'hf-push-remote-'));
+// ⚠️ A gitleaks that finds nothing: pre-push scans what it pushes now, and CI has no gitleaks.
+const clean = { ...ENV, PATH: await pathWith(0) };
 
 async function sha(ref = 'HEAD'): Promise<string> {
   return (await repo.git('rev-parse', ref)).trim();
@@ -51,7 +53,7 @@ async function commit(path: string, text: string): Promise<string> {
 }
 
 const push = (stdin: string, remoteName = 'origin') =>
-  repo.hook('pre-push', { args: [remoteName, remote], stdin: `${stdin}\n` });
+  repo.hook('pre-push', { args: [remoteName, remote], stdin: `${stdin}\n`, env: clean });
 
 beforeAll(async () => {
   await spawn(['git', 'init', '--quiet', '--bare', remote], remote);
@@ -69,6 +71,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await removeBins();
   await repo.remove();
   await rm(remote, { recursive: true, force: true });
 });
@@ -161,11 +164,12 @@ describe('what a push is measured from', () => {
 
 describe('what a push reports', () => {
   test('a failing lane fails the push, names the lane and the fix — and offers no bypass', async () => {
-    await repo.write(
+    // Committed: the working tree must be the commit (hooks-prepush-real.test.ts).
+    const tip = await commit(
       'package.json',
       JSON.stringify({ scripts: { check: 'bun run lint', lint: 'exit 3' } }),
     );
-    const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`, 'nowhere');
+    const result = await push(`refs/heads/feat ${tip} refs/heads/feat ${ZERO}`, 'nowhere');
     expect(result.code).toBe(1);
     expect(result.output).toContain('`bun run lint` failed');
     expect(result.output).toContain('fix:    bun run lint');
@@ -208,13 +212,13 @@ describe('what a push reports', () => {
     //   `check` runs the tests, and a test building a throwaway repository then commits into
     //   the repository being pushed — cwd is ignored once GIT_DIR is set.
     // ⚠️ `$GIT_DIR`, not the `${…}` form — oxlint reads that as a botched template literal.
-    await repo.write(
+    await commit(
       'package.json',
       JSON.stringify({ scripts: { check: 'echo "GIT_DIR=[$GIT_DIR]"' } }),
     );
     const result = await repo.hook('pre-push', {
       args: ['origin', remote],
-      env: { ...ENV, GIT_DIR: '/somewhere/else/.git' },
+      env: { ...clean, GIT_DIR: '/somewhere/else/.git' },
     });
     expect(result.code).toBe(0);
     expect(result.output).toContain('GIT_DIR=[]');

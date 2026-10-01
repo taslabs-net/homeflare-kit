@@ -6,10 +6,13 @@
 import { describe, expect, test } from 'bun:test';
 import { chmod, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import { HOOK_NAMES, HUSKY_HOOK, PREPARE, installHooks, problemsInHooks } from '../src/hooks.ts';
-import { ENV, scratchRepo, spawn } from './hooks-harness.ts';
+import { ENV, scratchRepo, spawn, withBun } from './hooks-harness.ts';
+
+/** The wrapper needs `bun` on PATH before it looks for the runner; a test runner may not add it. */
+const WITH_BUN = { ...ENV, PATH: withBun(ENV['PATH'] ?? '') };
 
 async function scratch(manifest: unknown): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'hf-hooks-'));
@@ -89,7 +92,7 @@ describe('the installed wrapper, run by git', () => {
       await rm(join(repo.dir, 'node_modules'), { recursive: true, force: true });
       await installHooks(repo.dir);
 
-      const result = await spawn(['git', '-C', repo.dir, ...COMMIT], repo.dir);
+      const result = await spawn(['git', '-C', repo.dir, ...COMMIT], repo.dir, WITH_BUN);
       expect(result.code).not.toBe(0);
       expect(result.output.trim().split('\n')).toHaveLength(1);
       expect(result.output).toContain("run 'bun install' in this worktree");
@@ -105,7 +108,7 @@ describe('the installed wrapper, run by git', () => {
       await installHooks(dir);
       const proc = Bun.spawn(['sh', '.husky/pre-push', 'origin', 'url'], {
         cwd: dir,
-        env: ENV,
+        env: WITH_BUN,
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -131,8 +134,7 @@ describe('the installed wrapper, run by git', () => {
         join(dir, 'node_modules/@homeflare/config/bin/hooks.ts'),
         "process.stderr.write('ran ' + process.argv.slice(2).join(' ') + '\\n');\n",
       );
-      const env = { ...ENV, PATH: `${dirname(process.execPath)}:${ENV['PATH'] ?? ''}` };
-      const result = await spawn(['sh', '.husky/pre-push', 'origin', 'url'], dir, env);
+      const result = await spawn(['sh', '.husky/pre-push', 'origin', 'url'], dir, WITH_BUN);
       expect(result.code).toBe(0);
       expect(result.output).toBe('ran pre-push origin url\n');
     } finally {

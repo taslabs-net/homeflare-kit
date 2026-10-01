@@ -13,7 +13,14 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { HUSKY_HOOK } from '../src/hooks.ts';
-import { ENV, type Result, pathWith, removeBins, scratchRepo } from './hooks-harness.ts';
+import {
+  ENV,
+  type Result,
+  type Scratch,
+  pathWith,
+  removeBins,
+  scratchRepo,
+} from './hooks-harness.ts';
 
 const ZERO = '0'.repeat(40);
 
@@ -27,15 +34,55 @@ function expectsClosedFailure(result: Result): void {
   expect(result.output.toLowerCase()).not.toContain('bypass');
 }
 
-/** A scratch repository with one commit and a `check` script, optionally without node_modules. */
+/**
+ * A scratch repository with everything committed (`node_modules` ignored: the working tree
+ * must be the commit) and a `check` script, optionally without node_modules.
+ */
 async function pushRepo(check: string, installed: boolean) {
   const repo = await scratchRepo('hf-nobypass-');
   if (!installed) await rm(join(repo.dir, 'node_modules'), { recursive: true, force: true });
-  await repo.write('package.json', JSON.stringify({ scripts: { check, lint: 'exit 3' } }));
-  await repo.git('add', 'package.json');
+  const scripts = { check, lint: 'exit 3', build: 'echo built' };
+  await repo.write('package.json', JSON.stringify({ scripts }));
+  await repo.write('.gitignore', 'node_modules\n');
+  await repo.git('add', '-A');
   await repo.git('commit', '--quiet', '-m', 'seed');
   const head = (await repo.git('rev-parse', 'HEAD')).trim();
   return { repo, head };
+}
+
+/** One commit that is not `HEAD`, without moving `HEAD`. */
+const elsewhere = async (repo: Scratch, head: string): Promise<string> =>
+  (await repo.git('commit-tree', '-p', head, '-m', 'x', `${head}^{tree}`)).trim();
+
+/**
+ * Run pre-push in a fresh repository and expect a closed failure. `gitleaks` is the shim's
+ * exit code, or `'absent'`; `stdinFor` builds the refs (default: `HEAD` to a new branch).
+ */
+async function pushFails(
+  check: string,
+  options: {
+    installed?: boolean;
+    gitleaks?: number | 'absent';
+    prepare?: (repo: Scratch, head: string) => Promise<void>;
+    stdinFor?: (repo: Scratch, head: string) => Promise<string>;
+  } = {},
+): Promise<Result> {
+  const { repo, head } = await pushRepo(check, options.installed ?? true);
+  try {
+    await options.prepare?.(repo, head);
+    const stdin =
+      (await options.stdinFor?.(repo, head)) ?? `refs/heads/main ${head} refs/heads/main ${ZERO}`;
+    const env = { ...ENV, PATH: await pathWith(options.gitleaks ?? 0) };
+    const result = await repo.hook('pre-push', {
+      env,
+      args: ['nowhere', 'url'],
+      stdin: `${stdin}\n`,
+    });
+    expectsClosedFailure(result);
+    return result;
+  } finally {
+    await repo.remove();
+  }
 }
 
 describe('pre-commit failures', () => {
@@ -72,6 +119,22 @@ describe('pre-commit failures', () => {
     }
   });
 
+  test('a stale wrapper', async () => {
+    const repo = await scratchRepo('hf-nobypass-');
+    try {
+      await repo.write(
+        '.husky/pre-commit',
+        '# HomeFlare shared git hook. An older copy.\nexit 0\n',
+      );
+      const env = { ...ENV, PATH: await pathWith(0) };
+      const result = await repo.hook('pre-commit', { env });
+      expectsClosedFailure(result);
+      expect(result.output).toContain('hooks.ts install');
+    } finally {
+      await repo.remove();
+    }
+  });
+
   test('a half-staged unformatted file', async () => {
     const repo = await scratchRepo('hf-nobypass-');
     try {
@@ -91,62 +154,56 @@ describe('pre-commit failures', () => {
 
 describe('pre-push failures', () => {
   test('a failing lane', async () => {
-    const { repo, head } = await pushRepo('bun run lint', true);
-    try {
-      const stdin = `refs/heads/main ${head} refs/heads/main ${ZERO}\n`;
-      expectsClosedFailure(await repo.hook('pre-push', { args: ['nowhere', 'url'], stdin }));
-    } finally {
-      await repo.remove();
-    }
+    await pushFails('bun run lint');
   });
 
   test('no node_modules', async () => {
-    const { repo, head } = await pushRepo('echo ok', false);
-    try {
-      const stdin = `refs/heads/main ${head} refs/heads/main ${ZERO}\n`;
-      const result = await repo.hook('pre-push', { args: ['nowhere', 'url'], stdin });
-      expectsClosedFailure(result);
-      expect(result.output).toContain("run 'bun install'");
-    } finally {
-      await repo.remove();
-    }
+    const result = await pushFails('echo ok', { installed: false });
+    expect(result.output).toContain("run 'bun install'");
   });
 
   test('no check script', async () => {
-    const { repo, head } = await pushRepo('echo ok', true);
-    try {
-      await repo.write('package.json', JSON.stringify({ name: 'probe' }));
-      const stdin = `refs/heads/main ${head} refs/heads/main ${ZERO}\n`;
-      const result = await repo.hook('pre-push', { args: ['nowhere', 'url'], stdin });
-      expectsClosedFailure(result);
-      expect(result.output).toContain('no `check` script');
-    } finally {
-      await repo.remove();
-    }
+    const result = await pushFails('echo ok', {
+      prepare: async (repo) => await repo.write('package.json', JSON.stringify({ name: 'probe' })),
+    });
+    expect(result.output).toContain('no `check` script');
   });
 
-  test('a mixed push: the checked-out ref with one that is not', async () => {
-    const { repo, head } = await pushRepo('echo ok', true);
-    try {
-      const other = (await repo.git('commit-tree', '-p', head, '-m', 'x', `${head}^{tree}`)).trim();
-      const stdin =
-        `refs/heads/main ${head} refs/heads/main ${ZERO}\n` +
-        `refs/heads/other ${other} refs/heads/other ${ZERO}\n`;
-      expectsClosedFailure(await repo.hook('pre-push', { args: ['nowhere', 'url'], stdin }));
-    } finally {
-      await repo.remove();
-    }
+  test('a check whose every lane is skipped', async () => {
+    const result = await pushFails('bun run build');
+    expect(result.output).toContain('every lane of `check` was skipped');
   });
 
   test('a ref that is not checked out', async () => {
-    const { repo, head } = await pushRepo('echo ok', true);
-    try {
-      const other = (await repo.git('commit-tree', '-p', head, '-m', 'x', `${head}^{tree}`)).trim();
-      const stdin = `refs/heads/other ${other} refs/heads/other ${ZERO}\n`;
-      expectsClosedFailure(await repo.hook('pre-push', { args: ['nowhere', 'url'], stdin }));
-    } finally {
-      await repo.remove();
-    }
+    await pushFails('echo ok', {
+      stdinFor: async (repo, head) =>
+        `refs/heads/other ${await elsewhere(repo, head)} refs/heads/other ${ZERO}`,
+    });
+  });
+
+  test('a mixed push: the checked-out ref with one that is not', async () => {
+    await pushFails('echo ok', {
+      stdinFor: async (repo, head) =>
+        `refs/heads/main ${head} refs/heads/main ${ZERO}\n` +
+        `refs/heads/other ${await elsewhere(repo, head)} refs/heads/other ${ZERO}`,
+    });
+  });
+
+  test('a working tree that is not the commit', async () => {
+    const result = await pushFails('echo ok', {
+      prepare: async (repo) => await repo.write('stray.txt', 'uncommitted\n'),
+    });
+    expect(result.output).toContain('uncommitted changes');
+  });
+
+  test('gitleaks missing: the pushed commits were not scanned', async () => {
+    const result = await pushFails('echo ok', { gitleaks: 'absent' });
+    expect(result.output).toContain('NOT scanned');
+  });
+
+  test('gitleaks finds a secret in what is pushed', async () => {
+    const result = await pushFails('echo ok', { gitleaks: 1 });
+    expect(result.output).toContain('ROTATE');
   });
 });
 

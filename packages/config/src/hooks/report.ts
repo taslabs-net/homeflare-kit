@@ -64,9 +64,19 @@ export async function runCaptured(
   return { code: await proc.exited, stdout };
 }
 
-/** Capture a command's stdout AND its exit code — git plumbing that answers by status. */
-export async function probe(cmd: readonly string[]): Promise<{ code: number; stdout: string }> {
-  const proc = Bun.spawn([...cmd], { stdout: 'pipe', stderr: 'ignore' });
+/**
+ * Capture a command's stdout AND its exit code — git plumbing that answers by status.
+ * `isolated` drops the inherited `GIT_*` variables — see `withoutGitEnv`.
+ */
+export async function probe(
+  cmd: readonly string[],
+  isolated = false,
+): Promise<{ code: number; stdout: string }> {
+  const proc = Bun.spawn([...cmd], {
+    stdout: 'pipe',
+    stderr: 'ignore',
+    ...(isolated ? { env: withoutGitEnv() } : {}),
+  });
   const stdout = await new Response(proc.stdout).text();
   return { code: await proc.exited, stdout };
 }
