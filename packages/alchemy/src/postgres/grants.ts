@@ -35,6 +35,7 @@ import {
 import type { PostgresConnection } from './connection.ts';
 import { withPg } from './connection.ts';
 import { databaseExists } from './database-sql.ts';
+import { PostgresGrantsDatabaseMissing } from './grants-errors.ts';
 
 export interface PostgresGrants extends Resource<
   'Postgres.Grants',
@@ -82,7 +83,17 @@ export const postgresGrantsHandlers = PostgresGrants.Provider.of({
   diff: ({ news, output }) => diffPostgresGrants(news, output),
 
   reconcile: ({ news, output }) =>
-    withPg((pg) => reconcileWithClient(pg, news, output), news.database),
+    Effect.gen(function* () {
+      // Probe the declared database BEFORE opening it, like `read`/`delete`: a declaration
+      // whose database was dropped would otherwise fail untyped on connect (`ConnectionError`
+      // over psql, `UnknownError` 3D000 over the socket). A reconcile must write into an
+      // existing container, so a missing database is a typed refusal, not absence.
+      const present = yield* withPg((pg) => databaseExists(pg, news.database));
+      if (!present) {
+        return yield* Effect.fail(new PostgresGrantsDatabaseMissing({ database: news.database }));
+      }
+      return yield* withPg((pg) => reconcileWithClient(pg, news, output), news.database);
+    }),
 
   delete: ({ olds }) =>
     Effect.gen(function* () {

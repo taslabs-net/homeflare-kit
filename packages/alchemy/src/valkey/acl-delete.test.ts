@@ -4,6 +4,7 @@ import * as Effect from 'effect/Effect';
 import { makeValkeyAclFileHandlers } from './acl.ts';
 import type { ValkeyAclFileAttributes, ValkeyAclFileProps } from './acl-attrs.ts';
 import { managedUserNames } from './acl-managed.ts';
+import { readWithExecutor } from './acl-ops.ts';
 import { reconcileWithExecutor } from './acl-reconcile.ts';
 import { type FakeValkey, makeFakeValkey } from './fake-valkey.ts';
 import { connection, context, run } from './handler-test-fixture.ts';
@@ -64,6 +65,19 @@ test('delete on state written before managedUsers existed falls back as managedU
   await remove(fake, props, legacy);
   expect(delusers(fake)).toEqual([['ACL', 'DELUSER', ...managedUserNames(legacy, props)]]);
   expect([...fake.acl.keys()].sort()).toEqual(survivors);
+});
+
+test('read-without-output seals empty, so legacy state with no managedUsers and no previous answers []', async () => {
+  // ★ Apply.ts calls reconcile with `olds: undefined` and `output: attr` on both create (:924)
+  //   and replacement (:1321), never a bare read. The empty-seal fallback in `managedUserNames`
+  //   (`previous === undefined`) therefore only ever fires on state that predates `managedUsers`
+  //   AND was last read without an output — where `[]` is the safe default, not a Valkey adoption
+  //   bug. A read with no output mints an empty seal (acl-ops.ts `toUserAttributes`), and with no
+  //   `previous` to lean on, that is indistinguishable from "nothing we ever managed".
+  const fake = makeFakeValkey({ acl: { seat: 'user seat on >FAKE-seed ~seat:* +@read' } });
+  const bare = await Effect.runPromise(readWithExecutor(fake, 'scratch'));
+  expect(bare.users.seat?.passwordSeal).toBe('');
+  expect(managedUserNames({ instance: 'scratch', users: bare.users }, undefined)).toEqual([]);
 });
 
 test('delete after a failed update spares users the last good reconcile never managed', async () => {

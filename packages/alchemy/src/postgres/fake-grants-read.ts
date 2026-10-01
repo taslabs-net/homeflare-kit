@@ -1,10 +1,9 @@
 /**
  * The read-answering half of the `Postgres.Grants` test fake: the `aclexplode`-shaped
  * queries and the existence/ownership checks, answered from the server model's ACL
- * (`fake-grants-sql.ts`), never from the statement list (S28). Pure row projection — the
- * statement application, the entry model and the grant/revoke semantics live in
- * `fake-grants-sql.ts`. The ACL entry and the model shape are defined HERE so the apply
- * half can import them without a cycle.
+ * (`fake-grants-sql.ts`), never from the statement list (S28). The entry and model shape
+ * are defined HERE so the write half (`fake-grants-write.ts`) can import them without a
+ * cycle.
  */
 import * as Effect from 'effect/Effect';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
@@ -45,6 +44,12 @@ export interface FakeGrantsModel {
   readonly schemaOwners: ReadonlyMap<string, string>;
   /** `current_user` — the grantor a write records, and the revoker the column read reports. */
   readonly executor: string;
+  /** Whether `current_user` is a superuser: one arm of `revokesAsOwner` (a superuser revokes
+   * as the object owner, `revoke.sgml`). */
+  readonly executorSuper: boolean;
+  /** The roles `current_user` is a member of (recursively): a member of the owning role revokes
+   * as that role (`revokesAsOwner`). */
+  readonly executorMemberships: ReadonlySet<string>;
   /** What `SELECT current_database()` answers. */
   readonly connected: string;
 }
@@ -53,6 +58,12 @@ const aclShapeRow = (marked: string): { privilege: string; grantable: boolean } 
   privilege: marked.replace(/\*$/, ''),
   grantable: marked.endsWith('*'),
 });
+
+/** Whether a `REVOKE` from the executor is performed as the object's owner (`select_best_grantor`
+ * acl.c@REL_18_6): a superuser, the owner itself, or a member of the owning role. Gates the
+ * column read's `grantor === owner` arm; the write path removes the owner's grant under it. */
+export const revokesAsOwner = (model: FakeGrantsModel, owner: string): boolean =>
+  model.executorSuper || model.executor === owner || model.executorMemberships.has(owner);
 
 /** Explode the model into aclexplode-shaped rows, filtered to one read's object shape
  * and grantee set. */
@@ -189,17 +200,21 @@ export const answerRead = <A extends object>(
         acl,
         (o) => o.schema === schema && o.column !== undefined,
         granteeFilter(role),
-        (entry, marked) => ({
-          table: entry.object.table,
-          column: entry.object.column,
-          public: entry.grantee === 'PUBLIC',
-          grantor: entry.grantor,
-          owner:
+        (entry, marked) => {
+          const owner =
             model.tableOwners.get(`${entry.object.schema}\u0000${entry.object.table ?? ''}`) ??
-            model.executor,
-          revoker: model.executor,
-          ...aclShapeRow(marked),
-        }),
+            model.executor;
+          return {
+            table: entry.object.table,
+            column: entry.object.column,
+            public: entry.grantee === 'PUBLIC',
+            grantor: entry.grantor,
+            owner,
+            revoker: model.executor,
+            revoker_as_owner: revokesAsOwner(model, owner),
+            ...aclShapeRow(marked),
+          };
+        },
       ) as unknown as ReadonlyArray<A>,
     );
   }

@@ -11,7 +11,9 @@
  *   flag. A class that declares nothing and holds nothing live is a no-op; a class that
  *   declares nothing but holds live grants gets only the revoke — that is how `delete`
  *   (a cleared declaration, `grants-declare.ts`) revokes exactly what the old declaration
- *   named and nothing else.
+ *   named. The one thing it restores is the collateral a table `REVOKE ALL` clears on
+ *   columns the declaration never named (see `restoredColumnGrants` below): a delete takes
+ *   away what it managed and leaves a DBA's or another resource's column grant untouched.
  * ★ OBJECTS THE DECLARED ROLE OWNS ARE LEFT ALONE (H2): an owner holds every privilege
  *   implicitly and a `REVOKE` cannot take that away, so both plans skip owned objects —
  *   repairing them would only add ACL rows the state can never converge on, and revoking

@@ -118,8 +118,10 @@ export const namesFromAttrs = (attrs: PostgresGrantsAttributes): DeclaredNames =
 
 /** The `delete` twin of a declaration: the same names, every privilege list emptied, the
  * PUBLIC flags off. `planRepair` turns it into exactly the revoke set delete may issue —
- * one revoke per named object where live still shows the role words, nothing for PUBLIC
- * (a delete never re-grants what a revoke cleared). */
+ * one revoke per named object where live still shows the role words, nothing for PUBLIC.
+ * A table revoke still restores the column collateral it clears (`grants-plan.ts`), so a
+ * delete takes away what the declaration managed and leaves a DBA's or another resource's
+ * undeclared column grant untouched. */
 export const clearedDeclaration = (declared: DeclaredGrants): DeclaredGrants => ({
   ...declared,
   schemaPrivileges: [],
