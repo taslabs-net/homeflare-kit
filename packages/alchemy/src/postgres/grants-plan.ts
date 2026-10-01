@@ -11,7 +11,9 @@
  *   flag. A class that declares nothing and holds nothing live is a no-op; a class that
  *   declares nothing but holds live grants gets only the revoke — that is how `delete`
  *   (a cleared declaration, `grants-declare.ts`) revokes exactly what the old declaration
- *   named and nothing else.
+ *   named. The one thing it restores is the collateral a table `REVOKE ALL` clears on
+ *   columns the declaration never named (see `restoredColumnGrants` below): a delete takes
+ *   away what it managed and leaves a DBA's or another resource's column grant untouched.
  * ★ OBJECTS THE DECLARED ROLE OWNS ARE LEFT ALONE (H2): an owner holds every privilege
  *   implicitly and a `REVOKE` cannot take that away, so both plans skip owned objects —
  *   repairing them would only add ACL rows the state can never converge on, and revoking
@@ -113,15 +115,10 @@ export const planRepair = (
     readonly revokedTables?: ReadonlyArray<string>;
     /** Columns that removal is revoking on purpose — do not restore them. */
     readonly revokedColumns?: ReadonlyArray<{ readonly table: string; readonly column: string }>;
-    /** False for a `delete` (a cleared declaration): its revokes must never re-grant the
-     * undeclared column entries a table `REVOKE ALL` clears — a delete takes privileges away,
-     * it does not restore any. Defaults to true for `reconcile`. */
-    readonly restoreCollateral?: boolean;
   } = {},
 ): ReadonlyArray<string> => {
   const statements: string[] = [];
   const ownedTables = new Set(live.ownedTables);
-  const restoreCollateral = prior.restoreCollateral !== false;
   if (!live.schemaOwnedByRole && wordsDiffer(declared.schemaPrivileges, live.schema.role)) {
     statements.push(revokeSchemaSql(declared.schema, declared.role));
     statements.push(
@@ -152,16 +149,12 @@ export const planRepair = (
           grantTableSql(declared.schema, table.table, declared.role, words),
         ),
       );
-      if (restoreCollateral) {
-        statements.push(...restoredColumnGrants(declared, live, table.table, skipColumns));
-      }
+      statements.push(...restoredColumnGrants(declared, live, table.table, skipColumns));
     }
   }
   for (const table of prior.revokedTables ?? []) {
     if (declaredTableNames.has(table) || ownedTables.has(table)) continue;
-    if (restoreCollateral) {
-      statements.push(...restoredColumnGrants(declared, live, table, skipColumns));
-    }
+    statements.push(...restoredColumnGrants(declared, live, table, skipColumns));
   }
   for (const column of declared.columns) {
     if (ownedTables.has(column.table)) continue;

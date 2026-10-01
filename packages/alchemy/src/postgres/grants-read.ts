@@ -136,10 +136,10 @@ export const readTableAcls = (
  * a role revokes only what it granted; a superuser's REVOKE is performed as the owner).
  * `restorable` is those words — the collateral re-grant restores them and leaves a third
  * grantor's entry where the revoke left it, instead of adding an owner grant on top.
- * `revoker_super` gates the `grantor === owner` arm: an owner's grant is only cleared by a
- * revoker who is a superuser (or the owner itself, which the `grantor === revoker` arm already
- * covers). A non-superuser, non-owner revoker clears only grants it made, so an owner grant
- * marked restorable would be re-granted over an entry the revoke never removed. */
+ * `revoker_as_owner` gates the `grantor === owner` arm: the revoker clears the owner's grant
+ * only when it revokes AS the owner — a superuser or a member of the owning role
+ * (`pg_has_role(..., 'USAGE')`, `select_best_grantor` acl.c@REL_18_6). A non-superuser,
+ * non-member revoker clears only grants it made, so an owner grant marked restorable would be re-granted over an entry the revoke never removed. */
 const COLUMNS_SQL = `SELECT
     c.relname AS table,
     v.attname AS column,
@@ -149,7 +149,7 @@ const COLUMNS_SQL = `SELECT
     pg_get_userbyid(a.grantor) AS grantor,
     pg_get_userbyid(c.relowner) AS owner,
     current_user AS revoker,
-    (SELECT r.rolsuper FROM pg_roles r WHERE r.rolname = current_user) AS revoker_super
+    pg_has_role(current_user, c.relowner, 'USAGE') AS revoker_as_owner
   FROM pg_attribute v
   JOIN pg_class c ON c.oid = v.attrelid
   CROSS JOIN LATERAL aclexplode(v.attacl) AS a
@@ -164,8 +164,8 @@ export interface LiveColumn {
   readonly column: string;
   readonly role: ReadonlyArray<string>;
   readonly public: ReadonlyArray<string>;
-  /** Role words granted by `current_user`, or by the relation owner when this session is a
-   * superuser — what a table `REVOKE ALL` from this session actually clears. */
+  /** Role words granted by `current_user`, or by the relation owner when this session revokes
+   * AS the owner (superuser or owner-member) — what a table `REVOKE ALL` here actually clears. */
   readonly restorable: ReadonlyArray<string>;
 }
 
@@ -182,7 +182,7 @@ export const readColumnAcls = (
         readonly grantor: string;
         readonly owner: string;
         readonly revoker: string;
-        readonly revoker_super: boolean;
+        readonly revoker_as_owner: boolean;
       }
     >(COLUMNS_SQL, [schema, role]),
     (rows) => {
@@ -197,7 +197,7 @@ export const readColumnAcls = (
         entry[row.public ? 'public' : 'role'].push(word);
         if (
           !row.public &&
-          (row.grantor === row.revoker || (row.grantor === row.owner && row.revoker_super))
+          (row.grantor === row.revoker || (row.grantor === row.owner && row.revoker_as_owner))
         ) {
           entry.restorable.push(word);
         }
