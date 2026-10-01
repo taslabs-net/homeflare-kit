@@ -1,31 +1,25 @@
 /**
  * A recording fake `PgExecutor` (S28: "Tests use `bun:test`… a test never trusts the deploy's
  * own report" — here read back from the fake's own catalog, not from the statement list) for
- * every lifecycle test in this family. No socket, no `@effect/sql-pg` client — it is small
- * enough to re-derive the one thing this provider ever asks of a real one: three statement
- * shapes, matched by text, against an in-memory `pg_roles` set and `pg_database` map.
+ * every lifecycle test in this family. No socket, no `@effect/sql-pg` client — it matches the
+ * statement shapes this family issues, by text, against an in-memory `pg_database` map. The
+ * role catalog is `fake-role-sql.ts`; the schema catalog is `fake-schema-sql.ts`.
  *
- * ⛔ IT PARSES ITS OWN OUTPUT, NOT SQL IN GENERAL. `parseCreate` below understands exactly the
- *   text `buildCreateDatabaseSql` (`database-sql.ts`) produces — quoted with `quoteIdent` /
+ * ⛔ IT PARSES ITS OWN OUTPUT, NOT SQL IN GENERAL. `parseCreate` (`fake-sql-parse.ts`) understands
+ *   exactly the text `buildCreateDatabaseSql` produces — quoted with `quoteIdent` /
  *   `quoteStringLiteral` — because that is the only `CREATE DATABASE` this family ever issues. A
- *   general SQL parser would hide a quoting bug instead of tripping over it.
- * ★ `schemas` mirrors the same rule for `Postgres.Schema`: it parses exactly the text
- *   `buildCreateSchemaSql` / `buildCommentSchemaSql` / `buildDropSchemaSql` (`schema-sql.ts`)
- *   issue, reads `pg_namespace` rows back from its own map (stamped with this fake's
- *   `database`, the same `current_database()` a real server would answer), and answers
- *   `schemaIsEmpty` from a seeded relation set — never from parsing SQL in general.
+ *   general SQL parser would hide a quoting bug instead of tripping over it. The role and schema
+ *   halves live in their own files under the same rule.
  */
 import * as Effect from 'effect/Effect';
-import { SqlError, SqlSyntaxError } from 'effect/unstable/sql/SqlError';
+import { SqlError, SqlSyntaxError, UnknownError } from 'effect/unstable/sql/SqlError';
 import type { PostgresDatabaseAttributes } from './database-attrs.ts';
-import type { PostgresSchemaAttributes } from './schema-attrs.ts';
 import type { PgExecutor } from './database-sql.ts';
-import {
-  parseCommentSchema,
-  parseCreate,
-  parseCreateSchema,
-  parseDropSchema,
-} from './fake-sql-parse.ts';
+import { parseCreate } from './fake-sql-parse.ts';
+import { type FakeRoleState, applyRoleStatement } from './fake-role-sql.ts';
+import { type FakeSchemaState, applySchemaStatement } from './fake-schema-sql.ts';
+import type { PostgresRoleAttributes } from './role-attrs.ts';
+import type { PostgresSchemaAttributes } from './schema-attrs.ts';
 
 export interface RecordedStatement {
   readonly text: string;
@@ -37,6 +31,16 @@ export interface FakeSql extends PgExecutor {
   /** Mutable on purpose: a test seeds a row a "competing" statement would have produced (the
    * `42P04` race case) before the fake ever sees it. */
   readonly databases: Map<string, PostgresDatabaseAttributes>;
+  /** Mutable on purpose: a test seeds a live role (adoption, drift) or clears one (drop). */
+  readonly roleRows: Map<string, PostgresRoleAttributes>;
+  /** `member\0parent\0grantor` triples backing `pg_auth_members` (a plain `pg_auth_members`
+   * read, a grant, a revoke and a DROP ROLE cascade all go through `fake-role-sql.ts`);
+   * `GRANT`/`REVOKE` mutate it. An empty grantor segment is a grantor role that no longer
+   * exists. */
+  readonly memberships: Set<string>;
+  /** Options on a membership the name alone hides, keyed `member\0parent\0grantor`. Absent
+   * means neither ADMIN nor SET. */
+  readonly membershipOptions: Map<string, { readonly admin: boolean; readonly set: boolean }>;
   /** Mutable on purpose: a test seeds a live schema (adoption, drift) or clears one (drop). */
   readonly schemas: Map<string, PostgresSchemaAttributes>;
   /** Mutable on purpose: names of schemas this fake pretends hold at least one relation, so a
@@ -47,10 +51,14 @@ export interface FakeSql extends PgExecutor {
 export interface FakeSqlOptions {
   readonly roles?: ReadonlyArray<string>;
   readonly databases?: ReadonlyArray<PostgresDatabaseAttributes>;
+  readonly roleRows?: ReadonlyArray<PostgresRoleAttributes>;
   /** Fail the NEXT `CREATE DATABASE` with SQLSTATE `42P04` (duplicate_database), once, the way a
    * concurrent creator racing this reconcile would — classified exactly as
    * `@effect/sql-pg`'s own driver classifies it (`database-sql.ts`'s header). */
   readonly raceNextCreate?: boolean;
+  /** Fail the next statement whose text starts with this prefix, once, without applying it.
+   * A `transaction` that included earlier statements rolls them back. */
+  readonly failNext?: string;
   readonly schemas?: ReadonlyArray<PostgresSchemaAttributes>;
   /** Names of schemas the fake answers `schemaIsEmpty` with `false` for. */
   readonly schemasWithRelations?: ReadonlyArray<string>;
@@ -72,16 +80,37 @@ export interface FakeSqlOptions {
 
 export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   const statements: RecordedStatement[] = [];
-  const roles = new Set(options.roles ?? []);
+  const roleNames = new Set(options.roles ?? []);
+  const roleRows = new Map(options.roleRows?.map((r) => [r.name, r] as const) ?? []);
   const databases = new Map(options.databases?.map((d) => [d.name, d] as const) ?? []);
+  const memberships = new Set<string>();
+  const membershipOptions = new Map<string, { readonly admin: boolean; readonly set: boolean }>();
   const schemas = new Map(options.schemas?.map((s) => [s.name, s] as const) ?? []);
   const relationsIn = new Set(options.schemasWithRelations ?? []);
-  const database = options.database ?? 'postgres';
-  const sessionRole = options.currentUser ?? 'postgres';
   let raceRemaining = options.raceNextCreate === true ? 1 : 0;
-  let swallowSchemaRemaining = options.swallowNextCreateSchema === true ? 1 : 0;
-  let schemaRaceOwner = options.raceNextCreateSchema;
+  let failNext = options.failNext;
   let oidCounter = 20000;
+  const nextOid = (): number => {
+    const oid = oidCounter;
+    oidCounter += 1;
+    return oid;
+  };
+  const roleState: FakeRoleState = {
+    roleNames,
+    roleRows,
+    memberships,
+    membershipOptions,
+    nextOid,
+  };
+  const schemaState: FakeSchemaState = {
+    schemas,
+    relationsIn,
+    database: options.database ?? 'postgres',
+    sessionRole: options.currentUser ?? 'postgres',
+    swallowRemaining: options.swallowNextCreateSchema === true ? 1 : 0,
+    raceOwner: options.raceNextCreateSchema,
+    nextOid,
+  };
 
   const unsafe = <A extends object>(
     text: string,
@@ -90,29 +119,31 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
     Effect.suspend(() => {
       statements.push({ text, params });
 
-      if (text.startsWith('SELECT 1 AS present FROM pg_roles')) {
-        const role = params[0] as string;
-        return Effect.succeed(
-          (roles.has(role) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
+      if (failNext !== undefined && text.startsWith(failNext)) {
+        failNext = undefined;
+        return Effect.fail(
+          new SqlError({
+            reason: new UnknownError({
+              cause: new Error('injected statement failure'),
+              message: 'injected statement failure',
+              operation: text.slice(0, 40),
+            }),
+          }),
         );
       }
 
-      // ⚠️ startsWith, NOT includes: `SELECT_SCHEMA_SQL` (`schema-sql.ts`) also contains
-      //   `current_database() AS database` in its projection; only the standalone check starts
-      //   with it.
-      if (text.startsWith('SELECT current_database()')) {
-        return Effect.succeed([{ database }] as unknown as ReadonlyArray<A>);
+      if (text.startsWith('SELECT 1 AS present FROM pg_roles')) {
+        const role = params[0] as string;
+        return Effect.succeed(
+          (roleNames.has(role) || roleRows.has(role)
+            ? [{ present: 1 }]
+            : []) as unknown as ReadonlyArray<A>,
+        );
       }
 
-      // Starts with `SELECT current_user`, not `current_database`. The omitted-owner
-      // comparison reads this; a CREATE without AUTHORIZATION stores the same role.
-      if (text.startsWith('SELECT current_user')) {
-        return Effect.succeed([{ role: sessionRole }] as unknown as ReadonlyArray<A>);
-      }
-
-      // ⚠️ startsWith, BEFORE the `FROM pg_database` branch: the full-row `SELECT_DATABASE_SQL`
-      //   also contains `FROM pg_database`, but starts with `SELECT d.oid` — only the
-      //   existence probe starts with `SELECT 1 AS present`.
+      // ⚠️ startsWith, BEFORE the `FROM pg_database` branch: the full-row select also contains
+      //   `FROM pg_database`, but starts with `SELECT d.oid` — only the existence probe starts
+      //   with `SELECT 1 AS present`.
       if (text.startsWith('SELECT 1 AS present FROM pg_database')) {
         const name = params[0] as string;
         return Effect.succeed(
@@ -124,25 +155,6 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
         const name = params[0] as string;
         const row = databases.get(name);
         return Effect.succeed((row === undefined ? [] : [row]) as unknown as ReadonlyArray<A>);
-      }
-
-      // ⚠️ THE EMPTY CHECK BEFORE THE NAMESPACE READ: `SCHEMA_EMPTY_SQL` itself contains
-      //   `FROM pg_namespace` (its subquery resolves the schema's oid), so a plain
-      //   `includes('FROM pg_namespace')` test would swallow it — same ordering hazard the
-      //   database branch has with `SELECT 1 AS present FROM pg_roles`.
-      if (text.includes('AS empty') && text.includes('pg_class')) {
-        const name = params[0] as string;
-        return Effect.succeed([{ empty: !relationsIn.has(name) }] as unknown as ReadonlyArray<A>);
-      }
-
-      if (text.includes('FROM pg_namespace')) {
-        const name = params[0] as string;
-        const row = schemas.get(name);
-        // A real server answers `current_database()` for its own connection; stamp every row
-        // with this fake's database so a read row always carries the proof of where it ran.
-        return Effect.succeed(
-          (row === undefined ? [] : [{ ...row, database }]) as unknown as ReadonlyArray<A>,
-        );
       }
 
       if (text.startsWith('CREATE DATABASE')) {
@@ -158,49 +170,67 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
             }),
           );
         }
-        const row = { ...parseCreate(text), oid: oidCounter };
-        oidCounter += 1;
+        const row = { ...parseCreate(text), oid: nextOid() };
         databases.set(row.name, row);
         return Effect.succeed([] as unknown as ReadonlyArray<A>);
       }
 
-      if (text.startsWith('CREATE SCHEMA')) {
-        if (swallowSchemaRemaining > 0) {
-          swallowSchemaRemaining -= 1;
-          return Effect.succeed([] as unknown as ReadonlyArray<A>);
-        }
-        const row = { ...parseCreateSchema(text, sessionRole), database, oid: oidCounter };
-        oidCounter += 1;
-        if (schemaRaceOwner !== undefined) {
-          // A concurrent creator won the race: our IF NOT EXISTS did nothing, their row is
-          // what the re-read finds.
-          schemas.set(row.name, { ...row, owner: schemaRaceOwner });
-          schemaRaceOwner = undefined;
-        } else {
-          schemas.set(row.name, row);
-        }
-        return Effect.succeed([] as unknown as ReadonlyArray<A>);
-      }
+      const schemaStatement = applySchemaStatement<A>(schemaState, text, params);
+      if (schemaStatement !== undefined) return schemaStatement;
 
-      if (text.startsWith('COMMENT ON SCHEMA')) {
-        const parsed = parseCommentSchema(text);
-        const existing = schemas.get(parsed.name);
-        if (existing === undefined) {
-          throw new Error(`fake-sql: COMMENT ON SCHEMA on absent schema "${parsed.name}"`);
-        }
-        schemas.set(parsed.name, { ...existing, comment: parsed.comment });
-        return Effect.succeed([] as unknown as ReadonlyArray<A>);
-      }
-
-      if (text.startsWith('DROP SCHEMA')) {
-        const parsed = parseDropSchema(text);
-        if (parsed.cascade) relationsIn.delete(parsed.name);
-        schemas.delete(parsed.name);
-        return Effect.succeed([] as unknown as ReadonlyArray<A>);
-      }
+      const roleStatement = applyRoleStatement<A>(roleState, text, params);
+      if (roleStatement !== undefined) return roleStatement;
 
       throw new Error(`fake-sql: unrecognised statement: ${text}`);
     });
 
-  return { unsafe, statements, databases, schemas, relationsIn };
+  const snapshot = () => ({
+    roleRows: new Map(roleRows),
+    roleNames: new Set(roleNames),
+    memberships: new Set(memberships),
+    membershipOptions: new Map(membershipOptions),
+    databases: new Map(databases),
+    schemas: new Map(schemas),
+    relationsIn: new Set(relationsIn),
+    swallowRemaining: schemaState.swallowRemaining,
+    raceOwner: schemaState.raceOwner,
+    oid: oidCounter,
+  });
+  const restore = (snap: ReturnType<typeof snapshot>) => {
+    roleRows.clear();
+    for (const [key, value] of snap.roleRows) roleRows.set(key, value);
+    roleNames.clear();
+    for (const name of snap.roleNames) roleNames.add(name);
+    memberships.clear();
+    for (const key of snap.memberships) memberships.add(key);
+    membershipOptions.clear();
+    for (const [key, value] of snap.membershipOptions) membershipOptions.set(key, value);
+    databases.clear();
+    for (const [key, value] of snap.databases) databases.set(key, value);
+    schemas.clear();
+    for (const [key, value] of snap.schemas) schemas.set(key, value);
+    relationsIn.clear();
+    for (const name of snap.relationsIn) relationsIn.add(name);
+    schemaState.swallowRemaining = snap.swallowRemaining;
+    schemaState.raceOwner = snap.raceOwner;
+    oidCounter = snap.oid;
+  };
+  const transaction = (sqls: readonly string[]): Effect.Effect<void, SqlError> => {
+    const snap = snapshot();
+    return Effect.gen(function* () {
+      for (const sql of sqls) yield* unsafe(sql).pipe(Effect.asVoid);
+    }).pipe(Effect.onError(() => Effect.sync(() => restore(snap))));
+  };
+
+  return {
+    unsafe,
+    transaction,
+    statements,
+    databases,
+    roleRows,
+    memberships,
+    membershipOptions,
+    schemas,
+    relationsIn,
+  };
 };

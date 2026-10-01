@@ -71,15 +71,19 @@ const returnsRows = (sql: string): boolean => /^\s*(SELECT|WITH)\b/i.test(sql);
 const wrapRows = (sql: string): string =>
   `SELECT coalesce(json_agg(t), '[]'::json)::text FROM (${sql}) t;`;
 
+/** A password literal must not survive into an error Alchemy logs. `ALTER ROLE … PASSWORD`
+ * inlines the value (Postgres has no bind form), and the runner turns the first 40 characters
+ * of that statement into `operation` and the full `stderr` into `message`. */
+export const redactPasswordLiterals = (text: string): string =>
+  text.replace(/PASSWORD\s+'(?:[^']|'')*'/gi, "PASSWORD '[redacted]'");
+
 const failure = (operation: string, result: PsqlResult): SqlError => {
   const state = /ERROR:\s+([0-9A-Z]{5}):/.exec(result.stderr)?.[1];
+  const stderr = redactPasswordLiterals(result.stderr.trim());
   const fields = {
-    cause: Object.assign(
-      new Error(result.stderr.trim()),
-      state === undefined ? {} : { code: state },
-    ),
-    message: result.stderr.trim(),
-    operation,
+    cause: Object.assign(new Error(stderr), state === undefined ? {} : { code: state }),
+    message: stderr,
+    operation: redactPasswordLiterals(operation),
   };
   const reason =
     state === undefined
@@ -90,6 +94,42 @@ const failure = (operation: string, result: PsqlResult): SqlError => {
   return new SqlError({ reason });
 };
 
+const runScript = (
+  run: PsqlRunner,
+  target: PsqlTarget,
+  stdin: string,
+  operation: string,
+): Effect.Effect<PsqlResult, SqlError> =>
+  Effect.gen(function* () {
+    const result = yield* Effect.tryPromise({
+      try: () =>
+        run({
+          argv: [
+            'psql',
+            '-X',
+            '-q',
+            '-A',
+            '-t',
+            '-v',
+            'ON_ERROR_STOP=1',
+            '-v',
+            'VERBOSITY=verbose',
+            '-U',
+            target.username,
+            '-d',
+            target.database,
+          ],
+          stdin,
+        }),
+      catch: (cause) =>
+        new SqlError({ reason: new ConnectionError({ cause, operation: 'psql exec' }) }),
+    });
+    if (result.code !== 0) {
+      return yield* Effect.fail(failure(operation, result));
+    }
+    return result;
+  });
+
 export const makePsqlExecutor = (run: PsqlRunner, target: PsqlTarget): PgExecutor => ({
   unsafe: <A extends object>(sql: string, params: ReadonlyArray<unknown> = []) =>
     Effect.gen(function* () {
@@ -99,30 +139,12 @@ export const makePsqlExecutor = (run: PsqlRunner, target: PsqlTarget): PgExecuto
           new SqlError({ reason: new UnknownError({ cause, operation: 'psql inline params' }) }),
       });
       const rows = returnsRows(inlined);
-      const result = yield* Effect.tryPromise({
-        try: () =>
-          run({
-            argv: [
-              'psql',
-              '-X',
-              '-q',
-              '-A',
-              '-t',
-              '-v',
-              'ON_ERROR_STOP=1',
-              '-v',
-              'VERBOSITY=verbose',
-              '-U',
-              target.username,
-              '-d',
-              target.database,
-            ],
-            stdin: rows ? wrapRows(inlined) : `${inlined};`,
-          }),
-        catch: (cause) =>
-          new SqlError({ reason: new ConnectionError({ cause, operation: 'psql exec' }) }),
-      });
-      if (result.code !== 0) return yield* Effect.fail(failure(inlined.slice(0, 40), result));
+      const result = yield* runScript(
+        run,
+        target,
+        rows ? wrapRows(inlined) : `${inlined};`,
+        redactPasswordLiterals(inlined).slice(0, 40),
+      );
       if (!rows) return [] as ReadonlyArray<A>;
       const parsed = yield* Effect.try({
         try: () => (JSON.parse(result.stdout.trim() || '[]') as unknown[]).map(normalizeRow),
@@ -130,5 +152,16 @@ export const makePsqlExecutor = (run: PsqlRunner, target: PsqlTarget): PgExecuto
           new SqlError({ reason: new UnknownError({ cause, operation: 'psql parse output' }) }),
       });
       return parsed as ReadonlyArray<A>;
+    }),
+  /**
+   * One `psql` session: `BEGIN` … statements … `COMMIT`. `ON_ERROR_STOP` exits before `COMMIT`
+   * on a failure, and the backend aborts the open transaction when that session drops
+   * (`postgres.c@REL_18_6` `SocketBackend` EOF while `IsTransactionState`). Separate `unsafe`
+   * calls cannot do this — each is its own process and its own autocommit.
+   */
+  transaction: (statements) =>
+    Effect.gen(function* () {
+      const script = ['BEGIN', ...statements, 'COMMIT'].join(';\n');
+      yield* runScript(run, target, `${script};`, 'BEGIN');
     }),
 });

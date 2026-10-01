@@ -36,6 +36,7 @@ const emptyThenRefuse = (drop: Effect.Effect<ReadonlyArray<object>, SqlError>): 
     }
     return drop as Effect.Effect<ReadonlyArray<A>, SqlError>;
   },
+  transaction: () => Effect.void,
 });
 
 describe('2BP01 classification', () => {

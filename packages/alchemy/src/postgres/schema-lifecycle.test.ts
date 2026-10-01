@@ -229,6 +229,7 @@ describe('drop', () => {
                   }),
                 }),
               ),
+      transaction: () => Effect.void,
     };
     const error = await fails(dropWithClient(refusing, baseProps));
     expect(error).toBeInstanceOf(PostgresSchemaDropNotEmptyError);

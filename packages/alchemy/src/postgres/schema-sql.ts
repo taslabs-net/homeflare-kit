@@ -82,7 +82,7 @@ export const currentUser = (pg: PgExecutor): Effect.Effect<string, SqlError> =>
  * this check — and then the plain `DROP SCHEMA` answers `2BP01`, which `dropWithClient`
  * classifies as the same typed refusal.
  *
- * ⚠️ THE FAKE (`fake-sql.ts`) ROUTES THIS STATEMENT BY `AS empty` + `pg_class` — keep both
+ * ⚠️ THE FAKE (`fake-schema-sql.ts`) ROUTES THIS STATEMENT BY `AS empty` + `pg_class` — keep both
  *   markers in any rewrite, and keep this check matched BEFORE the plain `pg_namespace` branch
  *   (this SQL contains `FROM pg_namespace` too, inside its `WITH`).
  */

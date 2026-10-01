@@ -1,7 +1,9 @@
 /**
  * PostgreSQL providers for Alchemy — `Postgres.Database` (create-and-assert over one
- * self-hosted cluster) and `Postgres.Schema` (create-and-assert over one schema inside one),
- * both walked against PostgreSQL 18.6. See `docs/postgres.md` and `docs/postgres-schema.md`.
+ * self-hosted cluster), `Postgres.Schema` (create-and-assert over one schema inside one), and
+ * `Postgres.Role` (create / adopt / alter / drop of a LOGIN or NOLOGIN role whose password is a
+ * reference), walked against PostgreSQL 18.6. See `docs/postgres.md`, `docs/postgres-schema.md`
+ * and `docs/postgres-role.md`.
  *
  * ⛔ THIS BARREL IS THE PUBLIC API, deliberately smaller than the directory: `fake-sql.ts` is a
  *   test double, not something a consuming stack should import.
@@ -66,4 +68,46 @@ export {
   PostgresDatabaseRenameRefused,
   type PostgresDatabaseError,
 } from './errors.ts';
-export { postgresProviders, postgresRunnerProviders } from './providers.ts';
+export type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts';
+export { sameValidUntil, validUntilRefusal } from './role-attrs.ts';
+export {
+  buildAlterRoleSql,
+  buildCreateRoleSql,
+  buildDropRoleSql,
+  buildSetPasswordSql,
+  scalarDrift,
+  selectRole,
+} from './role-sql.ts';
+export {
+  buildGrantMembershipSql,
+  buildRepairMembershipSql,
+  buildRevokeGrantorMembershipSql,
+  membershipDrift,
+  selectRoleMemberships,
+  syncMemberships,
+  unsafeMemberships,
+} from './role-membership-sql.ts';
+export type { MembershipRow } from './role-membership-sql.ts';
+export { PostgresRole, isPostgresRole } from './role.ts';
+export { PostgresRoleProvider } from './role-provider.ts';
+export { resolvePassword } from './role-secrets.ts';
+export type { ResolvedPassword } from './role-secrets.ts';
+export type { FromEnv } from '../secrets/write-only.ts';
+export {
+  PostgresRoleCreateVanished,
+  PostgresRoleIdentityRefused,
+  PostgresRoleMembershipUnrepaired,
+  PostgresRoleNameRefused,
+  PostgresRoleParentMissing,
+  PostgresRolePasswordEnvUnsetError,
+  PostgresRolePrivilegedRefused,
+  PostgresRoleRenameRefused,
+  PostgresRoleValidUntilRefused,
+  type PostgresRoleError,
+} from './role-errors.ts';
+export {
+  postgresProviders,
+  postgresRoleProviders,
+  postgresRoleRunnerProviders,
+  postgresRunnerProviders,
+} from './providers.ts';
