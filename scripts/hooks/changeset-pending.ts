@@ -6,9 +6,10 @@
  *   never reaches npm. Nothing errors; the release just does not happen.
  *
  * ⛔ WARNS RATHER THAN BLOCKING, DELIBERATELY. Plenty of legitimate commits touch a
- *   package without changing published behaviour — a test, a comment, a refactor. A hard
- *   block on those trains people to pass --no-verify, which disables the SECRET scan too.
- *   The PR template carries the real checkbox; this is the early reminder.
+ *   package without changing published behaviour — a test, a comment, a refactor. Hooks
+ *   fail closed and offer no way round, so a hard block on those would leave a legitimate
+ *   commit with nothing to fix: there is no changeset to add. The PR template carries the
+ *   real checkbox; this is the early reminder.
  */
 import { ok, stagedFiles } from './lib.ts';
 

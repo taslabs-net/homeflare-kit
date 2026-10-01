@@ -132,15 +132,19 @@ describe('what a push is measured from', () => {
     }
   });
 
-  test('a branch that is not checked out is reported NOT CHECKED — never passed', async () => {
+  test('a branch that is not checked out FAILS the push, naming the checkout — never passed', async () => {
     // 🔴 Found in review: the lanes run on the working tree, so a push of another ref used to
     //   run `bun test --changed` against the checkout, find nothing, and print "passed".
+    //   Then it printed "NOT CHECKED" and exited 0, which still let the push through; the
+    //   hook fails closed now (Tim, 2026-10-01), so the push stops and says how to make it
+    //   checkable.
     const other = (
       await repo.git('commit-tree', '-p', 'HEAD', '-m', 'elsewhere', 'HEAD^{tree}')
     ).trim();
     const result = await push(`refs/heads/other ${other} refs/heads/other ${ZERO}`);
-    expect(result.code).toBe(0);
-    expect(result.output).toContain('NOT CHECKED');
+    expect(result.code).toBe(1);
+    expect(result.output).toContain('the working tree is not what is being pushed');
+    expect(result.output).toContain('fix:    check out other and push from there');
     expect(result.output).not.toContain('LINT-LANE-RAN');
     expect(result.output).not.toContain('passed');
   });
@@ -156,7 +160,7 @@ describe('what a push is measured from', () => {
 });
 
 describe('what a push reports', () => {
-  test('a failing lane fails the push, names the lane, the fix and the bypass', async () => {
+  test('a failing lane fails the push, names the lane and the fix — and offers no bypass', async () => {
     await repo.write(
       'package.json',
       JSON.stringify({ scripts: { check: 'bun run lint', lint: 'exit 3' } }),
@@ -164,15 +168,21 @@ describe('what a push reports', () => {
     const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`, 'nowhere');
     expect(result.code).toBe(1);
     expect(result.output).toContain('`bun run lint` failed');
-    expect(result.output).toContain('git push --no-verify');
+    expect(result.output).toContain('fix:    bun run lint');
+    expect(result.output).not.toContain('--no-verify');
   });
 
-  test('in a worktree nobody has installed: skipped out loud, not failed', async () => {
+  test('in a worktree nobody has installed: the push FAILS with the fix, never skipped', async () => {
     await rm(join(repo.dir, 'node_modules'), { recursive: true, force: true });
-    const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`);
-    expect(result.code).toBe(0);
-    expect(result.output).toContain("run 'bun install'");
-    await mkdir(join(repo.dir, 'node_modules'));
+    try {
+      const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`);
+      expect(result.code).toBe(1);
+      expect(result.output).toContain('no node_modules');
+      expect(result.output).toContain("fix:    run 'bun install' in this worktree");
+      expect(result.output).not.toContain('LINT-LANE-RAN');
+    } finally {
+      await mkdir(join(repo.dir, 'node_modules'));
+    }
   });
 
   test('is a no-op when the repo declares no check script', async () => {

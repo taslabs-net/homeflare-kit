@@ -102,6 +102,14 @@ export async function scratchRepo(prefix = 'hf-hook-repo-'): Promise<Scratch> {
   };
 }
 
+/** The directories `pathWith` made, so a suite can remove them — see `removeBins`. */
+const binDirs: string[] = [];
+
+/** ⚠️ CALL THIS FROM `afterAll`: every `pathWith` leaves a directory in the temp dir otherwise. */
+export async function removeBins(): Promise<void> {
+  for (const dir of binDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+}
+
 /**
  * A PATH whose `gitleaks` exits with the given code, in front of the caller's PATH — or,
  * for `'absent'`, a PATH of only `bun`, `git` and the system directories.
@@ -113,6 +121,7 @@ export async function scratchRepo(prefix = 'hf-hook-repo-'): Promise<Scratch> {
  */
 export async function pathWith(gitleaks: number | 'absent'): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'hf-hook-bin-'));
+  binDirs.push(dir);
   const git = Bun.which('git');
   if (git !== null) await symlink(git, join(dir, 'git'));
   await symlink(process.execPath, join(dir, 'bun'));

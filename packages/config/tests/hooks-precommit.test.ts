@@ -8,7 +8,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ENV, type Scratch, pathWith, scratchRepo } from './hooks-harness.ts';
+import { ENV, type Scratch, pathWith, removeBins, scratchRepo } from './hooks-harness.ts';
 
 const UGLY = 'export const value  =   {a:1,   b:2}\n';
 
@@ -26,6 +26,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await repo.remove();
+  await removeBins();
 });
 
 describe('the secret scan', () => {
@@ -47,18 +48,21 @@ describe('the secret scan', () => {
     expect(result.output).toContain('brew install gitleaks');
   });
 
-  test('in a worktree nobody has installed: the scan still runs, the rest skips out loud', async () => {
+  test('in a worktree nobody has installed: the scan runs, then the commit FAILS with the fix', async () => {
     // ⚠️ A fresh worktree runs its hooks now; without node_modules, formatting would reach
-    //   for an unpinned `bunx oxfmt`. The secret scan needs only the gitleaks binary.
+    //   for an unpinned `bunx oxfmt`. The secret scan needs only the gitleaks binary, so it
+    //   still runs first — and then the hook stops, rather than passing the commit unchecked.
     const bare = await scratchRepo('hf-hook-bare-');
     try {
       await rm(join(bare.dir, 'node_modules'), { recursive: true, force: true });
       await bare.write('ugly.ts', UGLY);
       await bare.git('add', 'ugly.ts');
       const result = await bare.hook('pre-commit', { env: clean });
-      expect(result.code).toBe(0);
+      expect(result.code).toBe(1);
       expect(result.output).toContain('gitleaks found no secret');
-      expect(result.output).toContain("run 'bun install'");
+      expect(result.output).toContain('no node_modules');
+      expect(result.output).toContain("run 'bun install' in this worktree");
+      // ⛔ Stopped before formatting: the staged bytes are exactly what was staged.
       expect(await bare.git('show', ':ugly.ts')).toBe(UGLY);
     } finally {
       await bare.remove();
@@ -101,8 +105,8 @@ describe('format and lint', () => {
   test('handles a path git would quote and escape', async () => {
     // 🔴 Measured 2026-09-22: without `-z`, `git diff --cached --name-only` applies
     //   core.quotePath and hands back the literal `"caf\303\251 .ts"` — a path that does not
-    //   exist. oxfmt then fails on every commit touching the file, and the obvious response
-    //   is `--no-verify`.
+    //   exist. oxfmt then fails on every commit touching the file, and a hook that fails
+    //   closed must not fail on a legal path.
     const awkward = 'café note.md';
     await repo.write(awkward, '#  Heading\n\n\ntext\n');
     await repo.git('add', '--', awkward);
@@ -120,7 +124,7 @@ describe('format and lint', () => {
     const keep = join(repo.dir, 'partial.ts');
     await Bun.write(keep, "export const a = 'formatted';\n");
     await repo.git('add', 'partial.ts');
-    await repo.git('commit', '--quiet', '--no-verify', '-m', 'seed');
+    await repo.git('commit', '--quiet', '-m', 'seed');
 
     await Bun.write(keep, "export const a = 'staged';\n");
     await repo.git('add', 'partial.ts');

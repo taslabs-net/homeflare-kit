@@ -20,8 +20,8 @@
  *
  * ⛔ WARNS RATHER THAN BLOCKING, for the same reason as changeset-pending.ts: the edit is
  *   often legitimate — every `description` change in this repo's history was a capability
- *   landing where the sentence genuinely had to change. A hard block on a legitimate edit
- *   trains people to pass `--no-verify`, which disables the SECRET scan too. The rule is
+ *   landing where the sentence genuinely had to change. Hooks fail closed and offer no way
+ *   round, so a hard block on a legitimate edit would leave nothing to fix. The rule is
  *   "land it in its own pull request", and only a human can judge that.
  */
 import { ok, stagedFiles } from './lib.ts';

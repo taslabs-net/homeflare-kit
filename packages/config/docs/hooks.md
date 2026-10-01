@@ -92,7 +92,11 @@ shared config, so each worktree runs its own checked-out `.husky/`, including a 
 
 husky's `.husky/_` only existed where husky had run, so every other worktree of the clone
 had no hooks at all. In an uninstalled worktree, the wrapper prints that `bun install` is
-needed and exits 0. It fails open, because the required checks on `main` are the gate.
+needed and exits 1. ⛔ **It fails closed** (Tim, 2026-10-01): a gate that cannot run is
+fixed, never skipped, and no hook message offers a way round it. `pre-commit` and
+`pre-push` fail the same way when `node_modules` is missing, after the secret scan has run.
+Re-run `bun node_modules/@homeflare/config/bin/hooks.ts install` in a repo that adopted
+earlier: its committed wrapper still has the old bytes, and `problemsInHooks` reports it.
 
 `activate` does nothing under `CI`, or outside a git work tree. It never fails, because it
 runs inside `bun install`.
@@ -105,8 +109,10 @@ tracked files, and never-installed worktrees have none. To restore it, run `bun 
 on an adopted branch, or `bun node_modules/@homeflare/config/bin/hooks.ts activate`.
 
 ⚠️ **Only a push of the checked-out commit can be checked.** The lanes run on the working
-tree. Pushing another ref, as in `git push origin other-branch`, is reported as
-**NOT CHECKED** and left to CI. It is never reported as passed.
+tree. Pushing another ref, as in `git push origin other-branch`, **fails** with the fix:
+check that ref out and push from there. It is never reported as passed, and no longer
+exits 0 with a note. An annotated tag at `HEAD` counts as checked out: its commit is
+compared, not the tag object.
 
 ```ts
 import { problemsInHooks } from '@homeflare/config/hooks';

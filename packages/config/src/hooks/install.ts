@@ -24,10 +24,12 @@ const RUNNER = 'node_modules/@homeflare/config/bin/hooks.ts';
 export const PREPARE: string = `bun ${RUNNER} activate`;
 
 /**
- * ⚠️ IT EXITS 0 WHEN THE RUNNER IS ABSENT. A worktree with no `node_modules` would
- *   otherwise fail every commit with a module-resolution error, and the first thing
- *   anyone would do is delete the hook. Failing open is the right trade for a
- *   convenience; the required checks on `main` are what must fail closed.
+ * ⛔ IT EXITS 1 WHEN THE RUNNER IS ABSENT. A worktree with no `node_modules` cannot run the
+ *   checks, and a gate that cannot run is fixed, never skipped (Tim, 2026-10-01): the
+ *   wrapper stops the commit or push with one line naming the fix, `bun install`, instead
+ *   of letting it through unchecked. It used to exit 0 there, on the argument that a hook
+ *   is a convenience and CI is the gate; that left every fresh worktree committing with
+ *   no checks at all, which is the exact gap `core.hooksPath` exists to close (activate.ts).
  * ★ `"$@"` AND STDIN PASS THROUGH. `pre-push` reads the remote name from its first argument
  *   and the pushed refs from stdin (push-range.ts); `exec` keeps both.
  * ⚠️ NO SHEBANG, AND THAT IS MEASURED, NOT FORGOTTEN: git 2.55 runs an executable hook that
@@ -37,15 +39,15 @@ export const HUSKY_HOOK: string = `# HomeFlare shared git hook. The behaviour li
 # and the same bytes are installed as .husky/pre-commit and .husky/pre-push — the hook
 # name comes from $0, and git's arguments and stdin pass straight through.
 #
-# ⚠️ A hook is a local convenience, not a gate: it is skippable with --no-verify, and a
-#   worktree runs it only once \`bun install\` has run there. The required checks on main
-#   stay the gate.
+# ⛔ It fails closed. A worktree can run this hook only once \`bun install\` has run there;
+#   until then the runner is missing, and the commit or push stops with the fix. CI still
+#   runs the whole gate on every pull request.
 #
 # Regenerate this file with: bun ${RUNNER} install
 hook="${RUNNER}"
 if [ ! -f "$hook" ]; then
-  echo "homeflare hooks: $hook is missing — run 'bun install' in this worktree; skipping" >&2
-  exit 0
+  echo "homeflare hooks: $hook is missing — run 'bun install' in this worktree" >&2
+  exit 1
 fi
 exec bun "$hook" "$(basename "$0")" "$@"
 `;

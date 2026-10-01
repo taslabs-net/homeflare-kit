@@ -1,9 +1,11 @@
 /**
  * How a hook talks to whoever triggered it.
  *
- * ★ EVERY FAILURE PRINTS BOTH COMMANDS — the one that fixes it and the one that skips
- *   it. A hook that exits non-zero and says nothing teaches `--no-verify` as a reflex,
- *   and that switch turns off every check rather than the one that was wrong.
+ * ★ EVERY FAILURE SAYS WHAT FAILED AND THE COMMAND THAT FIXES IT, and nothing else. A hook
+ *   that exits non-zero and says nothing leaves the contributor guessing, and one that also
+ *   offers a way round it teaches the way round as a reflex. Hooks fail closed (Tim,
+ *   2026-10-01): a gate that cannot run is fixed, never skipped, so there is no bypass to
+ *   print — fix the cause.
  *
  * ⚠️ Output goes to STDERR. Git hooks share stdout with porcelain in some flows, and a
  *   hook that writes there can corrupt what a caller is parsing.
@@ -11,11 +13,6 @@
 
 /** The two hooks this package implements. Named exactly as the git hook files are. */
 export type Hook = 'pre-commit' | 'pre-push';
-
-const BYPASS: Record<Hook, string> = {
-  'pre-commit': 'git commit --no-verify',
-  'pre-push': 'git push --no-verify',
-};
 
 /**
  * 🔴 A GIT HOOK EXPORTS `GIT_DIR` AND `GIT_INDEX_FILE`, AND EVERYTHING IT SPAWNS
@@ -130,7 +127,6 @@ export function note(what: string): void {
 /** ⛔ ALWAYS GIVE THE FIX. "lint failed" is a dead end; the command that repairs it is not. */
 export function fail(hook: Hook, what: string, fix: string): never {
   line(`\n✗ ${hook}: ${what}`);
-  line(`  fix:    ${fix}`);
-  line(`  bypass: ${BYPASS[hook]}  — CI still runs the real gate\n`);
+  line(`  fix:    ${fix}\n`);
   process.exit(1);
 }

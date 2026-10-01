@@ -2,8 +2,8 @@
  * Shared helpers for the git hooks.
  *
  * ★ EVERY HOOK SCRIPT IS ONE CONCERN AND SAYS WHY IT FAILED. A hook that prints a bare
- *   non-zero exit teaches contributors to reach for `--no-verify`, which disables the
- *   whole gate rather than the one check that was wrong.
+ *   non-zero exit leaves the contributor guessing. Hooks fail closed — there is no way round
+ *   one — so the message is the whole product: what failed, and the command that fixes it.
  */
 
 /** Files staged for commit, excluding deletions (nothing to check in a deleted file). */

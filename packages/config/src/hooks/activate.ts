@@ -25,9 +25,9 @@ export type Activation = {
 };
 
 /**
- * ⚠️ CI IS SKIPPED ON PURPOSE. Hooks are a local convenience and CI runs the real gate; a
+ * ⚠️ CI IS SKIPPED ON PURPOSE. CI runs the whole gate itself, and hooks fail closed: a
  *   runner with hooks on would run them on the commits it makes itself (a release's
- *   "Version Packages" commit) on a machine that may have no gitleaks.
+ *   "Version Packages" commit) on a machine that may have no gitleaks, and fail those.
  */
 function inCi(env: Readonly<Record<string, string | undefined>>): boolean {
   const ci = env['CI'];

@@ -2,8 +2,8 @@
  * Guards the git hooks.
  *
  * ★ WHY TEST HOOKS. They run on a contributor's machine, not in CI, so a broken one
- *   fails in the place nobody is watching — and the usual response to a confusing hook
- *   failure is `--no-verify`, which disables the SECRET scan along with it.
+ *   fails in the place nobody is watching. Hooks fail closed, so a broken one does not
+ *   just misreport: it blocks every commit until someone fixes the cause.
  */
 import { describe, expect, test } from 'bun:test';
 

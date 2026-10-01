@@ -5,9 +5,11 @@
  *   format and lint — and is measured in hundreds of milliseconds, so it can run on every
  *   commit without anyone resenting it. `pre-push` runs the repository's own `check`
  *   narrowed to what the push can affect (push-plan.ts): seconds, once per push.
- * ⚠️ NEITHER IS A GATE. Both are skippable with `--no-verify`, and a worktree has them only
- *   once `bun install` has run there. The required checks on `main` stay the gate — CI
- *   runs the whole `check`, every test, the build and the smoke test on every pull request.
+ * ⛔ BOTH FAIL CLOSED (Tim, 2026-10-01). A hook that cannot do its job — no `node_modules`, no
+ *   gitleaks, a push it cannot check — stops the commit or push and names the fix. A gate
+ *   that cannot run is fixed, never skipped, and no message here offers a way round it.
+ *   CI is still the full gate: it runs the whole `check`, every test, the build and the
+ *   smoke test on every pull request.
  */
 import { existsSync } from 'node:fs';
 import { resolveOxfmtConfig } from './oxfmt-config.ts';
@@ -37,25 +39,29 @@ function matchedFileCount(stdout: string): number | null {
  *   the unformatted bytes — CI then fails on a file that reads as correct locally.
  */
 /**
- * Has `bun install` run in this worktree?
+ * Has `bun install` run in this worktree? Fails the hook if not.
  *
- * ⚠️ WITHOUT IT, SKIP — LOUDLY — RATHER THAN IMPROVISE. A fresh worktree now runs its hooks
+ * ⛔ WITHOUT IT, FAIL — NEVER SKIP, NEVER IMPROVISE. A fresh worktree runs its hooks
  *   (activate.ts), and in the repo that HOSTS this package they are reached by workspace
  *   path, not through node_modules. There `tool()` would fall back to `bunx`, fetching an
  *   unpinned oxfmt mid-commit, and a pre-push lane would die on "command not found". The
- *   wrapper every other repo commits makes the same call one step earlier (install.ts).
+ *   alternative, letting the commit through unchecked, is a gate that quietly is not one.
+ *   The wrapper every other repo commits makes the same call one step earlier (install.ts).
  */
-function installed(root: string, hook: 'pre-commit' | 'pre-push'): boolean {
-  if (existsSync(`${root}/node_modules`)) return true;
-  note(`${hook}: no node_modules in this worktree — run 'bun install'; skipping the rest`);
-  return false;
+function requireInstalled(root: string, hook: 'pre-commit' | 'pre-push'): void {
+  if (existsSync(`${root}/node_modules`)) return;
+  fail(
+    hook,
+    'no node_modules in this worktree, so the checks cannot run',
+    "run 'bun install' in this worktree",
+  );
 }
 
 export async function preCommit(root: string): Promise<void> {
   // ⛔ SECRETS FIRST, before anything can rewrite or pass — see secrets.ts. It needs only the
   //   gitleaks binary, so it runs even in a worktree nobody has installed yet.
   await scanStagedSecrets();
-  if (!installed(root, 'pre-commit')) return;
+  requireInstalled(root, 'pre-commit');
 
   const { formattable, code, partial } = await staged();
 
@@ -176,7 +182,7 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
     note('pre-push: no `check` script declared in package.json; nothing to run');
     return;
   }
-  if (!installed(root, 'pre-push')) return;
+  requireInstalled(root, 'pre-push');
 
   const scope = await pushScope(root, args[0] ?? 'origin', parsePushRefs(stdin));
   if (scope.kind === 'empty') {
@@ -184,14 +190,18 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
     return;
   }
   if (scope.kind === 'elsewhere') {
-    // ⛔ NOT A PASS, AND IT DOES NOT SAY ONE. The working tree is another commit; running the
-    //   lanes would certify content nobody checked. Failing would teach `--no-verify` for an
-    //   ordinary push, so it says what it did not do, and CI checks the ref.
-    note(`pre-push: ${scope.why} — the working tree is not what is being pushed`);
-    note(
-      '  NOT CHECKED here; CI checks it. To check it locally, check it out and push from there.',
+    // ⛔ IT CANNOT CHECK THIS PUSH, SO IT FAILS (Tim, 2026-10-01). The working tree is another
+    //   commit; running the lanes would certify content nobody checked, and reporting "not
+    //   checked" while exiting 0 let exactly that content through. A gate that cannot run is
+    //   fixed, never skipped: the fix is to push from a checkout of the ref.
+    const names = scope.refs.map((ref) => ref.replace(/^refs\/heads\//, ''));
+    fail(
+      'pre-push',
+      `${scope.why} — the working tree is not what is being pushed, so nothing here can check it`,
+      names.length === 1
+        ? `check out ${names[0] ?? 'the ref'} and push from there`
+        : `check out each of ${names.join(', ')} and push it from there, one at a time`,
     );
-    return;
   }
   let base: string | undefined;
   if (scope.kind === 'unscoped') {

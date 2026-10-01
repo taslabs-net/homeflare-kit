@@ -35,8 +35,11 @@ export type PushScope =
     }
   /** No usable base: run every lane, tests in full. */
   | { readonly kind: 'unscoped'; readonly why: string }
-  /** The pushed commit is not what is checked out, so the working tree cannot vouch for it. */
-  | { readonly kind: 'elsewhere'; readonly why: string };
+  /**
+   * The pushed commit is not what is checked out, so the working tree cannot vouch for it.
+   * `refs` are the local refs being pushed, so the caller can name the one to check out.
+   */
+  | { readonly kind: 'elsewhere'; readonly why: string; readonly refs: readonly string[] };
 
 /** git's "no such ref" sentinel — 40 zeros (64 under SHA-256). */
 const ZERO = /^0+$/;
@@ -53,6 +56,18 @@ export function parsePushRefs(stdin: string): readonly PushRef[] {
 }
 
 const short = (sha: string): string => sha.slice(0, 9);
+
+/**
+ * The commit a pushed object names.
+ * 🔴 AN ANNOTATED TAG'S SHA IS THE TAG OBJECT'S, NOT ITS COMMIT'S. Measured 2026-10-01 on git
+ *   2.47.3: `git push origin v1` for an annotated tag at `HEAD` writes the TAG's sha on stdin,
+ *   which never equals `rev-parse HEAD`. Compared raw, that push was `elsewhere` — harmless
+ *   while that only printed a note, but now that `elsewhere` FAILS it would stop a push that
+ *   `git checkout v1` could never fix. Peeling it makes "check out the ref" achievable.
+ */
+async function commitOf(root: string, sha: string): Promise<string> {
+  return (await out(root, ['rev-parse', '--verify', '--quiet', `${sha}^{commit}`])) ?? sha;
+}
 
 async function ok(root: string, args: readonly string[]): Promise<boolean> {
   return (await probe(['git', '-C', root, ...args])).code === 0;
@@ -117,8 +132,9 @@ async function baseFor(
  *   in review 2026-09-23 and reproduced: `git push origin broken` from a clean `main`
  *   measured the right files, then ran `bun test --changed` against `main`'s tree, found
  *   nothing, and printed "passed". A ref that is not checked out now comes back
- *   `elsewhere`, which the caller reports as NOT CHECKED — never as a pass. (The old
- *   whole-`check` hook had the same blind spot; it just ran unrelated tests while in it.)
+ *   `elsewhere`, which the caller FAILS on, naming the ref to check out — never a pass, and
+ *   no longer a note followed by exit 0. (The old whole-`check` hook had the same blind spot;
+ *   it just ran unrelated tests while in it.)
  * ⚠️ WITH SEVERAL REFS, THE ONE AT `HEAD` IS MEASURED and the rest are named as unchecked.
  */
 export async function pushScope(
@@ -131,20 +147,30 @@ export async function pushScope(
     return { kind: 'empty', why: 'this push only deletes refs' };
   }
   const head = await out(root, ['rev-parse', 'HEAD']);
-  const atHead = pushed.find((ref) => ref.localSha === head);
+  let atHead: PushRef | undefined;
+  for (const candidate of pushed) {
+    if (head !== undefined && (await commitOf(root, candidate.localSha)) === head) {
+      atHead = candidate;
+      break;
+    }
+  }
   const others = pushed.filter((ref) => ref !== atHead).map((ref) => ref.localRef);
   if (pushed.length > 0 && atHead === undefined) {
     return {
       kind: 'elsewhere',
       why: `pushing ${others.join(', ')}, but the checkout is at ${short(head ?? '?')}`,
+      refs: others,
     };
   }
-  const ref = atHead ?? {
-    localRef: 'HEAD',
-    localSha: head ?? 'HEAD',
-    remoteRef: '',
-    remoteSha: '0'.repeat(40),
-  };
+  // ★ `localSha` becomes the peeled commit, so an annotated tag is measured as its commit.
+  const ref = atHead
+    ? { ...atHead, localSha: head ?? atHead.localSha }
+    : {
+        localRef: 'HEAD',
+        localSha: head ?? 'HEAD',
+        remoteRef: '',
+        remoteSha: '0'.repeat(40),
+      };
   const found = await baseFor(root, remote, ref);
   const also = others.length > 0 ? `; ${others.join(', ')} not checked here` : '';
   if (!('base' in found)) return { kind: 'unscoped', why: `${found.why}${also}` };
