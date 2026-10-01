@@ -13,6 +13,7 @@ import {
   PostgresSchemaCreateVanished,
   PostgresSchemaDrift,
   PostgresSchemaDropNotEmptyError,
+  PostgresSchemaExistsRefused,
   PostgresSchemaOwnerMissing,
   PostgresSchemaWrongDatabase,
 } from './schema-errors.ts';
@@ -61,14 +62,14 @@ describe('the current_database() proof', () => {
 });
 
 describe('reconcile: greenfield', () => {
-  test('issues exactly one CREATE SCHEMA IF NOT EXISTS with an AUTHORIZATION clause', async () => {
+  test('issues exactly one CREATE SCHEMA with an AUTHORIZATION clause', async () => {
     const fake = makeFakeSql({ roles: ['tim'] });
     const attrs = await run(reconcileWithClient(fake, baseProps));
     expect(attrs.name).toBe('ledger');
     expect(attrs.owner).toBe('tim');
     const creates = fake.statements.filter((s) => s.text.startsWith('CREATE SCHEMA'));
     expect(creates.length).toBe(1);
-    expect(creates[0]?.text).toBe('CREATE SCHEMA IF NOT EXISTS "ledger" AUTHORIZATION "tim"');
+    expect(creates[0]?.text).toBe('CREATE SCHEMA "ledger" AUTHORIZATION "tim"');
   });
 
   test('no owner clause falls back to the executing role', async () => {
@@ -76,7 +77,7 @@ describe('reconcile: greenfield', () => {
     const attrs = await run(reconcileWithClient(fake, { name: 'plain', database: 'postgres' }));
     expect(attrs.owner).toBe('postgres');
     const create = fake.statements.find((s) => s.text.startsWith('CREATE SCHEMA'));
-    expect(create?.text).toBe('CREATE SCHEMA IF NOT EXISTS "plain"');
+    expect(create?.text).toBe('CREATE SCHEMA "plain"');
   });
 
   test('declared comment is issued with a single COMMENT ON SCHEMA statement', async () => {
@@ -85,7 +86,7 @@ describe('reconcile: greenfield', () => {
     expect(attrs.comment).toBe('seat ledger');
     const comments = fake.statements.filter((s) => s.text.startsWith('COMMENT ON SCHEMA'));
     expect(comments.length).toBe(1);
-    expect(comments[0]?.text).toBe('COMMENT ON SCHEMA "ledger" IS \'seat ledger\'');
+    expect(comments[0]?.text).toBe('COMMENT ON SCHEMA "ledger" IS E\'seat ledger\'');
   });
 
   test('a declared empty comment IS "no comment": no statement issued, no drift later', async () => {
@@ -93,13 +94,13 @@ describe('reconcile: greenfield', () => {
     const attrs = await run(reconcileWithClient(fake, { ...baseProps, comment: '' }));
     expect(attrs.comment).toBeNull();
     expect(fake.statements.some((s) => s.text.startsWith('COMMENT ON SCHEMA'))).toBe(false);
-    // Postgres stores IS '' as NULL, so a second plan must stay a noop — the permanent drift
+    // Postgres stores IS E'' as NULL, so a second plan must stay a noop — the permanent drift
     // loop an unnormalized '' used to cause. Reads (the current_database() and schema-row
     // SELECT proofs) always run, so compare write statements only.
     const writeCount = () =>
       fake.statements.filter((s) => !/^\s*(SELECT|WITH)\b/i.test(s.text)).length;
     const writesBefore = writeCount();
-    await run(reconcileWithClient(fake, { ...baseProps, comment: '' }));
+    await run(reconcileWithClient(fake, { ...baseProps, comment: '' }, attrs));
     expect(writeCount()).toBe(writesBefore);
   });
 
@@ -119,23 +120,21 @@ describe('reconcile: greenfield', () => {
   test('a concurrent creator that won the IF NOT EXISTS race is refused, not adopted', async () => {
     const fake = makeFakeSql({ roles: ['tim'], raceNextCreateSchema: 'someone-else' });
     const error = await fails(reconcileWithClient(fake, baseProps));
-    expect(error).toBeInstanceOf(PostgresSchemaDrift);
-    expect((error as PostgresSchemaDrift).prop).toBe('owner');
-    expect((error as PostgresSchemaDrift).live).toBe('someone-else');
+    expect(error._tag).toBe('PostgresSchemaExistsRefused');
   });
 
   test('hostile names are quoted exactly: embedded quote and a hyphen', async () => {
     const fake = makeFakeSql({ roles: ['tim'] });
     await run(reconcileWithClient(fake, { name: 'a"b-c', database: 'postgres', owner: 'tim' }));
     const create = fake.statements.find((s) => s.text.startsWith('CREATE SCHEMA'));
-    expect(create?.text).toBe('CREATE SCHEMA IF NOT EXISTS "a""b-c" AUTHORIZATION "tim"');
+    expect(create?.text).toBe('CREATE SCHEMA "a""b-c" AUTHORIZATION "tim"');
   });
 });
 
 describe('reconcile: already present', () => {
-  test('no drift records zero write statements', async () => {
+  test('adopted output with no drift records zero write statements', async () => {
     const fake = makeFakeSql({ roles: ['tim'], schemas: [liveRow()] });
-    const attrs = await run(reconcileWithClient(fake, baseProps));
+    const attrs = await run(reconcileWithClient(fake, baseProps, liveRow()));
     expect(attrs).toEqual(liveRow());
     expect(
       fake.statements.every(
@@ -149,7 +148,7 @@ describe('reconcile: already present', () => {
       roles: ['tim', 'someone-else'],
       schemas: [liveRow({ owner: 'someone-else' })],
     });
-    const error = await fails(reconcileWithClient(fake, baseProps));
+    const error = await fails(reconcileWithClient(fake, baseProps, liveRow()));
     expect(error).toBeInstanceOf(PostgresSchemaDrift);
     expect((error as PostgresSchemaDrift).prop).toBe('owner');
     expect(fake.statements.some((s) => s.text.startsWith('ALTER'))).toBe(false);
@@ -157,17 +156,27 @@ describe('reconcile: already present', () => {
 
   test('a comment mismatch fails with the typed drift tag naming "comment"', async () => {
     const fake = makeFakeSql({ roles: ['tim'], schemas: [liveRow({ comment: 'old comment' })] });
-    const error = await fails(reconcileWithClient(fake, { ...baseProps, comment: 'new comment' }));
+    const error = await fails(
+      reconcileWithClient(fake, { ...baseProps, comment: 'new comment' }, liveRow()),
+    );
     expect(error).toBeInstanceOf(PostgresSchemaDrift);
     expect((error as PostgresSchemaDrift).prop).toBe('comment');
   });
 
   test('a missing comment declaration does not drift against an existing comment', async () => {
     const fake = makeFakeSql({ roles: ['tim'], schemas: [liveRow({ comment: 'legacy' })] });
-    const attrs = await run(reconcileWithClient(fake, baseProps));
+    const attrs = await run(reconcileWithClient(fake, baseProps, liveRow()));
     expect(attrs.comment).toBe('legacy');
     expect(fake.statements.some((s) => s.text.startsWith('COMMENT'))).toBe(false);
   });
+});
+
+test('pre-existing same-owner schema without output is refused', async () => {
+  const fake = makeFakeSql({ schemas: [liveRow()], schemasWithRelations: ['ledger'] });
+  const error = await fails(reconcileWithClient(fake, baseProps));
+  expect(error).toBeInstanceOf(PostgresSchemaExistsRefused);
+  expect(fake.schemas.get('ledger')).toEqual(liveRow());
+  expect(fake.relationsIn.has('ledger')).toBe(true);
 });
 
 describe('read', () => {

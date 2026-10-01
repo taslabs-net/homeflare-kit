@@ -13,7 +13,7 @@ const ok = (stdout: string) => Promise.resolve({ code: 0, stdout, stderr: '' });
 
 describe('psql executor', () => {
   test('inlines string params as literals and refuses non-strings', () => {
-    expect(inlineParams('SELECT $1, $2', ["it's", 'b'])).toBe("SELECT 'it''s', 'b'");
+    expect(inlineParams('SELECT $1, $2', ["it's", 'b'])).toBe("SELECT E'it''s', E'b'");
     expect(() => inlineParams('SELECT $1', [5])).toThrow('must be a string');
   });
 
@@ -29,7 +29,7 @@ describe('psql executor', () => {
     expect(rows).toEqual([{ oid: 16400, name: 'x' }]);
     expect(calls[0]?.argv.slice(0, 1)).toEqual(['psql']);
     expect(calls[0]?.stdin).toContain('json_agg');
-    expect(calls[0]?.stdin).toContain("datname = 'x'");
+    expect(calls[0]?.stdin).toContain("datname = E'x'");
   });
 
   test('a WITH-led row query is wrapped in json_agg too, not discarded as a write', async () => {
@@ -84,7 +84,7 @@ describe('psql executor', () => {
     expect(stdin).toContain('SCRAM-SHA-256$');
     expect(stdin).not.toContain(placeholder);
     expect(rendered).not.toContain(placeholder);
-    expect(rendered).not.toContain(`PASSWORD '${placeholder.slice(0, 3)}`);
+    expect(rendered).not.toContain(`PASSWORD E'${placeholder.slice(0, 3)}`);
   });
 
   test('a runner that never reached psql is a ConnectionError', async () => {

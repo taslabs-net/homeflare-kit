@@ -3,9 +3,9 @@
  * `Postgres.Schema` declaration.
  *
  * ⛔ OWNER BEFORE COMMENT. `reconcile` calls `assertOwner` on the create re-read before any
- *   `COMMENT ON SCHEMA`. A concurrent creator can win `IF NOT EXISTS` (the `CREATE` then does
- *   nothing). The kit role is superuser, so commenting first rewrites their schema, and the
- *   later drift failure does not roll that write back — the two statements are not one
+ *   `COMMENT ON SCHEMA`. Measured before the 2026-10-01 fix: a concurrent creator could win
+ *   `IF NOT EXISTS` (the `CREATE` did nothing). Plain CREATE now refuses that race. The kit role
+ *   is superuser, so commenting first rewrites their schema, and the later drift failure does not roll that write back — the two statements are not one
  *   transaction.
  * ⛔ AN OMITTED `owner` IS `current_user`, NOT "DON'T ASSERT". A fresh `CREATE SCHEMA` without
  *   `AUTHORIZATION` is owned by the role running it. Skipping the comparison when the prop is

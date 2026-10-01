@@ -34,32 +34,17 @@ import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
-import {
-  type PostgresSchemaAttributes,
-  type PostgresSchemaProps,
-  normalizedComment,
-} from './schema-attrs.ts';
+import { type PostgresSchemaAttributes, type PostgresSchemaProps } from './schema-attrs.ts';
 import { schemaNameByteRefusal } from './schema-attrs.ts';
 import { diffPostgresSchema } from './schema-diff.ts';
-import { assertDatabase, assertLive, assertOwner } from './schema-assert.ts';
-import {
-  buildCommentSchemaSql,
-  buildCreateSchemaSql,
-  currentUser,
-  selectSchema,
-} from './schema-sql.ts';
-import { databaseExists, roleExists } from './database-sql.ts';
+import { selectSchema } from './schema-sql.ts';
+import { databaseExists } from './database-sql.ts';
+import { reconcileWithClient } from './schema-reconcile.ts';
+import { assertSchemaIdentity, assertSchemaTarget } from './schema-identity.ts';
 import { deleteWithClient, dropWithClient } from './schema-delete.ts';
 import type { PgExecutor } from './database-sql.ts';
 import { type PostgresConnection, withPg } from './connection.ts';
-import {
-  PostgresSchemaCreateVanished,
-  type PostgresSchemaDrift,
-  PostgresSchemaNameRefused,
-  PostgresSchemaOwnerMissing,
-  PostgresSchemaWrongDatabase,
-} from './schema-errors.ts';
+import { PostgresSchemaNameRefused, PostgresSchemaWrongDatabase } from './schema-errors.ts';
 
 export interface PostgresSchema extends Resource<
   'Postgres.Schema',
@@ -80,62 +65,11 @@ export const isPostgresSchema = (value: unknown): value is PostgresSchema =>
   value !== null &&
   (value as { Type?: unknown }).Type === 'Postgres.Schema';
 
-/**
- * The core of `reconcile`, against any {@link PgExecutor} — the real pooled client through
- * `withPg`, or `fake-sql.ts`'s recording fake in tests.
- */
-export const reconcileWithClient = (
-  pg: PgExecutor,
-  props: PostgresSchemaProps,
-): Effect.Effect<
-  PostgresSchemaAttributes,
-  | PostgresSchemaWrongDatabase
-  | PostgresSchemaOwnerMissing
-  | PostgresSchemaDrift
-  | PostgresSchemaCreateVanished
-  | SqlError
-> =>
-  Effect.gen(function* () {
-    yield* assertDatabase(props, pg);
-    // Only an omitted owner needs the session role: a declared owner is the comparison itself.
-    const executingRole = props.owner !== undefined ? props.owner : yield* currentUser(pg);
-    const observed = yield* selectSchema(pg, props.name);
-    if (observed === undefined) {
-      if (props.owner !== undefined) {
-        const ownerPresent = yield* roleExists(pg, props.owner);
-        if (!ownerPresent) {
-          return yield* Effect.fail(
-            new PostgresSchemaOwnerMissing({ schema: props.name, owner: props.owner }),
-          );
-        }
-      }
-      yield* pg.unsafe(buildCreateSchemaSql(props)).pipe(Effect.asVoid);
-      // Never trust the write's own report (S10): re-read what the server actually stored.
-      const created = yield* selectSchema(pg, props.name);
-      if (created === undefined) {
-        return yield* Effect.fail(new PostgresSchemaCreateVanished({ schema: props.name }));
-      }
-      // Owner before COMMENT ON (schema-assert.ts): a race winner is refused here, so their
-      // schema is never commented.
-      yield* assertOwner(props, created, executingRole);
-      const comment = normalizedComment(props.comment);
-      if (comment !== undefined && comment !== (created.comment ?? undefined)) {
-        yield* pg.unsafe(buildCommentSchemaSql(props.name, comment)).pipe(Effect.asVoid);
-        const commented = yield* selectSchema(pg, props.name);
-        if (commented === undefined) {
-          return yield* Effect.fail(new PostgresSchemaCreateVanished({ schema: props.name }));
-        }
-        return yield* assertLive(props, commented, executingRole);
-      }
-      return yield* assertLive(props, created, executingRole);
-    }
-    return yield* assertLive(props, observed, executingRole);
-  });
-
 /** The core of `read`: one bound `SELECT`, no ownership branding. */
 export const readWithClient = (pg: PgExecutor, name: string) => selectSchema(pg, name);
 
 export { diffPostgresSchema } from './schema-diff.ts';
+export { reconcileWithClient } from './schema-reconcile.ts';
 export { deleteWithClient, dropWithClient };
 
 /** The five lifecycle handlers. Exported on its own so a test drives the real implementation. */
@@ -164,12 +98,13 @@ export const postgresSchemaHandlers = PostgresSchema.Provider.of({
           }),
         );
       }
+      if (live !== undefined && output !== undefined) yield* assertSchemaIdentity(live, output);
       return live === undefined ? undefined : Unowned(live);
     }),
 
   diff: ({ news, output, olds }) => diffPostgresSchema(news, output, olds),
 
-  reconcile: ({ news }) =>
+  reconcile: ({ news, output }) =>
     Effect.gen(function* () {
       const nameRefusal = schemaNameByteRefusal(news.name);
       if (nameRefusal !== undefined) {
@@ -177,7 +112,8 @@ export const postgresSchemaHandlers = PostgresSchema.Provider.of({
           new PostgresSchemaNameRefused({ name: news.name, ...nameRefusal }),
         );
       }
-      return yield* withPg((pg) => reconcileWithClient(pg, news), news.database);
+      yield* assertSchemaTarget(news, output);
+      return yield* withPg((pg) => reconcileWithClient(pg, news, output), news.database);
     }),
 
   delete: ({ olds, output }) =>

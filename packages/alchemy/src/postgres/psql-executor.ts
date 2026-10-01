@@ -75,7 +75,10 @@ const wrapRows = (sql: string): string =>
  * inlines the value (Postgres has no bind form), and the runner turns the first 40 characters
  * of that statement into `operation` and the full `stderr` into `message`. */
 export const redactPasswordLiterals = (text: string): string =>
-  text.replace(/PASSWORD\s+'(?:[^']|'')*'/gi, "PASSWORD '[redacted]'");
+  text.replace(
+    /PASSWORD\s+(?:E'(?:[^'\\]|\\[\s\S]|'')*'|'(?:[^']|'')*')/gi,
+    "PASSWORD '[redacted]'",
+  );
 
 const failure = (operation: string, result: PsqlResult): SqlError => {
   const state = /ERROR:\s+([0-9A-Z]{5}):/.exec(result.stderr)?.[1];

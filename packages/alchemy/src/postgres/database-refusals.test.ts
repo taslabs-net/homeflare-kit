@@ -50,12 +50,12 @@ describe('quoting', () => {
   });
 
   test('quoteStringLiteral doubles an embedded single quote', () => {
-    expect(quoteStringLiteral("en_US.UTF-8'; DROP")).toBe("'en_US.UTF-8''; DROP'");
+    expect(quoteStringLiteral("en_US.UTF-8'; DROP")).toBe("E'en_US.UTF-8''; DROP'");
   });
 
   test('buildCreateDatabaseSql never string-concatenates an unescaped value', () => {
     const sql = buildCreateDatabaseSql({ name: 'db"1', owner: 'ro"le', encoding: "UT'F8" });
-    expect(sql).toBe('CREATE DATABASE "db""1" WITH OWNER "ro""le" ENCODING \'UT\'\'F8\'');
+    expect(sql).toBe('CREATE DATABASE "db""1" WITH OWNER "ro""le" ENCODING E\'UT\'\'F8\'');
   });
 });
 

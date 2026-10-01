@@ -75,7 +75,7 @@ describe('reconcile: greenfield', () => {
     const attrs = await run(reconcileWithClient(fake, props));
     expect(attrs.validUntil).toBe('2027-01-01T00:00:00Z');
     expect(startingWith(fake, 'CREATE ROLE')[0]?.text).toBe(
-      'CREATE ROLE "seat-alice" WITH LOGIN INHERIT CONNECTION LIMIT 10 VALID UNTIL \'2027-01-01T00:00:00Z\'',
+      'CREATE ROLE "seat-alice" WITH LOGIN INHERIT CONNECTION LIMIT 10 VALID UNTIL E\'2027-01-01T00:00:00Z\'',
     );
   });
 
@@ -145,7 +145,7 @@ describe('reconcile: already present', () => {
       'ALTER ROLE "seat-observability" WITH NOLOGIN',
       'ALTER ROLE "seat-observability" WITH INHERIT',
       'ALTER ROLE "seat-observability" WITH CONNECTION LIMIT 10',
-      'ALTER ROLE "seat-observability" WITH VALID UNTIL \'2027-01-01T00:00:00Z\'',
+      'ALTER ROLE "seat-observability" WITH VALID UNTIL E\'2027-01-01T00:00:00Z\'',
     ]);
     expect(attrs.connectionLimit).toBe(10);
   });

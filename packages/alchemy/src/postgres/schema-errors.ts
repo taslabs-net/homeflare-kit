@@ -1,9 +1,7 @@
 /**
  * `Postgres.Schema`'s failures as typed tags, following the `Postgres.Database` pattern (S21).
  *
- * ⛔ NONE OF THESE IS A STATUS-CODE OR MESSAGE MATCH. Every one is raised by this family's own
- *   code from a fact it already checked (a byte count, a live catalog row, a role lookup) —
- *   never from sniffing a driver error's text.
+ * Refusals use checked catalog facts or raw SQLSTATE (42P06 / 2BP01), never driver message text.
  */
 import * as Data from 'effect/Data';
 
@@ -32,7 +30,7 @@ export class PostgresSchemaRenameRefused extends Data.TaggedError('PostgresSchem
   override get message(): string {
     return (
       `Postgres.Schema: the declared name changed from "${this.from}" to "${this.to}". A ` +
-      'rename is refused at plan — this provider never runs ALTER SCHEMA … RENAME. Declare a new ' +
+      'rename is refused during plan or apply — this provider never runs ALTER SCHEMA … RENAME. Declare a new ' +
       'logical id for the new name and remove the old one once its contents have moved.'
     );
   }
@@ -166,7 +164,40 @@ export class PostgresSchemaDatabaseRefused extends Data.TaggedError(
   }
 }
 
+/** No persisted proof: even a same-owner schema needs explicit adoption, including recovery. */
+export class PostgresSchemaExistsRefused extends Data.TaggedError('PostgresSchemaExistsRefused')<{
+  readonly schema: string;
+  readonly database: string;
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Schema "${this.schema}" in "${this.database}" already exists. Re-plan with ` +
+      '--adopt (adopt(true)) to adopt it explicitly; crash recovery also requires adoption. ' +
+      'No existing schema was changed.'
+    );
+  }
+}
+
+/** Reconcile must not replace the oid delete relies on with an out-of-band replacement's oid. */
+export class PostgresSchemaIdentityRefused extends Data.TaggedError(
+  'PostgresSchemaIdentityRefused',
+)<{
+  readonly schema: string;
+  readonly storedOid: number;
+  readonly liveOid: number;
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Schema "${this.schema}": live oid ${String(this.liveOid)} differs from stored oid ` +
+      `${String(this.storedOid)}. The schema was dropped and recreated outside this stack. ` +
+      'Remove stale state and explicitly adopt the replacement before managing it.'
+    );
+  }
+}
+
 export type PostgresSchemaError =
+  | PostgresSchemaExistsRefused
+  | PostgresSchemaIdentityRefused
   | PostgresSchemaNameRefused
   | PostgresSchemaRenameRefused
   | PostgresSchemaOwnerMissing

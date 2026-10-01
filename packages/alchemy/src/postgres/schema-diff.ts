@@ -11,16 +11,13 @@
  *   declared `cascade: true` and later set to `false` would otherwise keep dropping with
  *   `CASCADE` on every delete, because `delete`'s `olds` are read from those persisted props.
  */
+import { assertSchemaTarget } from './schema-identity.ts';
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Effect from 'effect/Effect';
 import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
 import { normalizedComment, schemaNameByteRefusal } from './schema-attrs.ts';
-import {
-  PostgresSchemaDatabaseRefused,
-  PostgresSchemaNameRefused,
-  PostgresSchemaRenameRefused,
-} from './schema-errors.ts';
+import { PostgresSchemaNameRefused } from './schema-errors.ts';
 
 /** Plan-time only: rename refused, over-long name refused, a database move refused; a `cascade`
  * flip answers `update` so the new prop reaches state, and every other change answers `update`
@@ -33,19 +30,10 @@ export const diffPostgresSchema = (
 ) =>
   Effect.gen(function* () {
     if (output === undefined || !isResolved(news)) return undefined;
-    if (news.name !== output.name) {
-      return yield* Effect.fail(
-        new PostgresSchemaRenameRefused({ from: output.name, to: news.name }),
-      );
-    }
+    yield* assertSchemaTarget(news, output);
     const nameRefusal = schemaNameByteRefusal(news.name);
     if (nameRefusal !== undefined) {
       return yield* Effect.fail(new PostgresSchemaNameRefused({ name: news.name, ...nameRefusal }));
-    }
-    if (news.database !== output.database) {
-      return yield* Effect.fail(
-        new PostgresSchemaDatabaseRefused({ from: output.database, to: news.database }),
-      );
     }
     const comment = normalizedComment(news.comment);
     const changed =

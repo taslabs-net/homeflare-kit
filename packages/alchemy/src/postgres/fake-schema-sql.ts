@@ -9,7 +9,7 @@
  *   answers for the connection it opened — and `schemaIsEmpty` from a seeded relation set.
  */
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import { SqlError, SqlSyntaxError, UnknownError } from 'effect/unstable/sql/SqlError';
 import { parseCommentSchema, parseCreateSchema, parseDropSchema } from './fake-sql-parse.ts';
 import type { PostgresSchemaAttributes } from './schema-attrs.ts';
 
@@ -22,6 +22,7 @@ export interface FakeSchemaState {
   readonly database: string;
   /** What `current_user` answers, and the owner of a `CREATE SCHEMA` without `AUTHORIZATION`. */
   readonly sessionRole: string;
+  readonly standardConformingStrings: boolean;
   /** Remaining swallowed `CREATE SCHEMA`s (the S10 lie). */
   swallowRemaining: number;
   /** Owner a raced `CREATE SCHEMA` stores instead, consumed once. */
@@ -71,24 +72,28 @@ export const applySchemaStatement = <A extends object>(
       state.swallowRemaining -= 1;
       return Effect.succeed([] as unknown as ReadonlyArray<A>);
     }
-    const row = {
-      ...parseCreateSchema(text, state.sessionRole),
-      database: state.database,
-      oid: state.nextOid(),
-    };
+    const parsed = parseCreateSchema(text, state.sessionRole);
     if (state.raceOwner !== undefined) {
-      // A concurrent creator won: our IF NOT EXISTS did nothing, their row is what the re-read
-      // finds.
-      state.schemas.set(row.name, { ...row, owner: state.raceOwner });
+      state.schemas.set(parsed.name, {
+        ...parsed,
+        database: state.database,
+        oid: state.nextOid(),
+        owner: state.raceOwner,
+      });
       state.raceOwner = undefined;
+    }
+    // PG18 CREATE SCHEMA docs: IF NOT EXISTS does nothing, even if the owner differs.
+    if (state.schemas.has(parsed.name)) {
+      if (!text.startsWith('CREATE SCHEMA IF NOT EXISTS'))
+        return Effect.fail(schemaSqlError('42P06'));
     } else {
-      state.schemas.set(row.name, row);
+      state.schemas.set(parsed.name, { ...parsed, database: state.database, oid: state.nextOid() });
     }
     return Effect.succeed([] as unknown as ReadonlyArray<A>);
   }
 
   if (text.startsWith('COMMENT ON SCHEMA')) {
-    const parsed = parseCommentSchema(text);
+    const parsed = parseCommentSchema(text, state.standardConformingStrings);
     const existing = state.schemas.get(parsed.name);
     if (existing === undefined) {
       throw new Error(`fake-sql: COMMENT ON SCHEMA on absent schema "${parsed.name}"`);
@@ -99,6 +104,8 @@ export const applySchemaStatement = <A extends object>(
 
   if (text.startsWith('DROP SCHEMA')) {
     const parsed = parseDropSchema(text);
+    if (!parsed.cascade && state.relationsIn.has(parsed.name))
+      return Effect.fail(schemaSqlError('2BP01'));
     if (parsed.cascade) state.relationsIn.delete(parsed.name);
     state.schemas.delete(parsed.name);
     return Effect.succeed([] as unknown as ReadonlyArray<A>);
@@ -106,3 +113,34 @@ export const applySchemaStatement = <A extends object>(
 
   return undefined;
 };
+
+/** Match the socket/runner SQLSTATE classification, including class 2B as UnknownError. */
+const schemaSqlError = (code: string): SqlError => {
+  const fields = {
+    cause: Object.assign(new Error(code), { code }),
+    message: code,
+    operation: 'schema DDL',
+  };
+  return new SqlError({
+    reason: code.startsWith('42') ? new SqlSyntaxError(fields) : new UnknownError(fields),
+  });
+};
+
+/** REL_18_6 pg_namespace.dat: public exists on bootstrap, owned by pg_database_owner. */
+export const seedSchemas = (
+  rows: readonly PostgresSchemaAttributes[] | undefined,
+  database: string,
+): Map<string, PostgresSchemaAttributes> =>
+  new Map([
+    [
+      'public',
+      {
+        name: 'public',
+        oid: 2200,
+        owner: 'pg_database_owner',
+        comment: 'standard public schema',
+        database,
+      },
+    ],
+    ...(rows?.map((row) => [row.name, row] as const) ?? []),
+  ]);
