@@ -14,6 +14,7 @@
 import { existsSync } from 'node:fs';
 import { resolveOxfmtConfig } from './oxfmt-config.ts';
 import { type Lane, planLanes } from './push-plan.ts';
+import { checkoutFix } from './push-fix.ts';
 import { changesEverything, parsePushRefs, pushScope } from './push-range.ts';
 import { fail, note, ok, run, runCaptured, runLane, tool } from './report.ts';
 import { scanStagedSecrets } from './secrets.ts';
@@ -168,6 +169,7 @@ function describe(lane: Lane): string {
  *
  * ★ `args` ARE GIT'S: the remote name and URL. `stdin` is git's ref list — see
  *   push-range.ts for how the base is chosen and why it never narrows to nothing.
+ * ⛔ A REPO WITH NO `check` SCRIPT FAILS: with nothing to run there is no gate to pass.
  * ⛔ IT DOES NOT CERTIFY WHAT CI WILL SAY. It certifies that `check`'s own lint and type
  *   lanes pass and that every test the pushed files can reach passes. The build, the smoke
  *   test and the unreachable tests are CI's, and the success line says so.
@@ -179,8 +181,13 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
     : {};
   const scripts = pkg.scripts ?? {};
   if (scripts['check'] === undefined) {
-    note('pre-push: no `check` script declared in package.json; nothing to run');
-    return;
+    // ⛔ NO `check` IS NO GATE, SO IT FAILS (Tim, 2026-10-01). It used to say "nothing to run"
+    //   and exit 0, which read as a pass on a repo that had no checks at all.
+    fail(
+      'pre-push',
+      'this repo has no `check` script, so pre-push has nothing to run',
+      'add one to package.json — the lint, type and test lanes CI runs — and push again',
+    );
   }
   requireInstalled(root, 'pre-push');
 
@@ -190,18 +197,12 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
     return;
   }
   if (scope.kind === 'elsewhere') {
-    // ⛔ IT CANNOT CHECK THIS PUSH, SO IT FAILS (Tim, 2026-10-01). The working tree is another
-    //   commit; running the lanes would certify content nobody checked, and reporting "not
-    //   checked" while exiting 0 let exactly that content through. A gate that cannot run is
-    //   fixed, never skipped: the fix is to push from a checkout of the ref.
-    const names = scope.refs.map((ref) => ref.replace(/^refs\/heads\//, ''));
-    fail(
-      'pre-push',
-      `${scope.why} — the working tree is not what is being pushed, so nothing here can check it`,
-      names.length === 1
-        ? `check out ${names[0] ?? 'the ref'} and push from there`
-        : `check out each of ${names.join(', ')} and push it from there, one at a time`,
-    );
+    // ⛔ IT CANNOT CHECK THIS PUSH, SO IT FAILS (Tim, 2026-10-01). A pushed commit is not the
+    //   working tree; running the lanes would certify content nobody checked, and reporting
+    //   "not checked" while exiting 0 let exactly that content through. That holds for ONE
+    //   such ref in a push of several, even with the checked-out one alongside it. A gate
+    //   that cannot run is fixed, never skipped: the fix is a checkout per ref (push-fix.ts).
+    fail('pre-push', scope.why, checkoutFix(scope.refs, scope.here));
   }
   let base: string | undefined;
   if (scope.kind === 'unscoped') {

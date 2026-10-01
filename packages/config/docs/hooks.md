@@ -114,6 +114,16 @@ check that ref out and push from there. It is never reported as passed, and no l
 exits 0 with a note. An annotated tag at `HEAD` counts as checked out: its commit is
 compared, not the tag object.
 
+⛔ **One ref that is not the checkout fails the whole push, even alongside one that is.**
+`git push origin main other-branch` from `main` used to measure `main` and note
+`other-branch` as unchecked, which let it through. Now it fails and names the order:
+`push main on its own, then check out other-branch and push from there`. Two refs that
+are both the checkout, such as `HEAD:a HEAD:b`, are both checked and pass. A deletion is
+not a ref to check.
+
+⛔ **A repo with no `check` script fails the push.** It used to print "nothing to run" and
+exit 0, which read as a pass on a repo with no checks at all. The failure says to add one.
+
 ```ts
 import { problemsInHooks } from '@homeflare/config/hooks';
 

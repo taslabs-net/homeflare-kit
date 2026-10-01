@@ -185,11 +185,22 @@ describe('what a push reports', () => {
     }
   });
 
-  test('is a no-op when the repo declares no check script', async () => {
+  test('a repo that declares no check script FAILS the push — no checks is no gate', async () => {
+    // ⛔ It used to say "nothing to run" and exit 0, which read as a pass on a repo with no
+    //   checks at all. Hooks fail closed (Tim, 2026-10-01).
     await repo.write('package.json', JSON.stringify({ name: 'probe' }));
     const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`);
-    expect(result.code).toBe(0);
-    expect(result.output).toContain('no `check` script');
+    expect(result.code).toBe(1);
+    expect(result.output).toContain('this repo has no `check` script');
+    expect(result.output).toContain('fix:    add one to package.json');
+    expect(result.output).not.toContain('--no-verify');
+  });
+
+  test('a repo with no package.json at all fails the same way', async () => {
+    await rm(join(repo.dir, 'package.json'), { force: true });
+    const result = await push(`refs/heads/feat ${await sha()} refs/heads/feat ${ZERO}`);
+    expect(result.code).toBe(1);
+    expect(result.output).toContain('this repo has no `check` script');
   });
 
   test('strips the GIT_* a real hook exports before running a lane', async () => {

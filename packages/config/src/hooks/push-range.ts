@@ -36,10 +36,16 @@ export type PushScope =
   /** No usable base: run every lane, tests in full. */
   | { readonly kind: 'unscoped'; readonly why: string }
   /**
-   * The pushed commit is not what is checked out, so the working tree cannot vouch for it.
-   * `refs` are the local refs being pushed, so the caller can name the one to check out.
+   * A pushed commit is not what is checked out, so the working tree cannot vouch for it.
+   * `refs` are the pushed refs that are not the checkout, so the caller can name each one to
+   * check out. `here` are the refs that ARE the checkout, non-empty only in a mixed push.
    */
-  | { readonly kind: 'elsewhere'; readonly why: string; readonly refs: readonly string[] };
+  | {
+      readonly kind: 'elsewhere';
+      readonly why: string;
+      readonly refs: readonly string[];
+      readonly here: readonly string[];
+    };
 
 /** git's "no such ref" sentinel — 40 zeros (64 under SHA-256). */
 const ZERO = /^0+$/;
@@ -135,7 +141,10 @@ async function baseFor(
  *   `elsewhere`, which the caller FAILS on, naming the ref to check out — never a pass, and
  *   no longer a note followed by exit 0. (The old whole-`check` hook had the same blind spot;
  *   it just ran unrelated tests while in it.)
- * ⚠️ WITH SEVERAL REFS, THE ONE AT `HEAD` IS MEASURED and the rest are named as unchecked.
+ * ⛔ ONE REF ELSEWHERE FAILS THE WHOLE PUSH, EVEN ALONGSIDE `HEAD` (Tim, 2026-10-01). With
+ *   several refs the one at `HEAD` used to be measured and the rest named as "not checked
+ *   here", which still let an unchecked ref through on the back of a checked one. Every
+ *   ref that is the checkout counts as checked — `HEAD:a HEAD:b` is two refs at one commit.
  */
 export async function pushScope(
   root: string,
@@ -147,21 +156,22 @@ export async function pushScope(
     return { kind: 'empty', why: 'this push only deletes refs' };
   }
   const head = await out(root, ['rev-parse', 'HEAD']);
-  let atHead: PushRef | undefined;
+  const here: PushRef[] = [];
+  const there: PushRef[] = [];
   for (const candidate of pushed) {
-    if (head !== undefined && (await commitOf(root, candidate.localSha)) === head) {
-      atHead = candidate;
-      break;
-    }
+    const checkedOut = head !== undefined && (await commitOf(root, candidate.localSha)) === head;
+    (checkedOut ? here : there).push(candidate);
   }
-  const others = pushed.filter((ref) => ref !== atHead).map((ref) => ref.localRef);
-  if (pushed.length > 0 && atHead === undefined) {
-    return {
-      kind: 'elsewhere',
-      why: `pushing ${others.join(', ')}, but the checkout is at ${short(head ?? '?')}`,
-      refs: others,
-    };
+  if (there.length > 0) {
+    const refs = there.map((ref) => ref.localRef);
+    const at = `the checkout is at ${short(head ?? '?')}`;
+    const why =
+      here.length === 0
+        ? `pushing ${refs.join(', ')}, but ${at} — the working tree is not what is being pushed, so nothing here can check it`
+        : `pushing ${here.map((ref) => ref.localRef).join(', ')} together with ${refs.join(', ')}, but ${at}, which does not hold ${refs.join(', ')}, so nothing here can check ${refs.length === 1 ? 'it' : 'them'}`;
+    return { kind: 'elsewhere', why, refs, here: here.map((ref) => ref.localRef) };
   }
+  const atHead = here[0];
   // ★ `localSha` becomes the peeled commit, so an annotated tag is measured as its commit.
   const ref = atHead
     ? { ...atHead, localSha: head ?? atHead.localSha }
@@ -172,8 +182,7 @@ export async function pushScope(
         remoteSha: '0'.repeat(40),
       };
   const found = await baseFor(root, remote, ref);
-  const also = others.length > 0 ? `; ${others.join(', ')} not checked here` : '';
-  if (!('base' in found)) return { kind: 'unscoped', why: `${found.why}${also}` };
+  if (!('base' in found)) return { kind: 'unscoped', why: found.why };
 
   const diff = await probe([
     'git',
@@ -187,8 +196,8 @@ export async function pushScope(
   ]);
   if (diff.code !== 0) return { kind: 'unscoped', why: `git diff ${short(found.base)} failed` };
   const changed = diff.stdout.split('\0').filter((path) => path !== '');
-  if (changed.length === 0) return { kind: 'empty', why: `no file differs ${found.why}${also}` };
-  return { kind: 'scoped', base: found.base, changed, why: `${found.why}${also}` };
+  if (changed.length === 0) return { kind: 'empty', why: `no file differs ${found.why}` };
+  return { kind: 'scoped', base: found.base, changed, why: found.why };
 }
 
 /**

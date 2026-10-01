@@ -6,6 +6,9 @@
  *   checkout that makes it checkable, and the checkout has to be possible: that is why an
  *   annotated tag at `HEAD` — whose sha on git's stdin is the TAG object's, not its commit's —
  *   must count as checked out, or the hook would demand something no checkout can satisfy.
+ * ⛔ ONE UNCHECKABLE REF FAILS THE PUSH EVEN ALONGSIDE THE CHECKED-OUT ONE (Tim, 2026-10-01).
+ *   Measuring the ref at `HEAD` and merely noting the rest let an unchecked ref ride through
+ *   on a checked one. Two refs AT `HEAD` are both checked, so that case must still pass.
  */
 import { afterAll, describe, expect, test } from 'bun:test';
 import { type Scratch, scratchRepo } from './hooks-harness.ts';
@@ -69,5 +72,69 @@ describe('several refs, none checked out', () => {
     expect(result.code).toBe(1);
     expect(result.output).toContain('fix:    check out each of a, b and push it from there');
     expect(result.output).not.toContain('CHECK-RAN');
+  });
+});
+
+describe('a mixed push: the checked-out ref together with one that is not', () => {
+  test('fails, naming the checked-out ref to push alone and the other to check out', async () => {
+    const result = await push(
+      `refs/heads/main ${await sha('HEAD')} refs/heads/main ${ZERO}`,
+      `refs/heads/other ${await elsewhere('other')} refs/heads/other ${ZERO}`,
+    );
+
+    expect(result.code).toBe(1);
+    expect(result.output).toContain(
+      'fix:    push main on its own, then check out other and push from there',
+    );
+    expect(result.output).not.toContain('CHECK-RAN');
+    expect(result.output).not.toContain('--no-verify');
+  });
+
+  test('names every ref that is elsewhere, however many', async () => {
+    const result = await push(
+      `refs/heads/main ${await sha('HEAD')} refs/heads/main ${ZERO}`,
+      `refs/heads/a ${await elsewhere('a')} refs/heads/a ${ZERO}`,
+      `refs/heads/b ${await elsewhere('b')} refs/heads/b ${ZERO}`,
+    );
+
+    expect(result.code).toBe(1);
+    expect(result.output).toContain(
+      'fix:    push main on its own, then check out each of a, b and push it from there',
+    );
+  });
+
+  test('an annotated tag at HEAD does not excuse a branch that is elsewhere', async () => {
+    await repo.git('tag', '-a', 'v2', '-m', 'v2');
+    const result = await push(
+      `refs/tags/v2 ${await sha('v2')} refs/tags/v2 ${ZERO}`,
+      `refs/heads/other ${await elsewhere('other')} refs/heads/other ${ZERO}`,
+    );
+
+    expect(result.code).toBe(1);
+    expect(result.output).toContain(
+      'fix:    push refs/tags/v2 on its own, then check out other and push from there',
+    );
+  });
+
+  test('two refs that are BOTH the checkout are both checked, so the push passes', async () => {
+    // ⚠️ The guard against over-failing: `git push origin HEAD:a HEAD:b`, or `--all` with two
+    //   branches at one commit, has two refs and one commit, and nothing is unchecked.
+    const result = await push(
+      `refs/heads/a ${await sha('HEAD')} refs/heads/a ${ZERO}`,
+      `refs/heads/b ${await sha('HEAD')} refs/heads/b ${ZERO}`,
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.output).toContain('CHECK-RAN');
+  });
+
+  test('a deletion alongside the checked-out ref is not a ref to check', async () => {
+    const result = await push(
+      `refs/heads/main ${await sha('HEAD')} refs/heads/main ${ZERO}`,
+      `(delete) ${ZERO} refs/heads/old ${await sha('HEAD')}`,
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.output).toContain('CHECK-RAN');
   });
 });

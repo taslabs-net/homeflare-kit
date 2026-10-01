@@ -112,6 +112,32 @@ describe('pre-push failures', () => {
     }
   });
 
+  test('no check script', async () => {
+    const { repo, head } = await pushRepo('echo ok', true);
+    try {
+      await repo.write('package.json', JSON.stringify({ name: 'probe' }));
+      const stdin = `refs/heads/main ${head} refs/heads/main ${ZERO}\n`;
+      const result = await repo.hook('pre-push', { args: ['nowhere', 'url'], stdin });
+      expectsClosedFailure(result);
+      expect(result.output).toContain('no `check` script');
+    } finally {
+      await repo.remove();
+    }
+  });
+
+  test('a mixed push: the checked-out ref with one that is not', async () => {
+    const { repo, head } = await pushRepo('echo ok', true);
+    try {
+      const other = (await repo.git('commit-tree', '-p', head, '-m', 'x', `${head}^{tree}`)).trim();
+      const stdin =
+        `refs/heads/main ${head} refs/heads/main ${ZERO}\n` +
+        `refs/heads/other ${other} refs/heads/other ${ZERO}\n`;
+      expectsClosedFailure(await repo.hook('pre-push', { args: ['nowhere', 'url'], stdin }));
+    } finally {
+      await repo.remove();
+    }
+  });
+
   test('a ref that is not checked out', async () => {
     const { repo, head } = await pushRepo('echo ok', true);
     try {
