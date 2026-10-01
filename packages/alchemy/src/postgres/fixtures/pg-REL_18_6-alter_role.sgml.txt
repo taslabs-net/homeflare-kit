@@ -1,0 +1,44 @@
+# path: doc/src/sgml/ref/alter_role.sgml
+# blob: 7b0a04bc4637c7c08246e597a9acf4466b467fa2
+# tag: REL_18_6 (commit 724edf9bde9d356724ad384a2e196edc3c9f80f7)
+# fetched: 2026-09-29 via gh api repos/postgres/postgres/contents/...?ref=724edf9bde9d356724ad384a2e196edc3c9f80f7
+# excerpt: the <synopsis> block plus the memberships sentence the GRANT/REVOKE design leans on; blob SHA is the full upstream file
+#
+<synopsis>
+ALTER ROLE <replaceable class="parameter">role_specification</replaceable> [ WITH ] <replaceable class="parameter">option</replaceable> [ ... ]
+
+<phrase>where <replaceable class="parameter">option</replaceable> can be:</phrase>
+
+      SUPERUSER | NOSUPERUSER
+    | CREATEDB | NOCREATEDB
+    | CREATEROLE | NOCREATEROLE
+    | INHERIT | NOINHERIT
+    | LOGIN | NOLOGIN
+    | REPLICATION | NOREPLICATION
+    | BYPASSRLS | NOBYPASSRLS
+    | CONNECTION LIMIT <replaceable class="parameter">connlimit</replaceable>
+    | [ ENCRYPTED ] PASSWORD '<replaceable class="parameter">password</replaceable>' | PASSWORD NULL
+    | VALID UNTIL '<replaceable class="parameter">timestamp</replaceable>'
+
+ALTER ROLE <replaceable class="parameter">name</replaceable> RENAME TO <replaceable>new_name</replaceable>
+
+ALTER ROLE { <replaceable class="parameter">role_specification</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">database_name</replaceable> ] SET <replaceable>configuration_parameter</replaceable> { TO | = } { <replaceable>value</replaceable> | DEFAULT }
+ALTER ROLE { <replaceable class="parameter">role_specification</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">database_name</replaceable> ] SET <replaceable>configuration_parameter</replaceable> FROM CURRENT
+ALTER ROLE { <replaceable class="parameter">role_specification</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">database_name</replaceable> ] RESET <replaceable>configuration_parameter</replaceable>
+ALTER ROLE { <replaceable class="parameter">role_specification</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">database_name</replaceable> ] RESET ALL
+
+<phrase>where <replaceable class="parameter">role_specification</replaceable> can be:</phrase>
+
+    <replaceable class="parameter">role_name</replaceable>
+  | CURRENT_ROLE
+  | CURRENT_USER
+  | SESSION_USER
+</synopsis>
+
+The first variant of this command listed in the synopsis can change
+   many of the role attributes that can be specified in
+   <link linkend="sql-createrole"><command>CREATE ROLE</command></link>.
+   (All the possible attributes are covered,
+   except that there are no options for adding or removing memberships; use
+   <link linkend="sql-grant"><command>GRANT</command></link> and
+   <link linkend="sql-revoke"><command>REVOKE</command></link> for that.)

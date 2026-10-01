@@ -142,6 +142,12 @@ rule; the consuming stack's runner does.
 - `CREATE DATABASE … TEMPLATE "template0"` is the runner default (`template` overrides):
   CT100's `template1` is ParadeDB's and would copy postgis/pg_ivm/paradedb objects. The socket
   path adds no `TEMPLATE` clause, unchanged.
-- Not covered: there is no `Postgres.Role` resource in the kit yet, so the owner role must
-  exist (`PostgresDatabaseOwnerMissing` otherwise). NetBox's 11 lost triggers on `pg_restore`
-  are a restore concern, out of this resource's scope.
+- `Postgres.Role` (`docs/postgres-role.md`) manages the roles themselves — declare the owner
+  role with it before `Postgres.Database` adopts a database it owns. NetBox's 11 lost triggers
+  on `pg_restore` are a restore concern, out of this resource's scope.
+
+`Postgres.Schema` ([postgres-schema.md](./postgres-schema.md)) rides the same two transports —
+`postgresProviders` and `postgresRunnerProviders` both merge its provider alongside
+`Postgres.Database`'s, so one connection serves the family. Schema opens its own declared
+`database` on that connection (`withPg`'s database override) rather than the family's
+maintenance database, proven per statement via `current_database()`.

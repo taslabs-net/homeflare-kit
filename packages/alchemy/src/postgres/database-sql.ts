@@ -28,14 +28,23 @@ import * as Effect from 'effect/Effect';
 import type { PostgresDatabaseAttributes, PostgresDatabaseProps } from './database-attrs.ts';
 
 /** What every function in this file needs from a client — real (`PgClient.PgClient`) or fake
- * (`fake-sql.ts`). Deliberately smaller than `SqlClient`: nothing here ever needs the tagged
- * template, transactions or streaming, because every statement is either bound params through
- * `.unsafe(text, params)` or a hand-escaped literal through `.unsafe(text)`. */
+ * (`fake-sql.ts`). Deliberately smaller than `SqlClient`: nothing here needs the tagged template
+ * or streaming. `transaction` is the one exception, and only `Postgres.Role`'s create uses it:
+ * role DDL commits per statement unless the statements share a transaction, and a `GRANT` that
+ * fails after `CREATE ROLE` would leave a LOGIN role behind. */
 export interface PgExecutor {
   readonly unsafe: <A extends object>(
     sql: string,
     params?: ReadonlyArray<unknown>,
   ) => Effect.Effect<ReadonlyArray<A>, SqlError>;
+  /**
+   * Run `statements` in one transaction. `CREATE ROLE`, `ALTER ROLE` and `GRANT`/`REVOKE` of
+   * membership are transactional (`utility.c@REL_18_6`: those cases do not call
+   * `PreventInTransactionBlock`; `CREATE DATABASE` does). The socket client reserves one
+   * connection (`SqlClient.withTransaction`); the runner sends one `psql` script, because each
+   * `unsafe` call is its own session and would autocommit.
+   */
+  readonly transaction: (statements: readonly string[]) => Effect.Effect<void, SqlError>;
 }
 
 /** Single-token identifier quoting: wrap in `"`, double any embedded `"`. No dot-splitting —
@@ -100,6 +109,22 @@ const ROLE_EXISTS_SQL = 'SELECT 1 AS present FROM pg_roles WHERE rolname = $1';
 export const roleExists = (pg: PgExecutor, role: string): Effect.Effect<boolean, SqlError> =>
   Effect.map(
     pg.unsafe<{ readonly present: number }>(ROLE_EXISTS_SQL, [role]),
+    (rows) => rows.length > 0,
+  );
+
+const DATABASE_EXISTS_SQL = 'SELECT 1 AS present FROM pg_database WHERE datname = $1';
+
+/**
+ * Does one database of the cluster exist? `Postgres.Schema` runs this over the FAMILY
+ * connection (no `withPg` database override) before `read` and `delete`, so a declared
+ * database that does not exist yet answers "schema absent" instead of the transports' untyped
+ * connect failures (`ConnectionError` over psql, `UnknownError` 3D000 over the socket). The
+ * probe targets the maintenance database the family connection already points at, which a
+ * cold plan can always reach.
+ */
+export const databaseExists = (pg: PgExecutor, name: string): Effect.Effect<boolean, SqlError> =>
+  Effect.map(
+    pg.unsafe<{ readonly present: number }>(DATABASE_EXISTS_SQL, [name]),
     (rows) => rows.length > 0,
   );
 

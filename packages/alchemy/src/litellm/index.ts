@@ -39,6 +39,21 @@ export {
   LitellmBudgetUnreadableError,
 } from './budget-errors.ts';
 export {
+  LiteLLMCredential,
+  LiteLLMCredentialProvider,
+  isLiteLLMCredential,
+  type CredentialAttributes,
+  type CredentialError,
+  type CredentialProps,
+} from './credential.ts';
+export {
+  LitellmCredentialAbsentAfterWriteError,
+  LitellmCredentialEnvUnsetError,
+  LitellmCredentialInvalidError,
+  LitellmCredentialNotConvergedError,
+  LitellmCredentialUnreadableError,
+} from './credential-errors.ts';
+export {
   LiteLLMMCPServer,
   LiteLLMMCPServerProvider,
   isLiteLLMMCPServer,

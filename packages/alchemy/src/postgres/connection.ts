@@ -77,20 +77,45 @@ const isRunner = (c: PostgresConnectionConfig | PostgresRunnerConfig): c is Post
  * operation — never once per statement — so a reconcile that runs a `SELECT`, then a `CREATE`,
  * then a re-read shares one pool and closes it once, while a plan-only `read` still opens and
  * closes its own.
+ *
+ * `database` overrides which database of the SAME cluster the pool opens — the schema
+ * resource's declared `database`. The family connection is pointed at a maintenance database
+ * (a brand-new database cannot be connected to on a cold plan), so `Postgres.Schema` passes its
+ * declared database here: the runner transport swaps the `psql -d` target, the socket path
+ * swaps the pool's `database`. The swap is proven per statement, not trusted: every read row
+ * carries `current_database()` (`schema-sql.ts`), and reconcile/drop compare it before writing.
  */
 export const withPg = <A, E>(
-  build: (pg: PgClient.PgClient | PgExecutor, context: PgContext) => Effect.Effect<A, E>,
+  build: (pg: PgExecutor, context: PgContext) => Effect.Effect<A, E>,
+  database?: string,
 ): Effect.Effect<A, E | SqlError, PostgresConnection> =>
   Effect.gen(function* () {
     const resolveConfig = yield* PostgresConnection;
     const config = yield* resolveConfig;
-    if (isRunner(config)) {
-      return yield* build(makePsqlExecutor(config.run, config), {
-        template: config.template ?? 'template0',
+    const target: PostgresConnectionConfig | PostgresRunnerConfig =
+      database === undefined ? config : { ...config, database };
+    if (isRunner(target)) {
+      return yield* build(makePsqlExecutor(target.run, target), {
+        template: target.template ?? 'template0',
       });
     }
     return yield* Effect.provide(
-      Effect.flatMap(PgClient.PgClient, (pg) => build(pg, {})),
-      PgClient.layer(config),
+      Effect.flatMap(PgClient.PgClient, (pg) =>
+        build(
+          {
+            unsafe: (sql, params) => pg.unsafe(sql, params),
+            // One reserved connection (`SqlClient.withTransaction`). A pool checkout per
+            // statement would autocommit CREATE before GRANT.
+            transaction: (statements) =>
+              pg.withTransaction(
+                Effect.gen(function* () {
+                  for (const sql of statements) yield* pg.unsafe(sql).pipe(Effect.asVoid);
+                }),
+              ),
+          },
+          {},
+        ),
+      ),
+      PgClient.layer(target),
     );
   });
