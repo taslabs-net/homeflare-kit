@@ -13,7 +13,7 @@
  *   in `fake-role-sql.ts` under the same rule.
  */
 import * as Effect from 'effect/Effect';
-import { SqlError, SqlSyntaxError } from 'effect/unstable/sql/SqlError';
+import { SqlError, SqlSyntaxError, UnknownError } from 'effect/unstable/sql/SqlError';
 import type { PostgresDatabaseAttributes } from './database-attrs.ts';
 import type { PostgresRoleAttributes } from './role-attrs.ts';
 import type { PgExecutor } from './database-sql.ts';
@@ -32,9 +32,13 @@ export interface FakeSql extends PgExecutor {
   readonly databases: Map<string, PostgresDatabaseAttributes>;
   /** Mutable on purpose: a test seeds a live role (adoption, drift) or clears one (drop). */
   readonly roleRows: Map<string, PostgresRoleAttributes>;
-  /** `member\0parent` pairs backing `pg_auth_members`; `GRANT`/`REVOKE` mutate it. */
+  /** `member\0parent\0grantor` triples backing `pg_auth_members` (a plain `pg_auth_members`
+   * read, a grant, a revoke and a DROP ROLE cascade all go through `fake-role-sql.ts`);
+   * `GRANT`/`REVOKE` mutate it. An empty grantor segment is a grantor role that no longer
+   * exists. */
   readonly memberships: Set<string>;
-  /** Options on a membership the name alone hides. Absent means neither ADMIN nor SET. */
+  /** Options on a membership the name alone hides, keyed `member\0parent\0grantor`. Absent
+   * means neither ADMIN nor SET. */
   readonly membershipOptions: Map<string, { readonly admin: boolean; readonly set: boolean }>;
 }
 
@@ -46,6 +50,9 @@ export interface FakeSqlOptions {
    * concurrent creator racing this reconcile would — classified exactly as
    * `@effect/sql-pg`'s own driver classifies it (`database-sql.ts`'s header). */
   readonly raceNextCreate?: boolean;
+  /** Fail the next statement whose text starts with this prefix, once, without applying it.
+   * A `transaction` that included earlier statements rolls them back. */
+  readonly failNext?: string;
 }
 
 /** Pull every field back out of exactly the text `buildCreateDatabaseSql` writes. */
@@ -87,6 +94,7 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   const memberships = new Set<string>();
   const membershipOptions = new Map<string, { readonly admin: boolean; readonly set: boolean }>();
   let raceRemaining = options.raceNextCreate === true ? 1 : 0;
+  let failNext = options.failNext;
   let oidCounter = 20000;
   const roleState: FakeRoleState = {
     roleNames,
@@ -106,6 +114,19 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   ): Effect.Effect<ReadonlyArray<A>, SqlError> =>
     Effect.suspend(() => {
       statements.push({ text, params });
+
+      if (failNext !== undefined && text.startsWith(failNext)) {
+        failNext = undefined;
+        return Effect.fail(
+          new SqlError({
+            reason: new UnknownError({
+              cause: new Error('injected statement failure'),
+              message: 'injected statement failure',
+              operation: text.slice(0, 40),
+            }),
+          }),
+        );
+      }
 
       if (text.startsWith('SELECT 1 AS present FROM pg_roles')) {
         const role = params[0] as string;
@@ -146,5 +167,33 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
       throw new Error(`fake-sql: unrecognised statement: ${text}`);
     });
 
-  return { unsafe, statements, databases, roleRows, memberships, membershipOptions };
+  const snapshot = () => ({
+    roleRows: new Map(roleRows),
+    roleNames: new Set(roleNames),
+    memberships: new Set(memberships),
+    membershipOptions: new Map(membershipOptions),
+    databases: new Map(databases),
+    oid: oidCounter,
+  });
+  const restore = (snap: ReturnType<typeof snapshot>) => {
+    roleRows.clear();
+    for (const [key, value] of snap.roleRows) roleRows.set(key, value);
+    roleNames.clear();
+    for (const name of snap.roleNames) roleNames.add(name);
+    memberships.clear();
+    for (const key of snap.memberships) memberships.add(key);
+    membershipOptions.clear();
+    for (const [key, value] of snap.membershipOptions) membershipOptions.set(key, value);
+    databases.clear();
+    for (const [key, value] of snap.databases) databases.set(key, value);
+    oidCounter = snap.oid;
+  };
+  const transaction = (sqls: readonly string[]): Effect.Effect<void, SqlError> => {
+    const snap = snapshot();
+    return Effect.gen(function* () {
+      for (const sql of sqls) yield* unsafe(sql).pipe(Effect.asVoid);
+    }).pipe(Effect.onError(() => Effect.sync(() => restore(snap))));
+  };
+
+  return { unsafe, transaction, statements, databases, roleRows, memberships, membershipOptions };
 };

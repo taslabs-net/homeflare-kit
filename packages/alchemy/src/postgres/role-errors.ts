@@ -122,10 +122,77 @@ export class PostgresRoleCreateVanished extends Data.TaggedError('PostgresRoleCr
   }
 }
 
+/** A `pg_auth_members` row survived reconcile in a shape the declaration does not allow — not
+ * wanted, still `ADMIN`, or still `SET` at the upstream default TRUE. A live grantor's row is
+ * named in `REVOKE … GRANTED BY`, which either binds or fails loudly; the one shape no
+ * statement this family may issue can touch is a row whose grantor role was dropped
+ * (`pg_auth_members` keeps it keyed on the dead oid, and no `GRANTED BY` name reaches it), so
+ * the message asks the operator to revoke it by hand as a bootstrap superuser and re-plan. */
+export class PostgresRoleMembershipUnrepaired extends Data.TaggedError(
+  'PostgresRoleMembershipUnrepaired',
+)<{
+  readonly role: string;
+  readonly parent: string;
+  readonly grantor: string | null;
+  readonly declared: boolean;
+}> {
+  override get message(): string {
+    const who =
+      this.grantor === null ? 'a grantor role that no longer exists' : `grantor "${this.grantor}"`;
+    return (
+      `Postgres.Role "${this.role}": membership of "${this.parent}" ` +
+      `(${this.declared ? 'declared, options unsafe' : 'not declared'}) could not be repaired ` +
+      `after its statements — the row still stands under ${who}. pg_auth_members keys a ` +
+      'membership on (parent, member, grantor), and a grantor that no longer exists cannot be ' +
+      'named in REVOKE … GRANTED BY. Revoke the row by hand as a bootstrap superuser ' +
+      '(`REVOKE role FROM member GRANTED BY <grantor>`; a grantor oid with no role name needs ' +
+      'catalog surgery) and re-plan.'
+    );
+  }
+}
+
+/** A declared `memberOf` parent is not in `pg_roles`. Checked before any statement of a create,
+ * so a missing parent never leaves a committed LOGIN role behind a `42704` (`undefined_object`,
+ * `user.c@REL_18_6`) from `GRANT`. */
+export class PostgresRoleParentMissing extends Data.TaggedError('PostgresRoleParentMissing')<{
+  readonly role: string;
+  readonly parent: string;
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Role "${this.role}": memberOf parent "${this.parent}" does not exist. ` +
+      'Nothing was written — declare that role first (or drop it from memberOf). A GRANT of a ' +
+      'missing role fails only after CREATE ROLE has committed, and the next plan then needs ' +
+      '--adopt to finish the orphan.'
+    );
+  }
+}
+
+/** The live role's oid is not the one this stack stored. A drop and recreate out of band reuses
+ * the name and would otherwise plan as ours: noop while the seal still matches, and a destroy
+ * would `DROP` a role this stack never created. */
+export class PostgresRoleIdentityRefused extends Data.TaggedError('PostgresRoleIdentityRefused')<{
+  readonly role: string;
+  readonly storedOid: number;
+  readonly liveOid: number;
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Role "${this.role}": the live oid is ${String(this.liveOid)}, but state recorded ` +
+      `${String(this.storedOid)}. The name was dropped and recreated outside this stack. Nothing ` +
+      'was altered and the live role was not dropped — remove the stale state, or adopt the new ' +
+      'role under a new logical id once you mean to own it.'
+    );
+  }
+}
+
 export type PostgresRoleError =
   | PostgresRoleNameRefused
   | PostgresRoleRenameRefused
   | PostgresRoleValidUntilRefused
   | PostgresRolePasswordEnvUnsetError
   | PostgresRolePrivilegedRefused
-  | PostgresRoleCreateVanished;
+  | PostgresRoleCreateVanished
+  | PostgresRoleMembershipUnrepaired
+  | PostgresRoleParentMissing
+  | PostgresRoleIdentityRefused;

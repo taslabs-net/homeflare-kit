@@ -3,8 +3,8 @@
  * create with exact statement text, membership `GRANT`/`REVOKE`, per-field scalar drift, a create
  * whose re-read finds nothing, and zero statements when nothing drifted. The password lifecycle
  * is `role-password.test.ts`; the plan-time refusals are `role-refusals.test.ts`. Every case
- * reverts cleanly by reverting `role.ts`/`role-sql.ts`/`fake-sql.ts` locally: these fail on
- * `origin/main`, which has none of them.
+ * reverts cleanly by reverting `role.ts`/`role-sql.ts`/`role-membership-sql.ts`/`fake-sql.ts`
+ * locally: these fail on `origin/main`, which has none of them.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
@@ -80,7 +80,7 @@ describe('reconcile: greenfield', () => {
   });
 
   test('declared memberships become one-parent GRANTs after the CREATE, and the answer comes from the re-read, sorted', async () => {
-    const fake = makeFakeSql();
+    const fake = makeFakeSql({ roles: ['hf_agent', 'seat-b'] });
     const attrs = await run(
       reconcileWithClient(fake, { ...baseProps, memberOf: ['seat-b', 'hf_agent'] }),
     );
@@ -101,8 +101,13 @@ describe('reconcile: greenfield', () => {
   });
 
   test('a create whose re-read finds nothing fails with the typed tag, not a guess (S10/S20)', async () => {
+    const unsafe = <A extends object>(_sql?: string) => Effect.succeed([] as ReadonlyArray<A>);
     const blankPg: PgExecutor = {
-      unsafe: <A extends object>() => Effect.succeed([] as ReadonlyArray<A>),
+      unsafe,
+      transaction: (statements) =>
+        Effect.gen(function* () {
+          for (const sql of statements) yield* unsafe(sql).pipe(Effect.asVoid);
+        }),
     };
     const error = await fails(reconcileWithClient(blankPg, baseProps));
     expect(error).toBeInstanceOf(PostgresRoleCreateVanished);
@@ -153,27 +158,27 @@ describe('reconcile: already present', () => {
     expect(fake.statements.some((s) => s.text.startsWith('ALTER'))).toBe(false);
   });
 
-  test('a membership the declaration adds is granted; a live one it drops is revoked', async () => {
-    const fake = makeFakeSql({ roleRows: [liveRole()] });
-    fake.memberships.add('seat-observability\0hf_agent');
+  test('a membership the declaration adds is granted; a live one it drops is revoked by its grantor', async () => {
+    const fake = makeFakeSql({ roleRows: [liveRole()], roles: ['seat-owners'] });
+    fake.memberships.add('seat-observability\0hf_agent\0postgres');
     const attrs = await run(reconcileWithClient(fake, { ...baseProps, memberOf: ['seat-owners'] }));
     expect(startingWith(fake, 'GRANT').map((s) => s.text)).toEqual([
       'GRANT "seat-owners" TO "seat-observability" WITH SET FALSE',
     ]);
     expect(startingWith(fake, 'REVOKE').map((s) => s.text)).toEqual([
-      'REVOKE "hf_agent" FROM "seat-observability"',
+      'REVOKE "hf_agent" FROM "seat-observability" GRANTED BY "postgres"',
     ]);
     expect(attrs.memberOf).toEqual(['seat-owners']);
   });
 
   test('memberOf [] revokes everything; memberOf undefined touches nothing', async () => {
     const revoking = makeFakeSql({ roleRows: [liveRole()] });
-    revoking.memberships.add('seat-observability\0hf_agent');
+    revoking.memberships.add('seat-observability\0hf_agent\0postgres');
     const afterRevoke = await run(reconcileWithClient(revoking, { ...baseProps, memberOf: [] }));
     expect(afterRevoke.memberOf).toEqual([]);
 
     const untouched = makeFakeSql({ roleRows: [liveRole()] });
-    untouched.memberships.add('seat-observability\0hf_agent');
+    untouched.memberships.add('seat-observability\0hf_agent\0postgres');
     const afterNoop = await run(reconcileWithClient(untouched, baseProps));
     expect(afterNoop.memberOf).toEqual(['hf_agent']);
     expect(
@@ -190,8 +195,8 @@ describe('read', () => {
 
   test('answers the live row with memberships merged in, sorted \u2014 no seal; branding and the seal merge are the caller\u2019s job', async () => {
     const fake = makeFakeSql({ roleRows: [liveRole()] });
-    fake.memberships.add('seat-observability\0seat-b');
-    fake.memberships.add('seat-observability\0hf_agent');
+    fake.memberships.add('seat-observability\0seat-b\0postgres');
+    fake.memberships.add('seat-observability\0hf_agent\0postgres');
     expect(await run(readRole(fake, 'seat-observability'))).toEqual({
       name: 'seat-observability',
       oid: 20000,
@@ -201,8 +206,8 @@ describe('read', () => {
       validUntil: null,
       memberOf: ['hf_agent', 'seat-b'],
       memberships: [
-        { parent: 'hf_agent', admin: false, set: false },
-        { parent: 'seat-b', admin: false, set: false },
+        { parent: 'hf_agent', grantor: 'postgres', admin: false, set: false },
+        { parent: 'seat-b', grantor: 'postgres', admin: false, set: false },
       ],
     });
   });
@@ -211,12 +216,12 @@ describe('read', () => {
 describe('delete statement', () => {
   test('is the idempotent quoted DROP, and the fake applies it to the row and touching memberships', async () => {
     const fake = makeFakeSql({ roleRows: [liveRole()] });
-    fake.memberships.add('seat-observability\0hf_agent');
-    fake.memberships.add('other-role\0seat-observability');
+    fake.memberships.add('seat-observability\0hf_agent\0postgres');
+    fake.memberships.add('other-role\0seat-observability\0postgres');
     await run(fake.unsafe('DROP ROLE IF EXISTS "seat-observability"').pipe(Effect.asVoid));
     expect(fake.roleRows.has('seat-observability')).toBe(false);
-    expect(fake.memberships.has('seat-observability\0hf_agent')).toBe(false);
-    expect(fake.memberships.has('other-role\0seat-observability')).toBe(false);
+    expect(fake.memberships.has('seat-observability\0hf_agent\0postgres')).toBe(false);
+    expect(fake.memberships.has('other-role\0seat-observability\0postgres')).toBe(false);
     // Idempotent: the same statement against the now-absent role is not an error.
     await run(fake.unsafe('DROP ROLE IF EXISTS "seat-observability"').pipe(Effect.asVoid));
   });

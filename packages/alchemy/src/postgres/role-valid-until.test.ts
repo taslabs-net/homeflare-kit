@@ -12,7 +12,8 @@ import * as Effect from 'effect/Effect';
 import { sameValidUntil, validUntilRefusal } from './role-attrs.ts';
 import type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts';
 import { PostgresRoleValidUntilRefused } from './role-errors.ts';
-import { diffPostgresRole, refuseAtPlan } from './role.ts';
+import { diffPostgresRole } from './role-diff.ts';
+import { refuseAtPlan } from './role.ts';
 
 const fails = <A, E>(eff: Effect.Effect<A, E>): Promise<E> => Effect.runPromise(Effect.flip(eff));
 

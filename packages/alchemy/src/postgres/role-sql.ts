@@ -13,12 +13,15 @@
  *   other string value and NEVER written to state — only its seal is (`role-attrs.ts`,
  *   `passwordSeal`).
  * ★ MEMBERSHIP IS TWO ONE-PARENT STATEMENTS (`GRANT` / `REVOKE`), never a multi-role list, so a
- *   partially-failed membership write is observable in the state that remains.
+ *   partially-failed membership write is observable in the state that remains. Those statements
+ *   and the `pg_auth_members` read live in `role-membership-sql.ts` — this file stays the role
+ *   row (`pg_roles`), its scalar statements and the compare between them.
  */
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import * as Effect from 'effect/Effect';
 import type { PgExecutor } from './database-sql.ts';
 import { quoteIdent, quoteStringLiteral } from './database-sql.ts';
+import { buildGrantMembershipSql, selectRoleMemberships } from './role-membership-sql.ts';
 import {
   type PostgresRoleAttributes,
   type PostgresRoleProps,
@@ -46,18 +49,6 @@ const SELECT_ROLE_SQL = `SELECT
   FROM pg_roles r
   WHERE r.rolname = $1`;
 
-/** `admin_option` and `set_option` ride with the parent name. Upstream `GRANT` defaults `SET`
- * to TRUE (`grant.sgml` at REL_18_6), and `SUPERUSER` / `CREATEROLE` / `CREATEDB` are exercised
- * by `SET ROLE`, not by inheritance (`user-manag.sgml`). A seat grant must say `SET FALSE`. */
-const MEMBERSHIP_SQL = `SELECT parent.rolname AS parent,
-    m.admin_option AS admin,
-    m.set_option AS set
-  FROM pg_auth_members m
-  JOIN pg_roles member ON member.oid = m.member
-  JOIN pg_roles parent ON parent.oid = m.roleid
-  WHERE member.rolname = $1
-  ORDER BY parent.rolname`;
-
 export const selectRole = (
   pg: PgExecutor,
   name: string,
@@ -66,21 +57,6 @@ export const selectRole = (
     pg.unsafe<Omit<PostgresRoleAttributes, 'memberOf' | 'passwordSeal'>>(SELECT_ROLE_SQL, [name]),
     (rows) => rows[0],
   );
-
-/** One `pg_auth_members` row as this family reads it: the parent name plus the two options a
- * name-only compare would hide. `admin` true is `WITH ADMIN`; `set` true (the `GRANT` default)
- * lets the member `SET ROLE` to the parent. */
-export interface MembershipRow {
-  readonly parent: string;
-  readonly admin: boolean;
-  readonly set: boolean;
-}
-
-export const selectRoleMemberships = (
-  pg: PgExecutor,
-  name: string,
-): Effect.Effect<readonly MembershipRow[], SqlError> =>
-  Effect.map(pg.unsafe<MembershipRow>(MEMBERSHIP_SQL, [name]), (rows) => rows);
 
 /** One combined read used by reconcile, so a no-op reconcile issues exactly one round trip.
  * `passwordSeal` is state-only — `pg_roles` answers no password (S25) — so the caller merges it. */
@@ -92,7 +68,12 @@ export const readRoleWithClient = (
     const row = yield* selectRole(pg, name);
     if (row === undefined) return undefined;
     const memberships = yield* selectRoleMemberships(pg, name);
-    return { ...row, memberOf: memberships.map((membership) => membership.parent), memberships };
+    // Two grantors of one parent are two catalog rows. `memberOf` is the set of names.
+    return {
+      ...row,
+      memberOf: [...new Set(memberships.map((membership) => membership.parent))].sort(),
+      memberships,
+    };
   });
 
 /** The `WITH` options a create carries, in one place so `diff` and the fake agree on the text.
@@ -148,13 +129,18 @@ export const buildSetPasswordSql = (name: string, verifier: string): string =>
 
 export const buildDropRoleSql = (name: string): string => `DROP ROLE IF EXISTS ${quoteIdent(name)}`;
 
-/** Seat grants say `SET FALSE`. Upstream `GRANT` defaults `SET` to TRUE, and `SET ROLE` to the
- * parent is how `SUPERUSER` / `CREATEROLE` / `CREATEDB` are exercised (`user-manag.sgml`). */
-export const buildGrantMembershipSql = (member: string, parent: string): string =>
-  `GRANT ${quoteIdent(parent)} TO ${quoteIdent(member)} WITH SET FALSE`;
-
-export const buildRevokeMembershipSql = (member: string, parent: string): string =>
-  `REVOKE ${quoteIdent(parent)} FROM ${quoteIdent(member)}`;
+/** `CREATE`, the optional password `ALTER`, and one seat `GRANT` per declared parent, in the
+ * order a single transaction runs them. Grants are sorted so the script is stable. */
+export const buildCreateStatements = (
+  props: PostgresRoleProps,
+  verifier: string | undefined,
+): readonly string[] => [
+  buildCreateRoleSql(props),
+  ...(verifier === undefined ? [] : [buildSetPasswordSql(props.name, verifier)]),
+  ...[...new Set(props.memberOf ?? [])]
+    .sort()
+    .map((parent) => buildGrantMembershipSql(props.name, parent)),
+];
 
 /** Compare every declared scalar prop against the live row; answer the list of statements
  * reconcile needs to run, empty when nothing drifted. `name` is compared by the caller. */
@@ -177,39 +163,38 @@ export const scalarDrift = (
   return changes;
 };
 
-/** Drop the observe-only membership options before attributes reach state. `diff` and reconcile
- * both read `memberships` off the live row; what state stores is the parent-name set. */
+/** Whether a live role is the one an interrupted create would have left: every declared scalar,
+ * the declared parent set, and no privilege flag or unsafe membership option. The password is
+ * not in `pg_roles`, so it is not part of the proof. */
+export const declarationMatches = (
+  props: PostgresRoleProps,
+  live: Omit<PostgresRoleAttributes, 'passwordSeal'>,
+): boolean => {
+  const wanted =
+    props.memberOf === undefined ? undefined : [...new Set(props.memberOf)].sort().join('\0');
+  const found = [...(live.memberOf ?? [])].sort().join('\0');
+  return (
+    props.name === live.name &&
+    props.login === live.login &&
+    props.inherit === live.inherit &&
+    props.connectionLimit === live.connectionLimit &&
+    (props.validUntil === undefined || sameValidUntil(props.validUntil, live.validUntil)) &&
+    (wanted === undefined || wanted === found) &&
+    privilegedFlags(live).length === 0 &&
+    (live.memberships ?? []).every((row) => !row.admin && !row.set)
+  );
+};
+
+/** Drop the observe-only membership options before attributes reach state. Alchemy's plan diff
+ * receives the stored attributes (`Plan.ts` passes `oldState.attr`), so an `admin`/`set` row
+ * kept here would still not be what `diff` sees — the provider reads `pg_auth_members` live.
+ * What state stores is the parent-name set. */
 export const storedAttributes = (
   live: Omit<PostgresRoleAttributes, 'passwordSeal'>,
 ): Omit<PostgresRoleAttributes, 'passwordSeal'> => {
   const { memberships: _observeOnly, ...stored } = live;
   return stored;
 };
-
-/** Grant what the declaration wants and revoke what it does not. `undefined` leaves live alone;
- * answers the declared set (sorted, de-duplicated), or the live set when nothing was declared.
- *
- * ⛔ REVOKE BEFORE GRANT. Upstream `GRANT` on an existing membership keeps any option the new
- *   `GRANT` omits, and `SET` defaults to TRUE (`grant.sgml` at REL_18_6). A seat `GRANT …
- *   WITH SET FALSE` therefore does not clear `ADMIN`. Issuing that `GRANT` and then `REVOKE`
- *   for the same still-wanted parent deletes the row the declaration meant to keep. Revoke
- *   first, then grant, so the repair ends on the safe grant. */
-export const syncMemberships = (
-  pg: PgExecutor,
-  props: PostgresRoleProps,
-  live: readonly string[],
-  unsafe: ReadonlySet<string> = new Set(),
-): Effect.Effect<readonly string[], SqlError> =>
-  Effect.gen(function* () {
-    const { grants, revokes } = membershipDrift(props.memberOf, live, unsafe);
-    for (const parent of revokes) {
-      yield* pg.unsafe(buildRevokeMembershipSql(props.name, parent)).pipe(Effect.asVoid);
-    }
-    for (const parent of grants) {
-      yield* pg.unsafe(buildGrantMembershipSql(props.name, parent)).pipe(Effect.asVoid);
-    }
-    return props.memberOf === undefined ? live : [...new Set(props.memberOf)].sort();
-  });
 
 /** Catalog flags this family never declares. A create lands on the server default (all false);
  * an absent field on a seeded test row is that default. */
@@ -223,31 +208,4 @@ export const privilegedFlags = (
   if (live.replication === true) flags.push('REPLICATION');
   if (live.bypassrls === true) flags.push('BYPASSRLS');
   return flags;
-};
-
-/** Parents whose `pg_auth_members` row carries ADMIN, or SET at the upstream default TRUE. */
-export const unsafeMemberships = (
-  live: Omit<PostgresRoleAttributes, 'passwordSeal'>,
-): ReadonlySet<string> =>
-  new Set((live.memberships ?? []).filter((row) => row.admin || row.set).map((row) => row.parent));
-
-/** Membership drift: sorted set difference between declared and live. Duplicates in the
- * declaration collapse to one; `undefined` means "not asserted" — nothing to grant or revoke.
- * A parent already granted `WITH ADMIN`, or with `SET` still at the upstream default TRUE, is
- * a grant again: the name matches, but the options do not, so reconcile revokes and re-grants. */
-export const membershipDrift = (
-  declared: readonly string[] | undefined,
-  live: readonly string[],
-  unsafe: ReadonlySet<string> = new Set(),
-): { readonly grants: readonly string[]; readonly revokes: readonly string[] } => {
-  if (declared === undefined) return { grants: [], revokes: [] };
-  const wanted = [...new Set(declared)].sort();
-  const current = [...live].sort();
-  return {
-    grants: wanted.filter((parent) => !current.includes(parent) || unsafe.has(parent)),
-    revokes: [
-      ...current.filter((parent) => !wanted.includes(parent)),
-      ...wanted.filter((parent) => current.includes(parent) && unsafe.has(parent)),
-    ],
-  };
 };

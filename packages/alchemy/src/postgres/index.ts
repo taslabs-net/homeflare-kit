@@ -42,15 +42,20 @@ export {
   buildAlterRoleSql,
   buildCreateRoleSql,
   buildDropRoleSql,
-  buildGrantMembershipSql,
-  buildRevokeMembershipSql,
   buildSetPasswordSql,
-  membershipDrift,
   scalarDrift,
   selectRole,
-  selectRoleMemberships,
 } from './role-sql.ts';
-export type { MembershipRow } from './role-sql.ts';
+export {
+  buildGrantMembershipSql,
+  buildRepairMembershipSql,
+  buildRevokeGrantorMembershipSql,
+  membershipDrift,
+  selectRoleMemberships,
+  syncMemberships,
+  unsafeMemberships,
+} from './role-membership-sql.ts';
+export type { MembershipRow } from './role-membership-sql.ts';
 export { PostgresRole, isPostgresRole } from './role.ts';
 export { PostgresRoleProvider } from './role-provider.ts';
 export { resolvePassword } from './role-secrets.ts';
@@ -58,7 +63,10 @@ export type { ResolvedPassword } from './role-secrets.ts';
 export type { FromEnv } from '../secrets/write-only.ts';
 export {
   PostgresRoleCreateVanished,
+  PostgresRoleIdentityRefused,
+  PostgresRoleMembershipUnrepaired,
   PostgresRoleNameRefused,
+  PostgresRoleParentMissing,
   PostgresRolePasswordEnvUnsetError,
   PostgresRolePrivilegedRefused,
   PostgresRoleRenameRefused,

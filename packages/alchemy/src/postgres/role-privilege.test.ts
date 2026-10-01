@@ -51,20 +51,30 @@ describe('adopted privilege flags', () => {
     ).toBe(false);
   });
 
-  test('a membership granted WITH ADMIN is revoked and re-granted WITH SET FALSE', async () => {
-    const fake = makeFakeSql({ roleRows: [liveRole()] });
-    fake.memberships.add('seat-widget\0hf_agent');
-    fake.membershipOptions.set('seat-widget\0hf_agent', { admin: true, set: true });
+  test('a membership granted WITH ADMIN by this session is repaired in place', async () => {
+    const fake = makeFakeSql({ roleRows: [liveRole()], roles: ['hf_agent'] });
+    fake.memberships.add('seat-widget\0hf_agent\0postgres');
+    fake.membershipOptions.set('seat-widget\0hf_agent\0postgres', { admin: true, set: true });
     await run(reconcileWithClient(fake, baseProps));
     const texts = fake.statements.map((s) => s.text);
-    // Upstream GRANT keeps an option the new GRANT omits, and SET defaults to TRUE, so a
-    // GRANT that does not clear ADMIN followed by REVOKE deletes the membership this
-    // declaration still wants. REVOKE must come first; the re-read must still contain it.
-    const revokeAt = texts.indexOf('REVOKE "hf_agent" FROM "seat-widget"');
-    const grantAt = texts.indexOf('GRANT "hf_agent" TO "seat-widget" WITH SET FALSE');
-    expect(revokeAt).toBeGreaterThanOrEqual(0);
-    expect(grantAt).toBeGreaterThan(revokeAt);
-    expect(fake.memberships.has('seat-widget\0hf_agent')).toBe(true);
-    expect(fake.membershipOptions.has('seat-widget\0hf_agent')).toBe(false);
+    // `AddRoleMems` updates the session grantor's row. One full-options GRANT clears ADMIN
+    // and SET without a REVOKE that would drop the membership the declaration still wants.
+    expect(texts).toContain('GRANT "hf_agent" TO "seat-widget" WITH ADMIN FALSE, SET FALSE');
+    expect(texts.some((text) => text.startsWith('REVOKE'))).toBe(false);
+    expect(fake.memberships.has('seat-widget\0hf_agent\0postgres')).toBe(true);
+    expect(fake.membershipOptions.has('seat-widget\0hf_agent\0postgres')).toBe(false);
+  });
+
+  test("another grantor's ADMIN row is revoked by that grantor and the seat grant remains", async () => {
+    const fake = makeFakeSql({ roleRows: [liveRole()], roles: ['hf_agent'] });
+    fake.memberships.add('seat-widget\0hf_agent\0other');
+    fake.membershipOptions.set('seat-widget\0hf_agent\0other', { admin: true, set: true });
+    await run(reconcileWithClient(fake, baseProps));
+    const texts = fake.statements.map((s) => s.text);
+    expect(texts).toContain('GRANT "hf_agent" TO "seat-widget" WITH ADMIN FALSE, SET FALSE');
+    expect(texts).toContain('REVOKE "hf_agent" FROM "seat-widget" GRANTED BY "other"');
+    expect(fake.memberships.has('seat-widget\0hf_agent\0other')).toBe(false);
+    expect(fake.memberships.has('seat-widget\0hf_agent\0postgres')).toBe(true);
+    expect(fake.membershipOptions.has('seat-widget\0hf_agent\0postgres')).toBe(false);
   });
 });

@@ -121,6 +121,23 @@ describe('runner transport through withPg', () => {
     expect(stdins.slice(before).some((s) => s.startsWith('CREATE DATABASE'))).toBe(false);
   });
 
+  test('transaction is one psql script from BEGIN through COMMIT', async () => {
+    const calls: string[] = [];
+    const run: PsqlRunner = (call) => {
+      calls.push(call.stdin);
+      return ok('');
+    };
+    await Effect.runPromise(
+      makePsqlExecutor(run, target).transaction([
+        'CREATE ROLE "a" WITH NOLOGIN',
+        'GRANT "p" TO "a" WITH SET FALSE',
+      ]),
+    );
+    expect(calls).toEqual([
+      'BEGIN;\nCREATE ROLE "a" WITH NOLOGIN;\nGRANT "p" TO "a" WITH SET FALSE;\nCOMMIT;',
+    ]);
+  });
+
   test("postgresRunnerProviders keeps the connection live for the engine's later handler calls", async () => {
     const run: PsqlRunner = () => ok('[]');
     const rows = await Effect.runPromise(

@@ -30,7 +30,13 @@ run yourself. The `Postgres.Database` resource in this kit already binds `@effec
 - **Membership is `pg_auth_members`, compared as a sorted set.** `memberOf` omitted leaves live
   memberships alone; `[]` ensures none. Moves run through one-parent `GRANT`/`REVOKE`
   (`alter_role.sgml`: "there are no options for adding or removing memberships; use GRANT and
-  REVOKE").
+  REVOKE"). A plain `REVOKE` only removes the session grantor's row (`plan_single_revoke` matches
+  `grantor`); each unwanted row is `REVOKE … GRANTED BY` its own grantor. A wanted row that is
+  `WITH ADMIN` or still `SET TRUE` is repaired in place with one
+  `GRANT … WITH ADMIN FALSE, SET FALSE` (`AddRoleMems` updates that grantor's tuple). Another
+  grantor's unsafe row is revoked by name afterwards. A row whose grantor role is gone cannot be
+  named and fails `PostgresRoleMembershipUnrepaired`. A missing parent fails
+  `PostgresRoleParentMissing` before any statement.
 - **`defaultRemovalPolicy: 'retain'`.** A seat group role may own objects and be granted across
   databases. A destroy is still implemented in full (`DROP ROLE IF EXISTS`, idempotent), opted in
   with `.pipe(RemovalPolicy.destroy())`. A role that still owns objects fails the drop with the
@@ -38,11 +44,12 @@ run yourself. The `Postgres.Database` resource in this kit already binds `@effec
   client's `SqlError`. An adopt or alter that finds `SUPERUSER`, `CREATEROLE`, `CREATEDB`,
   `REPLICATION` or `BYPASSRLS` set refuses (`PostgresRolePrivilegedRefused`) before any write:
   those flags are not inherited, and `SET ROLE` to the parent exercises them. A seat `GRANT`
-  says `WITH SET FALSE`. A membership already granted `WITH ADMIN`, or left at the upstream
-  `SET TRUE` default, is revoked and then re-granted: upstream `GRANT` keeps an option the new
-  `GRANT` omits, so the revoke has to come first or it deletes the membership the declaration
-  still wants. `diff` treats those option rows the same way, so a later `GRANT … WITH ADMIN`
-  (or a grant left at `SET TRUE`) plans as `update` rather than a name-matched noop.
+  says `WITH SET FALSE`. Create runs `CREATE`, the password `ALTER` and the seat `GRANT`s in one
+  transaction, so a later statement failure does not leave a LOGIN role behind. `diff` reads
+  `pg_auth_members` live — stored attributes omit the option rows, and the engine passes stored
+  attributes — so `ADMIN` or `SET TRUE` plans as `update`. A live oid that is not the stored oid
+  is `PostgresRoleIdentityRefused` on read, diff, reconcile and delete: the name was recreated
+  out of band and is not dropped or altered.
 
 ## Props → `CREATE ROLE` / `ALTER ROLE` → catalog mapping
 
@@ -93,7 +100,10 @@ environment in-process and answers `update` when the resolved value no longer ma
 `reconcile` compares against that state seal — never against a cluster read. `validUntil` is
 serialised server-side to `...Z`; comparison uses `Date.parse` on both sides, so millisecond
 `.000Z` churn is equality, not drift. A create whose re-read answers `undefined` fails typed
-(`PostgresRoleCreateVanished`).
+(`PostgresRoleCreateVanished`). A `creating` row with no attributes is `noteUnfinished` in `diff`,
+and `read` answers the live role as ours only when `ownedRead` can prove it matches that row
+(`PostgresRoleParentMissing` and the create transaction are what keep a failed `GRANT` from
+needing that recovery).
 
 ## Providers
 

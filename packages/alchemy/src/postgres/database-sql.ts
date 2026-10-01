@@ -28,14 +28,23 @@ import * as Effect from 'effect/Effect';
 import type { PostgresDatabaseAttributes, PostgresDatabaseProps } from './database-attrs.ts';
 
 /** What every function in this file needs from a client — real (`PgClient.PgClient`) or fake
- * (`fake-sql.ts`). Deliberately smaller than `SqlClient`: nothing here ever needs the tagged
- * template, transactions or streaming, because every statement is either bound params through
- * `.unsafe(text, params)` or a hand-escaped literal through `.unsafe(text)`. */
+ * (`fake-sql.ts`). Deliberately smaller than `SqlClient`: nothing here needs the tagged template
+ * or streaming. `transaction` is the one exception, and only `Postgres.Role`'s create uses it:
+ * role DDL commits per statement unless the statements share a transaction, and a `GRANT` that
+ * fails after `CREATE ROLE` would leave a LOGIN role behind. */
 export interface PgExecutor {
   readonly unsafe: <A extends object>(
     sql: string,
     params?: ReadonlyArray<unknown>,
   ) => Effect.Effect<ReadonlyArray<A>, SqlError>;
+  /**
+   * Run `statements` in one transaction. `CREATE ROLE`, `ALTER ROLE` and `GRANT`/`REVOKE` of
+   * membership are transactional (`utility.c@REL_18_6`: those cases do not call
+   * `PreventInTransactionBlock`; `CREATE DATABASE` does). The socket client reserves one
+   * connection (`SqlClient.withTransaction`); the runner sends one `psql` script, because each
+   * `unsafe` call is its own session and would autocommit.
+   */
+  readonly transaction: (statements: readonly string[]) => Effect.Effect<void, SqlError>;
 }
 
 /** Single-token identifier quoting: wrap in `"`, double any embedded `"`. No dot-splitting —

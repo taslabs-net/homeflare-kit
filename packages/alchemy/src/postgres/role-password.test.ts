@@ -142,8 +142,13 @@ describe('password: no new write statements on the no-op path', () => {
     // create path: CREATE, then the dedicated password ALTER, then a re-read that finds nothing.
     // The typed `PostgresRoleCreateVanished` surfaces that — the value stayed on the wire, and
     // the failure is never a secret leak.
+    const unsafe = <A extends object>(_sql?: string) => Effect.succeed([] as ReadonlyArray<A>);
     const blankPg: PgExecutor = {
-      unsafe: <A extends object>() => Effect.succeed([] as ReadonlyArray<A>),
+      unsafe,
+      transaction: (statements) =>
+        Effect.gen(function* () {
+          for (const sql of statements) yield* unsafe(sql).pipe(Effect.asVoid);
+        }),
     };
     const error = await fails(
       reconcileWithClient(blankPg, withPassword, { PG_SEAT_ROLE_PASSWORD: 'v' }),

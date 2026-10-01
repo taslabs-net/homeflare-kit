@@ -79,7 +79,7 @@ const isRunner = (c: PostgresConnectionConfig | PostgresRunnerConfig): c is Post
  * closes its own.
  */
 export const withPg = <A, E>(
-  build: (pg: PgClient.PgClient | PgExecutor, context: PgContext) => Effect.Effect<A, E>,
+  build: (pg: PgExecutor, context: PgContext) => Effect.Effect<A, E>,
 ): Effect.Effect<A, E | SqlError, PostgresConnection> =>
   Effect.gen(function* () {
     const resolveConfig = yield* PostgresConnection;
@@ -90,7 +90,22 @@ export const withPg = <A, E>(
       });
     }
     return yield* Effect.provide(
-      Effect.flatMap(PgClient.PgClient, (pg) => build(pg, {})),
+      Effect.flatMap(PgClient.PgClient, (pg) =>
+        build(
+          {
+            unsafe: (sql, params) => pg.unsafe(sql, params),
+            // One reserved connection (`SqlClient.withTransaction`). A pool checkout per
+            // statement would autocommit CREATE before GRANT.
+            transaction: (statements) =>
+              pg.withTransaction(
+                Effect.gen(function* () {
+                  for (const sql of statements) yield* pg.unsafe(sql).pipe(Effect.asVoid);
+                }),
+              ),
+          },
+          {},
+        ),
+      ),
       PgClient.layer(config),
     );
   });

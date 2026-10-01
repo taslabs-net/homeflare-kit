@@ -113,12 +113,15 @@ export interface PostgresRoleAttributes {
   readonly memberOf: readonly string[] | null;
   /**
    * The membership rows behind `memberOf`, including `admin_option` and `set_option`. Present
-   * on a catalog read; absent on attributes the engine stored before this field existed, which
-   * is the safe case (nothing to re-grant). `diff` treats an `admin` or `set` row the way
-   * reconcile does: the name matched, the options did not, so the plan is `update`.
+   * on a catalog read; stripped before attributes are stored (`storedAttributes`), because the
+   * engine's diff receives stored attributes and would never see them there. The provider's
+   * diff reads these rows live. `grantor` is the role that made the grant
+   * (`pg_auth_members.grantor`), null when that role was dropped — a dropped-grantor row cannot
+   * be named in `REVOKE … GRANTED BY`, so reconcile can only fail typed on it.
    */
   readonly memberships?: readonly {
     readonly parent: string;
+    readonly grantor: string | null;
     readonly admin: boolean;
     readonly set: boolean;
   }[];

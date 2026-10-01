@@ -22,9 +22,10 @@ export interface FakeRoleState {
   /** Bare role names, backing the `roleExists` check the database family's owner probe uses. */
   readonly roleNames: Set<string>;
   readonly roleRows: Map<string, PostgresRoleAttributes>;
-  /** `member\0parent` pairs backing `pg_auth_members`; `GRANT`/`REVOKE` mutate it. */
+  /** `member\0parent\0grantor` triples backing `pg_auth_members` (`''` grantor = dropped
+   * grantor); `GRANT`/`REVOKE` mutate it. */
   readonly memberships: Set<string>;
-  /** Options a name-only compare would hide. A `GRANT … WITH SET FALSE` clears the row. */
+  /** Options a name-only compare would hide, keyed `member\0parent\0grantor`. */
   readonly membershipOptions: Map<string, { readonly admin: boolean; readonly set: boolean }>;
   /** Hands out the next `oid` a real cluster would assign. */
   nextOid(): number;
@@ -95,16 +96,23 @@ export const applyRoleStatement = <A extends object>(
 ): Effect.Effect<ReadonlyArray<A>, SqlError> | undefined => {
   if (text.includes('FROM pg_auth_members')) {
     const member = params[0] as string;
-    const parents = [...state.memberships]
-      .filter((pair) => pair.split('\0')[0] === member)
-      .map((pair) => pair.split('\0')[1] as string)
-      .sort();
-    return Effect.succeed(
-      parents.map((parent) => {
-        const options = state.membershipOptions.get(`${member}\0${parent}`);
-        return { parent, admin: options?.admin === true, set: options?.set === true };
-      }) as unknown as ReadonlyArray<A>,
-    );
+    const rows = [...state.memberships]
+      .filter((key) => key.split('\0')[0] === member)
+      .map((key) => {
+        const parts = key.split('\0');
+        const options = state.membershipOptions.get(key);
+        return {
+          parent: parts[1] as string,
+          grantor: parts[2] === undefined || parts[2] === '' ? null : (parts[2] as string),
+          admin: options?.admin === true,
+          set: options?.set === true,
+        };
+      })
+      .sort(
+        (a, b) =>
+          a.parent.localeCompare(b.parent) || (a.grantor ?? '').localeCompare(b.grantor ?? ''),
+      );
+    return Effect.succeed(rows as unknown as ReadonlyArray<A>);
   }
 
   if (text.includes('FROM pg_roles r')) {
@@ -134,25 +142,59 @@ export const applyRoleStatement = <A extends object>(
   }
 
   if (text.startsWith('GRANT')) {
-    const m = /^GRANT "((?:[^"]|"")*)" TO "((?:[^"]|"")*)"(?: WITH SET FALSE)?$/.exec(text);
+    const m =
+      /^GRANT "((?:[^"]|"")*)" TO "((?:[^"]|"")*)"(?: WITH ADMIN FALSE, SET FALSE| WITH SET FALSE)?$/.exec(
+        text,
+      );
     if (m === null) {
       throw new Error(`fake-sql: could not parse a generated GRANT statement: ${text}`);
     }
-    const pair = `${unquoteIdent(m[2] as string)}\0${unquoteIdent(m[1] as string)}`;
-    state.memberships.add(pair);
-    // `WITH SET FALSE` is the seat grant. It carries no ADMIN, so the options row goes away.
-    if (text.endsWith('WITH SET FALSE')) state.membershipOptions.delete(pair);
+    // The session issues the statement as the bootstrap superuser, so the grant it (re)makes
+    // is keyed on grantor `postgres` — `AddRoleMems` updates only that (role, member, grantor)
+    // tuple (`user.c@REL_18_6`). A later `REVOKE … GRANTED BY "postgres"` finds the same row.
+    const parent = unquoteIdent(m[1] as string);
+    const member = unquoteIdent(m[2] as string);
+    if (!state.roleRows.has(parent) && !state.roleNames.has(parent)) {
+      throw new Error(`fake-sql: GRANT parent "${parent}" does not exist`);
+    }
+    if (!state.roleRows.has(member) && !state.roleNames.has(member)) {
+      throw new Error(`fake-sql: GRANT member "${member}" does not exist`);
+    }
+    const key = `${member}\0${parent}\0postgres`;
+    state.memberships.add(key);
+    // `grant.sgml` (REL_18_6): altering an existing membership retains every option the new
+    // GRANT omits, so only the full-options form clears ADMIN; `WITH SET FALSE` alone keeps a
+    // current ADMIN. A bare `GRANT` (never issued by this family) leaves options untouched.
+    const options = state.membershipOptions.get(key) ?? { admin: false, set: false };
+    if (text.endsWith('WITH ADMIN FALSE, SET FALSE')) {
+      state.membershipOptions.delete(key);
+    } else if (text.endsWith('WITH SET FALSE')) {
+      if (options.admin) state.membershipOptions.set(key, { admin: true, set: false });
+      else state.membershipOptions.delete(key);
+    }
     return Effect.succeed([] as unknown as ReadonlyArray<A>);
   }
 
   if (text.startsWith('REVOKE')) {
-    const m = /^REVOKE "((?:[^"]|"")*)" FROM "((?:[^"]|"")*)"$/.exec(text);
-    if (m === null) {
+    const granted =
+      /^REVOKE "((?:[^"]|"")*)" FROM "((?:[^"]|"")*)" GRANTED BY "((?:[^"]|"")*)"$/.exec(text);
+    if (granted !== null) {
+      // Only the grantor's own row goes; other grantors' rows for the same parent stand.
+      const key = `${unquoteIdent(granted[2] as string)}\0${unquoteIdent(granted[1] as string)}\0${unquoteIdent(granted[3] as string)}`;
+      state.memberships.delete(key);
+      state.membershipOptions.delete(key);
+      return Effect.succeed([] as unknown as ReadonlyArray<A>);
+    }
+    const plain = /^REVOKE "((?:[^"]|"")*)" FROM "((?:[^"]|"")*)"$/.exec(text);
+    if (plain === null) {
       throw new Error(`fake-sql: could not parse a generated REVOKE statement: ${text}`);
     }
-    const pair = `${unquoteIdent(m[2] as string)}\0${unquoteIdent(m[1] as string)}`;
-    state.memberships.delete(pair);
-    state.membershipOptions.delete(pair);
+    // `revoke.sgml`: a plain REVOKE removes only grants the session's grantor made and warns
+    // on the rest — a no-op against other grantors' rows. The session's grantor is
+    // `postgres`, so the key it can touch is `member\0parent\0postgres`.
+    const key = `${unquoteIdent(plain[2] as string)}\0${unquoteIdent(plain[1] as string)}\0postgres`;
+    state.memberships.delete(key);
+    state.membershipOptions.delete(key);
     return Effect.succeed([] as unknown as ReadonlyArray<A>);
   }
 
@@ -164,9 +206,12 @@ export const applyRoleStatement = <A extends object>(
     const name = unquoteIdent(m[1] as string);
     state.roleRows.delete(name);
     state.roleNames.delete(name);
-    for (const pair of state.memberships) {
-      if (pair.split('\0')[0] === name || pair.split('\0')[1] === name)
-        state.memberships.delete(pair);
+    for (const key of state.memberships) {
+      const parts = key.split('\0');
+      if (parts[0] === name || parts[1] === name) {
+        state.memberships.delete(key);
+        state.membershipOptions.delete(key);
+      }
     }
     return Effect.succeed([] as unknown as ReadonlyArray<A>);
   }

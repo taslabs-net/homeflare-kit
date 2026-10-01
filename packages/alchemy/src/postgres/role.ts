@@ -27,8 +27,6 @@
  *   server's own `2BP01` (`dependent_objects_still_exist`), surfaced as the client's `SqlError`.
  */
 import { Resource } from 'alchemy';
-import { isResolved } from 'alchemy/Diff';
-import type { Input } from 'alchemy/Input';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
@@ -39,22 +37,22 @@ import { passwordMatchesSeal, resolvePassword, sealPassword } from './role-secre
 import { scramSha256Verifier } from './role-scram.ts';
 import {
   buildAlterRoleSql,
-  buildCreateRoleSql,
+  buildCreateStatements,
   buildSetPasswordSql,
-  membershipDrift,
   privilegedFlags,
   readRoleWithClient,
   scalarDrift,
   storedAttributes,
-  syncMemberships,
-  unsafeMemberships,
 } from './role-sql.ts';
+import { assertParentsExist, syncMemberships } from './role-membership-sql.ts';
 import {
   PostgresRoleCreateVanished,
+  PostgresRoleIdentityRefused,
+  type PostgresRoleMembershipUnrepaired,
   PostgresRoleNameRefused,
+  type PostgresRoleParentMissing,
   PostgresRolePasswordEnvUnsetError,
   PostgresRolePrivilegedRefused,
-  PostgresRoleRenameRefused,
   PostgresRoleValidUntilRefused,
 } from './role-errors.ts';
 import { type PostgresConnection } from './connection.ts';
@@ -91,11 +89,15 @@ export const reconcileWithClient = (
   props: PostgresRoleProps,
   env: Environment = process.env,
   previousSeal = '',
+  storedOid?: number,
 ): Effect.Effect<
   PostgresRoleAttributes,
   | PostgresRolePasswordEnvUnsetError
   | PostgresRolePrivilegedRefused
   | PostgresRoleCreateVanished
+  | PostgresRoleMembershipUnrepaired
+  | PostgresRoleParentMissing
+  | PostgresRoleIdentityRefused
   | SqlError
 > =>
   Effect.gen(function* () {
@@ -109,19 +111,15 @@ export const reconcileWithClient = (
           new PostgresRolePasswordEnvUnsetError({ role: props.name, variable: resolved.variable }),
         );
       }
-      // The create carries no PASSWORD clause, so a credential never rides a CREATE's log line;
-      // the one secret statement is the dedicated ALTER below. `syncMemberships` against an
-      // empty live set grants every declared parent — a `GRANT` naming an absent parent role
-      // fails with the server's own clear error, carried as the client's `SqlError`.
-      yield* pg.unsafe(buildCreateRoleSql(props)).pipe(Effect.asVoid);
-      if (resolved.value !== undefined) {
-        yield* pg
-          .unsafe(
-            buildSetPasswordSql(props.name, scramSha256Verifier(Redacted.value(resolved.value))),
-          )
-          .pipe(Effect.asVoid);
-      }
-      yield* syncMemberships(pg, props, []);
+      // The create carries no PASSWORD clause. The verifier ALTER and the seat GRANTs share
+      // one transaction with the CREATE, so a failure rolls all of them back. A missing parent
+      // is refused first — `GRANT` would otherwise be `42704` after the CREATE committed.
+      yield* assertParentsExist(pg, props.name, props.memberOf);
+      const verifier =
+        resolved.value === undefined
+          ? undefined
+          : scramSha256Verifier(Redacted.value(resolved.value));
+      yield* pg.transaction(buildCreateStatements(props, verifier));
       // Never trust the write's own report (S10): re-read what the server actually stored.
       const created = yield* readRoleWithClient(pg, props.name);
       if (created === undefined) {
@@ -131,6 +129,17 @@ export const reconcileWithClient = (
         ...storedAttributes(created),
         passwordSeal: resolved.value === undefined ? '' : sealPassword(resolved.value),
       };
+    }
+    // A recycled name (dropped and recreated out of band) is a different oid. Refuse before
+    // any ALTER, PASSWORD or DROP-by-name the caller might follow with.
+    if (storedOid !== undefined && observed.oid !== storedOid) {
+      return yield* Effect.fail(
+        new PostgresRoleIdentityRefused({
+          role: props.name,
+          storedOid,
+          liveOid: observed.oid,
+        }),
+      );
     }
     // A live role this stack did not create can carry flags CREATE ROLE's default leaves off.
     // They are not inherited: SET ROLE to this role exercises them. Refuse before any write.
@@ -147,6 +156,8 @@ export const reconcileWithClient = (
         new PostgresRolePasswordEnvUnsetError({ role: props.name, variable: resolved.variable }),
       );
     }
+    // Parents before any ALTER, so a missing one does not leave a half-applied scalar update.
+    yield* assertParentsExist(pg, props.name, props.memberOf);
     // Adopted or drifted: every scalar comes back to the declaration, one ALTER per field.
     for (const change of scalarDrift(props, observed)) {
       yield* pg.unsafe(buildAlterRoleSql(props.name, change)).pipe(Effect.asVoid);
@@ -164,7 +175,7 @@ export const reconcileWithClient = (
         )
         .pipe(Effect.asVoid);
     }
-    yield* syncMemberships(pg, props, observed.memberOf ?? [], unsafeMemberships(observed));
+    yield* syncMemberships(pg, props, observed.memberships ?? []);
     const after = yield* readRoleWithClient(pg, props.name);
     if (after === undefined) {
       return yield* Effect.fail(new PostgresRoleCreateVanished({ role: props.name }));
@@ -204,48 +215,4 @@ export const refuseAtPlan = (
         );
       }
     }
-  });
-
-/**
- * The core of `diff`: `news` against `output`, plus one in-process read of the environment to
- * notice a rotated password (the seal lives in state, so the live cluster cannot say). A rename
- * is a plan-time refusal; so are an over-long name and an unusable `validUntil`; every other
- * change answers `update`. `delete` is a real drop here, so `diff` never answers `replace`.
- */
-export const diffPostgresRole = (
-  news: Input<PostgresRoleProps>,
-  output: PostgresRoleAttributes | undefined,
-  env: Environment = process.env,
-) =>
-  Effect.gen(function* () {
-    if (output === undefined || !isResolved(news)) return undefined;
-    if (news.name !== output.name) {
-      return yield* Effect.fail(
-        new PostgresRoleRenameRefused({ from: output.name, to: news.name }),
-      );
-    }
-    yield* refuseAtPlan(news);
-    const scalars = scalarDrift(news, output);
-    // `read` spreads live membership rows into the object this receives. A name-only compare
-    // answers noop once the parent matches, so a later `GRANT … WITH ADMIN` (or a grant left
-    // at the upstream `SET TRUE` default) would never reach reconcile — the only writer that
-    // clears `admin_option` / `set_option`. Treat those rows the way reconcile does.
-    const membership = membershipDrift(
-      news.memberOf,
-      output.memberOf ?? [],
-      unsafeMemberships(output),
-    );
-    // The seal is state-only, so diff is the only place a rotated environment value is noticed:
-    // a resolved password that no longer matches the seal answers `update`, the same
-    // staleness rule LiteLLM.MCPServer's `credentialState` applies. An unset variable is never
-    // stale — a plan that cannot read the secret never churns it.
-    const resolved = resolvePassword(news, env);
-    const passwordStale =
-      resolved.value !== undefined && !passwordMatchesSeal(resolved.value, output.passwordSeal);
-    const changed =
-      scalars.length > 0 ||
-      membership.grants.length > 0 ||
-      membership.revokes.length > 0 ||
-      passwordStale;
-    return changed ? ({ action: 'update' } as const) : ({ action: 'noop' } as const);
   });

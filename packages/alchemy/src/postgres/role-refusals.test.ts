@@ -10,7 +10,8 @@ import { readFileSync } from 'node:fs';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { POSTGRES_NAME_MAX_BYTES } from './database-attrs.ts';
-import { diffPostgresRole, refuseAtPlan } from './role.ts';
+import { refuseAtPlan } from './role.ts';
+import { diffPostgresRole } from './role-diff.ts';
 import { resolvePassword } from './role-secrets.ts';
 import { seal } from '../secrets/write-only.ts';
 import { PostgresRoleNameRefused, PostgresRoleRenameRefused } from './role-errors.ts';
@@ -19,12 +20,14 @@ import {
   buildAlterRoleSql,
   buildCreateRoleSql,
   buildDropRoleSql,
-  buildGrantMembershipSql,
-  buildRevokeMembershipSql,
   buildSetPasswordSql,
-  membershipDrift,
   scalarDrift,
 } from './role-sql.ts';
+import {
+  buildGrantMembershipSql,
+  buildRevokeGrantorMembershipSql,
+  membershipDrift,
+} from './role-membership-sql.ts';
 
 const run = <A, E>(eff: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(eff);
 const fails = <A, E>(eff: Effect.Effect<A, E>): Promise<E> => Effect.runPromise(Effect.flip(eff));
@@ -96,34 +99,29 @@ describe('diff', () => {
     }
   });
 
-  test('matching parent names with ADMIN or SET still answer update', async () => {
-    // read spreads the live membership rows into the object diff receives. Once the parent
-    // name matches, a name-only compare answers noop and reconcile — the only writer that
-    // clears admin_option / set_option — never runs.
-    const withUnsafe = {
-      ...output,
-      memberOf: ['hf_agent'],
-      memberships: [{ parent: 'hf_agent', admin: true, set: true }],
-    };
-    expect(await run(diffPostgresRole({ ...base, memberOf: ['hf_agent'] }, withUnsafe))).toEqual({
+  test('ADMIN or SET on the live read answers update; stored membership rows do not', async () => {
+    const declared = { ...base, memberOf: ['hf_agent'] as const };
+    const stored = { ...output, memberOf: ['hf_agent'] as const };
+    const row = (admin: boolean, set: boolean) => ({
+      found: {
+        ...stored,
+        memberships: [{ parent: 'hf_agent', grantor: 'postgres', admin, set }],
+      },
+    });
+    expect(await run(diffPostgresRole(declared, stored, {}, row(true, true)))).toEqual({
       action: 'update',
     });
-    expect(
-      await run(
-        diffPostgresRole(
-          { ...base, memberOf: ['hf_agent'] },
-          { ...withUnsafe, memberships: [{ parent: 'hf_agent', admin: false, set: true }] },
-        ),
-      ),
-    ).toEqual({ action: 'update' });
-    expect(
-      await run(
-        diffPostgresRole(
-          { ...base, memberOf: ['hf_agent'] },
-          { ...withUnsafe, memberships: [{ parent: 'hf_agent', admin: false, set: false }] },
-        ),
-      ),
-    ).toEqual({ action: 'noop' });
+    expect(await run(diffPostgresRole(declared, stored, {}, row(false, true)))).toEqual({
+      action: 'update',
+    });
+    expect(await run(diffPostgresRole(declared, stored, {}, row(false, false)))).toEqual({
+      action: 'noop',
+    });
+    const stuffed = {
+      ...stored,
+      memberships: [{ parent: 'hf_agent', grantor: 'postgres', admin: true, set: true }],
+    };
+    expect(await run(diffPostgresRole(declared, stuffed))).toEqual({ action: 'noop' });
   });
 
   test('a rotated password answers update even with no other drift; a matching or unreadable one does not', async () => {
@@ -205,7 +203,9 @@ describe('quoting', () => {
       'ALTER ROLE "a""b" WITH CONNECTION LIMIT 3',
     );
     expect(buildGrantMembershipSql('m"1', 'p"2')).toBe('GRANT "p""2" TO "m""1" WITH SET FALSE');
-    expect(buildRevokeMembershipSql('m"1', 'p"2')).toBe('REVOKE "p""2" FROM "m""1"');
+    expect(buildRevokeGrantorMembershipSql('m"1', 'p"2', 'g"3')).toBe(
+      'REVOKE "p""2" FROM "m""1" GRANTED BY "g""3"',
+    );
     expect(buildDropRoleSql('a"b')).toBe('DROP ROLE IF EXISTS "a""b"');
   });
 
