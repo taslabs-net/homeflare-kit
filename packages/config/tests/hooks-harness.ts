@@ -159,10 +159,13 @@ export async function pathWith(
  * ⚠️ NOT A SHIM IN FRONT OF THE CALLER'S PATH: git prepends its own exec-path to a hook's PATH,
  *   and that directory holds a `git`, so the only place to win is inside the hook file.
  */
-export async function useOldGit(repo: Scratch): Promise<void> {
+export async function useOldGit(
+  repo: Scratch,
+  refuse = 'echo "fatal: unrecognized argument: $a" >&2; exit 129',
+): Promise<void> {
+  // `refuse` is the shell run when the flag is seen: pass `exit 3` for a git that fails SILENTLY.
   const dir = await mkdtemp(join(tmpdir(), 'hf-hook-bin-'));
   binDirs.push(dir);
-  const refuse = 'echo "fatal: unrecognized argument: $a" >&2; exit 129';
   await Bun.write(
     join(dir, 'git'),
     `#!/bin/sh\nfor a in "$@"; do case "$a" in --diff-merges=*) ${refuse};; esac; done\nexec "${GIT}" "$@"\n`,

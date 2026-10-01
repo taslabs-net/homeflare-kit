@@ -68,9 +68,13 @@ export async function scanPushedSecrets(
 
   const listed = await gitAt(root, ['log', '--no-show-signature', '--format=%H', ...opts]);
   if (listed.code !== 0) {
+    // ⚠️ GIT MAY SAY NOTHING (a signal, a wrapper that swallows stderr): an empty reason would
+    //   print "NOT scanned ()", so the exit code stands in for it.
+    const said = listed.stderr.trim().split('\n')[0] ?? '';
+    const reason = said === '' ? `git log exited ${String(listed.code)} and said nothing` : said;
     fail(
       'pre-push',
-      `git could not list the commits being pushed, so they were NOT scanned (${listed.stderr.trim().split('\n')[0] ?? ''})`,
+      `git could not list the commits being pushed, so they were NOT scanned (${reason})`,
       `fix what git reports; ${MERGES} needs git 2.36 or newer`,
     );
   }

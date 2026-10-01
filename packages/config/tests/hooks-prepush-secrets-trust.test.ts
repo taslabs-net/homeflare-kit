@@ -64,4 +64,33 @@ describe('a REAL push when the scanner cannot be trusted', () => {
     expect(result.output).toContain('needs git 2.36 or newer');
     expect(await remoteRef(remote, 'feat')).toBeUndefined();
   });
+
+  test('a git that fails SILENTLY still gives a reason: the exit code, never "NOT scanned ()"', async () => {
+    const { repo, remote } = await fixture();
+    await useOldGit(repo, 'exit 3');
+    await commit(repo, 'a.txt', 'a\n');
+    const env = { ...ENV, PATH: withBun(await pathWith(0)) };
+
+    const result = await realPush(repo, env, 'origin', 'feat');
+
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain('(git log exited 3 and said nothing)');
+    expect(result.output).not.toContain('NOT scanned ()');
+    expect(await remoteRef(remote, 'feat')).toBeUndefined();
+  });
+
+  // 🔴 `[git]` is gitleaks's component marker only right after the level. Read anywhere on a line
+  //   it blocked a clean push: here a WRN line whose message names a path under `docs/[git]/`.
+  test('a WRN line that merely mentions [git] in a path is NOT an error — the push goes through', async () => {
+    const { repo, remote } = await fixture();
+    await commit(repo, 'a.txt', 'a\n');
+    const say = '2:30PM INF 1 commits scanned.\n2:30PM WRN skipping docs/[git]/notes.md: too large';
+    const env = { ...ENV, PATH: withBun(await pathWith(0, { say })) };
+
+    const result = await realPush(repo, env, 'origin', 'feat');
+
+    expect(result.code).toBe(0);
+    expect(result.output).not.toContain('gitleaks reported an error');
+    expect(await remoteRef(remote, 'feat')).toBeDefined();
+  });
 });

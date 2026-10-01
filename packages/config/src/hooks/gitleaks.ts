@@ -14,6 +14,9 @@
  *   `[git]` marks git's own words. A finding is a `WRN` and a non-zero exit, and is not this.
  * ⚠️ `--no-color` is passed so the level is the second word on the line and not wrapped in escape
  *   codes; any that still arrive are stripped.
+ * ⛔ THE `[git]` MARKER COUNTS ONLY RIGHT AFTER THE LEVEL, where gitleaks puts it (`<time> <LEVEL>
+ *   [git] …`). Anywhere else on a line it is just text: a path, a repository directory in a
+ *   debug line, a message — and reading it as "gitleaks errored" blocked a clean commit.
  */
 import { withoutGitEnv } from './report.ts';
 
@@ -23,8 +26,18 @@ export type Gitleaks = {
   readonly broke: string | undefined;
 };
 
-const BROKEN = /^\s*\S+\s+(?:ERR|FTL|PNC)\s|\[git\]/;
+/** `<time> ERR|FTL|PNC <message>`, or `<time> <LEVEL> [git] <git's words>`. */
+const BROKEN = /^\s*\S+\s+(?:ERR|FTL|PNC)\s|^\s*\S+\s+[A-Z]{3}\s+\[git\]/;
 const ESCAPES = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
+/** The first line of gitleaks's stderr that says it (or the git under it) failed, if any. */
+export function brokenLine(stderr: string): string | undefined {
+  const line = stderr
+    .split('\n')
+    .map((text) => text.replace(ESCAPES, ''))
+    .find((text) => BROKEN.test(text));
+  return line?.trim();
+}
 
 /**
  * Run `gitleaks <args>`, echoing its stderr as it would have appeared.
@@ -38,9 +51,5 @@ export async function runGitleaks(args: readonly string[], isolated = false): Pr
   });
   const said = await new Response(proc.stderr).text();
   process.stderr.write(said);
-  const broke = said
-    .split('\n')
-    .map((line) => line.replace(ESCAPES, ''))
-    .find((line) => BROKEN.test(line));
-  return { code: await proc.exited, broke: broke?.trim() };
+  return { code: await proc.exited, broke: brokenLine(said) };
 }

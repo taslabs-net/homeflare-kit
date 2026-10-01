@@ -82,6 +82,23 @@ describe('the secret scan', () => {
     expect(result.output).not.toContain('--no-verify');
   });
 
+  test('a WRN line that mentions [git] in a path is not an error — and a real finding still reads as one', async () => {
+    // 🔴 The marker is gitleaks's only right after the level; anywhere else it is text.
+    const say = '2:30PM WRN skipping docs/[git]/notes.md: too large';
+    const clean = await repo.hook('pre-commit', {
+      env: { ...ENV, PATH: await pathWith(0, { say }) },
+    });
+    expect(clean.code).toBe(0);
+    expect(clean.output).not.toContain('gitleaks reported an error');
+
+    const found = await repo.hook('pre-commit', {
+      env: { ...ENV, PATH: await pathWith(1, { say: `${say}\n2:30PM WRN leaks found: 1` }) },
+    });
+    expect(found.code).toBe(1);
+    expect(found.output).toContain('gitleaks found a secret');
+    expect(found.output).not.toContain('reported an error');
+  });
+
   test('a clean scan says so and lets the commit continue', async () => {
     const result = await repo.hook('pre-commit', { env: clean });
     expect(result.code).toBe(0);
