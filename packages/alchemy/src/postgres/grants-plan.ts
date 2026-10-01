@@ -113,10 +113,15 @@ export const planRepair = (
     readonly revokedTables?: ReadonlyArray<string>;
     /** Columns that removal is revoking on purpose — do not restore them. */
     readonly revokedColumns?: ReadonlyArray<{ readonly table: string; readonly column: string }>;
+    /** False for a `delete` (a cleared declaration): its revokes must never re-grant the
+     * undeclared column entries a table `REVOKE ALL` clears — a delete takes privileges away,
+     * it does not restore any. Defaults to true for `reconcile`. */
+    readonly restoreCollateral?: boolean;
   } = {},
 ): ReadonlyArray<string> => {
   const statements: string[] = [];
   const ownedTables = new Set(live.ownedTables);
+  const restoreCollateral = prior.restoreCollateral !== false;
   if (!live.schemaOwnedByRole && wordsDiffer(declared.schemaPrivileges, live.schema.role)) {
     statements.push(revokeSchemaSql(declared.schema, declared.role));
     statements.push(
@@ -147,12 +152,16 @@ export const planRepair = (
           grantTableSql(declared.schema, table.table, declared.role, words),
         ),
       );
-      statements.push(...restoredColumnGrants(declared, live, table.table, skipColumns));
+      if (restoreCollateral) {
+        statements.push(...restoredColumnGrants(declared, live, table.table, skipColumns));
+      }
     }
   }
   for (const table of prior.revokedTables ?? []) {
     if (declaredTableNames.has(table) || ownedTables.has(table)) continue;
-    statements.push(...restoredColumnGrants(declared, live, table, skipColumns));
+    if (restoreCollateral) {
+      statements.push(...restoredColumnGrants(declared, live, table, skipColumns));
+    }
   }
   for (const column of declared.columns) {
     if (ownedTables.has(column.table)) continue;

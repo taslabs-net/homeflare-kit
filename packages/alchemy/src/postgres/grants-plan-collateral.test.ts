@@ -200,3 +200,58 @@ describe('removing a table restores the column grants its REVOKE clears', () => 
     ]);
   });
 });
+
+describe('a non-superuser connection revokes only its own grants', () => {
+  /** `widgets` is owned by `admin`; the executor `seat` is a non-superuser, and the column
+   * grant on `qty` was made by `admin` (the owner). A `REVOKE ALL ON TABLE` from `seat`
+   * clears only grants `seat` made — `admin`'s column grant survives (`revoke.sgml`), so it
+   * must not be marked restorable: re-granting it would add an owner grant on top of an
+   * entry the revoke never removed. */
+  test('an owner-made column grant is not re-granted by a non-superuser, non-owner connection', async () => {
+    const fake = makeFakeGrants({
+      schemas: ['app'],
+      roles: ['seat', 'admin', 'seat_writer'],
+      tables: [{ schema: 'app', table: 'widgets', columns: ['qty'], owner: 'admin' }],
+      executor: 'seat',
+      executorSuper: false,
+      acl: [
+        {
+          object: { schema: 'app', table: 'widgets', column: 'qty' },
+          grantee: 'seat_writer',
+          grantor: 'admin',
+          words: ['update'],
+        },
+      ],
+    });
+    const live = await run(readGrants(fake, 'app', 'seat_writer'));
+    expect(live.columns).toEqual([
+      { table: 'widgets', column: 'qty', role: ['update'], public: [], restorable: [] },
+    ]);
+    const statements = planRepair(resolveProps(props), live);
+    expect(statements).not.toContain('GRANT update ("qty") ON "app"."widgets" TO "seat_writer"');
+  });
+
+  test('the same owner-made grant is restored by a superuser connection, which revokes as the owner', async () => {
+    const fake = makeFakeGrants({
+      schemas: ['app'],
+      roles: ['postgres', 'admin', 'seat_writer'],
+      tables: [{ schema: 'app', table: 'widgets', columns: ['qty'], owner: 'admin' }],
+      executor: 'postgres',
+      executorSuper: true,
+      acl: [
+        {
+          object: { schema: 'app', table: 'widgets', column: 'qty' },
+          grantee: 'seat_writer',
+          grantor: 'admin',
+          words: ['update'],
+        },
+      ],
+    });
+    const live = await run(readGrants(fake, 'app', 'seat_writer'));
+    expect(live.columns).toEqual([
+      { table: 'widgets', column: 'qty', role: ['update'], public: [], restorable: ['update'] },
+    ]);
+    const statements = planRepair(resolveProps(props), live);
+    expect(statements).toContain('GRANT update ("qty") ON "app"."widgets" TO "seat_writer"');
+  });
+});

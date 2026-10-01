@@ -178,10 +178,10 @@ export const deleteWithClient = (
     if (!(yield* schemaExists(pg, props.schema))) return;
     const cleared = clearedDeclaration(resolveProps(props));
     const live = yield* readGrants(pg, cleared.schema, cleared.role);
-    const planned = planRepair(cleared, live);
+    const planned = planRepair(cleared, live, { restoreCollateral: false });
     if (planned.length > 0) yield* pg.transaction(planned);
     const after = yield* readGrants(pg, cleared.schema, cleared.role);
-    const remaining = planRepair(cleared, after);
+    const remaining = planRepair(cleared, after, { restoreCollateral: false });
     if (remaining.length > 0) {
       return yield* Effect.fail(
         new PostgresGrantsRepairRefused({

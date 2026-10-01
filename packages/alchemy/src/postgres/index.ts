@@ -101,6 +101,7 @@ export {
 export { PostgresGrants, PostgresGrantsProvider, isPostgresGrants } from './grants.ts';
 export {
   PostgresGrantsDatabaseMismatch,
+  PostgresGrantsDatabaseMissing,
   PostgresGrantsDuplicateObject,
   PostgresGrantsNameRefused,
   PostgresGrantsPrivilegeRefused,

@@ -8,7 +8,7 @@ import * as Effect from 'effect/Effect';
 import type { PsqlRunner } from './psql-executor.ts';
 import { postgresRunnerConnection } from './connection.ts';
 import { postgresGrantsHandlers } from './grants.ts';
-import { PostgresGrantsDatabaseMismatch } from './grants-errors.ts';
+import { PostgresGrantsDatabaseMismatch, PostgresGrantsDatabaseMissing } from './grants-errors.ts';
 import type { PostgresGrantsAttributes, PostgresGrantsProps } from './grants-attrs.ts';
 
 const declared: PostgresGrantsProps = {
@@ -70,13 +70,17 @@ const grantsReconcile = postgresGrantsHandlers.reconcile;
 describe('a missing declared database is absent', () => {
   test('delete is a no-op and never connects to the dropped database', async () => {
     const { run, stdins, argvs } = recording('[]', '[{"database":"agents"}]');
-    await Effect.runPromise(
+    const result = await Effect.runPromise(
       postgresGrantsHandlers
         .delete({ ...handlerArgs, olds: declared, output: persisted })
         .pipe(Effect.provide(provide(run))),
     );
+    // The no-op resolves cleanly: only the family-connection probe ran, so no
+    // current_database()/GRANT/REVOKE ever targeted the (absent) declared database.
+    expect(result).toBeUndefined();
     expect(stdins.length).toBe(1);
     expect(stdins[0]).toContain('FROM pg_database');
+    expect(stdins[0]).not.toContain('current_database()');
     expect(argvs[0]?.at(-1)).toBe('postgres');
   });
 
@@ -121,8 +125,34 @@ describe('a present database is opened and proved', () => {
     );
     expect(error).toBeInstanceOf(PostgresGrantsDatabaseMismatch);
     expect(error).toMatchObject({ declared: 'agents', connected: 'postgres' });
-    expect(argvs.length).toBe(1);
-    expect(argvs[0]?.at(-1)).toBe('agents');
-    expect(stdins[0]).toContain('current_database()');
+    // The reconcile probes the family connection first (pg_database), then opens the
+    // declared database and proves current_database() there.
+    expect(argvs.length).toBe(2);
+    expect(argvs[0]?.at(-1)).toBe('postgres');
+    expect(stdins[0]).toContain('FROM pg_database');
+    expect(argvs[1]?.at(-1)).toBe('agents');
+    expect(stdins[1]).toContain('current_database()');
+  });
+});
+
+describe('a missing declared database on reconcile is a typed refusal', () => {
+  test('reconcile fails PostgresGrantsDatabaseMissing and never opens the declared database', async () => {
+    const { run, stdins, argvs } = recording('[]', '[{"database":"agents"}]');
+    const error = await Effect.runPromise(
+      Effect.flip(
+        grantsReconcile({
+          ...handlerArgs,
+          news: declared,
+          olds: declared,
+          output: undefined,
+        }).pipe(Effect.provide(provide(run))),
+      ),
+    );
+    expect(error).toBeInstanceOf(PostgresGrantsDatabaseMissing);
+    expect(error).toMatchObject({ database: 'agents' });
+    // Only the family-connection probe ran; reconcile never opened the declared database.
+    expect(stdins.length).toBe(1);
+    expect(stdins[0]).toContain('FROM pg_database');
+    expect(argvs[0]?.at(-1)).toBe('postgres');
   });
 });

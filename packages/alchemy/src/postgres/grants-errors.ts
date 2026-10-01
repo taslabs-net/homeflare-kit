@@ -118,6 +118,24 @@ export class PostgresGrantsSchemaMissing extends Data.TaggedError('PostgresGrant
   }
 }
 
+/** `reconcile` refuses to apply into a database `pg_database` does not have. `read` and `delete`
+ * treat a missing database as absence (first create / no-op), but a reconcile names a container
+ * it must write into — probing first turns what would be an untyped connect failure
+ * (`ConnectionError` over psql, `UnknownError` 3D000 over the socket) into a typed refusal. */
+export class PostgresGrantsDatabaseMissing extends Data.TaggedError(
+  'PostgresGrantsDatabaseMissing',
+)<{
+  readonly database: string;
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Grants: database "${this.database}" is not in pg_database. Grants are written into ` +
+      'a database that already exists — declare a Postgres.Database (or create it by hand) before ' +
+      'the grant set that scopes to it.'
+    );
+  }
+}
+
 /** The grantee role, or a default-privileges `forRole` creator, is not in `pg_roles` —
  * checked before any statement runs, the way `Postgres.Schema` checks its `AUTHORIZATION`
  * owner. */
@@ -189,6 +207,7 @@ export type PostgresGrantsError =
   | PostgresGrantsDuplicateObject
   | PostgresGrantsRetargetRefused
   | PostgresGrantsDatabaseMismatch
+  | PostgresGrantsDatabaseMissing
   | PostgresGrantsSchemaMissing
   | PostgresGrantsRoleMissing
   | PostgresGrantsTableMissing

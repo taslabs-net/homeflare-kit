@@ -137,6 +137,8 @@ export {
 export {
   LitellmModelAbsentAfterWriteError,
   LitellmModelAmbiguousNameError,
+  LitellmModelConfigFileRowError,
+  LitellmModelForeignRowError,
   LitellmModelInvalidError,
   LitellmModelNotConvergedError,
   LitellmModelPriorGenerationError,

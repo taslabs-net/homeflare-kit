@@ -58,6 +58,9 @@ export interface FakeGrantsOptions {
   /** The role the statements run AS — the grantor recorded on every write, and
    * `current_user` on the column read (default `postgres`, the owner the fixtures assume). */
   readonly executor?: string;
+  /** Whether the executor is a superuser (default `true`: `postgres` is). A non-superuser
+   * executor revokes only its own grants, matching `revoke.sgml`. */
+  readonly executorSuper?: boolean;
   /** What `current_database()` answers (default `agents`, the declaration the fixtures use). */
   readonly connected?: string;
 }
@@ -87,6 +90,7 @@ export const makeFakeGrants = (options: FakeGrantsOptions = {}): FakeGrants => {
   const databases = new Set(options.databases ?? []);
   const tables = options.tables ?? [];
   const executor = options.executor ?? 'postgres';
+  const executorSuper = options.executorSuper ?? true;
   const connected = options.connected ?? 'agents';
   const acl: AclEntry[] = (options.acl ?? []).map((seed) => ({ ...seed, words: [...seed.words] }));
 
@@ -112,6 +116,7 @@ export const makeFakeGrants = (options: FakeGrantsOptions = {}): FakeGrants => {
     tableOwners,
     schemaOwners,
     executor,
+    executorSuper,
     connected,
   };
 

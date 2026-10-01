@@ -65,6 +65,46 @@ describe('delete: the re-read proof', () => {
     ]);
   });
 
+  test('a delete never re-grants the undeclared column entries its table revoke clears', async () => {
+    // The seat's own column grant on `qty` was never declared, but a table-level
+    // `REVOKE ALL` clears it too. `delete` revokes, it does not restore: the column grant
+    // must NOT be re-granted in the same pass (grants-plan.ts `restoreCollateral: false`).
+    const fake = makeFakeGrants({
+      schemas: ['app'],
+      roles: ['postgres', 'seat_writer'],
+      tables: [{ schema: 'app', table: 'widgets', columns: ['qty'] }],
+      acl: [
+        {
+          object: { schema: 'app', table: 'widgets' },
+          grantee: 'seat_writer',
+          grantor: 'postgres',
+          words: ['select'],
+        },
+        {
+          object: { schema: 'app', table: 'widgets', column: 'qty' },
+          grantee: 'seat_writer',
+          grantor: 'postgres',
+          words: ['update'],
+        },
+      ],
+    });
+    const before = fake.statements.length;
+    await run(
+      deleteWithClient(fake, {
+        ...baseProps,
+        tables: [{ table: 'widgets', privileges: ['select'] }],
+      }),
+    );
+    const writes = fake.statements
+      .slice(before)
+      .map((s) => s.text)
+      .filter(isWrite);
+    // Only the table revoke: no schema grant was seeded, and the column `qty` entry is
+    // cleared by the table revoke but never re-granted.
+    expect(writes).toEqual(['REVOKE ALL ON "app"."widgets" FROM "seat_writer"']);
+    expect(writes.some((text) => text.startsWith('GRANT'))).toBe(false);
+  });
+
   test('a third grantor\u2019s surviving grant fails the delete as PostgresGrantsRepairRefused', async () => {
     const fake = makeFakeGrants(catalog);
     await run(

@@ -45,6 +45,9 @@ export interface FakeGrantsModel {
   readonly schemaOwners: ReadonlyMap<string, string>;
   /** `current_user` — the grantor a write records, and the revoker the column read reports. */
   readonly executor: string;
+  /** Whether `current_user` is a superuser: gates the `grantor === owner` arm of the column
+   * read's `restorable` (a non-superuser revokes only grants it made, `revoke.sgml`). */
+  readonly executorSuper: boolean;
   /** What `SELECT current_database()` answers. */
   readonly connected: string;
 }
@@ -198,6 +201,7 @@ export const answerRead = <A extends object>(
             model.tableOwners.get(`${entry.object.schema}\u0000${entry.object.table ?? ''}`) ??
             model.executor,
           revoker: model.executor,
+          revoker_super: model.executorSuper,
           ...aclShapeRow(marked),
         }),
       ) as unknown as ReadonlyArray<A>,
