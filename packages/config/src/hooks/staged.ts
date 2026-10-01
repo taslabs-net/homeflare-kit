@@ -30,7 +30,8 @@ export type Staged = {
  *   and a file named `café .ts` comes back as the literal 12 characters
  *   `"caf\303\251 .ts"` — quotes, backslashes and octal escapes. Passing that to oxfmt
  *   names a file that does not exist, so every commit touching it fails with a message
- *   about the wrong path, and the fix anyone would reach for is `--no-verify`.
+ *   about the wrong path, and a hook that fails closed on a path it cannot read is a hook
+ *   nobody can commit past, so it has to read every legal path.
  */
 async function names(args: readonly string[]): Promise<readonly string[]> {
   const out = await capture(['git', ...args, '-z']);

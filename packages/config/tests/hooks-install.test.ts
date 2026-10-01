@@ -4,11 +4,15 @@
  *   test first.
  */
 import { describe, expect, test } from 'bun:test';
-import { chmod, mkdtemp, rm, stat } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { HOOK_NAMES, HUSKY_HOOK, PREPARE, installHooks, problemsInHooks } from '../src/hooks.ts';
+import { ENV, scratchRepo, spawn, withBun } from './hooks-harness.ts';
+
+/** The wrapper needs `bun` on PATH before it looks for the runner; a test runner may not add it. */
+const WITH_BUN = { ...ENV, PATH: withBun(ENV['PATH'] ?? '') };
 
 async function scratch(manifest: unknown): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'hf-hooks-'));
@@ -41,20 +45,101 @@ describe('the wrapper', () => {
     expect(HUSKY_HOOK).toContain('exec bun "$hook" "$(basename "$0")" "$@"');
   });
 
-  // ⚠️ Failing open is the deliberate trade — see install.ts. A regression here would
-  //   make every commit in an uninstalled worktree fail on module resolution.
-  test('exits 0 when the runner is absent rather than blocking the commit', () => {
-    expect(HUSKY_HOOK).toContain('exit 0');
+  // ⛔ Fails closed — see install.ts. A regression to `exit 0` would let every commit in an
+  //   uninstalled worktree through with no checks at all.
+  test('exits 1 when the runner is absent, with the fix on one stderr line', () => {
+    expect(HUSKY_HOOK).toContain('exit 1');
+    expect(HUSKY_HOOK).not.toContain('exit 0');
     expect(HUSKY_HOOK).toContain("run 'bun install' in this worktree");
   });
 
-  test('says a hook is not the gate', () => {
-    expect(HUSKY_HOOK).toContain('--no-verify');
-    expect(HUSKY_HOOK).toContain('required checks on main');
+  test('says it fails closed and offers no way round it', () => {
+    expect(HUSKY_HOOK).toContain('fails closed');
+    expect(HUSKY_HOOK).not.toContain('--no-verify');
+    expect(HUSKY_HOOK).not.toContain('skipping');
   });
 
   test('prepare activates through the same runner', () => {
     expect(PREPARE).toBe('bun node_modules/@homeflare/config/bin/hooks.ts activate');
+  });
+});
+
+/**
+ * ★ THE WRAPPER, RUN THE WAY GIT RUNS IT: a real commit in a repo whose `core.hooksPath` is
+ *   the installed `.husky/`. The string checks above say what the file contains; these say
+ *   what it does when the runner is missing, and that it still hands over when it is there.
+ */
+describe('the installed wrapper, run by git', () => {
+  const COMMIT = [
+    '-c',
+    'user.name=Probe',
+    '-c',
+    'user.email=probe@example.invalid',
+    '-c',
+    'commit.gpgsign=false',
+    '-c',
+    'core.hooksPath=.husky',
+    'commit',
+    '--allow-empty',
+    '--quiet',
+    '-m',
+    'x',
+  ];
+
+  test('with no runner it exits 1 and the commit does not happen', async () => {
+    const repo = await scratchRepo('hf-wrapper-');
+    try {
+      await rm(join(repo.dir, 'node_modules'), { recursive: true, force: true });
+      await installHooks(repo.dir);
+
+      const result = await spawn(['git', '-C', repo.dir, ...COMMIT], repo.dir, WITH_BUN);
+      expect(result.code).not.toBe(0);
+      expect(result.output.trim().split('\n')).toHaveLength(1);
+      expect(result.output).toContain("run 'bun install' in this worktree");
+      expect(await Bun.file(join(repo.dir, '.git/refs/heads/main')).exists()).toBe(false);
+    } finally {
+      await repo.remove();
+    }
+  });
+
+  test('run directly it exits 1 with that one line on stderr and nothing on stdout', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hf-wrapper-direct-'));
+    try {
+      await installHooks(dir);
+      const proc = Bun.spawn(['sh', '.husky/pre-push', 'origin', 'url'], {
+        cwd: dir,
+        env: WITH_BUN,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [out, err] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      expect(await proc.exited).toBe(1);
+      expect(out).toBe('');
+      expect(err.trim().split('\n')).toHaveLength(1);
+      expect(err).toContain("run 'bun install' in this worktree");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('with the runner present it hands over, passing the hook name and the arguments', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hf-wrapper-present-'));
+    try {
+      await installHooks(dir);
+      await mkdir(join(dir, 'node_modules/@homeflare/config/bin'), { recursive: true });
+      await Bun.write(
+        join(dir, 'node_modules/@homeflare/config/bin/hooks.ts'),
+        "process.stderr.write('ran ' + process.argv.slice(2).join(' ') + '\\n');\n",
+      );
+      const result = await spawn(['sh', '.husky/pre-push', 'origin', 'url'], dir, WITH_BUN);
+      expect(result.code).toBe(0);
+      expect(result.output).toBe('ran pre-push origin url\n');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

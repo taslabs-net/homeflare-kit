@@ -10,10 +10,10 @@
  *   A repo configured with only `.oxfmtrc.mjs` got formatted with oxfmt's built-in defaults
  *   instead of its own style. Measured by the homeflare-desktop docs agent.
  */
-import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ENV, type Scratch, pathWith, scratchRepo } from './hooks-harness.ts';
+import { ENV, type Scratch, pathWith, removeBins, scratchRepo } from './hooks-harness.ts';
 
 let active: Scratch | undefined;
 
@@ -35,6 +35,8 @@ afterEach(async () => {
   await active?.remove();
   active = undefined;
 });
+
+afterAll(removeBins);
 
 async function repoWithoutDefaultConfig(): Promise<Scratch> {
   const repo = await scratchRepo('hf-hook-config-');

@@ -14,11 +14,18 @@
  *     macOS:  brew install actionlint
  *     Linux:  github.com/rhysd/actionlint/releases
  *
- * ⚠️ SKIPS WHEN NOT INSTALLED, unlike the secret scan. The asymmetry is deliberate: a
- *   missed workflow typo costs one red CI run, while a missed secret costs a rotation.
- *   CI runs actionlint unconditionally, so nothing depends on every laptop having it.
+ * ⛔ FAILS CLOSED WHEN NOT INSTALLED, like the secret scan (Tim, 2026-10-01). It used to skip
+ *   with a warning on the argument that a missed workflow typo costs one red CI run while a
+ *   missed secret costs a rotation. That asymmetry is gone: a gate that cannot run is fixed,
+ *   never skipped, and a warning that exits 0 reads as coverage that does not exist. Only
+ *   a commit that stages a workflow needs the binary, and the failure names the install.
  */
-import { ok, run, stagedFiles } from './lib.ts';
+import { fail, ok, run, stagedFiles } from './lib.ts';
+
+/** The pin is homeflare-mini's CI image: the same actionlint a laptop and CI both run. */
+const INSTALL =
+  'macOS: brew install actionlint — Linux: the rhysd/actionlint 1.7.12 release, ' +
+  'https://github.com/rhysd/actionlint/releases/tag/v1.7.12 (same pin as homeflare-mini CI)';
 
 const staged = await stagedFiles();
 const workflows = staged.filter((f) => f.startsWith('.github/workflows/'));
@@ -28,17 +35,12 @@ if (workflows.length === 0) {
   process.exit(0);
 }
 
-const which = Bun.spawn(['which', 'actionlint'], { stdout: 'ignore', stderr: 'ignore' });
-
-if ((await which.exited) !== 0) {
-  console.error('\n⚠️  actionlint not installed — workflow changes were NOT linted here.');
-  console.error('   CI will still check them. To catch it locally: brew install actionlint\n');
-  process.exit(0);
+if (Bun.which('actionlint') === null) {
+  fail('actionlint is not installed, so the staged workflow changes were NOT linted', INSTALL);
 }
 
 if ((await run(['actionlint', '-color'])) !== 0) {
-  console.error('\n✗ actionlint found problems in the workflows\n');
-  process.exit(1);
+  fail('actionlint found problems in the workflows', 'fix what actionlint reported above');
 }
 
 ok(`actionlint: ${workflows.length} workflow file(s) clean`);
