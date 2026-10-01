@@ -39,6 +39,10 @@ full account).
 `POST /key/delete` also types its 404 and 403 as resource-specific tags, `KeyNotFound` (message
 `No keys found`) and `KeyDeleteForbidden` (message `not authorized to delete this key`), each matched
 on the status and that phrase of LiteLLM's own message (`patches/key_management/delete_key_fn_key_delete_post.json`).
+The credential by-name read and delete type their `404` as `CredentialNotFound` (message
+`Credential not found`), and the credential PATCH carries `credential_name` in its body as a second
+member (`credential_name_body`, wire-named `credential_name`) because the vendor's `UpdateCredentialItem`
+requires it there and a Smithy member has one binding (`patches/credential_management/{get_credential_by_name_credentials_by_name__credential_name__get,delete_credential_credentials__credential_name__delete,update_credential_credentials__credential_name__patch}.json`).
 `GenerateKeyResponse.key` and `NewUserResponse.key` — the literal virtual-key
 value `/key/generate`, `/key/regenerate` and `/user/new` return — decode to
 `Redacted.Redacted<string>` rather than a plain `string`.

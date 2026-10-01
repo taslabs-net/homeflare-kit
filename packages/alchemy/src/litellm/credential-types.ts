@@ -22,13 +22,13 @@
  *   A masked fragment (`sk****45`) is a PARTIAL SECRET, so `toAttributes` copies no
  *   `credential_values` entry at all (`credential-form.ts`); what was last written is remembered
  *   as the digest of the values this process RESOLVED, `valuesSeal` — never the values.
- * ⚠️ `credential_info` IS COMPARED, BUT ONLY PER DECLARED KEY, AND ONLY ENTRIES THE VENDOR
- *   RETURNS: the PATCH route merges by assignment and can never REMOVE a key (measured:
- *   `update_db_credential` — `merged.credential_info.update(...)`), so a live key the declaration
- *   does not name is unmodelled on purpose and ignored by the comparison. An `info` key that
- *   matches the vendor's own sensitive-key list is refused at plan time (credential-form.ts): the
- *   vendor returns `credential_info` UNMASKED, so declaring a secret there would store it in
- *   clear in LiteLLM's row and in Alchemy's state, and never read back masked.
+ * ⚠️ `credential_info` IS THE COMPLETE INTENDED MAP, INCLUDING ON ADOPTION. Measured in
+ *   LiteLLM 1.103.0 `credential_endpoints/endpoints.py:314-319`: a nonempty PATCH normally resets
+ *   the DB info map (except when it contains a literal `credential_info` key); an empty patch
+ *   leaves it alone. Memory only merges (:385-387), retaining removed keys until restart.
+ *   Therefore removing any live info key requires a rewrite; every PATCH sends the full map.
+ *   Sensitive info keys are refused at plan time because the vendor returns info UNMASKED.
+ *   Reads retain their NAMES only, so removal can converge without persisting their values.
  */
 import type { FromEnv } from '../secrets/write-only.ts';
 
@@ -44,7 +44,7 @@ export interface CredentialProps {
 
   /**
    * Free-form metadata stored beside the values (`credential_info` in the vendor's row), compared
-   * per DECLARED key with canonical-JSON deep equality. ⛔ Refused for a key matching the vendor's
+   * as the complete intended map with canonical-JSON deep equality (omitted means empty). ⛔ Refused for a key matching the vendor's
    * own sensitive-key list: those belong in `credentialValues`, where LiteLLM stores them
    * encrypted and answers them masked — in `credential_info` they would be stored in clear.
    */
@@ -68,7 +68,7 @@ export interface CredentialAttributes {
   /**
    * The row's `credential_info` as the read answers it, minus any SENSITIVE-KEYED entry — those
    * would mirror a clear secret into Alchemy's state and are skipped (`toAttributes`). The digest
-   * comparison ignores undeclared live keys (credential-form.ts).
+   * comparison removes undeclared live keys, including on adoption (credential-form.ts).
    */
   readonly credentialInfo: Readonly<Record<string, unknown>>;
 
@@ -78,6 +78,12 @@ export interface CredentialAttributes {
    * compared (`secrets/write-only.ts`). An ADOPTED row starts `''`, which reads as `stale`.
    */
   readonly valuesSeal: string;
+
+  /** Names only, never masked fragments. Optional for states written by older providers. */
+  readonly valueKeys?: readonly string[];
+
+  /** All info key names, including withheld sensitive entries; optional for older states. */
+  readonly infoKeys?: readonly string[];
 }
 
 /**

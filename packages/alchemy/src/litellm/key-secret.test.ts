@@ -17,6 +17,7 @@ import {
   liveRow,
   newFake,
   runAgainst,
+  tokenFor,
   withEnv,
 } from './key-harness.ts';
 
@@ -67,7 +68,7 @@ describe('create returns the key Redacted, and it goes nowhere else', () => {
 });
 
 describe('a read-only plan never reveals or needs the key', () => {
-  test('diff does not read the environment and makes no request', async () => {
+  test('diff with an unset variable makes no verification request', async () => {
     const fake = newFake();
     const attributes = await withEnv({ [VAR]: FAKE_KEY }, () => runAgainst(fake, reconcile(seat)));
     const before = fake.requests().length;
@@ -139,13 +140,32 @@ describe('a value that cannot be used is refused before any write', () => {
 });
 
 describe('the value is only ever for a create', () => {
-  test('an existing key is never sent one: the variable is not even read', async () => {
-    const fake = newFake({ keySeed: [liveRow({ models: ['old'] })] });
+  test("an existing key's value is read only to compare, never sent", async () => {
+    // The row's token matches OTHER_FAKE_KEY, so the in-memory compare passes — proving the value
+    // was read for the check but never put on the wire.
+    const fake = newFake({
+      keySeed: [liveRow({ models: ['old'], token: tokenFor(OTHER_FAKE_KEY) })],
+    });
     await withEnv({ [VAR]: OTHER_FAKE_KEY }, () =>
       keyStack(fake).deploy(declare({ ...seat, models: ['new'] }), { adopt: true }),
     );
     expect(fake.keys.received()).toEqual([]);
     expect(JSON.stringify(fake.keys.writes())).not.toContain(OTHER_FAKE_KEY);
+  });
+
+  test('an existing key whose declared value is not the key it holds is refused', async () => {
+    // The row's token is some OTHER key's hash; the declared value cannot be the row's, so nothing
+    // is written and the refusal names the variable, never the value.
+    const fake = newFake({ keySeed: [liveRow({ models: ['old'] })] });
+    const message = await failureOf(
+      withEnv({ [VAR]: OTHER_FAKE_KEY }, () =>
+        keyStack(fake).deploy(declare({ ...seat, models: ['new'] }), { adopt: true }),
+      ),
+    );
+    expect(message).toContain(VAR);
+    expect(message).toContain('is not the key');
+    expect(message).not.toContain(OTHER_FAKE_KEY);
+    expect(fake.keys.writes()).toEqual([]);
   });
 
   test('a proxy that mints its own value instead is caught, and its row removed again', async () => {
@@ -197,7 +217,9 @@ describe('what could still leak the value, or lose the key', () => {
   });
 
   test('DISTILLED_DEBUG_HTTP does not stop an update, which never carries the value', async () => {
-    const fake = newFake({ keySeed: [liveRow({ models: ['old'] })] });
+    const fake = newFake({
+      keySeed: [liveRow({ models: ['old'], token: tokenFor(FAKE_KEY) })],
+    });
     const printed = await printedBy(() =>
       withEnv({ DISTILLED_DEBUG_HTTP: '1', [VAR]: FAKE_KEY }, () =>
         keyStack(fake).deploy(declare({ ...seat, models: ['new'] }), { adopt: true }),

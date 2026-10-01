@@ -16,23 +16,32 @@
  *   `sk-…` in the vault, the same one the seat reads — and handed to LiteLLM, which the docstring
  *   for `key` supports: "User defined key value. Must start with 'sk-' and be at least 16
  *   characters long."
- * ⚠️ THE VALUE IS NEVER COMPARED WITH THE LIVE ROW. LiteLLM keeps the sha256 hex of the key
- *   (`hash_token`, measured in the 1.103.0 wheel's `proxy/utils.py`), so a value COULD be checked
- *   against a row. There would be nothing to do about a mismatch: `/key/update` drops `key` from its
- *   body (`prepare_key_update_data` pops it, `key_management_endpoints.py:2469`), so it cannot change
- *   a key's value, and `/key/regenerate` is an Enterprise feature (its docstring, :5673). A changed
- *   variable therefore changes nothing on an existing key: rotate by declaring a new alias.
+ * ⚠️ AN ADOPTED KEY'S VALUE IS COMPARED WITH THE LIVE ROW, IN MEMORY ONLY. LiteLLM keeps the sha256
+ *   hex of the key (`hash_token`, measured in the 1.103.0 wheel's `proxy/utils.py`), and `/key/list`
+ *   with `return_full_object` returns it as the row's `token`. When a declaration names `key:
+ *   { fromEnv }` for a key that already exists, the resolved value is sha256'd and compared with that
+ *   hash (never with the value, and the hash is never persisted — key-form.ts's `toAttributes` still
+ *   drops `token`). A mismatch is refused (`LitellmKeyValueMismatchError`): a seat reading the same
+ *   variable would hold a key that authenticates nothing while the plan reported success. There is
+ *   nothing to WRITE about a mismatch — `/key/update` drops `key` from its body
+ *   (`prepare_key_update_data` pops it, `key_management_endpoints.py:2469`), so it cannot change a
+ *   key's value, and `/key/regenerate` is an Enterprise feature (its docstring, :5673) — so the
+ *   operator fixes the variable or drops the `key`. A changed variable changes nothing on an
+ *   existing key: rotate by declaring a new alias. Plan and reconcile both check a set variable;
+ *   an unset or empty variable skips verification so a deployer need not hold the seat key.
  * ⚠️ A PROXY MAY REFUSE THE WHOLE APPROACH: with the dashboard's `disable_custom_api_keys` setting
  *   on, `/key/generate` answers 403 to ANY user-defined key ("Keys must be auto-generated",
  *   `_check_custom_key_allowed`, :485-496). That surfaces as the SDK's typed `Forbidden`. UNVERIFIED
  *   whether the estate's proxy has it on; adopting existing keys is unaffected.
  */
+import { createHash } from 'node:crypto';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { type FromEnv, resolveAll } from '../secrets/write-only.ts';
 import {
   LitellmKeyDebugLoggingError,
   LitellmKeyValueMalformedError,
+  LitellmKeyValueMismatchError,
   LitellmKeyValueMissingError,
   LitellmKeyValueRequiredError,
 } from './key-errors.ts';
@@ -80,6 +89,36 @@ export const echoes = (
   (Redacted.isRedacted(returned) ? Redacted.value(returned) : returned) === Redacted.value(sent);
 
 /**
+ * The sha256 hex of a key value, the same digest LiteLLM stores as `hash_token` (`proxy/utils.py`).
+ * ★ MATCHES THE VENDOR'S HASH, not a house format: the row's `token` is the vendor's own store, so
+ *   the digest must be reproducible from the value with the vendor's algorithm, not a salt (a salt
+ *   would make every comparison fail). Nothing here is persisted — the value is in memory only.
+ */
+const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
+
+/**
+ * Whether an ADOPTED key's declared `key: { fromEnv }` value is the key the live row holds.
+ *
+ * ⚠️ COMPARED AS A SHA256 AGAINST THE ROW'S `token`, never value-against-value, and the hash is
+ *   never written anywhere: a `Redacted` value unwrapped only long enough to digest it, then gone.
+ *   The row's `token` (`hash_token`) is the vendor's own sha256 hex of the key.
+ */
+export const verifyKeyValue = (
+  keyAlias: string,
+  ref: FromEnv | undefined,
+  token: string | null,
+): Effect.Effect<void, LitellmKeyValueMismatchError> =>
+  Effect.gen(function* () {
+    if (ref === undefined) return;
+    const variable = ref.fromEnv;
+    const value = resolveAll({ key: ref }).values['key'];
+    if (value === undefined) return;
+    if (token === null || sha256(value) !== token) {
+      return yield* new LitellmKeyValueMismatchError({ keyAlias, variable });
+    }
+  });
+
+/**
  * ⛔ THE SDK PRINTS BODIES WHILE `DISTILLED_DEBUG_HTTP` IS SET (`@distilled.cloud/core`
  *   `protocol-http.ts`: the first 400 characters of every request body; `protocol-rest.ts`: of every
  *   response), and `/key/generate` carries the key in both. Measured by reading the pinned source
@@ -92,3 +131,7 @@ export const refuseDebugLogging = (
   (globalThis.process?.env?.['DISTILLED_DEBUG_HTTP'] ?? '') !== ''
     ? Effect.fail(new LitellmKeyDebugLoggingError({ keyAlias }))
     : Effect.void;
+
+/** Whether verification can run; unset/empty variables skip the check, never a create. */
+export const hasKeyValue = (ref: FromEnv | undefined): boolean =>
+  ref !== undefined && resolveAll({ key: ref }).values['key'] !== undefined;

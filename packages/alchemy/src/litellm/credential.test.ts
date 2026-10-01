@@ -1,7 +1,7 @@
 /**
  * `LiteLLM.Credential` through Alchemy's real Plan and Apply over the fake proxy
- * (`fake-credential-litellm.ts`): create, no-op, the DELETE+POST rewrite, adoption, the masked
- * store's asymmetry, removal.
+ * (`fake-credential-litellm.ts`): create, no-op, the PATCH merge, the whole-row rewrite to drop a
+ * key, adoption, the masked store's asymmetry, removal.
  *
  * ★ EVERY VALUE IS `FAKE-*`, and the credential reaches the resource only through an environment
  *   variable the test sets and removes, exactly as a deploying process would (S25).
@@ -59,30 +59,41 @@ test('a second deploy of the same declaration writes nothing', async () => {
   expect(writesOf(fake.requests().slice(before))).toEqual([]);
 });
 
-test('a rotated value is a whole-row rewrite — DELETE then POST — one row left, then a no-op', async () => {
+test('a rotated value is a PATCH merge — one row, then a no-op', async () => {
   const fake = startFakeCredentialLitellm({ masterKey: KEY });
   const same = stack(fake);
   await same.deploy(declare(props));
   process.env[VARIABLE] = 'FAKE-key-two';
   const before = fake.requests().length;
   expect(await same.deploy(declare(props))).toEqual({ Cred: 'update' });
-  expect(writesOf(fake.requests().slice(before))).toEqual([
-    'DELETE /credentials/FAKE_api',
-    'POST /credentials',
-  ]);
+  expect(writesOf(fake.requests().slice(before))).toEqual(['PATCH /credentials/FAKE_api']);
   expect(fake.rows()).toHaveLength(1);
   expect(fake.rows()[0]?.['credential_values']).toEqual({ api_key: 'FAKE-key-two' });
   expect(await same.deploy(declare(props))).toEqual({ Cred: 'noop' });
 });
 
-test('a changed metadata value is a rewrite too', async () => {
+test('a changed metadata value is a PATCH too', async () => {
   const fake = startFakeCredentialLitellm({ masterKey: KEY });
   const same = stack(fake);
   await same.deploy(declare(props));
   expect(
     await same.deploy(declare({ ...props, credentialInfo: { note: 'docs search v2' } })),
   ).toEqual({ Cred: 'update' });
+  expect(writesOf(fake.requests())).toEqual(['POST /credentials', 'PATCH /credentials/FAKE_api']);
   expect(fake.rows()[0]?.['credential_info']).toEqual({ note: 'docs search v2' });
+});
+
+test('dropping a previously-declared info key is a whole-row rewrite (PATCH cannot remove)', async () => {
+  const fake = startFakeCredentialLitellm({ masterKey: KEY });
+  const same = stack(fake);
+  await same.deploy(declare({ ...props, credentialInfo: { note: 'docs search', team: 'a' } }));
+  const before = fake.requests().length;
+  expect(await same.deploy(declare(props))).toEqual({ Cred: 'update' });
+  expect(writesOf(fake.requests().slice(before))).toEqual([
+    'DELETE /credentials/FAKE_api',
+    'POST /credentials',
+  ]);
+  expect(fake.rows()[0]?.['credential_info']).toEqual({ note: 'docs search' });
 });
 
 test('a live row is Unowned: refused without --adopt, taken with it (and sealed)', async () => {
@@ -99,7 +110,7 @@ test('a live row is Unowned: refused without --adopt, taken with it (and sealed)
   expect(writesOf(fake.requests())).toEqual([]);
   await engine.deploy(declare(props), { adopt: true });
   // the declared values are stamped over the row a writer elsewhere rotated, so the seal matches
-  expect(writesOf(fake.requests())).toEqual(['DELETE /credentials/FAKE_api', 'POST /credentials']);
+  expect(writesOf(fake.requests())).toEqual(['PATCH /credentials/FAKE_api']);
   expect(fake.rows()[0]?.['credential_values']).toEqual({ api_key: 'FAKE-key-one' });
   const before = fake.requests().length;
   expect(await engine.deploy(declare(props))).toEqual({ Cred: 'noop' });

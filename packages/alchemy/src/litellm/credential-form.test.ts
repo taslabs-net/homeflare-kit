@@ -12,6 +12,8 @@ import {
   firstProblem,
   isCredentialRow,
   literalValues,
+  patchBody,
+  removedInfoKeys,
   toAttributes,
 } from './credential-form.ts';
 import type { CredentialAttributes, CredentialProps } from './credential-types.ts';
@@ -73,13 +75,14 @@ test('toAttributes mirrors only the metadata the vendor answers unmasked, and no
   expect(live).toEqual({
     credentialInfo: { note: 'docs search' },
     credentialName: 'FAKE_api',
+    valueKeys: ['api_key', 'region'],
+    infoKeys: ['aws_secret', 'note'],
     valuesSeal: '',
   });
 });
 
 test('differing compares per declared key only, deeply, ignoring object key order', () => {
-  // a live key the declaration does not name is unmodelled, never drift (the vendor's merge
-  // cannot remove keys — credential-types.ts)
+  // This helper checks declared values; removedInfoKeys separately detects undeclared live keys.
   expect(differing(attributes({ note: 'docs search', extra: 'live' }), base)).toEqual([]);
   expect(differing(attributes({ note: 'docs search v2', extra: 'live' }), base)).toEqual([
     'credential_info.note',
@@ -119,4 +122,30 @@ test('createBody carries the name in the body and the values as literals, unwrap
   });
   // the body carries the VALUE the proxy stores, never the variable NAME the declaration holds
   expect(JSON.stringify(body)).not.toContain(VARIABLE);
+});
+
+test('patchBody carries the name twice (path label and body field) and the info, values optional', () => {
+  expect(patchBody(base, undefined)).toEqual({
+    credential_info: { note: 'docs search' },
+    credential_name: 'FAKE_api',
+    credential_name_body: 'FAKE_api',
+  });
+  expect(patchBody(base, { api_key: 'FAKE-key-one' })).toEqual({
+    credential_info: { note: 'docs search' },
+    credential_name: 'FAKE_api',
+    credential_name_body: 'FAKE_api',
+    credential_values: { api_key: 'FAKE-key-one' },
+  });
+  // the body carries the VALUE, never the variable NAME the declaration holds
+  expect(JSON.stringify(patchBody(base, { api_key: 'FAKE-key-one' }))).not.toContain(VARIABLE);
+});
+
+test('removedInfoKeys finds live keys absent from the full intended info map', () => {
+  const prior = attributes({ note: 'docs search', team: 'a' });
+  expect(removedInfoKeys(prior, base)).toEqual(['team']);
+  expect(
+    removedInfoKeys(prior, { ...base, credentialInfo: { note: 'docs search', team: 'a' } }),
+  ).toEqual([]);
+  // No live row means there is nothing to remove.
+  expect(removedInfoKeys(undefined, base)).toEqual([]);
 });

@@ -9,7 +9,8 @@
  *   key declared with `budgetId: tier.budgetId`, an Output until the tier exists.
  * ⛔ THE VALUE IS WRITE-ONLY (key-secret.ts): `key: { fromEnv }` names the variable, the value goes
  *   over the wire once in `/key/generate`, and no attribute, log line or error carries it. `diff`
- *   and `read` never touch the environment, so a plan needs no secret.
+ *   checks a set variable against the live token in memory; an unset variable skips the check.
+ *   `read` never touches the environment, and no value or hash is added to state.
  * ★ `defaultRemovalPolicy: 'retain'` — deleting a key breaks whatever holds it (a seat's every call
  *   401s). Dropping the declaration leaves the key live; `.pipe(RemovalPolicy.destroy())` opts in.
  * ⛔ A RENAME IS REFUSED, not replaced. The new key would need the same value, and `/key/generate`
@@ -46,8 +47,14 @@ import {
   LitellmKeyCallbackMetadataDeclaredError,
   LitellmKeyCallbackMetadataLiveError,
 } from './key-metadata-errors.ts';
-import { deleteKey, findKey, generateKey, updateKey } from './key-operations.ts';
-import { echoes, refuseDebugLogging, resolveKeyValue } from './key-secret.ts';
+import { deleteKey, findKey, generateKey, readKeyToken, updateKey } from './key-operations.ts';
+import {
+  echoes,
+  hasKeyValue,
+  refuseDebugLogging,
+  resolveKeyValue,
+  verifyKeyValue,
+} from './key-secret.ts';
 
 export type { KeyAttributes, KeyProps };
 export type { KeyError } from './key-errors.ts';
@@ -134,6 +141,14 @@ export const keyHandlers = {
       if (news.keyAlias !== output.keyAlias) {
         return yield* new LitellmKeyAliasChangedError({ from: output.keyAlias, to: news.keyAlias });
       }
+      // beta.79 Provider.ts:274-289 permits effectful diff, and Plan.ts:1503-1527 calls it
+      // even for unchanged props. Refuse an immutable value mismatch before a false noop.
+      if (hasKeyValue(news.key)) {
+        const token = yield* readKeyToken(news.keyAlias);
+        // A dashboard deletion leaves stale output: recreate even without a settings change.
+        if (token === undefined) return { action: 'update' } as const;
+        yield* verifyKeyValue(news.keyAlias, news.key, token);
+      }
       return differing(output, news).length === 0
         ? ({ action: 'noop' } as const)
         : ({ action: 'update' } as const);
@@ -159,6 +174,13 @@ export const keyHandlers = {
         yield* createKey(news);
       } else {
         yield* refuseTakeover({ fqn, instanceId, output }, `LiteLLM.Key ${alias}`);
+        // ⚠️ AN ADOPTED KEY'S DECLARED VALUE IS CHECKED AGAINST THE ROW (key-secret.ts's header):
+        //   only when `key: { fromEnv }` names a variable, only as a sha256 in memory, and nothing
+        //   is written about a mismatch (`/key/update` cannot change a key's value). No `key` declared
+        //   means no extra read: `readKeyToken` is a `/key/list`, and an omitted value is never held.
+        if (hasKeyValue(news.key)) {
+          yield* verifyKeyValue(alias, news.key, (yield* readKeyToken(alias)) ?? null);
+        }
         yield* refuseMetadata(news, before);
         if (differing(before, news).length > 0) yield* updateKey(updateBody(news, before));
       }

@@ -4,7 +4,9 @@
  * ⛔ THERE IS NO SECRET IN THIS FILE'S OUTPUT. `KeyAttributes` has no `key`, no `token` and no hash:
  *   `/key/list` rows carry `token` (LiteLLM's hash of the key) and `toAttributes` drops it, because
  *   attributes are persisted unencrypted (key-secret.ts). The value is unwrapped in `createBody`, at
- *   the last moment before the wire. The callback slots of `metadata` are dropped too (key-metadata.ts).
+ *   the last moment before the wire, and compared with a live row only as a sha256 in memory
+ *   (`verifyKeyValue`, key-secret.ts) against the raw row's `token` — the hash itself never reaches
+ *   state. The callback slots of `metadata` are dropped too (key-metadata.ts).
  * ★ THE ROW IS READ THROUGH `/key/list?key_alias=…&return_full_object=true`. Measured 2026-09-28
  *   (litellm-key-access): a bare list and `get_key` come back with `models: []` for keys whose real
  *   allowlist lives in the full object. The generated `UserAPIKeyAuth` row declares every column
@@ -34,8 +36,10 @@ export interface KeyProps {
   readonly keyAlias: string;
   /**
    * The key's VALUE, by the NAME of the environment variable holding it (`{ fromEnv: 'SEAT_KEY' }`).
-   * Write-only and create-only: required to create the key, never stored, never compared with a
-   * live row. Omit it to manage an existing key's settings without ever holding its value.
+   * Write-only and create-only: required to create the key, never stored. On an EXISTING key a
+   * declared value is compared with the row in memory only (sha256 against the row's `token`), and a
+   * mismatch is refused — `/key/update` cannot change a key's value. Omit it to manage an existing
+   * key's settings without ever holding its value.
    */
   readonly key?: FromEnv;
   /**

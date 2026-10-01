@@ -1,0 +1,16 @@
+---
+'@homeflare/alchemy': patch
+'@homeflare/distilled-litellm': patch
+---
+
+Harden `LiteLLM.Key` and `LiteLLM.Credential` against the review findings on their release PRs.
+
+`LiteLLM.Credential`: a create onto a name another owner already holds is refused at apply, never overwritten (`refuseTakeover`, matching `LiteLLM.Key`); a `POST /credentials` that fails on the wire is a `LitellmCredentialTransportError` that keeps neither the request nor its cause (the body holds the values), and a create is refused while `DISTILLED_DEBUG_HTTP` is set (the SDK would print the values); the by-name read and delete `catchTag` the SDK's `CredentialNotFound` instead of `instanceof NotFound`, so a 404 from a front proxy or wrong base path stays an error rather than reading as absence. A changed row is now updated with `PATCH /credentials/{name}` (a value-key merge with full intended info) instead of a whole-row DELETE + POST, so a write that fails on the wire leaves the row in place — the DELETE + POST rewrite left no row when the POST failed after the DELETE. Removing value keys or in-memory info keys requires a whole-row rewrite. Reconcile refuses debug logging and missing required values before DELETE. Info is the complete intended map, including on adoption, so undeclared live info keys are deliberately removed. PATCH normally replaces DB info but only merges memory info; it sends the full intended map.
+
+`LiteLLM.Key`: an owned or adopted key whose declared `key: { fromEnv }` value is not the key the live row holds is refused (`LitellmKeyValueMismatchError`), compared only as a sha256 in memory against the row's `token` (`hash_token`) — never persisted, never in an error. `/key/update` cannot change a key's value, so a mismatch is nothing to write: fix the variable or rotate with a new alias. Alchemy beta.79 calls the effectful diff even for unchanged props, so an environment-only rotation is refused during plan. Unset/empty variables skip verification for an existing key, allowing settings updates without the seat key; creates still require the value.
+
+`@homeflare/distilled-litellm`: the by-name read and delete now type their `404` as `CredentialNotFound` (matched on the vendor's `Credential not found`), so `catchTag` sees it; the credential PATCH now carries `credential_name` in its request body (a second member `credential_name_body`, wire-named `credential_name`) so it answers the vendor's `UpdateCredentialItem` instead of a 422.
+
+Walked against LiteLLM 1.103.0 `proxy/credential_endpoints/endpoints.py:312–319,384–387` and Alchemy 2.0.0-beta.79 `src/Provider.ts:274–289`, `src/Plan.ts:1503–1527`. Regression tests exercise real Plan/Apply and SDK encoding; the fake models separate DB/memory semantics, records PATCH bodies, requires the body name (422), and uses the vendor 404 error envelope.
+
+An owned key deleted outside the stack now plans an update and is recreated using its declared variable; only a live row is checked for a value mismatch. A credential rewrite whose POST fails after DELETE reports `LitellmCredentialRewriteError`, explicitly identifies the completed DELETE, and explains that the next deploy recreates an absent row. Regression tests cover dashboard deletion with a models change, live mismatches, and failed rewrite recovery through real Plan/Apply.

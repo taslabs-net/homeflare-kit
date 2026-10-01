@@ -16,8 +16,11 @@
  *   a row committed to the table but not loaded in memory, so the read answers 404 while the
  *   create for the same name answers 409 — the asymmetry credential-operations.ts documents.
  * ★ A CREATE ON AN EXISTING NAME ANSWERS 409 (the vendor's unique-violation handling,
- *   `_credential_exists_detail`), decoded by the real SDK path as core `Conflict`. The fake does
- *   not model a PATCH route because the resource never calls one (credential-form.ts).
+ *   `_credential_exists_detail`), decoded by the real SDK path as core `Conflict`. The PATCH route
+ *   merges values in both stores; nonempty info normally replaces DB info but merges in memory
+ *   (`credential_endpoints/endpoints.py:312-319,384-387`, 1.103.0). Empty info leaves DB unchanged. With
+ *   the body's `credential_name` (the `credential_name_body` member) applied as the new name only
+ *   when it differs from the path's (the kit never renames in place, so it never does).
  * ★ `FAKE-*` VALUES ONLY. Nothing here is, or looks like, a real credential.
  */
 /** One request that reached the fake. Its own type, so this file depends on no other fake. */
@@ -37,7 +40,7 @@ export interface FakeCredentialLitellm {
    */
   readonly rows: () => readonly Row[];
   readonly requests: () => readonly FakeCredentialRequest[];
-  /** The JSON bodies of every `POST`, in order. */
+  /** The JSON bodies of every `POST` and `PATCH`, in order (including rejected PATCH requests). */
   readonly bodies: () => readonly Row[];
 }
 
@@ -94,12 +97,13 @@ export const startFakeCredentialLitellm = (
 ): FakeCredentialLitellm => {
   const masterKey = options.masterKey ?? 'sk-test-master';
   let rows: Row[] = (options.seed ?? []).map((row) => ({ ...row }));
+  let memory = rows.map((row) => ({ ...row }));
   const requests: FakeCredentialRequest[] = [];
   const bodies: Row[] = [];
   const memoryOmits = new Set<string>(options.memoryOmits ?? []);
 
   const inMemory = (name: string): Row | undefined =>
-    rows.find((row) => String(row['credential_name']) === name && !memoryOmits.has(name));
+    memory.find((row) => String(row['credential_name']) === name && !memoryOmits.has(name));
 
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const request =
@@ -116,7 +120,7 @@ export const startFakeCredentialLitellm = (
       const name = decodeURIComponent(path.slice('/credentials/by_name/'.length));
       const found = inMemory(name);
       return found === undefined
-        ? json(404, { detail: `Credential not found. Got credential name: ${name}` })
+        ? json(404, { error: { message: `Credential not found. Got credential name: ${name}` } })
         : json(200, {
             ...found,
             credential_values: masked(found['credential_values']),
@@ -132,21 +136,75 @@ export const startFakeCredentialLitellm = (
         return json(409, { detail: `Credential '${name}' already exists.` });
       }
       rows = [...rows, credentialRow(body)];
+      memory = [...memory, credentialRow(body)];
       memoryOmits.delete(name); // a create loads the row into memory; an omission is seeded-only
       return json(200, { success: true, message: 'Credential created successfully' });
+    }
+
+    // PATCH /credentials/{name} — DB info replacement, memory merge (see the header); the body's
+    // `credential_name` (the `credential_name_body` member) renames only when it differs.
+    if (path.startsWith('/credentials/') && request.method === 'PATCH') {
+      const name = decodeURIComponent(path.slice('/credentials/'.length));
+      const body = (await request.json()) as Row;
+      bodies.push(body);
+      if (typeof body['credential_name'] !== 'string') {
+        return json(422, {
+          detail: [{ loc: ['body', 'credential_name'], msg: 'Field required', type: 'missing' }],
+        });
+      }
+      if (!rows.some((row) => String(row['credential_name']) === name)) {
+        return json(404, { error: { message: 'Credential not found in DB.' } });
+      }
+      const bodyName = body['credential_name'];
+      const target =
+        typeof bodyName === 'string' && bodyName !== '' && bodyName !== name ? bodyName : name;
+      const info = (body['credential_info'] ?? {}) as Row;
+      const values = (body['credential_values'] ?? {}) as Row;
+      rows = rows.map((row) =>
+        String(row['credential_name']) === name
+          ? {
+              ...row,
+              credential_name: target,
+              credential_info:
+                Object.keys(info).length === 0
+                  ? row['credential_info']
+                  : {
+                      ...('credential_info' in ((row['credential_info'] ?? {}) as Row)
+                        ? (row['credential_info'] as Row)
+                        : {}),
+                      ...info,
+                    },
+              credential_values: { ...((row['credential_values'] ?? {}) as Row), ...values },
+            }
+          : row,
+      );
+      memory = memory.map((row) =>
+        String(row['credential_name']) === name
+          ? {
+              ...row,
+              credential_name: target,
+              credential_info: { ...((row['credential_info'] ?? {}) as Row), ...info },
+              credential_values: { ...((row['credential_values'] ?? {}) as Row), ...values },
+            }
+          : row,
+      );
+      return json(200, { success: true, message: 'Credential updated successfully' });
     }
 
     // DELETE /credentials/{name} — DB-authoritative; 404 when the TABLE lacks the name.
     if (path.startsWith('/credentials/') && request.method === 'DELETE') {
       const name = decodeURIComponent(path.slice('/credentials/'.length));
       if (!rows.some((row) => String(row['credential_name']) === name)) {
-        return json(404, { detail: `Credential not found. Got credential name: ${name}` });
+        return json(404, {
+          error: { message: `Credential not found. Got credential name: ${name}` },
+        });
       }
       rows = rows.filter((row) => String(row['credential_name']) !== name);
+      memory = memory.filter((row) => String(row['credential_name']) !== name);
       return json(200, { success: true, message: 'Credential deleted successfully' });
     }
 
-    return json(404, { detail: 'not found' });
+    return json(404, { error: { message: 'not found' } });
   }) as typeof globalThis.fetch;
 
   return {

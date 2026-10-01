@@ -4,21 +4,27 @@
  *
  *   read    `getCredentialByNameCredentialsByNameCredentialNameGet`  GET     /credentials/by_name/{name}
  *   create  `createCredentialCredentialsPost`                        POST    /credentials
+ *   update  `updateCredentialCredentialsCredentialNamePatch`        PATCH   /credentials/{name}
  *   delete  `deleteCredentialCredentialsCredentialNameDelete`        DELETE  /credentials/{name}
  *
- * ⛔ THE TYPED UPDATE OPERATION IS UNUSED, AND WHY: `updateCredentialCredentialsCredentialNamePatch`
- *   is wire-broken — measured 2026-09-30, stub fetch against this SDK, its PATCH body carries only
- *   `{credential_info, credential_values}` while the vendor's PATCH body model
- *   (`UpdateCredentialItem`, live 1.103.0 container) requires `credential_name` as a body field,
- *   so every PATCH answers 422. The whole-row rewrite a changed declaration needs is the vendor's
- *   own DELETE + POST above; credential.ts carries the reasoning. The typed fix belongs in the
- *   distilled clone; no hand-rolled HTTP here (S23).
- * ⛔ NO MESSAGE SNIFFING (S21). These operations declare only `UnprocessableEntity` (422); the
- *   `404` the read and the delete answer decodes at run time as core's shared `NotFound` class
- *   (`HTTP_STATUS_MAP`), invisible to the type checker, so absence is that class, tested with
- *   `instanceof` — never a status check, never error text. A create on a name the DB already has
- *   answers `409` (`endpoints.py`'s unique-violation handling), decoded as core `Conflict`, and is
- *   PROPAGATED: a row another writer raced in is not this declaration's row.
+ * ★ THE UPDATE IS A PATCH, NOT A REWRITE. The vendor's PATCH merges value keys; nonempty info
+ *   normally replaces the DB map but merges in memory (`endpoints.py:312-319,384-387`, 1.103.0).
+ *   The body carries `credential_name` as a second member
+ *   (`credential_name_body`, wire-named `credential_name`) because the vendor's
+ *   `UpdateCredentialItem` requires it in the body and a Smithy member has one binding — the
+ *   distilled patch `patches/credential_management/update_credential_credentials__credential_name__patch.json`.
+ *   A PATCH that fails on the wire leaves the row it was merging into, where the old DELETE + POST
+ *   rewrite left NO row when the POST failed after the DELETE (review finding 3). credential.ts
+ *   still rewrites to drop value or info keys, since PATCH cannot remove them from both stores.
+ * ⛔ NO MESSAGE SNIFFING (S21). The read's and delete's `404` is typed as the SDK's
+ *   `CredentialNotFound` (a distilled patch matched on the vendor's "Credential not found" message,
+ *   `endpoints.py`), so absence is that TAG, `catchTag`ed — never `instanceof`, never error text. A
+ *   404 from a front proxy, Access, or a wrong base path decodes as core's `NotFound` and stays an
+ *   error, never absence. A create on a name the DB already has answers `409` (`endpoints.py`'s
+ *   unique-violation handling), decoded as core `Conflict`, and is PROPAGATED: a row another writer
+ *   raced in is not this declaration's row. The PATCH's own 404 (message `Credential not found in
+ *   DB.`) is NOT `CredentialNotFound`: it stays core `NotFound`, an error — a row deleted between
+ *   the read and the PATCH must not silently read as absence.
  * ⚠️ THE READ AND THE DELETE ASK DIFFERENT STORES (measured, `endpoints.py`): the by-name read
  *   walks the proxy's IN-MEMORY `credential_list` (a row the proxy has not loaded answers 404),
  *   while the delete consults the DATABASE (`delete_by_name`) and removes the in-memory entry
@@ -27,17 +33,22 @@
  * ⚠️ Unlike pass-through endpoints, each credential is its own DB row: no semaphore.
  */
 import * as credentials from '@distilled.cloud/litellm/credential_management';
-import { NotFound } from '@distilled.cloud/litellm/Errors';
 import * as Effect from 'effect/Effect';
+import * as Predicate from 'effect/Predicate';
+import { isHttpClientError } from 'effect/unstable/http/HttpClientError';
 import { isCredentialRow, toAttributes } from './credential-form.ts';
 import type { CredentialAttributes } from './credential-types.ts';
-import { LitellmCredentialUnreadableError } from './credential-errors.ts';
+import {
+  LitellmCredentialDebugLoggingError,
+  LitellmCredentialTransportError,
+  LitellmCredentialUnreadableError,
+} from './credential-errors.ts';
 import { type LitellmOpContext, throughFetch } from './operations.ts';
 
 /**
  * One credential by name, or `undefined` when the proxy does not hold it in memory. ⛔ ANY FAILURE
- * OTHER THAN `NotFound` PROPAGATES: a 401, a 422 or a dead network says nothing about whether the
- * row exists, and must never be read as absence.
+ * OTHER THAN `CredentialNotFound` PROPAGATES: a 401, a 422 or a dead network says nothing about
+ * whether the row exists, and must never be read as absence.
  */
 export const readCredential = (
   credentialName: string,
@@ -52,9 +63,7 @@ export const readCredential = (
       credential_name: credentialName,
     }),
   ).pipe(
-    Effect.catch((error) =>
-      error instanceof NotFound ? Effect.succeed(undefined) : Effect.fail(error),
-    ),
+    Effect.catchTag('CredentialNotFound', () => Effect.succeed(undefined)),
     Effect.flatMap((response) => {
       if (response === undefined) return Effect.succeed(undefined);
       if (!isCredentialRow(response)) {
@@ -77,11 +86,89 @@ export const readCredential = (
     }),
   );
 
-/** POST /credentials. The answer carries no row (`{"success": true, ...}`), so the read back is the proof. */
+/**
+ * POST /credentials. The answer carries no row (`{"success": true, ...}`), so the read back is the
+ * proof.
+ *
+ * ⛔ THE REQUEST BODY CARRIES THE VALUES, AND A FAILED CALL CAN CARRY ITS REQUEST — exactly the
+ *   `{"key":"sk-…"}` leak `generateKey` (key-operations.ts) closes, and it is closed the same way:
+ *   a transport failure is an `HttpClientError` in the error channel, a body that fails mid-read is
+ *   the SAME error as a DEFECT (`Effect.orDie` in core's `protocol-rest.ts`). Both become
+ *   `LitellmCredentialTransportError`, which keeps the NAME and the reason's tag and nothing else.
+ * ⛔ RECONCILE REFUSES WHILE `DISTILLED_DEBUG_HTTP` IS SET, before any request: the SDK prints
+ *   the first 400 characters of every request body (core `protocol-http.ts`), which would put the values on
+ *   stderr — the same refusal `key-secret.ts` makes for `/key/generate`.
+ */
 export const createCredential = (
   body: credentials.CreateCredentialCredentialsPostRequest,
-): Effect.Effect<void, credentials.CreateCredentialCredentialsPostError, LitellmOpContext> =>
-  throughFetch(credentials.createCredentialCredentialsPost(body)).pipe(Effect.asVoid);
+): Effect.Effect<
+  void,
+  credentials.CreateCredentialCredentialsPostError | LitellmCredentialTransportError,
+  LitellmOpContext
+> => {
+  const credentialName = body.credential_name ?? '';
+  return Effect.gen(function* () {
+    yield* throughFetch(credentials.createCredentialCredentialsPost(body)).pipe(
+      Effect.asVoid,
+      Effect.catchTag('HttpClientError', (error) =>
+        Effect.fail(
+          new LitellmCredentialTransportError({ credentialName, reason: error.reason._tag }),
+        ),
+      ),
+      Effect.catchDefect((defect) =>
+        carriesRequest(defect)
+          ? Effect.fail(
+              new LitellmCredentialTransportError({
+                credentialName,
+                reason: isHttpClientError(defect) ? defect.reason._tag : 'Defect',
+              }),
+            )
+          : Effect.die(defect),
+      ),
+    );
+  });
+};
+
+/**
+ * PATCH /credentials/{name}. Sends the full intended `credential_info` (DB replacement, memory
+ * merge) and merges resolved `credential_values` when present. The answer carries no row
+ * (`{"success": true, ...}`), so the read back is the proof.
+ *
+ * ⛔ THE SAME TWO GUARDS AS `createCredential`: the body carries the values, so a transport failure
+ *   becomes a `LitellmCredentialTransportError` that keeps the NAME and the reason's tag and
+ *   nothing else, and reconcile refuses while `DISTILLED_DEBUG_HTTP` is set (the SDK would print
+ *   the values). A PATCH that fails on the wire leaves the row in place — the point of using it
+ *   over a DELETE + POST rewrite.
+ */
+export const updateCredential = (
+  body: credentials.UpdateCredentialCredentialsCredentialNamePatchRequest,
+): Effect.Effect<
+  void,
+  credentials.UpdateCredentialCredentialsCredentialNamePatchError | LitellmCredentialTransportError,
+  LitellmOpContext
+> => {
+  const credentialName = body.credential_name ?? '';
+  return Effect.gen(function* () {
+    yield* throughFetch(credentials.updateCredentialCredentialsCredentialNamePatch(body)).pipe(
+      Effect.asVoid,
+      Effect.catchTag('HttpClientError', (error) =>
+        Effect.fail(
+          new LitellmCredentialTransportError({ credentialName, reason: error.reason._tag }),
+        ),
+      ),
+      Effect.catchDefect((defect) =>
+        carriesRequest(defect)
+          ? Effect.fail(
+              new LitellmCredentialTransportError({
+                credentialName,
+                reason: isHttpClientError(defect) ? defect.reason._tag : 'Defect',
+              }),
+            )
+          : Effect.die(defect),
+      ),
+    );
+  });
+};
 
 /**
  * DELETE /credentials/{name}, idempotent BY THIS FUNCTION: the vendor answers 404 for a name its
@@ -101,5 +188,21 @@ export const deleteCredential = (
     }),
   ).pipe(
     Effect.asVoid,
-    Effect.catch((error) => (error instanceof NotFound ? Effect.void : Effect.fail(error))),
+    Effect.catchTag('CredentialNotFound', () => Effect.void),
   );
+
+/**
+ * Whether `DISTILLED_DEBUG_HTTP` is set, refused once at the top of reconcile, before even a
+ * DELETE can run (the following POST would carry values). Reads `process.env` because that is
+ * what the SDK's `protocol-http.ts` reads.
+ */
+export const refuseDebugLogging = (
+  credentialName: string,
+): Effect.Effect<void, LitellmCredentialDebugLoggingError> =>
+  (globalThis.process?.env?.['DISTILLED_DEBUG_HTTP'] ?? '') !== ''
+    ? Effect.fail(new LitellmCredentialDebugLoggingError({ credentialName }))
+    : Effect.void;
+
+/** An `HttpClientError` (or a defect that is one) carries its request — and thus the values. */
+const carriesRequest = (value: unknown): boolean =>
+  isHttpClientError(value) || Predicate.hasProperty(value, 'request');

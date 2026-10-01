@@ -17,12 +17,11 @@
  * ⚠️ A RENAME IS A REPLACE: the name is the row's identity and its only address, so a changed
  *   `credentialName` creates the new row and the old one survives under 'retain' — never renamed
  *   in place.
- * ⚠️ A CHANGED ROW IS REWRITTEN AS DELETE + POST, NOT PATCHED — MEASURED, NOT A TASTE. The SDK's
- *   typed PATCH op is wire-broken against the vendor (its body omits `credential_name`, which the
- *   vendor's PATCH model requires; credential-form.ts holds the stub-fetch measurement). The
- *   whole-row rewrite below is the vendor's own delete (DB-authoritative, idempotent) and create,
- *   both carrying the name on the wire. A rewrite still reads back so a dropped field fails the
- *   deploy.
+ * ⚠️ A CHANGED ROW IS PATCHED, NOT REWRITTEN — PATCH merges values and normally replaces DB
+ *   info, but only merges in-memory info (1.103.0 credential_endpoints/endpoints.py:312-319,384-387).
+ *   A failed PATCH leaves the row behind (review finding 3: DELETE + POST left NO row when POST
+ *   failed). Dropping a value key OR an info key still requires DELETE + POST; both stores must
+ *   converge. All refusals run before the first write. Every write reads back to prove removal.
  */
 import { Resource } from 'alchemy';
 import { Unowned } from 'alchemy/AdoptPolicy';
@@ -31,14 +30,30 @@ import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import * as Predicate from 'effect/Predicate';
+import { refuseTakeover } from '../ownership/adopt.ts';
 import {
   LitellmCredentialAbsentAfterWriteError,
   LitellmCredentialInvalidError,
   LitellmCredentialNotConvergedError,
 } from './credential-errors.ts';
-import { createBody, differing, firstProblem } from './credential-form.ts';
-import { createCredential, deleteCredential, readCredential } from './credential-operations.ts';
+import {
+  createBody,
+  differing,
+  firstProblem,
+  literalValues,
+  patchBody,
+  removedInfoKeys,
+  removedValueKeys,
+} from './credential-form.ts';
+import {
+  createCredential,
+  deleteCredential,
+  readCredential,
+  refuseDebugLogging,
+  updateCredential,
+} from './credential-operations.ts';
 import type { CredentialAttributes, CredentialProps } from './credential-types.ts';
+import { rewriteCredential } from './credential-rewrite.ts';
 import { requireValues, resolveValues, sealValues, valuesState } from './credential-values.ts';
 
 export type { CredentialAttributes, CredentialProps };
@@ -70,7 +85,7 @@ const refuse = (props: CredentialProps) => {
 };
 
 type Args<P> = {
-  id: string;
+  fqn: string;
   instanceId: string;
   output: CredentialAttributes | undefined;
 } & P;
@@ -85,6 +100,8 @@ export const credentialHandlers = {
    */
   read: ({ olds, output }: Args<{ olds: CredentialProps }>) =>
     Effect.gen(function* () {
+      // SDK debug logging prints responses too; non-sensitive value keys can be unmasked.
+      yield* refuseDebugLogging(olds.credentialName);
       const problem = output === undefined ? firstProblem(olds) : undefined;
       if (problem !== undefined) {
         return yield* Effect.die(
@@ -116,17 +133,20 @@ export const credentialHandlers = {
         return { action: 'replace', deleteFirst: false } as const;
       }
       // ⚠️ An unresolved value never drifts a plan (credential-values.ts's `unknown`): the gate
-      //   is "not stale", the same shape mcp-server.ts uses, and the rewrite below still demands
+      //   is "not stale", the same shape mcp-server.ts uses, and the write below still demands
       //   the value when a write is actually being made.
       const state = valuesState(news, output.valuesSeal);
-      return differing(output, news).length === 0 && state !== 'stale'
+      // PATCH cannot remove value keys or in-memory info keys. Names alone prove drift.
+      const removed = [...removedInfoKeys(output, news), ...removedValueKeys(output, news)];
+      return differing(output, news).length === 0 && removed.length === 0 && state !== 'stale'
         ? ({ action: 'noop' } as const)
         : ({ action: 'update' } as const);
     }),
 
-  reconcile: ({ news, output }: Args<{ news: CredentialProps }>) =>
+  reconcile: ({ fqn, instanceId, news, output }: Args<{ news: CredentialProps }>) =>
     Effect.gen(function* () {
       yield* refuse(news);
+      yield* refuseDebugLogging(news.credentialName);
       const resolved = resolveValues(news);
       const before = yield* readCredential(news.credentialName);
       let sealed = output?.valuesSeal ?? '';
@@ -137,24 +157,52 @@ export const credentialHandlers = {
         yield* createCredential(createBody(news, resolved));
         sealed = sealValues(resolved.values);
       } else {
-        // ⛔ THE REWRITE: whole-row DELETE + POST. A write that would send only half the declared
-        //   values is refused first — the vendor's merge cannot remove keys, so a partial send
-        //   would leave a stale value under a declared key.
-        if (differing(before, news).length > 0 || valuesState(news, sealed) === 'stale') {
+        // ⛔ A LIVE ROW IS ONLY WRITTEN WHEN THIS STACK MAY OWN IT. A rename onto a name the proxy
+        //   already holds runs here with `output: undefined` (a fresh replace's new generation) and
+        //   `before` set to the FOREIGN row — the planner never probed the new identity, so this is
+        //   the apply-time check key.ts's own reconcile makes, and without it a deploy-wide
+        //   `--adopt` meant for something else would overwrite a row another owner relies on.
+        yield* refuseTakeover(
+          { fqn, instanceId, output },
+          `LiteLLM.Credential ${news.credentialName}`,
+        );
+        // ⛔ PATCH FOR VALUE/INFO CHANGES, REWRITE TO DROP KEYS IN BOTH STORES. Unlike the
+        // old unconditional rewrite (finding 3), failed PATCH leaves the row behind. A rewrite
+        // still needs every declared value BEFORE DELETE so a partial environment cannot erase it.
+        const removed = [...removedInfoKeys(before, news), ...removedValueKeys(before, news)];
+        const infoDrift = differing(before, news).length > 0;
+        const valuesStale = valuesState(news, sealed) === 'stale';
+        if (removed.length > 0) {
           yield* requireValues(news, resolved);
-          yield* deleteCredential(news.credentialName);
-          yield* createCredential(createBody(news, resolved));
+          yield* rewriteCredential(createBody(news, resolved));
           sealed = sealValues(resolved.values);
+        } else if (infoDrift || valuesStale) {
+          if (valuesStale) yield* requireValues(news, resolved);
+          yield* updateCredential(
+            patchBody(news, valuesStale ? literalValues(resolved) : undefined),
+          );
+          if (valuesStale) sealed = sealValues(resolved.values);
         }
       }
 
+      // ⛔ THE READ-BACK IS A SINGLE READ, ON PURPOSE, AND THE VENDOR CLOSES THE RACE. The by-name
+      //   read walks the proxy's IN-MEMORY list, which a write that just returned has already
+      //   reloaded: `create_credential` awaits `upsert_credentials` and the PATCH awaits its
+      //   in-memory sync before answering (endpoints.py, 1.103.0), so a row written by THIS proxy
+      //   is in memory by the time its write answers. A retry loop would only paper over a
+      //   multi-proxy read that hit a peer which had not reloaded — and then the honest answer is
+      //   the failure below, not a slow pretend. This is the same single-read stance key.ts takes.
       const after = yield* readCredential(news.credentialName);
       if (after === undefined) {
         return yield* Effect.fail(
           new LitellmCredentialAbsentAfterWriteError({ credentialName: news.credentialName }),
         );
       }
-      const left = differing(after, news);
+      const left = [
+        ...differing(after, news),
+        ...removedInfoKeys(after, news).map((key) => `credential_info.${key}`),
+        ...removedValueKeys(after, news).map((key) => `credential_values.${key}`),
+      ];
       if (left.length > 0) {
         return yield* Effect.fail(
           new LitellmCredentialNotConvergedError({
