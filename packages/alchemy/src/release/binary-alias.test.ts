@@ -7,19 +7,19 @@
  *   `replace`, reported success, and left no binary on disk; the next deploy put it back.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm, stat, symlink } from 'node:fs/promises';
+import { mkdtemp, rm, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type HostRunner } from '../launchd/runner.ts';
 import { localRunner } from '../launchd/local-runner.ts';
 import { reconcileBinary } from './binary-lifecycle.ts';
-import { VMALERT_TEXT, realEngine } from './fake-engine.ts';
+import { VMALERT_TEXT, makeBinaryDirectory, realEngine } from './fake-engine.ts';
 import { VMUTILS_URL, fakeTransport, syntheticRelease, vmalertProps } from './fake-release.ts';
 
 let tmp = '';
 beforeEach(async () => {
   tmp = await mkdtemp(join(tmpdir(), 'hf-alias-'));
-  await mkdir(join(tmp, 'real', 'vmutils-1.151.0'), { recursive: true });
+  await makeBinaryDirectory(join(tmp, 'real', 'vmutils-1.151.0'));
   await symlink(join(tmp, 'real'), join(tmp, 'link'));
 });
 afterEach(async () => {
