@@ -46,8 +46,8 @@ import {
   LitellmKeyCallbackMetadataDeclaredError,
   LitellmKeyCallbackMetadataLiveError,
 } from './key-metadata-errors.ts';
-import { deleteKey, findKey, generateKey, updateKey } from './key-operations.ts';
-import { echoes, refuseDebugLogging, resolveKeyValue } from './key-secret.ts';
+import { deleteKey, findKey, generateKey, readKeyToken, updateKey } from './key-operations.ts';
+import { echoes, refuseDebugLogging, resolveKeyValue, verifyKeyValue } from './key-secret.ts';
 
 export type { KeyAttributes, KeyProps };
 export type { KeyError } from './key-errors.ts';
@@ -159,6 +159,13 @@ export const keyHandlers = {
         yield* createKey(news);
       } else {
         yield* refuseTakeover({ fqn, instanceId, output }, `LiteLLM.Key ${alias}`);
+        // ⚠️ AN ADOPTED KEY'S DECLARED VALUE IS CHECKED AGAINST THE ROW (key-secret.ts's header):
+        //   only when `key: { fromEnv }` names a variable, only as a sha256 in memory, and nothing
+        //   is written about a mismatch (`/key/update` cannot change a key's value). No `key` declared
+        //   means no extra read: `readKeyToken` is a `/key/list`, and an omitted value is never held.
+        if (news.key !== undefined) {
+          yield* verifyKeyValue(alias, news.key, yield* readKeyToken(alias));
+        }
         yield* refuseMetadata(news, before);
         if (differing(before, news).length > 0) yield* updateKey(updateBody(news, before));
       }

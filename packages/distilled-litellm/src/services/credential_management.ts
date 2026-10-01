@@ -12,6 +12,16 @@ import * as Retry from "../retry.ts";
 
 export type { LitellmOpError, LitellmOpContext };
 
+/** No credential matches the name a by-name read or delete asked for (the proxy holds no such row, or another caller deleted it first). LiteLLM answers 404 with the message `Credential not found`. Whether the row still exists is the caller's re-read, never this error. */
+export class CredentialNotFound
+  extends /*@__PURE__*/ T.applyErrorMatchers(
+    /*@__PURE__*/ S.TaggedError<CredentialNotFound>()("CredentialNotFound", {
+      code: S.Number,
+      message: S.String,
+    }).pipe(C.withBadRequestError),
+    [{ status: 404, message: { includes: "Credential not found" } }],
+  ) {}
+
 export class UnprocessableEntity
   extends /*@__PURE__*/ T.applyErrorMatchers(
     /*@__PURE__*/ S.TaggedError<UnprocessableEntity>()("UnprocessableEntity", {
@@ -271,6 +281,7 @@ export interface UpdateCredentialCredentialsCredentialNamePatchRequest {
   credential_info: UpdateCredentialCredentialsCredentialNamePatchRequestCredentialInfoMap;
   credential_values?: UpdateCredentialCredentialsCredentialNamePatchRequestCredentialValuesMap | null;
   model_id?: string | null;
+  credential_name_body: string;
 }
 export const UpdateCredentialCredentialsCredentialNamePatchRequest =
   /*@__PURE__*/ S.suspend(() =>
@@ -284,6 +295,7 @@ export const UpdateCredentialCredentialsCredentialNamePatchRequest =
         ),
       ),
       model_id: S.optional(S.NullOr(S.String)),
+      credential_name_body: S.String.pipe(T.Body("credential_name")),
     }).pipe(
       T.Http({
         method: "PATCH",
@@ -342,6 +354,7 @@ export const createCredentialCredentialsPost: API.OperationMethod<
 
 export type DeleteCredentialCredentialsCredentialNameDeleteError =
   | UnprocessableEntity
+  | CredentialNotFound
   | LitellmOpError;
 /** Delete Credential [BETA] endpoint. This might change unexpectedly. */
 export const deleteCredentialCredentialsCredentialNameDelete: API.OperationMethod<
@@ -352,7 +365,7 @@ export const deleteCredentialCredentialsCredentialNameDelete: API.OperationMetho
 > = /*@__PURE__*/ API.make(() => ({
   input: DeleteCredentialCredentialsCredentialNameDeleteRequest,
   output: DeleteCredentialCredentialsCredentialNameDeleteResponse,
-  errors: [UnprocessableEntity],
+  errors: [UnprocessableEntity, CredentialNotFound],
   protocol: LitellmProtocol,
   retry: Retry.Retry,
 }));
@@ -376,6 +389,7 @@ export const getCredentialByModelCredentialsByModelModelIdGet: API.OperationMeth
 
 export type GetCredentialByNameCredentialsByNameCredentialNameGetError =
   | UnprocessableEntity
+  | CredentialNotFound
   | LitellmOpError;
 /** Get Credential By Name [BETA] endpoint. This might change unexpectedly. */
 export const getCredentialByNameCredentialsByNameCredentialNameGet: API.OperationMethod<
@@ -386,7 +400,7 @@ export const getCredentialByNameCredentialsByNameCredentialNameGet: API.Operatio
 > = /*@__PURE__*/ API.make(() => ({
   input: GetCredentialByNameCredentialsByNameCredentialNameGetRequest,
   output: CredentialItem,
-  errors: [UnprocessableEntity],
+  errors: [UnprocessableEntity, CredentialNotFound],
   protocol: LitellmProtocol,
   retry: Retry.Retry,
 }));

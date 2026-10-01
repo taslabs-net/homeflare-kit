@@ -16,8 +16,10 @@
  *   a row committed to the table but not loaded in memory, so the read answers 404 while the
  *   create for the same name answers 409 — the asymmetry credential-operations.ts documents.
  * ★ A CREATE ON AN EXISTING NAME ANSWERS 409 (the vendor's unique-violation handling,
- *   `_credential_exists_detail`), decoded by the real SDK path as core `Conflict`. The fake does
- *   not model a PATCH route because the resource never calls one (credential-form.ts).
+ *   `_credential_exists_detail`), decoded by the real SDK path as core `Conflict`. The PATCH route
+ *   is modelled as the vendor merges (assign by key, never remove — `update_db_credential`), with
+ *   the body's `credential_name` (the `credential_name_body` member) applied as the new name only
+ *   when it differs from the path's (the kit never renames in place, so it never does).
  * ★ `FAKE-*` VALUES ONLY. Nothing here is, or looks like, a real credential.
  */
 /** One request that reached the fake. Its own type, so this file depends on no other fake. */
@@ -134,6 +136,32 @@ export const startFakeCredentialLitellm = (
       rows = [...rows, credentialRow(body)];
       memoryOmits.delete(name); // a create loads the row into memory; an omission is seeded-only
       return json(200, { success: true, message: 'Credential created successfully' });
+    }
+
+    // PATCH /credentials/{name} — merge by key, never remove (see the header); the body's
+    // `credential_name` (the `credential_name_body` member) renames only when it differs.
+    if (path.startsWith('/credentials/') && request.method === 'PATCH') {
+      const name = decodeURIComponent(path.slice('/credentials/'.length));
+      if (!rows.some((row) => String(row['credential_name']) === name)) {
+        return json(404, { detail: 'Credential not found in DB.' });
+      }
+      const body = (await request.json()) as Row;
+      const bodyName = body['credential_name'];
+      const target =
+        typeof bodyName === 'string' && bodyName !== '' && bodyName !== name ? bodyName : name;
+      const info = (body['credential_info'] ?? {}) as Row;
+      const values = (body['credential_values'] ?? {}) as Row;
+      rows = rows.map((row) =>
+        String(row['credential_name']) === name
+          ? {
+              ...row,
+              credential_name: target,
+              credential_info: { ...((row['credential_info'] ?? {}) as Row), ...info },
+              credential_values: { ...((row['credential_values'] ?? {}) as Row), ...values },
+            }
+          : row,
+      );
+      return json(200, { success: true, message: 'Credential updated successfully' });
     }
 
     // DELETE /credentials/{name} — DB-authoritative; 404 when the TABLE lacks the name.

@@ -25,10 +25,12 @@
  * ⚠️ `credential_info` IS COMPARED, BUT ONLY PER DECLARED KEY, AND ONLY ENTRIES THE VENDOR
  *   RETURNS: the PATCH route merges by assignment and can never REMOVE a key (measured:
  *   `update_db_credential` — `merged.credential_info.update(...)`), so a live key the declaration
- *   does not name is unmodelled on purpose and ignored by the comparison. An `info` key that
- *   matches the vendor's own sensitive-key list is refused at plan time (credential-form.ts): the
- *   vendor returns `credential_info` UNMASKED, so declaring a secret there would store it in
- *   clear in LiteLLM's row and in Alchemy's state, and never read back masked.
+ *   does not name is unmodelled on purpose and ignored by the comparison — except a key the PRIOR
+ *   declaration named, which is a removal and plans a whole-row rewrite (`removedInfoKeys`,
+ *   credential.ts). An `info` key that matches the vendor's own sensitive-key list is refused at
+ *   plan time (credential-form.ts): the vendor returns `credential_info` UNMASKED, so declaring a
+ *   secret there would store it in clear in LiteLLM's row and in Alchemy's state, and never read
+ *   back masked.
  */
 import type { FromEnv } from '../secrets/write-only.ts';
 

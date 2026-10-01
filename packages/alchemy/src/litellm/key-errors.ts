@@ -125,6 +125,27 @@ export class LitellmKeyValueNotHonouredError extends Data.TaggedError(
 }
 
 /**
+ * An ADOPTED key was declared with a `key` whose value is not the key the live row holds. The
+ * value is compared only as a sha256 in memory against the row's `token` (`hash_token`, the
+ * vendor's own store) — never in state, never in an error — and a mismatch is refused, because a
+ * seat that reads the same variable would hold a key that authenticates nothing while the plan
+ * reported success. `/key/update` cannot change a key's value (`prepare_key_update_data` pops
+ * `key`), so there is nothing to write: the operator must fix the variable or drop the `key`.
+ */
+export class LitellmKeyValueMismatchError extends Data.TaggedError('LitellmKeyValueMismatchError')<{
+  readonly keyAlias: string;
+  readonly variable: string;
+}> {
+  override get message(): string {
+    return (
+      `LiteLLM.Key '${this.keyAlias}': the value of ${this.variable} is not the key this alias ` +
+      'holds. Nothing was written. /key/update cannot change a key value, so fix the variable or ' +
+      'drop the `key` and manage the existing key without one.'
+    );
+  }
+}
+
+/**
  * The alias is the identity: `/key/update` and `/key/delete` find a key by it, and this resource
  * never holds the value that could find it any other way. A different alias is a different key.
  */
@@ -210,6 +231,7 @@ export type KeyError =
   | LitellmKeyValueMissingError
   | LitellmKeyValueMalformedError
   | LitellmKeyValueNotHonouredError
+  | LitellmKeyValueMismatchError
   | LitellmKeyAliasChangedError
   | LitellmKeyAmbiguousAliasError
   | LitellmKeyCallbackMetadataDeclaredError

@@ -22,10 +22,10 @@
  *                 so it is written.
  *   - `match`   — the seal was made from exactly these resolved values.
  * ⚠️ ALL-OR-NOTHING RESOLUTION: a write sends `credential_values` only when EVERY declared
- *   variable resolves, because the update path is a whole-row rewrite (credential.ts — the SDK's
- *   PATCH op cannot work, see credential-operations.ts) — sending the resolved half would store a
- *   row whose unset half was silently blanked. When any variable is missing the state is
- *   `unknown` and no write is attempted.
+ *   variable resolves — the values-stale PATCH and the whole-row create both demand every value
+ *   (`requireValues`, credential.ts), because sending the resolved half would store a row whose
+ *   unset half was silently blanked. When any variable is missing the state is `unknown` and no
+ *   write is attempted.
  * ⚠️ A SEAL OF A GUESSABLE SECRET IS STILL GUESSABLE (secrets/write-only.ts). Use a random token.
  */
 import * as Effect from 'effect/Effect';

@@ -7,24 +7,25 @@
  *   `litellm_logging.py::_get_masked_values`, measured in the live 1.103.0 container) and
  *   `credential_info` in full:
  *   - `credential_info` is compared PER DECLARED KEY, with canonical-JSON deep equality — the
- *     PATCH route's merge assigns keys and never removes them (measured: `update_db_credential`),
- *     so a live key the declaration does not name is unmodelled and ignored rather than reported
- *     as drift. A declared key the row lacks IS drift: the row must be rewritten.
+ *     PATCH route's merge assigns keys and never removes them (measured: `update_db_credential`,
+ *     `merged_credential.credential_info.update(...)`), so a live key the declaration does not
+ *     name is unmodelled and ignored rather than reported as drift — EXCEPT a key the PRIOR
+ *     declaration named, which is a removal and must be dropped with a whole-row rewrite
+ *     (`removedInfoKeys`, consumed by credential.ts). A declared key the row lacks IS drift.
  *   - the values are compared only through the seal of the values this process RESOLVED
  *     (`valuesSeal`, credential-values.ts) — never against the masked fragments, which are
  *     partial secrets and are never copied into state.
- * ⚠️ THE UPDATE PATH IS A WHOLE-ROW REWRITE, NOT A PATCH, MEASURED, NOT A TASTE: the SDK's typed
- *   PATCH operation is wire-broken against the vendor — the generated request type marks
- *   `credential_name` as a path label ONLY, and core's `buildRequest` excludes a labelled member
- *   from the JSON body, while the vendor's PATCH body model (`UpdateCredentialItem` in
- *   `models/credentials.py` at 1.103.0) REQUIRES `credential_name` as a body field. Measured
- *   2026-09-30 with a stub fetch against the vendored SDK: the PATCH body is
- *   `{"credential_info": …, "credential_values": …}` with no `credential_name` — so every PATCH
- *   would answer FastAPI's `422` on a real proxy. This resource therefore rewrites a changed row
- *   with the vendor's own DELETE + POST, which both carry the name on the wire (the DELETE in the
- *   path, the POST in the body — both measured); the typed fix belongs in the distilled clone
- *   (a generated request type cannot express "path label AND body field"), never a hand-rolled
- *   HTTP call here (S23). Nothing is sent through `updateCredentialCredentialsCredentialNamePatch`.
+ * ★ A CHANGED ROW IS PATCHED, NOT REWRITTEN. The vendor's PATCH merges by key
+ *   (`update_db_credential`), so updating a value or an `info` entry is a PATCH carrying the
+ *   declared `credential_info` and (only when the values are stale) the resolved
+ *   `credential_values`. A PATCH that fails on the wire leaves the row it was merging into — the
+ *   fix for the review's finding 3, where a DELETE + POST rewrite left NO row when the POST failed
+ *   after the DELETE. The one thing PATCH cannot do is REMOVE a key, so a declaration that drops
+ *   a previously-declared `info` key is still a whole-row rewrite (credential.ts decides). The
+ *   PATCH body carries `credential_name` IN THE BODY as a second member (`credential_name_body`,
+ *   wire-named `credential_name`) because the vendor's `UpdateCredentialItem` requires it and a
+ *   Smithy member has one binding — the path label can't also be the body field; the distilled
+ *   patch for it is `patches/credential_management/update_credential_credentials__credential_name__patch.json`.
  */
 import type * as credentials from '@distilled.cloud/litellm/credential_management';
 import * as Redacted from 'effect/Redacted';
@@ -139,10 +140,10 @@ export const isCredentialRow = (row: unknown): row is Record<string, unknown> =>
   typeof (row as Record<string, unknown>)['credential_name'] === 'string';
 
 /**
- * The literal values a create or rewrite sends, unwrapped from their `Redacted` exactly once.
- * ⛔ EVERY DECLARED ENTRY IS SENT: the update path is a whole-row rewrite, so "the values this
- *   declaration names" is the whole managed set — there is no partial send that could leave a
- *   stale value behind under a declared key.
+ * The literal values a create or a values-stale PATCH sends, unwrapped from their `Redacted`
+ * exactly once. ⛔ EVERY DECLARED ENTRY IS SENT: the whole-row create and the values-stale PATCH
+ * both demand every declared value (`requireValues`), so there is no partial send that could
+ * leave a stale value behind under a declared key.
  */
 export const literalValues = (resolved: ResolvedValues): Readonly<Record<string, unknown>> =>
   Object.fromEntries(
@@ -160,4 +161,45 @@ export const createBody = (
     credential_values: { ...literalValues(resolved) },
   };
   return body as unknown as credentials.CreateCredentialCredentialsPostRequest;
+};
+
+/**
+ * The body `PATCH /credentials/{name}` carries — the declared `credential_info` always (the
+ * vendor's `UpdateCredentialItem` REQUIRES it, and the merge assigns every declared key), the
+ * resolved `credential_values` only when the caller passes them (a values-stale write; an
+ * info-only drift sends none, so it never demands a value the environment does not hold).
+ *
+ * ⛔ `credential_name` APPEARS TWICE, ON PURPOSE: `credential_name` is the path label (its URI
+ *   placeholder is the row's address), and `credential_name_body` is the SAME value as a body
+ *   field wire-named `credential_name` — the vendor's `UpdateCredentialItem` requires the name in
+ *   the body, a Smithy member can carry only ONE binding, and the kit never renames in place (a
+ *   changed name is a REPLACE, credential.ts), so the two are always equal here.
+ */
+export const patchBody = (
+  props: CredentialProps,
+  values: Readonly<Record<string, unknown>> | undefined,
+): credentials.UpdateCredentialCredentialsCredentialNamePatchRequest => {
+  const body: Record<string, unknown> = {
+    credential_info: { ...props.credentialInfo },
+    credential_name: props.credentialName,
+    credential_name_body: props.credentialName,
+  };
+  if (values !== undefined) body.credential_values = { ...values };
+  return body as unknown as credentials.UpdateCredentialCredentialsCredentialNamePatchRequest;
+};
+
+/**
+ * The `credential_info` keys the PRIOR declaration named and this one does not — a key the PATCH
+ * merge cannot remove, so a whole-row rewrite is the only way to drop it. `undefined` prior (an
+ * adopt or a first write) has no prior declaration to drop keys from, so nothing is removed.
+ * Sensitive-keyed entries are never mirrored into attributes (toAttributes skips them), so they
+ * can never be removed here either — and they were refused at plan time, so none was declared.
+ */
+export const removedInfoKeys = (
+  prior: CredentialAttributes | undefined,
+  props: CredentialProps,
+): readonly string[] => {
+  if (prior === undefined) return [];
+  const declared = props.credentialInfo ?? {};
+  return Object.keys(prior.credentialInfo).filter((key) => !(key in declared));
 };
