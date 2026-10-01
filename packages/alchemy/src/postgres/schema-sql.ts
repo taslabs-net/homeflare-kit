@@ -21,7 +21,7 @@ export const buildCreateSchemaSql = (props: PostgresSchemaProps): string =>
     props.owner === undefined ? '' : ` AUTHORIZATION ${quoteIdent(props.owner)}`
   }`;
 
-/** `COMMENT ON SCHEMA "name" IS '…'` — issued only when a comment is declared. */
+/** `COMMENT ON SCHEMA "name" IS E'…'` — issued only when a comment is declared. */
 export const buildCommentSchemaSql = (name: string, comment: string): string =>
   `COMMENT ON SCHEMA ${quoteIdent(name)} IS ${quoteStringLiteral(comment)}`;
 
