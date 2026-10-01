@@ -25,6 +25,7 @@ import { LiteLLMBudgetProvider } from './budget.ts';
 import { LiteLLMCredentialProvider } from './credential.ts';
 import { LiteLLMMCPServerProvider } from './mcp-server.ts';
 import { LiteLLMKeyProvider } from './key.ts';
+import { LiteLLMModelProvider } from './model.ts';
 import { LiteLLMPassThroughEndpointProvider } from './pass-through-endpoint.ts';
 import { LiteLLMPolicyAttachmentProvider } from './policy-attachment.ts';
 import { LiteLLMPolicyProvider } from './policy.ts';
@@ -45,4 +46,5 @@ export const litellmProviders = (creds: Layer.Layer<Credentials> = CredentialsFr
     LiteLLMPolicyAttachmentProvider(),
     LiteLLMTeamProvider(),
     LiteLLMKeyProvider(),
+    LiteLLMModelProvider(),
   ).pipe(Layer.provideMerge(creds));

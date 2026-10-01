@@ -99,6 +99,59 @@ export const isCreate = (fqn: string, instanceId: string): Effect.Effect<boolean
     (generation) => generation?.status === 'creating',
   );
 
+const idOf = (attr: unknown): string | undefined => {
+  if (typeof attr !== 'object' || attr === null) return undefined;
+  const id = (attr as { readonly id?: unknown }).id;
+  return typeof id === 'string' && id !== '' ? id : undefined;
+};
+
+/**
+ * `attr.id` on every generation OLDER than `instanceId` in this FQN's state chain (and a former
+ * FQN `renamedFrom` names). Walks `old` the way {@link generationOf} does, and skips the current
+ * generation itself.
+ * ⛔ THOSE IDS ARE NOT THIS GENERATION'S. A `replacing` row's reconcile runs with no attributes, so
+ *   a live row found by name can be the previous generation's own deployment. Recording that id on
+ *   the new generation makes both the same id, and `destroy()` then deletes the old generation by
+ *   it (Apply.ts, the retain check near 2168 and the provider delete that follows when the policy
+ *   is not `retain`). A same-instance `old` snapshot (an `updating` row) is not one of these.
+ */
+export const olderGenerationIds = (
+  fqn: string,
+  instanceId: string,
+): Effect.Effect<readonly string[]> =>
+  Effect.gen(function* () {
+    const found = yield* storeOf;
+    if (found === undefined) return [];
+    const ids: string[] = [];
+    for (const at of [fqn, ...(found.resources[fqn]?.FormerFqns ?? [])]) {
+      collectOlder(yield* rowAt(found.store, found.where, at), instanceId, ids);
+    }
+    return ids;
+  });
+
+/**
+ * Once `instanceId` has been seen, collect `attr.id` from generations with a DIFFERENT instance
+ * id. An `updating` row's `old` is the same instance's pre-update snapshot (Apply.ts), not a
+ * replacement generation — that snapshot's id is the row this apply is already writing.
+ */
+const collectOlder = (row: unknown, instanceId: string, ids: string[]): void => {
+  let at = row;
+  let seen = false;
+  while (typeof at === 'object' && at !== null && !isActionState(at as never)) {
+    const generation = at as Generation;
+    if (!seen) {
+      seen = generation.instanceId === instanceId;
+      at = generation.old;
+      continue;
+    }
+    if (generation.instanceId !== instanceId) {
+      const id = idOf(generation.attr);
+      if (id !== undefined) ids.push(id);
+    }
+    at = generation.old;
+  }
+};
+
 /**
  * ⛔ A REFUSED CREATE MUST NOT LEAVE A ROW THAT CLAIMS THE OBJECT IT REFUSED. Apply commits a
  *   `creating` row for this instance before it calls reconcile, and a failed reconcile leaves it

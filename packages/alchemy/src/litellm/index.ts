@@ -127,6 +127,22 @@ export {
 } from './toolset.ts';
 export type { ToolsetTool } from './toolset-types.ts';
 export {
+  LiteLLMModel,
+  LiteLLMModelProvider,
+  isLiteLLMModel,
+  type ModelAttributes,
+  type ModelError,
+  type ModelProps,
+} from './model.ts';
+export {
+  LitellmModelAbsentAfterWriteError,
+  LitellmModelAmbiguousNameError,
+  LitellmModelInvalidError,
+  LitellmModelNotConvergedError,
+  LitellmModelPriorGenerationError,
+  LitellmModelUnreadableError,
+} from './model-errors.ts';
+export {
   LitellmRegistryAbsentAfterWriteError,
   LitellmRegistryAmbiguousError,
   LitellmRegistryInvalidError,
