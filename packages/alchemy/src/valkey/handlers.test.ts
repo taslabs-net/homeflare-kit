@@ -41,7 +41,7 @@ for (const tag of [
     expect(
       (await run(Effect.flip(required(acl.read)({ ...context, olds: props, output: undefined }))))
         ._tag,
-    ).toBe(tag);
+    ).toBe(tag === 'ValkeySocketError' ? 'ValkeyInstanceUnreachable' : tag);
     expect(
       (
         await run(
@@ -51,7 +51,7 @@ for (const tag of [
     ).toBe(tag);
     expect(
       (await run(Effect.flip(acl.delete({ ...context, olds: props, output: attrs }))))._tag,
-    ).toBe(tag);
+    ).toBe(tag === 'ValkeySocketError' ? 'ValkeyInstanceUnreachable' : tag);
   });
 }
 
@@ -101,7 +101,10 @@ test('configured ACL file refuses reconcile and delete before SETUSER/DELUSER', 
   expect(
     ex.commands.some(({ args }) => ['SETUSER', 'DELUSER', 'SAVE'].includes(args[1] ?? '')),
   ).toBe(false);
-  expect(await run(required(acl.read)({ ...context, olds: props, output: attrs }))).toEqual(attrs);
+  expect(await run(required(acl.read)({ ...context, olds: props, output: attrs }))).toEqual({
+    ...attrs,
+    managedUsers: [],
+  });
 });
 
 test('delete is repeatable, removes only declared users and preserves admin/undeclared', async () => {

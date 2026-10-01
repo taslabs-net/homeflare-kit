@@ -22,11 +22,13 @@ import type {
 } from './acl-attrs.ts';
 import { buildDelUserArgs, passwordState, refusalBeforeWrite } from './acl-form.ts';
 import { sameSet } from './acl-compare.ts';
+import { aclUnreachable } from './acl-connection.ts';
+import { managedUserNames } from './acl-managed.ts';
 import { readAclFileConfig, readParsedUsers, readWithExecutor } from './acl-ops.ts';
 import { reconcileWithExecutor } from './acl-reconcile.ts';
 import { declaredChannels, effectiveKeyPrefix } from './acl-profiles.ts';
 import { type ValkeyConnection, withValkey } from './connection.ts';
-import { ValkeyAclFileRendered, ValkeyInstanceUnreachable } from './errors.ts';
+import { ValkeyAclFileRendered } from './errors.ts';
 import { resolveAll } from '../secrets/write-only.ts';
 import { ValkeyServerError } from './transport.ts';
 
@@ -62,23 +64,12 @@ export const makeValkeyAclFileHandlers = (
     read: ({ output, olds }) =>
       Effect.gen(function* () {
         const props = output ?? olds;
-        // A socket that never reached the instance is the typed unreachable failure (F4): the
-        // handler knows the instance name and the connection layer's host/port, so it names them.
-        // An AUTH refusal is already a typed ValkeyServerError (`connection.ts`); no
-        // swallow and no `undefined`, which would misreport a dead instance as "not yet created".
-        const live = yield* connect((ex, config) =>
-          readWithExecutor(ex, props.instance, config.username).pipe(
-            Effect.catchTag('ValkeySocketError', () =>
-              Effect.fail(
-                new ValkeyInstanceUnreachable({
-                  instance: props.instance,
-                  host: config.host,
-                  port: config.port,
-                }),
-              ),
-            ),
-          ),
-        );
+        // Catch outside connect: acquisition can fail before the executor callback runs.
+        // AUTH server refusals keep ValkeyServerError; no failure is reported as absence.
+        const live = yield* connect(
+          (ex, config) => readWithExecutor(ex, props.instance, config.username),
+          props.instance,
+        ).pipe(Effect.catchTag('ValkeySocketError', aclUnreachable(props.instance)));
         // ★ THE STORED SEALS SURVIVE THE RE-READ (`mcp-server.ts`'s rule): a read must never
         //   mint, replace or drop a seal — it reports live users wearing the seals the store
         //   already holds, so an unchanged plan stays a no-op instead of churning the row.
@@ -87,16 +78,20 @@ export const makeValkeyAclFileHandlers = (
         for (const [name, user] of Object.entries(live.users)) {
           users[name] = { ...user, passwordSeal: output.users[name]?.passwordSeal ?? '' };
         }
-        return { instance: live.instance, users };
+        return { instance: live.instance, users, managedUsers: managedUserNames(output, olds) };
       }),
 
-    diff: ({ news, output }) =>
+    diff: ({ news, output, olds }) =>
       Effect.gen(function* () {
         if (!isResolved(news)) return undefined;
         const refused = refusalBeforeWrite(news.instance, news.users);
         if (refused !== undefined) return yield* Effect.fail(refused);
         if (output === undefined) return undefined;
         const declared = Object.keys(news.users).sort();
+        // Ownership changes need an apply even if live rules already match or a removed user
+        // is already absent, so the next plan has the correct managed-user inventory.
+        if (!sameSet(declared, [...managedUserNames(output, olds)]))
+          return { action: 'update' } as const;
         const liveNames = Object.keys(output.users).sort();
         if (news.exclusive && declared.length !== liveNames.length)
           return { action: 'update' } as const;
@@ -124,61 +119,41 @@ export const makeValkeyAclFileHandlers = (
         return { action: 'noop' } as const;
       }),
 
-    reconcile: ({ news, output }) =>
-      connect((ex, config) =>
-        reconcileWithExecutor(ex, news, output, process.env, config.username).pipe(
-          // The engine runs reconcile after `read` answered `undefined`, so a socket that never
-          // reached the instance is what the plan surfaces — the typed failure, with the host
-          // and port the connection layer actually holds. A server error reply (NOAUTH, an ACL
-          // refusal) keeps its own tag: the server was reached, it refused.
-          Effect.catchTag('ValkeySocketError', () =>
-            Effect.fail(
-              new ValkeyInstanceUnreachable({
-                instance: news.instance,
-                host: config.host,
-                port: config.port,
-              }),
-            ),
-          ),
-        ),
-      ),
+    reconcile: ({ news, output, olds }) =>
+      // The catch covers connect and the whole operation. A server refusal keeps its own tag:
+      // the server was reached, it refused. A socket failure names the selected endpoint.
+      connect(
+        (ex, config) => reconcileWithExecutor(ex, news, output, process.env, config.username, olds),
+        news.instance,
+      ).pipe(Effect.catchTag('ValkeySocketError', aclUnreachable(news.instance))),
 
     delete: ({ olds }) =>
-      connect((ex, config) =>
-        Effect.gen(function* () {
-          // ⛔ GATE FIRST (F3): a rendered aclfile is the source of truth, so this family deletes
-          //   nothing there either — the file's renderer re-adds what the kit would DELUSER.
-          const aclfile = yield* readAclFileConfig(ex);
-          if (aclfile !== '') {
-            return yield* Effect.fail(
-              new ValkeyAclFileRendered({ instance: olds.instance, path: aclfile }),
-            );
-          }
-          // Removing the declaration removes every user it managed (the engine runs this only
-          // when a human opts out of retain); the instance itself is untouched, and undeclared
-          // users are preserved (F1). `ACL DELUSER` ignores absent names (Valkey docs);
-          // reading first also avoids an empty DELUSER command on a repeated delete (S14).
-          const live = yield* readParsedUsers(ex, config.username);
-          const targets = Object.keys(olds.users).filter((name) => live[name] !== undefined);
-          if (targets.length === 0) return;
-          const reply = yield* ex.send(buildDelUserArgs(targets));
-          if (reply.kind === 'error') {
-            return yield* Effect.fail(new ValkeyServerError({ detail: reply.message }));
-          }
-          return;
-        }).pipe(
-          // A socket that never reached the instance is the typed unreachable failure (F4).
-          Effect.catchTag('ValkeySocketError', () =>
-            Effect.fail(
-              new ValkeyInstanceUnreachable({
-                instance: olds.instance,
-                host: config.host,
-                port: config.port,
-              }),
-            ),
-          ),
-        ),
-      ),
+      connect(
+        (ex, config) =>
+          Effect.gen(function* () {
+            // ⛔ GATE FIRST (F3): a rendered aclfile is the source of truth, so this family deletes
+            //   nothing there either — the file's renderer re-adds what the kit would DELUSER.
+            const aclfile = yield* readAclFileConfig(ex);
+            if (aclfile !== '') {
+              return yield* Effect.fail(
+                new ValkeyAclFileRendered({ instance: olds.instance, path: aclfile }),
+              );
+            }
+            // Removing the declaration removes every user it managed (the engine runs this only
+            // when a human opts out of retain); the instance itself is untouched, and undeclared
+            // users are preserved (F1). `ACL DELUSER` ignores absent names (Valkey docs);
+            // reading first also avoids an empty DELUSER command on a repeated delete (S14).
+            const live = yield* readParsedUsers(ex, config.username);
+            const targets = Object.keys(olds.users).filter((name) => live[name] !== undefined);
+            if (targets.length === 0) return;
+            const reply = yield* ex.send(buildDelUserArgs(targets));
+            if (reply.kind === 'error') {
+              return yield* Effect.fail(new ValkeyServerError({ detail: reply.message }));
+            }
+            return;
+          }),
+        olds.instance,
+      ).pipe(Effect.catchTag('ValkeySocketError', aclUnreachable(olds.instance))),
   });
 
 export const valkeyAclFileHandlers = makeValkeyAclFileHandlers();

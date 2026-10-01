@@ -192,9 +192,9 @@ export const resolvedPassword = (user: ValkeyAclUser, env: Environment): string 
 };
 
 /** The plan reconcile walks: `create` (absent live), `update` (present but not exactly as
- * declared — see `matchesDeclared`), `remove` (live users the declaration does not name — ONLY
- * under `exclusive: true`) and `undeclared` (the same names reported, never deleted, when the
- * declaration did not opt into exclusive ownership). */
+ * declared — see `matchesDeclared`), `remove` (previously managed users removed from the
+ * declaration, plus all undeclared users under `exclusive: true`) and `undeclared` (all live
+ * names outside the current declaration, reported with their deletion/preservation decision). */
 export interface AclUserPlan {
   readonly create: ReadonlyArray<ValkeyAclUser>;
   readonly update: ReadonlyArray<ValkeyAclUser>;
@@ -206,6 +206,7 @@ export const planAclUsers = (
   declared: Readonly<Record<string, ValkeyAclUser>>,
   live: Readonly<Record<string, ParsedAclUser>>,
   exclusive = false,
+  managed: ReadonlyArray<string> = [],
 ): AclUserPlan => {
   const create: ValkeyAclUser[] = [];
   const update: ValkeyAclUser[] = [];
@@ -222,7 +223,12 @@ export const planAclUsers = (
   for (const name of Object.keys(live)) {
     if (declared[name] === undefined) undeclared.push(name);
   }
-  return { create, update, remove: exclusive ? undeclared : [], undeclared };
+  return {
+    create,
+    update,
+    remove: exclusive ? undeclared : undeclared.filter((name) => managed.includes(name)),
+    undeclared,
+  };
 };
 
 /** The exact `ACL DELUSER` argument list. */

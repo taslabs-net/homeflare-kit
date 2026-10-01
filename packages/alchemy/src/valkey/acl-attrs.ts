@@ -51,11 +51,12 @@ export interface ValkeyAclFileProps {
   /**
    * ★ EXCLUSIVE OWNERSHIP IS OPT-IN, OFF BY DEFAULT (round-3 finding 1). `true` means this
    *   declaration is the ONLY writer of the instance's ACL: reconcile `ACL DELUSER`s every user
-   *   it did not declare. `false` — the default — leaves undeclared users (CT100's key-less
+   *   it did not declare. `false` — the default — leaves never-managed users (CT100's key-less
    *   `monitor` for `redis_exporter`, an operator's debugging user) untouched and reports them
    *   with a warning, because reconcile cannot know what a template renderer or a human still
    *   needs. The measured incident: reconcile deleted CT100's `monitor` and closed the
    *   exporter's connection.
+   *   Removing a previously managed user from the declaration always revokes it.
    */
   readonly exclusive?: boolean;
 }
@@ -92,4 +93,6 @@ export interface ValkeyAclUserAttributes {
 export interface ValkeyAclFileAttributes {
   readonly instance: string;
   readonly users: Readonly<Record<string, ValkeyAclUserAttributes>>;
+  /** Last managed declaration, separate from observed users. Optional for earlier state. */
+  readonly managedUsers?: ReadonlyArray<string>;
 }

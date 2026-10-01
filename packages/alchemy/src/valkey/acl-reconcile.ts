@@ -9,8 +9,8 @@
  *   measurably errors on 8.1.10 — "This instance is not configured to use an ACL file" — so the
  *   kit-owned family never calls it. ACL state is runtime state, not data: it does not survive
  *   a restart even with appendonly (measured), so this family re-asserts on every reconcile.
- * ★ UNDECLARED USERS ARE PRESERVED BY DEFAULT (F1). `planAclUsers` only DELUSERs them when
- *   `exclusive: true`; the default reports them via `Effect.logWarning` and leaves them alone.
+ * ★ NEVER-MANAGED USERS ARE PRESERVED BY DEFAULT (F1). `planAclUsers` only DELUSERs those
+ *   under `exclusive: true`; removing a previously declared user always revokes it.
  */
 import * as Effect from 'effect/Effect';
 import { type Environment, type FromEnv, resolveAll, seal } from '../secrets/write-only.ts';
@@ -20,6 +20,7 @@ import type {
   ValkeyAclUser,
   ValkeyAclUserAttributes,
 } from './acl-attrs.ts';
+import { managedUserNames } from './acl-managed.ts';
 import { matchesDeclared } from './acl-compare.ts';
 import {
   buildDelUserArgs,
@@ -48,6 +49,7 @@ export const reconcileWithExecutor = (
   stored: ValkeyAclFileAttributes | undefined,
   env: Environment = process.env,
   self?: string,
+  previous?: ValkeyAclFileProps,
 ): Effect.Effect<ValkeyAclFileAttributes, ValkeyError | ValkeyTransportError> =>
   Effect.gen(function* () {
     // ⛔ BEFORE ANY WRITE. The aclfile gate stands in front of the declaration refusals and the
@@ -72,15 +74,20 @@ export const reconcileWithExecutor = (
     const { values } = resolveAll(refs, env);
 
     const live = yield* readParsedUsers(executor, self);
-    const { create, update, remove, undeclared } = planAclUsers(props.users, live, props.exclusive);
+    const { create, update, remove, undeclared } = planAclUsers(
+      props.users,
+      live,
+      props.exclusive,
+      managedUserNames(stored, previous),
+    );
 
-    // Preserve-by-default (F1): an undeclared user is reported and left alone; only
-    // `exclusive: true` removes it (and only undeclared users — `default`/`self` never appear).
+    // Preserve-by-default (F1): never-managed users need exclusive ownership to be removed.
+    // Previously managed users are revoked; `default`/`self` never appear in this live map.
     for (const name of undeclared) {
       yield* Effect.logWarning(
         `Valkey.AclFile "${props.instance}": live ACL user "${name}" is not declared; ${
-          props.exclusive
-            ? 'it is scheduled for deletion (exclusive: true).'
+          remove.includes(name)
+            ? 'it is scheduled for deletion (previously managed or exclusive: true).'
             : 'it was left alone (exclusive: false).'
         }`,
       );
@@ -121,7 +128,7 @@ export const reconcileWithExecutor = (
       writeList.push({ user, password });
     }
 
-    // ⛔ RUNTIME-ONLY. `reset`-first SETUSER per write; DELUSER only under `exclusive`. No
+    // ⛔ RUNTIME-ONLY. `reset`-first SETUSER per write; DELUSER for removed managed users or `exclusive`. No
     //   `ACL SAVE`: in the only mode this family writes (empty aclfile) it measurably errors on
     //   8.1.10. See the header note for the restart semantics that follow.
     for (const { user, password } of writeList) {
@@ -138,7 +145,7 @@ export const reconcileWithExecutor = (
     }
 
     // Read back and verify: every declared user, exactly as declared (S10). Undeclared leftovers
-    // fail only under `exclusive` — a claim of exclusive ownership that the server contradicts.
+    // fail under `exclusive` or when a previously managed user was scheduled for revocation.
     const after = yield* readParsedUsers(executor, self);
     for (const [name, user] of Object.entries(props.users)) {
       const parsed = after[name];
@@ -148,9 +155,9 @@ export const reconcileWithExecutor = (
         );
       }
     }
-    if (props.exclusive) {
+    if (props.exclusive || remove.length > 0) {
       for (const name of Object.keys(after)) {
-        if (props.users[name] === undefined) {
+        if (props.users[name] === undefined && (props.exclusive || remove.includes(name))) {
           return yield* Effect.fail(
             new ValkeyAclReadbackFailed({ instance: props.instance, user: name }),
           );
@@ -169,5 +176,5 @@ export const reconcileWithExecutor = (
     for (const [name, parsed] of Object.entries(after)) {
       users[name] = { ...toUserAttributes(parsed), passwordSeal: seals[name] ?? '' };
     }
-    return { instance: props.instance, users };
+    return { instance: props.instance, users, managedUsers: Object.keys(props.users).sort() };
   });

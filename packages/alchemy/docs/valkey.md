@@ -9,7 +9,7 @@ requires a password-bearing URL. See [the source audit and executable cap eviden
 
 - `Valkey.Instance` — **assert-and-read** a running server. It never creates, never reconfigures,
   and never stops one.
-- `Valkey.AclFile` — the per-instance **ACL users**, each limited to a key prefix and a fixed
+- `Valkey.AclFile` — **kit-owned instances only, without `--aclfile`**: per-instance ACL users, each limited to a key prefix and a fixed
   command allow-list, with passwords by reference (never in state).
 
 Both are `defaultRemovalPolicy: 'retain'` and answer `Unowned` on read (H1), so a live instance and
@@ -48,10 +48,10 @@ exist on the LiteLLM cache (`:6380`) and `litellm` on the seat store (`:6381`) �
 poison the response cache. `valkey-seats` carries the seat users; `valkey-litellm` carries the
 single `litellm` application user. Both can also carry the key-less `monitor` exporter user.
 
-Undeclared users are **preserved and reported** by default. Only `exclusive: true` allows
-reconcile to delete them. `default` and the connection username are always protected. Removing
-a user from a non-exclusive declaration leaves it live; use an explicit administrative removal
-or opt into whole-instance exclusive ownership when that is intended.
+Users this resource **never managed are preserved and reported** by default; `exclusive: true`
+allows their removal. Removing a previously declared user plans an update and revokes it with
+`ACL DELUSER`, including in non-exclusive mode. Attributes record the managed usernames
+separately from observed users. `default` and the connection username are always protected.
 
 ```ts
 import { ValkeyAclFile } from '@homeflare/alchemy/valkey';
@@ -102,9 +102,10 @@ export class SeatsAcl extends ValkeyAclFile('SeatsAcl', {
 
 ## Connection
 
-`valkeyProviders({ host, port, username, password })` wires both resources to one instance; a stack
-with more than one instance calls it more than once and merges the results. `host`/`port` carry no
-secret; `password` is a `FromEnv` reference resolved at call time (a missing variable is the typed
+`valkeyProviders({ instance, host, port, username, password })` registers a named connection.
+Each operation selects it by `Valkey.Instance.name` or `Valkey.AclFile.instance`; a missing name
+fails with `ValkeyConnectionMissing`. The connection stays available to lifecycle handlers through
+`Layer.provideMerge`. `host`/`port` carry no secret; `password` is a `FromEnv` reference resolved at call time (a missing variable is the typed
 `ValkeyAuthPasswordMissing`, and a username without a password is unrepresentable). `withValkey`
 opens one `node:net` socket per operation and closes it after — never held across a whole
 reconcile. Connect, each read, and the socket idle timer share `timeoutMs` (default 10s); a
@@ -114,6 +115,7 @@ reply longer than 1 MiB or an array longer than 10,000 elements fails `ValkeySoc
 import { valkeyProviders } from '@homeflare/alchemy/valkey';
 
 const providers = valkeyProviders({
+  instance: 'valkey-seats',
   host: '127.0.0.1',
   port: 6381,
   username: 'admin',
@@ -130,14 +132,17 @@ none means “not found” or permits the engine to skip adoption.
 
 ## Source of truth and drift
 
-**Configured ACL file ⇒ read-only resource.** Before reconcile or delete, `CONFIG GET aclfile`
+**Configured ACL file ⇒ unsupported by `Valkey.AclFile`.** Before reconcile or delete, `CONFIG GET aclfile`
 is checked. Any non-empty path raises `ValkeyAclFileRendered` before mutation. RESP cannot
 reliably distinguish a writable file from a read-only mount or a competing renderer, so this
 conservative gate refuses **all** configured files. This includes CT100's read-only OpenBao
 files: add users to that rendering template, then use its ACL LOAD/restart workflow. Adding an
-admin does not bypass the gate. Instance assertions and ACL reads remain available.
+admin does not bypass the gate. Adoption is also refused: beta.79 `Plan.ts` forces reconcile
+after adoption, even for a no-op diff. CT100's rendered users have no `ACL LIST` permission,
+so ACL reads fail there too. CT100's ACLs remain owned by `homeflare-ct100`'s templates.
+`Valkey.Instance` assertions require a connection with the necessary `INFO`/`CONFIG GET` rights.
 
-**No ACL file ⇒ runtime-only management.** SETUSER/DELUSER change the live ACL. No ACL SAVE is
+**Kit-owned instance, no ACL file ⇒ runtime-only management.** SETUSER/DELUSER change the live ACL. No ACL SAVE is
 issued: it requires a configured ACL file. This mode is for instances whose operator accepts
 that ACLs must be reapplied after restart; AOF persistence does not persist this ACL declaration.
 A deployment with unchanged props is not proof that credentials survived a restart.

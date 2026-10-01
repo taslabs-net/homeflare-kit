@@ -11,6 +11,7 @@ import type { ValkeyExecutor } from './transport.ts';
 import { valkeyConnection } from './connection.ts';
 
 export const config: ValkeyConnectionConfig = {
+  instance: 'scratch',
   host: '127.0.0.1',
   port: 0,
   username: 'admin',

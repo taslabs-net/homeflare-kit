@@ -96,8 +96,8 @@ export class ValkeyAclReadbackFailed extends Data.TaggedError('ValkeyAclReadback
 }> {
   override get message(): string {
     return (
-      `Valkey.AclFile "${this.instance}": ACL SETUSER for "${this.user}" reported success, ` +
-      'but the user line read back does not match the declaration. Re-plan.'
+      `Valkey.AclFile "${this.instance}": ACL reconciliation for "${this.user}" reported success, ` +
+      'but readback contradicts the declared rules or removal. Re-plan.'
     );
   }
 }
@@ -208,7 +208,7 @@ export class ValkeyAclNameGlob extends Data.TaggedError('ValkeyAclNameGlob')<{
  * can neither write the file nor outlast the renderer that owns it (CT100: openbao-agent renders
  * `/etc/valkey/*-acl.conf` and mounts it read-only — a runtime `ACL SETUSER` there is reverted by
  * the next render/restart, measured 2026-09-30 as a WRONGPASS seat). Declare those users in the
- * rendering template instead, or point this family at an instance whose ACL it can persist. */
+ * rendering template instead, or use kit-owned runtime ACL management without a configured ACL file. */
 export class ValkeyAclFileRendered extends Data.TaggedError('ValkeyAclFileRendered')<{
   readonly instance: string;
   readonly path: string;
@@ -219,8 +219,8 @@ export class ValkeyAclFileRendered extends Data.TaggedError('ValkeyAclFileRender
       '(CONFIG GET aclfile), so the file — not this family — is the source of truth. The kit ' +
       'speaks RESP only and can neither write that file nor survive the renderer that owns it; ' +
       'a runtime ACL SETUSER there is reverted on the next render or restart. Declare the users ' +
-      'in the rendering template. Reads still work: plan-time diff sees stored attributes, and ' +
-      'alchemy drift re-reads the live ACL.'
+      'in the rendering template. Adoption also reconciles and is refused. ACL reads require ' +
+      'ACL LIST permission, which CT100 rendered users do not have.'
     );
   }
 }

@@ -16,7 +16,12 @@ export type {
 } from './acl-attrs.ts';
 export { ValkeyAclFile, ValkeyAclFileProvider, isValkeyAclFile } from './acl.ts';
 export type { ValkeyConnectionConfig } from './connection.ts';
-export { ValkeyConnection, valkeyConnection, withValkey } from './connection.ts';
+export {
+  ValkeyConnection,
+  ValkeyConnectionMissing,
+  valkeyConnection,
+  withValkey,
+} from './connection.ts';
 export {
   ValkeyAclChannelPatterns,
   ValkeyAclFileRendered,

@@ -115,8 +115,9 @@ export const makeValkeyInstanceHandlers = (
         const props = output ?? olds;
         // Neither AUTH failure nor an unreachable endpoint proves absence. Propagate the
         // typed failure so Plan.ts cannot bypass the adoption gate with a CREATE.
-        return yield* connect((ex) =>
-          Effect.map(readWithExecutor(ex, { name: props.name, port: props.port }), Unowned),
+        return yield* connect(
+          (ex) => Effect.map(readWithExecutor(ex, { name: props.name, port: props.port }), Unowned),
+          props.name,
         );
       }),
 
@@ -132,8 +133,9 @@ export const makeValkeyInstanceHandlers = (
 
     reconcile: ({ news }) =>
       Effect.gen(function* () {
-        const live = yield* connect((ex) =>
-          readWithExecutor(ex, { name: news.name, port: news.port }),
+        const live = yield* connect(
+          (ex) => readWithExecutor(ex, { name: news.name, port: news.port }),
+          news.name,
         );
         const drift = firstDrift(news, live);
         if (drift !== undefined) {

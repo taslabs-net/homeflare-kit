@@ -14,9 +14,17 @@
  *   for the operation, runs it, and closes the socket when it finishes — one connection per
  *   `reconcile`, never held across a whole plan.
  */
-import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
-import * as Layer from 'effect/Layer';
+import {
+  type ValkeyConnection,
+  type ValkeyConnectionMissing,
+  resolveValkeyConnection,
+} from './connection-service.ts';
+export {
+  ValkeyConnection,
+  ValkeyConnectionMissing,
+  valkeyConnection,
+} from './connection-service.ts';
 import { type Socket, connect } from 'node:net';
 import { type Environment, type FromEnv, resolveAll } from '../secrets/write-only.ts';
 import { ValkeyAuthPasswordMissing } from './errors.ts';
@@ -44,6 +52,8 @@ import {
  * `timeoutMs` bounds connect, each read, and the socket idle timer (default 10s). A blackholed
  * host must stall a plan no longer than that deadline. */
 export type ValkeyConnectionConfig = {
+  /** Resource routing key: required by valkeyProviders; omit only for direct transport calls. */
+  readonly instance?: string;
   readonly host: string;
   readonly port: number;
   /** Per-connect/per-read deadline in ms. */
@@ -55,18 +65,6 @@ export type ValkeyConnectionConfig = {
       readonly password: FromEnv;
     }
 );
-
-/** The lazy connection service (S24): its value is an `Effect` of the config, resolved inside each
- * operation so an environment variable is read at call time, never at layer build. */
-export class ValkeyConnection extends Context.Service<
-  ValkeyConnection,
-  Effect.Effect<ValkeyConnectionConfig>
->()('Valkey.Connection') {}
-
-/** A stack's one-line way to provide an instance: `Layer.provide(valkeyConnection({ … }))` on the
- * provider layer, or merged into the stack's own layer tree. */
-export const valkeyConnection = (config: ValkeyConnectionConfig): Layer.Layer<ValkeyConnection> =>
-  Layer.succeed(ValkeyConnection, Effect.succeed(config));
 
 const openSocket = (
   host: string,
@@ -150,10 +148,14 @@ export const withValkey = <A, E>(
     executor: ValkeyExecutor,
     config: ValkeyConnectionConfig,
   ) => Effect.Effect<A, E | ValkeyTransportError>,
-): Effect.Effect<A, E | ValkeyTransportError | ValkeyAuthPasswordMissing, ValkeyConnection> =>
+  instance?: string,
+): Effect.Effect<
+  A,
+  E | ValkeyTransportError | ValkeyAuthPasswordMissing | ValkeyConnectionMissing,
+  ValkeyConnection
+> =>
   Effect.gen(function* () {
-    const resolveConfig = yield* ValkeyConnection;
-    const config = yield* resolveConfig;
+    const config = yield* resolveValkeyConnection(instance);
     const timeoutMs = config.timeoutMs ?? DEFAULT_SOCKET_TIMEOUT_MS;
     const socket = yield* openSocket(config.host, config.port, timeoutMs);
     // Listener first, then the idle deadline. A timeout destroys with an error, and Node
