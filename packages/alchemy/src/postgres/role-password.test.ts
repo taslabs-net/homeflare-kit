@@ -55,7 +55,7 @@ describe('password: create', () => {
     // stdin on the runner transport, so both are covered by one assertion over the shared text.
     const sent = startingWith(fake, 'ALTER ROLE').map((s) => s.text);
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatch(/^ALTER ROLE "seat-observability" WITH PASSWORD 'SCRAM-SHA-256\$/);
+    expect(sent[0]).toMatch(/^ALTER ROLE "seat-observability" WITH PASSWORD E'SCRAM-SHA-256\$/);
     expect(JSON.stringify(fake.statements)).not.toContain('s3cret-value');
     expect(JSON.stringify(attrs)).not.toContain('s3cret-value');
     // The seal stays a seal of the plain value — only the wire form changed.
@@ -82,7 +82,7 @@ describe('password: live role', () => {
     );
     const sent = startingWith(fake, 'ALTER ROLE').map((s) => s.text);
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatch(/^ALTER ROLE "seat-observability" WITH PASSWORD 'SCRAM-SHA-256\$/);
+    expect(sent[0]).toMatch(/^ALTER ROLE "seat-observability" WITH PASSWORD E'SCRAM-SHA-256\$/);
     expect(JSON.stringify(fake.statements)).not.toContain('new');
     expect(sealMatches(attrs.passwordSeal, { password: 'new' })).toBe(true);
     expect(sealMatches(attrs.passwordSeal, { password: 'old' })).toBe(false);

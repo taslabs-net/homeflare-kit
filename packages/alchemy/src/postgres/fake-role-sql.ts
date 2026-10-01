@@ -40,7 +40,7 @@ const parseCreateRole = (text: string): RoleRow => {
   const login = /(?:^| )(NOLOGIN|LOGIN)(?: |$)/.exec(text);
   const inherit = /(?:^| )(NOINHERIT|INHERIT)(?: |$)/.exec(text);
   const limit = /CONNECTION LIMIT (-?\d+)/.exec(text);
-  const until = /VALID UNTIL '((?:[^']|'')*)'/.exec(text);
+  const until = /VALID UNTIL E'((?:[^']|'')*)'/.exec(text);
   if (name === null) {
     throw new Error(`fake-sql: could not parse a generated CREATE ROLE statement: ${text}`);
   }
@@ -61,7 +61,7 @@ const parseAlterRole = (text: string): Partial<RoleRow> => {
     throw new Error(`fake-sql: could not parse a generated ALTER ROLE statement: ${text}`);
   }
   const who = unquoteIdent(name[1] as string);
-  const until = /VALID UNTIL '((?:[^']|'')*)'/.exec(text);
+  const until = /VALID UNTIL E'((?:[^']|'')*)'/.exec(text);
   const limit = /CONNECTION LIMIT (-?\d+)/.exec(text);
   const login = /(?:^| )(NOLOGIN|LOGIN)(?: |$)/.exec(text);
   const inherit = /(?:^| )(NOINHERIT|INHERIT)(?: |$)/.exec(text);

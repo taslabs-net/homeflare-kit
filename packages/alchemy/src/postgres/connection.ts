@@ -70,6 +70,11 @@ export const postgresRunnerConnection = (
   config: PostgresRunnerConfig,
 ): Layer.Layer<PostgresConnection> => Layer.succeed(PostgresConnection, Effect.succeed(config));
 
+/** Effect-scoped pool factory, like BaoGate: tests override it without process-wide module mocks. */
+export const PostgresPool = Context.Reference<typeof PgClient.layer>('homeflare/postgres/Pool', {
+  defaultValue: () => PgClient.layer,
+});
+
 const isRunner = (c: PostgresConnectionConfig | PostgresRunnerConfig): c is PostgresRunnerConfig =>
   'run' in c;
 
@@ -103,6 +108,7 @@ export const withPg = <A, E>(
         database: target.database,
       });
     }
+    const pool = yield* PostgresPool;
     return yield* Effect.provide(
       Effect.flatMap(PgClient.PgClient, (pg) =>
         build(
@@ -120,6 +126,6 @@ export const withPg = <A, E>(
           { database: target.database },
         ),
       ),
-      PgClient.layer(target),
+      pool(target),
     );
   });

@@ -7,14 +7,14 @@
  * `withPg` override — the config each `PgClient.layer` call receives is recorded here.
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { mock } from 'bun:test';
 import * as PgClientModule from '@effect/sql-pg/PgClient';
 import type { PgClient as PgClientService } from '@effect/sql-pg/PgClient';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import { SqlClient } from 'effect/unstable/sql/SqlClient';
 import { isDependentObjectsError } from './schema-sql.ts';
 import { classifyInstalled } from './installed-classifier.ts';
-import { postgresConnection } from './connection.ts';
+import { PostgresPool, postgresConnection } from './connection.ts';
 import { postgresSchemaHandlers } from './schema.ts';
 import { PostgresSchemaDeleteForeignRefused } from './schema-errors.ts';
 import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
@@ -28,7 +28,7 @@ if (postgresSchemaHandlers.read === undefined) {
 const schemaRead = postgresSchemaHandlers.read;
 
 /** Every `PgClient.layer` config the mocked layer was built with — one per `withPg` call. */
-const pools: Array<{ database?: string }> = [];
+const pools: Array<{ database?: string | undefined }> = [];
 /** Every SQL text the fake client ran, in order. */
 const queries: string[] = [];
 /** The router answers for the current test (`schema-test-kit.ts` markers, JSON strings). */
@@ -47,17 +47,17 @@ const fakeClient = {
   },
 } as unknown as PgClientService;
 
-// `withPg`'s socket path calls `PgClient.layer(target)` — the mocked layer records the target
-// (the pool config: family or `withPg`'s database override) and serves the fake client.
-mock.module('@effect/sql-pg/PgClient', () => ({
-  ...PgClientModule,
-  layer: (config: { database?: string }) => {
+// The pool factory is provided to this Effect only; other suites keep the real driver.
+const socket = Layer.merge(
+  postgresConnection({ host: '/tmp', database: 'postgres', username: 'postgres' }),
+  Layer.succeed(PostgresPool, (config) => {
     pools.push(config);
-    return Layer.succeed(PgClientModule.PgClient, fakeClient);
-  },
-}));
-
-const socket = postgresConnection({ host: '/tmp', database: 'postgres', username: 'postgres' });
+    return Layer.merge(
+      Layer.succeed(PgClientModule.PgClient, fakeClient),
+      Layer.succeed(SqlClient, fakeClient),
+    );
+  }),
+);
 const declared: PostgresSchemaProps = { name: 's4', database: 'agents', owner: 'seat_role' };
 const persisted: PostgresSchemaAttributes = {
   name: 's4',

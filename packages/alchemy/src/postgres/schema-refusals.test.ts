@@ -59,17 +59,17 @@ describe('quoting', () => {
   });
 
   test('quoteStringLiteral doubles an embedded single quote', () => {
-    expect(quoteStringLiteral("seat ledger'; DROP")).toBe("'seat ledger''; DROP'");
+    expect(quoteStringLiteral("seat ledger'; DROP")).toBe("E'seat ledger''; DROP'");
   });
 
   test('buildCreateSchemaSql never string-concatenates an unescaped value', () => {
     const sql = buildCreateSchemaSql({ name: 'sc"1', database: 'postgres', owner: 'ro"le' });
-    expect(sql).toBe('CREATE SCHEMA IF NOT EXISTS "sc""1" AUTHORIZATION "ro""le"');
+    expect(sql).toBe('CREATE SCHEMA "sc""1" AUTHORIZATION "ro""le"');
   });
 
   test('buildCommentSchemaSql never string-concatenates an unescaped comment', () => {
     const sql = buildCommentSchemaSql('sc"1', "it'; DROP");
-    expect(sql).toBe(`COMMENT ON SCHEMA "sc""1" IS 'it''; DROP'`);
+    expect(sql).toBe(`COMMENT ON SCHEMA "sc""1" IS E'it''; DROP'`);
   });
 });
 

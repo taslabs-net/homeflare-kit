@@ -19,9 +19,10 @@
  *   `createdb_opt_item`'s string branch is `opt_boolean_or_string → NonReservedWord_or_Sconst →
  *   NonReservedWord | Sconst`. A locale like `en_US.UTF-8` would hit the same dot-splitting
  *   `quoteIdent` avoids if it were identifier-quoted; a plain `Sconst` (`quoteStringLiteral`) has
- *   no such rule. This rests on `standard_conforming_strings = on` (the PG18 default, and
- *   measured live 2026-09-23 — `docs/postgres.md#measured`); the escaper only ever doubles `'`
- *   and never emits a backslash, so it never depends on which way that setting points.
+ *   no such rule. Use E'…' with doubled backslashes and quotes: PostgreSQL 18 lexical
+ *   section 4.1.2.2 makes escape strings independent of standard_conforming_strings.
+ *   Measured 2026-10-01: the former quote-only escaper allowed comment SQL injection when
+ *   that setting was off; an input backslash escaped the first quote of a doubled pair.
  */
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import * as Effect from 'effect/Effect';
@@ -52,9 +53,10 @@ export interface PgExecutor {
  * `NonReservedWord` too, for `OWNER` and `TABLESPACE`. */
 export const quoteIdent = (value: string): string => `"${value.replace(/"/g, '""')}"`;
 
-/** SQL string-literal quoting: wrap in `'`, double any embedded `'`. Used for every `WITH`
- * value that is locale or encoding text, never for an identifier (see the file header). */
-export const quoteStringLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
+/** Escape-string quoting is safe with standard_conforming_strings either on or off.
+ * Double backslashes BEFORE quotes, so caller text cannot escape a closing delimiter. */
+export const quoteStringLiteral = (value: string): string =>
+  `E'${value.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
 
 const withOptions = (props: PostgresDatabaseProps, template?: string): string => {
   const parts: string[] = [`OWNER ${quoteIdent(props.owner)}`];

@@ -15,13 +15,13 @@ import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-att
 import { quoteIdent, quoteStringLiteral } from './database-sql.ts';
 import type { PgExecutor } from './database-sql.ts';
 
-/** `CREATE SCHEMA IF NOT EXISTS "name" [AUTHORIZATION "owner"]` — the only create this family issues. */
+/** `CREATE SCHEMA "name" [AUTHORIZATION "owner"]` — the only create this family issues. */
 export const buildCreateSchemaSql = (props: PostgresSchemaProps): string =>
-  `CREATE SCHEMA IF NOT EXISTS ${quoteIdent(props.name)}${
+  `CREATE SCHEMA ${quoteIdent(props.name)}${
     props.owner === undefined ? '' : ` AUTHORIZATION ${quoteIdent(props.owner)}`
   }`;
 
-/** `COMMENT ON SCHEMA "name" IS '…'` — issued only when a comment is declared. */
+/** `COMMENT ON SCHEMA "name" IS E'…'` — issued only when a comment is declared. */
 export const buildCommentSchemaSql = (name: string, comment: string): string =>
   `COMMENT ON SCHEMA ${quoteIdent(name)} IS ${quoteStringLiteral(comment)}`;
 
@@ -118,5 +118,13 @@ export const isDependentObjectsError = (error: SqlError): boolean => {
   const cause = error.reason.cause;
   return (
     typeof cause === 'object' && cause !== null && (cause as { code?: unknown }).code === '2BP01'
+  );
+};
+
+/** REL_18_6 pg_namespace.c raises duplicate_schema; both transports retain cause.code. */
+export const isDuplicateSchemaError = (error: SqlError): boolean => {
+  const cause = error.reason.cause;
+  return (
+    typeof cause === 'object' && cause !== null && (cause as { code?: unknown }).code === '42P06'
   );
 };

@@ -51,6 +51,8 @@ export {
 } from './schema.ts';
 export {
   PostgresSchemaCreateVanished,
+  PostgresSchemaExistsRefused,
+  PostgresSchemaIdentityRefused,
   PostgresSchemaDatabaseRefused,
   PostgresSchemaDeleteForeignRefused,
   PostgresSchemaDrift,

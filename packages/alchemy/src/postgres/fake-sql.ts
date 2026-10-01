@@ -17,7 +17,7 @@ import type { PostgresDatabaseAttributes } from './database-attrs.ts';
 import type { PgExecutor } from './database-sql.ts';
 import { parseCreate } from './fake-sql-parse.ts';
 import { type FakeRoleState, applyRoleStatement } from './fake-role-sql.ts';
-import { type FakeSchemaState, applySchemaStatement } from './fake-schema-sql.ts';
+import { type FakeSchemaState, applySchemaStatement, seedSchemas } from './fake-schema-sql.ts';
 import type { PostgresRoleAttributes } from './role-attrs.ts';
 import type { PostgresSchemaAttributes } from './schema-attrs.ts';
 
@@ -49,6 +49,7 @@ export interface FakeSql extends PgExecutor {
 }
 
 export interface FakeSqlOptions {
+  readonly standardConformingStrings?: boolean;
   readonly roles?: ReadonlyArray<string>;
   readonly databases?: ReadonlyArray<PostgresDatabaseAttributes>;
   readonly roleRows?: ReadonlyArray<PostgresRoleAttributes>;
@@ -68,9 +69,9 @@ export interface FakeSqlOptions {
   /** What `current_database()` answers and every schema row is stamped with (a real server
    * always reports the database its connection opened). Default `postgres`. */
   readonly database?: string;
-  /** The NEXT `CREATE SCHEMA` "succeeds" but stores a row owned by THIS role instead — a
+  /** The NEXT `CREATE SCHEMA` races with a row owned by THIS role — a
    * concurrent creator won between the first `SELECT` and the `IF NOT EXISTS`, which then
-   * does nothing (the re-read row is asserted like any other). Consumed once. */
+   * does nothing; plain CREATE instead fails with 42P06. Consumed once. */
   readonly raceNextCreateSchema?: string;
   /** What `current_user` answers, and the owner a `CREATE SCHEMA` without `AUTHORIZATION`
    * stores. Default `postgres`. A test that sets this pins the omitted-owner comparison
@@ -85,7 +86,7 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   const databases = new Map(options.databases?.map((d) => [d.name, d] as const) ?? []);
   const memberships = new Set<string>();
   const membershipOptions = new Map<string, { readonly admin: boolean; readonly set: boolean }>();
-  const schemas = new Map(options.schemas?.map((s) => [s.name, s] as const) ?? []);
+  const schemas = seedSchemas(options.schemas, options.database ?? 'postgres');
   const relationsIn = new Set(options.schemasWithRelations ?? []);
   let raceRemaining = options.raceNextCreate === true ? 1 : 0;
   let failNext = options.failNext;
@@ -106,6 +107,7 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
     schemas,
     relationsIn,
     database: options.database ?? 'postgres',
+    standardConformingStrings: options.standardConformingStrings ?? true,
     sessionRole: options.currentUser ?? 'postgres',
     swallowRemaining: options.swallowNextCreateSchema === true ? 1 : 0,
     raceOwner: options.raceNextCreateSchema,
