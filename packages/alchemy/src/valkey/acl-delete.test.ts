@@ -28,6 +28,7 @@ const env = { TEST_VALKEY_SEAT_PW: 'FAKE-seat' };
 const admin = 'user admin on >FAKE-admin ~* &* +@all';
 const operator = 'user operator on >FAKE-operator ~* &* +@all';
 const monitor = 'user monitor on >FAKE-monitor -@all';
+const draftAcl = 'user draft on >FAKE-draft ~draft:* &draft:* +@all';
 const survivors = ['admin', 'monitor', 'operator'];
 
 const instance = (): FakeValkey =>
@@ -80,10 +81,33 @@ test('delete after a failed update spares users the last good reconcile never ma
   expect([...fake.acl.keys()].sort()).toEqual(survivors);
 });
 
-test('delete never targets the connection user or default, even from a corrupted record', async () => {
+test('delete removes only output.managedUsers, never users listed in olds', async () => {
   const fake = instance();
   const output = await stored(fake);
-  await remove(fake, props, { ...output, managedUsers: ['admin', 'default', 'seat'] });
+  // `olds` claims live users (`operator`) and reserved names (`admin`, `default`) that the
+  // declaration no longer manages. Only `output.managedUsers` may be targets.
+  const corruptedOlds: ValkeyAclFileProps = {
+    instance: 'scratch',
+    users: { seat, operator: foreign, admin: foreign, default: foreign },
+  } as unknown as ValkeyAclFileProps;
+  await remove(fake, corruptedOlds, { ...output, managedUsers: ['seat'] });
   expect(delusers(fake)).toEqual([['ACL', 'DELUSER', 'seat']]);
-  expect(fake.acl.has('admin')).toBe(true);
+  expect([...fake.acl.keys()].sort()).toEqual(['admin', 'monitor', 'operator']);
+});
+
+test('delete after a partially-applied failed update spares users it never managed', async () => {
+  // The engine committed the new declaration as `olds` before reconcile ran. Reconcile then
+  // partially applied `draft` before failing; `output` still carries the last successful
+  // ownership record (`managedUsers: ['seat']`) but `draft` is already live.
+  const partial = makeFakeValkey({
+    acl: { admin, operator, monitor, draft: draftAcl },
+    passwords: { admin: 'FAKE-admin' },
+  });
+  const output = await stored(partial);
+  expect(Object.keys(output.users).sort()).toEqual(['draft', 'monitor', 'operator', 'seat']);
+  expect(output.managedUsers).toEqual(['seat']);
+  const failedUpdate: ValkeyAclFileProps = { instance: 'scratch', users: { seat, draft } };
+  await remove(partial, failedUpdate, output);
+  expect(delusers(partial)).toEqual([['ACL', 'DELUSER', 'seat']]);
+  expect([...partial.acl.keys()].sort()).toEqual(['admin', 'draft', 'monitor', 'operator']);
 });
