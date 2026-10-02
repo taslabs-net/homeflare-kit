@@ -14,7 +14,7 @@ import { PostgresRole } from './role.ts';
 import { readRole, reconcileWithClient, refuseAtPlan } from './role.ts';
 import { diffPostgresRole } from './role-diff.ts';
 import { PostgresRoleIdentityRefused } from './role-errors.ts';
-import { buildDropRoleSql, declarationMatches } from './role-sql.ts';
+import { buildDropRoleSql, declarationMatches, storedAttributes } from './role-sql.ts';
 import { withPg } from './connection.ts';
 
 export const postgresRoleHandlers = PostgresRole.Provider.of({
@@ -40,7 +40,8 @@ export const postgresRoleHandlers = PostgresRole.Provider.of({
         );
       }
       const passwordSeal = output?.passwordSeal ?? '';
-      const found = { ...live, passwordSeal };
+      // Read and reconcile must expose the same shape to Alchemy's drift comparison.
+      const found = { ...storedAttributes(live), passwordSeal };
       return yield* ownedRead(
         { fqn, instanceId, output },
         found,

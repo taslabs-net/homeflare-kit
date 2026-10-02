@@ -11,6 +11,7 @@ import * as Effect from 'effect/Effect';
 import { makeFakeSql } from './fake-sql.ts';
 import { PostgresRolePrivilegedRefused } from './role-errors.ts';
 import type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts';
+import { diffPostgresRole } from './role-diff.ts';
 import { reconcileWithClient } from './role.ts';
 
 const run = <A, E>(eff: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(eff);
@@ -57,24 +58,50 @@ describe('adopted privilege flags', () => {
     fake.membershipOptions.set('seat-widget\0hf_agent\0postgres', { admin: true, set: true });
     await run(reconcileWithClient(fake, baseProps));
     const texts = fake.statements.map((s) => s.text);
-    // `AddRoleMems` updates the session grantor's row. One full-options GRANT clears ADMIN
-    // and SET without a REVOKE that would drop the membership the declaration still wants.
-    expect(texts).toContain('GRANT "hf_agent" TO "seat-widget" WITH ADMIN FALSE, SET FALSE');
-    expect(texts.some((text) => text.startsWith('REVOKE'))).toBe(false);
+    // Option revocation keeps the membership, while RESTRICT protects dependent grants.
+    expect(texts).toContain(
+      'REVOKE ADMIN OPTION FOR "hf_agent" FROM "seat-widget" GRANTED BY "postgres" RESTRICT',
+    );
+    expect(texts).toContain(
+      'REVOKE SET OPTION FOR "hf_agent" FROM "seat-widget" GRANTED BY "postgres" RESTRICT',
+    );
+    expect(texts.some((text) => text.startsWith('GRANT'))).toBe(false);
     expect(fake.memberships.has('seat-widget\0hf_agent\0postgres')).toBe(true);
     expect(fake.membershipOptions.has('seat-widget\0hf_agent\0postgres')).toBe(false);
   });
 
-  test("another grantor's ADMIN row is revoked by that grantor and the seat grant remains", async () => {
+  test("another grantor's options are revoked while its membership remains", async () => {
     const fake = makeFakeSql({ roleRows: [liveRole()], roles: ['hf_agent'] });
     fake.memberships.add('seat-widget\0hf_agent\0other');
     fake.membershipOptions.set('seat-widget\0hf_agent\0other', { admin: true, set: true });
     await run(reconcileWithClient(fake, baseProps));
     const texts = fake.statements.map((s) => s.text);
-    expect(texts).toContain('GRANT "hf_agent" TO "seat-widget" WITH ADMIN FALSE, SET FALSE');
-    expect(texts).toContain('REVOKE "hf_agent" FROM "seat-widget" GRANTED BY "other"');
-    expect(fake.memberships.has('seat-widget\0hf_agent\0other')).toBe(false);
-    expect(fake.memberships.has('seat-widget\0hf_agent\0postgres')).toBe(true);
-    expect(fake.membershipOptions.has('seat-widget\0hf_agent\0postgres')).toBe(false);
+    expect(texts).toContain(
+      'REVOKE ADMIN OPTION FOR "hf_agent" FROM "seat-widget" GRANTED BY "other" RESTRICT',
+    );
+    expect(texts).toContain(
+      'REVOKE SET OPTION FOR "hf_agent" FROM "seat-widget" GRANTED BY "other" RESTRICT',
+    );
+    expect(fake.memberships.has('seat-widget\0hf_agent\0other')).toBe(true);
+    expect(fake.memberships.has('seat-widget\0hf_agent\0postgres')).toBe(false);
+    expect(fake.membershipOptions.has('seat-widget\0hf_agent\0other')).toBe(false);
   });
 });
+
+test.each(['superuser', 'createrole', 'createdb', 'replication', 'bypassrls'] as const)(
+  'live %s plans update and reconcile refuses before writing',
+  async (flag) => {
+    const live = liveRole({ [flag]: true });
+    expect(await run(diffPostgresRole(baseProps, liveRole(), {}, { found: live }))).toEqual({
+      action: 'update',
+    });
+    const fake = makeFakeSql({ roleRows: [live] });
+    const refused = await run(
+      reconcileWithClient(fake, baseProps, {}).pipe(
+        Effect.catchTag('PostgresRolePrivilegedRefused', (error) => Effect.succeed(error.flags)),
+      ),
+    );
+    expect(refused).toContain(flag.toUpperCase());
+    expect(fake.statements.every((s) => s.text.trimStart().startsWith('SELECT'))).toBe(true);
+  },
+);

@@ -147,6 +147,7 @@ export {
   PostgresRoleNameRefused,
   PostgresRoleParentMissing,
   PostgresRolePasswordEnvUnsetError,
+  PostgresRolePasswordNonAsciiRefused,
   PostgresRolePrivilegedRefused,
   PostgresRoleRenameRefused,
   PostgresRoleValidUntilRefused,

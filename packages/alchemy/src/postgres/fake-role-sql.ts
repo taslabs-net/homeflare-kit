@@ -176,6 +176,18 @@ export const applyRoleStatement = <A extends object>(
   }
 
   if (text.startsWith('REVOKE')) {
+    const option =
+      /^REVOKE (ADMIN|SET) OPTION FOR "((?:[^"]|"")*)" FROM "((?:[^"]|"")*)" GRANTED BY "((?:[^"]|"")*)" RESTRICT$/.exec(
+        text,
+      );
+    if (option !== null) {
+      const key = `${unquoteIdent(option[3] as string)}\0${unquoteIdent(option[2] as string)}\0${unquoteIdent(option[4] as string)}`;
+      const options = state.membershipOptions.get(key) ?? { admin: false, set: false };
+      const next = { ...options, [option[1] === 'ADMIN' ? 'admin' : 'set']: false };
+      if (next.admin || next.set) state.membershipOptions.set(key, next);
+      else state.membershipOptions.delete(key);
+      return Effect.succeed([] as unknown as ReadonlyArray<A>);
+    }
     const granted =
       /^REVOKE "((?:[^"]|"")*)" FROM "((?:[^"]|"")*)" GRANTED BY "((?:[^"]|"")*)"$/.exec(text);
     if (granted !== null) {

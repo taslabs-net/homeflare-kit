@@ -94,7 +94,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
     'the create-time membership shorthand; this family writes memberships with one explicit GRANT per parent instead, so the re-read stays authoritative',
   ROLE: 'grants the listed roles membership in the NEW role — the inverse of memberOf; membership is declared in one direction only',
   ADMIN:
-    'grants membership with ADMIN OPTION; a live membership that already has admin_option is revoked and re-granted without it, and the seat GRANT says SET FALSE',
+    'grants membership with ADMIN OPTION; a live admin_option is revoked by grantor with RESTRICT, preserving membership and refusing dependent grants, and the seat GRANT says SET FALSE',
   SYSID:
     'ignored by the server since PostgreSQL 8.1 (the docs keep it only for compatibility); this family never assigns oids',
 };

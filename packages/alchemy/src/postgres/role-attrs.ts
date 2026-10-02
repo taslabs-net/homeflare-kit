@@ -116,8 +116,8 @@ export interface PostgresRoleAttributes {
    * on a catalog read; stripped before attributes are stored (`storedAttributes`), because the
    * engine's diff receives stored attributes and would never see them there. The provider's
    * diff reads these rows live. `grantor` is the role that made the grant
-   * (`pg_auth_members.grantor`), null when that role was dropped — a dropped-grantor row cannot
-   * be named in `REVOKE … GRANTED BY`, so reconcile can only fail typed on it.
+   * (`pg_auth_members.grantor`). Null is a defensive inconsistent-catalog case, not an ordinary
+   * DROP ROLE outcome; such a row cannot be named in `REVOKE … GRANTED BY`.
    */
   readonly memberships?: readonly {
     readonly parent: string;

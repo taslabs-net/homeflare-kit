@@ -33,7 +33,12 @@ import type { SqlError } from 'effect/unstable/sql/SqlError';
 import { type Environment } from '../secrets/write-only.ts';
 import type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts';
 import { nameByteRefusal, validUntilRefusal } from './role-attrs.ts';
-import { passwordMatchesSeal, resolvePassword, sealPassword } from './role-secrets.ts';
+import {
+  assertPasswordAscii,
+  passwordMatchesSeal,
+  resolvePassword,
+  sealPassword,
+} from './role-secrets.ts';
 import { scramSha256Verifier } from './role-scram.ts';
 import {
   buildAlterRoleSql,
@@ -52,6 +57,7 @@ import {
   PostgresRoleNameRefused,
   type PostgresRoleParentMissing,
   PostgresRolePasswordEnvUnsetError,
+  type PostgresRolePasswordNonAsciiRefused,
   PostgresRolePrivilegedRefused,
   PostgresRoleValidUntilRefused,
 } from './role-errors.ts';
@@ -93,6 +99,7 @@ export const reconcileWithClient = (
 ): Effect.Effect<
   PostgresRoleAttributes,
   | PostgresRolePasswordEnvUnsetError
+  | PostgresRolePasswordNonAsciiRefused
   | PostgresRolePrivilegedRefused
   | PostgresRoleCreateVanished
   | PostgresRoleMembershipUnrepaired
@@ -102,6 +109,7 @@ export const reconcileWithClient = (
 > =>
   Effect.gen(function* () {
     const resolved = resolvePassword(props, env);
+    yield* assertPasswordAscii(props.name, resolved);
     const observed = yield* readRoleWithClient(pg, props.name);
     if (observed === undefined) {
       // A create that declares a password must hold it: a LOGIN role with no password set, or

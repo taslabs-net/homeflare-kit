@@ -24,8 +24,8 @@ import type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts'
 /** One `pg_auth_members` row as this family reads it: the parent name, the grantor who made
  * the grant, and the two options a name-only compare would hide. `admin` true is `WITH ADMIN`;
  * `set` true (the `GRANT` default) lets the member `SET ROLE` to the parent. `grantor` is null
- * when the granting role was later dropped — such a row can never be named in a `REVOKE …
- * GRANTED BY`, so it can only be repaired by hand as a bootstrap superuser. */
+ * only in an inconsistent catalog or a synthetic test row, not after an ordinary DROP ROLE:
+ * PostgreSQL tracks grantor dependencies. Keep the null guard as a defensive refusal. */
 export interface MembershipRow {
   readonly parent: string;
   readonly grantor: string | null;
@@ -55,11 +55,20 @@ export const selectRoleMemberships = (
 export const buildGrantMembershipSql = (member: string, parent: string): string =>
   `GRANT ${quoteIdent(parent)} TO ${quoteIdent(member)} WITH SET FALSE`;
 
-/** Repair an existing membership in place: one atomic full-options `GRANT` per parent.
- * Upstream keeps any `WITH` option the new `GRANT` omits (`grant.sgml`), so a repair must
- * spell both bits — `ADMIN FALSE, SET FALSE` — rather than rely on `SET FALSE` alone. */
-export const buildRepairMembershipSql = (member: string, parent: string): string =>
-  `GRANT ${quoteIdent(parent)} TO ${quoteIdent(member)} WITH ADMIN FALSE, SET FALSE`;
+/** ⛔ Do not repair with GRANT … ADMIN FALSE: measured in PR 336, that left grants made
+ * by the member standing after stripping its ADMIN. PG 16+ tracks dependent role grants:
+ * https://www.postgresql.org/docs/16/sql-grant.html#SQL-GRANT-DESCRIPTION-ROLES
+ * https://www.postgresql.org/docs/16/sql-revoke.html
+ * Measured 2026-10-02 on PG 17.11: REVOKE ADMIN OPTION … RESTRICT refuses dependents;
+ * without dependents, option revocation keeps the membership and its INHERIT bit intact.
+ * GRANTED BY targets the observed row, including a different grantor's row. */
+export const buildRepairMembershipSql = (
+  member: string,
+  parent: string,
+  grantor: string,
+  option: 'ADMIN' | 'SET',
+): string =>
+  `REVOKE ${option} OPTION FOR ${quoteIdent(parent)} FROM ${quoteIdent(member)} GRANTED BY ${quoteIdent(grantor)} RESTRICT`;
 
 /** Remove one grantor's row for one parent. Naming the grantor is what makes the revoke
  * bind: a plain `REVOKE` skips rows other grantors made (`revoke.sgml`). */
@@ -115,21 +124,13 @@ export const assertParentsExist = (
     }
   });
 
-/** Make live memberships equal the declaration, never dropping a membership the declaration
- * keeps. A wanted parent that is already granted is repaired with one
- * `GRANT … WITH ADMIN FALSE, SET FALSE` — `AddRoleMems` updates that grantor's row in place
- * (`user.c@REL_18_6` `SearchSysCache3` on role, member, grantor) — and any other grantor's
- * unsafe row is then revoked by name.
- *
- * 1. Rows the declaration does not want are revoked **by their own grantor** (dead-grantor
- *    rows are skipped and left for the backstop to report).
- * 2. Unsafe-but-wanted rows get one full-options repair `GRANT` per parent — atomic, in place,
- *    so the membership never drops even when another grantor's row also exists.
- * 3. A repair leaves other grantors' unsafe rows beside the safe one, so a mid re-read
- *    revokes every remaining unsafe row with a live grantor.
- * 4. Absent-but-wanted parents get a fresh seat grant.
- * 5. Backstop re-read: any row that is not wanted, or still unsafe, fails typed — including a
- *    dead-grantor row, which no statement this family may issue can repair. */
+/** Make live memberships equal the declaration, preserving wanted memberships in place.
+ * The previous full-options GRANT updated only its own grantor's row, then revoked other
+ * unsafe rows; it could silently strip ADMIN despite dependent grants (PR 336 round 2).
+ * Now each unsafe option is revoked by its observed grantor with RESTRICT. All membership
+ * changes share a transaction: a dependency/permission failure rolls back the whole batch
+ * and propagates the driver's typed SqlError. No CASCADE and no replacement grantor row.
+ * Unnameable grantors are defensive catalog-corruption cases, left to the typed backstop. */
 export const syncMemberships = (
   pg: PgExecutor,
   props: PostgresRoleProps,
@@ -144,44 +145,25 @@ export const syncMemberships = (
     }
     yield* assertParentsExist(pg, props.name, props.memberOf);
     const wanted = [...new Set(props.memberOf)].sort();
-    // 1. Not-wanted rows: revoke each by its own grantor (dead-grantor rows skipped; the
-    //    backstop catches them).
+    const statements: string[] = [];
     for (const row of rows) {
-      if (wanted.includes(row.parent) || row.grantor === null) continue;
-      yield* pg
-        .unsafe(buildRevokeGrantorMembershipSql(props.name, row.parent, row.grantor))
-        .pipe(Effect.asVoid);
-    }
-    // 2. Unsafe-but-wanted rows: one full-options repair `GRANT` per parent.
-    const repaired = [
-      ...new Set(
-        rows
-          .filter(
-            (row) => wanted.includes(row.parent) && (row.admin || row.set) && row.grantor !== null,
-          )
-          .map((row) => row.parent),
-      ),
-    ];
-    for (const parent of repaired) {
-      yield* pg.unsafe(buildRepairMembershipSql(props.name, parent)).pipe(Effect.asVoid);
-    }
-    // 3. If any repair ran, other grantors' unsafe rows may still stand: re-read and revoke
-    //    them by grantor (the repair's own safe row remains).
-    if (repaired.length > 0) {
-      const midRead = yield* selectRoleMemberships(pg, props.name);
-      for (const row of midRead) {
-        if (wanted.includes(row.parent) && (row.admin || row.set) && row.grantor !== null) {
-          yield* pg
-            .unsafe(buildRevokeGrantorMembershipSql(props.name, row.parent, row.grantor))
-            .pipe(Effect.asVoid);
+      if (row.grantor === null) continue;
+      if (!wanted.includes(row.parent)) {
+        statements.push(buildRevokeGrantorMembershipSql(props.name, row.parent, row.grantor));
+      } else {
+        for (const option of ['ADMIN', 'SET'] as const) {
+          if (option === 'ADMIN' ? row.admin : row.set) {
+            statements.push(buildRepairMembershipSql(props.name, row.parent, row.grantor, option));
+          }
         }
       }
     }
-    // 4. Absent-but-wanted parents: fresh seat grant.
+    // Absent-but-wanted parents get a fresh seat grant. Existing rows keep their grantor.
     for (const parent of wanted.filter((p) => !rows.some((row) => row.parent === p))) {
-      yield* pg.unsafe(buildGrantMembershipSql(props.name, parent)).pipe(Effect.asVoid);
+      statements.push(buildGrantMembershipSql(props.name, parent));
     }
-    // 5. Backstop: anything not wanted or still unsafe fails typed.
+    if (statements.length > 0) yield* pg.transaction(statements);
+    // Backstop: anything not wanted or still unsafe fails typed.
     for (const row of yield* selectRoleMemberships(pg, props.name)) {
       if (!wanted.includes(row.parent) || row.admin || row.set) {
         return yield* Effect.fail(

@@ -16,12 +16,13 @@ import type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts'
 import {
   PostgresRoleIdentityRefused,
   type PostgresRoleNameRefused,
+  type PostgresRolePasswordNonAsciiRefused,
   PostgresRoleRenameRefused,
   type PostgresRoleValidUntilRefused,
 } from './role-errors.ts';
 import { membershipDrift, unsafeMemberships } from './role-membership-sql.ts';
-import { passwordMatchesSeal, resolvePassword } from './role-secrets.ts';
-import { scalarDrift } from './role-sql.ts';
+import { assertPasswordAscii, passwordMatchesSeal, resolvePassword } from './role-secrets.ts';
+import { privilegedFlags, scalarDrift } from './role-sql.ts';
 import { refuseAtPlan } from './role.ts';
 
 /** A catalog read the provider performed for this diff. `found: undefined` means the name is
@@ -47,6 +48,7 @@ export const diffPostgresRole = (
   | PostgresRoleNameRefused
   | PostgresRoleValidUntilRefused
   | PostgresRoleIdentityRefused
+  | PostgresRolePasswordNonAsciiRefused
 > =>
   Effect.gen(function* () {
     if (output === undefined || !isResolved(news)) return undefined;
@@ -76,11 +78,13 @@ export const diffPostgresRole = (
       live === undefined ? new Set() : unsafeMemberships(live),
     );
     const resolved = resolvePassword(news, env);
+    yield* assertPasswordAscii(news.name, resolved);
     const passwordStale =
       resolved.value !== undefined && !passwordMatchesSeal(resolved.value, output.passwordSeal);
     const absent = observation !== undefined && live === undefined;
     const changed =
       absent ||
+      privilegedFlags(compared).length > 0 ||
       scalars.length > 0 ||
       membership.grants.length > 0 ||
       membership.revokes.length > 0 ||
