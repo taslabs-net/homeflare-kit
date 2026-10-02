@@ -11,6 +11,8 @@
  *   written — a plan never re-sends a secret that already matches, and never stores one.
  */
 import * as Redacted from 'effect/Redacted';
+import * as Effect from 'effect/Effect';
+import { PostgresRolePasswordNonAsciiRefused } from './role-errors.ts';
 import { type Environment, resolveAll, seal, sealMatches } from '../secrets/write-only.ts';
 import type { PostgresRoleProps } from './role-attrs.ts';
 
@@ -21,6 +23,19 @@ export interface ResolvedPassword {
   readonly variable: string | undefined;
   readonly value: Redacted.Redacted<string> | undefined;
 }
+
+/** ⛔ PostgreSQL applies SASLprep before SCRAM, with a raw-byte fallback for prohibited input:
+ * https://www.postgresql.org/docs/16/sasl-authentication.html#SASL-SCRAM-SHA-256
+ * Non-ASCII can normalize to different bytes (e.g. soft hyphen disappears). Refuse before
+ * any write, even with a matching old seal, until we have a vendor-compatible normalizer.
+ * ASCII is unchanged, including prohibited ASCII controls via PostgreSQL's fallback. */
+export const assertPasswordAscii = (
+  role: string,
+  resolved: ResolvedPassword,
+): Effect.Effect<void, PostgresRolePasswordNonAsciiRefused> =>
+  resolved.value !== undefined && /[\u0080-\uffff]/.test(Redacted.value(resolved.value))
+    ? Effect.fail(new PostgresRolePasswordNonAsciiRefused({ role }))
+    : Effect.void;
 
 export const resolvePassword = (
   props: PostgresRoleProps,

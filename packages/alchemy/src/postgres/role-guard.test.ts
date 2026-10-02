@@ -1,5 +1,5 @@
 /**
- * The create must not survive a missing parent, and a membership whose grantor role is gone
+ * The create must not survive a missing parent, and a synthetic inconsistent-catalog membership with no grantor
  * must fail typed rather than look repaired.
  */
 import { describe, expect, test } from 'bun:test';
@@ -30,7 +30,7 @@ const live = (): PostgresRoleAttributes => ({
   passwordSeal: '',
 });
 
-describe('missing parent and dead grantor', () => {
+describe('missing parent and inconsistent grantor', () => {
   test('a missing parent fails typed and issues no CREATE', async () => {
     const fake = makeFakeSql();
     const error = await fails(reconcileWithClient(fake, props));
@@ -48,7 +48,7 @@ describe('missing parent and dead grantor', () => {
     expect(fake.statements.some((s) => s.text.startsWith('CREATE ROLE'))).toBe(true);
   });
 
-  test('a wanted membership whose grantor role is gone fails typed', async () => {
+  test('a synthetic unresolvable grantor fails typed (not an ordinary DROP ROLE outcome)', async () => {
     const fake = makeFakeSql({ roleRows: [live()], roles: ['hf_agent'] });
     fake.memberships.add('seat-observability\0hf_agent\0');
     fake.membershipOptions.set('seat-observability\0hf_agent\0', { admin: true, set: true });

@@ -28,6 +28,8 @@ const b64 = (value: Buffer): string => value.toString('base64');
 /**
  * `SCRAM-SHA-256$4096:<salt>$<StoredKey>:<ServerKey>` for one password. The salt is fresh per
  * call (same as `psql \password`); tests pass one to make the output deterministic.
+ * Callers first run `assertPasswordAscii`: raw non-ASCII may differ from PostgreSQL's
+ * SASLprep bytes (https://www.postgresql.org/docs/16/sasl-authentication.html).
  */
 export const scramSha256Verifier = (password: string, salt?: Buffer): string => {
   const bytes = salt ?? randomBytes(SALT_BYTES);

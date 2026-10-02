@@ -26,16 +26,26 @@ run yourself. The `Postgres.Database` resource in this kit already binds `@effec
   never re-sends a secret that already matches, and never stores one. A create that declares a
   password but whose variable is unset refuses before any write
   (`PostgresRolePasswordEnvUnsetError`), including the retry of a create whose password statement
-  never sealed.
+  never sealed. Non-ASCII passwords fail typed before writes (`PostgresRolePasswordNonAsciiRefused`):
+  PostgreSQL applies SASLprep, and this provider does not implement that normalization.
 - **Membership is `pg_auth_members`, compared as a sorted set.** `memberOf` omitted leaves live
   memberships alone; `[]` ensures none. Moves run through one-parent `GRANT`/`REVOKE`
   (`alter_role.sgml`: "there are no options for adding or removing memberships; use GRANT and
   REVOKE"). A plain `REVOKE` only removes the session grantor's row (`plan_single_revoke` matches
   `grantor`); each unwanted row is `REVOKE … GRANTED BY` its own grantor. A wanted row that is
-  `WITH ADMIN` or still `SET TRUE` is repaired in place with one
-  `GRANT … WITH ADMIN FALSE, SET FALSE` (`AddRoleMems` updates that grantor's tuple). Another
-  grantor's unsafe row is revoked by name afterwards. A row whose grantor role is gone cannot be
-  named and fails `PostgresRoleMembershipUnrepaired`. A missing parent fails
+  `WITH ADMIN`, still `SET TRUE`, or `INHERIT TRUE` when `inherit:false` is declared is repaired
+  with `REVOKE ADMIN/SET/INHERIT OPTION FOR … GRANTED BY … RESTRICT`. Unwanted-row revokes commit
+  first, then each retained row's options share a repair transaction. SQLSTATE 2BP01/42501 becomes
+  `PostgresRoleMembershipUnrepaired` naming that parent and grantor, preserving refused options
+  and dependent rows without rolling back unwanted-row revokes. No CASCADE is issued.
+  Option repair was measured once by hand on a throwaway PostgreSQL 17.11 (2026-10-02);
+  automated tests stub the 2BP01/42501 responses. Semantics: PostgreSQL
+  [16 GRANT](https://www.postgresql.org/docs/16/sql-grant.html) / [REVOKE](https://www.postgresql.org/docs/16/sql-revoke.html),
+  [17 GRANT](https://www.postgresql.org/docs/17/sql-grant.html) / [REVOKE](https://www.postgresql.org/docs/17/sql-revoke.html),
+  [18 GRANT](https://www.postgresql.org/docs/18/sql-grant.html) / [REVOKE](https://www.postgresql.org/docs/18/sql-revoke.html).
+  `buildRepairMembershipSql` now requires the grantor and option (`ADMIN`, `SET` or `INHERIT`).
+  A null grantor is a defensive inconsistent-catalog case, not an ordinary DROP ROLE outcome,
+  and fails `PostgresRoleMembershipUnrepaired`. A missing parent fails
   `PostgresRoleParentMissing` before any statement.
 - **`defaultRemovalPolicy: 'retain'`.** A seat group role may own objects and be granted across
   databases. A destroy is still implemented in full (`DROP ROLE IF EXISTS`, idempotent), opted in
@@ -47,7 +57,9 @@ run yourself. The `Postgres.Database` resource in this kit already binds `@effec
   says `WITH SET FALSE`. Create runs `CREATE`, the password `ALTER` and the seat `GRANT`s in one
   transaction, so a later statement failure does not leave a LOGIN role behind. `diff` reads
   `pg_auth_members` live — stored attributes omit the option rows, and the engine passes stored
-  attributes — so `ADMIN` or `SET TRUE` plans as `update`. A live oid that is not the stored oid
+  attributes — so unsafe `ADMIN`, `SET` or `INHERIT` plans as `update`. Privileged catalog flags also plan
+  `update`, reaching the typed reconcile refusal. `read` omits membership option rows just as
+  reconcile does, so an unchanged role does not report structural drift. A live oid that is not the stored oid
   is `PostgresRoleIdentityRefused` on read, diff, reconcile and delete: the name was recreated
   out of band and is not dropped or altered.
 

@@ -45,8 +45,9 @@ const runnerFor =
       stdin,
     );
     const body = (wrapped?.[1] ?? stdin).replace(/;\s*$/, '');
-    const bound = /^([\s\S]*) = (E'[\s\S]*')$/.exec(body);
-    const sql = bound === null ? body : `${bound[1]} = $1`;
+    // Membership reads have ORDER BY after the bound name; preserve that suffix.
+    const bound = /^([\s\S]*) = (E'(?:\\.|''|[^'\\])*')([\s\S]*)$/.exec(body);
+    const sql = bound === null ? body : `${bound[1]} = $1${bound[3]}`;
     const params = bound === null ? [] : [parseLiteral(bound[2] as string)];
     const rows = await Effect.runPromise(fake.unsafe(sql, params));
     return { code: 0, stdout: JSON.stringify(rows), stderr: '' };
@@ -74,6 +75,17 @@ const ids = {
 };
 
 describe('oid and live membership options', () => {
+  test('read returns the reconcile shape, without observe-only memberships', async () => {
+    const fake = makeFakeSql({ roleRows: [stored()], roles: ['hf_agent'] });
+    fake.memberships.add('seat-observability\0hf_agent\0postgres');
+    const output = stored();
+    const found = await Effect.runPromise(
+      readRoleHandler({ ...ids, olds: baseProps, output }).pipe(Effect.provide(layerFor(fake))),
+    );
+    expect(found).toEqual(output);
+    expect(found).not.toHaveProperty('memberships');
+  });
+
   test('a recycled oid is refused on read, diff and delete, and delete issues no DROP', async () => {
     const fake = makeFakeSql({ roleRows: [{ ...stored(), oid: 7 }] });
     const output = stored();

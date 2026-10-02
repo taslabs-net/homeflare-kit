@@ -1,9 +1,10 @@
 /**
  * `Postgres.Role` failures as typed tags (S21).
  *
- * ⛔ NONE OF THESE IS A STATUS-CODE OR MESSAGE MATCH. Every one is raised from a fact the
+ * ⛔ NEVER MATCH DRIVER MESSAGE TEXT. Most errors are raised from a fact the
  *   provider already checked (a byte count, a live catalog row, a missing environment variable,
- *   a vanished create) — never from sniffing a driver error's text. A `DROP ROLE` that the
+ *   a vanished create). Membership repair also maps raw SQLSTATE 2BP01/42501 to a typed
+ *   refusal naming the observed parent and grantor. A `DROP ROLE` that the
  *   server refuses (the role still owns objects, `2BP01 dependent_objects_still_exist`) surfaces
  *   as the `SqlError` the client raised, unclassified by this family.
  */
@@ -122,12 +123,9 @@ export class PostgresRoleCreateVanished extends Data.TaggedError('PostgresRoleCr
   }
 }
 
-/** A `pg_auth_members` row survived reconcile in a shape the declaration does not allow — not
- * wanted, still `ADMIN`, or still `SET` at the upstream default TRUE. A live grantor's row is
- * named in `REVOKE … GRANTED BY`, which either binds or fails loudly; the one shape no
- * statement this family may issue can touch is a row whose grantor role was dropped
- * (`pg_auth_members` keeps it keyed on the dead oid, and no `GRANTED BY` name reaches it), so
- * the message asks the operator to revoke it by hand as a bootstrap superuser and re-plan. */
+/** An option repair was refused, or a catalog row survived outside the declaration. A null grantor is a
+ * defensive corruption/test case: PostgreSQL tracks grantor dependencies, so ordinary
+ * DROP ROLE does not leave a dangling grantor. Refuse instead of claiming convergence. */
 export class PostgresRoleMembershipUnrepaired extends Data.TaggedError(
   'PostgresRoleMembershipUnrepaired',
 )<{
@@ -138,15 +136,15 @@ export class PostgresRoleMembershipUnrepaired extends Data.TaggedError(
 }> {
   override get message(): string {
     const who =
-      this.grantor === null ? 'a grantor role that no longer exists' : `grantor "${this.grantor}"`;
+      this.grantor === null
+        ? 'an unresolvable grantor (inconsistent catalog)'
+        : `grantor "${this.grantor}"`;
     return (
       `Postgres.Role "${this.role}": membership of "${this.parent}" ` +
       `(${this.declared ? 'declared, options unsafe' : 'not declared'}) could not be repaired ` +
-      `after its statements — the row still stands under ${who}. pg_auth_members keys a ` +
-      'membership on (parent, member, grantor), and a grantor that no longer exists cannot be ' +
-      'named in REVOKE … GRANTED BY. Revoke the row by hand as a bootstrap superuser ' +
-      '(`REVOKE role FROM member GRANTED BY <grantor>`; a grantor oid with no role name needs ' +
-      'catalog surgery) and re-plan.'
+      `under ${who}. The server refused the repair or the catalog re-read still found the row ` +
+      'outside the declaration. pg_auth_members keys a membership on (parent, member, grantor). ' +
+      'Check dependent grants, executor permissions and grantor identity before re-planning.'
     );
   }
 }
@@ -186,7 +184,17 @@ export class PostgresRoleIdentityRefused extends Data.TaggedError('PostgresRoleI
   }
 }
 
+/** Never carry the rejected password in this error: errors reach logs and traces. */
+export class PostgresRolePasswordNonAsciiRefused extends Data.TaggedError(
+  'PostgresRolePasswordNonAsciiRefused',
+)<{ readonly role: string }> {
+  override get message(): string {
+    return `Postgres.Role "${this.role}": password must be ASCII; this provider does not implement PostgreSQL SASLprep normalization. Nothing was written.`;
+  }
+}
+
 export type PostgresRoleError =
+  | PostgresRolePasswordNonAsciiRefused
   | PostgresRoleNameRefused
   | PostgresRoleRenameRefused
   | PostgresRoleValidUntilRefused

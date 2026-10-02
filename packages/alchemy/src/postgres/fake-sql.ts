@@ -35,12 +35,14 @@ export interface FakeSql extends PgExecutor {
   readonly roleRows: Map<string, PostgresRoleAttributes>;
   /** `member\0parent\0grantor` triples backing `pg_auth_members` (a plain `pg_auth_members`
    * read, a grant, a revoke and a DROP ROLE cascade all go through `fake-role-sql.ts`);
-   * `GRANT`/`REVOKE` mutate it. An empty grantor segment is a grantor role that no longer
-   * exists. */
+   * `GRANT`/`REVOKE` mutate it. An empty grantor segment is an inconsistent catalog/test row. */
   readonly memberships: Set<string>;
   /** Options on a membership the name alone hides, keyed `member\0parent\0grantor`. Absent
-   * means neither ADMIN nor SET. */
-  readonly membershipOptions: Map<string, { readonly admin: boolean; readonly set: boolean }>;
+   * means neither ADMIN, SET nor an explicit per-grant INHERIT. */
+  readonly membershipOptions: Map<
+    string,
+    { readonly admin: boolean; readonly set: boolean; readonly inherit?: boolean }
+  >;
   /** Mutable on purpose: a test seeds a live schema (adoption, drift) or clears one (drop). */
   readonly schemas: Map<string, PostgresSchemaAttributes>;
   /** Mutable on purpose: names of schemas this fake pretends hold at least one relation, so a
@@ -85,7 +87,10 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   const roleRows = new Map(options.roleRows?.map((r) => [r.name, r] as const) ?? []);
   const databases = new Map(options.databases?.map((d) => [d.name, d] as const) ?? []);
   const memberships = new Set<string>();
-  const membershipOptions = new Map<string, { readonly admin: boolean; readonly set: boolean }>();
+  const membershipOptions = new Map<
+    string,
+    { readonly admin: boolean; readonly set: boolean; readonly inherit?: boolean }
+  >();
   const schemas = seedSchemas(options.schemas, options.database ?? 'postgres');
   const relationsIn = new Set(options.schemasWithRelations ?? []);
   let raceRemaining = options.raceNextCreate === true ? 1 : 0;

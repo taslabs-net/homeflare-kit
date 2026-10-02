@@ -181,7 +181,9 @@ export const declarationMatches = (
     (props.validUntil === undefined || sameValidUntil(props.validUntil, live.validUntil)) &&
     (wanted === undefined || wanted === found) &&
     privilegedFlags(live).length === 0 &&
-    (live.memberships ?? []).every((row) => !row.admin && !row.set)
+    (live.memberships ?? []).every(
+      (row) => !row.admin && !row.set && (!row.inherit || props.inherit),
+    )
   );
 };
 
