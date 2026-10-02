@@ -62,7 +62,8 @@ export interface PostgresRoleProps {
   readonly login: boolean;
   /** `CONNECTION LIMIT n`, `-1` for unlimited — maps to `pg_roles.rolconnlimit`. */
   readonly connectionLimit: number;
-  /** `INHERIT` or `NOINHERIT` — maps to `pg_roles.rolinherit`. */
+  /** `INHERIT` or `NOINHERIT` — maps to `pg_roles.rolinherit`; false also clears per-grant
+   * INHERIT on declared memberships (PG 16+ uses the role flag only to default new grants). */
   readonly inherit: boolean;
   /**
    * `VALID UNTIL 'timestamp'` — maps to `pg_roles.rolvaliduntil`. ISO 8601 without a timezone is
@@ -112,7 +113,8 @@ export interface PostgresRoleAttributes {
    */
   readonly memberOf: readonly string[] | null;
   /**
-   * The membership rows behind `memberOf`, including `admin_option` and `set_option`. Present
+   * The membership rows behind `memberOf`, including `admin_option`, `set_option` and
+   * `inherit_option`. Present
    * on a catalog read; stripped before attributes are stored (`storedAttributes`), because the
    * engine's diff receives stored attributes and would never see them there. The provider's
    * diff reads these rows live. `grantor` is the role that made the grant
@@ -124,6 +126,7 @@ export interface PostgresRoleAttributes {
     readonly grantor: string | null;
     readonly admin: boolean;
     readonly set: boolean;
+    readonly inherit: boolean;
   }[];
   /**
    * A seal of the last password value written, or `''` if none was ever written (`seal()` from

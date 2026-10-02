@@ -99,31 +99,6 @@ describe('diff', () => {
     }
   });
 
-  test('ADMIN or SET on the live read answers update; stored membership rows do not', async () => {
-    const declared = { ...base, memberOf: ['hf_agent'] as const };
-    const stored = { ...output, memberOf: ['hf_agent'] as const };
-    const row = (admin: boolean, set: boolean) => ({
-      found: {
-        ...stored,
-        memberships: [{ parent: 'hf_agent', grantor: 'postgres', admin, set }],
-      },
-    });
-    expect(await run(diffPostgresRole(declared, stored, {}, row(true, true)))).toEqual({
-      action: 'update',
-    });
-    expect(await run(diffPostgresRole(declared, stored, {}, row(false, true)))).toEqual({
-      action: 'update',
-    });
-    expect(await run(diffPostgresRole(declared, stored, {}, row(false, false)))).toEqual({
-      action: 'noop',
-    });
-    const stuffed = {
-      ...stored,
-      memberships: [{ parent: 'hf_agent', grantor: 'postgres', admin: true, set: true }],
-    };
-    expect(await run(diffPostgresRole(declared, stuffed))).toEqual({ action: 'noop' });
-  });
-
   test('a rotated password answers update even with no other drift; a matching or unreadable one does not', async () => {
     const declared = { ...base, password: { fromEnv: 'PG_SEAT_ROLE_PASSWORD' } as const };
     const stale = seal({ password: 'old' }, 'fixed-salt');

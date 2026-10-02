@@ -22,11 +22,14 @@ export interface FakeRoleState {
   /** Bare role names, backing the `roleExists` check the database family's owner probe uses. */
   readonly roleNames: Set<string>;
   readonly roleRows: Map<string, PostgresRoleAttributes>;
-  /** `member\0parent\0grantor` triples backing `pg_auth_members` (`''` grantor = dropped
+  /** `member\0parent\0grantor` triples backing `pg_auth_members` (`''` grantor = unresolvable
    * grantor); `GRANT`/`REVOKE` mutate it. */
   readonly memberships: Set<string>;
   /** Options a name-only compare would hide, keyed `member\0parent\0grantor`. */
-  readonly membershipOptions: Map<string, { readonly admin: boolean; readonly set: boolean }>;
+  readonly membershipOptions: Map<
+    string,
+    { readonly admin: boolean; readonly set: boolean; readonly inherit?: boolean }
+  >;
   /** Hands out the next `oid` a real cluster would assign. */
   nextOid(): number;
 }
@@ -106,6 +109,7 @@ export const applyRoleStatement = <A extends object>(
           grantor: parts[2] === undefined || parts[2] === '' ? null : (parts[2] as string),
           admin: options?.admin === true,
           set: options?.set === true,
+          inherit: options?.inherit === true,
         };
       })
       .sort(
@@ -165,26 +169,30 @@ export const applyRoleStatement = <A extends object>(
     // `grant.sgml` (REL_18_6): altering an existing membership retains every option the new
     // GRANT omits, so only the full-options form clears ADMIN; `WITH SET FALSE` alone keeps a
     // current ADMIN. A bare `GRANT` (never issued by this family) leaves options untouched.
-    const options = state.membershipOptions.get(key) ?? { admin: false, set: false };
+    const options = state.membershipOptions.get(key) ?? {
+      admin: false,
+      set: false,
+      inherit: state.roleRows.get(member)?.inherit ?? true,
+    };
     if (text.endsWith('WITH ADMIN FALSE, SET FALSE')) {
-      state.membershipOptions.delete(key);
+      state.membershipOptions.set(key, { ...options, admin: false, set: false });
     } else if (text.endsWith('WITH SET FALSE')) {
-      if (options.admin) state.membershipOptions.set(key, { admin: true, set: false });
-      else state.membershipOptions.delete(key);
+      state.membershipOptions.set(key, { ...options, set: false });
     }
     return Effect.succeed([] as unknown as ReadonlyArray<A>);
   }
 
   if (text.startsWith('REVOKE')) {
     const option =
-      /^REVOKE (ADMIN|SET) OPTION FOR "((?:[^"]|"")*)" FROM "((?:[^"]|"")*)" GRANTED BY "((?:[^"]|"")*)" RESTRICT$/.exec(
+      /^REVOKE (ADMIN|SET|INHERIT) OPTION FOR "((?:[^"]|"")*)" FROM "((?:[^"]|"")*)" GRANTED BY "((?:[^"]|"")*)" RESTRICT$/.exec(
         text,
       );
     if (option !== null) {
       const key = `${unquoteIdent(option[3] as string)}\0${unquoteIdent(option[2] as string)}\0${unquoteIdent(option[4] as string)}`;
       const options = state.membershipOptions.get(key) ?? { admin: false, set: false };
-      const next = { ...options, [option[1] === 'ADMIN' ? 'admin' : 'set']: false };
-      if (next.admin || next.set) state.membershipOptions.set(key, next);
+      const next = { ...options, [(option[1] as string).toLowerCase()]: false };
+      if (next.admin || next.set || next.inherit !== undefined)
+        state.membershipOptions.set(key, next);
       else state.membershipOptions.delete(key);
       return Effect.succeed([] as unknown as ReadonlyArray<A>);
     }

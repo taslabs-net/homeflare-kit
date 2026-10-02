@@ -11,8 +11,8 @@
  *   are exercised (`user-manag.sgml`). A safe seat membership is `ADMIN FALSE, SET FALSE`.
  * ⛔ REVOKE BY GRANTOR. A plain `REVOKE parent FROM member` only touches rows the session's
  *   own grantor made; Postgres 18 warns and leaves another grantor's rows standing
- *   (`revoke.sgml`). Every revoke here names `GRANTED BY`, so the statement either removes
- *   the row it targets or fails loudly — never a silent no-op.
+ *   (`revoke.sgml`). Every revoke here names `GRANTED BY`. A mismatched grantor can still
+ *   produce only a warning; the catalog re-read below catches surviving unsafe rows.
  */
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import * as Effect from 'effect/Effect';
@@ -22,7 +22,8 @@ import { PostgresRoleMembershipUnrepaired, PostgresRoleParentMissing } from './r
 import type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts';
 
 /** One `pg_auth_members` row as this family reads it: the parent name, the grantor who made
- * the grant, and the two options a name-only compare would hide. `admin` true is `WITH ADMIN`;
+ * the grant, and the three options a name-only compare would hide. `admin` true is `WITH ADMIN`;
+ * `inherit` true inherits the parent's privileges even when the member is NOINHERIT;
  * `set` true (the `GRANT` default) lets the member `SET ROLE` to the parent. `grantor` is null
  * only in an inconsistent catalog or a synthetic test row, not after an ordinary DROP ROLE:
  * PostgreSQL tracks grantor dependencies. Keep the null guard as a defensive refusal. */
@@ -31,12 +32,14 @@ export interface MembershipRow {
   readonly grantor: string | null;
   readonly admin: boolean;
   readonly set: boolean;
+  readonly inherit: boolean;
 }
 
 const MEMBERSHIP_SQL = `SELECT parent.rolname AS parent,
     grantor.rolname AS grantor,
     m.admin_option AS admin,
-    m.set_option AS set
+    m.set_option AS set,
+    m.inherit_option AS inherit
   FROM pg_auth_members m
   JOIN pg_roles member ON member.oid = m.member
   JOIN pg_roles parent ON parent.oid = m.roleid
@@ -60,13 +63,14 @@ export const buildGrantMembershipSql = (member: string, parent: string): string 
  * https://www.postgresql.org/docs/16/sql-grant.html#SQL-GRANT-DESCRIPTION-ROLES
  * https://www.postgresql.org/docs/16/sql-revoke.html
  * Measured 2026-10-02 on PG 17.11: REVOKE ADMIN OPTION … RESTRICT refuses dependents;
- * without dependents, option revocation keeps the membership and its INHERIT bit intact.
+ * without dependents, ADMIN/SET revocation keeps membership and its INHERIT bit intact.
+ * INHERIT revocation explicitly clears that bit for a declared NOINHERIT role.
  * GRANTED BY targets the observed row, including a different grantor's row. */
 export const buildRepairMembershipSql = (
   member: string,
   parent: string,
   grantor: string,
-  option: 'ADMIN' | 'SET',
+  option: 'ADMIN' | 'SET' | 'INHERIT',
 ): string =>
   `REVOKE ${option} OPTION FOR ${quoteIdent(parent)} FROM ${quoteIdent(member)} GRANTED BY ${quoteIdent(grantor)} RESTRICT`;
 
@@ -79,12 +83,17 @@ export const buildRevokeGrantorMembershipSql = (
 ): string =>
   `REVOKE ${quoteIdent(parent)} FROM ${quoteIdent(member)} GRANTED BY ${quoteIdent(grantor)}`;
 
-/** Catalog flags this family never declares. A create lands on the server default (all false);
- * an absent field on a seeded test row is that default. */
+/** ADMIN/SET are always unsafe; per-grant INHERIT is unsafe for declared NOINHERIT.
+ * PG 16–18 GRANT docs: the role attribute only defaults NEW membership grants. */
 export const unsafeMemberships = (
   live: Omit<PostgresRoleAttributes, 'passwordSeal'>,
+  inherit: boolean = live.inherit,
 ): ReadonlySet<string> =>
-  new Set((live.memberships ?? []).filter((row) => row.admin || row.set).map((row) => row.parent));
+  new Set(
+    (live.memberships ?? [])
+      .filter((row) => row.admin || row.set || (row.inherit && !inherit))
+      .map((row) => row.parent),
+  );
 
 /** Membership drift: sorted set difference between declared and live. Duplicates in the
  * declaration collapse to one; `undefined` means "not asserted" — nothing to grant or revoke.
@@ -127,9 +136,10 @@ export const assertParentsExist = (
 /** Make live memberships equal the declaration, preserving wanted memberships in place.
  * The previous full-options GRANT updated only its own grantor's row, then revoked other
  * unsafe rows; it could silently strip ADMIN despite dependent grants (PR 336 round 2).
- * Now each unsafe option is revoked by its observed grantor with RESTRICT. All membership
- * changes share a transaction: a dependency/permission failure rolls back the whole batch
- * and propagates the driver's typed SqlError. No CASCADE and no replacement grantor row.
+ * Now each unsafe option is revoked by its observed grantor with RESTRICT. Unwanted rows
+ * commit first, so a blocked ADMIN repair cannot restore unwanted access (PR 349 review).
+ * Each retained row's options share a transaction, attributing a dependency/permission
+ * refusal to that parent and grantor. No CASCADE and no replacement grantor row.
  * Unnameable grantors are defensive catalog-corruption cases, left to the typed backstop. */
 export const syncMemberships = (
   pg: PgExecutor,
@@ -145,27 +155,58 @@ export const syncMemberships = (
     }
     yield* assertParentsExist(pg, props.name, props.memberOf);
     const wanted = [...new Set(props.memberOf)].sort();
-    const statements: string[] = [];
+    const revokes: string[] = [];
     for (const row of rows) {
-      if (row.grantor === null) continue;
-      if (!wanted.includes(row.parent)) {
-        statements.push(buildRevokeGrantorMembershipSql(props.name, row.parent, row.grantor));
-      } else {
-        for (const option of ['ADMIN', 'SET'] as const) {
-          if (option === 'ADMIN' ? row.admin : row.set) {
-            statements.push(buildRepairMembershipSql(props.name, row.parent, row.grantor, option));
-          }
-        }
+      if (!wanted.includes(row.parent) && row.grantor !== null) {
+        revokes.push(buildRevokeGrantorMembershipSql(props.name, row.parent, row.grantor));
       }
     }
-    // Absent-but-wanted parents get a fresh seat grant. Existing rows keep their grantor.
-    for (const parent of wanted.filter((p) => !rows.some((row) => row.parent === p))) {
-      statements.push(buildGrantMembershipSql(props.name, parent));
+    if (revokes.length > 0) yield* pg.transaction(revokes);
+    for (const row of rows) {
+      if (row.grantor === null || !wanted.includes(row.parent)) continue;
+      const statements: string[] = [];
+      for (const option of ['ADMIN', 'SET', 'INHERIT'] as const) {
+        const unsafe =
+          option === 'ADMIN'
+            ? row.admin
+            : option === 'SET'
+              ? row.set
+              : row.inherit && !props.inherit;
+        if (unsafe) {
+          statements.push(buildRepairMembershipSql(props.name, row.parent, row.grantor, option));
+        }
+      }
+      if (statements.length > 0)
+        yield* pg.transaction(statements).pipe(
+          Effect.catchTag('SqlError', (error) => {
+            // Both installed socket and psql transports preserve raw SQLSTATE here.
+            // Class 2B is UnknownError, class 42 is SqlSyntaxError; never match messages.
+            const cause = error.reason.cause;
+            const code =
+              typeof cause === 'object' && cause !== null
+                ? (cause as { code?: unknown }).code
+                : undefined;
+            return Effect.fail(
+              code === '2BP01' || code === '42501'
+                ? new PostgresRoleMembershipUnrepaired({
+                    role: props.name,
+                    parent: row.parent,
+                    grantor: row.grantor,
+                    declared: true,
+                  })
+                : error,
+            );
+          }),
+        );
     }
-    if (statements.length > 0) yield* pg.transaction(statements);
+    // Absent-but-wanted parents get a fresh seat grant. Existing rows keep their grantor.
+    const grants = wanted
+      .filter((p) => !rows.some((row) => row.parent === p))
+      .map((parent) => buildGrantMembershipSql(props.name, parent));
+    if (grants.length > 0) yield* pg.transaction(grants);
     // Backstop: anything not wanted or still unsafe fails typed.
     for (const row of yield* selectRoleMemberships(pg, props.name)) {
-      if (!wanted.includes(row.parent) || row.admin || row.set) {
+      if (!wanted.includes(row.parent) || row.admin || row.set || (row.inherit && !props.inherit)) {
         return yield* Effect.fail(
           new PostgresRoleMembershipUnrepaired({
             role: props.name,

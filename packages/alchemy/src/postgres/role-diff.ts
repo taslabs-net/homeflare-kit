@@ -75,7 +75,7 @@ export const diffPostgresRole = (
     const membership = membershipDrift(
       news.memberOf,
       compared.memberOf ?? [],
-      live === undefined ? new Set() : unsafeMemberships(live),
+      live === undefined ? new Set() : unsafeMemberships(live, news.inherit),
     );
     const resolved = resolvePassword(news, env);
     yield* assertPasswordAscii(news.name, resolved);

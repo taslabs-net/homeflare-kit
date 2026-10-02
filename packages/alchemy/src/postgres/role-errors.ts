@@ -1,9 +1,10 @@
 /**
  * `Postgres.Role` failures as typed tags (S21).
  *
- * ⛔ NONE OF THESE IS A STATUS-CODE OR MESSAGE MATCH. Every one is raised from a fact the
+ * ⛔ NEVER MATCH DRIVER MESSAGE TEXT. Most errors are raised from a fact the
  *   provider already checked (a byte count, a live catalog row, a missing environment variable,
- *   a vanished create) — never from sniffing a driver error's text. A `DROP ROLE` that the
+ *   a vanished create). Membership repair also maps raw SQLSTATE 2BP01/42501 to a typed
+ *   refusal naming the observed parent and grantor. A `DROP ROLE` that the
  *   server refuses (the role still owns objects, `2BP01 dependent_objects_still_exist`) surfaces
  *   as the `SqlError` the client raised, unclassified by this family.
  */
@@ -122,7 +123,7 @@ export class PostgresRoleCreateVanished extends Data.TaggedError('PostgresRoleCr
   }
 }
 
-/** A catalog row survived reconcile outside the declaration. A null grantor is a
+/** An option repair was refused, or a catalog row survived outside the declaration. A null grantor is a
  * defensive corruption/test case: PostgreSQL tracks grantor dependencies, so ordinary
  * DROP ROLE does not leave a dangling grantor. Refuse instead of claiming convergence. */
 export class PostgresRoleMembershipUnrepaired extends Data.TaggedError(
@@ -141,9 +142,9 @@ export class PostgresRoleMembershipUnrepaired extends Data.TaggedError(
     return (
       `Postgres.Role "${this.role}": membership of "${this.parent}" ` +
       `(${this.declared ? 'declared, options unsafe' : 'not declared'}) could not be repaired ` +
-      `after its statements — the row still stands under ${who}. pg_auth_members keys a ` +
-      'membership on (parent, member, grantor), and a grantor that no longer exists cannot be ' +
-      'named in REVOKE … GRANTED BY. Investigate the catalog and grant dependencies before re-planning.'
+      `under ${who}. The server refused the repair or the catalog re-read still found the row ` +
+      'outside the declaration. pg_auth_members keys a membership on (parent, member, grantor). ' +
+      'Check dependent grants, executor permissions and grantor identity before re-planning.'
     );
   }
 }

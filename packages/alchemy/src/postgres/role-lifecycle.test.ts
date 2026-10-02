@@ -206,8 +206,8 @@ describe('read', () => {
       validUntil: null,
       memberOf: ['hf_agent', 'seat-b'],
       memberships: [
-        { parent: 'hf_agent', grantor: 'postgres', admin: false, set: false },
-        { parent: 'seat-b', grantor: 'postgres', admin: false, set: false },
+        { parent: 'hf_agent', grantor: 'postgres', inherit: false, admin: false, set: false },
+        { parent: 'seat-b', grantor: 'postgres', inherit: false, admin: false, set: false },
       ],
     });
   });

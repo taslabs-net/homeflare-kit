@@ -19,7 +19,7 @@ const props = {
   password: { fromEnv: 'TEST_PASSWORD' },
 };
 // Synthetic test input, deliberately recognizable if it escapes into captured telemetry.
-const password = "synthetic-'plain\\password-marker";
+const password = 'kit336-plaintext-canary:must-never-reach-transport!';
 const env = { TEST_PASSWORD: password };
 const live = { ...props, oid: 42, validUntil: null, memberOf: [], passwordSeal: '' };
 
@@ -74,7 +74,7 @@ test('SQL tracer captures only a verifier on create, rotate and failed ALTER', a
         .filter((text): text is string => typeof text === 'string' && text.includes('PASSWORD'));
       expect(passwordQueries).toHaveLength(1);
       expect(passwordQueries[0]).toContain("PASSWORD E'SCRAM-SHA-256$");
-      expect(JSON.stringify({ attributes, result })).not.toContain('plain');
+      expect(JSON.stringify({ attributes, result })).not.toContain(password);
     }
   }
 });
@@ -116,7 +116,7 @@ test('psql runner receives only a verifier; echoed failure and state hold no pla
       const writes = calls.filter((call) => call.stdin.includes('PASSWORD'));
       expect(writes).toHaveLength(1);
       expect(writes[0]?.stdin).toContain("PASSWORD E'SCRAM-SHA-256$");
-      expect(JSON.stringify({ calls, result })).not.toContain('plain');
+      expect(JSON.stringify({ calls, result })).not.toContain(password);
       expect(JSON.stringify(result)).not.toContain('SCRAM-SHA-256$');
     }
   }
