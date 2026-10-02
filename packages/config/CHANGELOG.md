@@ -1,5 +1,11 @@
 # @homeflare/config
 
+## 0.15.0
+
+### Minor Changes
+
+- [#346](https://github.com/taslabs-net/homeflare-kit/pull/346) [`fac3a03`](https://github.com/taslabs-net/homeflare-kit/commit/fac3a0390d4c898705f515948af2e2226e9d95d8) Thanks [@taslabs-net](https://github.com/taslabs-net)! - pre-push runs each test lane with `TMPDIR` set to a fresh directory and fails the push if anything is left, naming the leaked prefixes and how many entries share each one. Cleanup failures are reported without masking the test result or leak evidence. A tracked test file that hardcodes a `/tmp`, `/private/tmp`, or `/var/tmp` path fails the same hook unless that line, or the line above, carries a `tmp-allow:` reason; ignored nested checkouts are excluded.
+
 ## 0.14.0
 
 ### Minor Changes
