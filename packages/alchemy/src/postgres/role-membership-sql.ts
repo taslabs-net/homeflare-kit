@@ -87,7 +87,9 @@ export const buildRevokeGrantorMembershipSql = (
  * PG 16–18 GRANT docs: the role attribute only defaults NEW membership grants. */
 export const unsafeMemberships = (
   live: Omit<PostgresRoleAttributes, 'passwordSeal'>,
-  inherit: boolean = live.inherit,
+  /** The DECLARED inherit flag (never the live one): a declared NOINHERIT role must see live
+   *  per-grant INHERIT rows as unsafe even when the live role flag says INHERIT. */
+  inherit: boolean,
 ): ReadonlySet<string> =>
   new Set(
     (live.memberships ?? [])

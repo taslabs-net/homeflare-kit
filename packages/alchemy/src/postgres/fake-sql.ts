@@ -38,7 +38,7 @@ export interface FakeSql extends PgExecutor {
    * `GRANT`/`REVOKE` mutate it. An empty grantor segment is an inconsistent catalog/test row. */
   readonly memberships: Set<string>;
   /** Options on a membership the name alone hides, keyed `member\0parent\0grantor`. Absent
-   * means neither ADMIN nor SET. */
+   * means neither ADMIN, SET nor an explicit per-grant INHERIT. */
   readonly membershipOptions: Map<
     string,
     { readonly admin: boolean; readonly set: boolean; readonly inherit?: boolean }
