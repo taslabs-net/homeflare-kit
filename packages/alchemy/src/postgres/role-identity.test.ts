@@ -46,7 +46,7 @@ const runnerFor =
     );
     const body = (wrapped?.[1] ?? stdin).replace(/;\s*$/, '');
     // Membership reads have ORDER BY after the bound name; preserve that suffix.
-    const bound = /^([\s\S]*) = (E'(?:\\.|''|[^'])*')([\s\S]*)$/.exec(body);
+    const bound = /^([\s\S]*) = (E'(?:\\.|''|[^'\\])*')([\s\S]*)$/.exec(body);
     const sql = bound === null ? body : `${bound[1]} = $1${bound[3]}`;
     const params = bound === null ? [] : [parseLiteral(bound[2] as string)];
     const rows = await Effect.runPromise(fake.unsafe(sql, params));
