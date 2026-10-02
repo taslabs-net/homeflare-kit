@@ -13,6 +13,9 @@
  *
  * ⛔ SO: packing must be PURE. It never writes inside the repository.
  */
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { packForPublish } from '../scripts/pack.ts';
 
@@ -31,8 +34,7 @@ describe('packForPublish is pure', () => {
   test('packing the same package CONCURRENTLY leaves every manifest untouched', async () => {
     // ⛔ Two packs of ONE package at once — the exact shape that destroyed kit's scripts.
     const before = await manifestBytes();
-    const scratch = `${(await Bun.file('/dev/null').exists()) ? '/tmp' : '/tmp'}/hf-pack-purity-${Bun.randomUUIDv7()}`;
-    await Bun.spawn(['mkdir', '-p', scratch]).exited;
+    const scratch = await mkdtemp(join(tmpdir(), 'hf-pack-purity-'));
 
     try {
       const tarballs = await Promise.all([
@@ -48,15 +50,14 @@ describe('packForPublish is pure', () => {
       expect(tarballs[0]).not.toBe(tarballs[1]);
       expect(await manifestBytes()).toEqual(before);
     } finally {
-      await Bun.spawn(['rm', '-rf', scratch]).exited;
+      await rm(scratch, { recursive: true, force: true });
     }
   }, 60_000);
 
   test('the packed tarball still has scripts and devDependencies stripped', async () => {
     // ⚠️ Purity must not have cost the stripping — a published manifest with a
     //   `prepublishOnly` would run a build in the CONSUMER's install.
-    const scratch = `/tmp/hf-pack-strip-${Bun.randomUUIDv7()}`;
-    await Bun.spawn(['mkdir', '-p', scratch]).exited;
+    const scratch = await mkdtemp(join(tmpdir(), 'hf-pack-strip-'));
 
     try {
       const tarball = await packForPublish(`${REPO}/packages/kit`, scratch);
@@ -70,7 +71,7 @@ describe('packForPublish is pure', () => {
       expect(packed['exports']).toBeDefined();
       expect(packed['dependencies']).toBeDefined();
     } finally {
-      await Bun.spawn(['rm', '-rf', scratch]).exited;
+      await rm(scratch, { recursive: true, force: true });
     }
   }, 60_000);
 });

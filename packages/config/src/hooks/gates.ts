@@ -14,10 +14,11 @@
 import { resolveOxfmtConfig } from './oxfmt-config.ts';
 import { requireCleanTree, requireInstalled } from './preconditions.ts';
 import { checkoutFix } from './push-fix.ts';
-import { type Lane, planLanes } from './push-plan.ts';
+import { planLanes } from './push-plan.ts';
 import { changesEverything, parsePushRefs, pushScope } from './push-range.ts';
 import { scanPushedSecrets } from './push-secrets.ts';
-import { fail, note, ok, run, runCaptured, runLane, tool } from './report.ts';
+import { fail, note, ok, run, runCaptured, tool } from './report.ts';
+import { runPlannedLanes } from './push-run.ts';
 import { scanStagedSecrets } from './secrets.ts';
 import { fingerprints, staged } from './staged.ts';
 
@@ -137,15 +138,6 @@ export async function preCommit(root: string): Promise<void> {
   }
 }
 
-/** The one-line reason a lane is in the run, printed before it starts. */
-function describe(lane: Lane): string {
-  if (lane.kind === 'skip') return `skip ${lane.label} — ${lane.why}`;
-  if (lane.kind === 'test' && lane.scoped)
-    return `run  ${lane.command}  (only the tests the push can reach)`;
-  if (lane.kind === 'test') return `run  ${lane.command}  (IN FULL)`;
-  return `run  ${lane.command}`;
-}
-
 /**
  * Run the repository's own `check`, narrowed to what the push can affect.
  *
@@ -206,27 +198,11 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
     else base = scope.base;
   }
 
-  const lanes = planLanes(scripts, base);
-  const started = Bun.nanoseconds();
-  let ran = 0;
-  for (const lane of lanes) {
-    note(describe(lane));
-    if (lane.kind === 'skip') continue;
-    // 🔴 `runLane` strips the GIT_* this hook inherited — see report.ts.
-    if ((await runLane(lane.command, root)) !== 0) {
-      fail('pre-push', `\`${lane.label}\` failed`, `${lane.command} — until it is green`);
-    }
-    ran += 1;
-  }
-  if (ran === 0) {
-    // ⛔ NOTHING RAN IS NOT "0 LANES PASSED". A `check` made only of build and smoke lanes (which
-    //   CI runs) skips every one, and printing a success line for that certified nothing.
-    fail(
-      'pre-push',
-      'every lane of `check` was skipped, so nothing was checked',
-      'put a lint, type or test lane in `check`: only build and smoke lanes are skipped here, because CI runs them',
-    );
-  }
-  const seconds = ((Bun.nanoseconds() - started) / 1e9).toFixed(1);
-  ok(`pre-push: ${String(ran)} lane(s) of \`check\` passed in ${seconds}s — CI runs the full gate`);
+  // ⛔ Old literals must not block unrelated pushes. Reuse the paths measured from the
+  //   push base even when a manifest change widens the test lane to run in full.
+  await runPlannedLanes(
+    root,
+    planLanes(scripts, base),
+    scope.kind === 'scoped' ? scope.changed : undefined,
+  );
 }

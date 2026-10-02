@@ -22,7 +22,7 @@ import {
 } from './sudo-allowlist.ts';
 
 const PREFIXES = ['/etc/systemd/system', '/usr/local/bin'];
-const STAGED = '/tmp/hf-sudo-1/staged';
+const STAGED = '/tmp/hf-sudo-1/staged'; // tmp-allow: in-memory staging path, not a directory this test creates
 const TEMP = '/etc/systemd/system/.thing.service.hf-abcdef012345.tmp';
 const context: AllowContext = { prefixes: PREFIXES, staged: STAGED, temp: TEMP };
 const allowed = (argv: string[]) => privilegedProblem(argv, context);
@@ -51,7 +51,7 @@ describe('install shapes', () => {
       'a target that is not the derived temp',
       [INSTALL, '-m', '0644', '-T', '--', STAGED, '/etc/systemd/system/x.service'],
     ],
-    ['a temp outside every prefix', [INSTALL, '-m', '0644', '-T', '--', STAGED, '/tmp/x.tmp']],
+    ['a temp outside every prefix', [INSTALL, '-m', '0644', '-T', '--', STAGED, '/tmp/x.tmp']], // tmp-allow: refused argv, not a directory this test creates
     ['no -T', [INSTALL, '-m', '0644', '--', STAGED, TEMP]],
     ['a three-digit mode', [INSTALL, '-m', '644', '-T', '--', STAGED, TEMP]],
     ['-S (the Mac flag)', [INSTALL, '-S', '-m', '0644', '-T', '--', STAGED, TEMP]],
@@ -103,7 +103,7 @@ describe('mv and rm shapes', () => {
     ['mv without -T', [MV, '-f', '--', TEMP, '/etc/systemd/system/thing.service']],
     ['rm -r', [RM, '-rf', '--', TEMP]],
     ['rm without --', [RM, '-f', TEMP]],
-    ['rm outside every prefix', [RM, '-f', '--', '/tmp/x']],
+    ['rm outside every prefix', [RM, '-f', '--', '/tmp/x']], // tmp-allow: refused argv, not a directory this test creates
     ['sudo in argv', ['/usr/bin/sudo', '-n', RM, '-f', '--', TEMP]],
   ])('refuses %s', (_name, argv) => {
     expect(allowed(argv)).toBeString();

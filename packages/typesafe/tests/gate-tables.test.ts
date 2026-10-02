@@ -4,6 +4,9 @@
  * behaviour, the fail-closed path, and a ReDoS time budget over every emitted rule.
  * Red on origin/main: packages/typesafe/src/gate/generated does not exist there.
  */
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { digestOf } from '../scripts/gen-gate-tables.ts';
 import { compileRuleTable } from '../src/gate/scan.ts';
@@ -154,17 +157,22 @@ describe('gate-tables: --check reproduces committed output, and skips without a 
   });
 
   test('with no cache present, it skips (EXIT=0) rather than failing', async () => {
-    const proc = Bun.spawn(
-      ['bun', new URL('../scripts/gen-gate-tables.ts', import.meta.url).pathname, '--check'],
-      {
-        stdout: 'pipe',
-        stderr: 'pipe',
-        env: { ...process.env, HOMEFLARE_SCHEMA_CACHE: '/tmp/hf-gate-tables-test-empty-cache' },
-      },
-    );
-    const out = await new Response(proc.stdout).text();
-    const code = await proc.exited;
-    expect(code).toBe(0);
-    expect(out).toContain('Skipping');
+    const cache = join(tmpdir(), `hf-gate-tables-absent-${Bun.randomUUIDv7()}`);
+    try {
+      const proc = Bun.spawn(
+        ['bun', new URL('../scripts/gen-gate-tables.ts', import.meta.url).pathname, '--check'],
+        {
+          stdout: 'pipe',
+          stderr: 'pipe',
+          env: { ...process.env, HOMEFLARE_SCHEMA_CACHE: cache },
+        },
+      );
+      const out = await new Response(proc.stdout).text();
+      const code = await proc.exited;
+      expect(code).toBe(0);
+      expect(out).toContain('Skipping');
+    } finally {
+      await rm(cache, { recursive: true, force: true });
+    }
   });
 });

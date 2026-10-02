@@ -52,7 +52,7 @@ describe('writeFileAtomic under a prefix', () => {
     for (const line of logs) expect(line.startsWith('homeflare/linux sudo -n ')).toBe(true);
     // No temp file left behind, and the staging directory is gone too.
     expect([...fake.files.keys()].some((path) => path.includes('.hf-'))).toBe(false);
-    expect([...fake.dirs.keys()].some((path) => path.startsWith('/tmp/hf-sudo-'))).toBe(false);
+    expect([...fake.dirs.keys()].some((path) => path.startsWith('/tmp/hf-sudo-'))).toBe(false); // tmp-allow: in-memory fake path from fake-sudo, not a directory this test creates
   });
 
   test('a failed mv removes the temp it just installed, then still throws', async () => {
@@ -68,7 +68,7 @@ describe('writeFileAtomic under a prefix', () => {
     expect(calls[2]?.at(-1)).toBe(calls[0]?.at(-1));
     expect(fake.files.has(DEST)).toBe(false);
     expect([...fake.files.keys()].some((path) => path.includes('.hf-'))).toBe(false);
-    expect([...fake.dirs.keys()].some((path) => path.startsWith('/tmp/hf-sudo-'))).toBe(false);
+    expect([...fake.dirs.keys()].some((path) => path.startsWith('/tmp/hf-sudo-'))).toBe(false); // tmp-allow: in-memory fake path from fake-sudo, not a directory this test creates
   });
 
   // 🔴 Adversarial review, round 2: a failed CLEANUP rm after a failed mv used to be swallowed

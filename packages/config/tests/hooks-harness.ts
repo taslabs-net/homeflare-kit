@@ -11,6 +11,7 @@
  *   committed HERE instead — `cwd` is ignored once `GIT_DIR` is set. Identity, signing and
  *   hooks are passed with `-c` for the same reason: `git config` wrote into the real repo.
  */
+import { rmSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -109,10 +110,15 @@ export async function scratchRepo(prefix = 'hf-hook-repo-'): Promise<Scratch> {
 /** The directories `pathWith` made, so a suite can remove them — see `removeBins`. */
 const binDirs: string[] = [];
 
-/** ⚠️ CALL THIS FROM `afterAll`: every `pathWith` leaves a directory in the temp dir otherwise. */
-export async function removeBins(): Promise<void> {
-  for (const dir of binDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+/**
+ * Drop every PATH shim `pathWith` created. Every test file that calls `pathWith` registers
+ * `afterAll(removeBins)`: the exit hook alone runs after the pre-push tmp guard has already
+ * counted the leftovers (measured 2026-10-01: 4 hf-hook-bin- dirs left). It stays as a backstop.
+ */
+export function removeBins(): void {
+  for (const dir of binDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 }
+process.once('exit', removeBins);
 
 /**
  * A PATH whose `gitleaks` exits with the given code, in front of the caller's PATH — or,

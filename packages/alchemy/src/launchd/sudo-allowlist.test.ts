@@ -15,7 +15,7 @@ import {
 } from './sudo-allowlist.ts';
 
 const DAEMONS = '/Library/LaunchDaemons';
-const context = { prefixes: [DAEMONS, '/opt/example'], staged: '/tmp/hf-sudo-x/staged' };
+const context = { prefixes: [DAEMONS, '/opt/example'], staged: '/tmp/hf-sudo-x/staged' }; // tmp-allow: in-memory staging path, not a directory this test creates
 const allowed = (argv: string[]) => privilegedProblem(argv, context);
 const PLIST = `${DAEMONS}/com.example.a.plist`;
 
@@ -66,7 +66,7 @@ describe('launchctl shapes', () => {
     ['bootstrap of two plists', [LAUNCHCTL, 'bootstrap', 'system', PLIST, PLIST]],
     [
       'bootstrap outside every prefix',
-      [LAUNCHCTL, 'bootstrap', 'system', '/tmp/com.example.a.plist'],
+      [LAUNCHCTL, 'bootstrap', 'system', '/tmp/com.example.a.plist'], // tmp-allow: refused argv, not a directory this test creates
     ],
     ['bootstrap of a non-plist', [LAUNCHCTL, 'bootstrap', 'system', `${DAEMONS}/com.example.a`]],
     // ★ Only where launchd loads daemons at boot: anywhere else is a job that vanishes on restart.
