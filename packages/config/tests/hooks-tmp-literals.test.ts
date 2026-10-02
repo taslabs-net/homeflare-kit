@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { problemsInTmpLiterals } from '../src/hooks/tmp-literals.ts';
@@ -7,6 +7,64 @@ import { scratchRepo } from './hooks-harness.ts';
 const repoRoot = new URL('../../../', import.meta.url).pathname;
 
 describe('problemsInTmpLiterals', () => {
+  test('skips a tracked file missing from the worktree, but still scans present files', async () => {
+    const repo = await scratchRepo('hf-tmp-missing-');
+    const host = '/tm' + 'p';
+    try {
+      await repo.write('missing.test.ts', `const path = '${host}/missing';\n`);
+      await repo.write('present.test.ts', `const path = '${host}/present';\n`);
+      await repo.git('add', '.');
+      await repo.git('commit', '--quiet', '-m', 'seed');
+      await rm(join(repo.dir, 'missing.test.ts'));
+
+      const problems = await problemsInTmpLiterals(repo.dir);
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain('present.test.ts:1:');
+    } finally {
+      await repo.remove();
+    }
+  });
+
+  test('does not swallow read errors other than ENOENT', async () => {
+    const repo = await scratchRepo('hf-tmp-read-error-');
+    try {
+      await repo.write('broken.test.ts', '');
+      await repo.git('add', 'broken.test.ts');
+      await rm(join(repo.dir, 'broken.test.ts'));
+      await mkdir(join(repo.dir, 'broken.test.ts'));
+
+      await expect(problemsInTmpLiterals(repo.dir)).rejects.toMatchObject({ code: 'EISDIR' });
+    } finally {
+      await repo.remove();
+    }
+  });
+
+  test.each(['"', "'"])(
+    'a regex containing %s does not put later comments in string mode',
+    async (quote) => {
+      const repo = await scratchRepo('hf-tmp-regex-');
+      const host = '/tm' + 'p';
+      try {
+        await repo.write(
+          'regex.test.ts',
+          [
+            `s.replace(/${quote}/g,'')`,
+            `// a comment mentioning ${host}/example`,
+            `const path = '${host}/real';`,
+            '',
+          ].join('\n'),
+        );
+        await repo.git('add', 'regex.test.ts');
+
+        const problems = await problemsInTmpLiterals(repo.dir);
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toContain('regex.test.ts:3:');
+      } finally {
+        await repo.remove();
+      }
+    },
+  );
+
   test('scans tracked files, excluding an ignored nested checkout and untracked tests', async () => {
     const repo = await scratchRepo('hf-tmp-owned-');
     const host = '/tm' + 'p';

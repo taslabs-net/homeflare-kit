@@ -198,5 +198,11 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
     else base = scope.base;
   }
 
-  await runPlannedLanes(root, planLanes(scripts, base));
+  // ⛔ Old literals must not block unrelated pushes. Reuse the paths measured from the
+  //   push base even when a manifest change widens the test lane to run in full.
+  await runPlannedLanes(
+    root,
+    planLanes(scripts, base),
+    scope.kind === 'scoped' ? scope.changed : undefined,
+  );
 }

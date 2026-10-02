@@ -54,7 +54,9 @@ function literalLines(text: string): readonly number[] {
     if (ch === '\n') {
       line += 1;
       escaped = false;
-      if (mode === 'line') mode = 'code';
+      // ⚠️ A quote inside a regex can look like a string opener. Do not let it turn
+      //   comments on later lines into literals; only templates stay open across lines.
+      if (mode === 'line' || mode === 'sq' || mode === 'dq') mode = 'code';
       continue;
     }
     if (mode === 'line') continue;
@@ -120,17 +122,31 @@ function literalLines(text: string): readonly number[] {
 /**
  * `/tmp`, `/private/tmp`, and `/var/tmp` path literals in tracked test files under `root`.
  * A `tmp-allow: <reason>` comment on the same line or the line above is an allowlist entry.
+ * `changed` limits a push to its changed paths; without a known range, scan all tracked tests.
  */
-export async function problemsInTmpLiterals(root: string): Promise<readonly string[]> {
+export async function problemsInTmpLiterals(
+  root: string,
+  changed?: readonly string[],
+): Promise<readonly string[]> {
   // ⛔ A directory walk enters ignored worktrees and vendor clones. Only the index tells
   //   us which files this repository owns; NUL separators preserve unusual filenames.
   const listed = await probe(['git', '-C', root, 'ls-files', '-z'], true);
   if (listed.code !== 0)
     throw new Error('could not enumerate tracked test files with git ls-files');
-  const files = listed.stdout.split('\0').filter(isTestFile);
+  const selected = changed === undefined ? undefined : new Set(changed);
+  const files = listed.stdout
+    .split('\0')
+    .filter((rel) => isTestFile(rel) && (selected === undefined || selected.has(rel)));
   const problems: string[] = [];
   for (const rel of files) {
-    const text = await Bun.file(join(root, rel)).text();
+    let text: string;
+    try {
+      text = await Bun.file(join(root, rel)).text();
+    } catch (error) {
+      // ⚠️ The index includes unstaged deletions and paths absent in sparse checkouts.
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue;
+      throw error;
+    }
     const lines = text.split('\n');
     for (const lineNo of literalLines(text)) {
       const line = lines[lineNo - 1] ?? '';

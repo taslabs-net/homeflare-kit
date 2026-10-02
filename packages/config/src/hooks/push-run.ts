@@ -20,8 +20,12 @@ function describe(lane: Lane): string {
 }
 
 /** How many lanes actually ran. Calls `fail`, which does not return, when one does not pass. */
-export async function runPlannedLanes(root: string, lanes: readonly Lane[]): Promise<void> {
-  const literals = await problemsInTmpLiterals(root);
+export async function runPlannedLanes(
+  root: string,
+  lanes: readonly Lane[],
+  changed?: readonly string[],
+): Promise<void> {
+  const literals = await problemsInTmpLiterals(root, changed);
   if (literals.length > 0) {
     fail(
       'pre-push',
