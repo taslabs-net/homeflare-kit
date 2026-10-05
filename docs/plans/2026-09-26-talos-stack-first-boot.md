@@ -1,5 +1,7 @@
 # Talos stack and first boot — alchemy.talos.ts, apply lifecycle, bootstrap
 
+Ledger row: talos-k8s
+
 Status: active — design gate for K-A3 (Talos resource rework), stack and
 lifecycle half; retires together with the secrets-flow doc
 Verified: 2026-09-26 (red-team findings applied same date)

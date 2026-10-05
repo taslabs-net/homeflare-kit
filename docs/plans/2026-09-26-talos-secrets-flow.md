@@ -1,5 +1,7 @@
 # Talos secrets flow — machine config, talosconfig and machine secrets from OpenBao
 
+Ledger row: talos-k8s
+
 Status: active — design gate for K-A3 (Talos resource rework) + lane O1 (OpenBao
 mount/policy); retire when the K-A3 release lands built to the signed-off design
 Verified: 2026-09-26 (red-team findings applied same date)

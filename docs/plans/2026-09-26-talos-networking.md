@@ -1,5 +1,7 @@
 # Talos networking — VLAN-aware bridges, Cilium BGP, and what must be measured
 
+Ledger row: talos-k8s
+
 Status: active — decision record for the Talos VM network path; retire when
 the first Talos VMs are deployed on the settled answer
 Verified: 2026-09-26 (red-team findings applied same date)

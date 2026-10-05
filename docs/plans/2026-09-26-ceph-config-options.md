@@ -1,5 +1,7 @@
 # CephConfigOption — reads over the PVE API, writes over the ceph-cli transport
 
+Ledger row: talos-k8s
+
 Status: active — design for K-D's `CephConfigOption`; retire when it lands
 built to the signed-off design
 Verified: 2026-09-26 (red-team findings applied same date)

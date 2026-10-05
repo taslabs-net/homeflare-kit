@@ -1,5 +1,7 @@
 # Ceph mon-command transport — auth entities via ssh/sudo
 
+Ledger row: talos-k8s
+
 Status: active — design spike for K-A4 (`Ceph.AuthEntity`); retire when it
 lands built to the signed-off design
 Verified: 2026-09-26 (red-team findings applied same date)
