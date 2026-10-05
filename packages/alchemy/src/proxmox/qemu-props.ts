@@ -48,6 +48,16 @@ export interface VmProps extends WithTarget {
   boot?: string;
   /** e.g. `virtio-scsi-single`. */
   scsihw?: string;
+  /** Cloud-init DNS servers: PVE's `address-list` (IP addresses or DNS names). */
+  nameserver?: string;
+  /** Cloud-init DNS search domains, in PVE's wire spelling. */
+  searchdomain?: string;
+  /**
+   * Minimum disk sizes in GiB, e.g. `{ scsi0: 64 }`, grown after import completes.
+   * Existing larger disks are left alone. Lowering a previously declared target is refused.
+   * These are resize targets, never config fields; declare the corresponding disk slot too.
+   */
+  diskSizesGiB?: Partial<Record<`scsi${number}` | `ide${number}`, number>>;
   /**
    * `local-zfs:32` to create a new volume, or the live volume string as adopted —
    * `cephtb4:vm-101-disk-0,size=32G` (n is 0 to 30, pve-qemu-server's own `$MAX_SCSI_DISKS`).
@@ -81,8 +91,8 @@ export interface VmAttributes {
   config: Record<string, string>;
 }
 
-/** Props that identify the object rather than configure it: never sent, never compared. */
-const NOT_CONFIG: ReadonlySet<string> = new Set(['node', 'target', 'vmid']);
+/** Identity and resize metadata: never config form fields; sizes are compared separately. */
+const NOT_CONFIG: ReadonlySet<string> = new Set(['node', 'target', 'vmid', 'diskSizesGiB']);
 
 /** The indexed families this resource manages, with pve-qemu-server's own published range. */
 export const INDEXED = {
@@ -111,8 +121,10 @@ const SCALAR_KEYS: ReadonlySet<string> = new Set([
   'cpu',
   'memory',
   'name',
+  'nameserver',
   'onboot',
   'scsihw',
+  'searchdomain',
   'sockets',
 ]);
 

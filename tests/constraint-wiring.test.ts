@@ -100,11 +100,12 @@ describe('every family that writes to Proxmox is wired to the vendor tables', ()
   //   endpoint at all rather than keeping a dead literal around. One fewer pve: key; pbs unchanged.
   // ⛔ 75, NOT 74 — 2026-09-26: `pve:POST /nodes/{node}/storage/{storage}/download-url` joined
   //   (Proxmox.StorageDownload). One more pve: key; pbs unchanged.
-  test('the tabled surface is 75 endpoints across both products', () => {
+  // 2026-10-05: QEMU post-import resize adds one PVE endpoint (PBS unchanged).
+  test('the tabled surface is 76 endpoints across both products', () => {
     const keys = Object.keys(PROXMOX_CONSTRAINTS);
-    expect(keys.length).toBe(75);
+    expect(keys.length).toBe(76);
     expect(keys.filter((key) => key.startsWith('pbs:')).length).toBe(16);
-    expect(keys.filter((key) => key.startsWith('pve:')).length).toBe(59);
+    expect(keys.filter((key) => key.startsWith('pve:')).length).toBe(60);
   });
 });
 

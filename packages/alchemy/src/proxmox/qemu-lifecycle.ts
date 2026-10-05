@@ -15,59 +15,29 @@ import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as nodes from '@distilled.cloud/proxmox/nodes';
 import * as Effect from 'effect/Effect';
+import type * as HttpClient from 'effect/unstable/http/HttpClient';
 import { refuseTakeover } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
 import { runPve } from './distilled-pve.ts';
-import { createForm, formRefusals, updateForm } from './qemu-form.ts';
+import { createForm, formRefusals } from './qemu-form.ts';
 import { QemuRefusedError } from './qemu-errors.ts';
 import { identityRefusal, judge } from './qemu-judge.ts';
-import {
-  type VmAttributes,
-  type VmProps,
-  declaredKeys,
-  declaredValue,
-  isManagedKey,
-  storedConfig,
-  wireValue,
-} from './qemu-props.ts';
+import type { VmAttributes, VmProps } from './qemu-props.ts';
 import { readVm } from './qemu-read.ts';
 import { qemuTask } from './qemu-task.ts';
-import type { PveSpec } from './resource-spec.ts';
-import { specGuards } from './resource-guard.ts';
+import { attributesOf, guardCreate, guardUpdate, spec } from './qemu-spec.ts';
+import { type QemuDiskResizeRefused, checkLiveDiskSizes, validateDiskSizes } from './qemu-size.ts';
+import { resizeDisks } from './qemu-resize.ts';
 
 const CREATE_POLLS = 180;
 const DELETE_POLLS = 60;
 
-const attributesOf = (live: Record<string, unknown>, props: VmProps): VmAttributes => ({
-  config: storedConfig(live),
-  node: props.node,
-  vmid: props.vmid,
-});
-
-/**
- * ⚠️ KEPT ONLY TO SATISFY `PveSpec`'S REQUIRED FIELD — `qemu-judge.ts`'s `judge` is what diff and
- *   reconcile actually decide by, since a plain string compare is exactly the bug C1 found (it
- *   never matches the "new disk" or MAC-less spellings a declaration may use).
- */
-const matches = (attributes: VmAttributes, props: VmProps) =>
-  declaredKeys(props)
-    .filter(isManagedKey)
-    .every((key) => attributes.config[key] === wireValue(declaredValue(props, key)));
-
-const spec = {
-  attributes: attributesOf,
-  collection: (props: VmProps) => `nodes/${props.node}/qemu`,
-  createForm,
-  endpoint: {
-    create: 'pve:POST /nodes/{node}/qemu',
-    update: 'pve:PUT /nodes/{node}/qemu/{vmid}/config',
-  },
-  matches,
-  path: (props: VmProps) => `nodes/${props.node}/qemu/${String(props.vmid)}/config`,
-  updateForm,
-} satisfies PveSpec<VmProps, VmAttributes>;
-
-const { guardCreate, guardUpdate } = specGuards(spec);
+// ★ mint's legacy Error must not erase these tags from the inferred union (distilled-pve.ts).
+type QemuLifecycleError =
+  | Effect.Error<ReturnType<typeof readQemu>>
+  | nodes.PutNodeQemuResizeError
+  | QemuRefusedError
+  | QemuDiskResizeRefused;
 
 export const readQemu = (props: VmProps) =>
   readVm(props).pipe(
@@ -143,11 +113,16 @@ export const qemuHandlers = {
     news: Input<VmProps>;
     olds: VmProps;
     output: VmAttributes | undefined;
-  }) {
+  }): Effect.fn.Return<
+    { readonly action: 'noop' | 'update' } | undefined,
+    QemuLifecycleError,
+    HttpClient.HttpClient
+  > {
     if (!isResolved(news)) return undefined;
     const identity = identityRefusal(news.vmid, output?.vmid ?? olds.vmid);
     if (identity !== undefined) return yield* Effect.fail(new QemuRefusedError(identity));
     yield* refuseUnmanaged(news);
+    yield* validateDiskSizes(news, olds);
     yield* guardCreate(news, output === undefined);
     yield* guardUpdate(news);
     if (output === undefined) return undefined;
@@ -162,6 +137,7 @@ export const qemuHandlers = {
       yield* guardCreate(news, true);
       return { action: 'update' } as const;
     }
+    yield* checkLiveDiskSizes(news, live.config, true);
     const change = judge(news, live.config);
     yield* refuseChange(change);
     return { action: change.drift.length === 0 ? 'noop' : 'update' } as const;
@@ -178,10 +154,11 @@ export const qemuHandlers = {
     news: VmProps;
     olds: VmProps | undefined;
     output: VmAttributes | undefined;
-  }) {
+  }): Effect.fn.Return<VmAttributes, QemuLifecycleError, HttpClient.HttpClient> {
     const identity = identityRefusal(news.vmid, output?.vmid ?? olds?.vmid);
     if (identity !== undefined) return yield* Effect.fail(new QemuRefusedError(identity));
     yield* refuseUnmanaged(news);
+    yield* validateDiskSizes(news, olds);
     const live = yield* readQemu(news);
     yield* guardCreate(news, live === undefined);
     yield* guardUpdate(news);
@@ -199,6 +176,7 @@ export const qemuHandlers = {
         { fqn, instanceId, output },
         `Proxmox.Vm VM ${String(news.vmid)} on ${news.node}`,
       );
+      yield* checkLiveDiskSizes(news, live.config, true);
       const change = judge(news, live.config);
       yield* refuseChange(change);
       if (Object.keys(change.put).length > 0) {
@@ -210,13 +188,18 @@ export const qemuHandlers = {
         );
       }
     }
-    const after = yield* readQemu(news);
+    let after = yield* readQemu(news);
     if (after === undefined) {
       return yield* Effect.fail(
         new QemuRefusedError(
           `${spec.path(news)}: write returned success but the VM is still absent`,
         ),
       );
+    }
+    if (yield* resizeDisks(news, after.config)) {
+      after = yield* readQemu(news);
+      if (after === undefined)
+        return yield* Effect.fail(new QemuRefusedError('VM disappeared after resize'));
     }
     const left = judge(news, after.config);
     if (left.drift.length > 0) {

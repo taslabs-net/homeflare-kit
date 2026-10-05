@@ -113,6 +113,7 @@ export {
 export { provisionBootstrap } from './provision-bootstrap.ts';
 export { type DeclareProvisionOptions, declareProvisionBaseline } from './provision-declare.ts';
 export { ProxmoxVm, ProxmoxVmProvider, type VmAttributes, type VmProps } from './qemu.ts';
+export { QemuDiskResizeRefused } from './qemu-size.ts';
 export {
   ProxmoxStorageDownload,
   ProxmoxStorageDownloadProvider,

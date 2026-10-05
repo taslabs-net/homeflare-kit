@@ -13,16 +13,19 @@ import {
   isManagedKey,
   wireValue,
 } from './qemu-props.ts';
+import { dnsRefusals } from './qemu-dns.ts';
 
 /**
  * Why a declared key cannot go on the wire, checked before every create and every update.
  * ★ THE SAME RULE `lxc-create-form.ts` ENFORCES FOR `Proxmox.Lxc`: a key smuggled past the types
  *   (a cast, a JS caller) is refused here rather than silently dropped or silently sent.
  */
-export const formRefusals = (props: VmProps): string[] =>
-  declaredKeys(props)
+export const formRefusals = (props: VmProps): string[] => [
+  ...declaredKeys(props)
     .filter((key) => !isManagedKey(key))
-    .map((key) => `${key}: not a config key this resource manages (vmid ${String(props.vmid)}).`);
+    .map((key) => `${key}: not a config key this resource manages (vmid ${String(props.vmid)}).`),
+  ...dnsRefusals(props.nameserver),
+];
 
 /** The declared config, wire-spelled — every key `formRefusals` did not already refuse. */
 export const form = (props: VmProps): Record<string, string> => {

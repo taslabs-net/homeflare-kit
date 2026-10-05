@@ -265,10 +265,10 @@
         },
         {
           "method": "POST",
-          "owner": "Proxmox.ApiToken",
+          "owner": null,
           "parameters": 5,
           "path": "/access/users/{userid}/token/{tokenid}",
-          "unenforced": ["tokenid", "userid"]
+          "unenforced": ["expire", "tokenid", "userid"]
         },
         {
           "method": "PUT",
@@ -2727,10 +2727,10 @@
         },
         {
           "method": "PUT",
-          "owner": null,
+          "owner": "Proxmox.Vm",
           "parameters": 6,
           "path": "/nodes/{node}/qemu/{vmid}/resize",
-          "unenforced": ["digest", "node", "size", "vmid"]
+          "unenforced": ["node", "vmid"]
         },
         {
           "method": "PUT",
@@ -2957,7 +2957,7 @@
           "owner": "Proxmox.StorageDownload",
           "parameters": 9,
           "path": "/nodes/{node}/storage/{storage}/download-url",
-          "unenforced": ["content", "filename", "node", "storage", "url"]
+          "unenforced": ["content", "node", "storage"]
         },
         {
           "method": "POST",
@@ -3162,10 +3162,10 @@
       "sha256Short": "9def8f13",
       "system": "pve",
       "totals": {
-        "ownedUnenforcedParams": 401,
-        "unenforcedParams": 1459,
+        "ownedUnenforcedParams": 399,
+        "unenforcedParams": 1456,
         "ownedWriteEndpoints": 90,
-        "ownedWritePaths": 61,
+        "ownedWritePaths": 62,
         "writeEndpoints": 337,
         "writePaths": 258
       },

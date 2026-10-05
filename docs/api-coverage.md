@@ -39,7 +39,7 @@ proof.
 
 | system | version                                       | sha256      | write endpoints |      owned | write paths | owned paths | unenforced params | owned unenforced |
 | ------ | --------------------------------------------- | ----------- | --------------: | ---------: | ----------: | ----------: | ----------------: | ---------------: |
-| PVE    | pve-manager/9.2.11/f6997e698c7933ea           | `9def8f13…` |             337 | 90 (26.7%) |         258 |          61 |              1459 |              401 |
+| PVE    | pve-manager/9.2.11/f6997e698c7933ea           | `9def8f13…` |             337 | 90 (26.7%) |         258 |          62 |              1456 |              399 |
 | PBS    | proxmox-backup-server 4.2.6-1 (running 4.2.3) | `274ab9f6…` |             182 | 27 (14.8%) |         141 |          18 |               544 |               38 |
 
 ## Owned endpoints, by Resource
@@ -47,7 +47,7 @@ proof.
 | resource                      | system | write endpoints | unenforced params | source                                                              |
 | ----------------------------- | ------ | --------------: | ----------------: | ------------------------------------------------------------------- |
 | `Proxmox.Acl`                 | PVE    |               1 |                 4 | `packages/alchemy/src/proxmox/acl.ts`                               |
-| `Proxmox.ApiToken`            | PVE    |               3 |                 7 | `packages/alchemy/src/proxmox/api-token.ts`                         |
+| `Proxmox.ApiToken`            | PVE    |               2 |                 5 | `packages/alchemy/src/proxmox/api-token.ts`                         |
 | `Proxmox.Group`               | PVE    |               3 |                 3 | `packages/alchemy/src/proxmox/group.ts`                             |
 | `Proxmox.Role`                | PVE    |               3 |                 5 | `packages/alchemy/src/proxmox/role.ts`                              |
 | `Proxmox.User`                | PVE    |               3 |                 7 | `packages/alchemy/src/proxmox/user.ts`                              |
@@ -73,8 +73,8 @@ proof.
 | `Proxmox.Lxc`                 | PVE    |               4 |                42 | `packages/alchemy/src/proxmox/lxc-lifecycle.ts`                     |
 | `Proxmox.NetworkApply`        | PVE    |               1 |                 1 | `packages/alchemy/src/proxmox/network-apply.ts`                     |
 | `Proxmox.NodeNetwork`         | PVE    |               3 |                37 | `packages/alchemy/src/proxmox/node-network.ts`                      |
-| `Proxmox.StorageDownload`     | PVE    |               2 |                 8 | `packages/alchemy/src/proxmox/storage-download-lifecycle.ts`        |
-| `Proxmox.Vm`                  | PVE    |               2 |                87 | `packages/alchemy/src/proxmox/qemu.ts`                              |
+| `Proxmox.StorageDownload`     | PVE    |               2 |                 6 | `packages/alchemy/src/proxmox/storage-download-lifecycle.ts`        |
+| `Proxmox.Vm`                  | PVE    |               3 |                89 | `packages/alchemy/src/proxmox/qemu.ts`                              |
 | `Proxmox.ZfsPool`             | PVE    |               2 |                 6 | `packages/alchemy/src/proxmox/zfs-pool.ts`                          |
 | `Pbs.Datastore`               | PBS    |               3 |                11 | `packages/alchemy/src/proxmox/pbs-datastore.ts`                     |
 | `Pbs.NotificationMatcher`     | PBS    |               3 |                 2 | `packages/alchemy/src/proxmox/pbs-notification-matcher.ts`          |
@@ -112,7 +112,7 @@ so it cannot drift from the schema it was generated against.
 
 | area                   | uncovered write endpoints |
 | ---------------------- | ------------------------: |
-| `/nodes/{node}`        |                       144 |
+| `/nodes/{node}`        |                       143 |
 | `/cluster/sdn`         |                        34 |
 | `/cluster/firewall`    |                        14 |
 | `/cluster/mapping`     |                         9 |
