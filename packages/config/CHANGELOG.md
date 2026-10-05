@@ -1,5 +1,12 @@
 # @homeflare/config
 
+## 0.15.1
+
+### Patch Changes
+
+- [#351](https://github.com/taslabs-net/homeflare-kit/pull/351) [`a378fa0`](https://github.com/taslabs-net/homeflare-kit/commit/a378fa07185a7034060c0604a7826742a3288e38) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Report a pre-push temp directory cleanup failure after passing tests as a cleanup error,
+  with a hint to resolve the removal error instead of rerunning the test command.
+
 ## 0.15.0
 
 ### Minor Changes
