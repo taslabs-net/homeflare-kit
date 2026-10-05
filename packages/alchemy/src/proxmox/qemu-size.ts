@@ -62,7 +62,7 @@ export const validateDiskSizes = (props: VmProps, olds?: VmProps) =>
     }
   });
 
-/** Also used by adoption/recovery reads, so an imported but undersized disk cannot settle early. */
+/** Capacity drift drives reconcile; recovery ownership ignores it because resize follows create. */
 export const diskSizeDrift = (props: VmProps, config: Record<string, string>): string[] =>
   Object.entries(props.diskSizesGiB ?? {})
     .filter(

@@ -22,8 +22,12 @@ Unsupported slots, CD-ROM/cloud-init drives and unreadable live sizes are refuse
 
 The provider waits for import, reads the allocated disk, sends an absolute target
 through the generated `putNodeQemuResize` operation, waits for its task, and verifies
-the resulting capacity. Interrupted applies can safely retry without adding capacity
-twice. `size=` in a volume config string is still observed metadata: omit it when
+the resulting capacity. An interrupted create resumes without `--adopt` when its
+config matches, even if disk growth remains unfinished. Each resize checks the raw
+VM lock first; lock waits and resize task polling share a 60-observation budget per
+disk. A persistent lock raises `QemuDiskResizeRefused` without a resize write.
+Absolute targets let retries finish growth without adding capacity twice.
+`size=` in a volume config string is still observed metadata: omit it when
 using a resize target. An unrelated update never resends the import source.
 
 This resource never starts a VM. Complete its reconciliation before the separate

@@ -74,30 +74,32 @@ test('import completes, allocated size is read, resize completes, then reconcili
   expect(fake.calls[resizeIndex - 1]?.path).toBe(`${path}/config`);
 });
 
-test('recovery of an imported disk grows once without re-importing', async () => {
-  let size = '4250M';
-  const fake = fakePve((call) => {
-    if (call.path.includes('/tasks/')) {
-      size = '64G';
-      return { status: 'stopped', exitstatus: 'OK' };
-    }
-    if (call.method === 'GET') return config(size);
-    if (call.path === `${path}/resize`) return resizeTask;
-    throw new Error('must not re-import');
-  });
-  await withoutBao(async () => {
-    const stack = engineOver(ProxmoxVmProvider().pipe(Layer.provideMerge(fake.layer)));
-    expect((await stack.verify(ProxmoxVm('row', props), { all: true })).rows[0]).toMatchObject({
-      diff: 'update',
+for (const initialSize of ['4250M', '63.9999999990687G']) {
+  test(`recovery of an imported disk at ${initialSize} grows once without re-importing`, async () => {
+    let size = initialSize;
+    const fake = fakePve((call) => {
+      if (call.path.includes('/tasks/')) {
+        size = '64G';
+        return { status: 'stopped', exitstatus: 'OK' };
+      }
+      if (call.method === 'GET') return config(size);
+      if (call.path === `${path}/resize`) return resizeTask;
+      throw new Error('must not re-import');
     });
-    await stack.deploy(ProxmoxVm('row', props));
-    await stack.deploy(ProxmoxVm('row', props));
+    await withoutBao(async () => {
+      const stack = engineOver(ProxmoxVmProvider().pipe(Layer.provideMerge(fake.layer)));
+      expect((await stack.verify(ProxmoxVm('row', props), { all: true })).rows[0]).toMatchObject({
+        diff: 'update',
+      });
+      await stack.deploy(ProxmoxVm('row', props));
+      await stack.deploy(ProxmoxVm('row', props));
+    });
+    expect(fake.writes()).toEqual([`PUT ${path}/resize`]);
   });
-  expect(fake.writes()).toEqual([`PUT ${path}/resize`]);
-});
+}
 
 test('equal and larger live disks are no-ops, including equivalent units', async () => {
-  for (const size of ['64G', '65536M', '128G', '1T']) {
+  for (const size of ['64G', '65536M', '128G', '1T', '64.0000000009313G']) {
     const fake = fakePve(() => config(size));
     await withoutBao(async () => {
       const stack = engineOver(ProxmoxVmProvider().pipe(Layer.provideMerge(fake.layer)));

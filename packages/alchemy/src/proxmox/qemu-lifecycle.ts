@@ -85,8 +85,8 @@ export const qemuHandlers = {
   /**
    * ⛔ `Unowned` UNLESS STATE ALREADY VOUCHES FOR IT (C2). With no attributes this is Alchemy's
    *   adoption probe or the recovery read for an interrupted create (ownership/probe.ts); `settled`
-   *   is the same `judge` reconcile uses, so "proven ours" and "reconcile would write nothing" are
-   *   the same question asked once.
+   *   uses the same config comparison as reconcile. Disk growth is a post-create step, so its
+   *   drift cannot disown a VM after an interrupted/failed resize (measured 2026-10-05).
    */
   read: Effect.fn(function* ({
     fqn,
@@ -101,7 +101,9 @@ export const qemuHandlers = {
   }) {
     const found = yield* readQemu(olds);
     const settled = Effect.sync(
-      () => found !== undefined && judge(olds, found.config).drift.length === 0,
+      () =>
+        found !== undefined &&
+        judge(olds, found.config).drift.every((key) => key.startsWith('diskSizesGiB.')),
     );
     return yield* ownedRead({ fqn, instanceId, output }, found, settled);
   }),
@@ -188,18 +190,14 @@ export const qemuHandlers = {
         );
       }
     }
-    let after = yield* readQemu(news);
+    yield* resizeDisks(news);
+    const after = yield* readQemu(news);
     if (after === undefined) {
       return yield* Effect.fail(
         new QemuRefusedError(
           `${spec.path(news)}: write returned success but the VM is still absent`,
         ),
       );
-    }
-    if (yield* resizeDisks(news, after.config)) {
-      after = yield* readQemu(news);
-      if (after === undefined)
-        return yield* Effect.fail(new QemuRefusedError('VM disappeared after resize'));
     }
     const left = judge(news, after.config);
     if (left.drift.length > 0) {

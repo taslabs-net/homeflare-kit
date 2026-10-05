@@ -55,7 +55,7 @@ test('invalid DNS fails with a typed refusal before any live read or write', asy
     throw new Error('unexpected API call');
   });
   await withoutBao(async () => {
-    const tag = await Effect.runPromise(
+    const refusal = await Effect.runPromise(
       qemuHandlers
         .diff({
           news: { ...props, nameserver: 'dns://invalid' },
@@ -63,11 +63,11 @@ test('invalid DNS fails with a typed refusal before any live read or write', asy
           output: undefined,
         })
         .pipe(
-          Effect.catchTag('QemuRefusedError', (error) => Effect.succeed(error._tag)),
+          Effect.catchTag('QemuRefusedError', (error) => Effect.succeed(error.message)),
           Effect.provide(fake.layer),
         ),
     );
-    expect(tag).toBe('QemuRefusedError');
+    expect(refusal).toBe('nameserver: must satisfy the vendor address-list format');
   });
   expect(fake.calls).toEqual([]);
 });
