@@ -42,9 +42,11 @@ export async function runPlannedLanes(
     if (lane.kind === 'test') {
       const guarded = await runInTmp(lane.command, root);
       if (guarded.code !== 0 || guarded.leaks.length > 0 || guarded.cleanupError !== undefined) {
+        const cleanupOnly = guarded.code === 0 && guarded.leaks.length === 0;
         const leaked = formatLeaks(guarded.leaks).replaceAll('\n', '\n  ');
-        const why =
-          guarded.leaks.length === 0
+        const why = cleanupOnly
+          ? `\`${lane.label}\` passed, but removing its temp directory failed`
+          : guarded.leaks.length === 0
             ? `\`${lane.label}\` failed`
             : guarded.code === 0
               ? `\`${lane.label}\` left temp entries\n  ${leaked}`
@@ -54,7 +56,9 @@ export async function runPlannedLanes(
           guarded.cleanupError === undefined ? why : `${why}\n  ${guarded.cleanupError}`,
           guarded.leaks.length > 0
             ? 'remove every temp directory the test lane creates'
-            : `${lane.command} — until it is green`,
+            : cleanupOnly
+              ? 'resolve the temp directory removal error above'
+              : `${lane.command} — until it is green`,
         );
       }
       ran += 1;
