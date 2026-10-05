@@ -13,6 +13,7 @@
 import { type VmProps, declaredKeys, declaredValue, indexedKey, wireValue } from './qemu-props.ts';
 import { judgeDisk } from './qemu-volume.ts';
 import { netWrite, sameNet } from './qemu-net.ts';
+import { diskSizeDrift } from './qemu-size.ts';
 
 export type VmChange = {
   /** Keys to `PUT …/config`, wire-spelled and built on live ids where one exists. */
@@ -26,7 +27,7 @@ export type VmChange = {
 export const judge = (props: VmProps, config: Record<string, string>): VmChange => {
   const put: Record<string, string> = {};
   const refuse: string[] = [];
-  const drift = new Set<string>();
+  const drift = new Set<string>(diskSizeDrift(props, config));
 
   for (const key of declaredKeys(props)) {
     const want = wireValue(declaredValue(props, key));

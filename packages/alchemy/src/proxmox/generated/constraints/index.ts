@@ -54,4 +54,4 @@ export const PROXMOX_CONSTRAINTS: Readonly<Record<string, EndpointConstraints>> 
  * ★ A DIGEST OF THE DATA, NOT OF THE FILE TEXT, so reformatting is not a stale generation while
  *   changing a 128 to a 129 by hand is. `tests/schema-manifest.test.ts` recomputes it.
  */
-export const PROXMOX_CONSTRAINTS_DIGEST = '8b6745a471839974';
+export const PROXMOX_CONSTRAINTS_DIGEST = 'cbf63b7bac0500ef';

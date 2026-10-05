@@ -39,10 +39,10 @@
  *   whose volname is the literal `"0"` and whose options include an `import-from` key is `fresh`,
  *   with `import-from` itself dropped and every other declared option carried through for
  *   `judgeDisk` to enforce (see its `want.kind === 'fresh'` branch) -- independent of option order.
- * ⛔ NO RESIZE IS MADE HERE. lxc-volume.ts drives a second endpoint (`PUT .../resize`) this resource
- *   does not call — Talos's disks are declared once at their create size. A size difference between
- *   two already-adopted volume declarations is REFUSED with the `qm resize` to run by hand, never
- *   guessed at or silently written.
+ * ⛔ NO RESIZE IS MADE BY A CONFIG PUT. Before 2026-10-05 this resource did not call the resize
+ *   endpoint at all. `diskSizesGiB` now drives it separately (qemu-resize.ts), after import;
+ *   `size=` inside an adopted volume string still describes its observed size, never a resize.
+ *   A mismatch there is refused so a config PUT cannot record capacity the disk does not have.
  * ⚠️ OPTIONS BEYOND `size` ARE COMPARED AS A WHOLE, NOT KEY BY KEY, FOR AN ADOPTED `volume` -- BUT AS
  *   A SUBSET FOR A `fresh` IMPORT. Unlike lxc-volume.ts, this file does not model pve-qemu-server's
  *   per-option defaults (`ssd`, `discard`, `iothread`, …) — that table is unverified here. For an
@@ -169,7 +169,7 @@ export const judgeDisk = (key: string, declared: string, live: string): DiskVerd
     return {
       refuse:
         `${key}: declared size ${want.size} differs from the live ${have.size}. This resource does ` +
-        'not resize a disk -- grow it by hand (`qm resize`) and declare the size it then reports.',
+        'not resize a disk through config -- omit size= and declare a diskSizesGiB target instead.',
     };
   }
   if (sameMap(want.options, have.options)) return {};

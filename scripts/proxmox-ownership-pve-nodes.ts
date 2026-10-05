@@ -106,6 +106,7 @@ export const PVE_NODE_OWNERSHIP: readonly Ownership[] = [
     writes: [
       { method: 'POST', path: '/nodes/{node}/qemu' },
       { method: 'PUT', path: '/nodes/{node}/qemu/{vmid}/config' },
+      { method: 'PUT', path: '/nodes/{node}/qemu/{vmid}/resize' },
     ],
     /**
      * ⛔ MEASURED 2026-09-22 AGAINST pve-manager/9.2.4. `qemu.ts` points `path` at the CONFIG

@@ -129,7 +129,7 @@ type PlanView = { readonly resources: Readonly<Record<string, { readonly action:
 export type DriftRow = { readonly action: string };
 
 export interface FakeEngine {
-  /** Plan and apply `body`, as `alchemy deploy --adopt` would; resolves to the planned actions. */
+  /** Plan and apply `body` with the configured adoption policy; resolves to planned actions. */
   readonly deploy: (body: Body) => Promise<Record<string, string>>;
   /** Verify `body` against what the earlier deploys recorded. */
   readonly verify: (body: Body, options?: VerifyOptions) => Promise<AdoptReport>;
@@ -155,7 +155,10 @@ export interface FakeEngine {
  * hands in its real provider over a fake transport (proxmox/ceph-pool-adopt.test.ts).
  * ⚠️ THE CASTS ARE AT THE ENGINE'S TYPED BOUNDARY — openbao/fake-stack.ts has the reasoning.
  */
-export const engineOver = <ROut, E, RIn>(layer: Layer.Layer<ROut, E, RIn>): FakeEngine => {
+export const engineOver = <ROut, E, RIn>(
+  layer: Layer.Layer<ROut, E, RIn>,
+  options: { readonly adopt?: boolean } = {},
+): FakeEngine => {
   const rows: NonNullable<Parameters<typeof Alchemy.inMemoryState>[0]> = {};
   const state = Alchemy.inMemoryState(rows);
   const stack = Alchemy.Stack as unknown as (
@@ -176,7 +179,7 @@ export const engineOver = <ROut, E, RIn>(layer: Layer.Layer<ROut, E, RIn>): Fake
         const compiled = yield* stack('VerifyStack', { providers: layer, state }, body);
         return yield* next(compiled).pipe(Effect.provide(Layer.succeedContext(compiled.services)));
       }).pipe(
-        Effect.provideService(AdoptPolicy, true),
+        Effect.provideService(AdoptPolicy, options.adopt ?? true),
         Effect.provideService(Alchemy.Stage, 'test'),
         Effect.provide(state),
         Effect.scoped,
