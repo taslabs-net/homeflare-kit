@@ -5,6 +5,7 @@ import * as Fiber from 'effect/Fiber';
 import * as TestClock from 'effect/testing/TestClock';
 import { FAKE_TARGET, fakePve, withoutBao } from './fake-pve.ts';
 import { qemuHandlers } from './qemu-lifecycle.ts';
+import { resizeDisks } from './qemu-resize.ts';
 
 const props = {
   target: FAKE_TARGET,
@@ -21,6 +22,31 @@ const config = (size: string) => ({
 });
 const output = { ...props, config: config('4.15G') };
 
+test('backup-locked disks at or above target need one read, no wait and no write', async () => {
+  const fake = fakePve((call) => {
+    expect(call.path).toBe(`${path}/config`);
+    return {
+      ...config('64G'),
+      scsi1: 'cephtb4:vm-10000-disk-1,size=128G',
+      lock: 'backup',
+    };
+  });
+  await withoutBao(() =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        // No clock adjustment: any lock sleep would leave this operation suspended.
+        yield* resizeDisks({
+          ...props,
+          scsi1: 'cephtb4:vm-10000-disk-1',
+          diskSizesGiB: { scsi0: 64, scsi1: 64 },
+        });
+      }).pipe(Effect.provide(fake.layer), Effect.provide(TestClock.layer())),
+    ),
+  );
+  expect(fake.calls).toHaveLength(1);
+  expect(fake.writes()).toEqual([]);
+});
+
 for (const lockState of ['persists', 'clears', 'clears-at-target', 'task-timeout'] as const) {
   test(`resize observes import lock: ${lockState}`, async () => {
     let reads = 0;
@@ -36,11 +62,11 @@ for (const lockState of ['persists', 'clears', 'clears-at-target', 'task-timeout
       }
       if (call.path === `${path}/config`) {
         reads++;
-        // First read belongs to reconcile; the next three are the raw resize lock checks.
-        locked = lockState === 'persists' || reads <= 4;
+        // Reconcile and the size precheck precede the three raw resize lock checks.
+        locked = lockState === 'persists' || reads <= 5;
         return {
           ...config(resized || (!locked && lockState === 'clears-at-target') ? '64G' : '4.15G'),
-          ...(locked ? { lock: 'create' } : {}),
+          ...(locked ? { lock: lockState === 'persists' ? 'backup' : 'create' } : {}),
         };
       }
       if (call.path === `${path}/resize`) {
@@ -77,9 +103,9 @@ for (const lockState of ['persists', 'clears', 'clears-at-target', 'task-timeout
       expect(result).toMatchObject({
         _tag: 'QemuDiskResizeRefused',
         disk: 'scsi0',
-        message: 'scsi0: VM 10000 remains locked (create) after 60 observations; refusing resize',
+        message: 'scsi0: VM 10000 remains locked (backup) after 60 observations; refusing resize',
       });
-      expect(reads).toBe(61);
+      expect(reads).toBe(62);
       expect(polls).toBe(0);
     } else if (lockState === 'task-timeout') {
       expect(result).toMatchObject({ _tag: 'QemuRefusedError' });

@@ -46,8 +46,24 @@ const unlockedConfig = (props: VmProps, disk: string) =>
  */
 export const resizeDisks = (props: VmProps) =>
   Effect.gen(function* () {
-    for (const [disk, size] of Object.entries(props.diskSizesGiB ?? {})) {
-      if (size === undefined) continue;
+    const targets = Object.entries(props.diskSizesGiB ?? {}).filter(
+      (entry): entry is [string, number] => entry[1] !== undefined,
+    );
+    const first = targets[0];
+    if (first === undefined) return;
+    const live = yield* readVm(props);
+    if (live === undefined)
+      return yield* Effect.fail(
+        new QemuDiskResizeRefused({
+          disk: first[0],
+          message: 'VM disappeared before resize',
+        }),
+      );
+    const observed = storedConfig(live as unknown as Record<string, unknown>);
+    yield* checkLiveDiskSizes(props, observed);
+    for (const [disk, size] of targets) {
+      // ⚠️ A backup lock must not delay/refuse a no-op. Only growth needs an unlocked VM.
+      if ((diskBytes(observed[disk]) ?? 0) >= size * 1024 ** 3) continue;
       const { config, polls } = yield* unlockedConfig(props, disk);
       yield* checkLiveDiskSizes(props, config);
       if ((diskBytes(config[disk]) ?? 0) >= size * 1024 ** 3) continue;
