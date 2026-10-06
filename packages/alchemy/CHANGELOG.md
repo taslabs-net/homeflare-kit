@@ -2,6 +2,15 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.46.1
+
+### Patch Changes
+
+- [#357](https://github.com/taslabs-net/homeflare-kit/pull/357) [`d7b6357`](https://github.com/taslabs-net/homeflare-kit/commit/d7b6357a18e7e580a933eb656c7a813e03f2d96a) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Postgres: pin `search_path = pg_catalog, pg_temp` on every session and schema-qualify every
+  catalog reference; `Postgres.Schema` delete now proves and drops in one atomic `DO` block under an
+  advisory lock, and `cascade: true` refuses (typed, count only) when objects in other schemas
+  depend on the schema.
+
 ## 0.46.0
 
 ### Minor Changes
