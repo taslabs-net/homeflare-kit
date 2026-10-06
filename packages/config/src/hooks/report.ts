@@ -88,6 +88,12 @@ export async function probe(
  *   run by `bun run`, which is what used to put it there — `vitest` or `oxfmt` in an expanded
  *   script would otherwise be "command not found" on a machine without a global copy.
  * 🔴 AND WITHOUT THE HOOK'S `GIT_*` — see `withoutGitEnv`.
+ * ⚠️ `NODE_DISABLE_COMPILE_CACHE=1` FOR EVERY LANE (Node's `module.enableCompileCache()` docs:
+ *   the variable disables the module compile cache). Measured 2026-10-06 on npm 12.0.2 / node
+ *   v22.23.2: `TMPDIR=$T npm --version` leaves `$T/node-compile-cache`, because npm enables the
+ *   cache itself at startup. The temp guard then refused every push of an npm repo for a directory
+ *   its tests never made, and a test script cannot prevent it: the cache exists before the script
+ *   runs. The guard stays exactly as strict for everything else; `extra` still overrides this.
  */
 export async function runLane(
   command: string,
@@ -95,6 +101,7 @@ export async function runLane(
   extra?: Readonly<Record<string, string>>,
 ): Promise<number> {
   const env = withoutGitEnv();
+  env['NODE_DISABLE_COMPILE_CACHE'] = '1';
   env['PATH'] = `${root}/node_modules/.bin:${env['PATH'] ?? ''}`;
   if (extra !== undefined) Object.assign(env, extra);
   const proc = Bun.spawn(['sh', '-c', command], {
