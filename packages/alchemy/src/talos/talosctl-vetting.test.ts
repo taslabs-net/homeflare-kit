@@ -143,7 +143,19 @@ test('a refusal is a TalosBinaryRefused naming its source, never a TalosError', 
   );
   expect(outcome).toBeInstanceOf(TalosBinaryRefused);
   expect(outcome).not.toBeInstanceOf(TalosError);
-  expect(String(outcome)).toContain('HF_TALOSCTL');
+  expect(String(outcome)).toContain('the `binary` option');
+  expect(String(outcome)).not.toContain('HF_TALOSCTL');
+});
+
+test('no process uid means ownership cannot be checked: refused (fails on 19502c6: passed)', async () => {
+  const bin = trusted('no-getuid');
+  const real = process.getuid;
+  Object.defineProperty(process, 'getuid', { configurable: true, value: undefined });
+  try {
+    expect(await run(bin, pinned('v1.14.2'))).toContain('no process uid');
+  } finally {
+    Object.defineProperty(process, 'getuid', { configurable: true, value: real });
+  }
 });
 
 test('the version must match exactly: v1.14.20 and v1.13.8 fail, v1.14.2 passes', async () => {

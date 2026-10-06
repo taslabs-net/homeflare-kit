@@ -156,6 +156,17 @@ describe('diffClusterHealth', () => {
   });
 });
 
+describe('diffClusterHealth — a legacy auth.cluster row (fails if the hasOwn guard is deleted)', () => {
+  it('plans update for a healthy cluster whose saved row still carries auth.cluster', async () => {
+    const legacy = { auth: { ...talosOpenBaoConnection('uid-c1').auth, cluster: 'c1' } };
+    const result = await run(
+      diffClusterHealth(props(), { ...prior(true), connection: legacy as never }),
+      healthy,
+    );
+    assert.equal(result?.action, 'update');
+  });
+});
+
 describe('diffClusterHealth — a non-literal connection is a TYPED failure', () => {
   it('fails (flip would reject on a defect) with TalosUidNotLiteral for an Output uid', async () => {
     const output = Output.literal('uid-c1') as unknown as string;

@@ -146,7 +146,13 @@ export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
     const requested = talosctlBinary(options.binary);
     const resolved =
       requested === DEFAULT_TALOSCTL_BINARY ? yield* resolveDefault(requested) : requested;
-    const source = requested === DEFAULT_TALOSCTL_BINARY ? 'talosctl on PATH' : TALOSCTL_BINARY_ENV;
+    const fromOption = options.binary?.trim();
+    const source =
+      requested === DEFAULT_TALOSCTL_BINARY
+        ? 'talosctl on PATH'
+        : fromOption !== undefined && fromOption !== ''
+          ? 'the `binary` option'
+          : TALOSCTL_BINARY_ENV;
     // ⛔ Launch exactly the vetted canonical path, for the probe and the credentialed call alike.
     const binary = yield* checkBinaryPath(resolved, source);
     yield* checkOverrideVersion(binary, source);

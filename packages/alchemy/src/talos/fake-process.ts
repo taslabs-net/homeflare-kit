@@ -9,6 +9,11 @@
  *   process and mutates process-global state for the test's duration, which is exactly the kind
  *   of cross-test interference the house rules ask tests to avoid. `ChildProcessSpawner.make`
  *   takes just a `spawn` function and derives everything else, so a fake `spawn` is the whole cost.
+ *
+ * ⚠️ ONE PROCESS-GLOBAL EXCEPTION (hunt round 8): importing this file permanently prepends a
+ *   never-executed stub `talosctl` directory to `PATH` (`resolveDefault` walks PATH and vets what
+ *   it finds, see the comment at that code) and defaults `BAO_ADDR`/`BAO_TOKEN` to placeholders
+ *   (`readKvValue` refuses without them). Nothing real is spawned; the mutation outlives the file.
  */
 import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

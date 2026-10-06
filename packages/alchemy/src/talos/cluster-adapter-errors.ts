@@ -110,8 +110,9 @@ export class TalosClusterIdentityMissing extends Data.TaggedError('TalosClusterI
   override get message(): string {
     return (
       'talos-openbao connection carries no uid, so it cannot say which physical cluster it ' +
-      'targets. Refused before any vault read or request: wire workloads to ' +
-      '`Talos.ClusterIdentity` (its `connection` carries the uid).'
+      'targets. Refused before any vault read or request: pin the uid ' +
+      'printed by `Talos.ClusterIdentity` as a literal in `TalosOpenBaoAdapter` and build ' +
+      'workloads from `talosOpenBaoConnection(<that literal>)`.'
     );
   }
 }

@@ -106,6 +106,8 @@ export const checkBinaryPath = (binary: string, source: string) => {
       // ★ lstat, not stat: a symlink can be re-pointed by whoever owns the link, so none is accepted.
       if (file.isSymbolicLink()) return refuse('must not be a symlink');
       if (!file.isFile()) return refuse('is not a regular file');
+      // ⛔ FAIL CLOSED: with no process uid (a platform lacking getuid) ownership cannot be checked.
+      if (uid === undefined) return refuse('cannot be vetted: no process uid to check ownership');
       if (ancestor !== undefined) return refuse(ancestor);
       if (uid !== undefined && file.uid !== uid && file.uid !== 0) {
         return refuse('must be owned by the current user or root');

@@ -55,6 +55,17 @@ test('a legacy auth.cluster row is refused with no vault read and a remedy', asy
   expect(message).toContain('edit the saved state');
 });
 
+test('the missing-uid remedy says to pin a literal, not wire ClusterIdentity (fails on 19502c6)', async () => {
+  const noUid = { auth: { kind: 'talos-openbao' } } as Connection;
+  const message = await run(
+    connectTalosOpenBao(config, noUid).pipe(
+      Effect.catchTag('TalosClusterIdentityMissing', (error) => Effect.succeed(error.message)),
+    ),
+  );
+  expect(message).toContain('pin the uid');
+  expect(message).not.toContain('its `connection`');
+});
+
 test('no uid, an unknown uid and an ambiguous pin are refused before any vault read', async () => {
   const calls: FakeCall[] = [];
   const noUid = { auth: { kind: 'talos-openbao' } } as Connection;
