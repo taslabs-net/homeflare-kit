@@ -14,6 +14,7 @@
  * ★ ROWS COME BACK AS JSON: a row-returning statement (`SELECT`, or a `WITH` query) is wrapped
  *   in `json_agg`, so `oid` and `datconnlimit` arrive as JS numbers exactly as the socket client
  *   decodes them (database-sql.ts, no bigint).
+ * ⛔ EVERY SCRIPT IS PREFIXED WITH `SET search_path = pg_catalog, pg_temp;` — see `search-path.ts`.
  * ★ `VERBOSITY=verbose` puts the SQLSTATE in the error line, so `42P04` (duplicate database)
  *   stays recognisable to `isDuplicateDatabaseRace`.
  */
@@ -25,6 +26,7 @@ import {
   UnknownError,
 } from 'effect/unstable/sql/SqlError';
 import { type PgExecutor, quoteStringLiteral } from './database-sql.ts';
+import { PIN_SCRIPT_PREFIX } from './search-path.ts';
 
 export interface PsqlResult {
   readonly code: number;
@@ -122,7 +124,8 @@ const runScript = (
             '-d',
             target.database,
           ],
-          stdin,
+          // ⛔ EVERY psql SESSION STARTS PINNED (`search-path.ts`): one process, one session.
+          stdin: `${PIN_SCRIPT_PREFIX}${stdin}`,
         }),
       catch: (cause) =>
         new SqlError({ reason: new ConnectionError({ cause, operation: 'psql exec' }) }),

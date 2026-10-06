@@ -38,7 +38,7 @@ import { readOwnedTables, readSchemaOwnership } from './grants-ownership.ts';
 import { type LiveDefault, readDefaultAcls } from './grants-read-defaults.ts';
 import { type AclRow, encodeWord, wordsOf } from './grants-words.ts';
 
-const SCHEMA_PRESENT_SQL = 'SELECT 1 AS present FROM pg_namespace WHERE nspname = $1';
+const SCHEMA_PRESENT_SQL = 'SELECT 1 AS present FROM pg_catalog.pg_namespace WHERE nspname = $1';
 
 export const schemaExists = (pg: PgExecutor, schema: string): Effect.Effect<boolean, SqlError> =>
   Effect.map(
@@ -52,10 +52,10 @@ const SCHEMA_ACL_SQL = `SELECT
     a.grantee = 0 AS public,
     a.privilege_type AS privilege,
     a.is_grantable AS grantable
-  FROM pg_namespace n
-  CROSS JOIN LATERAL aclexplode(n.nspacl) AS a
+  FROM pg_catalog.pg_namespace n
+  CROSS JOIN LATERAL pg_catalog.aclexplode(n.nspacl) AS a
   WHERE n.nspname = $1
-    AND (a.grantee = 0 OR a.grantee = (SELECT oid FROM pg_roles WHERE rolname = $2))`;
+    AND (a.grantee = 0 OR a.grantee = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $2))`;
 
 export interface LiveSchemaAcl {
   readonly role: ReadonlyArray<string>;
@@ -84,10 +84,10 @@ const TABLES_SQL = `SELECT
     a.grantee = 0 AS public,
     a.privilege_type AS privilege,
     a.is_grantable AS grantable
-  FROM pg_class c
-  CROSS JOIN LATERAL aclexplode(c.relacl) AS a
-  WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)
-    AND (a.grantee = 0 OR a.grantee = (SELECT oid FROM pg_roles WHERE rolname = $2))
+  FROM pg_catalog.pg_class c
+  CROSS JOIN LATERAL pg_catalog.aclexplode(c.relacl) AS a
+  WHERE c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $1)
+    AND (a.grantee = 0 OR a.grantee = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $2))
   ORDER BY c.relname`;
 
 export interface LiveTable {
@@ -146,17 +146,17 @@ const COLUMNS_SQL = `SELECT
     a.grantee = 0 AS public,
     a.privilege_type AS privilege,
     a.is_grantable AS grantable,
-    pg_get_userbyid(a.grantor) AS grantor,
-    pg_get_userbyid(c.relowner) AS owner,
+    pg_catalog.pg_get_userbyid(a.grantor) AS grantor,
+    pg_catalog.pg_get_userbyid(c.relowner) AS owner,
     current_user AS revoker,
-    pg_has_role(current_user, c.relowner, 'USAGE') AS revoker_as_owner
-  FROM pg_attribute v
-  JOIN pg_class c ON c.oid = v.attrelid
-  CROSS JOIN LATERAL aclexplode(v.attacl) AS a
-  WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)
+    pg_catalog.pg_has_role(current_user, c.relowner, 'USAGE') AS revoker_as_owner
+  FROM pg_catalog.pg_attribute v
+  JOIN pg_catalog.pg_class c ON c.oid = v.attrelid
+  CROSS JOIN LATERAL pg_catalog.aclexplode(v.attacl) AS a
+  WHERE c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $1)
     AND v.attnum > 0
     AND NOT v.attisdropped
-    AND (a.grantee = 0 OR a.grantee = (SELECT oid FROM pg_roles WHERE rolname = $2))
+    AND (a.grantee = 0 OR a.grantee = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $2))
   ORDER BY c.relname, v.attname`;
 
 export interface LiveColumn {

@@ -8,6 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import type { PsqlRunner } from './psql-executor.ts';
 import { makePsqlExecutor } from './psql-executor.ts';
+import { stripPin } from './search-path.ts';
 import { reconcileWithClient } from './grants-ops.ts';
 import { requireDeclaredObjectsExist } from './grants-existence.ts';
 import { resolveProps } from './grants-declare.ts';
@@ -26,7 +27,8 @@ const props: PostgresGrantsProps = {
 const runner = (): { run: PsqlRunner; stdins: string[] } => {
   const stdins: string[] = [];
   let granted = false;
-  const run: PsqlRunner = ({ stdin }) => {
+  const run: PsqlRunner = ({ stdin: raw }) => {
+    const stdin = stripPin(raw);
     stdins.push(stdin);
     if (stdin.startsWith('BEGIN')) granted = true;
     return Promise.resolve({ code: 0, stdout: answer(stdin, granted), stderr: '' });
@@ -40,8 +42,10 @@ const answer = (stdin: string, granted: boolean): string => {
   if (stdin.includes('json_array_elements')) {
     return '[{"table":"a","column":"b.c"},{"table":"a.b","column":"c"}]';
   }
-  if (stdin.includes('SELECT 1 AS present FROM pg_roles')) return '[{"present":1}]';
-  if (stdin.includes('SELECT 1 AS present FROM pg_namespace')) return '[{"present":1}]';
+  if (stdin.includes('SELECT 1 AS present FROM pg_catalog.pg_roles')) return '[{"present":1}]';
+  if (stdin.includes('SELECT 1 AS present FROM pg_catalog.pg_namespace')) {
+    return '[{"present":1}]';
+  }
   if (stdin.includes('aclexplode(n.nspacl)')) {
     return granted ? '[{"public":false,"privilege":"usage","grantable":false}]' : '[]';
   }

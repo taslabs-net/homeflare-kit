@@ -14,6 +14,7 @@ import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-att
 import { Unowned } from 'alchemy/AdoptPolicy';
 import { postgresSchemaHandlers } from './schema.ts';
 import { PostgresSchemaDropNotEmptyError, PostgresSchemaWrongDatabase } from './schema-errors.ts';
+import { buildAtomicDropSql } from './schema-drop-sql.ts';
 import { deleteArgs, ok, readArgs, route, router, runnerWith } from './schema-test-kit.ts';
 
 const sampleOutput: PostgresSchemaAttributes = {
@@ -51,10 +52,12 @@ describe('delete handler (runner transport)', () => {
           ),
         ),
     );
-    expect(stdins.find((s) => s.startsWith('DROP SCHEMA'))).toBe(
-      'DROP SCHEMA IF EXISTS "ledger" CASCADE;',
+    // The drop is ONE `DO` statement carrying the proven oid + owner (`schema-drop-sql.ts`),
+    // not a re-read followed by a separate `DROP`.
+    expect(stdins.find((s) => s.startsWith('DO '))).toBe(
+      `${buildAtomicDropSql({ name: 'ledger', oid: 1, owner: 'tim', cascade: true })};`,
     );
-    // One `psql` argv per STATEMENT: probe, proof, ownership re-read, drop. The probe's argv
+    // One `psql` argv per STATEMENT: probe, proof, ownership re-read, atomic drop. The probe's argv
     // targets the family database; the delete's argvs target the declared one — the `-d` value
     // is the argv's last element.
     expect(argvs.length).toBe(4);
@@ -80,17 +83,19 @@ describe('delete handler (runner transport)', () => {
           ),
         ),
     );
-    expect(stdins.find((s) => s.startsWith('DROP SCHEMA'))).toBe('DROP SCHEMA IF EXISTS "ledger";');
+    expect(stdins.find((s) => s.startsWith('DO '))).toBe(
+      `${buildAtomicDropSql({ name: 'ledger', oid: 1, owner: 'tim', cascade: false })};`,
+    );
   });
 
-  test('the real handler refuses a non-empty schema over the runner transport, no DROP issued', async () => {
-    const { run, stdins } = runnerWith(
-      router({
-        probe: '[{"present":1}]',
-        schema: '[{"name":"ledger","oid":1,"owner":"tim"}]',
-        empty: '[{"empty":false}]',
-        proof,
-      }),
+  test('a non-empty schema is the typed refusal the atomic drop raises (HF002), over one psql', async () => {
+    const answers = router({
+      probe: '[{"present":1}]',
+      schema: '[{"name":"ledger","oid":1,"owner":"tim"}]',
+      proof,
+    });
+    const { run, stdins } = runnerWith(answers, (stdin) =>
+      stdin.startsWith('DO ') ? 'ERROR:  HF002: schema not empty' : undefined,
     );
     const error = await Effect.runPromise(
       Effect.flip(
@@ -104,7 +109,9 @@ describe('delete handler (runner transport)', () => {
       ),
     );
     expect(error).toBeInstanceOf(PostgresSchemaDropNotEmptyError);
-    expect(stdins.some((s) => s.startsWith('DROP SCHEMA'))).toBe(false);
+    // Proof and drop were ONE statement: exactly one `DO`, and no separate emptiness probe.
+    expect(stdins.filter((s) => s.startsWith('DO ')).length).toBe(1);
+    expect(stdins.some((s) => s.includes('AS empty'))).toBe(false);
   });
 
   test('the real handler refuses a wrong connected database before any DROP', async () => {
@@ -128,7 +135,7 @@ describe('delete handler (runner transport)', () => {
       ),
     );
     expect(error).toBeInstanceOf(PostgresSchemaWrongDatabase);
-    expect(stdins.some((s) => s.startsWith('DROP SCHEMA'))).toBe(false);
+    expect(stdins.some((s) => s.startsWith('DO '))).toBe(false);
   });
 
   test('defaultRemovalPolicy is retain — declared on the Resource for Postgres.Schema itself', () => {

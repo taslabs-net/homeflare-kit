@@ -3,6 +3,7 @@ import * as Effect from 'effect/Effect';
 import { makeFakeSql } from './fake-sql.ts';
 import { buildRepairMembershipSql, syncMemberships } from './role-membership-sql.ts';
 import { makePsqlExecutor } from './psql-executor.ts';
+import { stripPin } from './search-path.ts';
 
 const props = {
   name: 'seat',
@@ -34,7 +35,8 @@ test.each(['2BP01', '42501'])(
     // denial); the real server is the dependency authority.
     const scripts: string[] = [];
     const pg = makePsqlExecutor(
-      ({ stdin }) => {
+      ({ stdin: raw }) => {
+        const stdin = stripPin(raw);
         scripts.push(stdin);
         return Promise.resolve(
           stdin.startsWith('BEGIN')

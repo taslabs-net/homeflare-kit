@@ -6,6 +6,7 @@ import { parseLiteral } from './fake-sql-quote.ts';
 import { buildCommentSchemaSql } from './schema-sql.ts';
 import { buildSetPasswordSql } from './role-sql.ts';
 import { makePsqlExecutor, redactPasswordLiterals } from './psql-executor.ts';
+import { stripPin } from './search-path.ts';
 
 const payload = "\\'; CREATE SCHEMA injected; --";
 const target = { database: 'postgres', username: 'postgres' };
@@ -22,7 +23,8 @@ for (const on of [true, false]) {
   test(`psql executor comment and bound param stay one literal with standard_conforming_strings=${String(on)}`, async () => {
     const fake = makeFakeSql({ schemas: [row], standardConformingStrings: on });
     const calls: string[] = [];
-    const pg = makePsqlExecutor(async ({ stdin }) => {
+    const pg = makePsqlExecutor(async ({ stdin: raw }) => {
+      const stdin = stripPin(raw);
       calls.push(stdin);
       if (stdin.startsWith('COMMENT')) {
         await Effect.runPromise(fake.unsafe(stdin.slice(0, -1)));

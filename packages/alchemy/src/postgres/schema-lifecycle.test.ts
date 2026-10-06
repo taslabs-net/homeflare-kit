@@ -1,18 +1,16 @@
 /**
  * `reconcile`, `read`, and `drop` for `Postgres.Schema` against `fake-sql.ts`'s recording fake.
  * Tests the greenfield create, comment creation, already-present/drift, owner-missing guard,
- * quoting, the safe-drop rules, and the `current_database()` proof every write path runs first.
+ * quoting, and the `current_database()` proof every write path runs first. The drop rules live
+ * in `schema-drop.test.ts`.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
-import { SqlError, UnknownError } from 'effect/unstable/sql/SqlError';
 import { makeFakeSql } from './fake-sql.ts';
 import { type PostgresSchemaAttributes, type PostgresSchemaProps } from './schema-attrs.ts';
-import type { PgExecutor } from './database-sql.ts';
 import {
   PostgresSchemaCreateVanished,
   PostgresSchemaDrift,
-  PostgresSchemaDropNotEmptyError,
   PostgresSchemaExistsRefused,
   PostgresSchemaOwnerMissing,
   PostgresSchemaWrongDatabase,
@@ -42,7 +40,9 @@ describe('the current_database() proof', () => {
     expect(refusal.declared).toBe('agents');
     expect(refusal.connected).toBe('postgres');
     // The refusal fires before the first pg_namespace read, so nothing but the proof ran.
-    expect(fake.statements.some((s) => s.text.includes('FROM pg_namespace'))).toBe(false);
+    expect(fake.statements.some((s) => s.text.includes('FROM pg_catalog.pg_namespace'))).toBe(
+      false,
+    );
     expect(fake.statements.some((s) => s.text.startsWith('CREATE SCHEMA'))).toBe(false);
   });
 
@@ -50,7 +50,7 @@ describe('the current_database() proof', () => {
     const fake = makeFakeSql({ schemas: [liveRow()] });
     const error = await fails(dropWithClient(fake, { ...baseProps, database: 'agents' }));
     expect(error).toBeInstanceOf(PostgresSchemaWrongDatabase);
-    expect(fake.statements.some((s) => s.text.startsWith('DROP SCHEMA'))).toBe(false);
+    expect(fake.statements.some((s) => s.text.startsWith('DO '))).toBe(false);
     expect(fake.schemas.get('ledger')).not.toBeUndefined();
   });
 
@@ -188,59 +188,5 @@ describe('read', () => {
   test("answers the live row when present (ownership branding is the caller's job)", async () => {
     const fake = makeFakeSql({ schemas: [liveRow()] });
     expect(await run(readWithClient(fake, 'ledger'))).toEqual(liveRow());
-  });
-});
-
-describe('drop', () => {
-  test('drops an empty schema with cascade false', async () => {
-    const fake = makeFakeSql({ schemas: [liveRow()] });
-    await run(dropWithClient(fake, baseProps));
-    const drops = fake.statements.filter((s) => s.text.startsWith('DROP SCHEMA'));
-    expect(drops.length).toBe(1);
-    expect(drops[0]?.text).toBe('DROP SCHEMA IF EXISTS "ledger"');
-    expect(fake.schemas.get('ledger')).toBeUndefined();
-  });
-
-  test('refuses to drop a non-empty schema with cascade false', async () => {
-    const fake = makeFakeSql({ schemas: [liveRow()], schemasWithRelations: ['ledger'] });
-    const error = await fails(dropWithClient(fake, baseProps));
-    expect(error).toBeInstanceOf(PostgresSchemaDropNotEmptyError);
-    expect(fake.schemas.get('ledger')).not.toBeUndefined();
-  });
-
-  test('drops a non-empty schema with cascade true', async () => {
-    const fake = makeFakeSql({ schemas: [liveRow()], schemasWithRelations: ['ledger'] });
-    await run(dropWithClient(fake, { ...baseProps, cascade: true }));
-    const drop = fake.statements.find((s) => s.text.startsWith('DROP SCHEMA'));
-    expect(drop?.text).toBe('DROP SCHEMA IF EXISTS "ledger" CASCADE');
-    expect(fake.schemas.get('ledger')).toBeUndefined();
-  });
-
-  test('classifies the server 2BP01 refusal as the typed not-empty tag', async () => {
-    // The emptiness check said empty, but the server refuses with SQLSTATE 2BP01 — an object
-    // kind the check's four catalogs do not cover. Class `2B` is not `42`, so both drivers
-    // wrap it as UnknownError with the raw code on the cause; this executor replays that shape.
-    const refusing: PgExecutor = {
-      unsafe: <A extends object>(text: string) =>
-        text.startsWith('SELECT current_database()')
-          ? Effect.succeed([{ database: 'postgres' }] as unknown as ReadonlyArray<A>)
-          : text.includes('AS empty')
-            ? Effect.succeed([{ empty: true }] as unknown as ReadonlyArray<A>)
-            : Effect.fail(
-                new SqlError({
-                  reason: new UnknownError({
-                    cause: Object.assign(
-                      new Error('ERROR:  2BP01: dependent objects still exist'),
-                      { code: '2BP01' },
-                    ),
-                    message: 'dependent_objects_still_exist',
-                    operation: 'DROP SCHEMA',
-                  }),
-                }),
-              ),
-      transaction: () => Effect.void,
-    };
-    const error = await fails(dropWithClient(refusing, baseProps));
-    expect(error).toBeInstanceOf(PostgresSchemaDropNotEmptyError);
   });
 });

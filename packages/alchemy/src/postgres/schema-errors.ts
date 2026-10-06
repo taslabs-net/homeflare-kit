@@ -94,6 +94,29 @@ export class PostgresSchemaDropNotEmptyError extends Data.TaggedError(
   }
 }
 
+/**
+ * `cascade: true` refused: `DROP SCHEMA … CASCADE` would also drop objects that live in OTHER
+ * schemas because they depend on something in this one (a view, a foreign key or a trigger
+ * another stack owns). The refusal carries the COUNT only — never an object name, so the error
+ * cannot disclose another owner's catalog. Nothing was dropped: move or drop those dependents
+ * deliberately, or empty this schema by hand and declare `cascade: false`.
+ */
+export class PostgresSchemaCascadeCrossSchemaRefused extends Data.TaggedError(
+  'PostgresSchemaCascadeCrossSchemaRefused',
+)<{
+  readonly schema: string;
+  /** How many dependent objects live outside this schema (at least one when raised). */
+  readonly dependents: number;
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Schema "${this.schema}": cascade: true refused — ${String(this.dependents)} ` +
+      'dependent object(s) outside this schema would be dropped with it. No DROP was issued. ' +
+      'Remove or move those dependents first.'
+    );
+  }
+}
+
 /** Every statement this resource issues must run against the DECLARED database. The family
  * connection points at a maintenance database, so the schema handlers open `props.database`
  * themselves (`withPg`'s database override); this failure means the server answered
@@ -204,6 +227,7 @@ export type PostgresSchemaError =
   | PostgresSchemaDrift
   | PostgresSchemaCreateVanished
   | PostgresSchemaDropNotEmptyError
+  | PostgresSchemaCascadeCrossSchemaRefused
   | PostgresSchemaDeleteForeignRefused
   | PostgresSchemaWrongDatabase
   | PostgresSchemaDatabaseRefused;

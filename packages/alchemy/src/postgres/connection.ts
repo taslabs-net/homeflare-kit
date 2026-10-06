@@ -20,6 +20,7 @@ import * as Layer from 'effect/Layer';
 import type { SqlError } from 'effect/unstable/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 import { type PsqlRunner, makePsqlExecutor } from './psql-executor.ts';
+import { pinnedSocketExecutor } from './search-path.ts';
 
 /** What a stack passes to reach one cluster. `host` may be a socket directory (one beginning
  * with `/` expands to `${host}/.s.PGSQL.${port}` — measured in
@@ -109,21 +110,16 @@ export const withPg = <A, E>(
       });
     }
     const pool = yield* PostgresPool;
+    // ⛔ ONE RESERVED, PINNED CONNECTION FOR THE WHOLE OPERATION (`search-path.ts`): the pin is a
+    // session setting, so a pool checkout per statement would run most statements unpinned — and
+    // would autocommit CREATE before GRANT. `Effect.scoped` releases the reservation; the pool
+    // layer below closes the pool after.
     return yield* Effect.provide(
-      Effect.flatMap(PgClient.PgClient, (pg) =>
-        build(
-          {
-            unsafe: (sql, params) => pg.unsafe(sql, params),
-            // One reserved connection (`SqlClient.withTransaction`). A pool checkout per
-            // statement would autocommit CREATE before GRANT.
-            transaction: (statements) =>
-              pg.withTransaction(
-                Effect.gen(function* () {
-                  for (const sql of statements) yield* pg.unsafe(sql).pipe(Effect.asVoid);
-                }),
-              ),
-          },
-          { database: target.database },
+      Effect.scoped(
+        Effect.flatMap(PgClient.PgClient, (pg) =>
+          Effect.flatMap(pinnedSocketExecutor(pg), (executor) =>
+            build(executor, { database: target.database }),
+          ),
         ),
       ),
       pool(target),

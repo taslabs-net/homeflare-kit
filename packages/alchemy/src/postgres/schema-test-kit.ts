@@ -11,6 +11,7 @@
  *   branch's marker and matches its own.
  */
 import type { PsqlRunner } from './psql-executor.ts';
+import { stripPin } from './search-path.ts';
 import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
 
 export const ok = (stdout: string) => Promise.resolve({ code: 0, stdout, stderr: '' });
@@ -29,9 +30,12 @@ export interface RouteAnswers {
 
 /** Route one stdin to its answer by the markers above, `undefined` when no branch matches. */
 export const route = (stdin: string, answers: RouteAnswers): string | undefined => {
+  // The atomic drop (`schema-drop-sql.ts`) quotes every marker below inside its body: it answers
+  // nothing, and a refusal is injected by `runnerWith`'s `failOn`, never routed.
+  if (stdin.startsWith('DO ')) return undefined;
   if (stdin.includes('AS empty')) return answers.empty;
-  if (stdin.includes('FROM pg_namespace')) return answers.schema;
-  if (stdin.includes('FROM pg_database')) return answers.probe;
+  if (stdin.includes('FROM pg_catalog.pg_namespace')) return answers.schema;
+  if (stdin.includes('FROM pg_catalog.pg_database')) return answers.probe;
   if (stdin.includes('current_database()')) return answers.proof;
   return undefined;
 };
@@ -46,14 +50,24 @@ export const router = (answers: RouteAnswers) => (stdin: string) => route(stdin,
  */
 export const runnerWith = (
   answers: (stdin: string) => string,
+  /** The `psql` stderr a statement fails with (exit 3), or `undefined` to answer normally. */
+  failOn: (stdin: string) => string | undefined = () => undefined,
 ): { run: PsqlRunner; stdins: string[]; argvs: Array<readonly string[]> } => {
   const stdins: string[] = [];
   const argvs: Array<readonly string[]> = [];
   return {
-    run: ({ stdin, argv }) => {
+    // The pin prefix (`search-path.ts`) is stripped: these tests assert the STATEMENT. The pin
+    // itself is asserted once, on the raw stdin, in `search-path.test.ts`.
+    run: ({ stdin: raw, argv }) => {
+      const stdin = stripPin(raw);
       stdins.push(stdin);
       argvs.push(argv);
-      return Promise.resolve({ code: 0, stdout: answers(stdin), stderr: '' });
+      const stderr = failOn(stdin);
+      return Promise.resolve(
+        stderr === undefined
+          ? { code: 0, stdout: answers(stdin), stderr: '' }
+          : { code: 3, stdout: '', stderr },
+      );
     },
     stdins,
     argvs,

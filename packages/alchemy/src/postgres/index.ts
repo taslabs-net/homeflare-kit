@@ -50,6 +50,7 @@ export {
   isPostgresSchema,
 } from './schema.ts';
 export {
+  PostgresSchemaCascadeCrossSchemaRefused,
   PostgresSchemaCreateVanished,
   PostgresSchemaExistsRefused,
   PostgresSchemaIdentityRefused,
