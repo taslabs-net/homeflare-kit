@@ -22,9 +22,14 @@
  *   rollout would never learn the real problem was vault. Both `read` and `reconcile` now only
  *   catch `TalosError` (`talosctl health` itself ran and exited non-zero — the one case this
  *   family may honestly call "not healthy"); anything else propagates untouched.
+ * ★ `connection` IS A PASS-THROUGH so this resource is `ClusterLike`. Later rows take
+ *   `cluster: health`. The health check itself still uses `target` and `talosctl`; the field is
+ *   copied onto attributes and is not a credential. It is required: an optional field would not
+ *   satisfy `{ connection: Connection }`.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
+import type { Connection } from 'alchemy/Kubernetes/Connection';
 import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
@@ -49,12 +54,19 @@ export interface ClusterHealthProps extends WithTarget {
    * on kube-proxy and CoreDNS, both of which wait on a CNI that does not exist yet at bootstrap.
    */
   after?: readonly unknown[];
+  /**
+   * Kubernetes connection copied onto attributes so a later row can take `cluster: this`.
+   * Not read by the health check. Persist only a secret-free connection (`talos-openbao`).
+   */
+  connection: Connection;
 }
 
 export interface ClusterHealthAttributes {
   healthy: boolean;
   controlPlaneNodes: string;
   workerNodes: string;
+  /** Same object as the prop. Makes these attributes `ClusterLike`. */
+  connection: Connection;
 }
 
 export interface TalosClusterHealth extends Resource<
@@ -69,6 +81,24 @@ export const TalosClusterHealth = Resource<TalosClusterHealth>('Talos.ClusterHea
 
 const nodeCsv = (nodes: readonly string[] | undefined) =>
   nodes === undefined || nodes.length === 0 ? '' : nodes.join(',');
+
+const attributes = (props: ClusterHealthProps, healthy: boolean): ClusterHealthAttributes => ({
+  connection: props.connection,
+  controlPlaneNodes: nodeCsv(props.controlPlaneNodes),
+  healthy,
+  workerNodes: nodeCsv(props.workerNodes),
+});
+
+const sameConnection = (left: Connection, right: Connection): boolean => {
+  const authKey = (auth: Connection['auth']) =>
+    JSON.stringify(Object.fromEntries(Object.entries(auth).sort(([a], [b]) => a.localeCompare(b))));
+  return (
+    left.endpoint === right.endpoint &&
+    left.certificateAuthorityData === right.certificateAuthorityData &&
+    left.insecureSkipTlsVerify === right.insecureSkipTlsVerify &&
+    authKey(left.auth) === authKey(right.auth)
+  );
+};
 
 const healthArgs = (props: ClusterHealthProps, waitTimeout: string) => {
   const args = ['health', '--wait-timeout', waitTimeout];
@@ -113,11 +143,7 @@ const check = (props: ClusterHealthProps, waitTimeout: string) =>
         nodes: [contact],
         talosconfigPath: credential.talosconfigPath,
       });
-      return {
-        controlPlaneNodes: nodeCsv(props.controlPlaneNodes),
-        healthy: true,
-        workerNodes: nodeCsv(props.workerNodes),
-      };
+      return attributes(props, true);
     }),
   );
 
@@ -132,13 +158,7 @@ const isTalosError = (cause: unknown): cause is TalosError => cause instanceof T
 /** ★ EXPORTED for talos-cluster-health.test.ts — see talos-bootstrap.ts's own note on the pattern. */
 export const readClusterHealth = (props: ClusterHealthProps) =>
   check(props, '5s').pipe(
-    Effect.catchIf(isTalosError, () =>
-      Effect.succeed({
-        controlPlaneNodes: nodeCsv(props.controlPlaneNodes),
-        healthy: false,
-        workerNodes: nodeCsv(props.workerNodes),
-      }),
-    ),
+    Effect.catchIf(isTalosError, () => Effect.succeed(attributes(props, false))),
   );
 
 export const diffClusterHealth = (
@@ -148,7 +168,9 @@ export const diffClusterHealth = (
   Effect.gen(function* () {
     if (output === undefined || !isResolved(news)) return undefined;
     const live = yield* readClusterHealth(news);
-    if (live.healthy) return { action: 'noop' } as const;
+    if (live.healthy && sameConnection(live.connection, output.connection)) {
+      return { action: 'noop' } as const;
+    }
     return { action: 'update' } as const;
   });
 

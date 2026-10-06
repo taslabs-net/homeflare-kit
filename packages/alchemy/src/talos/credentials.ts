@@ -129,6 +129,15 @@ export const readKvValue = (
   });
 
 /**
+ * ★ MEASURED AGAINST OPENBAO v2.6.2 (C1 fix, LAND red team, 2026-09-26 — isolated in-memory
+ *   dev server): `bao kv get` on an unwritten KV-v2 key exits 2 with stderr exactly
+ *   `No value found at <mount>/data/<key>`. `readKvValue`'s Error embeds that text. It is the
+ *   only signal treated as "not written yet"; a permission denial or a transport failure is not.
+ */
+export const isVaultKeyAbsent = (error: unknown): boolean =>
+  error instanceof Error && /no value found at/i.test(error.message);
+
+/**
  * Write `raw` to a session-temp, 0600, exclusively-created file whose lifetime is the CALLER's
  * `Effect.scoped`, not this call's. See the ⛔ C1 FIX note at the top of this file.
  *
@@ -188,10 +197,10 @@ export const mintTalosconfig = (
 
 /**
  * Mint one temp kubeconfig file from the vault copy `Talos.Kubeconfig` writes at bring-up
- * (K-talos-first-boot, 2026-09-26) — the consumer-side counterpart to {@link mintTalosconfig},
- * named as the future seam for `Kubernetes.ClusterAdapter` in
- * docs/plans/2026-09-26-talos-secrets-flow.md ("consumers mint it the way the talosconfig is
- * minted"). Not yet wired to that adapter — this only makes the read+materialize step exist.
+ * (K-talos-first-boot, 2026-09-26) — the file-shaped counterpart to {@link mintTalosconfig}.
+ * `Kubernetes.ClusterAdapter` `talos-openbao` does not use it: connect reads the bytes with
+ * {@link readKvValue} and keeps them in memory. This remains for a caller that must hand a
+ * path to a process.
  */
 export const mintKubeconfig = (
   target: TalosTarget,

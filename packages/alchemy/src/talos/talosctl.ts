@@ -15,19 +15,42 @@ import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 
+/** `talosctl` on `PATH`. A lane pins another build with {@link TALOSCTL_BINARY_ENV} or `binary`. */
+export const DEFAULT_TALOSCTL_BINARY = 'talosctl';
+
 export class TalosError extends Error {
   constructor(
     readonly command: string,
     readonly exitCode: number,
     detail: string,
+    binary = DEFAULT_TALOSCTL_BINARY,
   ) {
-    super(`talosctl ${command} -> ${String(exitCode)}: ${detail}`);
+    super(`${binary} ${command} -> ${String(exitCode)}: ${detail}`);
     this.name = 'TalosError';
   }
 }
 
+/**
+ * Executable override, read at call time. The Mac PATH measured 2026-10-05 has v1.13.8; the
+ * cluster is v1.14.2. Set this to the v1.14.2 binary. A per-call `binary` option wins.
+ */
+export const TALOSCTL_BINARY_ENV = 'HF_TALOSCTL';
+
+const talosctlBinary = (override: string | undefined): string => {
+  const fromOption = override?.trim();
+  if (fromOption !== undefined && fromOption !== '') return fromOption;
+  const fromEnv = process.env[TALOSCTL_BINARY_ENV]?.trim();
+  if (fromEnv !== undefined && fromEnv !== '') return fromEnv;
+  return DEFAULT_TALOSCTL_BINARY;
+};
+
 export type TalosRunOptions = {
   readonly talosconfigPath: string;
+  /**
+   * `talosctl` executable. Wins over {@link TALOSCTL_BINARY_ENV}.
+   * @default `talosctl` on `PATH`, or `HF_TALOSCTL` when that variable is set.
+   */
+  readonly binary?: string;
   readonly nodes?: readonly string[];
   readonly endpoints?: readonly string[];
   /**
@@ -43,6 +66,7 @@ export type TalosRunOptions = {
 export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const binary = talosctlBinary(options.binary);
     const argv = [
       ...args,
       '--talosconfig',
@@ -51,7 +75,7 @@ export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
       ...(options.endpoints === undefined ? [] : ['--endpoints', options.endpoints.join(',')]),
       ...(options.insecure === true ? ['--insecure'] : []),
     ];
-    const result = yield* ChildProcess.make('talosctl', argv, {
+    const result = yield* ChildProcess.make(binary, argv, {
       detached: false,
       extendEnv: true,
       stderr: 'pipe',
@@ -83,7 +107,7 @@ export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
     const command = args.join(' ');
     if (result.exitCode !== 0) {
       return yield* Effect.fail(
-        new TalosError(command, result.exitCode, result.stderr.slice(0, 300)),
+        new TalosError(command, result.exitCode, result.stderr.slice(0, 300), binary),
       );
     }
     return result.stdout;

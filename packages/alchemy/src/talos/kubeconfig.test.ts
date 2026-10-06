@@ -85,13 +85,16 @@ describe('reconcile — CREATE writes talosctl kubeconfig output into the vault,
 
     assert.equal(result.endpoint, 'https://192.0.2.50:6443');
     assert.equal(result.context, 'admin@hf-c1');
-    assert.equal(result.connection.auth.kind, 'kubeconfig');
-    // ⛔ I2 (LAND red team): NEVER undefined — an undefined `path` here would let the stock
-    // KubeConfigAdapter fall back to $KUBECONFIG/~/.kube/config. It must be a path that can never
-    // resolve, so a consumer that isn't yet wired to mintKubeconfig fails loudly instead of quietly
-    // reaching the operator's own cluster.
-    const authPath = (result.connection.auth as { path?: string }).path;
-    assert.ok(typeof authPath === 'string' && authPath.length > 0);
+    assert.equal(result.connection.auth.kind, 'talos-openbao');
+    assert.deepEqual(result.connection.auth, {
+      context: 'admin@hf-c1',
+      key: 'kubeconfig',
+      kind: 'talos-openbao',
+      mount: 'talos-c1',
+    });
+    assert.equal(JSON.stringify(result).includes('talos-first-boot-unwired'), false);
+    assert.equal(JSON.stringify(result).includes('BEGIN CERTIFICATE'), false);
+    assert.equal(JSON.stringify(result).includes('PRIVATE KEY'), false);
 
     const put = calls.find((c) => c.command === 'bao' && c.args[1] === 'put');
     assert.ok(put);

@@ -23,14 +23,10 @@
  *       (docs/plans/2026-09-26-talos-secrets-flow.md, O1). Once `output` is defined, reconcile only
  *       reads the vault copy back to confirm it — the same "once" shape `talos-bootstrap.ts` uses
  *       for a boolean, here for a value.
- *     - The persisted `connection` carries no usable host path — a consumer materializes its own
- *       temp file via `credentials.ts`'s `mintKubeconfig`, the same pattern `mintTalosconfig`
- *       already established. Wiring `Kubernetes.ClusterAdapter` to call it is separate, later work
- *       (named, not built, in the secrets-flow doc); this only makes the vault-backed read+mint
- *       step exist for it to call. ⛔ Until that wiring lands, `connection.auth.path` is a sentinel
- *       that can never resolve to a real file (LAND red team I2, `kubeconfig-attrs.ts`'s own
- *       header) — an ABSENT path here would let the stock `Kubernetes.KubeConfigAdapter` silently
- *       fall back to `$KUBECONFIG`/`~/.kube/config` instead of failing loudly.
+ *     - The persisted `connection` is auth kind `talos-openbao`: `{ kind, mount, key, context }`
+ *       only. The adapter reads the vault at connect time and returns a `ClusterTransport`.
+ *       ⛔ Not the stock `kubeconfig` kind (an absent path falls back to `$KUBECONFIG`) and not
+ *       `client-cert` (alchemy `Connection.ts` persists that PEM on every workload's attributes).
  */
 import { chmodSync } from 'node:fs';
 import { Resource } from 'alchemy';
@@ -39,7 +35,12 @@ import type { Input } from 'alchemy/Input';
 import type { Connection } from 'alchemy/Kubernetes/Connection';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { DEFAULT_KUBECONFIG_KEY, mintTalosconfig, readKvValue } from './credentials.ts';
+import {
+  DEFAULT_KUBECONFIG_KEY,
+  isVaultKeyAbsent,
+  mintTalosconfig,
+  readKvValue,
+} from './credentials.ts';
 import { reservedTempPath, writeKvValue } from './credentials-write.ts';
 import { buildAttrs } from './kubeconfig-attrs.ts';
 import type { TalosRequirements, WithTarget } from './resource.ts';
@@ -63,14 +64,8 @@ export interface KubeconfigAttributes {
   /** Digest of endpoint+context+fingerprints — detects credential rotation without storing PEM. */
   credentialGeneration: string;
   /**
-   * Serializable `Kubernetes.Connection` for downstream workloads.
-   *
-   * ★ auth.kind `kubeconfig` is the stock ClusterAdapter — provider-roadmap.md names this seam.
-   *   `path` is a sentinel that can never resolve (LAND red team I2, `kubeconfig-attrs.ts`'s own
-   *   `toConnection` header): the content lives in OpenBao, not at a fixed host path, and a real
-   *   `Kubernetes.ClusterAdapter` wiring is later work, so this must fail rather than silently
-   *   reach the operator's own kubeconfig. A consumer materializes its own scoped temp file via
-   *   `credentials.ts`'s `mintKubeconfig` in the meantime.
+   * `talos-openbao` connection: mount, key and context only. Workloads resolve the admin
+   * material at connect time. This object never carries PEM or a filesystem path.
    */
   connection: Connection;
 }
@@ -85,18 +80,7 @@ export interface TalosKubeconfig extends Resource<
 
 export const TalosKubeconfig = Resource<TalosKubeconfig>('Talos.Kubeconfig');
 
-/**
- * ★ MEASURED AGAINST OPENBAO v2.6.2 (C1 fix, LAND red team, 2026-09-26 — isolated in-memory dev
- *   server, `env -i`, scratch HOME, no estate credentials; server removed after): `bao kv get` on a
- *   genuinely unwritten KV-v2 key exits 2 with stderr exactly `No value found at <mount>/data/<key>`
- *   — `readKvValue`'s Error message embeds that text verbatim. This is the ONLY signal this file
- *   trusts as "not written yet"; every other failure (a wrong exit code, a different stderr such as
- *   a permission denial or a network failure) propagates as a real error instead of being read as
- *   absence.
- */
-const isVaultKeyAbsent = (error: unknown): boolean =>
-  error instanceof Error && /no value found at/i.test(error.message);
-
+/** Absence is {@link isVaultKeyAbsent} — measured OpenBao v2.6.2 text, not every bao failure. */
 const readVaultMeta = (props: KubeconfigProps, key: string) =>
   readKvValue(props.target.mount, key, ['kubeconfig', 'config']).pipe(
     Effect.catchIf(isVaultKeyAbsent, () => Effect.succeed(undefined)),

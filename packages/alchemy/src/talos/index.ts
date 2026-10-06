@@ -18,9 +18,19 @@
  *   (talos-bootstrap.ts's own header) and kubeconfig landing in OpenBao, written once at bring-up
  *   (kubeconfig.ts's own header) — plus `Talos.ClusterHealth`'s error handling no longer conflates a
  *   vault/transport failure with "cluster not healthy yet" (talos-cluster-health.ts's own header).
+ * ★ `talos-openbao` (K-A5) is how `Kubernetes.*` reaches the cluster: `TalosOpenBaoAdapter`,
+ *   the connection `Talos.Kubeconfig` persists, and `HF_TALOSCTL` to pin the talosctl binary.
  * ★ Anything unlisted is still reachable by path if you genuinely need it — that is a
  *   deliberate, visible act rather than an accident of barrelling.
  */
+export {
+  TalosKubeconfigUnreadable,
+  TalosOpenBaoAdapter,
+  TalosOpenBaoAuthKind,
+  TalosVaultKeyMissing,
+  connectTalosOpenBao,
+  talosOpenBaoConnection,
+} from './cluster-adapter.ts';
 export type { TalosCredential, TalosTarget } from './credentials.ts';
 export {
   type KubeconfigAttributes,
@@ -47,3 +57,4 @@ export {
   TalosMachineConfig,
   TalosMachineConfigProvider,
 } from './talos-machine-config.ts';
+export { DEFAULT_TALOSCTL_BINARY, TALOSCTL_BINARY_ENV } from './talosctl.ts';

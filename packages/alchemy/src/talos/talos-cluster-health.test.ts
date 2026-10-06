@@ -7,6 +7,7 @@ import { describe, it } from 'node:test';
 import * as Effect from 'effect/Effect';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import { type FakeCall, fakeSpawner } from './fake-process.ts';
+import { talosOpenBaoConnection } from './cluster-adapter.ts';
 import {
   diffClusterHealth,
   readClusterHealth,
@@ -14,7 +15,18 @@ import {
 } from './talos-cluster-health.ts';
 
 const TARGET = { cluster: 'c1', mount: 'talos-c1' };
-const props = () => ({ controlPlaneNodes: ['198.51.100.10'], target: TARGET });
+const connection = talosOpenBaoConnection({
+  context: 'admin@hf-c1',
+  key: 'kubeconfig',
+  mount: 'talos-c1',
+});
+const props = () => ({ connection, controlPlaneNodes: ['198.51.100.10'], target: TARGET });
+const prior = (healthy: boolean) => ({
+  connection,
+  controlPlaneNodes: '198.51.100.10',
+  healthy,
+  workerNodes: '',
+});
 
 const run = <A, E>(
   effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,
@@ -54,6 +66,7 @@ describe('readClusterHealth', () => {
   it('reports healthy:true when talosctl health exits zero', async () => {
     const result = await run(readClusterHealth(props()), healthy);
     assert.equal(result.healthy, true);
+    assert.deepEqual(result.connection, connection);
   });
 
   it('propagates a vault/transport failure instead of reporting healthy:false', async () => {
@@ -66,28 +79,30 @@ describe('readClusterHealth', () => {
 
 describe('diffClusterHealth', () => {
   it('plans update when the cluster genuinely reports unhealthy', async () => {
-    const result = await run(
-      diffClusterHealth(props(), {
-        controlPlaneNodes: '198.51.100.10',
-        healthy: false,
-        workerNodes: '',
-      }),
-      unhealthy,
-    );
+    const result = await run(diffClusterHealth(props(), prior(false)), unhealthy);
     assert.equal(result?.action, 'update');
   });
 
   it('propagates a vault/transport failure rather than planning update silently', async () => {
-    await assert.rejects(
-      run(
-        diffClusterHealth(props(), {
-          controlPlaneNodes: '198.51.100.10',
-          healthy: false,
-          workerNodes: '',
-        }),
-        vaultDown,
-      ),
+    await assert.rejects(run(diffClusterHealth(props(), prior(false)), vaultDown));
+  });
+
+  it('plans noop when the cluster is healthy and the connection is unchanged', async () => {
+    const result = await run(diffClusterHealth(props(), prior(true)), healthy);
+    assert.equal(result?.action, 'noop');
+  });
+
+  it('plans update when the cluster is healthy but the connection changed', async () => {
+    const drifted = talosOpenBaoConnection({
+      context: 'admin@hf-c1',
+      key: 'other',
+      mount: 'talos-c1',
+    });
+    const result = await run(
+      diffClusterHealth(props(), { ...prior(true), connection: drifted }),
+      healthy,
     );
+    assert.equal(result?.action, 'update');
   });
 });
 
@@ -96,6 +111,7 @@ describe('check — I1 fix: --nodes names ONE contact node, not the whole cluste
     const calls: FakeCall[] = [];
     await run(
       readClusterHealth({
+        connection,
         controlPlaneNodes: ['198.51.100.10', '198.51.100.11', '198.51.100.12'],
         target: TARGET,
       }),
@@ -116,7 +132,7 @@ describe('check — I1 fix: --nodes names ONE contact node, not the whole cluste
 
   it('fails closed instead of spawning talosctl when controlPlaneNodes is empty', async () => {
     await assert.rejects(
-      run(readClusterHealth({ controlPlaneNodes: [], target: TARGET }), healthy),
+      run(readClusterHealth({ connection, controlPlaneNodes: [], target: TARGET }), healthy),
       (error: unknown) =>
         error instanceof Error && error.message.includes('controlPlaneNodes is empty'),
     );
