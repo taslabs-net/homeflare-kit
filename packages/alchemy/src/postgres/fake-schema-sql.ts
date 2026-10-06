@@ -22,6 +22,8 @@ export interface FakeSchemaState {
   /** Per schema name: how many objects in OTHER schemas depend on it (what the atomic drop's
    * `pg_depend` count answers). Absent means none. */
   readonly dependentsOutside: Map<string, number>;
+  /** Per schema name: how many sequences it holds (a cascade drop refuses any: `HF004`). */
+  readonly sequencesIn: Map<string, number>;
   /** What `current_database()` answers, and the stamp on every read row. */
   readonly database: string;
   /** What `current_user` answers, and the owner of a `CREATE SCHEMA` without `AUTHORIZATION`. */

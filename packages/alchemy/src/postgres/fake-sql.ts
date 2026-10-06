@@ -68,6 +68,7 @@ export interface FakeSqlOptions {
   /** Per schema name, how many objects in OTHER schemas depend on it (a cascade would drop
    * them): what the atomic drop's `pg_depend` count answers. */
   readonly dependentsOutside?: Readonly<Record<string, number>>;
+  readonly sequencesIn?: Readonly<Record<string, number>>; // per schema: sequences held (HF004)
   /** Accept the NEXT `CREATE SCHEMA` (no error) but record nothing — the S10 case where the
    * write's own report is a lie and the immediate re-read finds nothing. */
   readonly swallowNextCreateSchema?: boolean;
@@ -116,6 +117,7 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
     schemas,
     relationsIn,
     dependentsOutside,
+    sequencesIn: new Map(Object.entries(options.sequencesIn ?? {})),
     database: options.database ?? 'postgres',
     standardConformingStrings: options.standardConformingStrings ?? true,
     sessionRole: options.currentUser ?? 'postgres',

@@ -4,6 +4,7 @@
  * Refusals use checked catalog facts or raw SQLSTATE (42P06 / 2BP01), never driver message text.
  */
 import * as Data from 'effect/Data';
+import type { PostgresSchemaCascadeSequencesRefused } from './schema-sequence-error.ts';
 
 /** A declared name would be silently truncated (same as `PostgresDatabaseNameRefused`). */
 export class PostgresSchemaNameRefused extends Data.TaggedError('PostgresSchemaNameRefused')<{
@@ -228,6 +229,7 @@ export type PostgresSchemaError =
   | PostgresSchemaCreateVanished
   | PostgresSchemaDropNotEmptyError
   | PostgresSchemaCascadeCrossSchemaRefused
+  | PostgresSchemaCascadeSequencesRefused
   | PostgresSchemaDeleteForeignRefused
   | PostgresSchemaWrongDatabase
   | PostgresSchemaDatabaseRefused;

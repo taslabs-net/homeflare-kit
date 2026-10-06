@@ -14,6 +14,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import { type PsqlRunner, makePsqlExecutor } from './psql-executor.ts';
 import { PostgresSchemaCascadeCrossSchemaRefused } from './schema-errors.ts';
+import { PostgresSchemaCascadeSequencesRefused } from './schema-sequence-error.ts';
 import { dropWithClient } from './schema.ts';
 
 const enabled = process.env['HF_TEST_POSTGRES'] === '1';
@@ -120,6 +121,22 @@ suite('atomic drop on a real PostgreSQL', () => {
     await holder;
     await drop;
     expect(await present(a)).toBe(false);
+  });
+
+  test('a cascade of a schema holding a sequence refuses and loses nothing', async () => {
+    const a = fresh('seq_a');
+    const b = fresh('seq_b');
+    await psql(
+      `CREATE SCHEMA "${a}"; CREATE TABLE "${a}".t (id serial, x text);
+       INSERT INTO "${a}".t (x) VALUES ('kept');
+       CREATE SCHEMA "${b}"; CREATE VIEW "${b}".v AS SELECT last_value FROM "${a}".t_id_seq;`,
+    );
+    const error = await Effect.runPromise(Effect.flip(dropWithClient(pg, props(a))));
+    expect(error).toBeInstanceOf(PostgresSchemaCascadeSequencesRefused);
+    expect(error).toMatchObject({ schema: a, sequences: 1 });
+    expect(await present(a)).toBe(true);
+    expect((await psql(`SELECT x FROM "${a}".t;`)).stdout.trim()).toBe('kept');
+    expect((await psql(`SELECT count(*) FROM "${b}".v;`)).stdout.trim()).toBe('1');
   });
 
   test('a table added to a foreign extension refuses the cascade (ownership edge leaves)', async () => {

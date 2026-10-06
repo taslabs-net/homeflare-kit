@@ -26,6 +26,11 @@
  *   committed while we waited on a table lock would make the by-name `DROP` delete the
  *   REPLACEMENT. The last statement before the `DROP` re-reads the name of the verified OID and
  *   refuses `HF001` if it moved; only the statements between that read and the `DROP` remain.
+ * ⛔ SEQUENCES REFUSE THE CASCADE (`HF004`, KNOWN LIMIT; `schema-sequence-error.ts`). `LOCK TABLE`
+ *   cannot lock a sequence, so an uncommitted `CREATE VIEW b.v AS SELECT last_value FROM a.s` is
+ *   invisible to the closure scan, and PostgreSQL's deletion (locks first, THEN scans dependents)
+ *   would cascade into `b.v` once it commits. A schema with serial or identity columns therefore
+ *   cannot be cascade-dropped here: drop its contents first. The check runs before any table lock.
  * ⚠️ NOT COVERED: a type,
  *   function or collation created in ANOTHER schema to use ours has no relation to wait on. The
  *   advisory lock stays: it serialises runs of this provider, which is cheap and correct.
@@ -36,7 +41,7 @@
  *   the same single one.
  * ★ REFUSALS ARE CUSTOM SQLSTATEs, read from `reason.cause.code` exactly like `2BP01`
  *   (`schema-sql.ts#isDependentObjectsError`): `HF001` identity changed, `HF002` not empty,
- *   `HF003` dependents in another schema. Class `HF` is not `42`, so both transports wrap it as
+ *   `HF003` dependents in another schema, `HF004` a cascade over a schema holding a sequence. Class `HF` is not `42`, so both transports wrap it as
  *   `UnknownError` with the raw code. The `HF003` message carries a COUNT only: another owner's
  *   object names must not reach this stack's logs.
  */
@@ -48,6 +53,7 @@ import { buildDropSchemaSql, emptyPredicate } from './schema-sql.ts';
 export const IDENTITY_CHANGED = 'HF001';
 export const NOT_EMPTY = 'HF002';
 export const CROSS_SCHEMA_DEPENDENTS = 'HF003';
+export const CASCADE_SEQUENCES = 'HF004';
 
 /** How long any lock in the block may wait before the drop is refused (`55P03`, fails closed). */
 const LOCK_TIMEOUT = '10s';
@@ -88,6 +94,11 @@ BEGIN
       RAISE EXCEPTION 'schema not empty' USING ERRCODE = '${NOT_EMPTY}';
     END IF;
   ELSE
+    SELECT count(*) INTO v_count FROM pg_catalog.pg_class c
+      WHERE c.relnamespace = v_ns AND c.relkind = 'S';
+    IF v_count > 0 THEN
+      RAISE EXCEPTION 'cascade sequences: %', v_count USING ERRCODE = '${CASCADE_SEQUENCES}';
+    END IF;
     FOR v_rel IN SELECT c.oid::pg_catalog.regclass::pg_catalog.text FROM pg_catalog.pg_class c
         WHERE c.relnamespace = v_ns AND c.relkind IN ('r', 'p', 'v', 'm', 'f') ORDER BY c.oid LOOP
       EXECUTE pg_catalog.format('LOCK TABLE %s IN ACCESS EXCLUSIVE MODE', v_rel);

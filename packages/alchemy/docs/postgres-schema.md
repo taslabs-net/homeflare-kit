@@ -103,6 +103,10 @@ empty, or when `cascade: true` is declared.
   `PostgresSchemaCascadeCrossSchemaRefused`, naming the COUNT only (never another owner's
   object names). A dependent whose catalog class is not recognised counts as foreign: the check
   fails closed. The `IF EXISTS` makes delete idempotent.
+- Known limit: `cascade: true` over a schema that holds a sequence (every serial or identity
+  column owns one) is refused with `PostgresSchemaCascadeSequencesRefused` (`HF004`, count only).
+  A sequence cannot be locked, so a concurrent view over it could escape the dependency proof;
+  drop the schema's contents first, then declare `cascade: false`.
 - The proof and the drop are ONE statement. The re-read, the emptiness (or dependents) check and
   the `DROP` run in a single `DO` block, so on the runner transport it is one `psql`. The block
   takes `pg_advisory_xact_lock(<schema oid>)`, re-verifies the persisted `oid` + `owner` inside

@@ -16,6 +16,7 @@ import {
   PostgresSchemaDeleteForeignRefused,
   PostgresSchemaDropNotEmptyError,
 } from './schema-errors.ts';
+import { PostgresSchemaCascadeSequencesRefused } from './schema-sequence-error.ts';
 import { deleteWithClient, dropWithClient } from './schema.ts';
 
 const run = <A, E>(eff: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(eff);
@@ -146,6 +147,26 @@ describe('drop: cascade never reaches another schema', () => {
     expect((error as Error).message).toContain('3 dependent object(s)');
     expect(fake.schemas.get('ledger')).not.toBeUndefined();
     expect(fake.relationsIn.has('ledger')).toBe(true);
+  });
+
+  test('refuses cascade over a schema holding a sequence — count only (HF004), nothing dropped', async () => {
+    const fake = makeFakeSql({
+      schemas: [liveRow()],
+      schemasWithRelations: ['ledger'],
+      sequencesIn: { ledger: 2 },
+    });
+    const error = await fails(dropWithClient(fake, { ...baseProps, cascade: true }));
+    expect(error).toBeInstanceOf(PostgresSchemaCascadeSequencesRefused);
+    expect(error).toMatchObject({ schema: 'ledger', sequences: 2 });
+    expect((error as Error).message).toContain('2 sequence(s)');
+    expect(fake.schemas.get('ledger')).not.toBeUndefined();
+    expect(fake.relationsIn.has('ledger')).toBe(true);
+  });
+
+  test('the sequence check precedes every table lock in the generated block', () => {
+    const sql = buildAtomicDropSql({ name: 'ledger', oid: 1, owner: 'tim', cascade: true });
+    expect(sql).toContain("c.relkind = ''S''");
+    expect(sql.indexOf("c.relkind = ''S''")).toBeLessThan(sql.indexOf('LOCK TABLE'));
   });
 
   test('cascade false never runs the dependents check: the emptiness refusal comes first', async () => {

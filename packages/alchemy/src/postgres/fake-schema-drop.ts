@@ -11,7 +11,12 @@ import { SqlError, UnknownError } from 'effect/unstable/sql/SqlError';
 import { parseLiteral } from './fake-sql-quote.ts';
 import { parseDropSchema } from './fake-sql-parse.ts';
 import type { FakeSchemaState } from './fake-schema-sql.ts';
-import { CROSS_SCHEMA_DEPENDENTS, IDENTITY_CHANGED, NOT_EMPTY } from './schema-drop-sql.ts';
+import {
+  CASCADE_SEQUENCES,
+  CROSS_SCHEMA_DEPENDENTS,
+  IDENTITY_CHANGED,
+  NOT_EMPTY,
+} from './schema-drop-sql.ts';
 
 const refusal = (code: string, message: string): SqlError =>
   new SqlError({
@@ -53,6 +58,10 @@ export const applyAtomicDrop = (
   if (!cascade) {
     if (state.relationsIn.has(name)) return Effect.fail(refusal(NOT_EMPTY, 'schema not empty'));
   } else {
+    const sequences = state.sequencesIn.get(name) ?? 0;
+    if (sequences > 0) {
+      return Effect.fail(refusal(CASCADE_SEQUENCES, `cascade sequences: ${String(sequences)}`));
+    }
     const outside = state.dependentsOutside.get(name) ?? 0;
     if (outside > 0) {
       return Effect.fail(

@@ -28,6 +28,7 @@ import {
   type PostgresSchemaWrongDatabase,
 } from './schema-errors.ts';
 import {
+  CASCADE_SEQUENCES,
   CROSS_SCHEMA_DEPENDENTS,
   IDENTITY_CHANGED,
   NOT_EMPTY,
@@ -35,11 +36,13 @@ import {
   dependentsCount,
   sqlStateOf,
 } from './schema-drop-sql.ts';
+import { PostgresSchemaCascadeSequencesRefused, sequencesCount } from './schema-sequence-error.ts';
 import { isDependentObjectsError, selectSchema } from './schema-sql.ts';
 
 type DropError =
   | PostgresSchemaDropNotEmptyError
   | PostgresSchemaCascadeCrossSchemaRefused
+  | PostgresSchemaCascadeSequencesRefused
   | PostgresSchemaDeleteForeignRefused
   | SqlError;
 
@@ -48,7 +51,8 @@ type DropError =
  * {@link PgExecutor}. The server's refusals come back as typed tags: `HF001` (the row changed
  * between read and drop) re-reads and refuses as a foreign schema; `HF002` and the server's own
  * `2BP01` (an object kind the emptiness check's four catalogs miss) are the not-empty tag;
- * `HF003` is the cross-schema dependents refusal, with the count only.
+ * `HF003` is the cross-schema dependents refusal, with the count only; `HF004` refuses a cascade
+ * over a schema holding a sequence.
  */
 const dropAtomic = (
   pg: PgExecutor,
@@ -66,6 +70,14 @@ const dropAtomic = (
         new PostgresSchemaCascadeCrossSchemaRefused({
           schema: props.name,
           dependents: dependentsCount(error),
+        }),
+      );
+    }
+    if (state === CASCADE_SEQUENCES) {
+      return Effect.fail(
+        new PostgresSchemaCascadeSequencesRefused({
+          schema: props.name,
+          sequences: sequencesCount(error),
         }),
       );
     }
