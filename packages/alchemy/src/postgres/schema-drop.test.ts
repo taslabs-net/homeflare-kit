@@ -6,7 +6,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
-import { SqlError, UnknownError } from 'effect/unstable/sql/SqlError';
+import { SqlError, UnknownError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 import { makeFakeSql } from './fake-sql.ts';
 import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';

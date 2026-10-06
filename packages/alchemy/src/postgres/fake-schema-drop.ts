@@ -7,7 +7,7 @@
  *   cross-schema dependents, drop. A changed block shape fails the parse loudly.
  */
 import * as Effect from 'effect/Effect';
-import { SqlError, UnknownError } from 'effect/unstable/sql/SqlError';
+import { SqlError, UnknownError } from 'effect/sql/SqlError';
 import { parseLiteral } from './fake-sql-quote.ts';
 import { parseDropSchema } from './fake-sql-parse.ts';
 import type { FakeSchemaState } from './fake-schema-sql.ts';
