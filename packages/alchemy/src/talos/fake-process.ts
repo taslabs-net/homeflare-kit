@@ -15,7 +15,7 @@
  *   it finds, see the comment at that code) and defaults `BAO_ADDR`/`BAO_TOKEN` to placeholders
  *   (`readKvValue` refuses without them). Nothing real is spawned; the mutation outlives the file.
  */
-import { realpathSync } from 'node:fs';
+import { chmodSync, realpathSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as Effect from 'effect/Effect';
@@ -94,6 +94,12 @@ const stdinText = (stdin: unknown) =>
 //   `afterAll` binds only to the FIRST file that imports this (cached) module, so no hook can own
 //   the lifetime. A fixture on disk has no lifetime to clean up.
 const stubDir = fileURLToPath(new URL('./fixtures/bin', import.meta.url));
+// ⚠️ A checkout at umask 002 (CT100's default, measured 2026-10-06) writes the fixture and its dirs
+//   775, and the vetting rightly refuses group-writable. Git tracks only the executable bit, so
+//   normalising to 755 here changes no tracked content and weakens no check. The walk stops at the
+//   boundary (the stub dir), so the file and that dir are all it vets.
+chmodSync(stubDir, 0o755);
+chmodSync(join(stubDir, 'talosctl'), 0o755);
 export const STUB_TALOSCTL: string = realpathSync(join(stubDir, 'talosctl'));
 trustBoundaryForTests(stubDir);
 // (the boundary is the stub dir itself: it is vetted, nothing above it is)

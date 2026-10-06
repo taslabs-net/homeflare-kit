@@ -50,7 +50,8 @@ describe.each(PACKAGES)('packages/%s', (pkg) => {
   test('ships every file it declares', async () => {
     const { files = [] } = await manifest(pkg);
 
-    for (const entry of files) {
+    // A `!pattern` entry is an exclusion, not a path: nothing on disk to stat.
+    for (const entry of files.filter((e) => !e.startsWith('!'))) {
       // ⚠️ Bun.file().exists() answers about FILES and is false for a DIRECTORY, so a
       //   `files` entry like `dist`, `src` or `styles` needs a stat, not a file check.
       //   ⛔ Do not guess by extension: that sends README.md down the directory branch

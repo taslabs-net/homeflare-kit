@@ -88,6 +88,13 @@ const scratch = await mkdtemp(join(tmpdir(), 'hf-alchemy-smoke-'));
 try {
   console.log('packing…');
   const tarball = await packForPublish(pkgRoot, scratch);
+  // ⛔ Test fixtures (the fake `talosctl` stub) must not ship: `files` lists all of `src`, and only
+  //   the `!src/**/fixtures` exclusion keeps an executable named `talosctl` out of consumers' trees.
+  const packed = (await run(['tar', '-tzf', tarball], scratch)).split('\n');
+  const leaked = packed.filter((entry) => entry.includes('/fixtures/'));
+  if (leaked.length > 0) {
+    throw new Error(`alchemy smoke: tarball ships fixtures:\n${leaked.join('\n')}`);
+  }
   // ⚠️ A Version Packages PR bumps an interim SDK and alchemy's alias onto it together, so the
   //   new version is not on npm until this release publishes it (scripts/unpublished-siblings.ts).
   for (const s of await swapUnpublishedSiblings(
