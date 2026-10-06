@@ -9,7 +9,7 @@ import { Stack } from 'alchemy/Stack';
 import { Stage } from 'alchemy/Stage';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { FAKE_BASE, type FakeLitellm, startFakeLitellm } from './fake-litellm.ts';
 import { createPassThroughEndpoint } from './operations.ts';
 import {

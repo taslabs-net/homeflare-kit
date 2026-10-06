@@ -5,7 +5,7 @@ import * as RemovalPolicy from 'alchemy/RemovalPolicy';
 import * as Test from 'alchemy/Test/Bun';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { BaoAuthRole, BaoAuthRoleProvider } from './auth-role.ts';
 import { BaoEnv } from './bao-http.ts';
 import { type Reply, fakeBao } from './fake-bao.ts';

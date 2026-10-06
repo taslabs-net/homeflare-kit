@@ -24,7 +24,7 @@
  *   Measured 2026-10-01: the former quote-only escaper allowed comment SQL injection when
  *   that setting was off; an input backslash escaped the first quote of a doubled pair.
  */
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import * as Effect from 'effect/Effect';
 import type { PostgresDatabaseAttributes, PostgresDatabaseProps } from './database-attrs.ts';
 

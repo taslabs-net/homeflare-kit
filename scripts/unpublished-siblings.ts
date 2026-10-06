@@ -12,11 +12,19 @@
  * ⛔ ONLY THE SMOKE TARBALL IS EDITED, never the published one: each swap packs the sibling from
  *   the workspace and points the smoke copy's alias at that tarball with `file:`. The imports the
  *   smoke test then runs are the same ones a consumer runs once the release has published.
- * ⛔ Only an alias onto a WORKSPACE package whose exact version npm answers 404 for is swapped.
- *   Anything already published installs from the registry exactly as a consumer's would.
+ * ⛔ Only an alias onto a WORKSPACE package is ever swapped, and only when npm answers 404 for its
+ *   exact version OR the published copy's files differ from the freshly packed ones.
+ *   Anything else installs from the registry exactly as a consumer's would.
+ * 🔴 A BUMPED DEPENDENCY WITHOUT A BUMPED VERSION LOOKS PUBLISHED. Measured 2026-10-06 (kit PR 359):
+ *   the effect 4 move changed the distilled siblings' dependencies while changesets bumps their
+ *   version only at release, so `@homeflare/distilled-grafana@0.2.0` existed on npm — with a nested
+ *   `@distilled.cloud/core@1.0.0-rc.12` importing `effect/unstable/*`, which effect 4.0.1 no
+ *   longer has. The smoke installed that stale copy and died "Cannot find module".
  */
 import { Glob } from 'bun';
 import { editPackedManifest, packForPublish } from './pack.ts';
+import { publishedContents } from './published-tarball.ts';
+import { type Contents, contentsOfTarball, sameContents } from './tarball-contents.ts';
 
 const FIELDS = ['dependencies', 'optionalDependencies', 'peerDependencies'] as const;
 const ALIAS = /^npm:(@?[^@]+)@(.+)$/;
@@ -68,6 +76,18 @@ export async function isPublished(
   throw new Error(`npm registry answered ${res.status} for ${name}@${version}`);
 }
 
+/**
+ * The selection rule: a sibling is installed from the workspace when npm has no such version, or
+ * when the packed FILES differ from the published ones (same version, changed contents) — its
+ * code, declarations, `exports` and dependencies alike (tarball-contents.ts).
+ * ⛔ NOT THE DEPENDENCY FIELDS ALONE (red team, kit PR 359, 2026-10-06): a source-only or
+ *   exports-only change left them equal, so the smoke installed the published copy and never
+ *   exercised the pending release.
+ */
+export function needsWorkspaceCopy(published: Contents | null, packed: Contents): boolean {
+  return published === null || !sameContents(published, packed);
+}
+
 /** Map each workspace package name to its directory, from the root `workspaces` globs. */
 async function workspacePackages(repoRoot: string): Promise<Map<string, string>> {
   const rootPkg = JSON.parse(await Bun.file(`${repoRoot}/package.json`).text());
@@ -85,8 +105,9 @@ async function workspacePackages(repoRoot: string): Promise<Map<string, string>>
 }
 
 /**
- * Point every alias in the smoke tarball whose target version is not on npm at a freshly packed
- * tarball of the workspace sibling. Returns what was swapped, so the caller can say so loudly.
+ * Point every alias in the smoke tarball whose target version is not on npm, or whose
+ * files differ from the published copy's, at a freshly packed tarball of the workspace sibling.
+ * Returns what was swapped, so the caller can say so loudly.
  */
 export async function swapUnpublishedSiblings(
   tarball: string,
@@ -97,11 +118,17 @@ export async function swapUnpublishedSiblings(
   const swaps: SiblingSwap[] = [];
   await editPackedManifest(tarball, async (manifest) => {
     for (const alias of aliasesOntoWorkspace(manifest, workspace)) {
-      // oxlint-disable-next-line no-await-in-loop
-      if (await isPublished(alias.target, alias.version)) continue;
       const dir = workspace.get(alias.target) ?? '';
       // oxlint-disable-next-line no-await-in-loop
       const sibling = await packForPublish(dir, scratch);
+      // oxlint-disable-next-line no-await-in-loop
+      const published = await publishedContents(alias.target, alias.version);
+      // oxlint-disable-next-line no-await-in-loop
+      if (!needsWorkspaceCopy(published, await contentsOfTarball(sibling))) {
+        // oxlint-disable-next-line no-await-in-loop
+        await Bun.file(sibling).delete();
+        continue;
+      }
       (manifest[alias.field] as Record<string, string>)[alias.name] = `file:${sibling}`;
       swaps.push({ ...alias, tarball: sibling });
     }

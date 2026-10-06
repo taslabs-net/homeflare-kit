@@ -45,7 +45,7 @@
  *   `UnknownError` with the raw code. The `HF003` message carries a COUNT only: another owner's
  *   object names must not reach this stack's logs.
  */
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { quoteStringLiteral } from './database-sql.ts';
 import { OUTSIDE_DEPENDENTS_SQL } from './schema-closure-sql.ts';
 import { buildDropSchemaSql, emptyPredicate } from './schema-sql.ts';

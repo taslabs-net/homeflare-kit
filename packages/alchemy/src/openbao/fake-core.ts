@@ -9,7 +9,7 @@
  */
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import type * as Output from 'alchemy/Output';
 import { BaoAuthMethod, BaoAuthMethodProvider } from './auth-method.ts';
 import { BaoAuthRoleProvider } from './auth-role.ts';

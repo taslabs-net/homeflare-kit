@@ -19,7 +19,7 @@
 import type { PgClient } from '@effect/sql-pg/PgClient';
 import * as Effect from 'effect/Effect';
 import type * as Scope from 'effect/Scope';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 
 export const PIN_SEARCH_PATH_SQL = 'SET search_path = pg_catalog, pg_temp';

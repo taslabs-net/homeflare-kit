@@ -8,7 +8,7 @@
  * `PgConnection.ts#classifyFields` calls. If the driver moves the file, the import fails
  * loudly in the tests that use it rather than silently asserting a fabricated shape.
  */
-import { SqlError } from 'effect/unstable/sql/SqlError';
+import { SqlError } from 'effect/sql/SqlError';
 
 export const classifyInstalled = async (
   code: string,

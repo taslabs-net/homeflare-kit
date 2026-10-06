@@ -10,7 +10,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Effect, Layer, Metric } from 'effect';
 import * as ConfigProvider from 'effect/ConfigProvider';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { SeatObs } from '../src/index.ts';
 
 type Seen = { readonly url: string; readonly body: string };

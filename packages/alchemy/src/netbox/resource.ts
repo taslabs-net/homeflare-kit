@@ -36,7 +36,7 @@ import type { Input } from 'alchemy/Input';
 import { CredentialsFromEnv } from '@distilled.cloud/netbox/Credentials';
 import type { NetboxOpContext } from '@distilled.cloud/netbox/Protocol';
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { guardBody } from './constraint-guard.ts';
 import type { EndpointKey, NetboxBody } from './constraints.ts';
 

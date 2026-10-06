@@ -5,7 +5,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Effect, Option, Redacted, Stream } from 'effect';
-import { Tool } from 'effect/unstable/ai';
+import { Tool } from 'effect/ai';
 import { type McpToolkit, McpToolkitError, mcpToolkit } from '../src/index.ts';
 import { BOOM_TEXT, type McpStub, RESOURCE_TEXT, RESOURCE_URI, startMcpStub } from './mcp-stub.ts';
 import { printed } from './printed.ts';
@@ -54,8 +54,9 @@ describe('tools', () => {
 
   test('calls a tool and returns its text', async () => {
     const last = await withMcp((mcp) => call(mcp, 'read_fact', { key: 'codename' }));
-    // ★ The text is what the server sent: Effect's McpServer JSON-encodes a string result.
-    expect(last).toMatchObject({ isFailure: false, result: '"fact:codename"' });
+    // ★ The text is what the server sent. Measured 2026-10-06: effect 4.0.1's McpServer sends a
+    //   string result as is (rc.115 JSON-encoded it, so it arrived quoted).
+    expect(last).toMatchObject({ isFailure: false, result: 'fact:codename' });
   });
 
   test('an isError result comes back to the model as a failed result, not a dead run', async () => {

@@ -35,7 +35,7 @@
 import * as credentials from '@distilled.cloud/litellm/credential_management';
 import * as Effect from 'effect/Effect';
 import * as Predicate from 'effect/Predicate';
-import { isHttpClientError } from 'effect/unstable/http/HttpClientError';
+import { isHttpClientError } from 'effect/http/HttpClientError';
 import { isCredentialRow, toAttributes } from './credential-form.ts';
 import type { CredentialAttributes } from './credential-types.ts';
 import {

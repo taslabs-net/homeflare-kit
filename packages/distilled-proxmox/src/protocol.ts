@@ -68,8 +68,8 @@
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import type * as HttpClient from "effect/unstable/http/HttpClient";
-import type * as HttpClientError from "effect/unstable/http/HttpClientError";
+import type * as HttpClient from "effect/http/HttpClient";
+import type * as HttpClientError from "effect/http/HttpClientError";
 import type * as API from "@distilled.cloud/core/api";
 import {
   BadRequest,
@@ -84,6 +84,7 @@ import { Credentials, type Config } from "./credentials.ts";
 import { withPveFormArrays } from "./protocol-form.ts";
 import {
   ParameterVerificationFailed,
+  ProxmoxParseError,
   UnknownProxmoxError,
   type DefaultErrors,
 } from "./errors.ts";
@@ -215,6 +216,8 @@ export const ProxmoxProtocol: Layer.Layer<API.Protocol> = withPveFormArrays(
     //   not retryable) is the honest answer for "PVE said 400 and gave no
     //   further structure" — `UnknownProxmoxError` stays for statuses this
     //   package genuinely has no mapping for at all (never 400).
+    // A 2xx body that fails strict output validation (core rc.13).
+    parseError: ({ body, cause }) => new ProxmoxParseError({ body, cause }),
     unknownError: ({ status, message, body }) => {
       const b =
         body !== null && typeof body === "object"

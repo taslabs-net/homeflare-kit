@@ -20,7 +20,7 @@ import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PostgresDatabaseAttributes, PostgresDatabaseProps } from './database-attrs.ts';
 import { nameByteRefusal } from './database-attrs.ts';
 import {

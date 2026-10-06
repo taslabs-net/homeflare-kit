@@ -18,7 +18,7 @@ import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as Result from 'effect/Result';
 import * as PgTypes from '@effect/sql-pg/PgTypes';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { encodeState } from 'alchemy/State/StateEncoding';
 import { reconcileWithClient } from './database.ts';
 import { PostgresDatabaseDrift } from './errors.ts';

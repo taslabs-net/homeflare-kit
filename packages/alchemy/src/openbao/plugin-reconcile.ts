@@ -3,7 +3,7 @@
  * be run against a fake server rather than only reasoned about.
  */
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import type { Claim } from '../ownership/adopt.ts';
 import type { BaoError } from './bao-status.ts';
 import {

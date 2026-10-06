@@ -14,8 +14,8 @@ import type * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import * as Semaphore from 'effect/Semaphore';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
-import { isHttpClientError } from 'effect/unstable/http/HttpClientError';
+import type * as HttpClient from 'effect/http/HttpClient';
+import { isHttpClientError } from 'effect/http/HttpClientError';
 import { readBaoVariable, resolveAddress } from './bao-address.ts';
 import {
   BAO_TIMEOUT,

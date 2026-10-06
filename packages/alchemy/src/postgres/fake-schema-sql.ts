@@ -9,7 +9,7 @@
  *   answers for the connection it opened — and `schemaIsEmpty` from a seeded relation set.
  */
 import * as Effect from 'effect/Effect';
-import { SqlError, SqlSyntaxError, UnknownError } from 'effect/unstable/sql/SqlError';
+import { SqlError, SqlSyntaxError, UnknownError } from 'effect/sql/SqlError';
 import { applyAtomicDrop } from './fake-schema-drop.ts';
 import { parseCommentSchema, parseCreateSchema, parseDropSchema } from './fake-sql-parse.ts';
 import type { PostgresSchemaAttributes } from './schema-attrs.ts';

@@ -25,11 +25,12 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as HttpClient from 'effect/http/HttpClient';
 import { lift } from '../launchd/host-effect.ts';
 import { HostRunnerService } from '../launchd/runner.ts';
 import { adoptsAtApply } from '../ownership/adopt.ts';
 import { noteUnfinished } from '../ownership/resume.ts';
+import { isCreate } from '../ownership/rows.ts';
 import { diffBinary } from './binary-diff.ts';
 import {
   type ReleaseBinaryAttributes,
@@ -137,6 +138,12 @@ export const makeReleaseBinaryProvider = (internals: ReleaseBinaryInternals = {}
         reconcile: ({ fqn, instanceId, news, olds, output, session }) =>
           Effect.gen(function* () {
             const declared = yield* declaredPinProblems(fqn);
+            // ⛔ `output` ON A `creating` ROW IS THE ENGINE'S OWN APPLY-TIME PROBE, NOT STATE'S WORD.
+            //   🔴 MEASURED 2026-10-06 (alchemy 2.0.0-beta.81, adopt-parity.test.ts): for a create
+            //   with an Output prop beta.81 reads the live path at apply and hands the result to
+            //   reconcile as `output`, so `output === undefined` no longer meant "no state" and
+            //   OTHER bytes under --adopt were overwritten. A create is judged as a create.
+            const probed = output !== undefined && (yield* isCreate(fqn, instanceId));
             const adopt = yield* adoptsAtApply({ fqn, instanceId, output });
             return yield* lift(async () => {
               claim(fqn, news);
@@ -145,7 +152,7 @@ export const makeReleaseBinaryProvider = (internals: ReleaseBinaryInternals = {}
                 declared,
                 note: (message) => Effect.runPromise(session.note(message)),
                 olds,
-                output,
+                output: probed ? undefined : output,
               });
             });
           }),

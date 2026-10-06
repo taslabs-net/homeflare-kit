@@ -9,7 +9,7 @@
  * ★ IT IS THE SAME TRANSFORM AS cf-harness (landscape PR 165, cf-harness/src/request.ts),
  *   which is where the header and the body fields were measured against LiteLLM.
  */
-import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
+import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 
 export type SeatStamp = {
   /** Already validated and joined: LiteLLM reads one comma-separated header. */

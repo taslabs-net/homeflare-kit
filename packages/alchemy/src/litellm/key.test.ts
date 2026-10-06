@@ -112,7 +112,8 @@ describe('adopt by alias', () => {
       yield* LiteLLMKey('Seat', { keyAlias: 'seat-a', budgetId: tierRow.budgetId });
     });
     const message = await failureOf(keyStack(fake).deploy(body));
-    expect(message).toContain('already exists');
+    // ★ beta.81 probes at apply itself and refuses first; the kit's check is the backstop.
+    expect(message).toMatch(/already exists|Cannot adopt resource 'Seat'.*--adopt/s);
     expect(fake.keys.writes()).toEqual([]);
     await keyStack(fake).deploy(body, { adopt: true });
     expect(paths(fake)).toEqual(['/key/update']);

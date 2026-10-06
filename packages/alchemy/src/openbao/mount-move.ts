@@ -13,7 +13,7 @@
  *   neither, is a refusal — "neither" in particular is exactly the empty-mount failure above.
  */
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import type { BaoError } from './bao-status.ts';
 import { mountPath } from './mount-form.ts';
 import { type RemountError, type RemountOptions, remountAndWait } from './remount-wire.ts';

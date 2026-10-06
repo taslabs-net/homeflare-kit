@@ -34,7 +34,7 @@ import type { LitellmOpContext } from '@distilled.cloud/litellm/Protocol';
 import type { ConfigError } from '@distilled.cloud/litellm/Errors';
 import * as Effect from 'effect/Effect';
 import * as Semaphore from 'effect/Semaphore';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 
 export type { LitellmOpContext } from '@distilled.cloud/litellm/Protocol';
 export type LitellmRequirements = LitellmOpContext;

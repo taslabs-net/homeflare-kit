@@ -15,7 +15,10 @@ import { writesOf } from './fake-stack.ts';
 import { BaoMount } from './mount.ts';
 
 const NOT_OWNED = /Cannot adopt resource 'Z'.*not owned by this stack.*--adopt/s;
-const TAKEOVER = /: already exists, and this stack holds no state for it.*Nothing was written/s;
+// ★ beta.81 probes a create with an Output prop at apply itself, so ITS refusal fires first; the
+//   kit's refuseTakeover is the backstop. Either way each test asserts nothing was written.
+const TAKEOVER =
+  /Cannot adopt resource 'Z'.*--adopt|: already exists, and this stack holds no state for it.*Nothing was written/s;
 
 /** `Z`, with its knob an Output until apply: an upstream AppRole's `tokenTtl`, created with it. */
 const pending = (row: CoreRow) =>

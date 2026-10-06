@@ -14,7 +14,7 @@ import * as Cause from 'effect/Cause';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { type FakeMesh, fakeProviderLayer } from './fake-mesh.ts';
 import { MeshNode, MeshNodeProvider } from './mesh-node.ts';
 import type { MeshNodeAttributes, MeshNodeProps } from './mesh-node-form.ts';

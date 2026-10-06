@@ -11,7 +11,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Effect } from 'effect';
-import { Chat } from 'effect/unstable/ai';
+import { Chat } from 'effect/ai';
 import { SeatModel, mcpToolkit, runRounds } from '../src/index.ts';
 import { type McpStub, startMcpStub } from './mcp-stub.ts';
 import { type Stub, startStub } from './stub.ts';

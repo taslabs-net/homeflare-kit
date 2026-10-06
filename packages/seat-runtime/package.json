@@ -44,14 +44,14 @@
     "smoke": "bun run scripts/smoke.ts"
   },
   "dependencies": {
-    "@effect/ai-openai-compat": "4.0.0-rc.115",
-    "@effect/sql-pg": "4.0.0-rc.115",
+    "@effect/ai-openai-compat": "4.0.1",
+    "@effect/sql-pg": "4.0.1",
     "@modelcontextprotocol/sdk": "1.31.0"
   },
   "devDependencies": {
     "effect": "catalog:"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.115"
+    "effect": "4.0.1"
   }
 }

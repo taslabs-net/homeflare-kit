@@ -33,8 +33,8 @@
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import type * as HttpClient from "effect/unstable/http/HttpClient";
-import type * as HttpClientError from "effect/unstable/http/HttpClientError";
+import type * as HttpClient from "effect/http/HttpClient";
+import type * as HttpClientError from "effect/http/HttpClientError";
 import type * as API from "@distilled.cloud/core/api";
 import type { ConfigError } from "@distilled.cloud/core/errors";
 import {
@@ -42,7 +42,10 @@ import {
   type RestErrorEnvelope,
 } from "@distilled.cloud/core/protocol-rest";
 import { Credentials, type Config } from "./credentials.ts";
-import { UnknownUnifiNetworkError, type DefaultErrors } from "./errors.ts";
+import {
+  UnifiNetworkParseError,
+  UnknownUnifiNetworkError,
+  type DefaultErrors } from "./errors.ts";
 
 /**
  * Error channel shared by every generated UniFi Network operation. Generated
@@ -119,6 +122,9 @@ export const UnifiNetworkProtocol: Layer.Layer<API.Protocol> =
       Accept: "application/json",
     }),
     errorEnvelope,
+    // A 2xx body that fails strict output validation (core rc.13).
+    parseError: ({ body, cause }) =>
+      new UnifiNetworkParseError({ body, cause }),
     unknownError: ({ code, message, body }) =>
       new UnknownUnifiNetworkError({
         code:

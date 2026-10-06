@@ -12,7 +12,7 @@
  *   halves live in their own files under the same rule.
  */
 import * as Effect from 'effect/Effect';
-import { SqlError, SqlSyntaxError, UnknownError } from 'effect/unstable/sql/SqlError';
+import { SqlError, SqlSyntaxError, UnknownError } from 'effect/sql/SqlError';
 import type { PostgresDatabaseAttributes } from './database-attrs.ts';
 import type { PgExecutor } from './database-sql.ts';
 import { parseCreate } from './fake-sql-parse.ts';

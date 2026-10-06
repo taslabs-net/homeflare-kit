@@ -32,8 +32,8 @@
  *   point: a standby forwards to the same vault.
  */
 import * as Effect from 'effect/Effect';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { type BaoEnvironment, resolveAddress } from './bao-address.ts';
 import { BaoEnv, baoCall } from './bao-http.ts';
 import { canonicalNamespace, envNamespace, namespaceLabel } from './bao-namespace.ts';

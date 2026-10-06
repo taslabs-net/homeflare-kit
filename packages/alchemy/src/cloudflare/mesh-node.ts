@@ -18,7 +18,7 @@ import * as Provider from 'alchemy/Provider';
 import { Resource, type ResourceClass } from 'alchemy/Resource';
 import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as HttpClient from 'effect/http/HttpClient';
 import {
   type MeshNodeAttributes,
   type MeshNodeProps,

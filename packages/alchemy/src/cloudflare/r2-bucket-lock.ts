@@ -37,7 +37,7 @@ import { Credentials } from '@distilled.cloud/cloudflare/Credentials';
 import * as r2 from '@distilled.cloud/cloudflare/r2';
 import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as HttpClient from 'effect/http/HttpClient';
 import {
   type Jurisdiction,
   type R2LockRule,

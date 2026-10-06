@@ -11,7 +11,7 @@
  */
 import { type Credentials, credentials } from '@distilled.cloud/opnsense/Credentials';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 
 export const FAKE_BASE = 'https://opnsense.example.com';
 export const FAKE_KEY = 'placeholder-opnsense-key';

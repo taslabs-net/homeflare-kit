@@ -54,7 +54,7 @@ import type * as Cause from 'effect/Cause';
 import type * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Result from 'effect/Result';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { credentials as distilledPveCredentials } from '@distilled.cloud/proxmox/Credentials';
 import type { ProxmoxOpContext } from '@distilled.cloud/proxmox/Protocol';
 import * as ProxmoxRetry from '@distilled.cloud/proxmox/Retry';

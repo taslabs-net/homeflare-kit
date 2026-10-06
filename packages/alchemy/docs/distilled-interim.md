@@ -111,7 +111,7 @@ Two checks, both real, neither skippable:
 2. **`scripts/smoke.ts`** — packs the tarball, installs it into a scratch
    dir under its OWN published name (never the alias — the alias is the
    _consumer's_ concern), and builds a real request for one operation
-   against a fake `HttpClient` (`effect/unstable/http/HttpClient.make`,
+   against a fake `HttpClient` (`effect/http/HttpClient.make`,
    capturing the request instead of sending it). Assert on method, URL and
    headers, and decode a canned response. This is what caught the `/api/api/`
    bug — a clean typecheck did not, because the bug was in a runtime string,

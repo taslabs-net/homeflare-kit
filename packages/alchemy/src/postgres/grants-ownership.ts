@@ -11,7 +11,7 @@
  *   queries, still inside the read's one bounded burst.
  */
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 
 /** `pg_namespace.nspowner = <role>` for one schema. No rows when the schema is absent —

@@ -43,8 +43,8 @@
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import type * as HttpClient from "effect/unstable/http/HttpClient";
-import type * as HttpClientError from "effect/unstable/http/HttpClientError";
+import type * as HttpClient from "effect/http/HttpClient";
+import type * as HttpClientError from "effect/http/HttpClientError";
 import type * as API from "@distilled.cloud/core/api";
 import type { ConfigError } from "@distilled.cloud/core/errors";
 import {
@@ -52,7 +52,10 @@ import {
   type RestErrorEnvelope,
 } from "@distilled.cloud/core/protocol-rest";
 import { Credentials, type Config } from "./credentials.ts";
-import { UnknownOpenBaoError, type DefaultErrors } from "./errors.ts";
+import {
+  OpenBaoParseError,
+  UnknownOpenBaoError,
+  type DefaultErrors } from "./errors.ts";
 import { withMountTables } from "./protocol-mount-tables.ts";
 
 /**
@@ -112,6 +115,8 @@ export const OpenBaoProtocol: Layer.Layer<API.Protocol> =
     }),
     errorEnvelope,
     transformResponse,
+    // A 2xx body that fails strict output validation (core rc.13).
+    parseError: ({ body, cause }) => new OpenBaoParseError({ body, cause }),
     unknownError: ({ code, message, body }) =>
       new UnknownOpenBaoError({
         code:

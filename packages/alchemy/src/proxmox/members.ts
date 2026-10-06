@@ -10,10 +10,10 @@ import * as Cause from 'effect/Cause';
 import type * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Result from 'effect/Result';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
-import * as HttpClientError from 'effect/unstable/http/HttpClientError';
-import type * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
-import type * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
+import * as HttpClient from 'effect/http/HttpClient';
+import * as HttpClientError from 'effect/http/HttpClientError';
+import type * as HttpClientRequest from 'effect/http/HttpClientRequest';
+import type * as HttpClientResponse from 'effect/http/HttpClientResponse';
 import type { PveTarget } from './credentials.ts';
 
 export const PVE_API_PORT = 8006;

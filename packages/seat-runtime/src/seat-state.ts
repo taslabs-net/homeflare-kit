@@ -5,14 +5,14 @@
  * ⛔ THE LIBRARY HOLDS NO HOST. Every URL comes from the consumer (a value, or an environment
  *   variable it names), as `Redacted`; there is no default address here to point a seat at the
  *   wrong store, and nothing reads a credential from disk.
- * ★ THE SERVICES ARE EFFECT'S, NOT OURS: `SqlClient` (`effect/unstable/sql/SqlClient`) for
- *   Postgres and `Redis` (`effect/unstable/persistence/Redis`) for Valkey, so a consumer writes
+ * ★ THE SERVICES ARE EFFECT'S, NOT OURS: `SqlClient` (`effect/sql/SqlClient`) for
+ *   Postgres and `Redis` (`effect/persistence/Redis`) for Valkey, so a consumer writes
  *   ordinary Effect SQL and Redis code and this package adds only how they are built.
  */
 import * as Layer from 'effect/Layer';
-import type * as Redis from 'effect/unstable/persistence/Redis';
-import type * as SqlClient from 'effect/unstable/sql/SqlClient';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type * as Redis from 'effect/persistence/Redis';
+import type * as SqlClient from 'effect/sql/SqlClient';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { Config } from 'effect';
 import type { PgClient } from '@effect/sql-pg';
 import {

@@ -7,7 +7,7 @@ import { rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as HttpClientError from 'effect/unstable/http/HttpClientError';
+import * as HttpClientError from 'effect/http/HttpClientError';
 import { loadCaddyfile, readRunningConfig } from './admin-calls.ts';
 import { isUnreachable } from './caddy-http-client.ts';
 import { type FakeCaddy, fakeCaddy, runCaddy } from './fake-caddy.ts';

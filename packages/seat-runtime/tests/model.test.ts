@@ -4,7 +4,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Effect, Redacted } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 import { SeatModel } from '../src/index.ts';
 import { API_KEY, type ScenarioResult, TAGS, runScenario } from './scenario.ts';
 import { type Stub, startStub } from './stub.ts';

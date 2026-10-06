@@ -11,7 +11,7 @@
  */
 import { type Credentials, fromApiKey } from '@distilled.cloud/grafana/Credentials';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 
 export const FAKE_BASE = 'https://grafana.example.com';
 export const FAKE_TOKEN = 'placeholder-grafana-token';

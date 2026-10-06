@@ -1,6 +1,6 @@
 /** Test-only PBS 4.2.6-1 wire fixture. Every HTTP request is intercepted; no live credentials. */
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import type { PbsTarget } from './credentials.ts';
 
 export const PBS_JOBS_TARGET: PbsTarget = {

@@ -13,8 +13,8 @@
  *   as the payload sees `undefined` and calls it "absent".
  */
 import * as Effect from 'effect/Effect';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
-import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
+import * as HttpClient from 'effect/http/HttpClient';
+import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import type { ApiTarget, PveCredential, PveRole, PveTarget } from './credentials.ts';
 import { leased } from './lease-cache.ts';
 import { authorization } from './mint.ts';

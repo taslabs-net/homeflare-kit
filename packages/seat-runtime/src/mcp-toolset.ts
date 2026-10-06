@@ -18,7 +18,7 @@
  */
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import * as Effect from 'effect/Effect';
-import * as Toolkit from 'effect/unstable/ai/Toolkit';
+import * as Toolkit from 'effect/ai/Toolkit';
 import { type McpToolkitError, type Redact, describeCause } from './mcp-error.ts';
 import { collect } from './mcp-pages.ts';
 import { renderResult } from './mcp-render.ts';

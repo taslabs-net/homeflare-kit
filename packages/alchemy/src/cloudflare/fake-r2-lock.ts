@@ -19,7 +19,7 @@
  */
 import { type Credentials, fromApiToken } from '@distilled.cloud/cloudflare/Credentials';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import type { R2LockRule } from './lock-rules.ts';
 
 export const FAKE_BASE = 'https://api.example.com/client/v4';

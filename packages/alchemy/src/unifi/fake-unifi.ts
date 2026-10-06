@@ -12,7 +12,7 @@
  */
 import { type Credentials, credentials } from '@distilled.cloud/unifi-network/Credentials';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 
 export const FAKE_BASE = 'https://unifi.example.com/proxy/network/integration';
 export const FAKE_KEY = 'placeholder-unifi-key';

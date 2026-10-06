@@ -69,3 +69,27 @@ for (const row of FAMILIES.filter((each) => each.family !== 'Bao.MfaTotpMethod')
     });
   });
 }
+
+/**
+ * 🔴 A DESTROY AFTER A CRASHED CREATE MUST STILL DELETE (red team, kit PR 359, 2026-10-06). The
+ * engine's deletion-recovery read (Apply.ts, a row with no attributes) shares alchemy beta.81's
+ * `provider.read` span with the create-time deferred-adoption read. Answering `Unowned` to both
+ * made the engine skip `provider.delete` and erase the row: a live object nothing tracked.
+ */
+/** Bao.JwtAuthConfig's delete writes nothing and Bao.MfaLoginEnforcement's refuses: no object goes. */
+const DELETES_NOTHING = ['Bao.JwtAuthConfig', 'Bao.MfaLoginEnforcement'];
+for (const row of FAMILIES.filter((each) => !DELETES_NOTHING.includes(each.family))) {
+  describe(`${row.family}: a destroy after an interrupted create`, () => {
+    it('deletes the object the crashed create wrote', async () => {
+      await withCrashes((crashNext) => async (stack, estate) => {
+        crashNext();
+        const destroy = RemovalPolicy.destroy;
+        await assert.rejects(stack.deploy(row.declare('X', 'a', '15m', destroy)), /injected/);
+        assert.ok(row.has(estate, 'a'));
+        const declared = row.declare('X', 'a', '15m', destroy);
+        assert.deepEqual(await stack.destroy(declared), { X: 'delete' });
+        assert.ok(!row.has(estate, 'a'), 'the destroy left the object it was asked to delete');
+      });
+    });
+  });
+}

@@ -17,7 +17,7 @@
  *   file's read is the typed, readable refusal; the block is the guarantee.
  */
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
 import { assertDatabase, deleteForeignRefusal } from './schema-assert.ts';

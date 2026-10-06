@@ -19,12 +19,7 @@
  *   stays recognisable to `isDuplicateDatabaseRace`.
  */
 import * as Effect from 'effect/Effect';
-import {
-  ConnectionError,
-  SqlError,
-  SqlSyntaxError,
-  UnknownError,
-} from 'effect/unstable/sql/SqlError';
+import { ConnectionError, SqlError, SqlSyntaxError, UnknownError } from 'effect/sql/SqlError';
 import { type PgExecutor, quoteStringLiteral } from './database-sql.ts';
 import { PIN_SCRIPT_PREFIX } from './search-path.ts';
 

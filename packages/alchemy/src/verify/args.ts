@@ -3,7 +3,7 @@
  * command for the other.
  *
  * ★ `node:util` parseArgs, NOT effect's CLI module. Alchemy builds its CLI on
- *   `effect/unstable/cli`, but that needs a CliConfig and a Terminal layer to parse six flags; the
+ *   `effect/cli`, but that needs a CliConfig and a Terminal layer to parse six flags; the
  *   standard library parses them with no service at all, which keeps this pure and testable.
  * ⛔ `--stage` HAS NO GUESSED DEFAULT. Alchemy falls back to `live_$USER`; a gate that silently
  *   verified the wrong stage would pass for the wrong reason. It comes from the flag or from

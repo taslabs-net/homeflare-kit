@@ -18,7 +18,7 @@
  * ⛔ POLICIES ARE NOT REWRITTEN. Every ACL path naming the old mount keeps naming it.
  */
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { baoCall, baoRead } from './bao-http.ts';
 import type { BaoError } from './bao-status.ts';
 

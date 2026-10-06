@@ -9,7 +9,7 @@ import { expect, test } from 'bun:test';
 import { credentials } from '@distilled.cloud/litellm/Credentials';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { LiteLLMAccessGroup } from './access-group.ts';
 import { deleteAccessGroup } from './access-group-operations.ts';
 import type { AccessGroupProps } from './access-group-types.ts';

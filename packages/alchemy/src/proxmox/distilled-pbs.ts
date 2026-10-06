@@ -13,7 +13,7 @@ import * as Retry from '@distilled.cloud/proxmox-backup/Retry';
 import type * as Cause from 'effect/Cause';
 import type * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import type { PveCredentialDenied } from './credential-errors.ts';
 import type { PbsTarget, PveCredential, PveRole } from './credentials.ts';
 import { leased } from './lease-cache.ts';

@@ -10,7 +10,7 @@ import * as Output from 'alchemy/Output';
 import * as RemovalPolicy from 'alchemy/RemovalPolicy';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { groupKey } from './cloudflare-group-scope.ts';
 import { CloudflarePermissionGroups } from './cloudflare-permission-groups.ts';
 import { BaoCloudflareRole, BaoCloudflareRoleProvider } from './cloudflare-role.ts';

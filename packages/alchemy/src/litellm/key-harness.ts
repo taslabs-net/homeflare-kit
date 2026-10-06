@@ -9,7 +9,7 @@ import { credentials } from '@distilled.cloud/litellm/Credentials';
 import { Retry } from '@distilled.cloud/litellm/Retry';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { FAKE_BASE, startFakeLitellm } from './fake-litellm.ts';
 import { type FakeStack, fakeStack } from './fake-stack.ts';
 import { LiteLLMKey } from './key.ts';

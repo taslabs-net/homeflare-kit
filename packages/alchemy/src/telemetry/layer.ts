@@ -34,8 +34,8 @@ import * as Layer from 'effect/Layer';
 import * as Logger from 'effect/Logger';
 import * as LogLevel from 'effect/LogLevel';
 import * as Tracer from 'effect/Tracer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import { OtlpExporter, OtlpLogger, OtlpMetrics, OtlpTracer } from 'effect/unstable/observability';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
+import { OtlpExporter, OtlpLogger, OtlpMetrics, OtlpTracer } from 'effect/observability';
 import { redactedSerialization } from './redact-serialization.ts';
 import { type RedactionPolicy, wrapTracer } from './redact.ts';
 

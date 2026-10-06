@@ -11,7 +11,7 @@
  */
 import { type Credentials, fromToken } from '@distilled.cloud/argocd/Credentials';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 
 export const FAKE_BASE = 'https://argocd.example.com';
 export const FAKE_TOKEN = 'placeholder-argocd-token';

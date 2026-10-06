@@ -2,7 +2,7 @@
  * An Effect `HttpClient.HttpClient` over `node:http`, dialling a unix socket or loopback TCP
  * directly — the SDK's own transport layer for `@distilled.cloud/caddy`'s typed operations.
  *
- * ★ node:http, NOT `effect/unstable/http/FetchHttpClient`. MEASURED 2026-09-21 on bun 1.4.0 and
+ * ★ node:http, NOT `effect/http/FetchHttpClient`. MEASURED 2026-09-21 on bun 1.4.0 and
  *   node 26.7.0 (local-admin.ts's history): node:http dials a unix socket on BOTH runtimes, while
  *   node's fetch has no `unix` option at all (only Bun's does) — `@effect/platform-node`'s own
  *   `FetchHttpClient`/`NodeHttpClient.makeNodeHttp` (node:http, but URL-only — no `socketPath` seam)
@@ -21,10 +21,10 @@ import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Result from 'effect/Result';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
-import * as HttpClientError from 'effect/unstable/http/HttpClientError';
-import type * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
-import * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
+import * as HttpClient from 'effect/http/HttpClient';
+import * as HttpClientError from 'effect/http/HttpClientError';
+import type * as HttpClientRequest from 'effect/http/HttpClientRequest';
+import * as HttpClientResponse from 'effect/http/HttpClientResponse';
 import type { Target } from './admin-address.ts';
 
 export type LocalHttpClientOptions = {

@@ -26,7 +26,7 @@ import { BaoMount } from './mount.ts';
 import { BaoPkiRole } from './pki-role.ts';
 
 const REFUSED =
-  /Cannot resume creating resource 'Z'|: already exists, and this stack holds no state/s;
+  /Cannot resume creating resource 'Z'|Cannot adopt resource 'Z'|: already exists, and this stack holds no state/s;
 const RESUME_REFUSED = /already exists, and this stack holds no state.*Deploy with --adopt/s;
 
 /** Writes other than the upstream's. */
