@@ -67,6 +67,23 @@ const DEFAULT_TALOSCONFIG_KEY = 'talosconfig';
 export const DEFAULT_KUBECONFIG_KEY = 'kubeconfig';
 
 /**
+ * ⛔ THE CHILD GETS A MINIMAL ENV, NOT `process.env`: `PATH` to find `bao`, the vault address and
+ *   token, and the optional namespace / CA. `undefined` when BAO_ADDR or BAO_TOKEN is missing —
+ *   `bao` would then read a cached `~/.vault-token` login and act as whoever last logged in.
+ */
+const baoEnv = (): Record<string, string> | undefined => {
+  const addr = process.env['BAO_ADDR'];
+  const token = process.env['BAO_TOKEN'];
+  if (addr === undefined || addr === '' || token === undefined || token === '') return undefined;
+  const env: Record<string, string> = { BAO_ADDR: addr, BAO_TOKEN: token };
+  for (const name of ['PATH', 'BAO_NAMESPACE', 'BAO_CACERT']) {
+    const value = process.env[name];
+    if (value !== undefined && value !== '') env[name] = value;
+  }
+  return env;
+};
+
+/**
  * Read one OpenBao KV-v2 value and return the first of `fields` that is a non-empty string.
  *
  * ★ THE ONE PLACE THIS PACKAGE SHELLS TO `bao` — talosconfig, per-node machine config and any
@@ -81,10 +98,19 @@ export const readKvValue = (
 ): Effect.Effect<string, Error, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const env = baoEnv();
+    if (env === undefined) {
+      return yield* Effect.fail(
+        new Error(
+          `bao kv get ${mount}/${key} refused: BAO_ADDR and BAO_TOKEN must both be set. ` +
+            "Without them bao would fall back to a cached login in the operator's home.",
+        ),
+      );
+    }
     const result = yield* ChildProcess.make(
       'bao',
       ['kv', 'get', '-format=json', `${mount}/${key}`],
-      { detached: false, extendEnv: true, stderr: 'pipe', stdin: 'ignore', stdout: 'pipe' },
+      { detached: false, env, extendEnv: false, stderr: 'pipe', stdin: 'ignore', stdout: 'pipe' },
     ).pipe(
       spawner.spawn,
       Effect.flatMap((child) =>
@@ -114,7 +140,15 @@ export const readKvValue = (
       );
     }
 
-    const parsed = JSON.parse(result.stdout) as { data?: { data?: Record<string, unknown> } };
+    // ⛔ A V8 SyntaxError quotes the offending input; this stdout may hold the secret itself.
+    let parsed: { data?: { data?: Record<string, unknown> } };
+    try {
+      parsed = JSON.parse(result.stdout) as typeof parsed;
+    } catch {
+      return yield* Effect.fail(
+        new Error(`bao kv get ${mount}/${key} returned output that is not JSON (not echoed).`),
+      );
+    }
     const data = parsed.data?.data;
     for (const field of fields) {
       const raw = data?.[field];

@@ -7,11 +7,12 @@
  *   `kubeconfig` path makes alchemy's `KubeConfigAdapter` fall back to `$KUBECONFIG`
  *   (`Kubernetes/internal/kubeconfig.ts` `resolveKubeConfigPath`). The `client-cert` kind persists
  *   PEM on every workload because `Connection.ts` (v2.0.0-beta.79, lines 12-14) stores the
- *   Connection on workload attributes. This object is mount, key and context only.
+ *   Connection on workload attributes. This object is `{ kind, cluster }` only; mount, key and
+ *   context are `TalosOpenBaoAdapter({...})` configuration, because upstream replaces (and so
+ *   deletes the same-named objects of) every workload whose auth block changes.
  */
 import type { Connection } from 'alchemy/Kubernetes/Connection';
 import { talosOpenBaoConnection } from './cluster-adapter.ts';
-import { DEFAULT_KUBECONFIG_KEY } from './credentials.ts';
 import type { KubeconfigAttributes, KubeconfigProps } from './kubeconfig.ts';
 import { kubeconfigMetadata, sha256 } from './values.ts';
 
@@ -23,11 +24,7 @@ const generation = (meta: {
 }) => sha256(`${meta.context}\n${meta.endpoint}\n${meta.caFingerprint}\n${meta.clientFingerprint}`);
 
 const toConnection = (props: KubeconfigProps): Connection =>
-  talosOpenBaoConnection({
-    context: props.context,
-    key: props.kubeconfigKey ?? DEFAULT_KUBECONFIG_KEY,
-    mount: props.target.mount,
-  });
+  talosOpenBaoConnection(props.target.cluster);
 
 /** Parse `raw` kubeconfig YAML into public, persistable attributes, or `undefined` if it fails to. */
 export const buildAttrs = (

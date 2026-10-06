@@ -23,7 +23,7 @@
  *       (docs/plans/2026-09-26-talos-secrets-flow.md, O1). Once `output` is defined, reconcile only
  *       reads the vault copy back to confirm it — the same "once" shape `talos-bootstrap.ts` uses
  *       for a boolean, here for a value.
- *     - The persisted `connection` is auth kind `talos-openbao`: `{ kind, mount, key, context }`
+ *     - The persisted `connection` is auth kind `talos-openbao`: `{ kind, cluster }`
  *       only. The adapter reads the vault at connect time and returns a `ClusterTransport`.
  *       ⛔ Not the stock `kubeconfig` kind (an absent path falls back to `$KUBECONFIG`) and not
  *       `client-cert` (alchemy `Connection.ts` persists that PEM on every workload's attributes).
@@ -127,6 +127,8 @@ export const diffKubeconfig = (
       live !== undefined &&
       live.credentialGeneration === output.credentialGeneration &&
       live.context === output.context &&
+      // ⚠️ Rows saved before `talos-openbao` carry a dead placeholder (or none); they must update.
+      JSON.stringify(live.connection?.auth) === JSON.stringify(output.connection?.auth) &&
       live.endpoint === output.endpoint
     ) {
       return { action: 'noop' } as const;

@@ -92,3 +92,8 @@ export const fakeSpawner = (handler: FakeHandler, calls: FakeCall[] = []) =>
       return fakeHandle(handler(call));
     }),
   );
+
+// ⚠️ `readKvValue` refuses to run without BAO_ADDR and BAO_TOKEN (no cached-login fallback), so
+// every test that fakes `bao` needs both. Placeholders only; the fake spawner never reads them.
+process.env['BAO_ADDR'] ??= 'https://bao.invalid';
+process.env['BAO_TOKEN'] ??= 'fake-test-token';

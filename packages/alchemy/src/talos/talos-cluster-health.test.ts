@@ -15,11 +15,7 @@ import {
 } from './talos-cluster-health.ts';
 
 const TARGET = { cluster: 'c1', mount: 'talos-c1' };
-const connection = talosOpenBaoConnection({
-  context: 'admin@hf-c1',
-  key: 'kubeconfig',
-  mount: 'talos-c1',
-});
+const connection = talosOpenBaoConnection('c1');
 const props = () => ({ connection, controlPlaneNodes: ['198.51.100.10'], target: TARGET });
 const prior = (healthy: boolean) => ({
   connection,
@@ -93,13 +89,18 @@ describe('diffClusterHealth', () => {
   });
 
   it('plans update when the cluster is healthy but the connection changed', async () => {
-    const drifted = talosOpenBaoConnection({
-      context: 'admin@hf-c1',
-      key: 'other',
-      mount: 'talos-c1',
-    });
+    const drifted = talosOpenBaoConnection('other-cluster');
     const result = await run(
       diffClusterHealth(props(), { ...prior(true), connection: drifted }),
+      healthy,
+    );
+    assert.equal(result?.action, 'update');
+  });
+
+  it('plans update, not a throw, for a row saved before `connection` existed', async () => {
+    const { connection: _dropped, ...old } = prior(true);
+    const result = await run(
+      diffClusterHealth(props(), old as unknown as ReturnType<typeof prior>),
       healthy,
     );
     assert.equal(result?.action, 'update');

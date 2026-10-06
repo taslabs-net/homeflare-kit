@@ -29,10 +29,10 @@
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
-import type { Connection } from 'alchemy/Kubernetes/Connection';
 import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
+import type { TalosOpenBaoConnection } from './cluster-adapter.ts';
 import { mintTalosconfig } from './credentials.ts';
 import type { TalosRequirements, WithTarget } from './resource.ts';
 import { TalosError, talosctl } from './talosctl.ts';
@@ -58,7 +58,7 @@ export interface ClusterHealthProps extends WithTarget {
    * Kubernetes connection copied onto attributes so a later row can take `cluster: this`.
    * Not read by the health check. Persist only a secret-free connection (`talos-openbao`).
    */
-  connection: Connection;
+  connection: TalosOpenBaoConnection;
 }
 
 export interface ClusterHealthAttributes {
@@ -66,7 +66,7 @@ export interface ClusterHealthAttributes {
   controlPlaneNodes: string;
   workerNodes: string;
   /** Same object as the prop. Makes these attributes `ClusterLike`. */
-  connection: Connection;
+  connection: TalosOpenBaoConnection;
 }
 
 export interface TalosClusterHealth extends Resource<
@@ -89,16 +89,17 @@ const attributes = (props: ClusterHealthProps, healthy: boolean): ClusterHealthA
   workerNodes: nodeCsv(props.workerNodes),
 });
 
-const sameConnection = (left: Connection, right: Connection): boolean => {
-  const authKey = (auth: Connection['auth']) =>
-    JSON.stringify(Object.fromEntries(Object.entries(auth).sort(([a], [b]) => a.localeCompare(b))));
-  return (
-    left.endpoint === right.endpoint &&
-    left.certificateAuthorityData === right.certificateAuthorityData &&
-    left.insecureSkipTlsVerify === right.insecureSkipTlsVerify &&
-    authKey(left.auth) === authKey(right.auth)
-  );
-};
+/**
+ * ⚠️ A ROW SAVED BEFORE `connection` EXISTED HAS NONE — `right` is `undefined` at runtime despite
+ *   the type, and reading `right.endpoint` threw on a healthy cluster. Missing means "update".
+ */
+const sameConnection = (
+  left: TalosOpenBaoConnection,
+  right: TalosOpenBaoConnection | undefined,
+): boolean =>
+  right?.auth?.kind === left.auth.kind &&
+  right.auth.cluster === left.auth.cluster &&
+  right.endpoint === left.endpoint;
 
 const healthArgs = (props: ClusterHealthProps, waitTimeout: string) => {
   const args = ['health', '--wait-timeout', waitTimeout];

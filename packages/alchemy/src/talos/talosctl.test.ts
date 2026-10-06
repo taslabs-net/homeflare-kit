@@ -1,5 +1,6 @@
 /**
- * talosctl binary override. Fake spawner only — the named path is never executed.
+ * talosctl binary override. Fake spawner only — the named path is never executed (it only has to
+ * exist and be a trusted file; the fake answers `version --client` with the pinned version).
  */
 import { expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
@@ -15,7 +16,7 @@ const run = (binary: string | undefined, calls: FakeCall[]) =>
         ...(binary === undefined ? {} : { binary }),
       }),
       ChildProcessSpawner.ChildProcessSpawner,
-      fakeSpawner(() => ({}), calls),
+      fakeSpawner(() => ({ stdout: 'Client: Tag: v1.14.2' }), calls),
     ),
   );
 
@@ -32,18 +33,18 @@ const withEnv = async (value: string | undefined, body: () => Promise<void>) => 
 };
 
 test('the binary option wins over HF_TALOSCTL', async () => {
-  await withEnv('from-env/talosctl', async () => {
+  await withEnv(process.execPath, async () => {
     const calls: FakeCall[] = [];
-    await run('from-option/talosctl', calls);
-    expect(calls[0]?.command).toBe('from-option/talosctl');
+    await run('/bin/sh', calls);
+    expect(calls[0]?.command).toBe('/bin/sh');
   });
 });
 
 test('HF_TALOSCTL selects the binary when the option is omitted', async () => {
-  await withEnv('from-env/talosctl', async () => {
+  await withEnv(process.execPath, async () => {
     const calls: FakeCall[] = [];
     await run(undefined, calls);
-    expect(calls[0]?.command).toBe('from-env/talosctl');
+    expect(calls[0]?.command).toBe(process.execPath);
   });
 });
 

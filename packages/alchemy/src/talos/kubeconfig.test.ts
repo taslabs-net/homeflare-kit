@@ -86,12 +86,7 @@ describe('reconcile — CREATE writes talosctl kubeconfig output into the vault,
     assert.equal(result.endpoint, 'https://192.0.2.50:6443');
     assert.equal(result.context, 'admin@hf-c1');
     assert.equal(result.connection.auth.kind, 'talos-openbao');
-    assert.deepEqual(result.connection.auth, {
-      context: 'admin@hf-c1',
-      key: 'kubeconfig',
-      kind: 'talos-openbao',
-      mount: 'talos-c1',
-    });
+    assert.deepEqual(result.connection.auth, { cluster: 'c1', kind: 'talos-openbao' });
     assert.equal(JSON.stringify(result).includes('talos-first-boot-unwired'), false);
     assert.equal(JSON.stringify(result).includes('BEGIN CERTIFICATE'), false);
     assert.equal(JSON.stringify(result).includes('PRIVATE KEY'), false);
@@ -255,5 +250,26 @@ describe('diff', () => {
         : {},
     );
     assert.equal(result?.action, 'noop');
+  });
+
+  it('plans update for a row saved with the dead placeholder connection', async () => {
+    const output = await run(reconcile(props(), undefined), (call: FakeCall) => {
+      if (call.command === 'bao' && call.args[1] === 'get') {
+        return { stdout: JSON.stringify({ data: { data: { talosconfig: 'x' } } }) };
+      }
+      if (call.command === 'bao' && call.args[1] === 'put') return {};
+      writeFileSync(call.args[1] ?? '', fixtureKubeconfig('old'));
+      return {};
+    });
+    const old = {
+      ...(output as KubeconfigAttributes),
+      connection: { auth: { context: 'admin@hf-c1', kind: 'kubeconfig' } },
+    } as KubeconfigAttributes;
+    const result = await run(diff(props(), old), (call: FakeCall) =>
+      call.args[1] === 'get'
+        ? { stdout: JSON.stringify({ data: { data: { config: fixtureKubeconfig('old') } } }) }
+        : {},
+    );
+    assert.equal(result?.action, 'update');
   });
 });

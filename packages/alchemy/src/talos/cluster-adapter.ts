@@ -2,12 +2,17 @@
  * `Kubernetes.ClusterAdapter` kind `talos-openbao`.
  *
  * Reads `mount/key` from OpenBao at connect time (`credentials.ts`'s `readKvValue`, which
- * shells to `bao` and therefore inherits the lane's BAO env) and returns a `ClusterTransport`.
- * ⛔ NOTHING IS WRITTEN TO DISK. ⛔ THE PERSISTED CONNECTION IS `{ kind, mount, key, context }`
- *   ONLY. alchemy `Kubernetes/Connection.ts` (v2.0.0-beta.79, lines 12-14) stores the Connection
- *   on every workload's attributes, so the upstream `client-cert` kind would put the admin PEM
- *   in the shared state store. The stock `kubeconfig` kind is also refused: an empty path falls
+ * shells to `bao` with BAO_ADDR/BAO_TOKEN) and returns a `ClusterTransport`.
+ * ⛔ NOTHING IS WRITTEN TO DISK. ⛔ THE PERSISTED CONNECTION IS `{ kind, cluster }` ONLY.
+ *   alchemy `Kubernetes/Connection.ts` (v2.0.0-beta.79, lines 12-14) stores the Connection on
+ *   every workload's attributes, so the upstream `client-cert` kind would put the admin PEM in
+ *   the shared state store. The stock `kubeconfig` kind is also refused: an empty path falls
  *   back to `$KUBECONFIG`.
+ * ⛔ mount/key/context LIVE IN THE ADAPTER'S CONFIGURATION, NOT IN THE AUTH BLOCK. Upstream
+ *   compares clusters by the auth block (`internal/workload.ts:91-96` `connectionIdentity`) and
+ *   HelmChart/Manifest answer `replace` when it changes (`HelmChart.ts:248-258`,
+ *   `Manifest.ts:194-209`); a replace creates first, then cleanup deletes the SAME-named objects.
+ *   Renaming a vault key would silently delete Cilium, External Secrets and Gatekeeper.
  *
  * Walked against alchemy 2.0.0-beta.79 `ClusterAdapter.ts` / `BuiltinAdapters.ts` and the OpenBao
  * v2.6.2 absence string in `isVaultKeyAbsent`. Fake `bao` only — no live vault and no cluster.
@@ -15,6 +20,7 @@
 import {
   ClusterAdapter,
   type ClusterAdapterService,
+  ClusterNotFoundError,
   type ClusterTransport,
 } from 'alchemy/Kubernetes/ClusterAdapter';
 import type { Connection } from 'alchemy/Kubernetes/Connection';
@@ -28,19 +34,27 @@ import { kubeconfigTransport } from './kubeconfig-doc.ts';
 declare module 'alchemy/Kubernetes/Connection' {
   interface AuthRegistry {
     /**
-     * Admin kubeconfig in OpenBao KV, read when a workload connects.
-     * Contributed by {@link TalosOpenBaoAdapter}.
+     * Admin kubeconfig in OpenBao KV, read when a workload connects. Contributed by
+     * {@link TalosOpenBaoAdapter}, which holds the mount, key and context.
      */
     'talos-openbao': {
-      /** OpenBao KV mount, e.g. `talos-c1`. */
-      mount: string;
-      /** Path under the mount. `Talos.Kubeconfig` writes `kubeconfig`. */
-      key: string;
-      /** Context name inside the kubeconfig. Not secret. */
-      context: string;
+      /** Logical cluster name, e.g. `c1`. Identity only: changing it moves workloads. */
+      cluster: string;
     };
   }
 }
+
+/** Where the adapter reads. Configuration of the layer; never persisted. */
+export type TalosOpenBaoConfig = {
+  /** Logical cluster name; the only value persisted in the connection. */
+  readonly cluster: string;
+  /** OpenBao KV mount, e.g. `talos-c1`. */
+  readonly mount: string;
+  /** Path under the mount. `Talos.Kubeconfig` writes `kubeconfig`. */
+  readonly key: string;
+  /** Context name inside the kubeconfig. Not secret. */
+  readonly context: string;
+};
 
 /** `bao kv get` reported the key unwritten. The message names `mount/key` and no document bytes. */
 export class TalosVaultKeyMissing extends Data.TaggedError('TalosVaultKeyMissing')<{
@@ -81,60 +95,58 @@ export class TalosOpenBaoAuthKind extends Data.TaggedError('TalosOpenBaoAuthKind
   }
 }
 
-/** Serializable connection. No endpoint, no CA, no client cert. */
-export const talosOpenBaoConnection = (auth: {
-  readonly mount: string;
-  readonly key: string;
-  readonly context: string;
-}): Connection => ({
-  auth: { kind: 'talos-openbao', mount: auth.mount, key: auth.key, context: auth.context },
+/** A `Connection` narrowed to this kind, so a PEM-bearing connection cannot be stored by type. */
+export type TalosOpenBaoConnection = Connection & {
+  readonly auth: { readonly kind: 'talos-openbao'; readonly cluster: string };
+};
+
+/** Serializable connection: kind and cluster name. No vault path, endpoint, CA or client cert. */
+export const talosOpenBaoConnection = (cluster: string): TalosOpenBaoConnection => ({
+  auth: { kind: 'talos-openbao', cluster },
 });
 
 /**
  * Resolve one `talos-openbao` connection to a transport. Requires `ChildProcessSpawner`
  * because the vault read shells to `bao`.
+ *
+ * ⚠️ A key the vault reports absent is `ClusterNotFoundError`: upstream `read`/`delete` treat
+ *   that as "everything in-cluster is already gone", so tearing down a destroyed cluster is not
+ *   stuck. The message names `mount/key` and no document bytes.
  */
 export const connectTalosOpenBao = (
+  config: TalosOpenBaoConfig,
   connection: Connection,
 ): Effect.Effect<
   ClusterTransport,
-  TalosOpenBaoAuthKind | TalosVaultKeyMissing | TalosKubeconfigUnreadable | Error,
+  TalosOpenBaoAuthKind | ClusterNotFoundError | TalosKubeconfigUnreadable | Error,
   ChildProcessSpawner.ChildProcessSpawner
 > =>
   Effect.gen(function* () {
     if (connection.auth.kind !== 'talos-openbao') {
       return yield* Effect.fail(new TalosOpenBaoAuthKind({ kind: connection.auth.kind }));
     }
-    const auth = connection.auth;
-    const raw = yield* readKvValue(auth.mount, auth.key, ['kubeconfig', 'config']).pipe(
+    const { context, key, mount } = config;
+    const raw = yield* readKvValue(mount, key, ['kubeconfig', 'config']).pipe(
       Effect.mapError((error) =>
         isVaultKeyAbsent(error)
-          ? new TalosVaultKeyMissing({ key: auth.key, mount: auth.mount })
+          ? new ClusterNotFoundError({ message: new TalosVaultKeyMissing({ key, mount }).message })
           : error,
       ),
     );
-    const material = yield* Effect.sync(() => kubeconfigTransport(raw, auth.context));
+    const material = yield* Effect.sync(() => kubeconfigTransport(raw, context));
     if (material === undefined) {
-      return yield* Effect.fail(
-        new TalosKubeconfigUnreadable({
-          context: auth.context,
-          key: auth.key,
-          mount: auth.mount,
-        }),
-      );
+      return yield* Effect.fail(new TalosKubeconfigUnreadable({ context, key, mount }));
     }
     return { ...material, headers: Effect.succeed({}) } satisfies ClusterTransport;
   });
 
 /**
  * Register kind `talos-openbao`. Merge with `Kubernetes.providers()`:
- * `Layer.mergeAll(Kubernetes.providers(), TalosOpenBaoAdapter())`.
+ * `Layer.mergeAll(Kubernetes.providers(), TalosOpenBaoAdapter({ ... }))`.
  */
-export const TalosOpenBaoAdapter = (): Layer.Layer<
-  ClusterAdapterService,
-  never,
-  ChildProcessSpawner.ChildProcessSpawner
-> =>
+export const TalosOpenBaoAdapter = (
+  config: TalosOpenBaoConfig,
+): Layer.Layer<ClusterAdapterService, never, ChildProcessSpawner.ChildProcessSpawner> =>
   Layer.effect(
     ClusterAdapter('talos-openbao'),
     Effect.gen(function* () {
@@ -142,7 +154,7 @@ export const TalosOpenBaoAdapter = (): Layer.Layer<
       const service: ClusterAdapterService = {
         kind: 'Kubernetes.ClusterAdapter',
         connect: (connection) =>
-          connectTalosOpenBao(connection).pipe(Effect.provideContext(context)),
+          connectTalosOpenBao(config, connection).pipe(Effect.provideContext(context)),
       };
       return service;
     }),

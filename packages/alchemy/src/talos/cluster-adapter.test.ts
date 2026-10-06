@@ -2,7 +2,7 @@
  * `talos-openbao` connect, offline. Fake `bao` only — no vault, no cluster, no kubeconfig on disk.
  */
 import type { ClusterLike, Connection } from 'alchemy/Kubernetes/Connection';
-import { ClusterAdapter } from 'alchemy/Kubernetes/ClusterAdapter';
+import { ClusterAdapter, ClusterNotFoundError } from 'alchemy/Kubernetes/ClusterAdapter';
 import { type HelmChart } from 'alchemy/Kubernetes/HelmChart';
 import { type Manifest } from 'alchemy/Kubernetes/Manifest';
 import { expect, test } from 'bun:test';
@@ -11,7 +11,6 @@ import * as Layer from 'effect/Layer';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import {
   TalosOpenBaoAdapter,
-  TalosVaultKeyMissing,
   connectTalosOpenBao,
   talosOpenBaoConnection,
 } from './cluster-adapter.ts';
@@ -51,11 +50,8 @@ users:
 current-context: admin@hf-c1
 `;
 
-const connection = talosOpenBaoConnection({
-  context: 'admin@hf-c1',
-  key: 'kubeconfig',
-  mount: 'talos-c1',
-});
+const config = { cluster: 'c1', context: 'admin@hf-c1', key: 'kubeconfig', mount: 'talos-c1' };
+const connection = talosOpenBaoConnection('c1');
 
 const baoGet =
   (stdout: string): FakeHandler =>
@@ -75,7 +71,9 @@ const runAdapter = (target: Connection, handler: FakeHandler, calls: FakeCall[] 
     Effect.gen(function* () {
       const adapter = yield* ClusterAdapter('talos-openbao');
       return yield* adapter.connect(target);
-    }).pipe(Effect.provide(TalosOpenBaoAdapter().pipe(Layer.provide(provideBao(handler, calls))))),
+    }).pipe(
+      Effect.provide(TalosOpenBaoAdapter(config).pipe(Layer.provide(provideBao(handler, calls)))),
+    ),
   );
 
 /** Direct connect, so `catchTag` sees the typed error channel the layer's signature widens. */
@@ -156,8 +154,8 @@ test('connect reads the vault in memory and returns PEM only on the transport', 
 
 test('connect fails loudly naming the missing vault key', async () => {
   const message = await runDirect(
-    connectTalosOpenBao(connection).pipe(
-      Effect.catchTag('TalosVaultKeyMissing', (error) => Effect.succeed(error.message)),
+    connectTalosOpenBao(config, connection).pipe(
+      Effect.catchTag('Kubernetes.ClusterNotFoundError', (error) => Effect.succeed(error.message)),
     ),
     () => ({ exitCode: 2, stderr: 'No value found at talos-c1/data/kubeconfig' }),
   );
@@ -172,14 +170,14 @@ test('connect fails loudly naming the missing vault key', async () => {
   } catch (error) {
     caught = error;
   }
-  expect(caught).toBeInstanceOf(TalosVaultKeyMissing);
+  expect(caught).toBeInstanceOf(ClusterNotFoundError);
   expect(String(caught)).toContain('talos-c1/kubeconfig');
 });
 
 test('a vault denial is not reported as a missing key', async () => {
   let caught: unknown;
   try {
-    await runDirect(connectTalosOpenBao(connection), () => ({
+    await runDirect(connectTalosOpenBao(config, connection), () => ({
       exitCode: 1,
       stderr: 'permission denied',
     }));
@@ -187,7 +185,7 @@ test('a vault denial is not reported as a missing key', async () => {
     caught = error;
   }
   expect(caught).toBeInstanceOf(Error);
-  expect(caught).not.toBeInstanceOf(TalosVaultKeyMissing);
+  expect(caught).not.toBeInstanceOf(ClusterNotFoundError);
   expect(String(caught)).toContain('permission denied');
   expect(String(caught)).toContain('talos-c1/kubeconfig');
 });
@@ -195,7 +193,7 @@ test('a vault denial is not reported as a missing key', async () => {
 test('an unreadable document fails without echoing PEM', async () => {
   const secret = `${beginLine('PRIVATE KEY')}\nnot-a-document\n`;
   const message = await runDirect(
-    connectTalosOpenBao(connection).pipe(
+    connectTalosOpenBao(config, connection).pipe(
       Effect.catchTag('TalosKubeconfigUnreadable', (error) => Effect.succeed(error.message)),
     ),
     baoGet(JSON.stringify({ data: { data: { kubeconfig: secret } } })),
@@ -208,7 +206,7 @@ test('an unreadable document fails without echoing PEM', async () => {
 test('a different auth kind never calls bao', async () => {
   const calls: FakeCall[] = [];
   const message = await runDirect(
-    connectTalosOpenBao({ auth: { kind: 'token', token: 'not-a-token' } }).pipe(
+    connectTalosOpenBao(config, { auth: { kind: 'token', token: 'not-a-token' } }).pipe(
       Effect.catchTag('TalosOpenBaoAuthKind', (error) => Effect.succeed(error.message)),
     ),
     baoGet('{}'),

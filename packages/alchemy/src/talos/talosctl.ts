@@ -10,6 +10,8 @@
  * ⛔ DO NOT LOG STDOUT ON FAILURE. `talosctl kubeconfig` and error paths have been observed in the
  *   wild to include credential material; stderr is the safe diagnostic channel.
  */
+import { statSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import * as Effect from 'effect/Effect';
 import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
@@ -36,12 +38,34 @@ export class TalosError extends Error {
  */
 export const TALOSCTL_BINARY_ENV = 'HF_TALOSCTL';
 
+/** The Talos client version this family is written against (`--client` of the pinned binary). */
+export const TALOSCTL_PINNED_VERSION = 'v1.14.2';
+
 const talosctlBinary = (override: string | undefined): string => {
   const fromOption = override?.trim();
   if (fromOption !== undefined && fromOption !== '') return fromOption;
   const fromEnv = process.env[TALOSCTL_BINARY_ENV]?.trim();
   if (fromEnv !== undefined && fromEnv !== '') return fromEnv;
   return DEFAULT_TALOSCTL_BINARY;
+};
+
+/**
+ * ⛔ AN OVERRIDE RUNS WITH THE VAULT-MINTED TALOSCONFIG, SO IT MUST BE A TRUSTED FILE: absolute,
+ *   not group/world-writable. A bare name is only the unmodified default.
+ */
+const checkOverridePath = (binary: string) => {
+  const refuse = (why: string) =>
+    Effect.fail(new TalosError('binary check', 1, `${TALOSCTL_BINARY_ENV} ${why}`, binary));
+  if (binary === DEFAULT_TALOSCTL_BINARY) return Effect.void;
+  if (!isAbsolute(binary)) return refuse('must be an absolute path');
+  return Effect.try({
+    try: () => statSync(binary).mode,
+    catch: () => new TalosError('binary check', 1, 'override is not a readable file', binary),
+  }).pipe(
+    Effect.flatMap((mode) =>
+      (mode & 0o022) === 0 ? Effect.void : refuse('is group- or world-writable'),
+    ),
+  );
 };
 
 export type TalosRunOptions = {
@@ -62,20 +86,10 @@ export type TalosRunOptions = {
   readonly insecure?: boolean;
 };
 
-/** Run `talosctl <args…>`. Returns trimmed stdout, or '' when empty. */
-export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
+const capture = (binary: string, argv: readonly string[]) =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const binary = talosctlBinary(options.binary);
-    const argv = [
-      ...args,
-      '--talosconfig',
-      options.talosconfigPath,
-      ...(options.nodes === undefined ? [] : ['--nodes', options.nodes.join(',')]),
-      ...(options.endpoints === undefined ? [] : ['--endpoints', options.endpoints.join(',')]),
-      ...(options.insecure === true ? ['--insecure'] : []),
-    ];
-    const result = yield* ChildProcess.make(binary, argv, {
+    return yield* ChildProcess.make(binary, argv, {
       detached: false,
       extendEnv: true,
       stderr: 'pipe',
@@ -103,6 +117,45 @@ export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
       ),
       Effect.scoped,
     );
+  });
+
+/**
+ * ⛔ AN OVERRIDE MUST REPORT THE PINNED CLIENT VERSION (`version --client`, no talosconfig, so
+ *   nothing secret reaches an untrusted binary before it is vetted).
+ */
+const checkOverrideVersion = (binary: string) =>
+  binary === DEFAULT_TALOSCTL_BINARY
+    ? Effect.void
+    : capture(binary, ['version', '--client']).pipe(
+        Effect.flatMap((out) =>
+          out.exitCode === 0 && out.stdout.includes(TALOSCTL_PINNED_VERSION)
+            ? Effect.void
+            : Effect.fail(
+                new TalosError(
+                  'version --client',
+                  out.exitCode,
+                  `${TALOSCTL_BINARY_ENV} is not talosctl ${TALOSCTL_PINNED_VERSION}`,
+                  binary,
+                ),
+              ),
+        ),
+      );
+
+/** Run `talosctl <args…>`. Returns trimmed stdout, or '' when empty. */
+export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
+  Effect.gen(function* () {
+    const binary = talosctlBinary(options.binary);
+    yield* checkOverridePath(binary);
+    yield* checkOverrideVersion(binary);
+    const argv = [
+      ...args,
+      '--talosconfig',
+      options.talosconfigPath,
+      ...(options.nodes === undefined ? [] : ['--nodes', options.nodes.join(',')]),
+      ...(options.endpoints === undefined ? [] : ['--endpoints', options.endpoints.join(',')]),
+      ...(options.insecure === true ? ['--insecure'] : []),
+    ];
+    const result = yield* capture(binary, argv);
 
     const command = args.join(' ');
     if (result.exitCode !== 0) {
