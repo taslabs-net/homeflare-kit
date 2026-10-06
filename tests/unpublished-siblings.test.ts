@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { aliasesOntoWorkspace, isPublished } from '../scripts/unpublished-siblings.ts';
+import {
+  aliasesOntoWorkspace,
+  isPublished,
+  needsWorkspaceCopy,
+  publishedManifest,
+} from '../scripts/unpublished-siblings.ts';
 
 const workspace = new Map([
   ['@homeflare/distilled-netbox', '/repo/packages/distilled-netbox/'],
@@ -62,5 +67,42 @@ describe('isPublished', () => {
     await expect(
       isPublished('@homeflare/distilled-netbox', '0.3.0', answering(503)),
     ).rejects.toThrow(/answered 503/);
+  });
+});
+
+describe('needsWorkspaceCopy', () => {
+  const core = (v: string) => ({ dependencies: { '@distilled.cloud/core': v, effect: '4.0.1' } });
+
+  test('an unpublished version always comes from the workspace', () => {
+    expect(needsWorkspaceCopy(null, core('1.0.0-rc.13'))).toBe(true);
+  });
+
+  test('a published copy with changed dependencies comes from the workspace', () => {
+    expect(needsWorkspaceCopy(core('1.0.0-rc.12'), core('1.0.0-rc.13'))).toBe(true);
+    expect(needsWorkspaceCopy({}, core('1.0.0-rc.13'))).toBe(true);
+  });
+
+  test('an identical published copy installs from npm, whatever the key order', () => {
+    const reordered = { dependencies: { effect: '4.0.1', '@distilled.cloud/core': '1.0.0-rc.13' } };
+    expect(needsWorkspaceCopy(reordered, core('1.0.0-rc.13'))).toBe(false);
+  });
+
+  test('a changed peer or optional dependency counts too', () => {
+    expect(needsWorkspaceCopy({}, { peerDependencies: { effect: '^4' } })).toBe(true);
+    expect(needsWorkspaceCopy({}, { optionalDependencies: { x: '1' } })).toBe(true);
+  });
+});
+
+describe('publishedManifest', () => {
+  const reply = (status: number, body?: unknown) =>
+    (async () =>
+      new Response(body === undefined ? null : JSON.stringify(body), {
+        status,
+      })) as unknown as typeof fetch;
+
+  test('200 returns the manifest, 404 null, an outage throws', async () => {
+    expect(await publishedManifest('a', '1', reply(200, { name: 'a' }))).toEqual({ name: 'a' });
+    expect(await publishedManifest('a', '1', reply(404))).toBeNull();
+    await expect(publishedManifest('a', '1', reply(503))).rejects.toThrow(/answered 503/);
   });
 });
