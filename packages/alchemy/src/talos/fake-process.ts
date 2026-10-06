@@ -100,7 +100,9 @@ const stubDir = fileURLToPath(new URL('./fixtures/bin', import.meta.url));
 //   boundary (the stub dir), so the file and that dir are all it vets.
 chmodSync(stubDir, 0o755);
 chmodSync(join(stubDir, 'talosctl'), 0o755);
+chmodSync(join(stubDir, 'bao'), 0o755);
 export const STUB_TALOSCTL: string = realpathSync(join(stubDir, 'talosctl'));
+export const STUB_BAO: string = realpathSync(join(stubDir, 'bao'));
 trustBoundaryForTests(stubDir);
 // (the boundary is the stub dir itself: it is vetted, nothing above it is)
 process.env['PATH'] = `${realpathSync(stubDir)}${delimiter}${process.env['PATH'] ?? ''}`;
@@ -114,6 +116,7 @@ export const fakeSpawner = (handler: FakeHandler, calls: FakeCall[] = []) =>
       // The vetting probe of the default binary is answered, not recorded, so call lists stay the
       // caller's own calls; the recorded command is the bare name the callers asked for.
       const isStub = command.command === STUB_TALOSCTL;
+      const isBaoStub = command.command === STUB_BAO;
       if (isStub && command.args[0] === 'version' && command.args[1] === '--client') {
         // ⚠️ A literal, not an import of TALOSCTL_PINNED_VERSION: node-connect.harness.ts loads this
         //   file under Node's strip-only TypeScript, which cannot load talosctl.ts. Drift fails loudly
@@ -123,7 +126,7 @@ export const fakeSpawner = (handler: FakeHandler, calls: FakeCall[] = []) =>
       const stdin = yield* stdinText(command.options.stdin);
       const call: FakeCall = {
         args: command.args,
-        command: isStub ? 'talosctl' : command.command,
+        command: isStub ? 'talosctl' : isBaoStub ? 'bao' : command.command,
         ...(stdin === undefined ? {} : { stdin }),
       };
       calls.push(call);

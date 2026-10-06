@@ -30,7 +30,6 @@
  *   assigns, and `bao kv get` inserts the KV-v2 `data/` API segment itself — a key already
  *   prefixed `data/` reads `<mount>/data/data/<key>`, which the OLD default did.
  */
-import { closeSync, openSync, writeFileSync } from 'node:fs';
 import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import type * as Scope from 'effect/Scope';
@@ -38,6 +37,10 @@ import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import { baoEnv } from './bao-env.ts';
+import { resolveBao } from './talosctl-binary.ts';
+import { mintKvTempFile } from './mint-temp-file.ts';
+
+export { mintKvTempFile } from './mint-temp-file.ts';
 
 /** Where credentials come from. HomeFlare-specific mount names live in the stack, not here. */
 export type TalosTarget = {
@@ -83,6 +86,9 @@ export const readKvValue = (
 ): Effect.Effect<string, Error, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    // ⛔ `bao` fetches the cluster credentials, so it is resolved and VETTED before any env is built
+    //   or passed: a fake `bao` in a group/world-writable PATH folder is refused here, never launched.
+    const bao = yield* resolveBao();
     const env = baoEnv();
     if (env === undefined) {
       return yield* Effect.fail(
@@ -93,7 +99,7 @@ export const readKvValue = (
       );
     }
     const result = yield* ChildProcess.make(
-      'bao',
+      bao,
       ['kv', 'get', '-format=json', `${mount}/${key}`],
       // ⛔ NO `detached: false`, AND `forceKillAfter` IS SET (round-4 review). Effect detaches on
       //   Unix so `bao` leads its own process group, and the scope finalizer signals the WHOLE group
@@ -167,46 +173,6 @@ export const readKvValue = (
  */
 export const isVaultKeyAbsent = (error: unknown): boolean =>
   error instanceof Error && /no value found at/i.test(error.message);
-
-/**
- * Write `raw` to a session-temp, 0600, exclusively-created file whose lifetime is the CALLER's
- * `Effect.scoped`, not this call's. See the ⛔ C1 FIX note at the top of this file.
- *
- * ⛔ 0600, CREATED EXCLUSIVELY, AND `Bun.write` CANNOT DO EITHER. This file can hold a cluster
- *   admin client certificate or a machine config's bootstrap token. `Bun.write` takes no mode, so
- *   it lands at the process umask — world-readable on this estate — for as long as the resource
- *   runs. The name is unguessable, and "unguessable" is not a permission.
- * ⚠️ `wx` IS THE OTHER HALF. `O_EXCL` means this cannot be made to write through a path an
- *   attacker pre-created (the classic /tmp symlink race), and with a UUIDv7 name a collision is a
- *   genuine error rather than something to paper over.
- * ⚠️ A HARD KILL (SIGKILL, power loss) skips the finalizer and leaves the file behind. 0600 is
- *   what makes that survivable rather than a disclosure.
- */
-export const mintKvTempFile = (
-  raw: string,
-  label: string,
-): Effect.Effect<{ readonly path: string }, Error, Scope.Scope> =>
-  Effect.gen(function* () {
-    const path = `${Bun.env['TMPDIR'] ?? '/tmp'}/hf-talos-${label}-${Bun.randomUUIDv7()}.yaml`;
-    yield* Effect.acquireRelease(
-      Effect.try({
-        try: () => {
-          const fd = openSync(path, 'wx', 0o600);
-          try {
-            writeFileSync(fd, raw);
-          } finally {
-            closeSync(fd);
-          }
-        },
-        catch: (cause) => new Error(`writing ${label} temp file: ${String(cause)}`),
-      }),
-      () =>
-        Effect.tryPromise({ try: () => Bun.file(path).delete(), catch: () => undefined }).pipe(
-          Effect.orElseSucceed(() => undefined),
-        ),
-    );
-    return { path };
-  });
 
 /**
  * Mint one talosconfig file for `target`.

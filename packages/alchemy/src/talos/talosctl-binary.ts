@@ -21,14 +21,21 @@ export const DEFAULT_TALOSCTL_BINARY = 'talosctl';
  */
 export const TALOSCTL_BINARY_ENV = 'HF_TALOSCTL';
 
+/** `bao` on `PATH` — the OpenBao CLI that fetches the cluster credentials at connect time. */
+export const DEFAULT_BAO_BINARY = 'bao';
+
+/** `bao` executable override, read at call time and vetted exactly like {@link TALOSCTL_BINARY_ENV}. */
+export const BAO_BINARY_ENV = 'HF_BAO';
+
 export class TalosBinaryRefused extends Error {
-  constructor(
-    readonly command: string,
-    detail: string,
-    readonly binary = DEFAULT_TALOSCTL_BINARY,
-  ) {
+  readonly command: string;
+  readonly binary: string;
+
+  constructor(command: string, detail: string, binary = DEFAULT_TALOSCTL_BINARY) {
     super(`${binary} ${command} refused: ${detail}`);
     this.name = 'TalosBinaryRefused';
+    this.command = command;
+    this.binary = binary;
   }
 }
 
@@ -122,4 +129,22 @@ export const checkBinaryPath = (binary: string, source: string) => {
       return Effect.succeed(canonical);
     }),
   );
+};
+
+/**
+ * Resolve and vet the `bao` binary: {@link BAO_BINARY_ENV} wins over `bao` on `PATH`, and either is
+ * checked exactly like talosctl (absolute, owned, not writable, executable, not a symlink, every
+ * ancestor trusted). Returns the canonical path to launch.
+ *
+ * ⛔ `bao` FETCHES THE CLUSTER CREDENTIALS (`readKvValue` / `writeKvValue`), so an un-vetted `bao`
+ *   on a group/world-writable PATH folder (umask 002, the round-10 incident) could answer with an
+ *   attacker's kubeconfig. The same walk that vets `talosctl` must gate every `bao` launch.
+ */
+export const resolveBao = (): Effect.Effect<string, TalosBinaryRefused> => {
+  const override = process.env[BAO_BINARY_ENV]?.trim();
+  const requested = override !== undefined && override !== '' ? override : DEFAULT_BAO_BINARY;
+  const source = requested === DEFAULT_BAO_BINARY ? 'bao on PATH' : BAO_BINARY_ENV;
+  const resolved =
+    requested === DEFAULT_BAO_BINARY ? resolveDefault(requested) : Effect.succeed(requested);
+  return Effect.flatMap(resolved, (path) => checkBinaryPath(path, source));
 };

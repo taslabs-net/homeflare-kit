@@ -22,8 +22,13 @@ const KUBE_SYSTEM = { apiVersion: 'v1', kind: 'Namespace', name: 'kube-system' }
 /**
  * ⛔ upstream `readObject` (`internal/client.ts`) sets no request timeout, so a silent apiserver
  *   would hang connect and every plan. Bounded here; the failure is typed and closed.
+ * ⛔ SHORTER THAN `CONNECT_TIMEOUT` (10 s, cluster-transport.ts): the outer deadline wraps the vault
+ *   read AND this uid GET together, so an equal inner deadline could never fire first and
+ *   `TalosClusterIdentityTimeout` was unreachable through `connectTalosOpenBao` (red team, PR 355).
+ *   A silent apiserver now fails with the identity timeout while a slow `bao` still gets the full
+ *   outer budget.
  */
-export const UID_READ_TIMEOUT = Duration.seconds(10);
+export const UID_READ_TIMEOUT = Duration.seconds(5);
 
 /** The cluster's kube-system uid. Request failures propagate: nothing here fails open. */
 export const readClusterUid = (

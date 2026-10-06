@@ -13,9 +13,16 @@
  */
 import * as Effect from 'effect/Effect';
 import type * as Scope from 'effect/Scope';
+import * as Duration from 'effect/Duration';
 import * as Stream from 'effect/Stream';
+import { unlink } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import { baoEnv } from './bao-env.ts';
+import { resolveBao } from './talosctl-binary.ts';
 
 /**
  * A fresh, unguessable temp path for SOME OTHER PROCESS (talosctl) to create — unlike
@@ -29,9 +36,9 @@ export const reservedTempPath = (
   label: string,
 ): Effect.Effect<{ readonly path: string }, never, Scope.Scope> =>
   Effect.gen(function* () {
-    const path = `${Bun.env['TMPDIR'] ?? '/tmp'}/hf-talos-${label}-${Bun.randomUUIDv7()}.yaml`;
+    const path = join(tmpdir(), `hf-talos-${label}-${randomUUID()}.yaml`);
     yield* Effect.addFinalizer(() =>
-      Effect.tryPromise({ try: () => Bun.file(path).delete(), catch: () => undefined }).pipe(
+      Effect.tryPromise({ try: () => unlink(path), catch: () => undefined }).pipe(
         Effect.orElseSucceed(() => undefined),
       ),
     );
@@ -63,9 +70,24 @@ export const writeKvValue = (
 ): Effect.Effect<void, Error, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const result = yield* ChildProcess.make('bao', ['kv', 'put', `${mount}/${key}`, `${field}=-`], {
-      detached: false,
-      extendEnv: true,
+    // ⛔ Same vetting as `readKvValue`: `bao` writes credentials, so it is resolved and vetted before
+    //   any env is built or passed — a fake `bao` in a writable PATH folder is refused, never launched.
+    const bao = yield* resolveBao();
+    const env = baoEnv();
+    if (env === undefined) {
+      return yield* Effect.fail(
+        new Error(
+          `bao kv put ${mount}/${key} refused: BAO_ADDR and BAO_TOKEN must both be set. ` +
+            "Without them bao would fall back to a cached login in the operator's home.",
+        ),
+      );
+    }
+    const result = yield* ChildProcess.make(bao, ['kv', 'put', `${mount}/${key}`, `${field}=-`], {
+      env,
+      extendEnv: false,
+      // ⛔ Mirror readKvValue's spawn: `bao` leads its own process group (killed whole on interrupt)
+      //   and a SIGTERM-ignoring `bao` is SIGKILLed 1 s later instead of blocking the plan.
+      forceKillAfter: Duration.seconds(1),
       stderr: 'pipe',
       stdin: Stream.fromIterable([new TextEncoder().encode(value)]),
       stdout: 'pipe',

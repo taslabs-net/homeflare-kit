@@ -13,7 +13,7 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import { engineOver } from '../verify/fake-engine.ts';
-import { talosOpenBaoConnection } from './cluster-adapter.ts';
+import { connectTalosOpenBao, talosOpenBaoConnection } from './cluster-adapter.ts';
 import { UIDS, config, failure, providerLayer, vault } from './cluster-adapter.fixtures.ts';
 import { readClusterUid } from './cluster-identity.ts';
 import { openTransport } from './cluster-transport.ts';
@@ -101,3 +101,29 @@ test('a silent apiserver fails closed with TalosClusterIdentityTimeout', async (
     api.restore();
   }
 });
+
+test(
+  'through connect, a silent apiserver fails with the identity timeout, not the outer deadline',
+  async () => {
+    // ⛔ The inner uid deadline (5 s) is shorter than the outer connect deadline (10 s), so a silent
+    //   apiserver must be reported as TalosClusterIdentityTimeout, never swallowed into
+    //   TalosOpenBaoConnectTimeout (red team, PR 355 — on a084e18 the inner deadline never fired).
+    const api = fakeApiServer(UIDS, ['c1.cluster.invalid']);
+    try {
+      const message = await failure(() =>
+        Effect.runPromise(
+          Effect.provideService(
+            connectTalosOpenBao(config, talosOpenBaoConnection('uid-c1')),
+            ChildProcessSpawner.ChildProcessSpawner,
+            fakeSpawner(vault),
+          ),
+        ),
+      );
+      expect(message).toContain('TalosClusterIdentityTimeout');
+      expect(message).not.toContain('TalosOpenBaoConnectTimeout');
+    } finally {
+      api.restore();
+    }
+  },
+  { timeout: 15000 },
+);

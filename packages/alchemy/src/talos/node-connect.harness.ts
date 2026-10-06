@@ -54,6 +54,12 @@ syncBuiltinESMExports();
 process.env['BAO_ADDR'] ??= 'https://bao.invalid';
 process.env['BAO_TOKEN'] ??= 'fake-test-token';
 
+// ⚠️ The trust-boundary seam registers the fixtures dir ASYNC (trust-boundary.ts's computed
+//   dynamic import). `readKvValue` now vets `bao`, so the walk must see the boundary before it
+//   runs. Awaiting the seam here flushes that registration; without it a bare `node` run can walk
+//   past the (755) fixtures dir into a group-writable ancestor and refuse a trusted stub.
+await import('./trust-boundary.seam.ts');
+
 const spawner = Layer.succeed(
   ChildProcessSpawner.ChildProcessSpawner,
   fakeSpawner(() => ({ stdout: JSON.stringify({ data: { data: { kubeconfig } } }) })),
