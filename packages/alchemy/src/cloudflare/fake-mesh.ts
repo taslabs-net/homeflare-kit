@@ -19,7 +19,7 @@ import * as Cloudflare from 'alchemy/Cloudflare';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 
 export const FAKE_BASE = 'https://api.example.com/client/v4';
 export const FAKE_ACCOUNT = '00000000000000000000000000000001';

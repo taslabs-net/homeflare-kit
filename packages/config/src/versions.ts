@@ -2,7 +2,7 @@
  * `@homeflare/config/versions`: the one aligned set of versions the estate runs.
  *
  *     import { ESTATE_VERSIONS } from '@homeflare/config/versions';
- *     ESTATE_VERSIONS.alchemy; // '2.0.0-beta.79'
+ *     ESTATE_VERSIONS.alchemy; // '2.0.0-beta.81'
  *
  * ★ WHY IT LIVES HERE. Until this file, the set had two homes and neither was reachable from
  *   outside the kit. Bun was `BUN_VERSION` in repo-shape/ci.ts. Every other pin sat in
@@ -20,12 +20,15 @@
  *   source that looks correct.
  *
  * ★ RUNTIME PINS FOLLOW THE PINNED ALCHEMY RELEASE, NEVER THE OTHER WAY. `effect` and
- *   `@distilled.cloud/cloudflare` are the versions `alchemy@2.0.0-beta.79` was built and
+ *   `@distilled.cloud/cloudflare` are the versions `alchemy@2.0.0-beta.81` was built and
  *   tested against. That release's own `dependencies` pin every `@distilled.cloud/*` at
- *   exactly 1.0.0-rc.12, and its workspace overrides pin `effect` 4.0.0-rc.115
- *   (alchemy-run/alchemy `pnpm-workspace.yaml@v2.0.0-beta.79#overrides`). The test reads the
- *   installed `alchemy/package.json` to prove the distilled pin. These values move only in
- *   the same PR as the `alchemy` bump.
+ *   exactly 1.0.0-rc.13 (read from the installed `alchemy/package.json`, 2026-10-06), and it
+ *   declares `effect` as `^4.0.0` in both its devDependencies and its peerDependencies: a
+ *   stable 4.x range, no longer an rc pin. The workspace overrides file
+ *   (`pnpm-workspace.yaml`) is not in the published tarball, so the exact `effect` the
+ *   release was tested with is NOT readable there; the kit pins 4.0.1, the latest `4.x` when
+ *   the bump was planned. The test reads the installed `alchemy/package.json` to prove the
+ *   distilled pin. These values move only in the same PR as the `alchemy` bump.
  *
  * ⚠️ PUBLISHING THE SET ENFORCES NOTHING. No consumer check reads it yet. Wiring it into
  *   `checkProject`, so that each repository's lockfile is compared with it, is a separate,
@@ -51,9 +54,9 @@ export type EstatePackage =
  */
 export const ESTATE_VERSIONS: Readonly<Record<EstatePackage, string>> = {
   bun: BUN_VERSION,
-  alchemy: '2.0.0-beta.79',
-  effect: '4.0.0-rc.115',
-  '@distilled.cloud/cloudflare': '1.0.0-rc.12',
+  alchemy: '2.0.0-beta.81',
+  effect: '4.0.1',
+  '@distilled.cloud/cloudflare': '1.0.0-rc.13',
   typescript: '7.0.2',
   oxfmt: '0.68.0',
   oxlint: '1.83.0',

@@ -10,8 +10,8 @@ import { describe, expect, test } from 'bun:test';
 import { credentials } from '@distilled.cloud/litellm/Credentials';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
+import * as HttpClient from 'effect/http/HttpClient';
 import { FAKE_BASE, startFakeLitellm } from './fake-litellm.ts';
 import { listPassThroughEndpoints } from './operations.ts';
 

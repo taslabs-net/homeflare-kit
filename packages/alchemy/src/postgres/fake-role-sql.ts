@@ -12,7 +12,7 @@
  *   attributes a test seeds or a reconcile returns.
  */
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PostgresRoleAttributes } from './role-attrs.ts';
 import { unquoteIdent, unquoteLiteral } from './fake-sql-quote.ts';
 

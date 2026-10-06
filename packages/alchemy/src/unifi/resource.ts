@@ -37,7 +37,7 @@ import type { Input } from 'alchemy/Input';
 import { CredentialsFromEnv } from '@distilled.cloud/unifi-network/Credentials';
 import type { UnifiNetworkOpContext } from '@distilled.cloud/unifi-network/Protocol';
 import * as Effect from 'effect/Effect';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as HttpClient from 'effect/http/HttpClient';
 import { UNIFI_READ_ONLY_POLICY, refuseWrite } from './policy.ts';
 
 /** What every handler needs from the caller's runtime once `CredentialsFromEnv` is baked in. */

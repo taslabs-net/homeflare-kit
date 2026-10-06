@@ -5,10 +5,10 @@ The install line for `@homeflare/alchemy`, and why every peer on it and every en
 [README](../README.md#peers--and-one-override-you-need).
 
 ```sh
-bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
-        @effect/platform-node@4.0.0-rc.115 mime@4.1.0 \
-        @distilled.cloud/cloudflare@1.0.0-rc.12 @distilled.cloud/forgejo@1.0.0-rc.12 \
-        @effect/sql-pg@4.0.0-rc.115
+bun add @homeflare/alchemy alchemy@2.0.0-beta.81 effect@4.0.1 \
+        @effect/platform-node@4.0.1 mime@4.1.0 \
+        @distilled.cloud/cloudflare@1.0.0-rc.13 @distilled.cloud/forgejo@1.0.0-rc.13 \
+        @effect/sql-pg@4.0.1
 ```
 
 🔴 **Why, measured 2026-09-16 on 0.1.0 and re-checked 2026-09-17 against Alchemy 78.**
@@ -53,7 +53,7 @@ one `MeshNode` already called. Nothing else in this package imported it, so the 
 ⚠️ **`@distilled.cloud/forgejo` (added 2026-09-23, moving `/forgejo` off a hand-rolled
 `HttpClient` client) is required for the same reason `@distilled.cloud/cloudflare` is: it is
 a plain dependency of this package, not something a hoisting installer can hide from a strict
-one.** Pinned to `1.0.0-rc.12` — the distilled release's own lockstep version, not alchemy's,
+one.** Pinned to `1.0.0-rc.13` — the distilled release's own lockstep version, not alchemy's,
 since alchemy does not bundle a Forgejo SDK the way it bundles Cloudflare's.
 
 ⚠️ **`@effect/sql-pg` (added for `/postgres`, 2026-09-23) is required too, for the same
@@ -66,7 +66,7 @@ every other one.
 ⚠️ **`@distilled.cloud/grafana` (added 2026-09-24, kit PR 222, ahead of `/grafana`) is
 required for the same reason `@distilled.cloud/forgejo` is: a plain dependency of this
 package, not something a hoisting installer can hide from a strict one.** Pinned to
-`1.0.0-rc.12`, the same distilled release line as every other pin on this page. Unlike
+`1.0.0-rc.13`, the same distilled release line as every other pin on this page. Unlike
 Forgejo, this family is credential-parameterized per instance (`grafanaCredentials`/
 `grafanaProviders` take a `GrafanaTarget`, not a fixed env-var pair) — see
 [grafana.md](./grafana.md) for why one instance was never going to be enough for this
@@ -91,6 +91,6 @@ add here, nothing for `peers.test.ts` to check.
 ⚠️ **`@distilled.cloud/argocd` (added 2026-09-24, `/argocd`, built ahead of a Talos-on-PVE
 cluster that does not exist yet) is required for the same reason `@distilled.cloud/forgejo` and
 `/discord` are: a plain dependency of this package, not something a hoisting installer can hide
-from a strict one.** Pinned to `1.0.0-rc.12` — measured (`npm view @distilled.cloud/argocd`,
-2026-09-24) as genuinely published at that version, matching every other pin on this page; no
+from a strict one.** Pinned to `1.0.0-rc.13` (rc.12 measured with `npm view @distilled.cloud/argocd`,
+2026-09-24, as genuinely published; rc.13 is the bump's pin) — a version published, matching every other pin on this page; no
 interim alias was needed (see [distilled-interim.md](./distilled-interim.md) for when one is).

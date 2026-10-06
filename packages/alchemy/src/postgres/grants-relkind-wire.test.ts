@@ -51,12 +51,14 @@ const makeFake = () =>
     ],
   });
 
-describe('measured: the "char" relkind column decodes raw on the socket transport', () => {
-  test('PgTypes.decode returns the raw bytes for OID 18 — there is no "char" codec', () => {
+describe('measured: the "char" relkind column on the socket transport', () => {
+  // ★ MEASURED 2026-10-06 on @effect/sql-pg 4.0.1: OID 18 now decodes to the string (rc.115 had no
+  //   codec and returned `Uint8Array([114])`). The `::text` cast stays: it is correct on both, and
+  //   the readGrants tests below fail if it is dropped from the SQL the fake shapes rows from.
+  test('PgTypes.decode answers a string for OID 18 on 4.0.1 (rc.115 answered raw bytes)', () => {
     const decoded = PgTypes.decode(new Uint8Array([114]), 18, 1);
     if (!Result.isSuccess(decoded)) throw new Error('fixture: decode failed for OID 18');
-    expect(decoded.success instanceof Uint8Array).toBe(true);
-    expect(decoded.success).not.toBe('r');
+    expect(decoded.success).toBe('r');
   });
 
   test('the same byte string decodes as a string through the OID 25 text codec', () => {

@@ -13,8 +13,8 @@
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { Effect, Redacted } from 'effect';
-import * as Redis from 'effect/unstable/persistence/Redis';
-import * as SqlClient from 'effect/unstable/sql/SqlClient';
+import * as Redis from 'effect/persistence/Redis';
+import * as SqlClient from 'effect/sql/SqlClient';
 import { SeatState } from '../src/state.ts';
 import {
   POSTGRES_URL,

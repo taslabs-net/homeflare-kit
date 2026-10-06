@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test';
 import { policiesReadAclPolicy } from '@distilled.cloud/openbao/policies';
 import * as Effect from 'effect/Effect';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
-import { HttpClientError, TransportError } from 'effect/unstable/http/HttpClientError';
-import * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
+import * as HttpClient from 'effect/http/HttpClient';
+import { HttpClientError, TransportError } from 'effect/http/HttpClientError';
+import * as HttpClientResponse from 'effect/http/HttpClientResponse';
 import { readAuthRole, writeAuthRole } from './auth-role-wire.ts';
 import { BaoEnv } from './bao-http.ts';
 import { BaoError } from './bao-status.ts';

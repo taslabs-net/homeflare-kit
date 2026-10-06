@@ -134,7 +134,7 @@ import { fetchMeshNodeToken } from '@homeflare/alchemy/cloudflare';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { open } from 'node:fs/promises';
 
 const token = await Effect.runPromise(

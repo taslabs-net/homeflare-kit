@@ -6,9 +6,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as Effect from 'effect/Effect';
-import * as Headers from 'effect/unstable/http/Headers';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
-import * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
+import * as Headers from 'effect/http/Headers';
+import * as HttpClient from 'effect/http/HttpClient';
+import * as HttpClientResponse from 'effect/http/HttpClientResponse';
 import { BaoEnv, baoDelete, baoRead, baoWrite } from './bao-http.ts';
 import { BaoError } from './bao-status.ts';
 import { fakeBao, run, runFailure, withFake } from './fake-bao.ts';

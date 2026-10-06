@@ -12,7 +12,7 @@
  * ⛔ TEST-ONLY. No provider imports this file.
  */
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import type { PveTarget } from './credentials.ts';
 import { withFakeBao } from './fake-bao-env.ts';
 import { resetLastGoodForTest } from './members.ts';

@@ -17,7 +17,7 @@ import * as PgClient from '@effect/sql-pg/PgClient';
 import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 import { type PsqlRunner, makePsqlExecutor } from './psql-executor.ts';
 import { pinnedSocketExecutor } from './search-path.ts';

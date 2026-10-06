@@ -9,7 +9,7 @@
  */
 import { Effect, Layer, Metric, Schema } from 'effect';
 import * as ConfigProvider from 'effect/ConfigProvider';
-import { Chat, EmbeddingModel, LanguageModel, Prompt, Tool, Toolkit } from 'effect/unstable/ai';
+import { Chat, EmbeddingModel, LanguageModel, Prompt, Tool, Toolkit } from 'effect/ai';
 import { SeatModel, SeatObs } from '../src/index.ts';
 import type { Stub } from './stub.ts';
 

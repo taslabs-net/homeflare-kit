@@ -11,7 +11,7 @@ import * as RemovalPolicy from 'alchemy/RemovalPolicy';
 import type * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { BaoAuthRole, BaoAuthRoleProvider } from './auth-role.ts';
 import type { Reply, Seen } from './fake-bao.ts';
 import { type Estate, fakeEstate } from './fake-engines-roles.ts';

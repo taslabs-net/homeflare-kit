@@ -14,13 +14,16 @@
  * ⛔ 127.0.0.1, never Bun's wildcard default: tests/loopback-servers.test.ts scans for it.
  */
 import { Effect, Layer, Logger, Schema } from 'effect';
-import { McpProtocol, McpServer, Tool, Toolkit } from 'effect/unstable/ai';
-import { HttpRouter } from 'effect/unstable/http';
+import { McpProtocol, McpServer, Tool, Toolkit } from 'effect/ai';
+import { HttpRouter } from 'effect/http';
 
 export const RESOURCE_URI = 'estate://notes/hello';
 export const RESOURCE_TEXT = 'hello resource';
-/** ⚠️ Effect's own text for a tool that failed: it does not forward the failure value. */
-export const BOOM_TEXT = 'Tool execution failed due to an internal server error.';
+/**
+ * ⚠️ Measured 2026-10-06 on effect 4.0.1: a declared failure reaches the wire as the
+ * JSON-encoded failure value (rc.115 sent a generic "Tool execution failed" text instead).
+ */
+export const BOOM_TEXT = '"the fact store is down"';
 
 const ReadFact = Tool.make('read_fact', {
   description: 'Read a fact',
@@ -28,8 +31,8 @@ const ReadFact = Tool.make('read_fact', {
   success: Schema.String,
 });
 // ★ A DECLARED FAILURE (`failure` schema, default mode) reaches the wire as a result with
-//   `isError: true` — the MCP-spec way to tell a model a tool failed — but with Effect's own
-//   generic text, not the failure value. ⚠️ `failureMode: 'return'` does NOT: measured
+//   `isError: true` — the MCP-spec way to tell a model a tool failed — carrying the
+//   JSON-encoded failure value on effect 4.0.1 (rc.115: a generic text, not the value). ⚠️ `failureMode: 'return'` does NOT: measured
 //   2026-09-29, the server sends that as an ordinary success (`isError: false`) whose text is
 //   the failure value, so it could not exercise the client's error path.
 const Boom = Tool.make('boom', {

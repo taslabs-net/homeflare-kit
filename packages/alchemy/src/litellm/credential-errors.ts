@@ -18,7 +18,7 @@
  */
 import type * as credentials from '@distilled.cloud/litellm/credential_management';
 import * as Data from 'effect/Data';
-import type { HttpClientErrorReason } from 'effect/unstable/http/HttpClientError';
+import type { HttpClientErrorReason } from 'effect/http/HttpClientError';
 
 /** A declaration the resource refuses before any request: a combination nobody meant. */
 export class LitellmCredentialInvalidError extends Data.TaggedError(

@@ -42,7 +42,7 @@
 import type * as JsonSchema from 'effect/JsonSchema';
 import * as Schema from 'effect/Schema';
 import * as SchemaGetter from 'effect/SchemaGetter';
-import * as Tool from 'effect/unstable/ai/Tool';
+import * as Tool from 'effect/ai/Tool';
 
 /** One dynamic tool per MCP tool: the server's JSON Schema in, text out, failures returned. */
 export type McpTool = Tool.Dynamic<

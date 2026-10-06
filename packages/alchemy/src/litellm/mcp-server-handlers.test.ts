@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { credentials } from '@distilled.cloud/litellm/Credentials';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { FAKE_BASE } from './fake-litellm.ts';
 import { serverRow, startFakeMcpLitellm } from './fake-mcp-litellm.ts';
 import { mcpServerHandlers } from './mcp-server.ts';

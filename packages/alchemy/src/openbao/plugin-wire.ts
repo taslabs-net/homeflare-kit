@@ -12,7 +12,7 @@
  *   token without it reads as 403, which is an error here, never "absent".
  */
 import type * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { baoDelete, baoRead, baoWrite } from './bao-http.ts';
 import type { BaoError } from './bao-status.ts';
 import {

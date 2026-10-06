@@ -51,10 +51,10 @@ const pkgRoot = new URL('../', import.meta.url).pathname;
 
 /** The pinned set, mirroring what the README tells a consumer to write. */
 const PINS = {
-  effect: '4.0.0-rc.115',
-  '@effect/platform-node': '4.0.0-rc.115',
-  '@effect/platform-node-shared': '4.0.0-rc.115',
-  '@effect/platform-bun': '4.0.0-rc.115',
+  effect: '4.0.1',
+  '@effect/platform-node': '4.0.1',
+  '@effect/platform-node-shared': '4.0.1',
+  '@effect/platform-bun': '4.0.1',
   // ⛔ Exact, not `~1.2.6`. Measured 2026-09-16: vite's tilde resolved to rolldown
   //   1.2.9 and npm 404'd the tarball. 1.2.8 is the last version a green consumer
   //   install actually fetched (#37, five minutes earlier).
@@ -117,16 +117,16 @@ try {
       'bun',
       'add',
       tarball,
-      'alchemy@2.0.0-beta.79',
-      'effect@4.0.0-rc.115',
-      '@effect/platform-node@4.0.0-rc.115',
+      'alchemy@2.0.0-beta.81',
+      'effect@4.0.1',
+      '@effect/platform-node@4.0.1',
       'mime@4.1.0',
-      '@distilled.cloud/cloudflare@1.0.0-rc.12',
-      '@distilled.cloud/forgejo@1.0.0-rc.12',
-      '@distilled.cloud/discord@1.0.0-rc.12',
-      '@distilled.cloud/google-workspace@1.0.0-rc.12',
-      '@distilled.cloud/argocd@1.0.0-rc.12',
-      '@effect/sql-pg@4.0.0-rc.115',
+      '@distilled.cloud/cloudflare@1.0.0-rc.13',
+      '@distilled.cloud/forgejo@1.0.0-rc.13',
+      '@distilled.cloud/discord@1.0.0-rc.13',
+      '@distilled.cloud/google-workspace@1.0.0-rc.13',
+      '@distilled.cloud/argocd@1.0.0-rc.13',
+      '@effect/sql-pg@4.0.1',
     ],
     scratch,
   );

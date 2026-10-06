@@ -27,7 +27,7 @@
  *   (openbao/rename-identity.ts) runs first in every `Bao.*` reconcile.
  */
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { baoWrite } from '../openbao/bao-http.ts';
 import { sha256 } from '../openbao/digest.ts';
 import { authCapsArgv, authGetArgv, authGetOrCreateArgv } from './ceph-argv.ts';

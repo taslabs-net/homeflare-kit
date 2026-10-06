@@ -7,8 +7,8 @@
  *   BAO_TOKEN in the shell running the tests can never be read or contacted.
  */
 import * as Effect from 'effect/Effect';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import type { BaoEnvironment } from './bao-address.ts';
 import { BaoEnv } from './bao-http.ts';
 

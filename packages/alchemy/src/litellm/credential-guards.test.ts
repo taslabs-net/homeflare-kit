@@ -14,7 +14,7 @@ import { Retry } from '@distilled.cloud/litellm/Retry';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Logger from 'effect/Logger';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { credentialHandlers } from './credential.ts';
 import type { CredentialProps } from './credential-types.ts';
 import { resolveValues, sealValues } from './credential-values.ts';

@@ -24,8 +24,28 @@
  */
 import { Unowned } from 'alchemy/AdoptPolicy';
 import * as Effect from 'effect/Effect';
+import * as Option from 'effect/Option';
 import type { Owner } from './adopt.ts';
-import { recordedInstance } from './rows.ts';
+import { resumes } from './resume.ts';
+import { forgetRefusedCreate, recordedInstance } from './rows.ts';
+
+/**
+ * Whether this read is APPLY's own (Apply.ts `instrumentLifecycle` wraps every apply-time lifecycle
+ * call in a `provider.read` span; the plan's reads run outside one).
+ * ⛔ AN APPLY-TIME READ WITH NO ATTRIBUTES PROVES NOTHING. 🔴 MEASURED 2026-10-06 (alchemy
+ *   2.0.0-beta.81, openbao/adopt-core.test.ts and nine more suites): beta.81 asks the provider to
+ *   read at APPLY for a create whose props were still Outputs at plan (Plan.ts `deferredAdoption`),
+ *   and first overwrites the `creating` row with the NOW-RESOLVED props (Apply.ts `checkpoint`). That
+ *   row is whole, so `provenOurs` read the live object as matching it, and another owner's object
+ *   was taken over with no `--adopt`. Answering `Unowned` here hands the decision back to the engine,
+ *   which refuses it ("Cannot adopt resource … Re-run with `--adopt`") unless adoption is on.
+ * ★ THE ONE PROOF AN APPLY-TIME READ MAY USE IS THE PLAN'S: the diff's own recovery read noted this
+ *   instance as a proven resume (resume.ts), and that note is what `resumes` answers.
+ */
+const readsAtApply: Effect.Effect<boolean> = Effect.map(
+  Effect.option(Effect.currentSpan),
+  (span) => Option.isSome(span) && span.value.name === 'provider.read',
+);
 
 /**
  * Whether the state store proves the live object this instance's own: a row records `ask.instanceId`
@@ -42,6 +62,7 @@ export const provenOurs = <E, R>(
   settled: Effect.Effect<boolean, E, R>,
 ): Effect.Effect<boolean, never, R> =>
   Effect.gen(function* () {
+    if (yield* readsAtApply) return yield* resumes(ask.instanceId);
     const recorded = yield* recordedInstance(ask.fqn, ask.instanceId);
     if (recorded === 'absent') return false;
     if (recorded === 'partial') {
@@ -74,5 +95,11 @@ export const ownedRead = <A extends object, E, R>(
 ): Effect.Effect<A | undefined, never, R> =>
   Effect.gen(function* () {
     if (found === undefined || ask.output !== undefined) return found;
-    return (yield* provenOurs(ask, settled)) ? found : Unowned(found);
+    if (yield* provenOurs(ask, settled)) return found;
+    // ⛔ THE ENGINE'S OWN REFUSAL LEAVES ITS `creating` CHECKPOINT BEHIND (Apply.ts), now holding the
+    //   RESOLVED props: a whole row, which the next plan's recovery read would take as proof and
+    //   adopt exactly what was refused. Forgotten here, as adopt.ts refuseTakeover does for its own
+    //   refusal; under --adopt the engine's later `created` commit writes the row again.
+    if (yield* readsAtApply) yield* forgetRefusedCreate(ask.fqn, ask.instanceId);
+    return Unowned(found);
   });

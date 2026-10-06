@@ -30,7 +30,7 @@ import type { Input } from 'alchemy/Input';
 import { CredentialsFromEnv } from '@distilled.cloud/google-workspace/Credentials';
 import type { GoogleWorkspaceOpContext } from '@distilled.cloud/google-workspace/Protocol';
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 
 /**
  * ★ WHAT EVERY HANDLER NEEDS FROM THE CALLER'S RUNTIME, after Credentials are provided below.

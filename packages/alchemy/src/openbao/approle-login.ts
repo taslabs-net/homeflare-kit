@@ -18,8 +18,8 @@
  *   consolidation plan; not re-measured here). Give each host its own secret_id.
  */
 import * as Effect from 'effect/Effect';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import type { BaoEnvironment } from './bao-address.ts';
 import { BaoEnv, baoCall } from './bao-http.ts';
 import type { BaoError } from './bao-status.ts';

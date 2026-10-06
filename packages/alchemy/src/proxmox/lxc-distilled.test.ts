@@ -7,7 +7,7 @@ import * as Exit from 'effect/Exit';
 import * as Fiber from 'effect/Fiber';
 import * as Layer from 'effect/Layer';
 import * as TestClock from 'effect/testing/TestClock';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { FAKE_TARGET, withoutBao } from './fake-pve.ts';
 import { createGuest, updateGuest } from './lxc-lifecycle.ts';
 import type { LxcProps } from './lxc-props.ts';

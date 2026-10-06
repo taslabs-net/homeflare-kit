@@ -17,7 +17,7 @@
  *   and the `pg_auth_members` read live in `role-membership-sql.ts` — this file stays the role
  *   row (`pg_roles`), its scalar statements and the compare between them.
  */
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import * as Effect from 'effect/Effect';
 import type { PgExecutor } from './database-sql.ts';
 import { quoteIdent, quoteStringLiteral } from './database-sql.ts';

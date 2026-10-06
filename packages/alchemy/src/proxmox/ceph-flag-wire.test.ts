@@ -10,7 +10,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { engineOver } from '../verify/fake-engine.ts';
 import { scalarFlagOrDie } from './ceph-flag-wire.ts';
 import { ProxmoxCephFlag, ProxmoxCephFlagProvider } from './ceph-flag.ts';

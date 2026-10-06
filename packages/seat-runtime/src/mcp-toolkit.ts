@@ -26,7 +26,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import * as Effect from 'effect/Effect';
 import type * as Scope from 'effect/Scope';
-import type * as Toolkit from 'effect/unstable/ai/Toolkit';
+import type * as Toolkit from 'effect/ai/Toolkit';
 import {
   DEFAULT_CONNECT_TIMEOUT_MS,
   type McpHeaders,

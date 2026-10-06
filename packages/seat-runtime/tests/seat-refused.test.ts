@@ -12,7 +12,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Cause, Effect, Exit, Layer, Schema } from 'effect';
-import { Chat, Tool, Toolkit } from 'effect/unstable/ai';
+import { Chat, Tool, Toolkit } from 'effect/ai';
 import { SeatModel, runRounds } from '../src/index.ts';
 import { type Stub, startStub } from './stub.ts';
 

@@ -5,7 +5,7 @@
  * row `creating` and the resume failing OwnedBySomeoneElse.
  */
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 import type { DeclaredGrants } from './grants-declare.ts';
 import { PostgresGrantsColumnMissing, PostgresGrantsTableMissing } from './grants-errors.ts';

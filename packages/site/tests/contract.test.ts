@@ -29,7 +29,7 @@ describe('peer contract', () => {
     // ⚠️ Measured 2026-09-16 (alchemy): `>=4.0.0-rc.112` resolved to rc.115 and
     //   Config.string vanished. This package leans on Config/ConfigProvider internals
     //   whose override behaviour is itself measured per version (tests/overrides.test.ts).
-    expect(pkg.peerDependencies['effect']).toMatch(/^\d+\.\d+\.\d+-rc\.\d+$/);
+    expect(pkg.peerDependencies['effect']).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   test('the README install line and the smoke install carry the same pin', () => {

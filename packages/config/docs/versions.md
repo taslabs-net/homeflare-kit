@@ -5,16 +5,16 @@ Status: published source. Not yet enforced anywhere outside the kit. Verified 20
 ```ts
 import { ESTATE_VERSIONS } from '@homeflare/config/versions';
 
-ESTATE_VERSIONS.alchemy; // '2.0.0-beta.79'
+ESTATE_VERSIONS.alchemy; // '2.0.0-beta.81'
 ESTATE_VERSIONS.bun; // '1.4.0', the same value as BUN_VERSION in ./repo-shape
 ```
 
 | package                       | version             | why this one                                               |
 | ----------------------------- | ------------------- | ---------------------------------------------------------- |
 | `bun`                         | `1.4.0`             | the value every rendered CI installs (`BUN_VERSION`)       |
-| `alchemy`                     | `2.0.0-beta.79`     | the newest release on npm when this was written            |
-| `effect`                      | `4.0.0-rc.115`      | what that alchemy release overrides its whole workspace to |
-| `@distilled.cloud/cloudflare` | `1.0.0-rc.12`       | what that alchemy release depends on, exactly              |
+| `alchemy`                     | `2.0.0-beta.81`     | the newest release on npm when this was written            |
+| `effect`                      | `4.0.1`             | latest 4.x at the bump; alchemy peers `^4.0.0`             |
+| `@distilled.cloud/cloudflare` | `1.0.0-rc.13`       | what that alchemy release depends on, exactly              |
 | `typescript`                  | `7.0.2`             | the kit catalog                                            |
 | `oxfmt` / `oxlint`            | `0.68.0` / `1.83.0` | the kit catalog; ahead of upstream's `^0.66.0` / `^1.82.0` |
 | `@types/bun`                  | `1.4.2`             | matches `bun`                                              |

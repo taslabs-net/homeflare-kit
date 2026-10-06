@@ -11,7 +11,7 @@
  */
 import { type Credentials, credentials } from '@distilled.cloud/discord/Credentials';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 
 export const FAKE_BASE = 'https://discord.example.com';
 export const FAKE_TOKEN = 'placeholder-discord-token';

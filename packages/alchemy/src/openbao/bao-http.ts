@@ -17,10 +17,10 @@ import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
 import * as Schedule from 'effect/Schedule';
 import * as Semaphore from 'effect/Semaphore';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import * as Headers from 'effect/unstable/http/Headers';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
-import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
+import * as Headers from 'effect/http/Headers';
+import * as HttpClient from 'effect/http/HttpClient';
+import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import { type BaoEnvironment, headersFor, resolveAddress } from './bao-address.ts';
 import { BaoError, type BaoIntent, settle } from './bao-status.ts';
 

@@ -1,7 +1,7 @@
 /** Test-only declarations and vendor-shaped responses for the three migrated PVE families. */
 import type * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { type FakeEngine, engineOver } from '../verify/fake-engine.ts';
 import { ProxmoxBackupJob, ProxmoxBackupJobProvider } from './backup-job.ts';
 import { deleteBackupJob, readBackupJob } from './backup-job-distilled.ts';

@@ -46,12 +46,12 @@
  */
 import * as Effect from 'effect/Effect';
 import * as Metric from 'effect/Metric';
-import type * as Chat from 'effect/unstable/ai/Chat';
-import type * as LanguageModel from 'effect/unstable/ai/LanguageModel';
-import * as Prompt from 'effect/unstable/ai/Prompt';
-import type * as Tool from 'effect/unstable/ai/Tool';
-import type { AiError } from 'effect/unstable/ai/AiError';
-import type * as Toolkit from 'effect/unstable/ai/Toolkit';
+import type * as Chat from 'effect/ai/Chat';
+import type * as LanguageModel from 'effect/ai/LanguageModel';
+import * as Prompt from 'effect/ai/Prompt';
+import type * as Tool from 'effect/ai/Tool';
+import type { AiError } from 'effect/ai/AiError';
+import type * as Toolkit from 'effect/ai/Toolkit';
 
 /**
  * A tool call the forced turn cannot use. `ToolNotFoundError` is compat's own rejection (its reply

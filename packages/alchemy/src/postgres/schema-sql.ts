@@ -9,7 +9,7 @@
  * ★ The schema name is a single `ColId` token, so `quoteIdent` (single-token quoting) is
  *   correct — same rule as `Postgres.Database`'s name.
  */
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import * as Effect from 'effect/Effect';
 import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
 import { quoteIdent, quoteStringLiteral } from './database-sql.ts';

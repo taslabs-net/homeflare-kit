@@ -8,7 +8,7 @@
  */
 import type * as keys from '@distilled.cloud/litellm/key_management';
 import * as Data from 'effect/Data';
-import type { HttpClientErrorReason } from 'effect/unstable/http/HttpClientError';
+import type { HttpClientErrorReason } from 'effect/http/HttpClientError';
 import type {
   LitellmKeyCallbackMetadataDeclaredError,
   LitellmKeyCallbackMetadataLiveError,

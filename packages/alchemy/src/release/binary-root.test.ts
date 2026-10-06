@@ -7,8 +7,8 @@
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
-import * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
+import * as HttpClient from 'effect/http/HttpClient';
+import * as HttpClientResponse from 'effect/http/HttpClientResponse';
 import { sha256Hex } from '../launchd/job-form.ts';
 import { type HostRunner, hostRunnerLayer } from '../launchd/runner.ts';
 import { HostDirectory, HostDirectoryProvider } from '../linux/directory.ts';

@@ -15,7 +15,7 @@
  *   `42703`, the way the server refuses a missing object.
  */
 import * as Effect from 'effect/Effect';
-import { SqlError, SqlSyntaxError } from 'effect/unstable/sql/SqlError';
+import { SqlError, SqlSyntaxError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 import { type AclEntry, type FakeCatalogTable, answerRead } from './fake-grants-read.ts';
 import { parseGrantStatement } from './fake-grants-parse.ts';

@@ -20,7 +20,7 @@ import { provideFreshArtifactStore } from 'alchemy/Artifacts';
 import { encodeState } from 'alchemy/State/StateEncoding';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { litellmProviders } from './providers.ts';
 
 /** The planned action for each resource, deletions included, keyed by FQN. */

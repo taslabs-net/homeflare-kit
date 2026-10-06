@@ -14,7 +14,7 @@
  *   (`revoke.sgml`). Every revoke here names `GRANTED BY`. A mismatched grantor can still
  *   produce only a warning; the catalog re-read below catches surviving unsafe rows.
  */
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import * as Effect from 'effect/Effect';
 import type { PgExecutor } from './database-sql.ts';
 import { quoteIdent, roleExists } from './database-sql.ts';

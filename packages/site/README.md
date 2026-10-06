@@ -5,7 +5,7 @@ hosts) and **pinned values**; `derive()` builds every hostname, address, zone su
 Access URL, OIDC redirect and vault mount name from it, the same way in every repo.
 
 ```sh
-bun add @homeflare/site effect@4.0.0-rc.115
+bun add @homeflare/site effect@4.0.1
 ```
 
 ⛔ **`effect` is a pinned peer.** Effect release candidates are not compatible with each

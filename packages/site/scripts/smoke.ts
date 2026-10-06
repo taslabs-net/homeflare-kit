@@ -19,7 +19,7 @@ import { packForPublish } from '../../../scripts/pack.ts';
 const pkgRoot = new URL('../', import.meta.url).pathname;
 
 /** The peer pin, exactly as the README's install line writes it. */
-const PEER = 'effect@4.0.0-rc.115';
+const PEER = 'effect@4.0.1';
 
 async function run(cmd: readonly string[], cwd: string): Promise<string> {
   const proc = Bun.spawn([...cmd], { cwd, stdout: 'pipe', stderr: 'pipe' });

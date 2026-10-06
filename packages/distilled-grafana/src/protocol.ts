@@ -18,13 +18,13 @@
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import type * as HttpClient from "effect/unstable/http/HttpClient";
-import type * as HttpClientError from "effect/unstable/http/HttpClientError";
+import type * as HttpClient from "effect/http/HttpClient";
+import type * as HttpClientError from "effect/http/HttpClientError";
 import type * as API from "@distilled.cloud/core/api";
 import { makeRestProtocol } from "@distilled.cloud/core/protocol-rest";
 import type { API_ERRORS, ConfigError } from "@distilled.cloud/core/errors";
 import { Credentials, type Config } from "./credentials.ts";
-import { UnknownGrafanaError } from "./errors.ts";
+import { GrafanaParseError, UnknownGrafanaError } from "./errors.ts";
 
 /**
  * Error channel shared by every generated Grafana operation. Generated
@@ -68,6 +68,8 @@ export const GrafanaProtocol: Layer.Layer<API.Protocol> =
     },
     // Grafana's error body is `{ message?: string, status?: string }` — the
     // factory's default lenient envelope covers it.
+    // A 2xx body that fails strict output validation (core rc.13).
+    parseError: ({ body, cause }) => new GrafanaParseError({ body, cause }),
     unknownError: ({ code, message, body }) =>
       new UnknownGrafanaError({
         code:

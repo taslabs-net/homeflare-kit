@@ -76,8 +76,8 @@
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import type * as HttpClient from "effect/unstable/http/HttpClient";
-import type * as HttpClientError from "effect/unstable/http/HttpClientError";
+import type * as HttpClient from "effect/http/HttpClient";
+import type * as HttpClientError from "effect/http/HttpClientError";
 import type * as API from "@distilled.cloud/core/api";
 import {
   BadRequest,
@@ -92,6 +92,7 @@ import { Credentials, type Config } from "./credentials.ts";
 import { withPbsCodecs } from "./protocol-codecs.ts";
 import {
   ParameterVerificationFailed,
+  ProxmoxBackupParseError,
   UnknownProxmoxBackupError,
   type DefaultErrors,
 } from "./errors.ts";
@@ -169,6 +170,8 @@ const baseProtocol: Layer.Layer<API.Protocol> = makeRestProtocol<Config>({
   //   automatically; a malformed request is permanent). `BadRequest`
   //   (`Category.withBadRequestError`, not retryable) is the honest
   //   answer for "PBS said 400 and gave no further structure".
+  // A 2xx body that fails strict output validation (core rc.13).
+  parseError: ({ body, cause }) => new ProxmoxBackupParseError({ body, cause }),
   unknownError: ({ status, message, body }) => {
     const b =
       body !== null && typeof body === "object"

@@ -13,7 +13,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { engineOver } from '../verify/fake-engine.ts';
 import { FAKE_TARGET, type PveCall, fakePve, withoutBao } from './fake-pve.ts';
 import { ProxmoxUser, ProxmoxUserProvider, type UserProps } from './user.ts';

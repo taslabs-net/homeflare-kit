@@ -15,7 +15,7 @@
  * ⚠️ EVERY CLAIM ABOUT talosctl FLAGS IN THIS PACKAGE IS REASONED FROM THE PUBLISHED CLI REFERENCE
  *   (Talos v1.13 docs, fetched 2026-09-13 in this session). Nothing was measured on a live cluster.
  */
-import type * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import type { TalosTarget } from './credentials.ts';
 
 /**

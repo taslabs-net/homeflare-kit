@@ -66,8 +66,10 @@ describe('a file already at the path, with no state', () => {
     await h.stack.deploy(h.wired('vmalert'));
     h.events.length = 0;
     // The directory's mode change leaves `dir.path` an Output at plan, so nothing probes the path.
+    // ★ beta.81 reads the path at apply itself (`Unowned`) and refuses first; binary-claim.ts is the
+    //   backstop with the longer wording. Either refuses, and the binary is kept (below).
     await expect(h.stack.deploy(h.wired('vmalert-rules', 0o750))).rejects.toThrow(
-      'it holds the pinned binary, but this stack holds no state for it',
+      /it holds the pinned binary, but this stack holds no state for it|Cannot adopt resource 'vmalert-rules'.*--adopt/s,
     );
     // 🔴 Before: planned {dir: update, vmalert-rules: create, vmalert: delete}; the new name took
     //   the identical file as its own, the old name's delete removed it, and the deploy succeeded.

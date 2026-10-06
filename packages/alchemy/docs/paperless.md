@@ -115,7 +115,7 @@ request interface (`PaperlessTagRequest['matching_algorithm']`), never retyped b
 
 ```ts
 import { paperlessProviders, Tag } from '@homeflare/alchemy/paperless';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 
 // PAPERLESS_URL and PAPERLESS_TOKEN in the deploy's environment.
 export default async () => {

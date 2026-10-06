@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { credentials } from '@distilled.cloud/litellm/Credentials';
 import * as Effect from 'effect/Effect';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { type CredentialProps, LiteLLMCredential, credentialHandlers } from './credential.ts';
 import { credentialRow, startFakeCredentialLitellm } from './fake-credential-litellm.ts';
 import { FAKE_BASE } from './fake-litellm.ts';

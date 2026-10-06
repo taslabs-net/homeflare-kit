@@ -17,7 +17,7 @@ import type * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Schedule from 'effect/Schedule';
 import * as Stream from 'effect/Stream';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as HttpClient from 'effect/http/HttpClient';
 import { DownloadFailed } from './refused.ts';
 
 /** The provider's view of a transport: an archive's bytes by URL, never longer than `size`. */

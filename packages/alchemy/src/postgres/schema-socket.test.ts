@@ -11,7 +11,7 @@ import * as PgClientModule from '@effect/sql-pg/PgClient';
 import type { PgClient as PgClientService } from '@effect/sql-pg/PgClient';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { SqlClient, TransactionConnection } from 'effect/unstable/sql/SqlClient';
+import { SqlClient, TransactionConnection } from 'effect/sql/SqlClient';
 import { PIN_SEARCH_PATH_SQL } from './search-path.ts';
 import { isDependentObjectsError } from './schema-sql.ts';
 import { classifyInstalled } from './installed-classifier.ts';

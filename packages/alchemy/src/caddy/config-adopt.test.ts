@@ -10,8 +10,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
-import * as HttpClientError from 'effect/unstable/http/HttpClientError';
+import * as HttpClient from 'effect/http/HttpClient';
+import * as HttpClientError from 'effect/http/HttpClientError';
 import type { CaddyTransport } from './admin.ts';
 import { isUnreachable } from './caddy-http-client.ts';
 import { probeLive } from './config-lifecycle.ts';

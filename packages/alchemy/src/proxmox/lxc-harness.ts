@@ -25,7 +25,7 @@ import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
 import * as Layer from 'effect/Layer';
 import * as Logger from 'effect/Logger';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import type { PveTarget } from './credentials.ts';
 import { withFakeBao } from './fake-bao-env.ts';
 import { FAKE_BAO, FAKE_MEMBER, type FakePve } from './fake-pve-lxc.ts';

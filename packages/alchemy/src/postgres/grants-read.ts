@@ -32,7 +32,7 @@
  *   CASE in `database-sql.ts`, which casts `"char"` columns to text for the same reason.
  */
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 import { readOwnedTables, readSchemaOwnership } from './grants-ownership.ts';
 import { type LiveDefault, readDefaultAcls } from './grants-read-defaults.ts';

@@ -4,15 +4,15 @@ A seat's durable state is Postgres (runs, resumes, results) and its fast state i
 counters, caches). `@homeflare/seat-runtime/state` builds each as the **Effect service that already
 exists for it**, so consumer code is ordinary Effect SQL and Redis:
 
-| store    | service                                                           | from                                   |
-| -------- | ----------------------------------------------------------------- | -------------------------------------- |
-| Postgres | `SqlClient` (and `PgClient`, re-exported as `SeatState.PgClient`) | `@effect/sql-pg` rc.115, its own layer |
-| Valkey   | `Redis` (`send`, `eval`; not `subscribe`)                         | `effect/unstable/persistence/Redis`    |
+| store    | service                                                           | from                                  |
+| -------- | ----------------------------------------------------------------- | ------------------------------------- |
+| Postgres | `SqlClient` (and `PgClient`, re-exported as `SeatState.PgClient`) | `@effect/sql-pg` 4.0.1, its own layer |
+| Valkey   | `Redis` (`send`, `eval`; not `subscribe`)                         | `effect/persistence/Redis`            |
 
 ```ts
 import { Effect, Redacted } from 'effect';
-import * as Redis from 'effect/unstable/persistence/Redis';
-import * as SqlClient from 'effect/unstable/sql/SqlClient';
+import * as Redis from 'effect/persistence/Redis';
+import * as SqlClient from 'effect/sql/SqlClient';
 import { SeatState } from '@homeflare/seat-runtime/state';
 
 const state = SeatState.layer({

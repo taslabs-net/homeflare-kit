@@ -15,7 +15,7 @@
 import * as API from "@distilled.cloud/core/api";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
 
 const repeatedFormKeys = (request: HttpClientRequest.HttpClientRequest) => {
   if (

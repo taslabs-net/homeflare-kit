@@ -7,23 +7,23 @@ on CT100 from one environment block, the **round loop** (`runRounds`, with a har
 (`SeatState`).
 
 ```sh
-bun add @homeflare/seat-runtime effect@4.0.0-rc.115
+bun add @homeflare/seat-runtime effect@4.0.1
 ```
 
 ⛔ **Pin the rc, and put `overrides` in YOUR root `package.json`.** `effect` is an exact peer
-and `@effect/ai-openai-compat` and `@effect/sql-pg` exact dependencies, all `4.0.0-rc.115`
+and `@effect/ai-openai-compat` and `@effect/sql-pg` exact dependencies, all `4.0.1`
 (`@modelcontextprotocol/sdk` is an exact dependency too, `1.31.0`). If your app also
 uses `@effect/platform-bun`, add this to your own manifest, or a fresh install crashes:
 
 ```json
-{ "overrides": { "effect": "4.0.0-rc.115", "@effect/platform-node-shared": "4.0.0-rc.115" } }
+{ "overrides": { "effect": "4.0.1", "@effect/platform-node-shared": "4.0.1" } }
 ```
 
 ## Use it
 
 ```ts
 import { Effect, Layer } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
+import { LanguageModel } from 'effect/ai';
 import { SeatModel, SeatObs } from '@homeflare/seat-runtime';
 
 const model = SeatModel.layer({

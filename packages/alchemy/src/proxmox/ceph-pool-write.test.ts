@@ -15,7 +15,7 @@ import { describe, expect, test } from 'bun:test';
 import * as RemovalPolicy from 'alchemy/RemovalPolicy';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { engineOver } from '../verify/fake-engine.ts';
 import { ProxmoxCephPool, ProxmoxCephPoolProvider } from './ceph-pool.ts';
 import { FAKE_TARGET, withoutBao } from './fake-pve.ts';

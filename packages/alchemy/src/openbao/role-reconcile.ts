@@ -14,7 +14,7 @@
  *   so the refusal is seen at the next deploy instead of hiding behind a clean plan.
  */
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import type { Claim, Owner } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
 import { baoRead, baoWrite } from './bao-http.ts';

@@ -14,9 +14,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
-import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
+import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import type { PveTarget } from './credentials.ts';
 import { executeOnCluster, resetLastGoodForTest } from './members.ts';
 

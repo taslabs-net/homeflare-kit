@@ -1,8 +1,8 @@
 /** Exact vendor exceptions at the real protocol boundary; source provenance is in patches. */
 import { expect, test } from "bun:test";
 import * as Effect from "effect/Effect";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { credentials } from "./credentials.ts";
 import type { ProxmoxOpContext } from "./protocol.ts";
 import * as Retry from "./retry.ts";
