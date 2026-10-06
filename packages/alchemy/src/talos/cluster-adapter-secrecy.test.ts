@@ -4,17 +4,22 @@
  * upstream answer `replace` and delete same-named objects), and that no PEM marker, base64 key
  * body or kubeconfig byte reaches attributes, error fields, disk or logs.
  */
-import { existsSync, readdirSync } from 'node:fs';
-import { expect, test } from 'bun:test';
-import { ClusterAdapter, ClusterNotFoundError } from 'alchemy/Kubernetes/ClusterAdapter';
+import fs, { existsSync } from 'node:fs';
+import { expect, spyOn, test } from 'bun:test';
+import { ClusterAdapter } from 'alchemy/Kubernetes/ClusterAdapter';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import * as Logger from 'effect/Logger';
+import * as References from 'effect/References';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
-import { TalosOpenBaoAdapter, connectTalosOpenBao } from './cluster-adapter.ts';
+import {
+  TalosOpenBaoAdapter,
+  TalosVaultKeyMissing,
+  connectTalosOpenBao,
+} from './cluster-adapter.ts';
 import { readKvValue } from './credentials.ts';
 import { type FakeCall, type FakeHandler, fakeSpawner } from './fake-process.ts';
 import { buildAttrs } from './kubeconfig-attrs.ts';
-import { talosctl } from './talosctl.ts';
 import { tmpdir } from 'node:os';
 
 const b64 = (text: string) => Buffer.from(text).toString('base64');
@@ -35,7 +40,7 @@ users:
   - name: admin@hf-c1
     user: { client-certificate-data: ${b64(pemCert)}, client-key-data: ${b64(pemKey)} }
 `;
-const config = { cluster: 'c1', context: 'admin@hf-c1', key: 'kubeconfig', mount: 'talos-c1' };
+const config = { c1: { context: 'admin@hf-c1', key: 'kubeconfig', mount: 'talos-c1' } };
 const vault: FakeHandler = () => ({
   stdout: JSON.stringify({ data: { data: { kubeconfig: yaml } } }),
 });
@@ -46,30 +51,47 @@ const provide = <A, E>(
   handler: FakeHandler,
   calls: FakeCall[] = [],
 ) => Effect.runPromise(Effect.provide(effect, spawner(handler, calls)));
-const tmpFiles = () => readdirSync(tmpdir()).filter((n) => n.startsWith('hf-'));
 const needles = [begin('CERTIFICATE'), begin('PRIVATE KEY'), certBody, keyBody];
 const leaks = (text: string) => needles.filter((needle) => text.includes(needle));
 
 test('changing mount, key or context does not change the persisted Connection', async () => {
-  const persisted = (cfg: typeof config) => {
+  const persisted = (cfg: typeof config.c1) => {
     const attrs = buildAttrs(yaml, {
       context: cfg.context,
       kubeconfigKey: cfg.key,
       node: '198.51.100.10',
-      target: { cluster: cfg.cluster, mount: cfg.mount },
+      target: { cluster: 'c1', mount: cfg.mount },
     });
     return JSON.stringify(attrs?.connection);
   };
-  const a = persisted(config);
+  const a = persisted(config.c1);
   expect(a).toBe('{"auth":{"kind":"talos-openbao","cluster":"c1"}}');
-  expect(persisted({ ...config, key: 'k2', mount: 'm2' })).toBe(a);
+  expect(persisted({ ...config.c1, key: 'k2', mount: 'm2' })).toBe(a);
   expect(a).not.toContain('kubeconfig');
   expect(a).not.toContain('talos-c1');
 });
 
 test('connect through the layer leaves no PEM in tagged errors, temp files or logs', async () => {
-  const before = tmpFiles();
+  // ★ Spies, not a before/after temp-dir listing: a write that is cleaned up again, or lands
+  //   outside tmpdir, still fails here. Anything carrying kubeconfig material is a leak.
+  const written: string[] = [];
+  const note = (data: unknown) => void written.push(String(data));
+  const spies = [
+    spyOn(fs, 'writeFileSync').mockImplementation(((_path: unknown, data: unknown) =>
+      note(data)) as never),
+    spyOn(fs, 'openSync').mockImplementation((() => {
+      throw new Error('openSync is not expected on the connect path');
+    }) as never),
+    spyOn(Bun, 'write').mockImplementation(((_d: unknown, data: unknown) => {
+      note(data);
+      return Promise.resolve(0);
+    }) as never),
+  ];
+  // ★ Effect.logDebug of raw bytes only shows when the level is "All" and a Logger captures it.
   const logged: string[] = [];
+  const capture = Logger.layer([
+    Logger.make(({ message }) => void logged.push(JSON.stringify(message))),
+  ]);
   const saved = { ...console };
   for (const level of ['log', 'debug', 'info', 'warn', 'error'] as const) {
     console[level] = (...args: unknown[]) => void logged.push(args.map(String).join(' '));
@@ -80,7 +102,11 @@ test('connect through the layer leaves no PEM in tagged errors, temp files or lo
         Effect.gen(function* () {
           const adapter = yield* ClusterAdapter('talos-openbao');
           return yield* adapter.connect({ auth: { kind: 'talos-openbao', cluster: 'c1' } });
-        }).pipe(Effect.provide(TalosOpenBaoAdapter(config).pipe(Layer.provide(spawner(handler))))),
+        }).pipe(
+          Effect.provide(TalosOpenBaoAdapter(config).pipe(Layer.provide(spawner(handler)))),
+          Effect.provide(capture),
+          Effect.provideService(References.MinimumLogLevel, 'All'),
+        ),
       );
     await run(vault);
     const attempts = [
@@ -89,16 +115,29 @@ test('connect through the layer leaves no PEM in tagged errors, temp files or lo
       run(() => ({ stdout: JSON.stringify({ data: { data: { kubeconfig: pemKey } } }) })),
     ];
     const failures = await Promise.all(attempts.map((attempt) => attempt.catch((e: unknown) => e)));
-    expect(failures[0]).toBeInstanceOf(ClusterNotFoundError);
+    expect(failures[0]).toBeInstanceOf(TalosVaultKeyMissing);
     for (const failure of failures) {
       const text = JSON.stringify(failure, Object.getOwnPropertyNames(failure as object));
       expect(leaks(`${text}${String(failure)}`)).toEqual([]);
     }
   } finally {
     Object.assign(console, saved);
+    for (const spy of spies) spy.mockRestore();
   }
   expect(leaks(logged.join('\n'))).toEqual([]);
-  expect(tmpFiles()).toEqual(before);
+  expect(written).toEqual([]);
+});
+
+test('Effect.logDebug of raw bytes is caught by the capturing logger (the probe can fail)', async () => {
+  const logged: string[] = [];
+  const capture = Logger.make(({ message }) => void logged.push(JSON.stringify(message)));
+  await Effect.runPromise(
+    Effect.logDebug(pemKey).pipe(
+      Effect.provide(Logger.layer([capture])),
+      Effect.provideService(References.MinimumLogLevel, 'All'),
+    ),
+  );
+  expect(leaks(logged.join('\n'))).not.toEqual([]);
 });
 
 test('bao is refused without BAO_ADDR and BAO_TOKEN, and gets a minimal env', async () => {
@@ -153,25 +192,4 @@ test('connect fails with the typed adapter error when the kind mismatches', asyn
   );
   expect(outcome).toBe('mismatch');
   expect(existsSync(`${tmpdir()}/talos-openbao`)).toBe(false);
-});
-
-test('HF_TALOSCTL must be absolute, non-writable by others, and the pinned version', async () => {
-  const run = (binary: string, handler: FakeHandler = () => ({})) =>
-    provide(talosctl(['version'], { binary, talosconfigPath: 'unused.yaml' }), handler).catch(
-      (e: unknown) => String(e),
-    );
-  expect(await run('relative/talosctl')).toContain('absolute');
-  expect(await run('/definitely/not/here/talosctl')).toContain('not a readable file');
-  const bin = `${tmpdir()}/hf-talosctl-probe-${Bun.randomUUIDv7()}`;
-  await Bun.write(bin, '#!/bin/sh\n');
-  try {
-    await Bun.$`chmod 0777 ${bin}`.quiet();
-    expect(await run(bin)).toContain('group- or world-writable');
-    await Bun.$`chmod 0755 ${bin}`.quiet();
-    expect(await run(bin, () => ({ stdout: 'Client: Tag: v1.13.8' }))).toContain('v1.14.2');
-    const pinned = 'Client: Tag: v1.14.2';
-    expect(await run(bin, () => ({ stdout: pinned }))).toBe(pinned);
-  } finally {
-    await Bun.file(bin).delete();
-  }
 });

@@ -50,7 +50,7 @@ users:
 current-context: admin@hf-c1
 `;
 
-const config = { cluster: 'c1', context: 'admin@hf-c1', key: 'kubeconfig', mount: 'talos-c1' };
+const config = { c1: { context: 'admin@hf-c1', key: 'kubeconfig', mount: 'talos-c1' } };
 const connection = talosOpenBaoConnection('c1');
 
 const baoGet =
@@ -152,26 +152,37 @@ test('connect reads the vault in memory and returns PEM only on the transport', 
   expect(JSON.stringify(connection)).not.toContain('BEGIN CERTIFICATE');
 });
 
-test('connect fails loudly naming the missing vault key', async () => {
+const absent = () => ({ exitCode: 2, stderr: 'No value found at talos-c1/data/kubeconfig' });
+
+test('a missing key on a live cluster is the loud TalosVaultKeyMissing, not ClusterNotFound', async () => {
   const message = await runDirect(
     connectTalosOpenBao(config, connection).pipe(
-      Effect.catchTag('Kubernetes.ClusterNotFoundError', (error) => Effect.succeed(error.message)),
+      Effect.catchTag('TalosVaultKeyMissing', (error) => Effect.succeed(error.message)),
     ),
-    () => ({ exitCode: 2, stderr: 'No value found at talos-c1/data/kubeconfig' }),
+    absent,
   );
   expect(message).toContain('talos-c1/kubeconfig');
   expect(message).not.toContain('BEGIN CERTIFICATE');
   let caught: unknown;
   try {
-    await runAdapter(connection, () => ({
-      exitCode: 2,
-      stderr: 'No value found at talos-c1/data/kubeconfig',
-    }));
+    await runAdapter(connection, absent);
   } catch (error) {
     caught = error;
   }
-  expect(caught).toBeInstanceOf(ClusterNotFoundError);
+  expect(caught).not.toBeInstanceOf(ClusterNotFoundError);
   expect(String(caught)).toContain('talos-c1/kubeconfig');
+});
+
+test('a missing key on a retired cluster is ClusterNotFoundError', async () => {
+  const retired = { c1: { ...config.c1, retired: true } };
+  const message = await runDirect(
+    connectTalosOpenBao(retired, connection).pipe(
+      Effect.catchTag('Kubernetes.ClusterNotFoundError', (error) => Effect.succeed(error.message)),
+    ),
+    absent,
+  );
+  expect(message).toContain('talos-c1/kubeconfig');
+  expect(message).not.toContain('BEGIN CERTIFICATE');
 });
 
 test('a vault denial is not reported as a missing key', async () => {

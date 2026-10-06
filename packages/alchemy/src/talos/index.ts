@@ -27,8 +27,12 @@ export {
   TalosKubeconfigUnreadable,
   TalosOpenBaoAdapter,
   TalosOpenBaoAuthKind,
+  type TalosOpenBaoCluster,
+  type TalosOpenBaoConfig,
+  TalosOpenBaoUnknownCluster,
   TalosVaultKeyMissing,
   connectTalosOpenBao,
+  talosOpenBaoCluster,
   talosOpenBaoConnection,
 } from './cluster-adapter.ts';
 export type { TalosCredential, TalosTarget } from './credentials.ts';

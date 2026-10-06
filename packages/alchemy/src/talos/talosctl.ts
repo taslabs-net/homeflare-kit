@@ -10,8 +10,8 @@
  * ⛔ DO NOT LOG STDOUT ON FAILURE. `talosctl kubeconfig` and error paths have been observed in the
  *   wild to include credential material; stderr is the safe diagnostic channel.
  */
-import { statSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import { lstatSync } from 'node:fs';
+import { dirname, isAbsolute } from 'node:path';
 import * as Effect from 'effect/Effect';
 import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
@@ -59,13 +59,39 @@ const checkOverridePath = (binary: string) => {
   if (binary === DEFAULT_TALOSCTL_BINARY) return Effect.void;
   if (!isAbsolute(binary)) return refuse('must be an absolute path');
   return Effect.try({
-    try: () => statSync(binary).mode,
+    try: () => ({ file: lstatSync(binary), parent: lstatSync(dirname(binary)) }),
     catch: () => new TalosError('binary check', 1, 'override is not a readable file', binary),
   }).pipe(
-    Effect.flatMap((mode) =>
-      (mode & 0o022) === 0 ? Effect.void : refuse('is group- or world-writable'),
-    ),
+    Effect.flatMap(({ file, parent }) => {
+      // ★ lstat, not stat: a symlink can be re-pointed by whoever owns the link, so none is accepted.
+      if (file.isSymbolicLink()) return refuse('must not be a symlink');
+      if (!file.isFile()) return refuse('is not a regular file');
+      const uid = process.getuid?.();
+      if (uid !== undefined && file.uid !== uid && file.uid !== 0) {
+        return refuse('must be owned by the current user or root');
+      }
+      if ((file.mode & 0o022) !== 0) return refuse('is group- or world-writable');
+      // ⚠️ A writable parent directory lets another user swap the file between this check and exec.
+      if ((parent.mode & 0o022) !== 0) {
+        return refuse('lives in a group- or world-writable directory');
+      }
+      return Effect.void;
+    }),
   );
+};
+
+/**
+ * ⛔ THE CHILD GETS A MINIMAL ENV, NOT `process.env`: BAO_TOKEN and every other credential in the
+ *   caller's environment stay out of an override that is only vetted by path and version. The
+ *   talosconfig travels as a file argument, so the binary needs nothing else but `PATH`/`HOME`.
+ */
+const talosctlEnv = (): Record<string, string> => {
+  const env: Record<string, string> = {};
+  for (const name of ['PATH', 'HOME', 'TMPDIR']) {
+    const value = process.env[name];
+    if (value !== undefined && value !== '') env[name] = value;
+  }
+  return env;
 };
 
 export type TalosRunOptions = {
@@ -91,7 +117,8 @@ const capture = (binary: string, argv: readonly string[]) =>
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     return yield* ChildProcess.make(binary, argv, {
       detached: false,
-      extendEnv: true,
+      env: talosctlEnv(),
+      extendEnv: false,
       stderr: 'pipe',
       stdin: 'ignore',
       stdout: 'pipe',
@@ -119,6 +146,10 @@ const capture = (binary: string, argv: readonly string[]) =>
     );
   });
 
+/** ⚠️ EXACT TOKEN MATCH: `includes` would accept v1.14.20 for v1.14.2. */
+const reportsPinnedVersion = (stdout: string) =>
+  stdout.split(/[^\w.+-]+/).includes(TALOSCTL_PINNED_VERSION);
+
 /**
  * ⛔ AN OVERRIDE MUST REPORT THE PINNED CLIENT VERSION (`version --client`, no talosconfig, so
  *   nothing secret reaches an untrusted binary before it is vetted).
@@ -128,7 +159,7 @@ const checkOverrideVersion = (binary: string) =>
     ? Effect.void
     : capture(binary, ['version', '--client']).pipe(
         Effect.flatMap((out) =>
-          out.exitCode === 0 && out.stdout.includes(TALOSCTL_PINNED_VERSION)
+          out.exitCode === 0 && reportsPinnedVersion(out.stdout)
             ? Effect.void
             : Effect.fail(
                 new TalosError(

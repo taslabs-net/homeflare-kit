@@ -116,6 +116,14 @@ export const readKubeconfig = (props: KubeconfigProps) =>
     return meta;
   });
 
+/** ★ Key order is state-store noise (a row saved by another build), not drift: sort like upstream. */
+const sortedJson = (value: unknown): string =>
+  JSON.stringify(value, (_key, v: unknown) =>
+    typeof v === 'object' && v !== null && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+      : v,
+  );
+
 export const diffKubeconfig = (
   news: Input<KubeconfigProps>,
   output: KubeconfigAttributes | undefined,
@@ -128,7 +136,7 @@ export const diffKubeconfig = (
       live.credentialGeneration === output.credentialGeneration &&
       live.context === output.context &&
       // ⚠️ Rows saved before `talos-openbao` carry a dead placeholder (or none); they must update.
-      JSON.stringify(live.connection?.auth) === JSON.stringify(output.connection?.auth) &&
+      sortedJson(live.connection?.auth) === sortedJson(output.connection?.auth) &&
       live.endpoint === output.endpoint
     ) {
       return { action: 'noop' } as const;

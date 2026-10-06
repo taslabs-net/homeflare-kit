@@ -28,8 +28,9 @@ import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
-import { isVaultKeyAbsent, readKvValue } from './credentials.ts';
+import { DEFAULT_KUBECONFIG_KEY, isVaultKeyAbsent, readKvValue } from './credentials.ts';
 import { kubeconfigTransport } from './kubeconfig-doc.ts';
+import type { KubeconfigProps } from './kubeconfig.ts';
 
 declare module 'alchemy/Kubernetes/Connection' {
   interface AuthRegistry {
@@ -44,17 +45,58 @@ declare module 'alchemy/Kubernetes/Connection' {
   }
 }
 
-/** Where the adapter reads. Configuration of the layer; never persisted. */
-export type TalosOpenBaoConfig = {
-  /** Logical cluster name; the only value persisted in the connection. */
-  readonly cluster: string;
+/** One cluster's vault location. Configuration of the layer; never persisted. */
+export type TalosOpenBaoCluster = {
   /** OpenBao KV mount, e.g. `talos-c1`. */
   readonly mount: string;
-  /** Path under the mount. `Talos.Kubeconfig` writes `kubeconfig`. */
+  /** Path under the mount. `Talos.Kubeconfig` writes `kubeconfig` unless `kubeconfigKey` is set. */
   readonly key: string;
   /** Context name inside the kubeconfig. Not secret. */
   readonly context: string;
+  /**
+   * ⛔ ONLY `true` MAKES A MISSING KEY MEAN "THE CLUSTER IS GONE" (`ClusterNotFoundError`, which
+   *   upstream read/delete treat as "everything in-cluster is already gone"). Without it a missing
+   *   key is the loud `TalosVaultKeyMissing`: a typo in mount/key must not make `read` report every
+   *   row gone and `destroy` a silent no-op.
+   */
+  readonly retired?: boolean;
 };
+
+/**
+ * ⛔ KEYED BY CLUSTER NAME, the `cluster` in the persisted connection. One adapter serves every
+ *   cluster in a stack; `connect` looks the cluster up and refuses an unknown one
+ *   ({@link TalosOpenBaoUnknownCluster}) instead of reading some other cluster's kubeconfig.
+ */
+export type TalosOpenBaoConfig = Readonly<Record<string, TalosOpenBaoCluster>>;
+
+/**
+ * ★ ONE SOURCE OF TRUTH FOR mount/key/context: build the cluster entry from the SAME props the
+ *   `Talos.Kubeconfig` resource writes with (`target.mount`, `kubeconfigKey`, `context`), so the
+ *   writer and the reader cannot disagree.
+ */
+export const talosOpenBaoCluster = (
+  props: Pick<KubeconfigProps, 'context' | 'kubeconfigKey' | 'target'>,
+  options: { readonly retired?: boolean } = {},
+): TalosOpenBaoCluster => ({
+  context: props.context,
+  key: props.kubeconfigKey ?? DEFAULT_KUBECONFIG_KEY,
+  mount: props.target.mount,
+  ...(options.retired === true ? { retired: true } : {}),
+});
+
+/** The connection names a cluster this adapter was not configured for. */
+export class TalosOpenBaoUnknownCluster extends Data.TaggedError('TalosOpenBaoUnknownCluster')<{
+  readonly cluster: string;
+  readonly known: readonly string[];
+}> {
+  override get message(): string {
+    return (
+      `talos-openbao adapter has no configuration for cluster '${this.cluster}' ` +
+      `(configured: ${this.known.join(', ') || 'none'}). Refused rather than reading another ` +
+      "cluster's kubeconfig."
+    );
+  }
+}
 
 /** `bao kv get` reported the key unwritten. The message names `mount/key` and no document bytes. */
 export class TalosVaultKeyMissing extends Data.TaggedError('TalosVaultKeyMissing')<{
@@ -109,29 +151,44 @@ export const talosOpenBaoConnection = (cluster: string): TalosOpenBaoConnection 
  * Resolve one `talos-openbao` connection to a transport. Requires `ChildProcessSpawner`
  * because the vault read shells to `bao`.
  *
- * ⚠️ A key the vault reports absent is `ClusterNotFoundError`: upstream `read`/`delete` treat
- *   that as "everything in-cluster is already gone", so tearing down a destroyed cluster is not
- *   stuck. The message names `mount/key` and no document bytes.
+ * ⚠️ A key the vault reports absent is `ClusterNotFoundError` ONLY for a cluster configured
+ *   `retired: true` (upstream `read`/`delete` treat that as "everything in-cluster is already
+ *   gone", so tearing down a destroyed cluster is not stuck). Otherwise it is the typed
+ *   `TalosVaultKeyMissing`. Neither message names document bytes.
  */
 export const connectTalosOpenBao = (
-  config: TalosOpenBaoConfig,
+  configs: TalosOpenBaoConfig,
   connection: Connection,
 ): Effect.Effect<
   ClusterTransport,
-  TalosOpenBaoAuthKind | ClusterNotFoundError | TalosKubeconfigUnreadable | Error,
+  | TalosOpenBaoAuthKind
+  | TalosOpenBaoUnknownCluster
+  | TalosVaultKeyMissing
+  | ClusterNotFoundError
+  | TalosKubeconfigUnreadable
+  | Error,
   ChildProcessSpawner.ChildProcessSpawner
 > =>
   Effect.gen(function* () {
     if (connection.auth.kind !== 'talos-openbao') {
       return yield* Effect.fail(new TalosOpenBaoAuthKind({ kind: connection.auth.kind }));
     }
+    const { cluster } = connection.auth;
+    const config = Object.hasOwn(configs, cluster) ? configs[cluster] : undefined;
+    if (config === undefined) {
+      return yield* Effect.fail(
+        new TalosOpenBaoUnknownCluster({ cluster, known: Object.keys(configs) }),
+      );
+    }
     const { context, key, mount } = config;
     const raw = yield* readKvValue(mount, key, ['kubeconfig', 'config']).pipe(
-      Effect.mapError((error) =>
-        isVaultKeyAbsent(error)
-          ? new ClusterNotFoundError({ message: new TalosVaultKeyMissing({ key, mount }).message })
-          : error,
-      ),
+      Effect.mapError((error) => {
+        if (!isVaultKeyAbsent(error)) return error;
+        const missing = new TalosVaultKeyMissing({ key, mount });
+        return config.retired === true
+          ? new ClusterNotFoundError({ message: missing.message })
+          : missing;
+      }),
     );
     const material = yield* Effect.sync(() => kubeconfigTransport(raw, context));
     if (material === undefined) {
@@ -142,7 +199,8 @@ export const connectTalosOpenBao = (
 
 /**
  * Register kind `talos-openbao`. Merge with `Kubernetes.providers()`:
- * `Layer.mergeAll(Kubernetes.providers(), TalosOpenBaoAdapter({ ... }))`.
+ * `Layer.mergeAll(Kubernetes.providers(), TalosOpenBaoAdapter({ c1: talosOpenBaoCluster(kc1) }))`
+ * where `kc1` is the props object handed to `Talos.Kubeconfig`.
  */
 export const TalosOpenBaoAdapter = (
   config: TalosOpenBaoConfig,
