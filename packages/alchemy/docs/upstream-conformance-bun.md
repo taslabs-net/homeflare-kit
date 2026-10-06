@@ -4,7 +4,7 @@ Status: extracted from the [conformance ledger](./upstream-conformance.md); its 
 measurements and open findings are preserved below.
 
 These are non-test files under `src/` that the standard (S42) says must be portable. "Exp"
-marks files exported from a subpath `index.ts`. `git grep` on `origin/main` finds 23 non-test (25 with `talos/talosctl-binary.ts` and `talos/trust-boundary.ts`, added by PR 355)
+marks files exported from a subpath `index.ts`. `git grep` on `origin/main` finds 23 non-test
 files under `src/` that call `Bun.*` or import `node:*`/`bun:*`. Six of them are outside
 S42's scope:
 
@@ -13,10 +13,15 @@ S42's scope:
 - `proxmox/provision-cli-fake.ts`, which is used only by tests;
 - `verify/args.ts`, which belongs to the CLI and so is tooling under S43.
 
-That leaves 17 files (19 with `talos/talosctl-binary.ts` and `talos/trust-boundary.ts`). PR 355
-also adds two Node-loaded loopback fakes (`talos/fake-apiserver.ts`,
-`talos/node-connect.harness.ts`), test-side under S44 like the other fakes. The table lists them, plus `provision-cli-fake.ts`, which should move
-out of `src/`. The six out-of-scope files still ship in the tarball's `src/`, but no export
+That leaves 17 files. PR 355 brings the count on this branch to 28 by adding
+`talos/talosctl-binary.ts` and `talos/trust-boundary.ts` (both in scope below), making
+`talos/fake-process.ts` node-loading — on `origin/main` it imported only `effect/*`; here it
+imports `node:fs`, `node:path` and `node:url` — and adding `talos/fake-apiserver.ts`,
+`talos/node-connect.harness.ts` and the test seam `talos/trust-boundary.seam.ts`, three more
+Node-loaded loopback fakes that are test-side under S44 like the other fakes. With those three
+fakes and the seam, ten files on this branch are outside S42's scope, leaving 18 in scope. The
+table lists those 18, plus `provision-cli-fake.ts`, which should move out of `src/`. The
+out-of-scope files other than the seam still ship in the tarball's `src/`, but no export
 reaches them.
 ⚠️ The first version of this table said 16 files and left out `launchd/job-form.ts`.
 ⚠️ Corrected 2026-09-22: 14 of the 17 break upstream's rule. `launchd/job-form.ts`,
@@ -60,9 +65,11 @@ The ⚠️ rows:
   write, no async. Revisit when `FileSystem` gains `lstat`.
 
 - `talos/trust-boundary.ts` (added 2026-10-06 by PR 355): the same `node:fs` rationale as
-  `talos/talosctl-binary.ts`, which imports it. It resolves a path with `realpathSync` so the
-  vetting walks the real ancestors; the call is synchronous, read-only and made inside
-  `Effect.try`. Revisit together with `talosctl-binary.ts` when `FileSystem` gains `lstat`.
+  `talos/talosctl-binary.ts`, which imports it. Its query resolves the directory with
+  `realpathSync` so the boundary compare is canonical; the call is synchronous, read-only and
+  made inside `Effect.try`. The register function lives in `talos/trust-boundary.seam.ts`
+  (test-side, excluded from the tarball), so the shipped module offers no way to stop the walk
+  early. Revisit together with `talosctl-binary.ts` when `FileSystem` gains `lstat`.
 
 - `openbao/digest.ts`: every `Bao.*` family persists this digest in state, so a swap must
   hash the same bytes (`canonical()`, lowercase hex), or every row plans an update.

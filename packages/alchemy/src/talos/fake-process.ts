@@ -23,7 +23,7 @@ import * as Sink from 'effect/Sink';
 import * as Stream from 'effect/Stream';
 import type { Command } from 'effect/unstable/process/ChildProcess';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
-import { trustBoundaryForTests } from './trust-boundary.ts';
+import { trustBoundaryForTests } from './trust-boundary.seam.ts';
 
 export type FakeResult = {
   readonly stdout?: string;

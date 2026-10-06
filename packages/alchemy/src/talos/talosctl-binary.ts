@@ -10,7 +10,7 @@
 import { accessSync, constants, lstatSync, realpathSync } from 'node:fs';
 import { basename, delimiter, dirname, isAbsolute, join } from 'node:path';
 import * as Effect from 'effect/Effect';
-import { trustBoundaries } from './trust-boundary.ts';
+import { isTrustedBoundary } from './trust-boundary.ts';
 
 /** `talosctl` on `PATH`. A lane pins another build with {@link TALOSCTL_BINARY_ENV} or `binary`. */
 export const DEFAULT_TALOSCTL_BINARY = 'talosctl';
@@ -66,8 +66,9 @@ const untrustedAncestor = (file: string, uid: number | undefined): string | unde
   let dir = realpathSync(dirname(file));
   for (;;) {
     const stat = lstatSync(dir);
-    // The boundary directory itself is still vetted; only what lies ABOVE it is not (test seam).
-    const isBoundary = trustBoundaries.has(dir);
+    // The boundary directory itself is still vetted; only what lies ABOVE it is not (test seam,
+    // trust-boundary.seam.ts, which the published tarball does not carry).
+    const isBoundary = isTrustedBoundary(dir);
     if (uid !== undefined && stat.uid !== uid && stat.uid !== 0) {
       return `lives under a directory owned by another user (${dir})`;
     }

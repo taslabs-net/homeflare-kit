@@ -171,10 +171,12 @@ export const connectTalosOpenBao = (
   ChildProcessSpawner.ChildProcessSpawner
 > =>
   Effect.gen(function* () {
+    // ⛔ FAIL CLOSED BEFORE ANY DESTRUCTURING: a saved row missing its whole connection, or just
+    //   its auth block, names no physical cluster — a typed refusal, never a raw TypeError.
+    if (connection === undefined || connection === null) {
+      return yield* Effect.fail(new TalosClusterIdentityMissing({}));
+    }
     const { auth } = connection;
-    // ⛔ FAIL CLOSED BEFORE READING `auth.kind`: a connection with no auth block (a malformed
-    //   saved row) throws a raw TypeError here, not a typed refusal. Refuse it as a missing
-    //   identity: nothing names a physical cluster.
     if (auth === undefined || auth === null) {
       return yield* Effect.fail(new TalosClusterIdentityMissing({}));
     }

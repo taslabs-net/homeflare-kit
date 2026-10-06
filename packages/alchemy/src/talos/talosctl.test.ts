@@ -9,7 +9,7 @@ import { afterAll, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import { type FakeCall, fakeSpawner } from './fake-process.ts';
-import { trustBoundaryForTests } from './trust-boundary.ts';
+import { trustBoundaryForTests } from './trust-boundary.seam.ts';
 import { TALOSCTL_BINARY_ENV, talosctl } from './talosctl.ts';
 
 // ⚠️ A real, vetted file in a private directory: the system `sh` or `bun` may be a symlink or live

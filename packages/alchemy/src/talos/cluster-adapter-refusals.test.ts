@@ -75,6 +75,16 @@ test('a connection with no auth block is refused as a typed failure, not a raw T
   expect(calls).toEqual([]);
 });
 
+test('a connection that is itself undefined or null is refused as a typed failure (fails on a7668f7: the whole-connection destructure threw)', async () => {
+  const calls: FakeCall[] = [];
+  for (const absent of [undefined, null]) {
+    expect(
+      await refusedWith(connectTalosOpenBao(config, absent as unknown as Connection), calls),
+    ).toBe('TalosClusterIdentityMissing');
+  }
+  expect(calls).toEqual([]);
+});
+
 test('no uid, an unknown uid and an ambiguous pin are refused before any vault read', async () => {
   const calls: FakeCall[] = [];
   const noUid = { auth: { kind: 'talos-openbao' } } as Connection;

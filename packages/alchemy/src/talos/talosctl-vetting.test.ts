@@ -17,7 +17,7 @@ import { afterAll, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import { type FakeHandler, fakeSpawner } from './fake-process.ts';
-import { trustBoundaryForTests } from './trust-boundary.ts';
+import { trustBoundaryForTests } from './trust-boundary.seam.ts';
 import { TalosBinaryRefused, TalosError, talosctl } from './talosctl.ts';
 
 const run = (binary: string, handler: FakeHandler = () => ({}), envs: unknown[] = []) =>
@@ -74,6 +74,29 @@ test('a writable ancestor of the override is refused (fails on 37d835a: only the
   chmodSync(join(outer, 'inner'), 0o755);
   chmodSync(outer, 0o777);
   expect(await run(bin, pinned('v1.14.2'))).toContain('writable directory');
+});
+
+test('the walk stops at a registered boundary but not above an unregistered one (guards the trust-boundary.seam wiring: if the seam is missing or the pull fails, the jailed shape is refused too)', async () => {
+  // Two identical shapes: `jailed/inner` is registered as a boundary, `free/inner` is not. The
+  // wrapper above each is group/world-writable, so only the registered one can pass: the
+  // boundary directory itself is still vetted (755), and its wrapper is never reached.
+  const jailed = join(dir, 'jailed');
+  const free = join(dir, 'free');
+  for (const wrapper of [jailed, free]) {
+    mkdirSync(join(wrapper, 'inner', 'bin'), { recursive: true });
+    chmodSync(join(wrapper, 'inner', 'bin'), 0o755);
+    writeFileSync(join(wrapper, 'inner', 'bin', 'talosctl'), '#!/bin/sh\n', { mode: 0o755 });
+    chmodSync(join(wrapper, 'inner', 'bin', 'talosctl'), 0o755);
+  }
+  trustBoundaryForTests(join(jailed, 'inner'));
+  chmodSync(jailed, 0o777);
+  chmodSync(free, 0o777);
+  expect(await run(join(jailed, 'inner', 'bin', 'talosctl'), pinned('v1.14.2'))).toBe(
+    'Client: Tag: v1.14.2',
+  );
+  expect(await run(join(free, 'inner', 'bin', 'talosctl'), pinned('v1.14.2'))).toContain(
+    'writable directory',
+  );
 });
 
 test('an ancestor owned by another user is refused (fails on 37d835a: parent owner never read)', async () => {

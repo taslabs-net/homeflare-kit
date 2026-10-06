@@ -95,6 +95,15 @@ try {
   if (leaked.length > 0) {
     throw new Error(`alchemy smoke: tarball ships fixtures:\n${leaked.join('\n')}`);
   }
+  // ⛔ The trust-boundary seam must not ship either: it is the only module that can register a
+  //   directory the talosctl ancestor walk may stop above, so a consumer install must not
+  //   contain it — the shipped trust-boundary.ts offers no register path and must keep it that way.
+  const seamLeaked = packed.filter((entry) => entry.includes('trust-boundary.seam'));
+  if (seamLeaked.length > 0) {
+    throw new Error(
+      `alchemy smoke: tarball ships the trust-boundary seam:\n${seamLeaked.join('\n')}`,
+    );
+  }
   // ⚠️ A Version Packages PR bumps an interim SDK and alchemy's alias onto it together, so the
   //   new version is not on npm until this release publishes it (scripts/unpublished-siblings.ts).
   for (const s of await swapUnpublishedSiblings(
