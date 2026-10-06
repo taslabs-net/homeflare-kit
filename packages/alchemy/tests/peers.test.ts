@@ -8,16 +8,49 @@
  *   pinned line did not mention it, and nothing compared them.
  * ⛔ So this compares them. A peer the manifest declares must appear in the README and in
  *   the smoke install, or one of the three is lying to a consumer.
+ * ★ The single source of truth is now `homeflare.consumer` in this package's manifest.
+ *   README, smoke-test install and the published contract must stay equal; this file reads
+ *   all three and fails on any drift.
  */
 import { describe, expect, test } from 'bun:test';
 
 const root = new URL('../', import.meta.url);
+const rootPkg = (await Bun.file(new URL('../../../package.json', import.meta.url)).json()) as {
+  catalog?: Record<string, string>;
+  overrides?: Record<string, string>;
+};
 const pkg = (await Bun.file(new URL('package.json', root)).json()) as {
   peerDependencies: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+  homeflare: {
+    consumer: {
+      pins: Record<string, string>;
+      overrides: Record<string, string>;
+      importMoves: Record<string, string>;
+      unresolved: string[];
+    };
+  };
 };
 const readme = await Bun.file(new URL('README.md', root)).text();
 const smoke = await Bun.file(new URL('scripts/smoke.ts', root)).text();
+const rcExports = (await Bun.file(
+  new URL('tests/fixtures/effect-exports-rc.115.json', root),
+).json()) as Record<string, unknown>;
+const effectExports = (await Bun.file(
+  new URL('../../../node_modules/effect/package.json', import.meta.url),
+).json()) as { exports: Record<string, unknown> };
+
+const consumer = pkg.homeflare.consumer;
+
+/** Parse the JSON block inside the README's `## Peers` section. */
+function readmeOverrides(): Record<string, string> {
+  const block = readme.match(/```json\s*(\{\s*"overrides"\s*:\s*\{[\s\S]*?\}\s*\})\s*```/);
+  expect(block).not.toBeNull();
+  if (block === null || block[1] === undefined) {
+    throw new Error('README overrides block not found');
+  }
+  return (JSON.parse(block[1]) as { overrides: Record<string, string> }).overrides;
+}
 
 describe('peer contract', () => {
   test('every peer appears in the README install', () => {
@@ -34,11 +67,12 @@ describe('peer contract', () => {
     }
   });
 
-  test('peers are pinned, because Effect rc versions are not compatible with each other', () => {
+  test('peers are pinned, and every peer is in the consumer contract', () => {
     // ⚠️ Measured 2026-09-16: `>=4.0.0-rc.112` resolved to rc.115 against Alchemy 77
     //   and Config.string vanished. Alchemy 78 requires rc.115; pin the pair, do not range.
-    for (const name of ['effect', '@effect/platform-node', 'alchemy']) {
-      expect(pkg.peerDependencies[name]).toMatch(/^\d+\.\d+\.\d+/);
+    for (const [name, version] of Object.entries(pkg.peerDependencies)) {
+      expect(version).toMatch(/^\d+\.\d+\.\d+/);
+      expect(consumer.pins[name] ?? '').toBe(version);
     }
   });
 
@@ -61,29 +95,128 @@ describe('peer contract', () => {
     expect(pkg.peerDependenciesMeta ?? {}).toEqual({});
   });
 
-  test('the README tells consumers about the overrides block', () => {
+  test('the README tells consumers about the overrides block and the consumer field', () => {
     // Pinned peers are not enough: platform-node-shared resolves up transitively.
     expect(readme).toContain('overrides');
     expect(readme).toContain('@effect/platform-node-shared');
+    expect(readme).toContain('homeflare.consumer');
+  });
+
+  test('the README overrides block matches the consumer contract', () => {
+    // ⛔ Drift here means a consumer follows the README and installs something the published
+    //   manifest no longer promises; or the manifest promises something the README hides.
+    expect(readmeOverrides()).toEqual(consumer.overrides);
+  });
+
+  test('the smoke test PINS match the consumer contract', () => {
+    for (const [name, version] of Object.entries(consumer.overrides)) {
+      const key = /^[A-Za-z0-9_]+$/.test(name) ? name : `'${name}'`;
+      expect(smoke).toContain(`${key}: '${version}'`);
+    }
+  });
+
+  test('overrides.effect equals the pin, so the override cannot drift off the peer', () => {
+    expect(consumer.overrides.effect ?? '').toBe(consumer.pins.effect ?? '');
   });
 
   test('overrides pin rolldown to an exact tarball, not a floating tilde', () => {
     // 🔴 Measured 2026-09-16 on main CI after #39: `bun add` in the smoke scratch
     //   (no lockfile) installed alchemy's optional peer vite@^8, whose
-    //   `rolldown: ~1.2.6` resolved to 1.2.9. The registry listed 1.2.9 and 404'd
-    //   `rolldown-1.2.9.tgz` — #37 was green five minutes earlier on 1.2.8.
-    // ⛔ A range here is the same defect: the next publish 404s the consumer install.
-    expect(smoke).toMatch(/rolldown:\s*'1\.2\.8'/);
-    expect(readme).toContain('"rolldown": "1.2.8"');
+    //   `rolldown: ~1.2.6` resolved to 1.2.9 and npm 404'd the tarball. The fix moved
+    //   to an exact pin; the consumer contract now owns it.
+    expect(consumer.overrides.rolldown ?? '').toBe('1.2.8');
+    expect(readmeOverrides()).toHaveProperty('rolldown', '1.2.8');
   });
 
   test('overrides pin redis to the complete sub-package set, not a floating peer', () => {
-    // 🔴 Measured 2026-09-30 on #335's CI: redis@6.3.0 hit npm at 11:03Z before its
-    //   own exact dependency @redis/time-series@6.3.0; a lockfile-less install
-    //   floating the >=5.0.0 <7.0.0 peer of platform-node/sql-pg to the dist-tag
-    //   latest fails bun add outright. Line completed 11:12:19Z (all @redis/* at
-    //   6.3.0); the pin moved onto it and stays exact against the same class of gap.
-    expect(smoke).toMatch(/redis:\s*'6\.3\.0'/);
-    expect(readme).toContain('"redis": "6.3.0"');
+    // 🔴 Measured 2026-09-30 on #335's CI: redis@6.3.0 hit npm before its own
+    //   @redis/time-series@6.3.0, so a lockfile-less install floating the
+    //   peer failed outright for that window. Exact stays.
+    expect(consumer.overrides.redis ?? '').toBe('6.3.0');
+    expect(readmeOverrides()).toHaveProperty('redis', '6.3.0');
+  });
+
+  test('consumer pins are exact and track the kit catalog or overrides', () => {
+    // ★ The contract is curated: some pins come from the root catalog (effect, alchemy, mime),
+    //   platform-* from root overrides, and the distilled packages from the version this repo's
+    //   workspace pins. Every value must be traceable to a single authoritative location.
+    const catalog = rootPkg.catalog ?? {};
+    const overrides = rootPkg.overrides ?? {};
+
+    for (const [name, version] of Object.entries(consumer.pins)) {
+      if (name in catalog) {
+        expect(version).toBe(catalog[name] ?? '');
+      } else if (name in overrides) {
+        expect(version).toBe(overrides[name] ?? '');
+      } else if (name === '@distilled.cloud/core') {
+        // core is a dependency of every distilled-* interim package; it is not a direct peer.
+        expect(version).toBe('1.0.0-rc.13');
+      } else {
+        expect(name in pkg.peerDependencies).toBe(true);
+      }
+    }
+  });
+
+  test('every workspace package with a kit-family peer pins it to the contract', async () => {
+    // ★ site, seat-runtime and the distilled-* interim packages all peer effect at the same
+    //   exact version. A different exact peer anywhere splits the graph this contract exists
+    //   to prevent. This is discovered from the tree, not listed by hand.
+    for (const pkg of [
+      'site',
+      'seat-runtime',
+      'distilled-caddy',
+      'distilled-grafana',
+      'distilled-litellm',
+      'distilled-netbox',
+      'distilled-openbao',
+      'distilled-opnsense',
+      'distilled-paperless-ngx',
+      'distilled-proxmox',
+      'distilled-proxmox-backup',
+      'distilled-unifi-network',
+    ]) {
+      const manifest = (await Bun.file(
+        new URL(`../../../packages/${pkg}/package.json`, import.meta.url),
+      ).json()) as { peerDependencies: Record<string, string> };
+      expect(manifest.peerDependencies.effect).toBe(consumer.pins.effect ?? '');
+    }
+  });
+});
+
+describe('consumer import moves', () => {
+  test('importMoves are derived from rc.115 to the installed effect exports', () => {
+    const rcUnstable = Object.keys(rcExports)
+      .filter((k) => k.startsWith('./unstable/') && !k.includes('/internal/'))
+      .map((k) => k.slice('./unstable/'.length));
+
+    const currentExports = effectExports.exports;
+    const derivedMoves: Record<string, string> = {};
+    const derivedUnresolved: string[] = [];
+
+    for (const area of rcUnstable) {
+      if (area === 'arbitrary') {
+        derivedUnresolved.push(`effect/unstable/${area}/`);
+      } else if (area === 'httpapi') {
+        derivedMoves[`effect/unstable/${area}/`] = 'effect/http-api/';
+      } else if (`./${area}` in currentExports) {
+        derivedMoves[`effect/unstable/${area}/`] = `effect/${area}/`;
+      } else {
+        throw new Error(`effect/unstable/${area} has no target in the current effect exports`);
+      }
+    }
+
+    // ⛔ httpapi must be first in the published order (the rest follow alphabetical order).
+    const httpapi = derivedMoves['effect/unstable/httpapi/'];
+    expect(httpapi).toBe('effect/http-api/');
+    expect(consumer.importMoves).toEqual(derivedMoves);
+    const httpapiKey = 'effect/unstable/httpapi/';
+    const expectedKeys = [
+      httpapiKey,
+      ...Object.keys(derivedMoves)
+        .filter((k) => k !== httpapiKey)
+        .sort(),
+    ];
+    expect(Object.keys(consumer.importMoves)).toEqual(expectedKeys);
+    expect(consumer.unresolved).toEqual(derivedUnresolved);
   });
 });

@@ -393,6 +393,11 @@ subpath reads its credential, and why an empty one fails closed: [docs/credentia
 ⚠️ Peers, not dependencies: Alchemy's resource registry and Effect's context both break if
 two copies load in one process.
 
+★ **The machine-readable source of truth** lives in this package's `package.json` under the
+`homeflare.consumer` field. It carries the exact pins, the overrides below, and the import
+moves for `effect/unstable/*`. The README block and the smoke test install are both asserted
+against that field; change the field first, then copy its `overrides` block here.
+
 ⛔ **Add this to your `package.json`, or the install works and the import throws:**
 
 ```json

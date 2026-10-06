@@ -176,5 +176,58 @@
     "alchemy": "2.0.0-beta.81",
     "effect": "4.0.1",
     "mime": "4.1.0"
+  },
+  "homeflare": {
+    "consumer": {
+      "pins": {
+        "effect": "4.0.1",
+        "@effect/ai-openai-compat": "4.0.1",
+        "@effect/platform-bun": "4.0.1",
+        "@effect/platform-node": "4.0.1",
+        "@effect/platform-node-shared": "4.0.1",
+        "@effect/sql-pg": "4.0.1",
+        "alchemy": "2.0.0-beta.81",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.81",
+        "@distilled.cloud/core": "1.0.0-rc.13",
+        "@distilled.cloud/argocd": "1.0.0-rc.13",
+        "@distilled.cloud/cloudflare": "1.0.0-rc.13",
+        "@distilled.cloud/discord": "1.0.0-rc.13",
+        "@distilled.cloud/forgejo": "1.0.0-rc.13",
+        "@distilled.cloud/google-workspace": "1.0.0-rc.13",
+        "mime": "4.1.0"
+      },
+      "overrides": {
+        "effect": "4.0.1",
+        "@effect/platform-bun": "4.0.1",
+        "@effect/platform-node": "4.0.1",
+        "@effect/platform-node-shared": "4.0.1",
+        "rolldown": "1.2.8",
+        "redis": "6.3.0"
+      },
+      "importMoves": {
+        "effect/unstable/httpapi/": "effect/http-api/",
+        "effect/unstable/ai/": "effect/ai/",
+        "effect/unstable/cli/": "effect/cli/",
+        "effect/unstable/cluster/": "effect/cluster/",
+        "effect/unstable/devtools/": "effect/devtools/",
+        "effect/unstable/encoding/": "effect/encoding/",
+        "effect/unstable/eventlog/": "effect/eventlog/",
+        "effect/unstable/http/": "effect/http/",
+        "effect/unstable/net/": "effect/net/",
+        "effect/unstable/observability/": "effect/observability/",
+        "effect/unstable/persistence/": "effect/persistence/",
+        "effect/unstable/process/": "effect/process/",
+        "effect/unstable/reactivity/": "effect/reactivity/",
+        "effect/unstable/rpc/": "effect/rpc/",
+        "effect/unstable/schema/": "effect/schema/",
+        "effect/unstable/socket/": "effect/socket/",
+        "effect/unstable/sql/": "effect/sql/",
+        "effect/unstable/workers/": "effect/workers/",
+        "effect/unstable/workflow/": "effect/workflow/"
+      },
+      "unresolved": [
+        "effect/unstable/arbitrary/"
+      ]
+    }
   }
 }
