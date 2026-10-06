@@ -111,7 +111,8 @@ describe('what a push is measured from', () => {
     const result = await push(`refs/heads/feat ${tip} refs/heads/feat ${before}`);
 
     expect(result.code).toBe(0);
-    expect(result.output).toContain('changes what every test runs on');
+    expect(result.output).toContain('1 non-module file(s) — tests in full');
+    expect(result.output).not.toContain('package.json');
     expect(result.output).toContain('A-TEST-RAN');
     expect(result.output).toContain('B-TEST-RAN');
   });

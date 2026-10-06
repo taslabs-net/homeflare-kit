@@ -5,6 +5,8 @@
  *   with a count, and cleanup is attempted either way. Lint and types do not get one:
  *   they are not where the temp-directory leak comes from.
  * 🔴 `runLane` / `runInTmp` strip the GIT_* this hook inherited — see report.ts.
+ * ⛔ THE LOG IS THE LABEL. A changed path is not printed here: a newline in a name
+ *   would forge a second line. The full-suite reason is a count, printed by gates.ts.
  */
 import { type Lane } from './push-plan.ts';
 import { fail, note, ok, runLane } from './report.ts';
@@ -14,9 +16,14 @@ import { formatLeaks, problemsInTmpLiterals, runInTmp } from './tmp-guard.ts';
 function describe(lane: Lane): string {
   if (lane.kind === 'skip') return `skip ${lane.label} — ${lane.why}`;
   if (lane.kind === 'test' && lane.scoped)
-    return `run  ${lane.command}  (only the tests the push can reach)`;
-  if (lane.kind === 'test') return `run  ${lane.command}  (IN FULL)`;
-  return `run  ${lane.command}`;
+    return `run  ${lane.label}  (only the tests the push can reach)`;
+  if (lane.kind === 'test') return `run  ${lane.label}  (IN FULL)`;
+  return `run  ${lane.label}`;
+}
+
+/** What to re-run: the label only. A path here would be a second log line. */
+function untilGreen(lane: Lane): string {
+  return `${lane.label} — until it is green`;
 }
 
 /** How many lanes actually ran. Calls `fail`, which does not return, when one does not pass. */
@@ -58,14 +65,14 @@ export async function runPlannedLanes(
             ? 'remove every temp directory the test lane creates'
             : cleanupOnly
               ? 'resolve the temp directory removal error above'
-              : `${lane.command} — until it is green`,
+              : untilGreen(lane),
         );
       }
       ran += 1;
       continue;
     }
     if ((await runLane(lane.command, root)) !== 0) {
-      fail('pre-push', `\`${lane.label}\` failed`, `${lane.command} — until it is green`);
+      fail('pre-push', `\`${lane.label}\` failed`, untilGreen(lane));
     }
     ran += 1;
   }

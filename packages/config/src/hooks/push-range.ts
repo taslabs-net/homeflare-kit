@@ -203,13 +203,28 @@ export async function pushScope(
   return { kind: 'scoped', base: found.base, changed, why: found.why };
 }
 
+/** `.ts` / `.tsx` / `.js` / `.mjs` — the only suffixes Bun's `--changed` follows. */
+const MODULE_EXT = /\.(?:ts|tsx|js|mjs)$/;
+
 /**
- * A path that changes what EVERY test runs on: a manifest, a lockfile, Bun's config, a
- * tsconfig. Bun's `--changed` follows imports and none of these is imported — measured
- * 2026-09-23, editing package.json selected 0 of 246 test files — so a push touching one
- * runs the tests in full rather than none of them.
+ * 🔴 A `.d.ts` ENDS IN `.ts`, SO THE SUFFIX TEST WOULD KEEP IT ON `--changed`.
+ *   Measured 2026-10-06: a declaration-only push reported "no test files are affected"
+ *   and ran 0 tests. A declaration is not a module Bun follows.
+ */
+const DECLARATION = /\.d\.ts$/;
+
+/**
+ * A path that changes what EVERY test runs on, so the suite runs in full.
+ *
+ * 🔴 BUN'S `--changed` FOLLOWS IMPORTS ONLY. Measured 2026-09-23: editing package.json
+ *   selected 0 of 246 test files. Measured 2026-10-06: an edit of a doc and of a vendored
+ *   `.py` reported "no test files are affected", and the tests that read them failed in CI.
+ *   Selecting those tests by reading source was dropped: a miss still shipped, and a path
+ *   in the lane command could forge a log line. Any path that is not `.ts` / `.tsx` /
+ *   `.js` / `.mjs` widens the lane — a manifest, a lockfile, a tsconfig, a doc, a vendored
+ *   tree — and so does a `.d.ts`. One such path widens the push even when a module changed
+ *   beside it. Module paths stay on `--changed`. The cost is a full suite for that push.
  */
 export function changesEverything(path: string): boolean {
-  const name = path.split('/').pop() ?? '';
-  return /^(package\.json|bun\.lockb?|bunfig\.toml|tsconfig.*\.json)$/.test(name);
+  return DECLARATION.test(path) || !MODULE_EXT.test(path);
 }

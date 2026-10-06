@@ -191,15 +191,17 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
   if (scope.kind === 'unscoped') {
     note(`pre-push: ${scope.why} — every lane runs, tests in full`);
   } else {
-    const global = scope.changed.filter(changesEverything);
+    const widen = scope.changed.filter(changesEverything);
     note(`pre-push: ${String(scope.changed.length)} file(s) changed ${scope.why}`);
-    if (global.length > 0)
-      note(`  ${global.join(', ')} changes what every test runs on — tests in full`);
+    // ⛔ A COUNT, NEVER A PATH. The name is untrusted: a newline in it forges a second
+    //   log line. `changesEverything` is every non-module file, so this one reason
+    //   covers a doc, a vendored tree, and a manifest.
+    if (widen.length > 0) note(`${String(widen.length)} non-module file(s) — tests in full`);
     else base = scope.base;
   }
 
   // ⛔ Old literals must not block unrelated pushes. Reuse the paths measured from the
-  //   push base even when a manifest change widens the test lane to run in full.
+  //   push base even when a non-module change widens the test lane to run in full.
   await runPlannedLanes(
     root,
     planLanes(scripts, base),
