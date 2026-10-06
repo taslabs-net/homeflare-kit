@@ -14,6 +14,11 @@
  *      both on every pull request;
  *   3. everything else (lint, types, a `--check` script) runs exactly as `check` spells it.
  *      They are seconds, whole-program by nature, and deterministic.
+ * ★ READ-PATH TESTS ARE NOT THIS FUNCTION'S. `--changed` follows imports only
+ *   (measured 2026-10-06: a docs edit reported "no test files are affected").
+ *   gates.ts asks read-tests.ts which tracked tests name a changed non-module path
+ *   and appends those files. Doing it here would read the tree, and this function
+ *   is pinned by a table of `check` shapes rather than by a live repository.
  * ⛔ PURE. No git, no filesystem, no process: the whole contract is a function of the
  *   scripts table and the base, so the estate's real `check` shapes are pinned by a table
  *   test (tests/hooks-push-plan.test.ts) instead of by a live push.

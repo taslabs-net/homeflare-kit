@@ -98,8 +98,11 @@ The base comes from git. The hook reads the pushed refs on stdin:
 
 The lanes are the repo's own `check`, read as an `&&` chain:
 
-- `bun test …` becomes `bun test … --changed=<base>`. Bun follows the import graph
-  and runs only the test files the changed files can reach.
+- `bun test …` becomes `bun test … --changed=<base>`. Bun follows imports. A changed
+  file that is not `.ts`/`.tsx`/`.js`/`.mjs` also runs each `*.test.ts` / `*.test.js`
+  (outside `node_modules`) whose source names that path, an ancestor directory at
+  least two segments deep, or its file name when that name is 8+ characters and not
+  `README.md`, `index.*`, or `package.json`. One line reports how many were added.
 - `build*` and `smoke*` scripts are skipped. CI runs them on every pull request.
 - A script that hides a `bun test` or a build is expanded. For example
   `check → verify → bun test` becomes a narrowed test lane. Any other script runs

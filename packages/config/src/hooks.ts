@@ -9,10 +9,11 @@
  * ★ TRACKED `.husky/`, RUN BY GIT THROUGH `core.hooksPath` — NOT husky's `.husky/_`. Since
  *   2026-09-23 the mechanism is the one that reaches every worktree; activate.ts has the
  *   measurement. The files keep the directory name the estate already uses.
- * ★ PRE-PUSH IS SCOPED TO THE PUSH (push-range.ts, push-plan.ts): the repository's own
- *   `check`, with `bun test` narrowed to the tests the pushed files can reach and the build
- *   and smoke test left to CI. Many agents push to many repositories at once; a pre-push
- *   that re-ran every suite was the one people learned to skip.
+ * ★ PRE-PUSH IS SCOPED TO THE PUSH (push-range.ts, push-plan.ts, read-tests.ts): the
+ *   repository's own `check`, with `bun test` narrowed to the tests the pushed files
+ *   can reach — by import, and by a test that reads a changed non-module file — and
+ *   the build and smoke test left to CI. Many agents push to many repositories at
+ *   once; a pre-push that re-ran every suite was the one people learned to skip.
  *
  * Usage from a hook file — see `HUSKY_HOOK`:
  *

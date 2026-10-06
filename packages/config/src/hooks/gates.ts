@@ -16,6 +16,7 @@ import { requireCleanTree, requireInstalled } from './preconditions.ts';
 import { checkoutFix } from './push-fix.ts';
 import { planLanes } from './push-plan.ts';
 import { changesEverything, parsePushRefs, pushScope } from './push-range.ts';
+import { type ReadLanePlan, testsReading, withReadTests } from './read-tests.ts';
 import { scanPushedSecrets } from './push-secrets.ts';
 import { fail, note, ok, run, runCaptured, tool } from './report.ts';
 import { runPlannedLanes } from './push-run.ts';
@@ -200,9 +201,26 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
 
   // ⛔ Old literals must not block unrelated pushes. Reuse the paths measured from the
   //   push base even when a manifest change widens the test lane to run in full.
+  const planned = planLanes(scripts, base);
+  // ★ `--changed` follows imports only. Tests that read a changed non-module file are
+  //   named in read-tests.ts and appended here. A manifest change never reaches this:
+  //   `base` stays unset and the lane already runs in full.
+  const reading =
+    scope.kind === 'scoped' && base !== undefined
+      ? await testsReading(root, scope.changed)
+      : undefined;
+  const plannedTests: ReadLanePlan =
+    reading === undefined
+      ? { lanes: planned, added: false }
+      : withReadTests(planned, reading.files);
+  if (reading !== undefined && plannedTests.added) {
+    note(
+      `added ${String(reading.files.length)} extra test file(s) — ${String(reading.matchedPaths)} changed non-module path(s) named in a test`,
+    );
+  }
   await runPlannedLanes(
     root,
-    planLanes(scripts, base),
+    plannedTests.lanes,
     scope.kind === 'scoped' ? scope.changed : undefined,
   );
 }
