@@ -27,7 +27,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { TalosClusterMoved } from './cluster-adapter-errors.ts';
 import { readClusterUid } from './cluster-identity.ts';
-import { openTransport, talosVaultLocation } from './cluster-transport.ts';
+import { openTransport, talosVaultLocation, withConnectDeadline } from './cluster-transport.ts';
 import type { KubeconfigProps } from './kubeconfig.ts';
 import type { TalosRequirements } from './resource.ts';
 
@@ -70,8 +70,14 @@ export const readClusterIdentity = (
 ) =>
   Effect.gen(function* () {
     const cluster = props.target.cluster;
-    const transport = yield* openTransport(talosVaultLocation(props));
-    const uid = yield* readClusterUid(cluster, transport);
+    // ⛔ Same single deadline as connect: a hung `bao` must not hang the plan.
+    const uid = yield* withConnectDeadline(
+      cluster,
+      Effect.gen(function* () {
+        const transport = yield* openTransport(talosVaultLocation(props));
+        return yield* readClusterUid(cluster, transport);
+      }),
+    );
     if (output !== undefined && uid !== output.uid) {
       return yield* Effect.fail(new TalosClusterMoved({ cluster, live: uid, saved: output.uid }));
     }

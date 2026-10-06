@@ -34,6 +34,7 @@ export {
   TalosOpenBaoAmbiguousUid,
   TalosOpenBaoLegacyAuth,
   TalosOpenBaoAuthKind,
+  TalosOpenBaoConnectTimeout,
   type TalosOpenBaoCluster,
   type TalosOpenBaoConfig,
   TalosOpenBaoUnknownCluster,

@@ -28,6 +28,11 @@ uid read times out after 10 s with `TalosClusterIdentityTimeout`.
 `Talos.ClusterHealth.connection` is required and copied onto attributes so the resource is
 ClusterLike. `HF_TALOSCTL` or `TalosRunOptions.binary` selects the talosctl executable.
 
+Connect (and `Talos.ClusterIdentity`) run under one 10 s deadline covering the vault read and the
+uid GET: a hung `bao` fails with `TalosOpenBaoConnectTimeout` and its child is killed.
+`Talos.ClusterHealth` refuses an Output connection in `diff` (`TalosUidNotLiteral`).
+Usage rules for upstream behaviour: packages/alchemy/docs/talos-openbao-adapter.md.
+
 An unreadable document fails with `TalosKubeconfigUnreadable` and does not echo the document.
 
 Walked against alchemy 2.0.0-beta.79 `Kubernetes/Connection.ts`, `ClusterAdapter.ts` and

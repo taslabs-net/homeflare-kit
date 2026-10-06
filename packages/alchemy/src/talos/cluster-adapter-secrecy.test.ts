@@ -1,11 +1,11 @@
 /**
  * `talos-openbao` secrecy and identity, through the real adapter and provider paths. Fake `bao`
- * only. Asserts the persisted Connection is `{ kind, cluster }` (so a vault-key rename cannot make
+ * only. Asserts the persisted Connection is `{ kind, uid }` (so a vault-key rename cannot make
  * upstream answer `replace` and delete same-named objects), and that no PEM marker, base64 key
  * body or kubeconfig byte reaches attributes, error fields, disk or logs.
  */
 import fs, { existsSync } from 'node:fs';
-import { expect, spyOn, test } from 'bun:test';
+import { expect, mock, spyOn, test } from 'bun:test';
 import { ClusterAdapter } from 'alchemy/Kubernetes/ClusterAdapter';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
@@ -78,12 +78,20 @@ test('connect through the layer leaves no PEM in tagged errors, temp files or lo
   //   outside tmpdir, still fails here. Anything carrying kubeconfig material is a leak.
   const written: string[] = [];
   const note = (data: unknown) => void written.push(String(data));
-  const spies = [
-    spyOn(fs, 'writeFileSync').mockImplementation(((_path: unknown, data: unknown) =>
-      note(data)) as never),
-    spyOn(fs, 'openSync').mockImplementation((() => {
+  // ⚠️ credentials.ts and kubeconfig.ts use NAMED imports from node:fs, which a spy on the fs
+  //   default export never reaches (the earlier version of this test could not fail). So the module
+  //   itself is mocked, like fake-apiserver.ts does for node:https. mock.module is process-wide in
+  //   bun: only the three write entry points are replaced, and the real module goes back in finally.
+  const realFs = { ...fs };
+  const fakeFs = {
+    ...realFs,
+    openSync: () => {
       throw new Error('openSync is not expected on the connect path');
-    }) as never),
+    },
+    writeFileSync: (_path: unknown, data: unknown) => note(data),
+  };
+  mock.module('node:fs', () => ({ ...fakeFs, default: fakeFs }));
+  const spies = [
     spyOn(Bun, 'write').mockImplementation(((_d: unknown, data: unknown) => {
       note(data);
       return Promise.resolve(0);
@@ -127,6 +135,7 @@ test('connect through the layer leaves no PEM in tagged errors, temp files or lo
     Object.assign(console, saved);
     api.restore();
     for (const spy of spies) spy.mockRestore();
+    mock.module('node:fs', () => ({ ...realFs, default: realFs }));
   }
   expect(leaks(logged.join('\n'))).toEqual([]);
   expect(written).toEqual([]);

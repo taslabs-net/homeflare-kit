@@ -159,6 +159,23 @@ export class TalosClusterIdentityTimeout extends Data.TaggedError('TalosClusterI
   }
 }
 
+/**
+ * The whole connect path (vault read, parse, kube-system uid read) did not finish in time. One
+ * deadline covers `bao` and the apiserver together: a hung `bao` or a silent apiserver must not
+ * hang connect or a plan. The `bao` child is killed when the deadline interrupts the read.
+ */
+export class TalosOpenBaoConnectTimeout extends Data.TaggedError('TalosOpenBaoConnectTimeout')<{
+  readonly cluster: string;
+  readonly seconds: number;
+}> {
+  override get message(): string {
+    return (
+      `talos-openbao cluster '${this.cluster}': vault read and identity check did not finish ` +
+      `within ${this.seconds}s. Refused (failed closed); the bao child was killed.`
+    );
+  }
+}
+
 /** A connection was built from a uid that is not a plain string known at plan time. */
 export class TalosUidNotLiteral extends Data.TaggedError('TalosUidNotLiteral')<{
   readonly _?: never;

@@ -34,6 +34,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type { TalosOpenBaoConnection } from './cluster-adapter.ts';
 import { mintTalosconfig } from './credentials.ts';
+import { assertLiteralConnection } from './literal-connection.ts';
 import type { TalosRequirements, WithTarget } from './resource.ts';
 import { TalosError, talosctl } from './talosctl.ts';
 
@@ -167,6 +168,9 @@ export const diffClusterHealth = (
   output: ClusterHealthAttributes | undefined,
 ) =>
   Effect.gen(function* () {
+    // ⛔ `cluster: health` hands this connection to workloads: refuse an Output here, while it is
+    //   still an Input (`literal-connection.ts`).
+    assertLiteralConnection((news as { connection?: unknown }).connection);
     if (output === undefined || !isResolved(news)) return undefined;
     const live = yield* readClusterHealth(news);
     if (live.healthy && sameConnection(live.connection, output.connection)) {

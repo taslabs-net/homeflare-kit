@@ -32,6 +32,17 @@
  * ⚠️ A REAL MOVE IS NOT AN AUTOMATIC REPLACE. `Talos.ClusterIdentity` refuses a changed uid
  *   (`TalosClusterMoved`); a move is a NEW identity resource per physical cluster, so the old
  *   rows keep their old uid and their cleanup reaches only the old cluster.
+ * ⛔ ONE 10 s DEADLINE covers the vault read AND the uid GET (`withConnectDeadline`): a hung `bao`
+ *   or silent apiserver fails with `TalosOpenBaoConnectTimeout` and the `bao` child is killed.
+ *   ⚠️ The in-flight HTTPS GET is NOT aborted: upstream `readObject` takes no signal
+ *   (`internal/client.ts:75`), so the socket lives until the OS gives up. Left for the upstream ask.
+ *
+ * USAGE RULES (upstream behaviour this adapter cannot fix; full text in
+ * `docs/talos-openbao-adapter.md`):
+ *   1. Move a workload to another cluster ONLY by new logical IDs (destroy + create), never by
+ *      changing its connection in place.
+ *   2. Manage namespaces as separate `Manifest`s, never HelmChart `createNamespace`.
+ *   3. Never rename a HelmChart `releaseName` in place.
  *
  * Walked against alchemy 2.0.0-beta.79 `ClusterAdapter.ts` / `BuiltinAdapters.ts` and the OpenBao
  * v2.6.2 absence string in `isVaultKeyAbsent`. Fake `bao` and fake apiserver only.
@@ -43,6 +54,7 @@ import {
   type ClusterTransport,
 } from 'alchemy/Kubernetes/ClusterAdapter';
 import type { Connection } from 'alchemy/Kubernetes/Connection';
+import type * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
@@ -54,13 +66,19 @@ import {
   type TalosKubeconfigUnreadable,
   TalosOpenBaoAmbiguousUid,
   TalosOpenBaoAuthKind,
+  type TalosOpenBaoConnectTimeout,
   TalosOpenBaoLegacyAuth,
   TalosOpenBaoUnknownCluster,
   TalosUidNotLiteral,
   type TalosVaultKeyMissing,
 } from './cluster-adapter-errors.ts';
 import { assertClusterUid } from './cluster-identity.ts';
-import { type TalosOpenBaoCluster, openTransport } from './cluster-transport.ts';
+import {
+  CONNECT_TIMEOUT,
+  type TalosOpenBaoCluster,
+  openTransport,
+  withConnectDeadline,
+} from './cluster-transport.ts';
 
 export {
   TalosClusterIdentityMismatch,
@@ -71,6 +89,7 @@ export {
   TalosKubeconfigUnreadable,
   TalosOpenBaoAmbiguousUid,
   TalosOpenBaoAuthKind,
+  TalosOpenBaoConnectTimeout,
   TalosOpenBaoLegacyAuth,
   TalosOpenBaoUnknownCluster,
   TalosUidNotLiteral,
@@ -133,6 +152,7 @@ export const talosOpenBaoConnection = (uid: string): TalosOpenBaoConnection => {
 export const connectTalosOpenBao = (
   configs: TalosOpenBaoConfig,
   connection: Connection,
+  timeout: Duration.Duration = CONNECT_TIMEOUT,
 ): Effect.Effect<
   ClusterTransport,
   | TalosOpenBaoAuthKind
@@ -143,6 +163,7 @@ export const connectTalosOpenBao = (
   | TalosClusterIdentityMismatch
   | TalosClusterIdentityUnreadable
   | TalosClusterIdentityTimeout
+  | TalosOpenBaoConnectTimeout
   | TalosVaultKeyMissing
   | ClusterNotFoundError
   | TalosKubeconfigUnreadable
@@ -186,9 +207,16 @@ export const connectTalosOpenBao = (
         new ClusterNotFoundError({ message: `talos-openbao cluster '${alias}' is retired` }),
       );
     }
-    const transport = yield* openTransport(config);
-    yield* assertClusterUid(alias, uid, transport);
-    return transport;
+    // ⛔ One deadline over the vault read AND the uid GET (`withConnectDeadline`).
+    return yield* withConnectDeadline(
+      alias,
+      Effect.gen(function* () {
+        const transport = yield* openTransport(config);
+        yield* assertClusterUid(alias, uid, transport);
+        return transport;
+      }),
+      timeout,
+    );
   });
 
 /**

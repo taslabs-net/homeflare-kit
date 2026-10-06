@@ -4,8 +4,13 @@
  * reads the uid the adapter will later demand).
  */
 import type { ClusterTransport } from 'alchemy/Kubernetes/ClusterAdapter';
+import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
-import { TalosKubeconfigUnreadable, TalosVaultKeyMissing } from './cluster-adapter-errors.ts';
+import {
+  TalosKubeconfigUnreadable,
+  TalosOpenBaoConnectTimeout,
+  TalosVaultKeyMissing,
+} from './cluster-adapter-errors.ts';
 import { DEFAULT_KUBECONFIG_KEY, isVaultKeyAbsent, readKvValue } from './credentials.ts';
 import { kubeconfigTransport } from './kubeconfig-doc.ts';
 import type { KubeconfigProps } from './kubeconfig.ts';
@@ -60,6 +65,29 @@ export const talosOpenBaoCluster = (
   uid: pin.uid,
   ...(pin.retired === true ? { retired: true } : {}),
 });
+
+/**
+ * ⛔ ONE DEADLINE FOR THE WHOLE CONNECT PATH. `bao kv get` has no timeout of its own, and the
+ *   uid GET's bound (`cluster-identity.ts`) only starts after the vault read returns, so a hung
+ *   `bao` hung connect and every plan. Interrupting the effect closes the spawn scope, which
+ *   signals the child's process group (`NodeChildProcessSpawner` `terminateProcessGroup`).
+ */
+export const CONNECT_TIMEOUT = Duration.seconds(10);
+
+export const withConnectDeadline = <A, E, R>(
+  cluster: string,
+  effect: Effect.Effect<A, E, R>,
+  timeout: Duration.Duration = CONNECT_TIMEOUT,
+) =>
+  effect.pipe(
+    Effect.timeoutOrElse({
+      duration: timeout,
+      orElse: () =>
+        Effect.fail(
+          new TalosOpenBaoConnectTimeout({ cluster, seconds: Duration.toSeconds(timeout) }),
+        ),
+    }),
+  );
 
 /**
  * Vault read and parse, in memory. ⛔ No identity check here: callers decide what to trust.

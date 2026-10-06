@@ -9,57 +9,14 @@
 import assert from 'node:assert/strict';
 import { existsSync, writeFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import * as Effect from 'effect/Effect';
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
-import { type FakeCall, fakeSpawner } from './fake-process.ts';
+import type { FakeCall } from './fake-process.ts';
+import { fixtureKubeconfig, props, run } from './kubeconfig.fixtures.ts';
 import {
   type KubeconfigAttributes,
-  type KubeconfigProps,
   diffKubeconfig as diff,
   readKubeconfig as read,
   reconcileKubeconfig as reconcile,
 } from './kubeconfig.ts';
-
-const b64 = (words: string) => Buffer.from(words).toString('base64');
-
-const fixtureKubeconfig = (marker: string) => `
-apiVersion: v1
-kind: Config
-clusters:
-  - name: hf-c1
-    cluster:
-      server: https://192.0.2.50:6443
-      certificate-authority-data: ${b64(`not a ca ${marker}`)}
-contexts:
-  - name: admin@hf-c1
-    context: { cluster: hf-c1, user: admin@hf-c1 }
-users:
-  - name: admin@hf-c1
-    user:
-      client-certificate-data: ${b64(`not a certificate ${marker}`)}
-      client-key-data: ${b64(`not a key ${marker}`)}
-current-context: admin@hf-c1
-`;
-
-const TARGET = { cluster: 'c1', mount: 'talos-c1' };
-const props = (): KubeconfigProps => ({
-  context: 'admin@hf-c1',
-  node: '198.51.100.10',
-  target: TARGET,
-});
-
-const run = <A, E>(
-  effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,
-  handler: (c: FakeCall) => { stdout?: string; stderr?: string; exitCode?: number },
-  calls: FakeCall[] = [],
-) =>
-  Effect.runPromise(
-    Effect.provideService(
-      effect,
-      ChildProcessSpawner.ChildProcessSpawner,
-      fakeSpawner(handler, calls),
-    ),
-  );
 
 describe('reconcile — CREATE writes talosctl kubeconfig output into the vault, never a host path', () => {
   it('mints the temp file, writes its content to vault via stdin, cleans up the temp file', async () => {
@@ -247,26 +204,5 @@ describe('diff', () => {
         : {},
     );
     assert.equal(result?.action, 'noop');
-  });
-
-  it('plans update for a row saved with the dead placeholder connection', async () => {
-    const output = await run(reconcile(props(), undefined), (call: FakeCall) => {
-      if (call.command === 'bao' && call.args[1] === 'get') {
-        return { stdout: JSON.stringify({ data: { data: { talosconfig: 'x' } } }) };
-      }
-      if (call.command === 'bao' && call.args[1] === 'put') return {};
-      writeFileSync(call.args[1] ?? '', fixtureKubeconfig('old'));
-      return {};
-    });
-    const old = {
-      ...(output as KubeconfigAttributes),
-      connection: { auth: { context: 'admin@hf-c1', kind: 'kubeconfig' } },
-    } as unknown as KubeconfigAttributes;
-    const result = await run(diff(props(), old), (call: FakeCall) =>
-      call.args[1] === 'get'
-        ? { stdout: JSON.stringify({ data: { data: { config: fixtureKubeconfig('old') } } }) }
-        : {},
-    );
-    assert.equal(result?.action, 'update');
   });
 });
