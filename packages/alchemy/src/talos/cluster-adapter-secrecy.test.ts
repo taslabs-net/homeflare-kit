@@ -42,7 +42,9 @@ users:
   - name: admin@hf-c1
     user: { client-certificate-data: ${b64(pemCert)}, client-key-data: ${b64(pemKey)} }
 `;
-const config = { c1: { context: 'admin@hf-c1', key: 'kubeconfig', mount: 'talos-c1' } };
+const config = {
+  c1: { context: 'admin@hf-c1', key: 'kubeconfig', mount: 'talos-c1', uid: 'uid-c1' },
+};
 const vault: FakeHandler = () => ({
   stdout: JSON.stringify({ data: { data: { kubeconfig: yaml } } }),
 });
@@ -56,7 +58,7 @@ const provide = <A, E>(
 const needles = [begin('CERTIFICATE'), begin('PRIVATE KEY'), certBody, keyBody];
 const leaks = (text: string) => needles.filter((needle) => text.includes(needle));
 
-test('the persisted Connection is { kind, cluster, uid } and carries no vault path', () => {
+test('the persisted Connection is { kind, uid } and carries no vault path', () => {
   // ★ buildAttrs persists no connection at all (kubeconfig-attrs.ts): only the identity resource
   //   does, and its connection is a function of the cluster name and uid, never mount/key/context.
   const attrs = buildAttrs(yaml, {
@@ -65,8 +67,8 @@ test('the persisted Connection is { kind, cluster, uid } and carries no vault pa
     target: { cluster: 'c1', mount: config.c1.mount },
   });
   expect(Object.keys(attrs ?? {})).not.toContain('connection');
-  const a = JSON.stringify(talosOpenBaoConnection('c1', 'uid-c1'));
-  expect(a).toBe('{"auth":{"kind":"talos-openbao","cluster":"c1","uid":"uid-c1"}}');
+  const a = JSON.stringify(talosOpenBaoConnection('uid-c1'));
+  expect(a).toBe('{"auth":{"kind":"talos-openbao","uid":"uid-c1"}}');
   expect(a).not.toContain('kubeconfig');
   expect(a).not.toContain('talos-c1');
 });
@@ -102,7 +104,7 @@ test('connect through the layer leaves no PEM in tagged errors, temp files or lo
       Effect.runPromise(
         Effect.gen(function* () {
           const adapter = yield* ClusterAdapter('talos-openbao');
-          return yield* adapter.connect(talosOpenBaoConnection('c1', 'uid-c1'));
+          return yield* adapter.connect(talosOpenBaoConnection('uid-c1'));
         }).pipe(
           Effect.provide(TalosOpenBaoAdapter(config).pipe(Layer.provide(spawner(handler)))),
           Effect.provide(capture),

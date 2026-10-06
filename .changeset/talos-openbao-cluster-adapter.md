@@ -4,13 +4,20 @@
 
 Add Kubernetes cluster auth kind `talos-openbao`. Connect reads the admin kubeconfig from
 OpenBao KV with `bao` (BAO_ADDR and BAO_TOKEN required, minimal child env) and returns a
-ClusterTransport; the persisted connection is `{ kind, cluster }` only. mount, key and context
-are `TalosOpenBaoAdapter({ <cluster>: { mount, key, context, retired? } })` configuration keyed
-by cluster (build each entry with `talosOpenBaoCluster(kubeconfigProps)` so the writer and the
-reader share one source), so renaming them can never make upstream replace workloads. A
-connection naming an unconfigured cluster fails with `TalosOpenBaoUnknownCluster`. A missing
-vault key is `TalosVaultKeyMissing`, and `ClusterNotFoundError` only for a cluster marked
-`retired: true`.
+ClusterTransport; the persisted connection is `{ kind, uid }` only, where `uid` is the physical
+cluster's kube-system uid. mount, key, context and uid are
+`TalosOpenBaoAdapter({ <alias>: { mount, key, context, uid, retired? } })` configuration (build each
+entry with `talosOpenBaoCluster(kubeconfigProps, { uid })` so the writer and the reader share one
+source). Connect looks the entry up BY uid and proves the answering cluster has that uid before
+returning a transport, so renaming an alias, vault key, mount or context can never make upstream
+replace workloads. A uid no entry is pinned to fails with `TalosOpenBaoUnknownCluster`, two entries
+pinned to one uid with `TalosOpenBaoAmbiguousUid`, and a saved row that still carries the old
+`auth.cluster` alias with `TalosOpenBaoLegacyAuth` (edit the saved state once; there is no silent
+migration). A missing vault key is `TalosVaultKeyMissing`; an entry marked `retired: true` answers
+`ClusterNotFoundError` without a vault read.
+`Talos.ClusterIdentity` refuses a changed uid (`TalosClusterMoved`) in diff and reconcile instead of
+updating: an update never becomes a downstream replace, so a move is a NEW identity resource per
+physical cluster.
 `HF_TALOSCTL` must be absolute, not a symlink, owned by the user or root, not group/world-writable
 (nor its directory), and report exactly v1.14.2; talosctl runs with a minimal env (no BAO_TOKEN).
 `Talos.Kubeconfig.connection` now uses that kind.

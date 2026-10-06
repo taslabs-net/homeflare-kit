@@ -4,16 +4,62 @@
  */
 import * as Data from 'effect/Data';
 
-/** The connection names a cluster this adapter was not configured for. */
+/** The connection's uid matches no adapter entry. Uids are public. */
 export class TalosOpenBaoUnknownCluster extends Data.TaggedError('TalosOpenBaoUnknownCluster')<{
-  readonly cluster: string;
+  readonly uid: string;
   readonly known: readonly string[];
 }> {
   override get message(): string {
     return (
-      `talos-openbao adapter has no configuration for cluster '${this.cluster}' ` +
-      `(configured: ${this.known.join(', ') || 'none'}). Refused rather than reading another ` +
-      "cluster's kubeconfig."
+      `talos-openbao adapter has no entry pinned to cluster uid ${this.uid} ` +
+      `(configured uids: ${this.known.join(', ') || 'none'}). Refused rather than reading ` +
+      "another cluster's kubeconfig. If the cluster was retired, keep its entry with " +
+      '`retired: true` and its uid until its rows are destroyed.'
+    );
+  }
+}
+
+/** Two adapter entries pin the same uid, so which vault key to read is ambiguous. */
+export class TalosOpenBaoAmbiguousUid extends Data.TaggedError('TalosOpenBaoAmbiguousUid')<{
+  readonly uid: string;
+  readonly aliases: readonly string[];
+}> {
+  override get message(): string {
+    return (
+      `talos-openbao adapter entries ${this.aliases.join(', ')} are all pinned to uid ` +
+      `${this.uid}. Refused instead of picking one: a uid names exactly one entry.`
+    );
+  }
+}
+
+/** The saved auth block still carries the alias an earlier build of this branch persisted. */
+export class TalosOpenBaoLegacyAuth extends Data.TaggedError('TalosOpenBaoLegacyAuth')<{
+  readonly _?: never;
+}> {
+  override get message(): string {
+    return (
+      'talos-openbao connection carries a legacy `cluster` alias in its auth block. Refused ' +
+      'before any vault read or request, with no silent migration (old and new auth differ, so ' +
+      'upstream would PATCH then DELETE the same object). Remedy: edit the saved state ONCE so ' +
+      "each such row's `connection.auth` is `{ kind: 'talos-openbao', uid }` (drop `cluster`), " +
+      'then redeploy.'
+    );
+  }
+}
+
+/** `Talos.ClusterIdentity` read a different uid than the one it published. Never an update. */
+export class TalosClusterMoved extends Data.TaggedError('TalosClusterMoved')<{
+  readonly cluster: string;
+  readonly saved: string;
+  readonly live: string;
+}> {
+  override get message(): string {
+    return (
+      `Talos.ClusterIdentity '${this.cluster}' published uid ${this.saved} but the vault key now ` +
+      `answers as ${this.live}. Refused, not updated: an update cannot become a replace for the ` +
+      'workloads downstream, so the new cluster would be force-applied and the old one orphaned. ' +
+      'A move is explicit: declare a NEW Talos.ClusterIdentity for the new cluster and leave this ' +
+      'one pointing at the old cluster until its workloads are destroyed.'
     );
   }
 }
@@ -59,14 +105,13 @@ export class TalosOpenBaoAuthKind extends Data.TaggedError('TalosOpenBaoAuthKind
 
 /** The saved auth block carries no `uid`, so nothing says WHICH physical cluster it meant. */
 export class TalosClusterIdentityMissing extends Data.TaggedError('TalosClusterIdentityMissing')<{
-  readonly cluster: string;
+  readonly _?: never;
 }> {
   override get message(): string {
     return (
-      `talos-openbao connection for cluster '${this.cluster}' carries no uid, so it cannot say ` +
-      'which physical cluster it targets. Refused before any vault read or request: wire ' +
-      'workloads to `Talos.ClusterIdentity` (its `connection` carries the uid), not to a bare ' +
-      'cluster name.'
+      'talos-openbao connection carries no uid, so it cannot say which physical cluster it ' +
+      'targets. Refused before any vault read or request: wire workloads to ' +
+      '`Talos.ClusterIdentity` (its `connection` carries the uid).'
     );
   }
 }

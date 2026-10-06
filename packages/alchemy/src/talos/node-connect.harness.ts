@@ -58,12 +58,14 @@ const spawner = Layer.succeed(
   ChildProcessSpawner.ChildProcessSpawner,
   fakeSpawner(() => ({ stdout: JSON.stringify({ data: { data: { kubeconfig } } }) })),
 );
-const config = { c1: { context: 'admin@c1', key: 'kubeconfig', mount: 'talos-c1' } };
+const config = {
+  c1: { context: 'admin@c1', key: 'kubeconfig', mount: 'talos-c1', uid: 'uid-c1' },
+};
 
 const transport = await Effect.runPromise(
   Effect.gen(function* () {
     const adapter = yield* ClusterAdapter('talos-openbao');
-    return yield* adapter.connect(talosOpenBaoConnection('c1', 'uid-c1'));
+    return yield* adapter.connect(talosOpenBaoConnection('uid-c1'));
   }).pipe(Effect.provide(TalosOpenBaoAdapter(config).pipe(Layer.provide(spawner)))),
 );
 const hasCert = transport.clientCert !== undefined;

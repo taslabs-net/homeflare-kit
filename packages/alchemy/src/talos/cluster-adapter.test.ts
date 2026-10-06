@@ -51,8 +51,10 @@ users:
 current-context: admin@hf-c1
 `;
 
-const config = { c1: { context: 'admin@hf-c1', key: 'kubeconfig', mount: 'talos-c1' } };
-const connection = talosOpenBaoConnection('c1', 'uid-c1');
+const config = {
+  c1: { context: 'admin@hf-c1', key: 'kubeconfig', mount: 'talos-c1', uid: 'uid-c1' },
+};
+const connection = talosOpenBaoConnection('uid-c1');
 
 const baoGet =
   (stdout: string): FakeHandler =>
@@ -181,16 +183,18 @@ test('a missing key on a live cluster is the loud TalosVaultKeyMissing, not Clus
   expect(String(caught)).toContain('talos-c1/kubeconfig');
 });
 
-test('a missing key on a retired cluster is ClusterNotFoundError', async () => {
+test('a retired pin is ClusterNotFoundError with no vault read', async () => {
   const retired = { c1: { ...config.c1, retired: true } };
+  const calls: FakeCall[] = [];
   const message = await runDirect(
     connectTalosOpenBao(retired, connection).pipe(
       Effect.catchTag('Kubernetes.ClusterNotFoundError', (error) => Effect.succeed(error.message)),
     ),
     absent,
+    calls,
   );
-  expect(message).toContain('talos-c1/kubeconfig');
-  expect(message).not.toContain('BEGIN CERTIFICATE');
+  expect(message).toContain('retired');
+  expect(calls).toEqual([]);
 });
 
 test('a vault denial is not reported as a missing key', async () => {

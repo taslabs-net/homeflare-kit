@@ -7,7 +7,11 @@ import * as Effect from 'effect/Effect';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import { fakeApiServer } from './fake-apiserver.ts';
 import { fakeSpawner } from './fake-process.ts';
-import { diffClusterIdentity, readClusterIdentity } from './talos-cluster-identity.ts';
+import {
+  diffClusterIdentity,
+  readClusterIdentity,
+  reconcileClusterIdentity,
+} from './talos-cluster-identity.ts';
 
 const b64 = (text: string) => Buffer.from(text).toString('base64');
 const pem = (label: string) => `-----${'BEGIN'} ${label}-----\n${b64(label)}\n`;
@@ -33,12 +37,12 @@ const run = <A, E>(effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessS
     ),
   );
 
-test('reads the kube-system uid and publishes { kind, cluster, uid }', async () => {
+test('reads the kube-system uid and publishes { kind, uid }', async () => {
   const api = fakeApiServer({ 'c1.cluster.invalid': 'uid-c1' });
   try {
     const out = await run(readClusterIdentity(props));
     expect(out).toEqual({
-      connection: { auth: { cluster: 'c1', kind: 'talos-openbao', uid: 'uid-c1' } },
+      connection: { auth: { kind: 'talos-openbao', uid: 'uid-c1' } },
       uid: 'uid-c1',
     });
     expect(api.seen).toEqual(['GET c1.cluster.invalid/api/v1/namespaces/kube-system']);
@@ -47,22 +51,44 @@ test('reads the kube-system uid and publishes { kind, cluster, uid }', async () 
   }
 });
 
-test('a name that now answers as another cluster plans update, an unchanged one noop', async () => {
-  const prior = {
-    connection: { auth: { cluster: 'c1', kind: 'talos-openbao', uid: 'uid-c1' } },
-    uid: 'uid-c1',
-  } as const;
+const prior = {
+  connection: { auth: { kind: 'talos-openbao', uid: 'uid-c1' } },
+  uid: 'uid-c1',
+} as const;
+
+test('an unchanged uid is a noop', async () => {
   const api = fakeApiServer({ 'c1.cluster.invalid': 'uid-c1' });
   try {
     expect((await run(diffClusterIdentity(props, prior)))?.action).toBe('noop');
   } finally {
     api.restore();
   }
+});
+
+// ⛔ A changed uid must never be an `update`: downstream workloads would be force-applied onto the
+//   new cluster (see the header of talos-cluster-identity.ts).
+test('a changed uid is refused in diff AND reconcile, never an update', async () => {
   const moved = fakeApiServer({ 'c1.cluster.invalid': 'uid-c2' });
   try {
-    expect((await run(diffClusterIdentity(props, prior)))?.action).toBe('update');
+    const inDiff = await run(diffClusterIdentity(props, prior)).catch((e: unknown) => String(e));
+    expect(inDiff).toContain('TalosClusterMoved');
+    expect(inDiff).toContain('uid-c2');
+    const inReconcile = await run(reconcileClusterIdentity(props, prior)).catch((e: unknown) =>
+      String(e),
+    );
+    expect(inReconcile).toContain('TalosClusterMoved');
   } finally {
     moved.restore();
+  }
+});
+
+test('reconcile with no saved output publishes the live uid', async () => {
+  const api = fakeApiServer({ 'c1.cluster.invalid': 'uid-c2' });
+  try {
+    const out = await run(reconcileClusterIdentity(props, undefined));
+    expect(out.uid).toBe('uid-c2');
+  } finally {
+    api.restore();
   }
 });
 

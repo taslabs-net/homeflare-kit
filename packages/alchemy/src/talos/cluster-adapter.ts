@@ -3,7 +3,7 @@
  *
  * Reads `mount/key` from OpenBao at connect time (`credentials.ts`'s `readKvValue`, which
  * shells to `bao` with BAO_ADDR/BAO_TOKEN) and returns a `ClusterTransport`.
- * ⛔ NOTHING IS WRITTEN TO DISK. ⛔ THE PERSISTED CONNECTION IS `{ kind, cluster, uid }` ONLY.
+ * ⛔ NOTHING IS WRITTEN TO DISK. ⛔ THE PERSISTED CONNECTION IS `{ kind, uid }` ONLY.
  *   alchemy `Kubernetes/Connection.ts` (v2.0.0-beta.79, lines 12-14) stores the Connection on
  *   every workload's attributes, so the upstream `client-cert` kind would put the admin PEM in
  *   the shared state store. The stock `kubeconfig` kind is also refused: an empty path falls
@@ -16,15 +16,17 @@
  * ⛔ THE IDENTITY RULE: THE AUTH BLOCK NAMES THE PHYSICAL CLUSTER. `uid` is the kube-system
  *   Namespace `metadata.uid` (public, stable across CA rotation). read/update/delete all
  *   reconnect from the SAVED auth block (`Manifest.ts:214` and `:267`, `HelmChart.ts:322` and
- *   `:335`, via `connectionOfOutput`, `internal/workload.ts:104-108`) while the cluster NAME
- *   resolves through today's MUTABLE config: repoint `c1` at c2's vault key and a saved `c1` row
- *   PATCHes one cluster and DELETEs on another (reproduced through ManifestProvider). So `connect`
- *   fails closed BEFORE any vault read when the auth block has no uid, then GETs kube-system and
- *   compares before returning a transport: a missing, unreadable or different uid is a typed
- *   error — never `ClusterNotFoundError`, which upstream turns into a silent no-op. The stack
- *   obtains the uid as an Output of `Talos.ClusterIdentity`, so a REAL move to another cluster
- *   changes the auth block and upstream replaces instead of deleting on the wrong cluster.
- *   Cost: one extra GET per connect.
+ *   `:335`, via `connectionOfOutput`, `internal/workload.ts:104-108`). A cluster NAME resolved
+ *   through today's MUTABLE config would let a repointed `c1` PATCH one cluster and DELETE on
+ *   another (reproduced through ManifestProvider). So the auth block carries the uid and NOTHING
+ *   else: the config entry is looked up BY uid (no probing walk), `connect` fails closed BEFORE
+ *   any vault read when the uid is absent or the row is legacy (`auth.cluster`), then GETs
+ *   kube-system and compares before returning a transport. Missing, unreadable, unknown or
+ *   different uid is a typed error — never `ClusterNotFoundError` (except a `retired` entry's
+ *   absent key), which upstream turns into a silent no-op. Cost: one extra GET per connect.
+ * ⚠️ A REAL MOVE IS NOT AN AUTOMATIC REPLACE. `Talos.ClusterIdentity` refuses a changed uid
+ *   (`TalosClusterMoved`); a move is a NEW identity resource per physical cluster, so the old
+ *   rows keep their old uid and their cleanup reaches only the old cluster.
  *
  * Walked against alchemy 2.0.0-beta.79 `ClusterAdapter.ts` / `BuiltinAdapters.ts` and the OpenBao
  * v2.6.2 absence string in `isVaultKeyAbsent`. Fake `bao` and fake apiserver only.
@@ -32,7 +34,7 @@
 import {
   ClusterAdapter,
   type ClusterAdapterService,
-  type ClusterNotFoundError,
+  ClusterNotFoundError,
   type ClusterTransport,
 } from 'alchemy/Kubernetes/ClusterAdapter';
 import type { Connection } from 'alchemy/Kubernetes/Connection';
@@ -44,7 +46,9 @@ import {
   TalosClusterIdentityMissing,
   type TalosClusterIdentityUnreadable,
   type TalosKubeconfigUnreadable,
+  TalosOpenBaoAmbiguousUid,
   TalosOpenBaoAuthKind,
+  TalosOpenBaoLegacyAuth,
   TalosOpenBaoUnknownCluster,
   type TalosVaultKeyMissing,
 } from './cluster-adapter-errors.ts';
@@ -55,8 +59,11 @@ export {
   TalosClusterIdentityMismatch,
   TalosClusterIdentityMissing,
   TalosClusterIdentityUnreadable,
+  TalosClusterMoved,
   TalosKubeconfigUnreadable,
+  TalosOpenBaoAmbiguousUid,
   TalosOpenBaoAuthKind,
+  TalosOpenBaoLegacyAuth,
   TalosOpenBaoUnknownCluster,
   TalosVaultKeyMissing,
 } from './cluster-adapter-errors.ts';
@@ -69,11 +76,9 @@ declare module 'alchemy/Kubernetes/Connection' {
      * {@link TalosOpenBaoAdapter}, which holds the mount, key and context.
      */
     'talos-openbao': {
-      /** Logical cluster name, e.g. `c1`. Selects the adapter's vault configuration. */
-      cluster: string;
       /**
-       * The cluster's kube-system `metadata.uid`. Required at connect: absent means refused.
-       * Typed optional only so a row saved before this field existed still deserializes.
+       * The cluster's kube-system `metadata.uid`: the ONLY identity. Required at connect; typed
+       * optional so a row saved before it existed still deserializes (and is then refused).
        */
       uid?: string;
     };
@@ -81,20 +86,20 @@ declare module 'alchemy/Kubernetes/Connection' {
 }
 
 /**
- * ⛔ KEYED BY CLUSTER NAME, the `cluster` in the persisted connection. One adapter serves every
- *   cluster in a stack; `connect` looks the cluster up and refuses an unknown one
- *   ({@link TalosOpenBaoUnknownCluster}) instead of reading some other cluster's kubeconfig.
+ * ⛔ KEYED BY ALIAS, BUT THE ALIAS IS NEVER PERSISTED OR LOOKED UP BY. `connect` finds the entry
+ *   whose pinned `uid` equals the saved auth block's, so renaming an alias changes nothing upstream
+ *   hashes. Unknown uid is {@link TalosOpenBaoUnknownCluster}: refused, not another cluster's key.
  */
 export type TalosOpenBaoConfig = Readonly<Record<string, TalosOpenBaoCluster>>;
 
 /** A `Connection` narrowed to this kind, so a PEM-bearing connection cannot be stored by type. */
 export type TalosOpenBaoConnection = Connection & {
-  readonly auth: { readonly kind: 'talos-openbao'; readonly cluster: string; readonly uid: string };
+  readonly auth: { readonly kind: 'talos-openbao'; readonly uid: string };
 };
 
-/** Serializable connection: kind, cluster name and uid. No vault path, endpoint, CA or cert. */
-export const talosOpenBaoConnection = (cluster: string, uid: string): TalosOpenBaoConnection => ({
-  auth: { kind: 'talos-openbao', cluster, uid },
+/** Serializable connection: kind and uid. No alias, vault path, endpoint, CA or cert. */
+export const talosOpenBaoConnection = (uid: string): TalosOpenBaoConnection => ({
+  auth: { kind: 'talos-openbao', uid },
 });
 
 /**
@@ -113,6 +118,8 @@ export const connectTalosOpenBao = (
   ClusterTransport,
   | TalosOpenBaoAuthKind
   | TalosOpenBaoUnknownCluster
+  | TalosOpenBaoAmbiguousUid
+  | TalosOpenBaoLegacyAuth
   | TalosClusterIdentityMissing
   | TalosClusterIdentityMismatch
   | TalosClusterIdentityUnreadable
@@ -127,19 +134,40 @@ export const connectTalosOpenBao = (
     if (auth.kind !== 'talos-openbao') {
       return yield* Effect.fail(new TalosOpenBaoAuthKind({ kind: auth.kind }));
     }
-    const { cluster, uid } = auth;
-    const config = Object.hasOwn(configs, cluster) ? configs[cluster] : undefined;
-    if (config === undefined) {
+    // ⛔ Before the vault is touched. A row saved with an alias is refused even if it also has a
+    //   uid: no silent migration, the saved state is edited deliberately (the error says how).
+    if (Object.hasOwn(auth, 'cluster')) {
+      return yield* Effect.fail(new TalosOpenBaoLegacyAuth({}));
+    }
+    const { uid } = auth;
+    if (typeof uid !== 'string' || uid === '') {
+      return yield* Effect.fail(new TalosClusterIdentityMissing({}));
+    }
+    const matches = Object.entries(configs).filter(([, entry]) => entry.uid === uid);
+    const [match] = matches;
+    if (match === undefined) {
       return yield* Effect.fail(
-        new TalosOpenBaoUnknownCluster({ cluster, known: Object.keys(configs) }),
+        new TalosOpenBaoUnknownCluster({
+          known: Object.values(configs).map((entry) => entry.uid),
+          uid,
+        }),
       );
     }
-    // ⛔ Before the vault is touched: a row with no identity can only be refused, never guessed.
-    if (typeof uid !== 'string' || uid === '') {
-      return yield* Effect.fail(new TalosClusterIdentityMissing({ cluster }));
+    // ⛔ Two entries claiming one uid is a configuration error: refuse, never pick one.
+    if (matches.length > 1) {
+      return yield* Effect.fail(
+        new TalosOpenBaoAmbiguousUid({ aliases: matches.map(([alias]) => alias), uid }),
+      );
+    }
+    const [alias, config] = match;
+    // ⛔ A retired pin means the cluster is gone: no vault read, so destroying its rows completes.
+    if (config.retired === true) {
+      return yield* Effect.fail(
+        new ClusterNotFoundError({ message: `talos-openbao cluster '${alias}' is retired` }),
+      );
     }
     const transport = yield* openTransport(config);
-    yield* assertClusterUid(cluster, uid, transport);
+    yield* assertClusterUid(alias, uid, transport);
     return transport;
   });
 

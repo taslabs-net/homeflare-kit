@@ -98,7 +98,6 @@ const sameConnection = (
   right: TalosOpenBaoConnection | undefined,
 ): boolean =>
   right?.auth?.kind === left.auth.kind &&
-  right.auth.cluster === left.auth.cluster &&
   right.auth.uid === left.auth.uid &&
   right.endpoint === left.endpoint;
 

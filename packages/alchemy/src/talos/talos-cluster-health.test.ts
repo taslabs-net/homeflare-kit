@@ -15,7 +15,7 @@ import {
 } from './talos-cluster-health.ts';
 
 const TARGET = { cluster: 'c1', mount: 'talos-c1' };
-const connection = talosOpenBaoConnection('c1', 'uid-c1');
+const connection = talosOpenBaoConnection('uid-c1');
 const props = () => ({ connection, controlPlaneNodes: ['198.51.100.10'], target: TARGET });
 const prior = (healthy: boolean) => ({
   connection,
@@ -89,7 +89,7 @@ describe('diffClusterHealth', () => {
   });
 
   it('plans update when the cluster is healthy but the connection changed', async () => {
-    const drifted = talosOpenBaoConnection('other-cluster', 'uid-c1');
+    const drifted = talosOpenBaoConnection('uid-other');
     const result = await run(
       diffClusterHealth(props(), { ...prior(true), connection: drifted }),
       healthy,
@@ -98,7 +98,7 @@ describe('diffClusterHealth', () => {
   });
 
   it('plans update when only the cluster uid changed (a real move)', async () => {
-    const moved = talosOpenBaoConnection('c1', 'uid-c2');
+    const moved = talosOpenBaoConnection('uid-c2');
     const result = await run(
       diffClusterHealth(props(), { ...prior(true), connection: moved }),
       healthy,
