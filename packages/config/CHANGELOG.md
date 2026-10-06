@@ -1,5 +1,13 @@
 # @homeflare/config
 
+## 0.16.1
+
+### Patch Changes
+
+- [#360](https://github.com/taslabs-net/homeflare-kit/pull/360) [`09298b0`](https://github.com/taslabs-net/homeflare-kit/commit/09298b0f80da61e86675e20971a3dc020f9f8085) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Pre-push lanes run with `NODE_DISABLE_COMPILE_CACHE=1`: npm enables Node's module compile cache at
+  startup, which left `node-compile-cache` in the temp guard's `TMPDIR` and made it refuse every push
+  of an npm repo for a directory its tests never created. The guard is otherwise unchanged.
+
 ## 0.16.0
 
 ### Minor Changes
