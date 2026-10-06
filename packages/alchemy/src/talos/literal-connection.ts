@@ -44,7 +44,7 @@ export const withLiteralConnection = <C extends (...args: never[]) => unknown>(r
             return refused === undefined ? Effect.succeed(resolved) : Effect.fail(refused);
           }),
         );
-        return Reflect.apply(target, thisArg, [args[0], checked]);
+        return Reflect.apply(target, thisArg, [args[0], checked, ...args.slice(2)]);
       }
       const refused = refusal(props);
       return refused === undefined ? Reflect.apply(target, thisArg, args) : Effect.fail(refused);

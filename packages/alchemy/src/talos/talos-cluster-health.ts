@@ -100,7 +100,11 @@ const attributes = (props: ClusterHealthProps, healthy: boolean): ClusterHealthA
 const sameConnection = (
   left: TalosOpenBaoConnection,
   right: TalosOpenBaoConnection | undefined,
-): boolean => right?.auth?.kind === left.auth.kind && right.auth.uid === left.auth.uid;
+): boolean =>
+  right?.auth?.kind === left.auth.kind &&
+  right.auth.uid === left.auth.uid &&
+  // ⚠️ A row that still carries the legacy `auth.cluster` alias must update, so it leaves state.
+  !Object.hasOwn(right.auth, 'cluster');
 
 const healthArgs = (props: ClusterHealthProps, waitTimeout: string) => {
   const args = ['health', '--wait-timeout', waitTimeout];

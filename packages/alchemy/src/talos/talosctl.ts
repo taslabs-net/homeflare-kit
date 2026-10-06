@@ -10,6 +10,7 @@
  * ⛔ DO NOT LOG STDOUT ON FAILURE. `talosctl kubeconfig` and error paths have been observed in the
  *   wild to include credential material; stderr is the safe diagnostic channel.
  */
+import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
@@ -83,9 +84,12 @@ const capture = (binary: string, argv: readonly string[]) =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     return yield* ChildProcess.make(binary, argv, {
-      detached: false,
+      // ⛔ No `detached: false`, plus `forceKillAfter`, as credentials.ts's bao spawn: the child
+      //   leads its own process group (killed whole on interrupt) and a SIGTERM-ignoring talosctl
+      //   is SIGKILLed 1 s later instead of blocking interruption.
       env: talosctlEnv(),
       extendEnv: false,
+      forceKillAfter: Duration.seconds(1),
       stderr: 'pipe',
       stdin: 'ignore',
       stdout: 'pipe',
@@ -140,10 +144,11 @@ const checkOverrideVersion = (binary: string, source: string) =>
 export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
   Effect.gen(function* () {
     const requested = talosctlBinary(options.binary);
-    const binary =
+    const resolved =
       requested === DEFAULT_TALOSCTL_BINARY ? yield* resolveDefault(requested) : requested;
     const source = requested === DEFAULT_TALOSCTL_BINARY ? 'talosctl on PATH' : TALOSCTL_BINARY_ENV;
-    yield* checkBinaryPath(binary, source);
+    // ⛔ Launch exactly the vetted canonical path, for the probe and the credentialed call alike.
+    const binary = yield* checkBinaryPath(resolved, source);
     yield* checkOverrideVersion(binary, source);
     const argv = [
       ...args,

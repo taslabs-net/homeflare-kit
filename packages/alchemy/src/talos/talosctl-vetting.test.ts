@@ -2,7 +2,15 @@
  * `HF_TALOSCTL` vetting: path (absolute, lstat, owner, parent directory, mode), exact version, and
  * the minimal child env. Fake spawner only — the named file is never executed.
  */
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, expect, test } from 'bun:test';
@@ -83,6 +91,44 @@ test('an ancestor owned by another user is refused (fails on 37d835a: parent own
   } finally {
     Object.defineProperty(process, 'getuid', { configurable: true, value: real });
   }
+});
+
+test('a non-executable override is refused', async () => {
+  const bin = join(dir, 'noexec');
+  writeFileSync(bin, '#!/bin/sh\n', { mode: 0o644 });
+  chmodSync(bin, 0o644);
+  expect(await run(bin, pinned('v1.14.2'))).toContain('not executable');
+});
+
+test('both launches use the canonical path even if an ancestor symlink is swapped (fails on ede1f6f)', async () => {
+  const real = join(dir, 'real-bin');
+  const evil = join(dir, 'evil-bin');
+  for (const d of [real, evil]) {
+    mkdirSync(d);
+    chmodSync(d, 0o755);
+    writeFileSync(join(d, 'talosctl'), '#!/bin/sh\n', { mode: 0o755 });
+    chmodSync(join(d, 'talosctl'), 0o755);
+  }
+  const via = join(dir, 'via');
+  symlinkSync(real, via);
+  const launched: string[] = [];
+  const out = await Effect.runPromise(
+    Effect.provideService(
+      talosctl(['version'], { binary: join(via, 'talosctl'), talosconfigPath: 'unused.yaml' }),
+      ChildProcessSpawner.ChildProcessSpawner,
+      ChildProcessSpawner.make((cmd) => {
+        if (cmd._tag === 'StandardCommand') launched.push(cmd.command);
+        // The attacker repoints the link right after the version probe.
+        rmSync(via);
+        symlinkSync(evil, via);
+        return fakeSpawner(pinned('v1.14.2')).spawn(cmd);
+      }),
+    ),
+  );
+  expect(out).toBe('Client: Tag: v1.14.2');
+  expect(launched.length).toBe(2);
+  expect(launched[0]).toBe(join(realpathSync(real), 'talosctl'));
+  expect(launched[1]).toBe(launched[0]);
 });
 
 test('a refusal is a TalosBinaryRefused naming its source, never a TalosError', async () => {

@@ -8,7 +8,7 @@
  *   propagates through both untouched (hunt round 6: it read as `healthy: false`).
  */
 import { accessSync, constants, lstatSync, realpathSync } from 'node:fs';
-import { delimiter, dirname, isAbsolute, join } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join } from 'node:path';
 import * as Effect from 'effect/Effect';
 import { trustBoundaries } from './trust-boundary.ts';
 
@@ -81,20 +81,28 @@ const untrustedAncestor = (file: string, uid: number | undefined): string | unde
   }
 };
 
-/** ⛔ THE BINARY GETS THE VAULT-MINTED TALOSCONFIG: absolute, owned, not writable, trusted path. */
+/**
+ * ⛔ THE BINARY GETS THE VAULT-MINTED TALOSCONFIG: absolute, owned, not writable, executable, trusted
+ *   path. ⛔ RETURNS THE CANONICAL PATH (round 7): the override's directory is resolved ONCE
+ *   (realpath), that path and every ancestor of it are vetted, and the caller must launch exactly
+ *   the returned path for the version probe AND the credential-bearing call. Vetting the given path
+ *   and executing it again let a symlinked ancestor be repointed between the two launches. The leaf
+ *   itself is still lstat'd, so a symlink leaf is refused rather than followed.
+ */
 export const checkBinaryPath = (binary: string, source: string) => {
   const refuse = (why: string) =>
     Effect.fail(new TalosBinaryRefused('binary check', `${source} ${why}`, binary));
   if (!isAbsolute(binary)) return refuse('must be an absolute path');
   return Effect.try({
     try: () => {
-      const file = lstatSync(binary);
+      const canonical = join(realpathSync(dirname(binary)), basename(binary));
+      const file = lstatSync(canonical);
       const uid = process.getuid?.();
-      return { file, uid, ancestor: untrustedAncestor(binary, uid) };
+      return { canonical, file, uid, ancestor: untrustedAncestor(canonical, uid) };
     },
     catch: () => new TalosBinaryRefused('binary check', `${source} is not a readable file`, binary),
   }).pipe(
-    Effect.flatMap(({ file, uid, ancestor }) => {
+    Effect.flatMap(({ canonical, file, uid, ancestor }) => {
       // ★ lstat, not stat: a symlink can be re-pointed by whoever owns the link, so none is accepted.
       if (file.isSymbolicLink()) return refuse('must not be a symlink');
       if (!file.isFile()) return refuse('is not a regular file');
@@ -103,7 +111,12 @@ export const checkBinaryPath = (binary: string, source: string) => {
         return refuse('must be owned by the current user or root');
       }
       if ((file.mode & 0o022) !== 0) return refuse('is group- or world-writable');
-      return Effect.void;
+      try {
+        accessSync(canonical, constants.X_OK);
+      } catch {
+        return refuse('is not executable');
+      }
+      return Effect.succeed(canonical);
     }),
   );
 };
