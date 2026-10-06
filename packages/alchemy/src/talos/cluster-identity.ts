@@ -1,0 +1,39 @@
+/**
+ * Which PHYSICAL cluster answers — the kube-system Namespace's `metadata.uid`.
+ *
+ * ★ WHY THE UID. It is public, assigned once at cluster creation and stable across CA and
+ *   admin-cert rotation (a CA fingerprint is not: rotation would read as "a different cluster").
+ *   Every cluster has the namespace, and the admin kubeconfig can read it.
+ * ★ The GET goes through alchemy's own `readObject` (`Kubernetes/internal/client.ts`, reached
+ *   through the package's `./*` export) so TLS, CA and client-cert handling stay upstream's.
+ */
+import type { ClusterTransport } from 'alchemy/Kubernetes/ClusterAdapter';
+import { readObject } from 'alchemy/Kubernetes/internal/client';
+import * as Effect from 'effect/Effect';
+import {
+  TalosClusterIdentityMismatch,
+  TalosClusterIdentityUnreadable,
+} from './cluster-adapter-errors.ts';
+
+const KUBE_SYSTEM = { apiVersion: 'v1', kind: 'Namespace', name: 'kube-system' } as const;
+
+/** The cluster's kube-system uid. Request failures propagate: nothing here fails open. */
+export const readClusterUid = (cluster: string, transport: ClusterTransport) =>
+  readObject({ object: KUBE_SYSTEM, transport }).pipe(
+    Effect.flatMap((body) => {
+      const uid = (body as { metadata?: { uid?: unknown } } | undefined)?.metadata?.uid;
+      return typeof uid === 'string' && uid !== ''
+        ? Effect.succeed(uid)
+        : Effect.fail(new TalosClusterIdentityUnreadable({ cluster }));
+    }),
+  );
+
+/** Succeeds only when the answering cluster is the one `expected` names. */
+export const assertClusterUid = (cluster: string, expected: string, transport: ClusterTransport) =>
+  readClusterUid(cluster, transport).pipe(
+    Effect.flatMap((got) =>
+      got === expected
+        ? Effect.void
+        : Effect.fail(new TalosClusterIdentityMismatch({ cluster, expected, got })),
+    ),
+  );

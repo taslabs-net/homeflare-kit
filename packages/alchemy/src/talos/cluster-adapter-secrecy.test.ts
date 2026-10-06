@@ -16,7 +16,9 @@ import {
   TalosOpenBaoAdapter,
   TalosVaultKeyMissing,
   connectTalosOpenBao,
+  talosOpenBaoConnection,
 } from './cluster-adapter.ts';
+import { fakeApiServer } from './fake-apiserver.ts';
 import { readKvValue } from './credentials.ts';
 import { type FakeCall, type FakeHandler, fakeSpawner } from './fake-process.ts';
 import { buildAttrs } from './kubeconfig-attrs.ts';
@@ -54,19 +56,17 @@ const provide = <A, E>(
 const needles = [begin('CERTIFICATE'), begin('PRIVATE KEY'), certBody, keyBody];
 const leaks = (text: string) => needles.filter((needle) => text.includes(needle));
 
-test('changing mount, key or context does not change the persisted Connection', async () => {
-  const persisted = (cfg: typeof config.c1) => {
-    const attrs = buildAttrs(yaml, {
-      context: cfg.context,
-      kubeconfigKey: cfg.key,
-      node: '198.51.100.10',
-      target: { cluster: 'c1', mount: cfg.mount },
-    });
-    return JSON.stringify(attrs?.connection);
-  };
-  const a = persisted(config.c1);
-  expect(a).toBe('{"auth":{"kind":"talos-openbao","cluster":"c1"}}');
-  expect(persisted({ ...config.c1, key: 'k2', mount: 'm2' })).toBe(a);
+test('the persisted Connection is { kind, cluster, uid } and carries no vault path', () => {
+  // ★ buildAttrs persists no connection at all (kubeconfig-attrs.ts): only the identity resource
+  //   does, and its connection is a function of the cluster name and uid, never mount/key/context.
+  const attrs = buildAttrs(yaml, {
+    context: config.c1.context,
+    node: '198.51.100.10',
+    target: { cluster: 'c1', mount: config.c1.mount },
+  });
+  expect(Object.keys(attrs ?? {})).not.toContain('connection');
+  const a = JSON.stringify(talosOpenBaoConnection('c1', 'uid-c1'));
+  expect(a).toBe('{"auth":{"kind":"talos-openbao","cluster":"c1","uid":"uid-c1"}}');
   expect(a).not.toContain('kubeconfig');
   expect(a).not.toContain('talos-c1');
 });
@@ -96,12 +96,13 @@ test('connect through the layer leaves no PEM in tagged errors, temp files or lo
   for (const level of ['log', 'debug', 'info', 'warn', 'error'] as const) {
     console[level] = (...args: unknown[]) => void logged.push(args.map(String).join(' '));
   }
+  const api = fakeApiServer({ '192.0.2.50': 'uid-c1' });
   try {
     const run = (handler: FakeHandler) =>
       Effect.runPromise(
         Effect.gen(function* () {
           const adapter = yield* ClusterAdapter('talos-openbao');
-          return yield* adapter.connect({ auth: { kind: 'talos-openbao', cluster: 'c1' } });
+          return yield* adapter.connect(talosOpenBaoConnection('c1', 'uid-c1'));
         }).pipe(
           Effect.provide(TalosOpenBaoAdapter(config).pipe(Layer.provide(spawner(handler)))),
           Effect.provide(capture),
@@ -122,6 +123,7 @@ test('connect through the layer leaves no PEM in tagged errors, temp files or lo
     }
   } finally {
     Object.assign(console, saved);
+    api.restore();
     for (const spy of spies) spy.mockRestore();
   }
   expect(leaks(logged.join('\n'))).toEqual([]);

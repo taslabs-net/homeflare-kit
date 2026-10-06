@@ -4,15 +4,16 @@
  * ⛔ THE RESULT HOLDS PEM. Callers may put it on a `ClusterTransport` for one request.
  *   They must not persist it, log it, or copy it onto a `Connection`. Alchemy stores
  *   connection attributes in plaintext (`credentials.ts`'s own header).
- * ★ YAML IS `Bun.YAML`, the same parser `values.ts` already uses for this document.
- *   A second YAML library would be a dependency this repo refuses. Nothing here touches
- *   a filesystem or OpenBao — the caller has already read the bytes.
+ * ★ YAML IS `yaml-parse.ts` (runtime-neutral: Bun.YAML does not exist under Node, where the
+ *   published dist runs). Nothing here touches a filesystem or OpenBao — the caller has already
+ *   read the bytes.
  *
  * Walked against alchemy 2.0.0-beta.79 `Kubernetes/internal/client.ts`: `certificateAuthorityData`
  * stays base64 (the client decodes it) and `clientCert` is PEM. The document shape is the one
  * `values.ts` parses from the Talos v1.13 kubeconfig reference. Not measured on a live cluster.
  */
 import type { ClusterTransport } from 'alchemy/Kubernetes/ClusterAdapter';
+import { parseYaml } from './yaml-parse.ts';
 
 type KubeconfigDoc = {
   clusters?: {
@@ -47,12 +48,7 @@ export const kubeconfigTransport = (
   yamlText: string,
   contextName: string,
 ): KubeconfigMaterial | undefined => {
-  let parsed: unknown;
-  try {
-    parsed = Bun.YAML.parse(yamlText);
-  } catch {
-    return undefined;
-  }
+  const parsed = parseYaml(yamlText);
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
   const doc = parsed as KubeconfigDoc;
   const ctx = doc.contexts?.find((row) => row.name === contextName)?.context;

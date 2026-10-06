@@ -14,6 +14,7 @@ import {
   connectTalosOpenBao,
   talosOpenBaoConnection,
 } from './cluster-adapter.ts';
+import { fakeApiServer } from './fake-apiserver.ts';
 import { type FakeCall, type FakeHandler, fakeSpawner } from './fake-process.ts';
 import { buildAttrs } from './kubeconfig-attrs.ts';
 import type { ClusterHealthAttributes } from './talos-cluster-health.ts';
@@ -51,7 +52,7 @@ current-context: admin@hf-c1
 `;
 
 const config = { c1: { context: 'admin@hf-c1', key: 'kubeconfig', mount: 'talos-c1' } };
-const connection = talosOpenBaoConnection('c1');
+const connection = talosOpenBaoConnection('c1', 'uid-c1');
 
 const baoGet =
   (stdout: string): FakeHandler =>
@@ -100,7 +101,7 @@ const persisted = () => {
   const helm = {
     chart: 'oci://quay.io/cilium/charts/cilium',
     code: { hash: 'abc' },
-    connection: attrs.connection,
+    connection,
     namespace: 'kube-system',
     objects: [],
     releaseName: 'cilium',
@@ -108,7 +109,7 @@ const persisted = () => {
   } satisfies HelmChart['Attributes'];
   const manifest = {
     apiVersion: 'v1',
-    connection: attrs.connection,
+    connection,
     kind: 'Namespace',
     name: 'kube-system',
     namespace: 'kube-system',
@@ -137,11 +138,18 @@ test('HelmChart and Manifest attributes carry no PEM and no sentinel path', () =
 
 test('connect reads the vault in memory and returns PEM only on the transport', async () => {
   const calls: FakeCall[] = [];
-  const transport = await runAdapter(
-    connection,
-    baoGet(JSON.stringify({ data: { data: { kubeconfig: kubeconfigYaml } } })),
-    calls,
-  );
+  const api = fakeApiServer({ '192.0.2.50': 'uid-c1' });
+  let transport: Awaited<ReturnType<typeof runAdapter>>;
+  try {
+    transport = await runAdapter(
+      connection,
+      baoGet(JSON.stringify({ data: { data: { kubeconfig: kubeconfigYaml } } })),
+      calls,
+    );
+  } finally {
+    api.restore();
+  }
+  expect(api.seen).toEqual(['GET 192.0.2.50/api/v1/namespaces/kube-system']);
   expect(calls.map((call) => call.command)).toEqual(['bao']);
   expect(calls[0]?.args[1]).toBe('get');
   expect(calls[0]?.stdin).toBeUndefined();

@@ -24,6 +24,9 @@
  *   deliberate, visible act rather than an accident of barrelling.
  */
 export {
+  TalosClusterIdentityMismatch,
+  TalosClusterIdentityMissing,
+  TalosClusterIdentityUnreadable,
   TalosKubeconfigUnreadable,
   TalosOpenBaoAdapter,
   TalosOpenBaoAuthKind,
@@ -49,6 +52,12 @@ export {
   TalosBootstrap,
   TalosBootstrapProvider,
 } from './talos-bootstrap.ts';
+export {
+  type ClusterIdentityAttributes,
+  type ClusterIdentityProps,
+  TalosClusterIdentity,
+  TalosClusterIdentityProvider,
+} from './talos-cluster-identity.ts';
 export {
   type ClusterHealthAttributes,
   type ClusterHealthProps,

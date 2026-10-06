@@ -23,16 +23,16 @@
  *       (docs/plans/2026-09-26-talos-secrets-flow.md, O1). Once `output` is defined, reconcile only
  *       reads the vault copy back to confirm it — the same "once" shape `talos-bootstrap.ts` uses
  *       for a boolean, here for a value.
- *     - The persisted `connection` is auth kind `talos-openbao`: `{ kind, cluster }`
- *       only. The adapter reads the vault at connect time and returns a `ClusterTransport`.
- *       ⛔ Not the stock `kubeconfig` kind (an absent path falls back to `$KUBECONFIG`) and not
- *       `client-cert` (alchemy `Connection.ts` persists that PEM on every workload's attributes).
+ *     - NO `connection` is persisted here: a connection names the physical cluster by its
+ *       kube-system uid, which only `Talos.ClusterIdentity` can read (cluster-adapter.ts, the
+ *       identity rule). The adapter reads the vault at connect time. ⛔ Never the stock
+ *       `kubeconfig` kind (absent path falls back to `$KUBECONFIG`) nor `client-cert` (PEM on
+ *       every workload's attributes, alchemy `Connection.ts`).
  */
 import { chmodSync } from 'node:fs';
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
-import type { Connection } from 'alchemy/Kubernetes/Connection';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import {
@@ -63,11 +63,6 @@ export interface KubeconfigAttributes {
   clientCertificateFingerprint: string;
   /** Digest of endpoint+context+fingerprints — detects credential rotation without storing PEM. */
   credentialGeneration: string;
-  /**
-   * `talos-openbao` connection: mount, key and context only. Workloads resolve the admin
-   * material at connect time. This object never carries PEM or a filesystem path.
-   */
-  connection: Connection;
 }
 
 export interface TalosKubeconfig extends Resource<
@@ -116,14 +111,6 @@ export const readKubeconfig = (props: KubeconfigProps) =>
     return meta;
   });
 
-/** ★ Key order is state-store noise (a row saved by another build), not drift: sort like upstream. */
-const sortedJson = (value: unknown): string =>
-  JSON.stringify(value, (_key, v: unknown) =>
-    typeof v === 'object' && v !== null && !Array.isArray(v)
-      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
-      : v,
-  );
-
 export const diffKubeconfig = (
   news: Input<KubeconfigProps>,
   output: KubeconfigAttributes | undefined,
@@ -135,8 +122,10 @@ export const diffKubeconfig = (
       live !== undefined &&
       live.credentialGeneration === output.credentialGeneration &&
       live.context === output.context &&
-      // ⚠️ Rows saved before `talos-openbao` carry a dead placeholder (or none); they must update.
-      sortedJson(live.connection?.auth) === sortedJson(output.connection?.auth) &&
+      // ⚠️ A row saved by an earlier build still carries a `connection` (a name-only or dead
+      //   placeholder one). It must update so the stale connection leaves state: a workload wired
+      //   to this resource would otherwise keep an auth block that names no physical cluster.
+      !('connection' in output) &&
       live.endpoint === output.endpoint
     ) {
       return { action: 'noop' } as const;

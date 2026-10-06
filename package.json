@@ -73,6 +73,7 @@
     "@effect/sql-pg": "4.0.0-rc.115",
     "@modelcontextprotocol/sdk": "1.31.0",
     "mime": "4.1.0",
+    "yaml": "2.9.1",
     "handlebars": "4.7.9",
     "@flue/cli": "2.1.1",
     "@flue/react": "2.1.1",

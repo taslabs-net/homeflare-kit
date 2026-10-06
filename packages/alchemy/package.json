@@ -149,7 +149,8 @@
     "@distilled.cloud/paperless-ngx": "npm:@homeflare/distilled-paperless-ngx@0.3.0",
     "@distilled.cloud/proxmox": "npm:@homeflare/distilled-proxmox@0.3.4",
     "@distilled.cloud/proxmox-backup": "npm:@homeflare/distilled-proxmox-backup@0.3.1",
-    "@distilled.cloud/unifi-network": "npm:@homeflare/distilled-unifi-network@0.4.0"
+    "@distilled.cloud/unifi-network": "npm:@homeflare/distilled-unifi-network@0.4.0",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@distilled.cloud/argocd": "1.0.0-rc.12",

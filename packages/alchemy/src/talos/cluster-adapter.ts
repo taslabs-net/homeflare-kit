@@ -3,7 +3,7 @@
  *
  * Reads `mount/key` from OpenBao at connect time (`credentials.ts`'s `readKvValue`, which
  * shells to `bao` with BAO_ADDR/BAO_TOKEN) and returns a `ClusterTransport`.
- * ⛔ NOTHING IS WRITTEN TO DISK. ⛔ THE PERSISTED CONNECTION IS `{ kind, cluster }` ONLY.
+ * ⛔ NOTHING IS WRITTEN TO DISK. ⛔ THE PERSISTED CONNECTION IS `{ kind, cluster, uid }` ONLY.
  *   alchemy `Kubernetes/Connection.ts` (v2.0.0-beta.79, lines 12-14) stores the Connection on
  *   every workload's attributes, so the upstream `client-cert` kind would put the admin PEM in
  *   the shared state store. The stock `kubeconfig` kind is also refused: an empty path falls
@@ -13,24 +13,54 @@
  *   HelmChart/Manifest answer `replace` when it changes (`HelmChart.ts:248-258`,
  *   `Manifest.ts:194-209`); a replace creates first, then cleanup deletes the SAME-named objects.
  *   Renaming a vault key would silently delete Cilium, External Secrets and Gatekeeper.
+ * ⛔ THE IDENTITY RULE: THE AUTH BLOCK NAMES THE PHYSICAL CLUSTER. `uid` is the kube-system
+ *   Namespace `metadata.uid` (public, stable across CA rotation). read/update/delete all
+ *   reconnect from the SAVED auth block (`Manifest.ts:214` and `:267`, `HelmChart.ts:322` and
+ *   `:335`, via `connectionOfOutput`, `internal/workload.ts:104-108`) while the cluster NAME
+ *   resolves through today's MUTABLE config: repoint `c1` at c2's vault key and a saved `c1` row
+ *   PATCHes one cluster and DELETEs on another (reproduced through ManifestProvider). So `connect`
+ *   fails closed BEFORE any vault read when the auth block has no uid, then GETs kube-system and
+ *   compares before returning a transport: a missing, unreadable or different uid is a typed
+ *   error — never `ClusterNotFoundError`, which upstream turns into a silent no-op. The stack
+ *   obtains the uid as an Output of `Talos.ClusterIdentity`, so a REAL move to another cluster
+ *   changes the auth block and upstream replaces instead of deleting on the wrong cluster.
+ *   Cost: one extra GET per connect.
  *
  * Walked against alchemy 2.0.0-beta.79 `ClusterAdapter.ts` / `BuiltinAdapters.ts` and the OpenBao
- * v2.6.2 absence string in `isVaultKeyAbsent`. Fake `bao` only — no live vault and no cluster.
+ * v2.6.2 absence string in `isVaultKeyAbsent`. Fake `bao` and fake apiserver only.
  */
 import {
   ClusterAdapter,
   type ClusterAdapterService,
-  ClusterNotFoundError,
+  type ClusterNotFoundError,
   type ClusterTransport,
 } from 'alchemy/Kubernetes/ClusterAdapter';
 import type { Connection } from 'alchemy/Kubernetes/Connection';
-import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
-import { DEFAULT_KUBECONFIG_KEY, isVaultKeyAbsent, readKvValue } from './credentials.ts';
-import { kubeconfigTransport } from './kubeconfig-doc.ts';
-import type { KubeconfigProps } from './kubeconfig.ts';
+import {
+  type TalosClusterIdentityMismatch,
+  TalosClusterIdentityMissing,
+  type TalosClusterIdentityUnreadable,
+  type TalosKubeconfigUnreadable,
+  TalosOpenBaoAuthKind,
+  TalosOpenBaoUnknownCluster,
+  type TalosVaultKeyMissing,
+} from './cluster-adapter-errors.ts';
+import { assertClusterUid } from './cluster-identity.ts';
+import { type TalosOpenBaoCluster, openTransport } from './cluster-transport.ts';
+
+export {
+  TalosClusterIdentityMismatch,
+  TalosClusterIdentityMissing,
+  TalosClusterIdentityUnreadable,
+  TalosKubeconfigUnreadable,
+  TalosOpenBaoAuthKind,
+  TalosOpenBaoUnknownCluster,
+  TalosVaultKeyMissing,
+} from './cluster-adapter-errors.ts';
+export { type TalosOpenBaoCluster, talosOpenBaoCluster } from './cluster-transport.ts';
 
 declare module 'alchemy/Kubernetes/Connection' {
   interface AuthRegistry {
@@ -39,28 +69,16 @@ declare module 'alchemy/Kubernetes/Connection' {
      * {@link TalosOpenBaoAdapter}, which holds the mount, key and context.
      */
     'talos-openbao': {
-      /** Logical cluster name, e.g. `c1`. Identity only: changing it moves workloads. */
+      /** Logical cluster name, e.g. `c1`. Selects the adapter's vault configuration. */
       cluster: string;
+      /**
+       * The cluster's kube-system `metadata.uid`. Required at connect: absent means refused.
+       * Typed optional only so a row saved before this field existed still deserializes.
+       */
+      uid?: string;
     };
   }
 }
-
-/** One cluster's vault location. Configuration of the layer; never persisted. */
-export type TalosOpenBaoCluster = {
-  /** OpenBao KV mount, e.g. `talos-c1`. */
-  readonly mount: string;
-  /** Path under the mount. `Talos.Kubeconfig` writes `kubeconfig` unless `kubeconfigKey` is set. */
-  readonly key: string;
-  /** Context name inside the kubeconfig. Not secret. */
-  readonly context: string;
-  /**
-   * ⛔ ONLY `true` MAKES A MISSING KEY MEAN "THE CLUSTER IS GONE" (`ClusterNotFoundError`, which
-   *   upstream read/delete treat as "everything in-cluster is already gone"). Without it a missing
-   *   key is the loud `TalosVaultKeyMissing`: a typo in mount/key must not make `read` report every
-   *   row gone and `destroy` a silent no-op.
-   */
-  readonly retired?: boolean;
-};
 
 /**
  * ⛔ KEYED BY CLUSTER NAME, the `cluster` in the persisted connection. One adapter serves every
@@ -69,87 +87,19 @@ export type TalosOpenBaoCluster = {
  */
 export type TalosOpenBaoConfig = Readonly<Record<string, TalosOpenBaoCluster>>;
 
-/**
- * ★ ONE SOURCE OF TRUTH FOR mount/key/context: build the cluster entry from the SAME props the
- *   `Talos.Kubeconfig` resource writes with (`target.mount`, `kubeconfigKey`, `context`), so the
- *   writer and the reader cannot disagree.
- */
-export const talosOpenBaoCluster = (
-  props: Pick<KubeconfigProps, 'context' | 'kubeconfigKey' | 'target'>,
-  options: { readonly retired?: boolean } = {},
-): TalosOpenBaoCluster => ({
-  context: props.context,
-  key: props.kubeconfigKey ?? DEFAULT_KUBECONFIG_KEY,
-  mount: props.target.mount,
-  ...(options.retired === true ? { retired: true } : {}),
-});
-
-/** The connection names a cluster this adapter was not configured for. */
-export class TalosOpenBaoUnknownCluster extends Data.TaggedError('TalosOpenBaoUnknownCluster')<{
-  readonly cluster: string;
-  readonly known: readonly string[];
-}> {
-  override get message(): string {
-    return (
-      `talos-openbao adapter has no configuration for cluster '${this.cluster}' ` +
-      `(configured: ${this.known.join(', ') || 'none'}). Refused rather than reading another ` +
-      "cluster's kubeconfig."
-    );
-  }
-}
-
-/** `bao kv get` reported the key unwritten. The message names `mount/key` and no document bytes. */
-export class TalosVaultKeyMissing extends Data.TaggedError('TalosVaultKeyMissing')<{
-  readonly mount: string;
-  readonly key: string;
-}> {
-  override get message(): string {
-    return (
-      `${this.mount}/${this.key}: OpenBao has no value at this key. Talos.Kubeconfig writes it ` +
-      'once at bring-up. Connect refused instead of reading a kubeconfig from disk.'
-    );
-  }
-}
-
-/** Vault bytes exist but are not a kubeconfig for the pinned context. The document is not echoed. */
-export class TalosKubeconfigUnreadable extends Data.TaggedError('TalosKubeconfigUnreadable')<{
-  readonly mount: string;
-  readonly key: string;
-  readonly context: string;
-}> {
-  override get message(): string {
-    return (
-      `${this.mount}/${this.key}: OpenBao kubeconfig does not parse for context ${this.context}. ` +
-      'The document stayed in the vault. Connect wrote nothing to disk and nothing to state.'
-    );
-  }
-}
-
-/** The layer was asked to connect a different auth kind. */
-export class TalosOpenBaoAuthKind extends Data.TaggedError('TalosOpenBaoAuthKind')<{
-  readonly kind: string;
-}> {
-  override get message(): string {
-    return (
-      `talos-openbao adapter received auth kind '${this.kind}'. This adapter only connects ` +
-      '`talos-openbao`.'
-    );
-  }
-}
-
 /** A `Connection` narrowed to this kind, so a PEM-bearing connection cannot be stored by type. */
 export type TalosOpenBaoConnection = Connection & {
-  readonly auth: { readonly kind: 'talos-openbao'; readonly cluster: string };
+  readonly auth: { readonly kind: 'talos-openbao'; readonly cluster: string; readonly uid: string };
 };
 
-/** Serializable connection: kind and cluster name. No vault path, endpoint, CA or client cert. */
-export const talosOpenBaoConnection = (cluster: string): TalosOpenBaoConnection => ({
-  auth: { kind: 'talos-openbao', cluster },
+/** Serializable connection: kind, cluster name and uid. No vault path, endpoint, CA or cert. */
+export const talosOpenBaoConnection = (cluster: string, uid: string): TalosOpenBaoConnection => ({
+  auth: { kind: 'talos-openbao', cluster, uid },
 });
 
 /**
  * Resolve one `talos-openbao` connection to a transport. Requires `ChildProcessSpawner`
- * because the vault read shells to `bao`.
+ * because the vault read shells to `bao`, and reaches the apiserver once for the identity check.
  *
  * ⚠️ A key the vault reports absent is `ClusterNotFoundError` ONLY for a cluster configured
  *   `retired: true` (upstream `read`/`delete` treat that as "everything in-cluster is already
@@ -163,6 +113,9 @@ export const connectTalosOpenBao = (
   ClusterTransport,
   | TalosOpenBaoAuthKind
   | TalosOpenBaoUnknownCluster
+  | TalosClusterIdentityMissing
+  | TalosClusterIdentityMismatch
+  | TalosClusterIdentityUnreadable
   | TalosVaultKeyMissing
   | ClusterNotFoundError
   | TalosKubeconfigUnreadable
@@ -170,31 +123,24 @@ export const connectTalosOpenBao = (
   ChildProcessSpawner.ChildProcessSpawner
 > =>
   Effect.gen(function* () {
-    if (connection.auth.kind !== 'talos-openbao') {
-      return yield* Effect.fail(new TalosOpenBaoAuthKind({ kind: connection.auth.kind }));
+    const { auth } = connection;
+    if (auth.kind !== 'talos-openbao') {
+      return yield* Effect.fail(new TalosOpenBaoAuthKind({ kind: auth.kind }));
     }
-    const { cluster } = connection.auth;
+    const { cluster, uid } = auth;
     const config = Object.hasOwn(configs, cluster) ? configs[cluster] : undefined;
     if (config === undefined) {
       return yield* Effect.fail(
         new TalosOpenBaoUnknownCluster({ cluster, known: Object.keys(configs) }),
       );
     }
-    const { context, key, mount } = config;
-    const raw = yield* readKvValue(mount, key, ['kubeconfig', 'config']).pipe(
-      Effect.mapError((error) => {
-        if (!isVaultKeyAbsent(error)) return error;
-        const missing = new TalosVaultKeyMissing({ key, mount });
-        return config.retired === true
-          ? new ClusterNotFoundError({ message: missing.message })
-          : missing;
-      }),
-    );
-    const material = yield* Effect.sync(() => kubeconfigTransport(raw, context));
-    if (material === undefined) {
-      return yield* Effect.fail(new TalosKubeconfigUnreadable({ context, key, mount }));
+    // ⛔ Before the vault is touched: a row with no identity can only be refused, never guessed.
+    if (typeof uid !== 'string' || uid === '') {
+      return yield* Effect.fail(new TalosClusterIdentityMissing({ cluster }));
     }
-    return { ...material, headers: Effect.succeed({}) } satisfies ClusterTransport;
+    const transport = yield* openTransport(config);
+    yield* assertClusterUid(cluster, uid, transport);
+    return transport;
   });
 
 /**

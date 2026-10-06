@@ -85,8 +85,7 @@ describe('reconcile — CREATE writes talosctl kubeconfig output into the vault,
 
     assert.equal(result.endpoint, 'https://192.0.2.50:6443');
     assert.equal(result.context, 'admin@hf-c1');
-    assert.equal(result.connection.auth.kind, 'talos-openbao');
-    assert.deepEqual(result.connection.auth, { cluster: 'c1', kind: 'talos-openbao' });
+    assert.equal('connection' in result, false, 'the identity resource owns the connection');
     assert.equal(JSON.stringify(result).includes('talos-first-boot-unwired'), false);
     assert.equal(JSON.stringify(result).includes('BEGIN CERTIFICATE'), false);
     assert.equal(JSON.stringify(result).includes('PRIVATE KEY'), false);
@@ -108,7 +107,6 @@ describe('reconcile — write-once: a second reconcile never re-runs talosctl ku
     const priorOutput: KubeconfigAttributes = {
       certificateAuthorityFingerprint: 'x',
       clientCertificateFingerprint: 'x',
-      connection: { auth: { context: 'admin@hf-c1', kind: 'kubeconfig' } },
       context: 'admin@hf-c1',
       credentialGeneration: 'x',
       endpoint: 'https://192.0.2.50:6443',
@@ -203,7 +201,6 @@ describe('reconcile — belt-and-suspenders: a defined-but-empty output is treat
     const staleEmptyOutput: KubeconfigAttributes = {
       certificateAuthorityFingerprint: '',
       clientCertificateFingerprint: '',
-      connection: { auth: { context: 'admin@hf-c1', kind: 'kubeconfig' } },
       context: 'admin@hf-c1',
       credentialGeneration: '',
       endpoint: '',
@@ -264,7 +261,7 @@ describe('diff', () => {
     const old = {
       ...(output as KubeconfigAttributes),
       connection: { auth: { context: 'admin@hf-c1', kind: 'kubeconfig' } },
-    } as KubeconfigAttributes;
+    } as unknown as KubeconfigAttributes;
     const result = await run(diff(props(), old), (call: FakeCall) =>
       call.args[1] === 'get'
         ? { stdout: JSON.stringify({ data: { data: { config: fixtureKubeconfig('old') } } }) }
