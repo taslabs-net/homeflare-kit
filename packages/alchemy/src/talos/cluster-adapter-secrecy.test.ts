@@ -15,6 +15,7 @@ import { readKvValue } from './credentials.ts';
 import { type FakeCall, type FakeHandler, fakeSpawner } from './fake-process.ts';
 import { buildAttrs } from './kubeconfig-attrs.ts';
 import { talosctl } from './talosctl.ts';
+import { tmpdir } from 'node:os';
 
 const b64 = (text: string) => Buffer.from(text).toString('base64');
 const begin = (label: string) => `-----${'BEGIN'} ${label}-----`;
@@ -45,7 +46,7 @@ const provide = <A, E>(
   handler: FakeHandler,
   calls: FakeCall[] = [],
 ) => Effect.runPromise(Effect.provide(effect, spawner(handler, calls)));
-const tmpFiles = () => readdirSync(Bun.env['TMPDIR'] ?? '/tmp').filter((n) => n.startsWith('hf-'));
+const tmpFiles = () => readdirSync(tmpdir()).filter((n) => n.startsWith('hf-'));
 const needles = [begin('CERTIFICATE'), begin('PRIVATE KEY'), certBody, keyBody];
 const leaks = (text: string) => needles.filter((needle) => text.includes(needle));
 
@@ -151,7 +152,7 @@ test('connect fails with the typed adapter error when the kind mismatches', asyn
     vault,
   );
   expect(outcome).toBe('mismatch');
-  expect(existsSync(`${Bun.env['TMPDIR'] ?? '/tmp'}/talos-openbao`)).toBe(false);
+  expect(existsSync(`${tmpdir()}/talos-openbao`)).toBe(false);
 });
 
 test('HF_TALOSCTL must be absolute, non-writable by others, and the pinned version', async () => {
@@ -161,7 +162,7 @@ test('HF_TALOSCTL must be absolute, non-writable by others, and the pinned versi
     );
   expect(await run('relative/talosctl')).toContain('absolute');
   expect(await run('/definitely/not/here/talosctl')).toContain('not a readable file');
-  const bin = `${Bun.env['TMPDIR'] ?? '/tmp'}/hf-talosctl-probe-${Bun.randomUUIDv7()}`;
+  const bin = `${tmpdir()}/hf-talosctl-probe-${Bun.randomUUIDv7()}`;
   await Bun.write(bin, '#!/bin/sh\n');
   try {
     await Bun.$`chmod 0777 ${bin}`.quiet();
