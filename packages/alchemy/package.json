@@ -20,6 +20,7 @@
     "src",
     "!src/**/fixtures",
     "!src/**/trust-boundary.seam.ts",
+    "!dist/**/trust-boundary.seam.*",
     "README.md",
     "LICENSE"
   ],
