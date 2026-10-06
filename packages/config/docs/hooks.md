@@ -98,23 +98,22 @@ The base comes from git. The hook reads the pushed refs on stdin:
 
 The lanes are the repo's own `check`, read as an `&&` chain:
 
-- `bun test …` becomes `bun test … --changed=<base>`. Bun follows imports. A changed
-  file that is not `.ts`/`.tsx`/`.js`/`.mjs` also runs each `*.test.ts` / `*.test.js`
-  (outside `node_modules`) whose source — or a repo-relative module it imports
-  directly — names that path, an ancestor at least two segments deep (`src/vendor/`),
-  or a file name of 8+ characters other than `README.md`, `index.*`, or `package.json`.
-  One line reports the count of extra files; each selected path is passed as `./<path>`.
-  An added non-module path no test names runs the suite in full and says so by count.
-  ⚠️ An edit of a file found only by a directory listing, or of a short name no test
-  spells out, still stays on `--changed`.
+- `bun test …` becomes `bun test … --changed=<base>` only when every changed path
+  is a module (`.ts`, `.tsx`, `.js`, `.mjs`). Bun's `--changed` follows imports
+  only. Measured 2026-10-06: a docs edit and a vendored `.py` reported "no test
+  files are affected", so the tests that read them never ran. Choosing those
+  tests by reading source was dropped for safety: a miss still reached CI, and a
+  path in the lane command could forge a log line. Any non-module path runs the
+  suite in full. The line is a count — `N non-module file(s) — tests in full` —
+  never a path. The cost is that a docs, fixture, or vendored push runs every test.
 - `build*` and `smoke*` scripts are skipped. CI runs them on every pull request.
 - A script that hides a `bun test` or a build is expanded. For example
   `check → verify → bun test` becomes a narrowed test lane. Any other script runs
   under its own name, exactly as written.
 - A test script that is not a plain `bun test`, such as vitest with coverage thresholds
   or `node --test`, runs in full and is labelled `(IN FULL)`.
-- A push that changes a `package.json`, `bun.lock`, `bunfig.toml` or `tsconfig*.json`
-  runs the tests in full. Imports cannot see those files, but every test runs on them.
+- `package.json`, `bun.lock`, `bunfig.toml` and `tsconfig*.json` are non-module
+  files, so a push that changes one still runs the suite in full.
 - ⛔ A `check` whose every lane is skipped, such as only `build`, **fails** the push. It
   used to print "0 lane(s) passed" and exit 0.
 

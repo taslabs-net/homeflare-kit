@@ -16,7 +16,6 @@ import { requireCleanTree, requireInstalled } from './preconditions.ts';
 import { checkoutFix } from './push-fix.ts';
 import { planLanes } from './push-plan.ts';
 import { changesEverything, parsePushRefs, pushScope } from './push-range.ts';
-import { type ReadLanePlan, importLimitNote, testsReading, withReadTests } from './read-tests.ts';
 import { scanPushedSecrets } from './push-secrets.ts';
 import { fail, note, ok, run, runCaptured, tool } from './report.ts';
 import { runPlannedLanes } from './push-run.ts';
@@ -192,47 +191,20 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
   if (scope.kind === 'unscoped') {
     note(`pre-push: ${scope.why} — every lane runs, tests in full`);
   } else {
-    const global = scope.changed.filter(changesEverything);
+    const widen = scope.changed.filter(changesEverything);
     note(`pre-push: ${String(scope.changed.length)} file(s) changed ${scope.why}`);
-    if (global.length > 0)
-      note(`  ${global.join(', ')} changes what every test runs on — tests in full`);
+    // ⛔ A COUNT, NEVER A PATH. The name is untrusted: a newline in it forges a second
+    //   log line. `changesEverything` is every non-module file, so this one reason
+    //   covers a doc, a vendored tree, and a manifest.
+    if (widen.length > 0) note(`${String(widen.length)} non-module file(s) — tests in full`);
     else base = scope.base;
   }
 
   // ⛔ Old literals must not block unrelated pushes. Reuse the paths measured from the
-  //   push base even when a manifest change widens the test lane to run in full.
-  const planned = planLanes(scripts, base);
-  // ★ `--changed` follows imports only. Tests that read a changed non-module file are
-  //   named in read-tests.ts and appended here. A manifest change never reaches this:
-  //   `base` stays unset and the lane already runs in full.
-  const reading =
-    scope.kind === 'scoped' && base !== undefined
-      ? await testsReading(root, scope.changed, base)
-      : undefined;
-  // ⛔ An added non-module path no test names cannot be found by string search (a
-  //   directory listing, a short name). The suite runs in full. Counts only — the
-  //   path itself is not printed. `changesEverything` is a different set and stays.
-  const unnamedAdds = reading?.unnamedAdds ?? 0;
-  const importLimit = reading?.importLimit;
-  if (unnamedAdds > 0) {
-    note(`${String(unnamedAdds)} added non-module path(s) named by no test — tests in full`);
-  }
-  // ⛔ Counts only. The path that blew the cap is not printed.
-  if (importLimit !== undefined) note(importLimitNote(importLimit));
-  const plannedTests: ReadLanePlan =
-    unnamedAdds > 0 || importLimit !== undefined
-      ? { lanes: planLanes(scripts, undefined), added: false }
-      : reading === undefined
-        ? { lanes: planned, added: false }
-        : withReadTests(planned, reading.files);
-  if (reading !== undefined && plannedTests.added) {
-    note(
-      `added ${String(reading.files.length)} extra test file(s) — ${String(reading.matchedPaths)} changed non-module path(s) named in a test`,
-    );
-  }
+  //   push base even when a non-module change widens the test lane to run in full.
   await runPlannedLanes(
     root,
-    plannedTests.lanes,
+    planLanes(scripts, base),
     scope.kind === 'scoped' ? scope.changed : undefined,
   );
 }

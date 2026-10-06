@@ -1,6 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import { runPlannedLanes } from '../src/hooks/push-run.ts';
-import { withReadTests } from '../src/hooks/read-tests.ts';
 import * as guard from '../src/hooks/tmp-guard.ts';
 
 describe('pre-push test lane failure messages', () => {
@@ -69,39 +68,4 @@ describe('pre-push test lane failure messages', () => {
       guarded.mockRestore();
     }
   });
-});
-
-test('a selected name containing a newline is never logged', async () => {
-  const name = 'tests/has\nnewline.test.ts';
-  const planned = withReadTests(
-    [{ kind: 'test', label: 'bun test', command: 'bun test --changed=abc', scoped: true }],
-    [name],
-  );
-  const lane = planned.lanes[0];
-  if (lane === undefined || lane.kind !== 'test') throw new Error('expected a test lane');
-  expect(lane.command).toContain(name);
-  expect(lane.selected).toBe(1);
-
-  const guarded = spyOn(guard, 'runInTmp').mockResolvedValue({
-    code: 1,
-    leaks: [],
-    removed: 'fixture-dir',
-  });
-  const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
-  const stopped = new Error('hook stopped');
-  const exit = spyOn(process, 'exit').mockImplementation(() => {
-    throw stopped;
-  });
-  try {
-    await expect(runPlannedLanes(process.cwd(), planned.lanes, [])).rejects.toBe(stopped);
-    const logged = stderr.mock.calls.flat().join('');
-    expect(logged).not.toContain(name);
-    expect(logged).not.toContain('newline.test.ts');
-    expect(logged).toContain('1 selected');
-    expect(logged).toContain('bun test (1 selected) — until it is green');
-  } finally {
-    exit.mockRestore();
-    stderr.mockRestore();
-    guarded.mockRestore();
-  }
 });

@@ -14,11 +14,11 @@
  *      both on every pull request;
  *   3. everything else (lint, types, a `--check` script) runs exactly as `check` spells it.
  *      They are seconds, whole-program by nature, and deterministic.
- * ★ READ-PATH TESTS ARE NOT THIS FUNCTION'S. `--changed` follows imports only
+ * ★ A NON-MODULE PATH IS NOT THIS FUNCTION'S. `--changed` follows imports only
  *   (measured 2026-10-06: a docs edit reported "no test files are affected").
- *   gates.ts asks read-tests.ts which tracked tests name a changed non-module path
- *   and appends those files. Doing it here would read the tree, and this function
- *   is pinned by a table of `check` shapes rather than by a live repository.
+ *   gates.ts leaves `base` unset for any such path, which is this function's
+ *   existing "run every test" input. Reading the tree here would couple a pure
+ *   table of `check` shapes to a live repository.
  * ⛔ PURE. No git, no filesystem, no process: the whole contract is a function of the
  *   scripts table and the base, so the estate's real `check` shapes are pinned by a table
  *   test (tests/hooks-push-plan.test.ts) instead of by a live push.
@@ -34,8 +34,6 @@ export type Lane =
       readonly label: string;
       readonly command: string;
       readonly scoped: boolean;
-      /** Extra files appended for this push. Logged as a count; the names stay in `command`. */
-      readonly selected?: number;
     }
   /** Not run here, and why. */
   | { readonly kind: 'skip'; readonly label: string; readonly why: string };
@@ -152,7 +150,7 @@ function expand(
  * The lanes `pre-push` runs for this `scripts` table.
  *
  * `base` is the commit the push is measured from; `undefined` runs every test lane in full
- * (an unknown base, or a push that changes what every test runs on).
+ * (an unknown base, or a push that changes a non-module file).
  * ⚠️ AN EMPTY LIST MEANS NO `check` SCRIPT — the caller reports that; it is not a pass.
  */
 export function planLanes(

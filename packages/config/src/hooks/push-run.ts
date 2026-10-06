@@ -5,38 +5,25 @@
  *   with a count, and cleanup is attempted either way. Lint and types do not get one:
  *   they are not where the temp-directory leak comes from.
  * 🔴 `runLane` / `runInTmp` strip the GIT_* this hook inherited — see report.ts.
- * ⛔ THE LOG IS THE LABEL AND A COUNT. `command` lists every selected path, and a
- *   path with a newline would forge a second log line. Names stay in the command
- *   that runs; the line that is printed does not include them.
+ * ⛔ THE LOG IS THE LABEL. A changed path is not printed here: a newline in a name
+ *   would forge a second line. The full-suite reason is a count, printed by gates.ts.
  */
 import { type Lane } from './push-plan.ts';
 import { fail, note, ok, runLane } from './report.ts';
 import { formatLeaks, problemsInTmpLiterals, runInTmp } from './tmp-guard.ts';
 
-function selected(lane: Lane): number {
-  return lane.kind === 'test' ? (lane.selected ?? 0) : 0;
-}
-
 /** The one-line reason a lane is in the run, printed before it starts. */
 function describe(lane: Lane): string {
   if (lane.kind === 'skip') return `skip ${lane.label} — ${lane.why}`;
-  const n = selected(lane);
-  if (lane.kind === 'test' && lane.scoped) {
-    const which =
-      n === 0
-        ? 'only the tests the push can reach'
-        : `${String(n)} selected, only the tests the push can reach`;
-    return `run  ${lane.label}  (${which})`;
-  }
+  if (lane.kind === 'test' && lane.scoped)
+    return `run  ${lane.label}  (only the tests the push can reach)`;
   if (lane.kind === 'test') return `run  ${lane.label}  (IN FULL)`;
   return `run  ${lane.label}`;
 }
 
-/** What to re-run. The label and, when files were appended, how many — not their names. */
+/** What to re-run: the label only. A path here would be a second log line. */
 function untilGreen(lane: Lane): string {
-  const n = selected(lane);
-  const count = n === 0 ? '' : ` (${String(n)} selected)`;
-  return `${lane.label}${count} — until it is green`;
+  return `${lane.label} — until it is green`;
 }
 
 /** How many lanes actually ran. Calls `fail`, which does not return, when one does not pass. */
