@@ -13,6 +13,7 @@
  *   all three and fails on any drift.
  */
 import { describe, expect, test } from 'bun:test';
+import { deriveImportMoves, parseSmokePins, workspacePackages } from './peer-contract-helper';
 
 const root = new URL('../', import.meta.url);
 const rootPkg = (await Bun.file(new URL('../../../package.json', import.meta.url)).json()) as {
@@ -41,6 +42,22 @@ const effectExports = (await Bun.file(
 ).json()) as { exports: Record<string, unknown> };
 
 const consumer = pkg.homeflare.consumer;
+const repoRoot = new URL('../../../', import.meta.url);
+
+const distilledCoreVersions = new Set<string>();
+for await (const { manifest } of workspacePackages(repoRoot, 'packages/*/package.json')) {
+  const v = manifest.dependencies?.['@distilled.cloud/core'];
+  if (v !== undefined) distilledCoreVersions.add(v);
+}
+if (distilledCoreVersions.size !== 1) {
+  throw new Error(
+    `expected one @distilled.cloud/core version across workspace packages, got ${[...distilledCoreVersions].join(', ') || 'none'}`,
+  );
+}
+const [distilledCore] = [...distilledCoreVersions];
+if (distilledCore === undefined) {
+  throw new Error('expected one @distilled.cloud/core version across workspace packages, got none');
+}
 
 /** Parse the JSON block inside the README's `## Peers` section. */
 function readmeOverrides(): Record<string, string> {
@@ -108,11 +125,11 @@ describe('peer contract', () => {
     expect(readmeOverrides()).toEqual(consumer.overrides);
   });
 
-  test('the smoke test PINS match the consumer contract', () => {
-    for (const [name, version] of Object.entries(consumer.overrides)) {
-      const key = /^[A-Za-z0-9_]+$/.test(name) ? name : `'${name}'`;
-      expect(smoke).toContain(`${key}: '${version}'`);
-    }
+  test('the smoke test PINS match the consumer contract in both directions', () => {
+    // ⛔ A one-directional check misses overrides dropped from the contract but left in
+    //   the smoke install, which is exactly the README/smoke disagreement class this
+    //   suite exists to prevent.
+    expect(parseSmokePins(smoke)).toEqual(consumer.overrides);
   });
 
   test('overrides.effect equals the pin, so the override cannot drift off the peer', () => {
@@ -150,7 +167,7 @@ describe('peer contract', () => {
         expect(version).toBe(overrides[name] ?? '');
       } else if (name === '@distilled.cloud/core') {
         // core is a dependency of every distilled-* interim package; it is not a direct peer.
-        expect(version).toBe('1.0.0-rc.13');
+        expect(version).toBe(distilledCore);
       } else {
         expect(name in pkg.peerDependencies).toBe(true);
       }
@@ -161,53 +178,23 @@ describe('peer contract', () => {
     // ★ site, seat-runtime and the distilled-* interim packages all peer effect at the same
     //   exact version. A different exact peer anywhere splits the graph this contract exists
     //   to prevent. This is discovered from the tree, not listed by hand.
-    for (const pkg of [
-      'site',
-      'seat-runtime',
-      'distilled-caddy',
-      'distilled-grafana',
-      'distilled-litellm',
-      'distilled-netbox',
-      'distilled-openbao',
-      'distilled-opnsense',
-      'distilled-paperless-ngx',
-      'distilled-proxmox',
-      'distilled-proxmox-backup',
-      'distilled-unifi-network',
-    ]) {
-      const manifest = (await Bun.file(
-        new URL(`../../../packages/${pkg}/package.json`, import.meta.url),
-      ).json()) as { peerDependencies: Record<string, string> };
-      expect(manifest.peerDependencies.effect).toBe(consumer.pins.effect ?? '');
+    const drifted: { name: string | undefined; version: string }[] = [];
+    for await (const { name, manifest } of workspacePackages(repoRoot, 'packages/*/package.json')) {
+      const version = manifest.peerDependencies?.effect;
+      if (version !== undefined && version !== consumer.pins.effect) {
+        drifted.push({ name, version });
+      }
     }
+    expect(drifted).toEqual([]);
   });
 });
 
 describe('consumer import moves', () => {
   test('importMoves are derived from rc.115 to the installed effect exports', () => {
-    const rcUnstable = Object.keys(rcExports)
-      .filter((k) => k.startsWith('./unstable/') && !k.includes('/internal/'))
-      .map((k) => k.slice('./unstable/'.length));
-
-    const currentExports = effectExports.exports;
-    const derivedMoves: Record<string, string> = {};
-    const derivedUnresolved: string[] = [];
-
-    for (const area of rcUnstable) {
-      if (area === 'arbitrary') {
-        derivedUnresolved.push(`effect/unstable/${area}/`);
-      } else if (area === 'httpapi') {
-        derivedMoves[`effect/unstable/${area}/`] = 'effect/http-api/';
-      } else if (`./${area}` in currentExports) {
-        derivedMoves[`effect/unstable/${area}/`] = `effect/${area}/`;
-      } else {
-        throw new Error(`effect/unstable/${area} has no target in the current effect exports`);
-      }
-    }
+    const { importMoves: derivedMoves, unresolved } = deriveImportMoves(rcExports, effectExports);
 
     // ⛔ httpapi must be first in the published order (the rest follow alphabetical order).
-    const httpapi = derivedMoves['effect/unstable/httpapi/'];
-    expect(httpapi).toBe('effect/http-api/');
+    expect(derivedMoves['effect/unstable/httpapi/']).toBe('effect/http-api/');
     expect(consumer.importMoves).toEqual(derivedMoves);
     const httpapiKey = 'effect/unstable/httpapi/';
     const expectedKeys = [
@@ -217,6 +204,6 @@ describe('consumer import moves', () => {
         .sort(),
     ];
     expect(Object.keys(consumer.importMoves)).toEqual(expectedKeys);
-    expect(consumer.unresolved).toEqual(derivedUnresolved);
+    expect(consumer.unresolved).toEqual(unresolved);
   });
 });
