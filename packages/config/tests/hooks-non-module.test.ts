@@ -5,6 +5,8 @@
  *   one commit on top of what the remote has, so the markers say which tests ran.
  * 🔴 MEASURED 2026-10-06: an edit of a doc or a vendored `.py` reported "no test
  *   files are affected". An add of an unnamed path already widened; these are edits.
+ *   One non-module path widens the push even beside a module. A `.d.ts` is non-module:
+ *   the same day, a declaration-only push ran 0 tests on `--changed`.
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
@@ -81,6 +83,7 @@ beforeAll(async () => {
   await repo.write(DOCS[0], '# gaps\n');
   await repo.write(DOCS[1], '# notes\n');
   await repo.write(VENDOR, '# vendor\n');
+  await repo.write('ambient.d.ts', 'declare const ambientMarker: number;\n');
   await repo.git('add', '.');
   await repo.git('commit', '--quiet', '-m', 'seed');
   await repo.git('remote', 'add', 'origin', remote);
@@ -130,4 +133,23 @@ test('a package.json push still runs the full suite, without naming the file', a
     'package.json': JSON.stringify({ ...PROBE, version: '0.0.1' }, null, 2),
   });
   expectFull(await push(tip, before), 1, ['package.json']);
+});
+
+test('a push that changes a module and a non-module file runs the full suite', async () => {
+  const before = await sha();
+  await repo.git('push', '--quiet', 'origin', 'feat');
+  const tip = await commit({
+    'a.ts': 'export const value = 3;\n',
+    [DOCS[0]]: '# gaps mixed\n',
+  });
+  const output = await push(tip, before);
+  expectFull(output, 1, [DOCS[0], 'unit-gaps.md']);
+  expect(output).toContain('2 file(s) changed');
+});
+
+test('a .d.ts-only push runs the full suite and logs a count, not the path', async () => {
+  const before = await sha();
+  await repo.git('push', '--quiet', 'origin', 'feat');
+  const tip = await commit({ 'ambient.d.ts': 'declare const ambientMarker: string;\n' });
+  expectFull(await push(tip, before), 1, ['ambient.d.ts']);
 });

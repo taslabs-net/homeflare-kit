@@ -99,7 +99,7 @@ The base comes from git. The hook reads the pushed refs on stdin:
 The lanes are the repo's own `check`, read as an `&&` chain:
 
 - `bun test …` becomes `bun test … --changed=<base>` only when every changed path
-  is a module (`.ts`, `.tsx`, `.js`, `.mjs`). Bun's `--changed` follows imports
+  is a module (`.ts`, `.tsx`, `.js`, `.mjs`, not `.d.ts`). Bun's `--changed` follows imports
   only. Measured 2026-10-06: a docs edit and a vendored `.py` reported "no test
   files are affected", so the tests that read them never ran. Choosing those
   tests by reading source was dropped for safety: a miss still reached CI, and a
