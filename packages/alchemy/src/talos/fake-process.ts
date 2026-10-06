@@ -15,9 +15,9 @@
  *   it finds, see the comment at that code) and defaults `BAO_ADDR`/`BAO_TOKEN` to placeholders
  *   (`readKvValue` refuses without them). Nothing real is spawned; the mutation outlives the file.
  */
-import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { realpathSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as Effect from 'effect/Effect';
 import * as Sink from 'effect/Sink';
 import * as Stream from 'effect/Stream';
@@ -86,18 +86,18 @@ const stdinText = (stdin: unknown) =>
  * something to fake.
  */
 // ★ THE DEFAULT `talosctl` IS RESOLVED ON PATH AND VETTED (talosctl.ts resolveDefault), so a test
-//   that never names a binary needs a real, trusted file there. A private temp dir holds a stub that
-//   is NEVER executed (the fake spawner answers for it) and goes first on PATH; removed on exit.
-const stubDir = mkdtempSync(join(tmpdir(), 'hf-fake-talosctl-'));
-const stubFile = join(stubDir, 'talosctl');
-writeFileSync(stubFile, '#!/bin/sh\n', { mode: 0o755 });
-chmodSync(stubFile, 0o755);
-chmodSync(stubDir, 0o755);
-export const STUB_TALOSCTL: string = realpathSync(stubFile);
+//   that never names a binary needs a real, trusted file there. A COMMITTED stub (mode 755, never
+//   executed: the fake spawner answers for it) goes first on PATH.
+// ⚠️ NOT A TEMP DIR (measured 2026-10-06): the stub was a `mkdtemp` under os.tmpdir() removed by a
+//   `process.on('exit')` hook, and `bun test <one file>` leaked it (the house pre-push guard refused
+//   the push: `hf-fake-talosctl- 1`). `exit` does not reliably fire under bun test, and a module-level
+//   `afterAll` binds only to the FIRST file that imports this (cached) module, so no hook can own
+//   the lifetime. A fixture on disk has no lifetime to clean up.
+const stubDir = fileURLToPath(new URL('./fixtures/bin', import.meta.url));
+export const STUB_TALOSCTL: string = realpathSync(join(stubDir, 'talosctl'));
 trustBoundaryForTests(stubDir);
 // (the boundary is the stub dir itself: it is vetted, nothing above it is)
 process.env['PATH'] = `${realpathSync(stubDir)}${delimiter}${process.env['PATH'] ?? ''}`;
-process.on('exit', () => rmSync(stubDir, { force: true, recursive: true }));
 
 export const fakeSpawner = (handler: FakeHandler, calls: FakeCall[] = []) =>
   ChildProcessSpawner.make((command: Command) =>

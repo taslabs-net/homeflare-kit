@@ -140,7 +140,13 @@ test('connect through the layer leaves no PEM in tagged errors, temp files or lo
     //   the whole transport and the PEM markers from everything but `clientCert`.
     const transport = await run(() => ({ ...vault({} as FakeCall), stderr: yaml }));
     const { clientCert, ...rest } = transport;
-    expect(JSON.stringify(transport)).not.toContain(yaml);
+    // ⚠️ JSON.stringify ESCAPES newlines, so the needle must be the escaped form: a raw-text needle
+    //   can never match a multi-line document and the assertion passes vacuously (measured
+    //   2026-10-06: a transport leaking the whole document in `clientCert` passed).
+    const escaped = (text: string) => JSON.stringify(text).slice(1, -1);
+    expect(JSON.stringify(transport)).not.toContain(escaped(yaml));
+    expect(JSON.stringify(transport)).not.toContain(escaped(yaml.split('\n')[0] ?? ''));
+    expect(JSON.stringify(transport)).not.toContain('apiVersion');
     expect(JSON.stringify(rest)).not.toContain(begin('PRIVATE KEY'));
     expect(JSON.stringify(rest)).not.toContain(begin('CERTIFICATE'));
     expect(clientCert?.key).toContain(begin('PRIVATE KEY'));
