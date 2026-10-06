@@ -33,6 +33,32 @@ export function parseSmokePins(smoke: string): Record<string, string> {
   return out;
 }
 
+/** Extract the name@version pairs from the smoke script's `bun add` install call. */
+export function parseSmokeInstallPins(smoke: string): Record<string, string> {
+  const call = smoke.match(
+    /await\s+run\s*\(\s*\[\s*'bun'\s*,\s*'add'[\s\S]*?\]\s*,\s*scratch\s*,\s*\)/,
+  );
+  if (call?.[0] === undefined) {
+    throw new Error('smoke install call not found');
+  }
+
+  const out: Record<string, string> = {};
+  for (const [, quoted] of call[0].matchAll(/'([^']+)'/g)) {
+    if (quoted === undefined) {
+      continue;
+    }
+    const parts = quoted.split('@');
+    if (parts.length >= 2) {
+      const version = parts.pop();
+      const name = parts.join('@');
+      if (version !== undefined) {
+        out[name] = version;
+      }
+    }
+  }
+  return out;
+}
+
 /** Derive import moves from the rc.115 unstable exports to the installed effect exports. */
 export function deriveImportMoves(
   rcExports: Record<string, unknown>,

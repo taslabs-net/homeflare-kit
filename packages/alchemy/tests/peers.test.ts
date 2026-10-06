@@ -6,14 +6,19 @@
  *   it. Both got through because the README's install command and the smoke test's
  *   install command DISAGREED — the smoke test installed `cloudflare`, the README's
  *   pinned line did not mention it, and nothing compared them.
- * ⛔ So this compares them. A peer the manifest declares must appear in the README and in
+ * ⛔ So this compares them. A peer the manifest declares must appear in the peer doc and in
  *   the smoke install, or one of the three is lying to a consumer.
  * ★ The single source of truth is now `homeflare.consumer` in this package's manifest.
- *   README, smoke-test install and the published contract must stay equal; this file reads
- *   all three and fails on any drift.
+ *   docs/peers.md, the smoke-test install and the published contract must stay equal;
+ *   this file reads all three and fails on any drift.
  */
 import { describe, expect, test } from 'bun:test';
-import { deriveImportMoves, parseSmokePins, workspacePackages } from './peer-contract-helper';
+import {
+  deriveImportMoves,
+  parseSmokeInstallPins,
+  parseSmokePins,
+  workspacePackages,
+} from './peer-contract-helper';
 
 const root = new URL('../', import.meta.url);
 const rootPkg = (await Bun.file(new URL('../../../package.json', import.meta.url)).json()) as {
@@ -32,7 +37,7 @@ const pkg = (await Bun.file(new URL('package.json', root)).json()) as {
     };
   };
 };
-const readme = await Bun.file(new URL('README.md', root)).text();
+const peerDoc = await Bun.file(new URL('docs/peers.md', root)).text();
 const smoke = await Bun.file(new URL('scripts/smoke.ts', root)).text();
 const rcExports = (await Bun.file(
   new URL('tests/fixtures/effect-exports-rc.115.json', root),
@@ -54,25 +59,22 @@ if (distilledCoreVersions.size !== 1) {
     `expected one @distilled.cloud/core version across workspace packages, got ${[...distilledCoreVersions].join(', ') || 'none'}`,
   );
 }
-const [distilledCore] = [...distilledCoreVersions];
-if (distilledCore === undefined) {
-  throw new Error('expected one @distilled.cloud/core version across workspace packages, got none');
-}
+const [distilledCore] = [...distilledCoreVersions] as [string];
 
-/** Parse the JSON block inside the README's `## Peers` section. */
-function readmeOverrides(): Record<string, string> {
-  const block = readme.match(/```json\s*(\{\s*"overrides"\s*:\s*\{[\s\S]*?\}\s*\})\s*```/);
+/** Parse the JSON block inside `docs/peers.md`. */
+function peerDocOverrides(): Record<string, string> {
+  const block = peerDoc.match(/```json\s*(\{\s*"overrides"\s*:\s*\{[\s\S]*?\}\s*\})\s*```/);
   expect(block).not.toBeNull();
   if (block === null || block[1] === undefined) {
-    throw new Error('README overrides block not found');
+    throw new Error('docs/peers.md overrides block not found');
   }
   return (JSON.parse(block[1]) as { overrides: Record<string, string> }).overrides;
 }
 
 describe('peer contract', () => {
-  test('every peer appears in the README install', () => {
+  test('every peer appears in the install instructions in docs/peers.md', () => {
     for (const name of Object.keys(pkg.peerDependencies)) {
-      expect(readme).toContain(name);
+      expect(peerDoc).toContain(name);
     }
   });
 
@@ -112,17 +114,27 @@ describe('peer contract', () => {
     expect(pkg.peerDependenciesMeta ?? {}).toEqual({});
   });
 
-  test('the README tells consumers about the overrides block and the consumer field', () => {
+  test('docs/peers.md tells consumers about the overrides block and the consumer field', () => {
     // Pinned peers are not enough: platform-node-shared resolves up transitively.
-    expect(readme).toContain('overrides');
-    expect(readme).toContain('@effect/platform-node-shared');
-    expect(readme).toContain('homeflare.consumer');
+    expect(peerDoc).toContain('overrides');
+    expect(peerDoc).toContain('@effect/platform-node-shared');
+    expect(peerDoc).toContain('homeflare.consumer');
   });
 
-  test('the README overrides block matches the consumer contract', () => {
-    // ⛔ Drift here means a consumer follows the README and installs something the published
-    //   manifest no longer promises; or the manifest promises something the README hides.
-    expect(readmeOverrides()).toEqual(consumer.overrides);
+  test('the smoke install pins match the consumer contract pins', () => {
+    // ⛔ THE GAP THAT LET 0.1.1 SHIP (versions). If the smoke script installs a peer at a
+    //   different version than the contract, the smoke proves a tree no consumer will get.
+    const installed = parseSmokeInstallPins(smoke);
+    expect(new Set(Object.keys(installed))).toEqual(new Set(Object.keys(pkg.peerDependencies)));
+    for (const [name, version] of Object.entries(installed)) {
+      expect(consumer.pins[name] ?? '').toBe(version);
+    }
+  });
+
+  test('the docs/peers.md overrides block matches the consumer contract', () => {
+    // ⛔ Drift here means a consumer follows the peer doc and installs something the published
+    //   manifest no longer promises; or the manifest promises something the peer doc hides.
+    expect(peerDocOverrides()).toEqual(consumer.overrides);
   });
 
   test('the smoke test PINS match the consumer contract in both directions', () => {
@@ -142,7 +154,7 @@ describe('peer contract', () => {
     //   `rolldown: ~1.2.6` resolved to 1.2.9 and npm 404'd the tarball. The fix moved
     //   to an exact pin; the consumer contract now owns it.
     expect(consumer.overrides.rolldown ?? '').toBe('1.2.8');
-    expect(readmeOverrides()).toHaveProperty('rolldown', '1.2.8');
+    expect(peerDocOverrides()).toHaveProperty('rolldown', '1.2.8');
   });
 
   test('overrides pin redis to the complete sub-package set, not a floating peer', () => {
@@ -150,7 +162,7 @@ describe('peer contract', () => {
     //   @redis/time-series@6.3.0, so a lockfile-less install floating the
     //   peer failed outright for that window. Exact stays.
     expect(consumer.overrides.redis ?? '').toBe('6.3.0');
-    expect(readmeOverrides()).toHaveProperty('redis', '6.3.0');
+    expect(peerDocOverrides()).toHaveProperty('redis', '6.3.0');
   });
 
   test('consumer pins are exact and track the kit catalog or overrides', () => {
