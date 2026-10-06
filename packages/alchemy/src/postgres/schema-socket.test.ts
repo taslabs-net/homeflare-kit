@@ -11,7 +11,8 @@ import * as PgClientModule from '@effect/sql-pg/PgClient';
 import type { PgClient as PgClientService } from '@effect/sql-pg/PgClient';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { SqlClient } from 'effect/unstable/sql/SqlClient';
+import { SqlClient, TransactionConnection } from 'effect/unstable/sql/SqlClient';
+import { PIN_SEARCH_PATH_SQL } from './search-path.ts';
 import { isDependentObjectsError } from './schema-sql.ts';
 import { classifyInstalled } from './installed-classifier.ts';
 import { PostgresPool, postgresConnection } from './connection.ts';
@@ -31,6 +32,8 @@ const schemaRead = postgresSchemaHandlers.read;
 const pools: Array<{ database?: string | undefined }> = [];
 /** Every SQL text the fake client ran, in order. */
 const queries: string[] = [];
+/** The pool count at each `SET search_path`: one pin per pool, before that pool's statements. */
+const pins: number[] = [];
 /** The router answers for the current test (`schema-test-kit.ts` markers, JSON strings). */
 let answers: RouteAnswers = {};
 
@@ -38,7 +41,15 @@ let answers: RouteAnswers = {};
 // callbacks), and `Statement<A>` is an `Effect<ReadonlyArray<A>, SqlError>` — a plain succeed
 // satisfies the same call shape.
 const fakeClient = {
+  // `pinnedSocketExecutor` reserves one connection and routes every statement through the
+  // client's own `transactionService` — the fake only has to answer both.
+  reserve: Effect.succeed({}),
+  transactionService: TransactionConnection(0),
   unsafe: (text: string) => {
+    if (text === PIN_SEARCH_PATH_SQL) {
+      pins.push(pools.length);
+      return Effect.succeed([] as never);
+    }
     queries.push(text);
     const answer = route(text, answers);
     return Effect.succeed(
@@ -72,6 +83,7 @@ describe('socket transport: a missing declared database is schema absent', () =>
   beforeEach(() => {
     pools.length = 0;
     queries.length = 0;
+    pins.length = 0;
     answers = {};
   });
 
@@ -85,8 +97,8 @@ describe('socket transport: a missing declared database is schema absent', () =>
     expect(pools.length).toBe(1);
     expect(pools[0]?.database).toBe('postgres');
     expect(queries.length).toBe(1);
-    expect(queries[0]).toContain('FROM pg_database');
-    expect(queries.some((q) => q.startsWith('DROP SCHEMA'))).toBe(false);
+    expect(queries[0]).toContain('FROM pg_catalog.pg_database');
+    expect(queries.some((q) => q.startsWith('DO '))).toBe(false);
   });
 
   test('read answers absent: the untyped 3D000 connect never happens', async () => {
@@ -98,7 +110,7 @@ describe('socket transport: a missing declared database is schema absent', () =>
     expect(pools.length).toBe(1);
     expect(pools[0]?.database).toBe('postgres');
     expect(queries.length).toBe(1);
-    expect(queries[0]).toContain('FROM pg_database');
+    expect(queries[0]).toContain('FROM pg_catalog.pg_database');
   });
 
   test('the `database` override reaches the pool: probe over the family pool, statements over the declared one', async () => {
@@ -113,7 +125,9 @@ describe('socket transport: a missing declared database is schema absent', () =>
     );
     // The probe opened the family database; every statement after it opened `agents`.
     expect(pools.map((pool) => pool.database)).toEqual(['postgres', 'agents']);
-    expect(queries.some((q) => q.startsWith('DROP SCHEMA'))).toBe(true);
+    // Each pool's reserved connection is pinned before its first statement: pool 1, then pool 2.
+    expect(pins).toEqual([1, 2]);
+    expect(queries.some((q) => q.startsWith('DO '))).toBe(true);
   });
 
   test('read over an existing declared database answers the row from the overridden pool', async () => {
@@ -147,7 +161,7 @@ describe('socket transport: a missing declared database is schema absent', () =>
     );
     expect(error).toBeInstanceOf(PostgresSchemaDeleteForeignRefused);
     expect(error).toMatchObject({ liveOid: 16443, liveOwner: 'other_role', lastOid: 16442 });
-    expect(queries.some((q) => q.startsWith('DROP SCHEMA'))).toBe(false);
+    expect(queries.some((q) => q.startsWith('DO '))).toBe(false);
   });
 
   test('the installed classifier keeps 3D000 as UnknownError with the raw code — the untyped failure the probe prevents', async () => {

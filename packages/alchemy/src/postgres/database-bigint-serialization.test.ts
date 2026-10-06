@@ -76,10 +76,10 @@ const wireAccuratePg = (seed?: {
   return {
     unsafe: <A extends object>(text: string, params: ReadonlyArray<unknown> = []) =>
       Effect.suspend(() => {
-        if (text.startsWith('SELECT 1 AS present FROM pg_roles')) {
+        if (text.startsWith('SELECT 1 AS present FROM pg_catalog.pg_roles')) {
           return Effect.succeed([{ present: 1 }] as unknown as ReadonlyArray<A>);
         }
-        if (text.includes('FROM pg_database')) {
+        if (text.includes('FROM pg_catalog.pg_database')) {
           if (created === undefined) return Effect.succeed([] as unknown as ReadonlyArray<A>);
           const row = wireAccurateRow(text, created.oid, created.connectionLimit);
           return Effect.succeed([row] as unknown as ReadonlyArray<A>);

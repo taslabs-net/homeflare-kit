@@ -15,9 +15,9 @@ import { PostgresGrantsColumnMissing, PostgresGrantsTableMissing } from './grant
  * (`func.sgml@REL_18_6`). */
 const TABLES_PRESENT_SQL = `SELECT
     c.relname AS table
-  FROM pg_class c
-  WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)
-    AND c.relname::text IN (SELECT json_array_elements_text($2::json))`;
+  FROM pg_catalog.pg_class c
+  WHERE c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $1)
+    AND c.relname::text IN (SELECT pg_catalog.json_array_elements_text($2::json))`;
 
 const findMissingTable = (
   pg: PgExecutor,
@@ -41,13 +41,13 @@ const findMissingTable = (
 const COLUMNS_PRESENT_SQL = `SELECT
     c.relname AS table,
     a.attname AS column
-  FROM pg_attribute a
-  JOIN pg_class c ON c.oid = a.attrelid
-  WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)
+  FROM pg_catalog.pg_attribute a
+  JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+  WHERE c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $1)
     AND a.attnum > 0
     AND NOT a.attisdropped
     AND (c.relname, a.attname) IN (
-      SELECT x->>0, x->>1 FROM json_array_elements($2::json) x
+      SELECT x->>0, x->>1 FROM pg_catalog.json_array_elements($2::json) x
     )`;
 
 const findMissingColumn = (

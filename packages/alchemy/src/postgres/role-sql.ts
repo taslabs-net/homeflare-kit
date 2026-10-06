@@ -46,7 +46,7 @@ const SELECT_ROLE_SQL = `SELECT
     r.rolreplication AS replication,
     r.rolbypassrls AS bypassrls,
     to_char(r.rolvaliduntil AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "validUntil"
-  FROM pg_roles r
+  FROM pg_catalog.pg_roles r
   WHERE r.rolname = $1`;
 
 export const selectRole = (

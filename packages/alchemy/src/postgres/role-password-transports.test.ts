@@ -9,6 +9,7 @@ import type { Connection } from 'effect/unstable/sql/SqlConnection';
 import type { PgExecutor } from './database-sql.ts';
 import { makeFakeSql } from './fake-sql.ts';
 import { type PsqlRunner, makePsqlExecutor } from './psql-executor.ts';
+import { stripPin } from './search-path.ts';
 import { reconcileWithClient } from './role.ts';
 
 const props = {
@@ -84,7 +85,8 @@ test('psql runner receives only a verifier; echoed failure and state hold no pla
     for (const fail of [false, true]) {
       const calls: Parameters<PsqlRunner>[0][] = [];
       let created = exists;
-      const run: PsqlRunner = (call) => {
+      const run: PsqlRunner = (raw) => {
+        const call = { ...raw, stdin: stripPin(raw.stdin) };
         calls.push(call);
         if (call.stdin.includes('PASSWORD') && fail) {
           return Promise.resolve({
@@ -97,7 +99,7 @@ test('psql runner receives only a verifier; echoed failure and state hold no pla
         return Promise.resolve({
           code: 0,
           stderr: '',
-          stdout: call.stdin.includes('FROM pg_roles r')
+          stdout: call.stdin.includes('FROM pg_catalog.pg_roles r')
             ? JSON.stringify(created ? [live] : [])
             : '[]',
         });

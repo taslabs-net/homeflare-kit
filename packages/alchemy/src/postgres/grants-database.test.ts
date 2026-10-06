@@ -48,7 +48,7 @@ const recording = (probe: string, proof: string) => {
   const run: PsqlRunner = ({ stdin, argv }) => {
     stdins.push(stdin);
     argvs.push(argv);
-    const stdout = stdin.includes('FROM pg_database')
+    const stdout = stdin.includes('FROM pg_catalog.pg_database')
       ? probe
       : stdin.includes('current_database()')
         ? proof
@@ -79,7 +79,7 @@ describe('a missing declared database is absent', () => {
     // current_database()/GRANT/REVOKE ever targeted the (absent) declared database.
     expect(result).toBeUndefined();
     expect(stdins.length).toBe(1);
-    expect(stdins[0]).toContain('FROM pg_database');
+    expect(stdins[0]).toContain('FROM pg_catalog.pg_database');
     expect(stdins[0]).not.toContain('current_database()');
     expect(argvs[0]?.at(-1)).toBe('postgres');
   });
@@ -106,7 +106,7 @@ describe('a present database is opened and proved', () => {
         .pipe(Effect.provide(provide(run))),
     );
     expect(argvs[0]?.at(-1)).toBe('postgres');
-    expect(stdins[0]).toContain('FROM pg_database');
+    expect(stdins[0]).toContain('FROM pg_catalog.pg_database');
     expect(argvs.slice(1).every((argv) => argv.at(-1) === 'agents')).toBe(true);
     expect(stdins[1]).toContain('current_database()');
   });
@@ -129,7 +129,7 @@ describe('a present database is opened and proved', () => {
     // declared database and proves current_database() there.
     expect(argvs.length).toBe(2);
     expect(argvs[0]?.at(-1)).toBe('postgres');
-    expect(stdins[0]).toContain('FROM pg_database');
+    expect(stdins[0]).toContain('FROM pg_catalog.pg_database');
     expect(argvs[1]?.at(-1)).toBe('agents');
     expect(stdins[1]).toContain('current_database()');
   });
@@ -152,7 +152,7 @@ describe('a missing declared database on reconcile is a typed refusal', () => {
     expect(error).toMatchObject({ database: 'agents' });
     // Only the family-connection probe ran; reconcile never opened the declared database.
     expect(stdins.length).toBe(1);
-    expect(stdins[0]).toContain('FROM pg_database');
+    expect(stdins[0]).toContain('FROM pg_catalog.pg_database');
     expect(argvs[0]?.at(-1)).toBe('postgres');
   });
 });

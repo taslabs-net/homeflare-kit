@@ -7,6 +7,7 @@ import { buildCreateDatabaseSql, isDuplicateDatabaseRace } from './database-sql.
 import { buildSetPasswordSql } from './role-sql.ts';
 import { scramSha256Verifier } from './role-scram.ts';
 import { type PsqlRunner, inlineParams, makePsqlExecutor } from './psql-executor.ts';
+import { stripPin } from './search-path.ts';
 
 const target = { database: 'postgres', username: 'postgres' };
 const ok = (stdout: string) => Promise.resolve({ code: 0, stdout, stderr: '' });
@@ -24,7 +25,10 @@ describe('psql executor', () => {
       return ok('[{"oid":"16400","name":"x"}]\n');
     };
     const rows = await Effect.runPromise(
-      makePsqlExecutor(run, target).unsafe('SELECT 1 FROM pg_database WHERE datname = $1', ['x']),
+      makePsqlExecutor(run, target).unsafe(
+        'SELECT 1 FROM pg_catalog.pg_database WHERE datname = $1',
+        ['x'],
+      ),
     );
     expect(rows).toEqual([{ oid: 16400, name: 'x' }]);
     expect(calls[0]?.argv.slice(0, 1)).toEqual(['psql']);
@@ -114,10 +118,12 @@ describe('runner transport through withPg', () => {
       tablespace: 'pg_default',
     };
     let created = false;
-    const run: PsqlRunner = ({ stdin }) => {
+    const run: PsqlRunner = ({ stdin: raw }) => {
+      const stdin = stripPin(raw);
       stdins.push(stdin);
-      if (stdin.includes('pg_roles')) return ok('[{"present":1}]');
-      if (stdin.includes('FROM pg_database')) return ok(created ? JSON.stringify([row]) : '[]');
+      if (stdin.includes('pg_catalog.pg_roles')) return ok('[{"present":1}]');
+      if (stdin.includes('FROM pg_catalog.pg_database'))
+        return ok(created ? JSON.stringify([row]) : '[]');
       if (stdin.startsWith('CREATE DATABASE')) created = true;
       return ok('');
     };
@@ -141,7 +147,7 @@ describe('runner transport through withPg', () => {
   test('transaction is one psql script from BEGIN through COMMIT', async () => {
     const calls: string[] = [];
     const run: PsqlRunner = (call) => {
-      calls.push(call.stdin);
+      calls.push(stripPin(call.stdin));
       return ok('');
     };
     await Effect.runPromise(

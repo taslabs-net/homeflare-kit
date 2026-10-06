@@ -40,10 +40,10 @@ const MEMBERSHIP_SQL = `SELECT parent.rolname AS parent,
     m.admin_option AS admin,
     m.set_option AS set,
     m.inherit_option AS inherit
-  FROM pg_auth_members m
-  JOIN pg_roles member ON member.oid = m.member
-  JOIN pg_roles parent ON parent.oid = m.roleid
-  LEFT JOIN pg_roles grantor ON grantor.oid = m.grantor
+  FROM pg_catalog.pg_auth_members m
+  JOIN pg_catalog.pg_roles member ON member.oid = m.member
+  JOIN pg_catalog.pg_roles parent ON parent.oid = m.roleid
+  LEFT JOIN pg_catalog.pg_roles grantor ON grantor.oid = m.grantor
   WHERE member.rolname = $1
   ORDER BY parent.rolname, grantor.rolname NULLS FIRST`;
 

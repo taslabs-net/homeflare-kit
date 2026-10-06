@@ -97,7 +97,7 @@ export const applyRoleStatement = <A extends object>(
   text: string,
   params: ReadonlyArray<unknown>,
 ): Effect.Effect<ReadonlyArray<A>, SqlError> | undefined => {
-  if (text.includes('FROM pg_auth_members')) {
+  if (text.includes('FROM pg_catalog.pg_auth_members')) {
     const member = params[0] as string;
     const rows = [...state.memberships]
       .filter((key) => key.split('\0')[0] === member)
@@ -119,7 +119,7 @@ export const applyRoleStatement = <A extends object>(
     return Effect.succeed(rows as unknown as ReadonlyArray<A>);
   }
 
-  if (text.includes('FROM pg_roles r')) {
+  if (text.includes('FROM pg_catalog.pg_roles r')) {
     const name = params[0] as string;
     const row = state.roleRows.get(name);
     // pg_roles answers no password value (S25): even a seeded seal is not read back — state
