@@ -52,7 +52,11 @@ describe('drop: the proof and the DROP are one statement', () => {
     expect(at('pg_advisory_xact_lock')).toBeGreaterThan(-1);
     expect(at('pg_advisory_xact_lock')).toBeLessThan(at('n.oid = v_oid'));
     expect(at('pg_get_userbyid(n.nspowner) = v_owner')).toBeGreaterThan(-1);
-    expect(at('n.oid = v_oid')).toBeLessThan(at('EXECUTE'));
+    // The DDL-conflicting lock (a no-op COMMENT on the schema object) precedes the re-verify too.
+    expect(at('COMMENT ON SCHEMA %I')).toBeGreaterThan(-1);
+    expect(at('COMMENT ON SCHEMA %I')).toBeLessThan(at('n.oid = v_oid'));
+    expect(at("''lock_timeout''")).toBeLessThan(at('pg_advisory_xact_lock'));
+    expect(at('n.oid = v_oid')).toBeLessThan(sql.lastIndexOf('EXECUTE'));
   });
 
   test('a schema replaced between the read and the drop is refused, nothing dropped (HF001)', async () => {
@@ -160,8 +164,17 @@ describe('drop: cascade never reaches another schema', () => {
     expect(sql).toContain('pg_catalog.pg_depend');
     // A class the CASE does not know yields NULL; IS DISTINCT FROM counts NULL as foreign, so an
     // unclassifiable dependent refuses the cascade instead of slipping through.
-    expect(sql).toContain('IS DISTINCT FROM v_ns');
+    expect(sql).toContain('IS NOT DISTINCT FROM v_ns');
+    // The walk follows every deptype except the pin (`p`): n a i P S e x each cascade or attribute.
+    expect(sql).toContain("d.deptype <> ''p''");
     for (const catalog of [
+      'pg_collation',
+      'pg_conversion',
+      'pg_opclass',
+      'pg_opfamily',
+      'pg_ts_config',
+      'pg_statistic_ext',
+      'pg_extension',
       'pg_constraint',
       'pg_trigger',
       'pg_rewrite',
@@ -182,5 +195,26 @@ describe('drop: the generated text cannot be broken out of by a name', () => {
     expect(sql.endsWith("'")).toBe(true);
     // No unescaped quote before the final one: every `'` inside is doubled by the quoter.
     expect(sql.slice(5, -1).replace(/''/g, '')).not.toContain("'");
+  });
+
+  test('applyAtomicDrop reads such a name and owner back exactly (fake parses its own output)', async () => {
+    const name = `x$$; DROP TABLE t; --'\\"`;
+    const owner = `o'wn\\er$tag$`;
+    const fake = makeFakeSql({ schemas: [liveRow({ name, owner })] });
+    await run(dropWithClient(fake, { name, database: 'postgres' }));
+    expect(fake.schemas.get(name)).toBeUndefined();
+    // A different owner with the same tricky name is a refusal, not a by-name drop.
+    const other = makeFakeSql({ schemas: [liveRow({ name, owner: 'someone' })] });
+    const racing: PgExecutor = {
+      ...other,
+      unsafe: (text, params) => {
+        if (text.startsWith('DO ')) other.schemas.set(name, liveRow({ name, owner }));
+        return other.unsafe(text, params);
+      },
+    };
+    await fails(
+      deleteWithClient(racing, { name, database: 'postgres' }, liveRow({ name, owner: 'someone' })),
+    );
+    expect(other.schemas.get(name)).toBeDefined();
   });
 });
