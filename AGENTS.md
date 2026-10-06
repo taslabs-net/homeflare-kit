@@ -117,7 +117,9 @@ appear in `tsconfig.json` while emit stays off.
 
 Bun parses these itself. Do not add a dependency for any of them:
 
-- **YAML** — `Bun.YAML.parse()`, or `import cfg from './x.yaml'` directly
+- **YAML** — `Bun.YAML.parse()`, or `import cfg from './x.yaml'` directly. ⛔ Exception: code
+  in a PUBLISHED `dist/` (runs on Node, where `Bun.YAML` is a missing global) uses the `yaml`
+  package, as `@homeflare/alchemy`'s `talos/yaml-parse.ts` does (reproduced on Node 22)
 - **TOML** — `Bun.TOML`, and `bunfig.toml` is read natively
 - **JSON / JSONC** — `await Bun.file(p).json()`
 - **SQLite** — `bun:sqlite` (⛔ subpath export only, never the main entry)

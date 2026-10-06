@@ -136,11 +136,14 @@ test('connect through the layer leaves no PEM in tagged errors, temp files or lo
       );
     // ★ The success path also gets the whole document on stderr: a regression that logs or
     //   surfaces bao's stderr on success shows up in `logged` below. The transport legitimately
-    //   holds the client key, so only the raw document and the PEM markers are barred from it.
+    //   holds the client key (inside `clientCert`, by contract), so the raw document is barred from
+    //   the whole transport and the PEM markers from everything but `clientCert`.
     const transport = await run(() => ({ ...vault({} as FakeCall), stderr: yaml }));
-    const exposed = JSON.stringify(transport, Object.getOwnPropertyNames(transport));
-    expect(exposed).not.toContain(yaml);
-    expect(exposed).not.toContain(begin('PRIVATE KEY'));
+    const { clientCert, ...rest } = transport;
+    expect(JSON.stringify(transport)).not.toContain(yaml);
+    expect(JSON.stringify(rest)).not.toContain(begin('PRIVATE KEY'));
+    expect(JSON.stringify(rest)).not.toContain(begin('CERTIFICATE'));
+    expect(clientCert?.key).toContain(begin('PRIVATE KEY'));
     const attempts = [
       // ★ stdout carries the whole document on the failing exit: only stderr may surface.
       run(() => ({

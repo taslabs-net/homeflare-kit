@@ -23,7 +23,7 @@ const props = (uid: string) => ({
 const only = (calls: readonly string[], method: string) =>
   calls.filter((call) => call.startsWith(`${method} `));
 
-/** Same physical cluster (uid-c1), every piece of configuration the old config named renamed. */
+/** Same physical cluster (uid-c1) under a new alias: context, key and mount stay as they were. */
 const renamed = {
   moved: { context: 'admin@c1', key: 'kubeconfig', mount: 'talos-c1', uid: 'uid-c1' },
 };

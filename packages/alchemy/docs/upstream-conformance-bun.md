@@ -59,6 +59,11 @@ The ⚠️ rows:
   `Bun.which` is absent. The calls are synchronous, read-only, inside `Effect.try`; no
   write, no async. Revisit when `FileSystem` gains `lstat`.
 
+- `talos/trust-boundary.ts` (added 2026-10-06 by PR 355): the same `node:fs` rationale as
+  `talos/talosctl-binary.ts`, which imports it. It resolves a path with `realpathSync` so the
+  vetting walks the real ancestors; the call is synchronous, read-only and made inside
+  `Effect.try`. Revisit together with `talosctl-binary.ts` when `FileSystem` gains `lstat`.
+
 - `openbao/digest.ts`: every `Bao.*` family persists this digest in state, so a swap must
   hash the same bytes (`canonical()`, lowercase hex), or every row plans an update.
   `Crypto.digest` from `effect/Crypto` is in every stack's services and fails with a typed
@@ -76,5 +81,5 @@ The ⚠️ rows:
   more-portable replacement to point to; the file already conforms to S19 (no async/await,
   no raw `Promise` — `Effect.callback`/`Effect.tryPromise` throughout).
 
-Test runners: 51 files import `node:test`/`node:assert` (openbao 42, proxmox 7, forgejo 1,
-talos 1), and 126 import `bun:test`. S43 says `bun:test`.
+Test runners: 52 files import `node:test`/`node:assert` (openbao 30, proxmox 10, forgejo 1,
+talos 11), and 395 import `bun:test`. S43 says `bun:test`.
