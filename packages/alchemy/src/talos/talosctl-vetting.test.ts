@@ -84,6 +84,11 @@ test('the walk stops at a registered boundary but not above an unregistered one 
   const free = join(dir, 'free');
   for (const wrapper of [jailed, free]) {
     mkdirSync(join(wrapper, 'inner', 'bin'), { recursive: true });
+    // ⚠️ The BOUNDARY DIRECTORY is vetted too, so it must be 755 — not the umask default. Measured
+    //   2026-10-06 at umask 002 (CT100's default): `mkdirSync(…, { recursive: true })` creates the
+    //   intermediate `inner` group-writable (775), and the walk rightly refused the boundary itself
+    //   before ever reaching the 777 wrapper the test means to probe.
+    chmodSync(join(wrapper, 'inner'), 0o755);
     chmodSync(join(wrapper, 'inner', 'bin'), 0o755);
     writeFileSync(join(wrapper, 'inner', 'bin', 'talosctl'), '#!/bin/sh\n', { mode: 0o755 });
     chmodSync(join(wrapper, 'inner', 'bin', 'talosctl'), 0o755);
