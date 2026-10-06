@@ -145,3 +145,30 @@ export class TalosClusterIdentityUnreadable extends Data.TaggedError(
     );
   }
 }
+
+/** The kube-system GET got no answer in time: a silent apiserver must not hang connect or plan. */
+export class TalosClusterIdentityTimeout extends Data.TaggedError('TalosClusterIdentityTimeout')<{
+  readonly cluster: string;
+  readonly seconds: number;
+}> {
+  override get message(): string {
+    return (
+      `talos-openbao cluster '${this.cluster}': no answer to the kube-system uid read within ` +
+      `${this.seconds}s. Refused (failed closed) rather than waiting on a silent apiserver.`
+    );
+  }
+}
+
+/** A connection was built from a uid that is not a plain string known at plan time. */
+export class TalosUidNotLiteral extends Data.TaggedError('TalosUidNotLiteral')<{
+  readonly _?: never;
+}> {
+  override get message(): string {
+    return (
+      'talos-openbao connection uid must be a literal string taken from the adapter config, not ' +
+      'an Output (for example a Talos.ClusterIdentity attribute). An unresolved uid hides a ' +
+      "cluster change from the plan: upstream would plan an UPDATE and reconcile the old cluster's " +
+      'objects on the new one. Pin the uid in `TalosOpenBaoAdapter` and take it from there.'
+    );
+  }
+}

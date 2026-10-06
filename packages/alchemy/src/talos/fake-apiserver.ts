@@ -16,8 +16,14 @@ const realHttps = { ...httpsNamespace };
 type FakeRequest = EventEmitter & { write: () => void; end: () => void };
 type FakeResponse = EventEmitter & { statusCode?: number };
 
-/** `uids` maps an apiserver hostname to the kube-system uid it reports. */
-export const fakeApiServer = (uids: Readonly<Record<string, string>>) => {
+/**
+ * `uids` maps an apiserver hostname to the kube-system uid it reports; `hang` lists hostnames that
+ * accept the request and never answer.
+ */
+export const fakeApiServer = (
+  uids: Readonly<Record<string, string>>,
+  hang: readonly string[] = [],
+) => {
   const seen: string[] = [];
   const fake = ((
     options: { hostname: string; method: string; path: string },
@@ -28,6 +34,7 @@ export const fakeApiServer = (uids: Readonly<Record<string, string>>) => {
     const request = new EventEmitter() as FakeRequest;
     request.write = () => undefined;
     request.end = () => {
+      if (hang.includes(options.hostname)) return;
       const response = new EventEmitter() as FakeResponse;
       response.statusCode = 200;
       callback(response);

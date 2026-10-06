@@ -26,6 +26,7 @@
 export {
   TalosClusterIdentityMismatch,
   TalosClusterIdentityMissing,
+  TalosClusterIdentityTimeout,
   TalosClusterIdentityUnreadable,
   TalosClusterMoved,
   TalosKubeconfigUnreadable,
@@ -36,6 +37,7 @@ export {
   type TalosOpenBaoCluster,
   type TalosOpenBaoConfig,
   TalosOpenBaoUnknownCluster,
+  TalosUidNotLiteral,
   TalosVaultKeyMissing,
   connectTalosOpenBao,
   talosOpenBaoCluster,

@@ -2,9 +2,13 @@
  * `Talos.ClusterIdentity` — a read-only resource that reports WHICH physical cluster a name means.
  *
  * ★ It reads the vault kubeconfig and GETs the kube-system Namespace once (`cluster-identity.ts`),
- *   and publishes `{ uid, connection }`. Workloads take `cluster: identity`, so the auth block they
- *   persist is `{ kind: 'talos-openbao', uid }` and the adapter can refuse any other cluster at
- *   connect (cluster-adapter.ts's identity rule).
+ *   and publishes `{ uid }`. That is the BOOTSTRAP-THEN-PIN step (cluster-adapter.ts header): the
+ *   first deploy creates the cluster and this row with no workloads, the operator copies the
+ *   printed uid into the adapter config, and workloads take `talosOpenBaoConnection(<literal>)`.
+ *   ⛔ It publishes NO `connection`: an Output uid in a workload's auth is unresolved at plan time
+ *   and hides a cluster change from the plan (`talosOpenBaoConnection` explains the DELETE on B).
+ * ⛔ DRIFT REPAIR CANNOT LAUNDER A MOVE: `read` receives the persisted output and compares it, so
+ *   `Drift.repair` fails with `TalosClusterMoved` instead of reconciling B against B.
  * ⛔ IT MUTATES NOTHING: no vault write, no cluster write, `delete` is a no-op. Its only effect is
  *   the value it reports. `after` must reach past Cilium/CNI only if the apiserver needs it; the
  *   kube-system namespace exists as soon as the apiserver answers.
@@ -21,7 +25,6 @@ import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { type TalosOpenBaoConnection, talosOpenBaoConnection } from './cluster-adapter.ts';
 import { TalosClusterMoved } from './cluster-adapter-errors.ts';
 import { readClusterUid } from './cluster-identity.ts';
 import { openTransport, talosVaultLocation } from './cluster-transport.ts';
@@ -36,10 +39,12 @@ export interface ClusterIdentityProps extends KubeconfigSource {
 }
 
 export interface ClusterIdentityAttributes {
-  /** The cluster's kube-system `metadata.uid`. Public. */
+  /**
+   * The cluster's kube-system `metadata.uid`. Public. ⛔ NOT A `connection`: these attributes are
+   * deliberately not `ClusterLike`. Pin this value as a literal in `TalosOpenBaoAdapter` and build
+   * workloads' connection from that literal (bootstrap-then-pin, cluster-adapter.ts header).
+   */
   uid: string;
-  /** `{ kind, uid }`. Makes these attributes `ClusterLike`. */
-  connection: TalosOpenBaoConnection;
 }
 
 export interface TalosClusterIdentity extends Resource<
@@ -52,29 +57,32 @@ export interface TalosClusterIdentity extends Resource<
 
 export const TalosClusterIdentity = Resource<TalosClusterIdentity>('Talos.ClusterIdentity');
 
-/** ★ EXPORTED for talos-cluster-identity.test.ts — see talos-bootstrap.ts's note on the pattern. */
-export const readClusterIdentity = (props: ClusterIdentityProps) =>
+/**
+ * ★ EXPORTED for talos-cluster-identity.test.ts — see talos-bootstrap.ts's note on the pattern.
+ * ⛔ A PERSISTED OUTPUT IS COMPARED HERE TOO, not only in reconcile: `Drift.repair` hands `read`
+ *   the persisted attributes, then reconciles `news: old.props, output: <what read returned>`.
+ *   A read that ignored the output returned the NEW uid, so the reconcile guard compared B with B
+ *   and saved it. Failing in read stops that path with `TalosClusterMoved`.
+ */
+export const readClusterIdentity = (
+  props: ClusterIdentityProps,
+  output?: ClusterIdentityAttributes,
+) =>
   Effect.gen(function* () {
     const cluster = props.target.cluster;
     const transport = yield* openTransport(talosVaultLocation(props));
     const uid = yield* readClusterUid(cluster, transport);
-    return { connection: talosOpenBaoConnection(uid), uid };
+    if (output !== undefined && uid !== output.uid) {
+      return yield* Effect.fail(new TalosClusterMoved({ cluster, live: uid, saved: output.uid }));
+    }
+    return { uid };
   });
 
 /** ⛔ Fails closed when a saved uid exists and the live one differs. See the header. */
 export const reconcileClusterIdentity = (
   props: ClusterIdentityProps,
   output: ClusterIdentityAttributes | undefined,
-) =>
-  Effect.gen(function* () {
-    const live = yield* readClusterIdentity(props);
-    if (output !== undefined && live.uid !== output.uid) {
-      return yield* Effect.fail(
-        new TalosClusterMoved({ cluster: props.target.cluster, live: live.uid, saved: output.uid }),
-      );
-    }
-    return live;
-  });
+) => readClusterIdentity(props, output);
 
 export const diffClusterIdentity = (
   news: Input<ClusterIdentityProps>,
@@ -96,7 +104,13 @@ const handlers = {
     output: ClusterIdentityAttributes | undefined;
   }) => diffClusterIdentity(news, output),
   list: () => Effect.succeed([]),
-  read: ({ olds }: { olds: ClusterIdentityProps }) => readClusterIdentity(olds),
+  read: ({
+    olds,
+    output,
+  }: {
+    olds: ClusterIdentityProps;
+    output: ClusterIdentityAttributes | undefined;
+  }) => readClusterIdentity(olds, output),
   reconcile: ({
     news,
     output,

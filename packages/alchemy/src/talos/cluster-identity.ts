@@ -9,17 +9,36 @@
  */
 import type { ClusterTransport } from 'alchemy/Kubernetes/ClusterAdapter';
 import { readObject } from 'alchemy/Kubernetes/internal/client';
+import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import {
   TalosClusterIdentityMismatch,
+  TalosClusterIdentityTimeout,
   TalosClusterIdentityUnreadable,
 } from './cluster-adapter-errors.ts';
 
 const KUBE_SYSTEM = { apiVersion: 'v1', kind: 'Namespace', name: 'kube-system' } as const;
 
+/**
+ * ⛔ upstream `readObject` (`internal/client.ts`) sets no request timeout, so a silent apiserver
+ *   would hang connect and every plan. Bounded here; the failure is typed and closed.
+ */
+export const UID_READ_TIMEOUT = Duration.seconds(10);
+
 /** The cluster's kube-system uid. Request failures propagate: nothing here fails open. */
-export const readClusterUid = (cluster: string, transport: ClusterTransport) =>
+export const readClusterUid = (
+  cluster: string,
+  transport: ClusterTransport,
+  timeout: Duration.Duration = UID_READ_TIMEOUT,
+) =>
   readObject({ object: KUBE_SYSTEM, transport }).pipe(
+    Effect.timeoutOrElse({
+      duration: timeout,
+      orElse: () =>
+        Effect.fail(
+          new TalosClusterIdentityTimeout({ cluster, seconds: Duration.toSeconds(timeout) }),
+        ),
+    }),
     Effect.flatMap((body) => {
       const uid = (body as { metadata?: { uid?: unknown } } | undefined)?.metadata?.uid;
       return typeof uid === 'string' && uid !== ''

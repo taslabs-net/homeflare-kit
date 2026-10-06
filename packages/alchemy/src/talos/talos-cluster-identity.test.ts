@@ -1,6 +1,5 @@
 /**
- * `Talos.ClusterIdentity` — publishes the physical cluster's uid as the connection workloads
- * carry. Fake `bao` and fake apiserver only; nothing is written.
+ * `Talos.ClusterIdentity` — publishes the physical cluster's uid for the operator to pin. Fake `bao` and fake apiserver only; nothing is written.
  */
 import { expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
@@ -37,24 +36,18 @@ const run = <A, E>(effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessS
     ),
   );
 
-test('reads the kube-system uid and publishes { kind, uid }', async () => {
+test('reads the kube-system uid and publishes { uid }', async () => {
   const api = fakeApiServer({ 'c1.cluster.invalid': 'uid-c1' });
   try {
     const out = await run(readClusterIdentity(props));
-    expect(out).toEqual({
-      connection: { auth: { kind: 'talos-openbao', uid: 'uid-c1' } },
-      uid: 'uid-c1',
-    });
+    expect(out).toEqual({ uid: 'uid-c1' });
     expect(api.seen).toEqual(['GET c1.cluster.invalid/api/v1/namespaces/kube-system']);
   } finally {
     api.restore();
   }
 });
 
-const prior = {
-  connection: { auth: { kind: 'talos-openbao', uid: 'uid-c1' } },
-  uid: 'uid-c1',
-} as const;
+const prior = { uid: 'uid-c1' } as const;
 
 test('an unchanged uid is a noop', async () => {
   const api = fakeApiServer({ 'c1.cluster.invalid': 'uid-c1' });

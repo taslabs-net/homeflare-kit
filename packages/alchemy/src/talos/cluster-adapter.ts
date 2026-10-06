@@ -24,6 +24,11 @@
  *   kube-system and compares before returning a transport. Missing, unreadable, unknown or
  *   different uid is a typed error — never `ClusterNotFoundError` (except a `retired` entry's
  *   absent key), which upstream turns into a silent no-op. Cost: one extra GET per connect.
+ * ⛔ BOOTSTRAP-THEN-PIN. A brand-new cluster has no uid until it exists, and an Output uid is
+ *   forbidden (`talosOpenBaoConnection`). So: (1) the first deploy creates the cluster and
+ *   `Talos.ClusterIdentity` (which reads and outputs the uid) with NO workloads; (2) the operator
+ *   pins that printed uid literal in this adapter's config; (3) workloads deploy afterwards with
+ *   `talosOpenBaoConnection(<that literal>)`. A uid that is not pinned is refused at connect.
  * ⚠️ A REAL MOVE IS NOT AN AUTOMATIC REPLACE. `Talos.ClusterIdentity` refuses a changed uid
  *   (`TalosClusterMoved`); a move is a NEW identity resource per physical cluster, so the old
  *   rows keep their old uid and their cleanup reaches only the old cluster.
@@ -44,12 +49,14 @@ import type * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessS
 import {
   type TalosClusterIdentityMismatch,
   TalosClusterIdentityMissing,
+  type TalosClusterIdentityTimeout,
   type TalosClusterIdentityUnreadable,
   type TalosKubeconfigUnreadable,
   TalosOpenBaoAmbiguousUid,
   TalosOpenBaoAuthKind,
   TalosOpenBaoLegacyAuth,
   TalosOpenBaoUnknownCluster,
+  TalosUidNotLiteral,
   type TalosVaultKeyMissing,
 } from './cluster-adapter-errors.ts';
 import { assertClusterUid } from './cluster-identity.ts';
@@ -58,6 +65,7 @@ import { type TalosOpenBaoCluster, openTransport } from './cluster-transport.ts'
 export {
   TalosClusterIdentityMismatch,
   TalosClusterIdentityMissing,
+  TalosClusterIdentityTimeout,
   TalosClusterIdentityUnreadable,
   TalosClusterMoved,
   TalosKubeconfigUnreadable,
@@ -65,6 +73,7 @@ export {
   TalosOpenBaoAuthKind,
   TalosOpenBaoLegacyAuth,
   TalosOpenBaoUnknownCluster,
+  TalosUidNotLiteral,
   TalosVaultKeyMissing,
 } from './cluster-adapter-errors.ts';
 export { type TalosOpenBaoCluster, talosOpenBaoCluster } from './cluster-transport.ts';
@@ -77,10 +86,11 @@ declare module 'alchemy/Kubernetes/Connection' {
      */
     'talos-openbao': {
       /**
-       * The cluster's kube-system `metadata.uid`: the ONLY identity. Required at connect; typed
-       * optional so a row saved before it existed still deserializes (and is then refused).
+       * The cluster's kube-system `metadata.uid`: the ONLY identity, a LITERAL string known at
+       * plan time (never an Output, see {@link talosOpenBaoConnection}). A row saved before it
+       * existed has none at runtime and is refused at connect.
        */
-      uid?: string;
+      uid: string;
     };
   }
 }
@@ -97,10 +107,19 @@ export type TalosOpenBaoConnection = Connection & {
   readonly auth: { readonly kind: 'talos-openbao'; readonly uid: string };
 };
 
-/** Serializable connection: kind and uid. No alias, vault path, endpoint, CA or cert. */
-export const talosOpenBaoConnection = (uid: string): TalosOpenBaoConnection => ({
-  auth: { kind: 'talos-openbao', uid },
-});
+/**
+ * Serializable connection: kind and uid. No alias, vault path, endpoint, CA or cert.
+ * ⛔ THE UID MUST BE A LITERAL. An Output (a resource attribute such as `Talos.ClusterIdentity`'s)
+ *   is unresolved at plan time, so `isResolved(news)` is false, upstream plans an UPDATE (Plan.ts)
+ *   and reconcile replays the OLD cluster's `previousObjects` as deletes on the NEW cluster
+ *   (reproduced: DELETE on B). Take the uid from the pinned adapter entry: a changed literal is a
+ *   changed auth block, which upstream answers with `replace`. Anything else throws
+ *   {@link TalosUidNotLiteral} while the stack is being declared.
+ */
+export const talosOpenBaoConnection = (uid: string): TalosOpenBaoConnection => {
+  if (typeof uid !== 'string' || uid === '') throw new TalosUidNotLiteral({});
+  return { auth: { kind: 'talos-openbao', uid } };
+};
 
 /**
  * Resolve one `talos-openbao` connection to a transport. Requires `ChildProcessSpawner`
@@ -123,6 +142,7 @@ export const connectTalosOpenBao = (
   | TalosClusterIdentityMissing
   | TalosClusterIdentityMismatch
   | TalosClusterIdentityUnreadable
+  | TalosClusterIdentityTimeout
   | TalosVaultKeyMissing
   | ClusterNotFoundError
   | TalosKubeconfigUnreadable
