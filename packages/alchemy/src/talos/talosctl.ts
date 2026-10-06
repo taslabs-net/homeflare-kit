@@ -10,8 +10,8 @@
  * ⛔ DO NOT LOG STDOUT ON FAILURE. `talosctl kubeconfig` and error paths have been observed in the
  *   wild to include credential material; stderr is the safe diagnostic channel.
  */
-import { lstatSync } from 'node:fs';
-import { dirname, isAbsolute } from 'node:path';
+import { accessSync, constants, lstatSync, realpathSync } from 'node:fs';
+import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import * as Effect from 'effect/Effect';
 import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
@@ -50,13 +50,36 @@ const talosctlBinary = (override: string | undefined): string => {
 };
 
 /**
- * ⛔ AN OVERRIDE RUNS WITH THE VAULT-MINTED TALOSCONFIG, SO IT MUST BE A TRUSTED FILE: absolute,
- *   not group/world-writable. A bare name is only the unmodified default.
+ * ⛔ THE DEFAULT IS VETTED TOO (hunt round 5): a bare `talosctl` is resolved against `PATH` here
+ *   (not `Bun.which` — the published dist runs on Node, where that global is missing), symlinks are
+ *   followed, and the REAL file is vetted, version-checked and executed by absolute path, so a
+ *   writable PATH entry cannot swap the binary between the check and the exec.
+ */
+const resolveDefault = (binary: string) =>
+  Effect.try({
+    try: () => {
+      for (const entry of (process.env['PATH'] ?? '').split(delimiter)) {
+        if (!isAbsolute(entry)) continue;
+        try {
+          const candidate = join(entry, binary);
+          accessSync(candidate, constants.X_OK);
+          return realpathSync(candidate);
+        } catch {
+          // not in this PATH entry — try the next
+        }
+      }
+      throw new Error('not found');
+    },
+    catch: () => new TalosError('binary check', 1, `${binary} was not found on PATH`, binary),
+  });
+
+/**
+ * ⛔ THE BINARY RUNS WITH THE VAULT-MINTED TALOSCONFIG, SO IT MUST BE A TRUSTED FILE: absolute,
+ *   not group/world-writable. The default is resolved to an absolute path first (resolveDefault).
  */
 const checkOverridePath = (binary: string) => {
   const refuse = (why: string) =>
     Effect.fail(new TalosError('binary check', 1, `${TALOSCTL_BINARY_ENV} ${why}`, binary));
-  if (binary === DEFAULT_TALOSCTL_BINARY) return Effect.void;
   if (!isAbsolute(binary)) return refuse('must be an absolute path');
   return Effect.try({
     try: () => ({ file: lstatSync(binary), parent: lstatSync(dirname(binary)) }),
@@ -155,27 +178,27 @@ const reportsPinnedVersion = (stdout: string) =>
  *   nothing secret reaches an untrusted binary before it is vetted).
  */
 const checkOverrideVersion = (binary: string) =>
-  binary === DEFAULT_TALOSCTL_BINARY
-    ? Effect.void
-    : capture(binary, ['version', '--client']).pipe(
-        Effect.flatMap((out) =>
-          out.exitCode === 0 && reportsPinnedVersion(out.stdout)
-            ? Effect.void
-            : Effect.fail(
-                new TalosError(
-                  'version --client',
-                  out.exitCode,
-                  `${TALOSCTL_BINARY_ENV} is not talosctl ${TALOSCTL_PINNED_VERSION}`,
-                  binary,
-                ),
-              ),
-        ),
-      );
+  capture(binary, ['version', '--client']).pipe(
+    Effect.flatMap((out) =>
+      out.exitCode === 0 && reportsPinnedVersion(out.stdout)
+        ? Effect.void
+        : Effect.fail(
+            new TalosError(
+              'version --client',
+              out.exitCode,
+              `${TALOSCTL_BINARY_ENV} is not talosctl ${TALOSCTL_PINNED_VERSION}`,
+              binary,
+            ),
+          ),
+    ),
+  );
 
 /** Run `talosctl <args…>`. Returns trimmed stdout, or '' when empty. */
 export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
   Effect.gen(function* () {
-    const binary = talosctlBinary(options.binary);
+    const requested = talosctlBinary(options.binary);
+    const binary =
+      requested === DEFAULT_TALOSCTL_BINARY ? yield* resolveDefault(requested) : requested;
     yield* checkOverridePath(binary);
     yield* checkOverrideVersion(binary);
     const argv = [

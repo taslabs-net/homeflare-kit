@@ -15,7 +15,12 @@ import { YAMLParseError, parse } from 'yaml';
 /** Parse one YAML document, or `undefined` when the text is not valid YAML. */
 export const parseYaml = (text: string): unknown => {
   try {
-    return parse(text);
+    // ⛔ yaml reports unresolved tags etc. via process.emitWarning with the SOURCE TEXT in the
+    //   message (reproduced, hunt round 5: a kubeconfig with an unknown tag beside client-key-data
+    //   put the whole key on stderr). `logLevel: 'error'` silences warnings (yaml options.d.ts:
+    //   LogLevelId; doc.warnings are never emitted) and `prettyErrors: false` keeps source excerpts
+    //   out of any thrown error's message; syntax errors still throw YAMLParseError.
+    return parse(text, { logLevel: 'error', prettyErrors: false });
   } catch (error) {
     if (error instanceof YAMLParseError) return undefined;
     throw error;

@@ -19,7 +19,9 @@
  *   (kubeconfig.ts's own header) — plus `Talos.ClusterHealth`'s error handling no longer conflates a
  *   vault/transport failure with "cluster not healthy yet" (talos-cluster-health.ts's own header).
  * ★ `talos-openbao` (K-A5) is how `Kubernetes.*` reaches the cluster: `TalosOpenBaoAdapter`,
- *   the connection `Talos.Kubeconfig` persists, and `HF_TALOSCTL` to pin the talosctl binary.
+ *   `talosOpenBaoConnection(<pinned uid literal>)` (or `cluster: health`) as the persisted
+ *   `{ kind, uid }` connection — `Talos.Kubeconfig` and `Talos.ClusterIdentity` persist none — and
+ *   `HF_TALOSCTL` to pin the talosctl binary.
  * ★ Anything unlisted is still reachable by path if you genuinely need it — that is a
  *   deliberate, visible act rather than an accident of barrelling.
  */

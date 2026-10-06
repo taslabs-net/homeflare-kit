@@ -12,12 +12,15 @@ import { hasUnresolvedInputs } from 'alchemy/Diff';
 import * as Effect from 'effect/Effect';
 import { TalosUidNotLiteral } from './cluster-adapter-errors.ts';
 
-/** Throws {@link TalosUidNotLiteral} unless `connection` is `{ auth: { kind, uid: literal } }`. */
-export const assertLiteralConnection = (connection: unknown): void => {
+/**
+ * The typed refusal unless `connection` is `{ auth: { kind, uid: literal } }`, else `undefined`.
+ * ★ A value, never a throw: a throw inside `Effect.gen` would become a defect, not a failure.
+ */
+export const literalConnectionRefusal = (connection: unknown): TalosUidNotLiteral | undefined => {
   const auth = (connection as { auth?: { uid?: unknown } } | undefined)?.auth;
-  if (hasUnresolvedInputs(connection) || typeof auth?.uid !== 'string' || auth.uid === '') {
-    throw new TalosUidNotLiteral({});
-  }
+  return hasUnresolvedInputs(connection) || typeof auth?.uid !== 'string' || auth.uid === ''
+    ? new TalosUidNotLiteral({})
+    : undefined;
 };
 
 /**
@@ -31,14 +34,8 @@ export const assertLiteralConnection = (connection: unknown): void => {
 export const withLiteralConnection = <C extends (...args: never[]) => unknown>(resource: C): C =>
   new Proxy(resource, {
     apply: (target, thisArg, args: unknown[]) => {
-      const refusal = (given: unknown): TalosUidNotLiteral | undefined => {
-        try {
-          assertLiteralConnection((given as { connection?: unknown } | undefined)?.connection);
-          return undefined;
-        } catch (error) {
-          return error as TalosUidNotLiteral;
-        }
-      };
+      const refusal = (given: unknown) =>
+        literalConnectionRefusal((given as { connection?: unknown } | undefined)?.connection);
       const props = args[1];
       if (Effect.isEffect(props)) {
         const checked = props.pipe(

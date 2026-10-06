@@ -60,10 +60,49 @@ test('HF_TALOSCTL selects the binary when the option is omitted', async () => {
   });
 });
 
-test('the default binary name is talosctl', async () => {
-  await withEnv(undefined, async () => {
-    const calls: FakeCall[] = [];
-    await run(undefined, calls);
-    expect(calls[0]?.command).toBe('talosctl');
-  });
+const withPath = async (value: string, body: () => Promise<void>) => {
+  const saved = process.env['PATH'];
+  process.env['PATH'] = value;
+  try {
+    await body();
+  } finally {
+    if (saved === undefined) delete process.env['PATH'];
+    else process.env['PATH'] = saved;
+  }
+};
+
+test('the default talosctl is resolved on PATH, vetted and version-checked by absolute path', async () => {
+  await withEnv(undefined, () =>
+    withPath(dir, async () => {
+      const calls: FakeCall[] = [];
+      await run(undefined, calls);
+      expect(calls.map((call) => call.command)).toEqual([fixture, fixture]);
+    }),
+  );
+});
+
+test('the default talosctl on PATH is refused when it reports another version', async () => {
+  await withEnv(undefined, () =>
+    withPath(dir, async () => {
+      const outcome = await Effect.runPromise(
+        Effect.provideService(
+          talosctl(['version'], { talosconfigPath: 'unused.yaml' }),
+          ChildProcessSpawner.ChildProcessSpawner,
+          fakeSpawner(() => ({ stdout: 'Client: Tag: v1.13.8' })),
+        ),
+      ).catch((e: unknown) => String(e));
+      expect(outcome).toContain('is not talosctl v1.14.2');
+    }),
+  );
+});
+
+test('a default talosctl that is not on PATH is refused, never run by bare name', async () => {
+  await withEnv(undefined, () =>
+    withPath(join(dir, 'empty'), async () => {
+      const calls: FakeCall[] = [];
+      const outcome = await run(undefined, calls).catch((e: unknown) => String(e));
+      expect(outcome).toContain('not found on PATH');
+      expect(calls).toEqual([]);
+    }),
+  );
 });

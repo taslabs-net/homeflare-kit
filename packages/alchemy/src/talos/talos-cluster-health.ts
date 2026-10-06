@@ -34,7 +34,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type { TalosOpenBaoConnection } from './cluster-adapter.ts';
 import { mintTalosconfig } from './credentials.ts';
-import { assertLiteralConnection, withLiteralConnection } from './literal-connection.ts';
+import { literalConnectionRefusal, withLiteralConnection } from './literal-connection.ts';
 import type { TalosRequirements, WithTarget } from './resource.ts';
 import { TalosError, talosctl } from './talosctl.ts';
 
@@ -95,15 +95,12 @@ const attributes = (props: ClusterHealthProps, healthy: boolean): ClusterHealthA
 
 /**
  * ⚠️ A ROW SAVED BEFORE `connection` EXISTED HAS NONE — `right` is `undefined` at runtime despite
- *   the type, and reading `right.endpoint` threw on a healthy cluster. Missing means "update".
+ *   the type, and reading `right.auth` threw on a healthy cluster. Missing means "update".
  */
 const sameConnection = (
   left: TalosOpenBaoConnection,
   right: TalosOpenBaoConnection | undefined,
-): boolean =>
-  right?.auth?.kind === left.auth.kind &&
-  right.auth.uid === left.auth.uid &&
-  right.endpoint === left.endpoint;
+): boolean => right?.auth?.kind === left.auth.kind && right.auth.uid === left.auth.uid;
 
 const healthArgs = (props: ClusterHealthProps, waitTimeout: string) => {
   const args = ['health', '--wait-timeout', waitTimeout];
@@ -173,7 +170,8 @@ export const diffClusterHealth = (
   Effect.gen(function* () {
     // ⛔ `cluster: health` hands this connection to workloads: refuse an Output here, while it is
     //   still an Input (`literal-connection.ts`).
-    assertLiteralConnection((news as { connection?: unknown }).connection);
+    const refused = literalConnectionRefusal((news as { connection?: unknown }).connection);
+    if (refused !== undefined) return yield* Effect.fail(refused);
     if (output === undefined || !isResolved(news)) return undefined;
     const live = yield* readClusterHealth(news);
     if (live.healthy && sameConnection(live.connection, output.connection)) {

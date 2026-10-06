@@ -4,7 +4,7 @@
  * Proves the per-cluster config (each connection reaches its own endpoint, an unconfigured uid
  * is refused, a retired cluster's delete is a no-op) and the IDENTITY RULE (cluster-adapter.ts):
  * a saved row whose uid-pinned entry was repointed at another physical cluster is refused with NO
- * request sent to either, while a matching uid still works and a missing uid fails closed.
+ * write sent to either (one read-only GET proves the mismatch), while a matching uid still works and a missing uid fails closed.
  * The alias-rename and engine-level cases live in cluster-adapter-rename.test.ts.
  */
 import { expect, test } from 'bun:test';
@@ -85,7 +85,7 @@ test('delete on a retired cluster is a no-op, on a live one it reaches that clus
 //   vault key and delete the saved output. Before the identity rule that sent DELETE to c2.
 const repointed = { ...config, c1: { ...config.c2, uid: 'uid-c1' } };
 
-test('a saved c1 row is refused when its entry now points at c2: no request reaches either', async () => {
+test('a saved c1 row is refused when its entry now points at c2: no write reaches either', async () => {
   const api = fakeApiServer(UIDS);
   try {
     const row = manifestRow({ uid: 'uid-c1' });

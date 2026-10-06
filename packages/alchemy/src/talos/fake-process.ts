@@ -10,6 +10,9 @@
  *   of cross-test interference the house rules ask tests to avoid. `ChildProcessSpawner.make`
  *   takes just a `spawn` function and derives everything else, so a fake `spawn` is the whole cost.
  */
+import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, join } from 'node:path';
 import * as Effect from 'effect/Effect';
 import * as Sink from 'effect/Sink';
 import * as Stream from 'effect/Stream';
@@ -76,16 +79,37 @@ const stdinText = (stdin: unknown) =>
  * so that is the only shape this fake accepts — a `PipedCommand` is a test-authoring mistake, not
  * something to fake.
  */
+// ★ THE DEFAULT `talosctl` IS RESOLVED ON PATH AND VETTED (talosctl.ts resolveDefault), so a test
+//   that never names a binary needs a real, trusted file there. A private temp dir holds a stub that
+//   is NEVER executed (the fake spawner answers for it) and goes first on PATH; removed on exit.
+const stubDir = mkdtempSync(join(tmpdir(), 'hf-fake-talosctl-'));
+const stubFile = join(stubDir, 'talosctl');
+writeFileSync(stubFile, '#!/bin/sh\n', { mode: 0o755 });
+chmodSync(stubFile, 0o755);
+chmodSync(stubDir, 0o755);
+export const STUB_TALOSCTL: string = realpathSync(stubFile);
+process.env['PATH'] = `${realpathSync(stubDir)}${delimiter}${process.env['PATH'] ?? ''}`;
+process.on('exit', () => rmSync(stubDir, { force: true, recursive: true }));
+
 export const fakeSpawner = (handler: FakeHandler, calls: FakeCall[] = []) =>
   ChildProcessSpawner.make((command: Command) =>
     Effect.gen(function* () {
       if (command._tag !== 'StandardCommand') {
         return yield* Effect.die(new Error('fake-process: only StandardCommand is supported'));
       }
+      // The vetting probe of the default binary is answered, not recorded, so call lists stay the
+      // caller's own calls; the recorded command is the bare name the callers asked for.
+      const isStub = command.command === STUB_TALOSCTL;
+      if (isStub && command.args[0] === 'version' && command.args[1] === '--client') {
+        // ⚠️ A literal, not an import of TALOSCTL_PINNED_VERSION: node-connect.harness.ts loads this
+        //   file under Node's strip-only TypeScript, which cannot load talosctl.ts. Drift fails loudly
+        //   (every default-binary test then hits the version refusal).
+        return fakeHandle({ stdout: 'Client: Tag: v1.14.2' });
+      }
       const stdin = yield* stdinText(command.options.stdin);
       const call: FakeCall = {
         args: command.args,
-        command: command.command,
+        command: isStub ? 'talosctl' : command.command,
         ...(stdin === undefined ? {} : { stdin }),
       };
       calls.push(call);

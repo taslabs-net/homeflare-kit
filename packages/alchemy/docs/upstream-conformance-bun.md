@@ -4,7 +4,7 @@ Status: extracted from the [conformance ledger](./upstream-conformance.md); its 
 measurements and open findings are preserved below.
 
 These are non-test files under `src/` that the standard (S42) says must be portable. "Exp"
-marks files exported from a subpath `index.ts`. `git grep` on `origin/main` finds 23 non-test
+marks files exported from a subpath `index.ts`. `git grep` on `origin/main` finds 23 non-test (24 with `talos/talosctl.ts`, added by PR 355)
 files under `src/` that call `Bun.*` or import `node:*`/`bun:*`. Six of them are outside
 S42's scope:
 
@@ -13,7 +13,7 @@ S42's scope:
 - `proxmox/provision-cli-fake.ts`, which is used only by tests;
 - `verify/args.ts`, which belongs to the CLI and so is tooling under S43.
 
-That leaves 17 files. The table lists them, plus `provision-cli-fake.ts`, which should move
+That leaves 17 files (18 with `talos/talosctl.ts`). The table lists them, plus `provision-cli-fake.ts`, which should move
 out of `src/`. The six out-of-scope files still ship in the tarball's `src/`, but no export
 reaches them.
 ⚠️ The first version of this table said 16 files and left out `launchd/job-form.ts`.
@@ -35,7 +35,8 @@ among them `Fly/Secret.ts` and `Railway/Variable.ts`. They were listed under a b
 | `talos/credentials.ts`                                     | `Bun.write/file/env/randomUUIDv7`, `node:fs` | —   | `FileSystem.makeTempFileScoped`              |
 | `talos/kubeconfig.ts`                                      | `Bun.file`                                   | yes | `FileSystem`                                 |
 | `talos/talos-machine-config.ts`                            | `Bun.file`                                   | yes | `FileSystem`                                 |
-| `talos/values.ts`                                          | `Bun.YAML`, `node:crypto`                    | —   | tooling-side parse; hash may stay            |
+| `talos/values.ts`                                          | `node:crypto`                                | —   | allowed in `Effect.sync`                     |
+| `talos/talosctl.ts`                                        | `node:fs`, `node:path` (binary vetting) ⚠️   | —   | recorded difference, below                   |
 | `launchd/local-runner.ts`                                  | `node:child_process`, `node:fs/promises`     | yes | H3 above                                     |
 | `launchd/sudo-stage.ts`                                    | `node:fs/promises`, `node:os`, `node:path`   | —   | `FileSystem`, `Path`                         |
 | `launchd/job-form.ts`                                      | `node:crypto` (`createHash`)                 | —   | allowed in `Effect.sync`                     |
@@ -45,6 +46,14 @@ among them `Fly/Secret.ts` and `Railway/Variable.ts`. They were listed under a b
 | `proxmox/provision-cli-fake.ts`                            | `Bun.spawn`, `node:fs`                       | —   | test-only; move out of `src/`                |
 
 The ⚠️ rows:
+
+- `talos/talosctl.ts` (added 2026-10-06, hunt round 5): the binary vetting needs `lstat` and a
+  synchronous PATH walk. `effect/FileSystem` has `stat` (follows symlinks) and `readLink`
+  but no `lstat`, so "not a symlink" cannot be asked of it without a second probe, and the
+  Service would become a requirement of every `talosctl` caller and test (the offline fakes
+  provide only a `ChildProcessSpawner`). The published `dist/` also runs on Node, where
+  `Bun.which` is absent. The calls are synchronous, read-only, inside `Effect.try`; no
+  write, no async. Revisit when `FileSystem` gains `lstat`.
 
 - `openbao/digest.ts`: every `Bao.*` family persists this digest in state, so a swap must
   hash the same bytes (`canonical()`, lowercase hex), or every row plans an update.

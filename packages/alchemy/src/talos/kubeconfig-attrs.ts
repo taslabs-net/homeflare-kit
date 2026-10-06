@@ -3,10 +3,12 @@
  * fixes) once fixing those findings pushed the file over the 250-line cap. Only `import type`
  * comes back from kubeconfig.ts, so there is no runtime cycle.
  *
- * ⛔ NO `connection` HERE. A connection names the PHYSICAL cluster (`{ kind, cluster, uid }`,
+ * ⛔ NO `connection` HERE. A connection names the PHYSICAL cluster (`{ kind, uid }`,
  *   cluster-adapter.ts's identity rule) and the uid is only knowable from the cluster, which does
- *   not exist yet when this resource writes the vault key. `Talos.ClusterIdentity` publishes the
- *   connection; a name-only connection would be refused by the adapter at connect. Neither the
+ *   not exist yet when this resource writes the vault key. Workloads get their connection from the
+ *   operator's pinned literal (`talosOpenBaoConnection(uid)`) or `Talos.ClusterHealth`'s
+ *   pass-through; `Talos.ClusterIdentity` publishes `{ uid }` only; a name-only connection
+ *   (`cluster` present) is refused by the adapter as legacy. Neither the
  *   stock `kubeconfig` kind (an absent path falls back to `$KUBECONFIG`) nor `client-cert` (PEM on
  *   every workload's attributes, `Connection.ts` v2.0.0-beta.79 lines 12-14) is ever used.
  */
