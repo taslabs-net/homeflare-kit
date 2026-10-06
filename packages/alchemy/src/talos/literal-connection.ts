@@ -17,8 +17,15 @@ import { TalosUidNotLiteral } from './cluster-adapter-errors.ts';
  * ★ A value, never a throw: a throw inside `Effect.gen` would become a defect, not a failure.
  */
 export const literalConnectionRefusal = (connection: unknown): TalosUidNotLiteral | undefined => {
-  const auth = (connection as { auth?: { uid?: unknown } } | undefined)?.auth;
-  return hasUnresolvedInputs(connection) || typeof auth?.uid !== 'string' || auth.uid === ''
+  const auth = (connection as { auth?: { kind?: unknown; uid?: unknown } } | undefined)?.auth;
+  // ⛔ A stock `kubeconfig` connection has no uid and would pass the checks below by failing the
+  //   `uid` test as "not a string" — but it must be refused here, at declaration/diff time, because
+  //   connect would only refuse it later, after the engine has resolved it (and its empty path has
+  //   already fallen back to `$KUBECONFIG`). Only `talos-openbao` carries a literal uid.
+  return hasUnresolvedInputs(connection) ||
+    auth?.kind !== 'talos-openbao' ||
+    typeof auth?.uid !== 'string' ||
+    auth.uid === ''
     ? new TalosUidNotLiteral({})
     : undefined;
 };

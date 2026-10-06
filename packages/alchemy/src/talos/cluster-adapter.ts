@@ -172,6 +172,12 @@ export const connectTalosOpenBao = (
 > =>
   Effect.gen(function* () {
     const { auth } = connection;
+    // ⛔ FAIL CLOSED BEFORE READING `auth.kind`: a connection with no auth block (a malformed
+    //   saved row) throws a raw TypeError here, not a typed refusal. Refuse it as a missing
+    //   identity: nothing names a physical cluster.
+    if (auth === undefined || auth === null) {
+      return yield* Effect.fail(new TalosClusterIdentityMissing({}));
+    }
     if (auth.kind !== 'talos-openbao') {
       return yield* Effect.fail(new TalosOpenBaoAuthKind({ kind: auth.kind }));
     }

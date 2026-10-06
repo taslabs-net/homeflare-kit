@@ -81,5 +81,9 @@ The ⚠️ rows:
   more-portable replacement to point to; the file already conforms to S19 (no async/await,
   no raw `Promise` — `Effect.callback`/`Effect.tryPromise` throughout).
 
-Test runners: 52 files import `node:test`/`node:assert` (openbao 30, proxmox 10, forgejo 1,
+Test runners: 63 files import `node:test`/`node:assert` (openbao 41, proxmox 10, forgejo 1,
 talos 11), and 395 import `bun:test`. S43 says `bun:test`.
+
+Measured 2026-10-06 from this worktree with:
+`grep -rl --include='*.ts' -e 'node:test' -e 'node:assert' src/ | wc -l` (per directory, the same
+grep scoped to `src/<area>`), and `grep -rl --include='*.ts' -e 'bun:test' src/ | wc -l`.

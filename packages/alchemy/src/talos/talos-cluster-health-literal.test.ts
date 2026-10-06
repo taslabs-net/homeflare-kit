@@ -57,4 +57,13 @@ describe('diffClusterHealth — literal connection', () => {
     await assert.rejects(diffWith(Output.literal(connection), calls));
     assert.deepEqual(calls, []);
   });
+
+  it('refuses a stock kubeconfig connection at diff time (never reaches $KUBECONFIG)', async () => {
+    const calls: FakeCall[] = [];
+    await assert.rejects(
+      diffWith({ auth: { kind: 'kubeconfig', context: 'admin@hf-c1' } }, calls),
+      (error: unknown) => String(error).includes('literal string'),
+    );
+    assert.deepEqual(calls, []);
+  });
 });

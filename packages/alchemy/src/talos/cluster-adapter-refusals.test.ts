@@ -66,6 +66,15 @@ test('the missing-uid remedy says to pin a literal, not wire ClusterIdentity (fa
   expect(message).not.toContain('its `connection`');
 });
 
+test('a connection with no auth block is refused as a typed failure, not a raw TypeError', async () => {
+  const calls: FakeCall[] = [];
+  const noAuth = { endpoint: 'https://example.invalid' } as Connection;
+  expect(await refusedWith(connectTalosOpenBao(config, noAuth), calls)).toBe(
+    'TalosClusterIdentityMissing',
+  );
+  expect(calls).toEqual([]);
+});
+
 test('no uid, an unknown uid and an ambiguous pin are refused before any vault read', async () => {
   const calls: FakeCall[] = [];
   const noUid = { auth: { kind: 'talos-openbao' } } as Connection;
