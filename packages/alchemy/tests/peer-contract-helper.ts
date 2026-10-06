@@ -59,11 +59,21 @@ export function parseSmokeInstallPins(smoke: string): Record<string, string> {
   return out;
 }
 
+/**
+ * One published import move: the `effect/unstable/*` specifier to rewrite, and where it
+ * goes. The kit publishes these as an ordered ARRAY of these objects, never an object
+ * keyed by the old path.
+ */
+export interface ImportMove {
+  readonly from: string;
+  readonly to: string;
+}
+
 /** Derive import moves from the rc.115 unstable exports to the installed effect exports. */
 export function deriveImportMoves(
   rcExports: Record<string, unknown>,
   effectExports: { exports: Record<string, unknown> },
-): { importMoves: Record<string, string>; unresolved: string[] } {
+): { importMoves: ImportMove[]; unresolved: string[] } {
   const rcUnstable = Object.keys(rcExports)
     .filter((k) => k.startsWith('./unstable/') && !k.includes('/internal/'))
     .map((k) => k.slice('./unstable/'.length));
@@ -74,34 +84,32 @@ export function deriveImportMoves(
   const exact = new Set(exportKeys.map((k) => k.slice(2)));
   const dehyphen = new Map(exportKeys.map((k) => [k.slice(2).replace(/-/g, ''), k.slice(2)]));
 
-  const moves: Record<string, string> = {};
+  const moves: ImportMove[] = [];
   const unresolved: string[] = [];
 
   for (const area of rcUnstable) {
     if (exact.has(area)) {
-      moves[`effect/unstable/${area}/`] = `effect/${area}/`;
+      moves.push({ from: `effect/unstable/${area}/`, to: `effect/${area}/` });
     } else {
       const target = dehyphen.get(area.replace(/-/g, ''));
       if (target !== undefined) {
-        moves[`effect/unstable/${area}/`] = `effect/${target}/`;
+        moves.push({ from: `effect/unstable/${area}/`, to: `effect/${target}/` });
       } else {
         unresolved.push(`effect/unstable/${area}/`);
       }
     }
   }
 
-  // Preserve the contract's ordering: httpapi first, then alphabetical.
-  const httpapiKey = 'effect/unstable/httpapi/';
-  const ordered: Record<string, string> =
-    moves[httpapiKey] === undefined ? {} : { [httpapiKey]: moves[httpapiKey] };
-  for (const key of Object.keys(moves)
-    .filter((k) => k !== httpapiKey)
-    .sort()) {
-    const value = moves[key];
-    if (value !== undefined) {
-      ordered[key] = value;
-    }
-  }
+  // Preserve the contract's ordering: httpapi first, then alphabetical. Consumers apply
+  // the moves in published order, so `httpapi` must precede its parent `http` — a looser
+  // rewrite of `effect/unstable/http` would otherwise corrupt `effect/unstable/httpapi/`.
+  // Array#sort is stable, so this is deterministic for equal keys.
+  const httpapiFrom = 'effect/unstable/httpapi/';
+  moves.sort((a, b) => {
+    if (a.from === httpapiFrom) return -1;
+    if (b.from === httpapiFrom) return 1;
+    return a.from < b.from ? -1 : a.from > b.from ? 1 : 0;
+  });
 
-  return { importMoves: ordered, unresolved };
+  return { importMoves: moves, unresolved };
 }

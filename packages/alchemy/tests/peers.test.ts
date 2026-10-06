@@ -14,6 +14,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
+  type ImportMove,
   deriveImportMoves,
   parseSmokeInstallPins,
   parseSmokePins,
@@ -32,7 +33,7 @@ const pkg = (await Bun.file(new URL('package.json', root)).json()) as {
     consumer: {
       pins: Record<string, string>;
       overrides: Record<string, string>;
-      importMoves: Record<string, string>;
+      importMoves: ImportMove[];
       unresolved: string[];
     };
   };
@@ -202,20 +203,34 @@ describe('peer contract', () => {
 });
 
 describe('consumer import moves', () => {
+  test('the published importMoves are an ordered array of {from, to} objects', () => {
+    // 🔴 Measured 2026-10-06 (Opus red-team read of PR 363): the kit published importMoves
+    //   as an OBJECT keyed by the old path, while the bumper's contract types it as an
+    //   ordered ARRAY of {from, to} (scripts/kit-bump/contract.ts:23) and iterates it
+    //   (matrix.ts:108, pr.ts:78). `for...of` over a plain object throws
+    //   "TypeError: importMoves is not iterable" on the bumper's first real dry run, so
+    //   the SHAPE is part of the contract — this test is what fails on the object form.
+    expect(Array.isArray(consumer.importMoves)).toBe(true);
+    for (const move of consumer.importMoves) {
+      expect(Object.keys(move).sort()).toEqual(['from', 'to']);
+      expect(typeof move.from).toBe('string');
+      expect(typeof move.to).toBe('string');
+    }
+  });
+
   test('importMoves are derived from rc.115 to the installed effect exports', () => {
     const { importMoves: derivedMoves, unresolved } = deriveImportMoves(rcExports, effectExports);
-
-    // ⛔ httpapi must be first in the published order (the rest follow alphabetical order).
-    expect(derivedMoves['effect/unstable/httpapi/']).toBe('effect/http-api/');
     expect(consumer.importMoves).toEqual(derivedMoves);
-    const httpapiKey = 'effect/unstable/httpapi/';
-    const expectedKeys = [
-      httpapiKey,
-      ...Object.keys(derivedMoves)
-        .filter((k) => k !== httpapiKey)
-        .sort(),
-    ];
-    expect(Object.keys(consumer.importMoves)).toEqual(expectedKeys);
     expect(consumer.unresolved).toEqual(unresolved);
+  });
+
+  test('httpapi is published before its parent http; the rest follow alphabetical order', () => {
+    // ⛔ Order is load-bearing: a consumer applying the moves as rewrites in published
+    //   order must rewrite `effect/unstable/httpapi/` before `http/` can touch it, or
+    //   http's rewrite corrupts the httpapi specifier.
+    const [first, ...rest] = consumer.importMoves;
+    expect(first).toEqual({ from: 'effect/unstable/httpapi/', to: 'effect/http-api/' });
+    const restFroms = rest.map((m) => m.from);
+    expect(restFroms).toEqual([...restFroms].sort());
   });
 });

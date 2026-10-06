@@ -204,27 +204,84 @@
         "rolldown": "1.2.8",
         "redis": "6.3.0"
       },
-      "importMoves": {
-        "effect/unstable/httpapi/": "effect/http-api/",
-        "effect/unstable/ai/": "effect/ai/",
-        "effect/unstable/cli/": "effect/cli/",
-        "effect/unstable/cluster/": "effect/cluster/",
-        "effect/unstable/devtools/": "effect/devtools/",
-        "effect/unstable/encoding/": "effect/encoding/",
-        "effect/unstable/eventlog/": "effect/eventlog/",
-        "effect/unstable/http/": "effect/http/",
-        "effect/unstable/net/": "effect/net/",
-        "effect/unstable/observability/": "effect/observability/",
-        "effect/unstable/persistence/": "effect/persistence/",
-        "effect/unstable/process/": "effect/process/",
-        "effect/unstable/reactivity/": "effect/reactivity/",
-        "effect/unstable/rpc/": "effect/rpc/",
-        "effect/unstable/schema/": "effect/schema/",
-        "effect/unstable/socket/": "effect/socket/",
-        "effect/unstable/sql/": "effect/sql/",
-        "effect/unstable/workers/": "effect/workers/",
-        "effect/unstable/workflow/": "effect/workflow/"
-      },
+      "importMoves": [
+        {
+          "from": "effect/unstable/httpapi/",
+          "to": "effect/http-api/"
+        },
+        {
+          "from": "effect/unstable/ai/",
+          "to": "effect/ai/"
+        },
+        {
+          "from": "effect/unstable/cli/",
+          "to": "effect/cli/"
+        },
+        {
+          "from": "effect/unstable/cluster/",
+          "to": "effect/cluster/"
+        },
+        {
+          "from": "effect/unstable/devtools/",
+          "to": "effect/devtools/"
+        },
+        {
+          "from": "effect/unstable/encoding/",
+          "to": "effect/encoding/"
+        },
+        {
+          "from": "effect/unstable/eventlog/",
+          "to": "effect/eventlog/"
+        },
+        {
+          "from": "effect/unstable/http/",
+          "to": "effect/http/"
+        },
+        {
+          "from": "effect/unstable/net/",
+          "to": "effect/net/"
+        },
+        {
+          "from": "effect/unstable/observability/",
+          "to": "effect/observability/"
+        },
+        {
+          "from": "effect/unstable/persistence/",
+          "to": "effect/persistence/"
+        },
+        {
+          "from": "effect/unstable/process/",
+          "to": "effect/process/"
+        },
+        {
+          "from": "effect/unstable/reactivity/",
+          "to": "effect/reactivity/"
+        },
+        {
+          "from": "effect/unstable/rpc/",
+          "to": "effect/rpc/"
+        },
+        {
+          "from": "effect/unstable/schema/",
+          "to": "effect/schema/"
+        },
+        {
+          "from": "effect/unstable/socket/",
+          "to": "effect/socket/"
+        },
+        {
+          "from": "effect/unstable/sql/",
+          "to": "effect/sql/"
+        },
+        {
+          "from": "effect/unstable/workers/",
+          "to": "effect/workers/"
+        },
+        {
+          "from": "effect/unstable/workflow/",
+          "to": "effect/workflow/"
+        }
+      ],
       "unresolved": [
         "effect/unstable/arbitrary/"
       ]

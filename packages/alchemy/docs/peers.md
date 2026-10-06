@@ -14,9 +14,11 @@ below. The install succeeds without them and the import throws.
 
 ★ **The machine-readable source of truth** lives in this package's `package.json` under the
 `homeflare.consumer` field. It carries the exact pins, the overrides below, and the import
-moves for `effect/unstable/*`. The install line, the overrides block in this doc, and the
-smoke test install are all asserted against that field; change the field first, then copy
-its `overrides` block here.
+moves for `effect/unstable/*` as an ordered **array of `{"from", "to"}` pairs** — not an
+object keyed by the old path. Order is load-bearing: the most specific path comes first
+(`httpapi` before its parent `http`), because consumers apply the moves in published order.
+The install line, the overrides block in this doc, and the smoke test install are all
+asserted against that field; change the field first, then copy its `overrides` block here.
 
 ⛔ **Add this to your `package.json`, or the install works and the import throws:**
 
