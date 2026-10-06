@@ -55,7 +55,22 @@ const provide = <A, E>(
   handler: FakeHandler,
   calls: FakeCall[] = [],
 ) => Effect.runPromise(Effect.provide(effect, spawner(handler, calls)));
-const needles = [begin('CERTIFICATE'), begin('PRIVATE KEY'), certBody, keyBody];
+// ⚠️ EVERY ENCODING THE FIXTURE STORES, not just the PEM text: the kubeconfig carries
+//   `client-key-data: b64(pemKey)` and the PEM body is itself base64, so the stored field is b64 of
+//   a base64-wrapped body. Needles: the PEM markers and bodies, b64 of each PEM and of each body,
+//   and the raw YAML field values and whole document (an echoed document or field cannot slip by).
+const fieldValues = [b64(pemCert), b64(pemKey)];
+const needles = [
+  begin('CERTIFICATE'),
+  begin('PRIVATE KEY'),
+  certBody,
+  keyBody,
+  b64(certBody),
+  b64(keyBody),
+  b64(begin('PRIVATE KEY')),
+  ...fieldValues,
+  yaml,
+];
 const leaks = (text: string) => needles.filter((needle) => text.includes(needle));
 
 test('the persisted Connection is { kind, uid } and carries no vault path', () => {
@@ -119,10 +134,21 @@ test('connect through the layer leaves no PEM in tagged errors, temp files or lo
           Effect.provideService(References.MinimumLogLevel, 'All'),
         ),
       );
-    await run(vault);
+    // ★ The success path also gets the whole document on stderr: a regression that logs or
+    //   surfaces bao's stderr on success shows up in `logged` below. The transport legitimately
+    //   holds the client key, so only the raw document and the PEM markers are barred from it.
+    const transport = await run(() => ({ ...vault({} as FakeCall), stderr: yaml }));
+    const exposed = JSON.stringify(transport, Object.getOwnPropertyNames(transport));
+    expect(exposed).not.toContain(yaml);
+    expect(exposed).not.toContain(begin('PRIVATE KEY'));
     const attempts = [
-      run(() => ({ exitCode: 2, stderr: 'No value found at talos-c1/data/kubeconfig' })),
-      run(() => ({ stdout: `${pemKey} not json` })),
+      // ★ stdout carries the whole document on the failing exit: only stderr may surface.
+      run(() => ({
+        exitCode: 2,
+        stderr: 'No value found at talos-c1/data/kubeconfig',
+        stdout: yaml,
+      })),
+      run(() => ({ stdout: `${yaml} not json` })),
       run(() => ({ stdout: JSON.stringify({ data: { data: { kubeconfig: pemKey } } }) })),
     ];
     const failures = await Promise.all(attempts.map((attempt) => attempt.catch((e: unknown) => e)));

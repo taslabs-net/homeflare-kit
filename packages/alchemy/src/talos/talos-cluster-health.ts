@@ -34,7 +34,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type { TalosOpenBaoConnection } from './cluster-adapter.ts';
 import { mintTalosconfig } from './credentials.ts';
-import { assertLiteralConnection } from './literal-connection.ts';
+import { assertLiteralConnection, withLiteralConnection } from './literal-connection.ts';
 import type { TalosRequirements, WithTarget } from './resource.ts';
 import { TalosError, talosctl } from './talosctl.ts';
 
@@ -78,7 +78,10 @@ export interface TalosClusterHealth extends Resource<
   TalosRequirements
 > {}
 
-export const TalosClusterHealth = Resource<TalosClusterHealth>('Talos.ClusterHealth');
+// ⛔ Declaration-time literal guard: a fresh resource skips `diff` (see `withLiteralConnection`).
+export const TalosClusterHealth = withLiteralConnection(
+  Resource<TalosClusterHealth>('Talos.ClusterHealth'),
+);
 
 const nodeCsv = (nodes: readonly string[] | undefined) =>
   nodes === undefined || nodes.length === 0 ? '' : nodes.join(',');

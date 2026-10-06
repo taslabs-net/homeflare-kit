@@ -31,11 +31,13 @@
  *   prefixed `data/` reads `<mount>/data/data/<key>`, which the OLD default did.
  */
 import { closeSync, openSync, writeFileSync } from 'node:fs';
+import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import type * as Scope from 'effect/Scope';
 import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import { baoEnv } from './bao-env.ts';
 
 /** Where credentials come from. HomeFlare-specific mount names live in the stack, not here. */
 export type TalosTarget = {
@@ -67,23 +69,6 @@ const DEFAULT_TALOSCONFIG_KEY = 'talosconfig';
 export const DEFAULT_KUBECONFIG_KEY = 'kubeconfig';
 
 /**
- * ⛔ THE CHILD GETS A MINIMAL ENV, NOT `process.env`: `PATH` to find `bao`, the vault address and
- *   token, and the optional namespace / CA. `undefined` when BAO_ADDR or BAO_TOKEN is missing —
- *   `bao` would then read a cached `~/.vault-token` login and act as whoever last logged in.
- */
-const baoEnv = (): Record<string, string> | undefined => {
-  const addr = process.env['BAO_ADDR'];
-  const token = process.env['BAO_TOKEN'];
-  if (addr === undefined || addr === '' || token === undefined || token === '') return undefined;
-  const env: Record<string, string> = { BAO_ADDR: addr, BAO_TOKEN: token };
-  for (const name of ['PATH', 'BAO_NAMESPACE', 'BAO_CACERT']) {
-    const value = process.env[name];
-    if (value !== undefined && value !== '') env[name] = value;
-  }
-  return env;
-};
-
-/**
  * Read one OpenBao KV-v2 value and return the first of `fields` that is a non-empty string.
  *
  * ★ THE ONE PLACE THIS PACKAGE SHELLS TO `bao` — talosconfig, per-node machine config and any
@@ -110,7 +95,19 @@ export const readKvValue = (
     const result = yield* ChildProcess.make(
       'bao',
       ['kv', 'get', '-format=json', `${mount}/${key}`],
-      { detached: false, env, extendEnv: false, stderr: 'pipe', stdin: 'ignore', stdout: 'pipe' },
+      // ⛔ NO `detached: false`, AND `forceKillAfter` IS SET (round-4 review). Effect detaches on
+      //   Unix so `bao` leads its own process group, and the scope finalizer signals the WHOLE group
+      //   (`NodeChildProcessSpawner`: `kill(-pid)`). With `detached: false` a `bao` that forked a
+      //   sleeper left the grandchild alive, and without `forceKillAfter` a `bao` that ignores
+      //   SIGTERM kept connect blocked past its deadline. 1 s after SIGTERM the group gets SIGKILL.
+      {
+        env,
+        extendEnv: false,
+        forceKillAfter: Duration.seconds(1),
+        stderr: 'pipe',
+        stdin: 'ignore',
+        stdout: 'pipe',
+      },
     ).pipe(
       spawner.spawn,
       Effect.flatMap((child) =>
