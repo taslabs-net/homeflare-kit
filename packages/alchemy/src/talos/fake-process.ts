@@ -18,6 +18,7 @@ import * as Sink from 'effect/Sink';
 import * as Stream from 'effect/Stream';
 import type { Command } from 'effect/unstable/process/ChildProcess';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import { trustBoundaryForTests } from './trust-boundary.ts';
 
 export type FakeResult = {
   readonly stdout?: string;
@@ -88,6 +89,8 @@ writeFileSync(stubFile, '#!/bin/sh\n', { mode: 0o755 });
 chmodSync(stubFile, 0o755);
 chmodSync(stubDir, 0o755);
 export const STUB_TALOSCTL: string = realpathSync(stubFile);
+trustBoundaryForTests(stubDir);
+// (the boundary is the stub dir itself: it is vetted, nothing above it is)
 process.env['PATH'] = `${realpathSync(stubDir)}${delimiter}${process.env['PATH'] ?? ''}`;
 process.on('exit', () => rmSync(stubDir, { force: true, recursive: true }));
 

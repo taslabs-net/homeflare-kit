@@ -10,15 +10,19 @@
  * ⛔ DO NOT LOG STDOUT ON FAILURE. `talosctl kubeconfig` and error paths have been observed in the
  *   wild to include credential material; stderr is the safe diagnostic channel.
  */
-import { accessSync, constants, lstatSync, realpathSync } from 'node:fs';
-import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import * as Effect from 'effect/Effect';
 import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import {
+  DEFAULT_TALOSCTL_BINARY,
+  TALOSCTL_BINARY_ENV,
+  TalosBinaryRefused,
+  checkBinaryPath,
+  resolveDefault,
+} from './talosctl-binary.ts';
 
-/** `talosctl` on `PATH`. A lane pins another build with {@link TALOSCTL_BINARY_ENV} or `binary`. */
-export const DEFAULT_TALOSCTL_BINARY = 'talosctl';
+export { DEFAULT_TALOSCTL_BINARY, TALOSCTL_BINARY_ENV, TalosBinaryRefused };
 
 export class TalosError extends Error {
   constructor(
@@ -32,12 +36,6 @@ export class TalosError extends Error {
   }
 }
 
-/**
- * Executable override, read at call time. The Mac PATH measured 2026-10-05 has v1.13.8; the
- * cluster is v1.14.2. Set this to the v1.14.2 binary. A per-call `binary` option wins.
- */
-export const TALOSCTL_BINARY_ENV = 'HF_TALOSCTL';
-
 /** The Talos client version this family is written against (`--client` of the pinned binary). */
 export const TALOSCTL_PINNED_VERSION = 'v1.14.2';
 
@@ -47,60 +45,6 @@ const talosctlBinary = (override: string | undefined): string => {
   const fromEnv = process.env[TALOSCTL_BINARY_ENV]?.trim();
   if (fromEnv !== undefined && fromEnv !== '') return fromEnv;
   return DEFAULT_TALOSCTL_BINARY;
-};
-
-/**
- * ⛔ THE DEFAULT IS VETTED TOO (hunt round 5): a bare `talosctl` is resolved against `PATH` here
- *   (not `Bun.which` — the published dist runs on Node, where that global is missing), symlinks are
- *   followed, and the REAL file is vetted, version-checked and executed by absolute path, so a
- *   writable PATH entry cannot swap the binary between the check and the exec.
- */
-const resolveDefault = (binary: string) =>
-  Effect.try({
-    try: () => {
-      for (const entry of (process.env['PATH'] ?? '').split(delimiter)) {
-        if (!isAbsolute(entry)) continue;
-        try {
-          const candidate = join(entry, binary);
-          accessSync(candidate, constants.X_OK);
-          return realpathSync(candidate);
-        } catch {
-          // not in this PATH entry — try the next
-        }
-      }
-      throw new Error('not found');
-    },
-    catch: () => new TalosError('binary check', 1, `${binary} was not found on PATH`, binary),
-  });
-
-/**
- * ⛔ THE BINARY RUNS WITH THE VAULT-MINTED TALOSCONFIG, SO IT MUST BE A TRUSTED FILE: absolute,
- *   not group/world-writable. The default is resolved to an absolute path first (resolveDefault).
- */
-const checkOverridePath = (binary: string) => {
-  const refuse = (why: string) =>
-    Effect.fail(new TalosError('binary check', 1, `${TALOSCTL_BINARY_ENV} ${why}`, binary));
-  if (!isAbsolute(binary)) return refuse('must be an absolute path');
-  return Effect.try({
-    try: () => ({ file: lstatSync(binary), parent: lstatSync(dirname(binary)) }),
-    catch: () => new TalosError('binary check', 1, 'override is not a readable file', binary),
-  }).pipe(
-    Effect.flatMap(({ file, parent }) => {
-      // ★ lstat, not stat: a symlink can be re-pointed by whoever owns the link, so none is accepted.
-      if (file.isSymbolicLink()) return refuse('must not be a symlink');
-      if (!file.isFile()) return refuse('is not a regular file');
-      const uid = process.getuid?.();
-      if (uid !== undefined && file.uid !== uid && file.uid !== 0) {
-        return refuse('must be owned by the current user or root');
-      }
-      if ((file.mode & 0o022) !== 0) return refuse('is group- or world-writable');
-      // ⚠️ A writable parent directory lets another user swap the file between this check and exec.
-      if ((parent.mode & 0o022) !== 0) {
-        return refuse('lives in a group- or world-writable directory');
-      }
-      return Effect.void;
-    }),
-  );
 };
 
 /**
@@ -177,16 +121,15 @@ const reportsPinnedVersion = (stdout: string) =>
  * ⛔ AN OVERRIDE MUST REPORT THE PINNED CLIENT VERSION (`version --client`, no talosconfig, so
  *   nothing secret reaches an untrusted binary before it is vetted).
  */
-const checkOverrideVersion = (binary: string) =>
+const checkOverrideVersion = (binary: string, source: string) =>
   capture(binary, ['version', '--client']).pipe(
     Effect.flatMap((out) =>
       out.exitCode === 0 && reportsPinnedVersion(out.stdout)
         ? Effect.void
         : Effect.fail(
-            new TalosError(
+            new TalosBinaryRefused(
               'version --client',
-              out.exitCode,
-              `${TALOSCTL_BINARY_ENV} is not talosctl ${TALOSCTL_PINNED_VERSION}`,
+              `${source} is not talosctl ${TALOSCTL_PINNED_VERSION} (exit ${String(out.exitCode)})`,
               binary,
             ),
           ),
@@ -199,8 +142,9 @@ export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
     const requested = talosctlBinary(options.binary);
     const binary =
       requested === DEFAULT_TALOSCTL_BINARY ? yield* resolveDefault(requested) : requested;
-    yield* checkOverridePath(binary);
-    yield* checkOverrideVersion(binary);
+    const source = requested === DEFAULT_TALOSCTL_BINARY ? 'talosctl on PATH' : TALOSCTL_BINARY_ENV;
+    yield* checkBinaryPath(binary, source);
+    yield* checkOverrideVersion(binary, source);
     const argv = [
       ...args,
       '--talosconfig',

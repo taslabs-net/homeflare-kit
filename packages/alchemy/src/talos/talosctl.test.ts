@@ -9,12 +9,14 @@ import { afterAll, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import { type FakeCall, fakeSpawner } from './fake-process.ts';
+import { trustBoundaryForTests } from './trust-boundary.ts';
 import { TALOSCTL_BINARY_ENV, talosctl } from './talosctl.ts';
 
 // ⚠️ A real, vetted file in a private directory: the system `sh` or `bun` may be a symlink or live
 //   in a writable directory, which the vetting (correctly) refuses.
 const dir = mkdtempSync(join(tmpdir(), 'hf-talosctl-'));
 chmodSync(dir, 0o755);
+trustBoundaryForTests(dir);
 const fixture = join(dir, 'talosctl');
 writeFileSync(fixture, '#!/bin/sh\n', { mode: 0o755 });
 chmodSync(fixture, 0o755);

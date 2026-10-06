@@ -9,7 +9,8 @@ import { afterAll, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
 import { type FakeHandler, fakeSpawner } from './fake-process.ts';
-import { talosctl } from './talosctl.ts';
+import { trustBoundaryForTests } from './trust-boundary.ts';
+import { TalosBinaryRefused, TalosError, talosctl } from './talosctl.ts';
 
 const run = (binary: string, handler: FakeHandler = () => ({}), envs: unknown[] = []) =>
   Effect.runPromise(
@@ -25,6 +26,7 @@ const run = (binary: string, handler: FakeHandler = () => ({}), envs: unknown[] 
 
 const dir = mkdtempSync(join(tmpdir(), 'hf-talosctl-vet-'));
 chmodSync(dir, 0o755);
+trustBoundaryForTests(dir);
 afterAll(() => rmSync(dir, { force: true, recursive: true }));
 const trusted = (name: string) => {
   const path = join(dir, name);
@@ -54,6 +56,48 @@ test('an override in a group- or world-writable directory is refused', async () 
   writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 });
   chmodSync(open, 0o777);
   expect(await run(bin)).toContain('writable directory');
+});
+
+test('a writable ancestor of the override is refused (fails on 37d835a: only the parent was checked)', async () => {
+  const outer = join(dir, 'outer');
+  mkdirSync(join(outer, 'inner'), { recursive: true });
+  const bin = join(outer, 'inner', 'talosctl');
+  writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 });
+  chmodSync(join(outer, 'inner'), 0o755);
+  chmodSync(outer, 0o777);
+  expect(await run(bin, pinned('v1.14.2'))).toContain('writable directory');
+});
+
+test('an ancestor owned by another user is refused (fails on 37d835a: parent owner never read)', async () => {
+  const owner = join(dir, 'foreign');
+  mkdirSync(owner);
+  const bin = join(owner, 'talosctl');
+  writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 });
+  chmodSync(owner, 0o755);
+  expect(await run(bin, pinned('v1.14.2'))).toBe('Client: Tag: v1.14.2');
+  const real = process.getuid;
+  // Everything here is ours; pretending to be another uid makes every directory foreign.
+  Object.defineProperty(process, 'getuid', { configurable: true, value: () => 4242 });
+  try {
+    expect(await run(bin, pinned('v1.14.2'))).toContain('directory owned by another user');
+  } finally {
+    Object.defineProperty(process, 'getuid', { configurable: true, value: real });
+  }
+});
+
+test('a refusal is a TalosBinaryRefused naming its source, never a TalosError', async () => {
+  const outcome = await Effect.runPromise(
+    Effect.flip(
+      Effect.provideService(
+        talosctl(['version'], { binary: 'relative/talosctl', talosconfigPath: 'x' }),
+        ChildProcessSpawner.ChildProcessSpawner,
+        fakeSpawner(() => ({})),
+      ),
+    ),
+  );
+  expect(outcome).toBeInstanceOf(TalosBinaryRefused);
+  expect(outcome).not.toBeInstanceOf(TalosError);
+  expect(String(outcome)).toContain('HF_TALOSCTL');
 });
 
 test('the version must match exactly: v1.14.20 and v1.13.8 fail, v1.14.2 passes', async () => {

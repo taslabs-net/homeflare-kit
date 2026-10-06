@@ -74,6 +74,45 @@ describe('readClusterHealth', () => {
   });
 });
 
+/** A talosctl vetting refusal (relative HF_TALOSCTL): the binary never runs, so it is no verdict. */
+const withRefusedBinary = async <A>(body: () => Promise<A>): Promise<A> => {
+  const saved = process.env['HF_TALOSCTL'];
+  process.env['HF_TALOSCTL'] = 'relative/talosctl';
+  try {
+    return await body();
+  } finally {
+    if (saved === undefined) delete process.env['HF_TALOSCTL'];
+    else process.env['HF_TALOSCTL'] = saved;
+  }
+};
+const refusal = (error: unknown) =>
+  error instanceof Error &&
+  error.name === 'TalosBinaryRefused' &&
+  error.message.includes('absolute');
+
+describe('a talosctl vetting refusal is never a health verdict (fails on 37d835a: healthy:false)', () => {
+  it('read propagates it', async () => {
+    await withRefusedBinary(() =>
+      assert.rejects(run(readClusterHealth(props()), healthy), refusal),
+    );
+  });
+
+  it('diff propagates it instead of planning an update', async () => {
+    await withRefusedBinary(() =>
+      assert.rejects(run(diffClusterHealth(props(), prior(true)), healthy), refusal),
+    );
+  });
+
+  it('reconcile propagates it without the "cluster not healthy" mislabel', async () => {
+    await withRefusedBinary(() =>
+      assert.rejects(
+        run(reconcileClusterHealth(props()), healthy),
+        (error: unknown) => refusal(error) && !String(error).includes('cluster not healthy'),
+      ),
+    );
+  });
+});
+
 describe('diffClusterHealth', () => {
   it('plans update when the cluster genuinely reports unhealthy', async () => {
     const result = await run(diffClusterHealth(props(), prior(false)), unhealthy);
