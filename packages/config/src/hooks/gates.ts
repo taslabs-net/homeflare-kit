@@ -207,12 +207,21 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
   //   `base` stays unset and the lane already runs in full.
   const reading =
     scope.kind === 'scoped' && base !== undefined
-      ? await testsReading(root, scope.changed)
+      ? await testsReading(root, scope.changed, base)
       : undefined;
+  // ⛔ An added non-module path no test names cannot be found by string search (a
+  //   directory listing, a short name). The suite runs in full. Counts only — the
+  //   path itself is not printed. `changesEverything` is a different set and stays.
+  const unnamedAdds = reading?.unnamedAdds ?? 0;
+  if (unnamedAdds > 0) {
+    note(`${String(unnamedAdds)} added non-module path(s) named by no test — tests in full`);
+  }
   const plannedTests: ReadLanePlan =
-    reading === undefined
-      ? { lanes: planned, added: false }
-      : withReadTests(planned, reading.files);
+    unnamedAdds > 0
+      ? { lanes: planLanes(scripts, undefined), added: false }
+      : reading === undefined
+        ? { lanes: planned, added: false }
+        : withReadTests(planned, reading.files);
   if (reading !== undefined && plannedTests.added) {
     note(
       `added ${String(reading.files.length)} extra test file(s) — ${String(reading.matchedPaths)} changed non-module path(s) named in a test`,

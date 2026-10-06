@@ -100,9 +100,13 @@ The lanes are the repo's own `check`, read as an `&&` chain:
 
 - `bun test …` becomes `bun test … --changed=<base>`. Bun follows imports. A changed
   file that is not `.ts`/`.tsx`/`.js`/`.mjs` also runs each `*.test.ts` / `*.test.js`
-  (outside `node_modules`) whose source names that path, an ancestor directory at
-  least two segments deep, or its file name when that name is 8+ characters and not
-  `README.md`, `index.*`, or `package.json`. One line reports how many were added.
+  (outside `node_modules`) whose source — or a repo-relative module it imports
+  directly — names that path, an ancestor at least two segments deep (`src/vendor/`),
+  or a file name of 8+ characters other than `README.md`, `index.*`, or `package.json`.
+  One line reports the count of extra files; each selected path is passed as `./<path>`.
+  An added non-module path no test names runs the suite in full and says so by count.
+  ⚠️ An edit of a file found only by a directory listing, or of a short name no test
+  spells out, still stays on `--changed`.
 - `build*` and `smoke*` scripts are skipped. CI runs them on every pull request.
 - A script that hides a `bun test` or a build is expanded. For example
   `check → verify → bun test` becomes a narrowed test lane. Any other script runs
@@ -157,11 +161,7 @@ Only a file that starts with `# HomeFlare shared git hook` is compared. A hook f
 wrote for itself, such as this repository's own `.husky/`, which runs kit-only scripts
 after the shared runner, is not, and `install` would overwrite it.
 
-⚠️ **A package in a subdirectory is not supported.** The wrapper and the `node_modules`
-check look for `node_modules` at the repository root, because git runs a hook there. A
-layout whose package lives in a subdirectory with its own `node_modules` would fail with
-"run `bun install`" and no way for that to fix it. No estate repo has that layout, so it
-is stated and not handled.
+⚠️ A package in a subdirectory is not supported. See [hooks-layout.md](./hooks-layout.md).
 
 `activate` does nothing under `CI`, or outside a git work tree. It never fails, because it
 runs inside `bun install`.
