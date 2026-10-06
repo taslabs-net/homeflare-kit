@@ -21,8 +21,12 @@
  *   Lock modes: PostgreSQL docs, explicit-locking.html §13.3; `COMMENT`: sql-comment.html.
  *   `lock_timeout` turns any wait into `55P03`, an unclassified error: the drop is REFUSED, never
  *   forced. A comment-less schema is rewritten as `IS NULL`, which still takes the lock.
- * ⚠️ NOT COVERED: `ALTER SCHEMA … RENAME` takes no such object lock, so a rename-and-recreate
- *   between the re-verify and the `DROP` is still a window of a few statements; and a type,
+ * ⛔ RENAME TAKES NO SUCH LOCK (Codex read of PR 357, 2026-10-06): `ALTER SCHEMA … RENAME` updates
+ *   `pg_namespace` without locking the object, so a rename-then-`CREATE SCHEMA` of the same name
+ *   committed while we waited on a table lock would make the by-name `DROP` delete the
+ *   REPLACEMENT. The last statement before the `DROP` re-reads the name of the verified OID and
+ *   refuses `HF001` if it moved; only the statements between that read and the `DROP` remain.
+ * ⚠️ NOT COVERED: a type,
  *   function or collation created in ANOTHER schema to use ours has no relation to wait on. The
  *   advisory lock stays: it serialises runs of this provider, which is cheap and correct.
  * ★ THE VALUES ARE LITERALS INSIDE THE BODY, AND THE BODY IS ONE `E'…'` LITERAL. A `DO` body
@@ -92,6 +96,10 @@ BEGIN
     IF v_count > 0 THEN
       RAISE EXCEPTION 'cross-schema dependents: %', v_count USING ERRCODE = '${CROSS_SCHEMA_DEPENDENTS}';
     END IF;
+  END IF;
+  PERFORM 1 FROM pg_catalog.pg_namespace n WHERE n.oid = v_oid AND n.nspname = v_name;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'schema identity changed' USING ERRCODE = '${IDENTITY_CHANGED}';
   END IF;
   EXECUTE ${quoteStringLiteral(buildDropSchemaSql(drop.name, drop.cascade))};
 END`;

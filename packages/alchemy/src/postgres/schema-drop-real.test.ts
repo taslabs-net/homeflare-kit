@@ -121,4 +121,53 @@ suite('atomic drop on a real PostgreSQL', () => {
     await drop;
     expect(await present(a)).toBe(false);
   });
+
+  test('a table added to a foreign extension refuses the cascade (ownership edge leaves)', async () => {
+    const a = fresh('ext_a');
+    const b = fresh('ext_b');
+    await psql(
+      `CREATE SCHEMA "${b}"; CREATE EXTENSION hstore SCHEMA "${b}";
+       CREATE SCHEMA "${a}"; CREATE TABLE "${a}".t (id int);
+       ALTER EXTENSION hstore ADD TABLE "${a}".t;`,
+    );
+    try {
+      const error = await Effect.runPromise(Effect.flip(dropWithClient(pg, props(a))));
+      expect(error).toBeInstanceOf(PostgresSchemaCascadeCrossSchemaRefused);
+      expect(await present(a)).toBe(true);
+      const kept = await psql(`SELECT count(*) FROM pg_extension WHERE extname = 'hstore';`);
+      expect(kept.stdout.trim()).toBe('1');
+    } finally {
+      await psql(`ALTER EXTENSION hstore DROP TABLE "${a}".t; DROP EXTENSION IF EXISTS hstore;`);
+    }
+  });
+
+  test('a rename-then-recreate while the drop is parked is refused, the replacement survives', async () => {
+    const a = fresh('ren');
+    const saved = fresh('ren_saved');
+    await psql(`CREATE SCHEMA "${a}"; CREATE TABLE "${a}".t (x text);`);
+    const holder = spawnPsql(
+      ['psql', '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-U', username, '-d', database],
+      `BEGIN; SELECT 1 FROM "${a}".t; SELECT pg_sleep(4); COMMIT;`,
+    );
+    await Bun.sleep(700);
+    const drop = Effect.runPromise(Effect.flip(dropWithClient(pg, props(a))));
+    let parked = false;
+    for (let i = 0; i < 30 && !parked; i += 1) {
+      const waiting = await psql(
+        `SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND cardinality(pg_catalog.pg_blocking_pids(pid)) > 0 AND query LIKE 'DO %' AND pid <> pg_backend_pid();`,
+      );
+      parked = waiting.stdout.trim() !== '0';
+      if (!parked) await Bun.sleep(100);
+    }
+    expect(parked).toBe(true);
+    // RENAME takes no namespace object lock, so it commits while the drop waits.
+    const swap = await psql(
+      `ALTER SCHEMA "${a}" RENAME TO "${saved}"; CREATE SCHEMA "${a}"; CREATE TABLE "${a}".keep (id int);`,
+    );
+    expect(swap.code).toBe(0);
+    await holder;
+    await drop;
+    expect((await psql(`SELECT count(*) FROM "${a}".keep;`)).stdout.trim()).toBe('0');
+    expect(await present(saved)).toBe(true);
+  });
 });

@@ -80,7 +80,16 @@ const HOME_OF_DEPENDENT = `CASE d.classid
           ${viaFamily('pg_amproc', 'amprocfamily')}
         END`;
 
-/** `v_count := …`: how many objects the cascade would drop outside `v_ns`. */
+/**
+ * `v_count := …`: how many objects the cascade would drop outside `v_ns`, PLUS how many objects
+ * INSIDE it hold an `e` or `i` edge to an object outside the closure.
+ * ⛔ THE SECOND TERM IS THE OWNERSHIP ESCAPE (Codex read of PR 357, 2026-10-06). An inside table
+ *   added to a foreign extension (`ALTER EXTENSION x ADD TABLE a.t`) has an OUTGOING `e` edge; the
+ *   walk only follows edges INTO the closure, so it saw nothing, while `findDependentObjects`
+ *   redirects the deletion of an extension member / internal part to its OWNER and drops that
+ *   owner's other objects too. Any outgoing `e` or `i` edge leaving the closure counts as foreign:
+ *   refuse, never follow-and-classify (the simplest correct answer fails closed).
+ */
 export const OUTSIDE_DEPENDENTS_SQL = `v_count := (
       WITH RECURSIVE reach (classid, objid, inside) AS (
         SELECT ${cls('pg_namespace')}::pg_catalog.oid, v_ns, true
@@ -90,5 +99,10 @@ export const OUTSIDE_DEPENDENTS_SQL = `v_count := (
         JOIN reach r ON d.refclassid = r.classid AND d.refobjid = r.objid AND r.inside
         WHERE d.deptype <> 'p'
       )
-      SELECT pg_catalog.count(*) FROM reach WHERE NOT inside
+      SELECT (SELECT pg_catalog.count(*) FROM reach WHERE NOT inside)
+           + (SELECT pg_catalog.count(*) FROM pg_catalog.pg_depend e
+               JOIN reach r ON e.classid = r.classid AND e.objid = r.objid AND r.inside
+               WHERE e.deptype IN ('e', 'i') AND e.refobjid <> 0
+                 AND NOT EXISTS (SELECT 1 FROM reach o
+                                  WHERE o.inside AND o.classid = e.refclassid AND o.objid = e.refobjid))
     )`;
