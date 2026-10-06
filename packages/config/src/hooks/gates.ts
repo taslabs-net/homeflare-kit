@@ -16,7 +16,7 @@ import { requireCleanTree, requireInstalled } from './preconditions.ts';
 import { checkoutFix } from './push-fix.ts';
 import { planLanes } from './push-plan.ts';
 import { changesEverything, parsePushRefs, pushScope } from './push-range.ts';
-import { type ReadLanePlan, testsReading, withReadTests } from './read-tests.ts';
+import { type ReadLanePlan, importLimitNote, testsReading, withReadTests } from './read-tests.ts';
 import { scanPushedSecrets } from './push-secrets.ts';
 import { fail, note, ok, run, runCaptured, tool } from './report.ts';
 import { runPlannedLanes } from './push-run.ts';
@@ -213,11 +213,14 @@ export async function prePush(root: string, args: readonly string[], stdin: stri
   //   directory listing, a short name). The suite runs in full. Counts only — the
   //   path itself is not printed. `changesEverything` is a different set and stays.
   const unnamedAdds = reading?.unnamedAdds ?? 0;
+  const importLimit = reading?.importLimit;
   if (unnamedAdds > 0) {
     note(`${String(unnamedAdds)} added non-module path(s) named by no test — tests in full`);
   }
+  // ⛔ Counts only. The path that blew the cap is not printed.
+  if (importLimit !== undefined) note(importLimitNote(importLimit));
   const plannedTests: ReadLanePlan =
-    unnamedAdds > 0
+    unnamedAdds > 0 || importLimit !== undefined
       ? { lanes: planLanes(scripts, undefined), added: false }
       : reading === undefined
         ? { lanes: planned, added: false }

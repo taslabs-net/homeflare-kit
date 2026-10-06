@@ -13,10 +13,17 @@
  *   --diff-filter=A`) that no test names runs the suite in full: a directory listing
  *   or a short name is not a string in any test. `package.json` and the other
  *   full-suite names stay in `changesEverything`.
+ * ⛔ IMPORT READS ARE BOUNDED IN read-imports.ts. A symlink is followed only when its
+ *   real path stays inside the repo and outside `node_modules` and `.git`. Past
+ *   256 KiB for one file, or 8 MiB together, `importLimit` is set and the caller
+ *   runs the suite in full. The reason is a count.
  */
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { type ImportReadLimit, haystack, openReadSession } from './read-imports.ts';
 import { type Lane } from './push-plan.ts';
 import { fail, probe } from './report.ts';
+
+export { importLimitNote } from './read-imports.ts';
+export type { ImportReadLimit } from './read-imports.ts';
 
 /** What to add to a scoped test lane, and how many changed paths those files name. */
 export type ReadSelection = {
@@ -24,11 +31,19 @@ export type ReadSelection = {
   readonly matchedPaths: number;
   /** Added non-module paths no test names. Non-zero: the caller runs the suite in full. */
   readonly unnamedAdds: number;
+  /** Set when an import read passed the byte cap. The caller runs the suite in full. */
+  readonly importLimit: ImportReadLimit | undefined;
 };
 
 const MODULE_EXT = /\.(?:ts|tsx|js|mjs)$/;
 const TEST_FILE = /\.test\.(?:ts|js)$/;
-const MODULE_EXTS = ['.ts', '.tsx', '.js', '.mjs'] as const;
+
+const NONE: ReadSelection = {
+  files: [],
+  matchedPaths: 0,
+  unnamedAdds: 0,
+  importLimit: undefined,
+};
 
 /** A `.ts` / `.tsx` / `.js` / `.mjs` file. Bun's import graph already covers these. */
 function isModulePath(path: string): boolean {
@@ -64,48 +79,6 @@ function shQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-/** Repo-relative `./` and `../` specifiers. Package and `node:` imports are not followed. */
-function relativeSpecs(text: string): readonly string[] {
-  const specs: string[] = [];
-  for (const re of [/\bfrom\s+['"](\.[^'"]+)['"]/g, /\bimport\s+['"](\.[^'"]+)['"]/g]) {
-    for (const match of text.matchAll(re)) {
-      const spec = match[1];
-      if (spec !== undefined) specs.push(spec);
-    }
-  }
-  return specs;
-}
-
-/** A module path inside `root`, or undefined when the specifier leaves the repo. */
-function inRepo(root: string, abs: string): string | undefined {
-  const rel = relative(root, abs);
-  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return undefined;
-  const path = rel.split('\\').join('/');
-  if (path.split('/').includes('node_modules')) return undefined;
-  if (!MODULE_EXT.test(path)) return undefined;
-  return path;
-}
-
-/**
- * One hop, and only a file that exists. Extensionless specifiers try the module
- * extensions; a query or a hash is not a file we can read.
- */
-async function resolveImport(
-  root: string,
-  fromFile: string,
-  spec: string,
-): Promise<string | undefined> {
-  if (spec.includes('?') || spec.includes('#')) return undefined;
-  const base = join(root, dirname(fromFile), spec);
-  const candidates = MODULE_EXT.test(spec) ? [base] : MODULE_EXTS.map((ext) => `${base}${ext}`);
-  for (const abs of candidates) {
-    const path = inRepo(root, abs);
-    if (path === undefined || !(await Bun.file(abs).exists())) continue;
-    return path;
-  }
-  return undefined;
-}
-
 /** Tracked `*.test.ts` / `*.test.js`, never `node_modules`. `undefined` when git cannot list. */
 async function trackedTests(root: string): Promise<readonly string[] | undefined> {
   const listed = await probe(['git', '-C', root, 'ls-files', '-z']);
@@ -139,45 +112,11 @@ async function addedInRange(root: string, base: string): Promise<ReadonlySet<str
   return new Set(listed.stdout.split('\0').filter((path) => path !== ''));
 }
 
-async function sourceText(root: string, path: string, cache: Map<string, string>): Promise<string> {
-  const hit = cache.get(path);
-  if (hit !== undefined) return hit;
-  try {
-    const text = await Bun.file(join(root, path)).text();
-    cache.set(path, text);
-    return text;
-  } catch {
-    fail(
-      'pre-push',
-      `could not read ${path}, so a test that reads a changed file might be skipped`,
-      'restore that file, then push again',
-    );
-  }
-}
-
-/**
- * Text of repo-relative modules this test imports directly. Not their imports:
- * one hop, so a comment rewording in the test cannot hide a path the module names.
- */
-async function importedSources(
-  root: string,
-  testFile: string,
-  text: string,
-  cache: Map<string, string>,
-): Promise<readonly string[]> {
-  const texts: string[] = [];
-  for (const spec of relativeSpecs(text)) {
-    const path = await resolveImport(root, testFile, spec);
-    if (path === undefined || path === testFile) continue;
-    texts.push(await sourceText(root, path, cache));
-  }
-  return texts;
-}
-
 /**
  * Test files whose source — or a module they import directly — names a changed
  * non-module path. No non-module paths: an empty selection. An added path that
  * no test names is counted in `unnamedAdds` so the caller can run the suite in full.
+ * An import past the read cap sets `importLimit` and drops the partial selection.
  */
 export async function testsReading(
   root: string,
@@ -188,7 +127,7 @@ export async function testsReading(
     .filter((path) => !isModulePath(path))
     .map((path) => ({ path, needles: needlesFor(path) }))
     .filter((item) => item.needles.length > 0);
-  if (wanted.length === 0) return { files: [], matchedPaths: 0, unnamedAdds: 0 };
+  if (wanted.length === 0) return NONE;
 
   const tests = await trackedTests(root);
   if (tests === undefined) {
@@ -198,16 +137,26 @@ export async function testsReading(
       'run git ls-files in this repository, then push again',
     );
   }
+  const session = await openReadSession(root);
+  if (session === undefined) {
+    fail(
+      'pre-push',
+      'could not resolve the repository root, so an import might be read from outside it',
+      'push from a checkout whose root is a real directory, then try again',
+    );
+  }
   const added = await addedInRange(root, base);
-  const cache = new Map<string, string>();
   const files: string[] = [];
   const matched = new Set<string>();
   for (const file of tests) {
-    const text = await sourceText(root, file, cache);
-    const haystack = [text, ...(await importedSources(root, file, text, cache))];
+    const found = await haystack(session, file);
+    if (found.kind === 'limit') {
+      return { files: [], matchedPaths: 0, unnamedAdds: 0, importLimit: found.limit };
+    }
     let used = false;
     for (const item of wanted) {
-      if (!item.needles.some((needle) => haystack.some((part) => part.includes(needle)))) continue;
+      if (!item.needles.some((needle) => found.texts.some((part) => part.includes(needle))))
+        continue;
       matched.add(item.path);
       used = true;
     }
@@ -217,7 +166,7 @@ export async function testsReading(
   for (const item of wanted) {
     if (!matched.has(item.path) && added.has(item.path)) unnamedAdds += 1;
   }
-  return { files, matchedPaths: matched.size, unnamedAdds };
+  return { files, matchedPaths: matched.size, unnamedAdds, importLimit: undefined };
 }
 
 /** The lanes to run, and whether a scoped `bun test` gained the extra files. */
@@ -241,7 +190,7 @@ export function withReadTests(lanes: readonly Lane[], files: readonly string[]):
   const next = lanes.map((lane) => {
     if (added || lane.kind !== 'test' || !lane.scoped) return lane;
     added = true;
-    return { ...lane, command: `${lane.command} && ${extra}` };
+    return { ...lane, command: `${lane.command} && ${extra}`, selected: files.length };
   });
   return { lanes: added ? next : lanes, added };
 }

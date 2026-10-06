@@ -34,6 +34,8 @@ export type Lane =
       readonly label: string;
       readonly command: string;
       readonly scoped: boolean;
+      /** Extra files appended for this push. Logged as a count; the names stay in `command`. */
+      readonly selected?: number;
     }
   /** Not run here, and why. */
   | { readonly kind: 'skip'; readonly label: string; readonly why: string };
