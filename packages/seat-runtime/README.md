@@ -10,7 +10,7 @@ on CT100 from one environment block, the **round loop** (`runRounds`, with a har
 bun add @homeflare/seat-runtime effect@4.0.1
 ```
 
-⛔ **Pin the rc, and put `overrides` in YOUR root `package.json`.** `effect` is an exact peer
+⛔ **Pin the exact version, and put `overrides` in YOUR root `package.json`.** `effect` is an exact peer
 and `@effect/ai-openai-compat` and `@effect/sql-pg` exact dependencies, all `4.0.1`
 (`@modelcontextprotocol/sdk` is an exact dependency too, `1.31.0`). If your app also
 uses `@effect/platform-bun`, add this to your own manifest, or a fresh install crashes:
@@ -176,7 +176,7 @@ scrubbed of quoted arguments (Postgres's is not). **No `subscribe`.** Traps, tes
 
 ## The measured pairing
 
-Exact same-rc pins, the `overrides` trap, rc.118's dropped `unstable/` prefix and the MCP SDK's
+Exact same-version pins, the `overrides` trap, rc.118's dropped `unstable/` prefix and the MCP SDK's
 pairing, each with what was measured: [docs/pairing.md](./docs/pairing.md). ⚠️ Compat's own `.d.ts`
 has 26 `TS2411` errors under `skipLibCheck: false` (upstream's): keep it `true`.
 

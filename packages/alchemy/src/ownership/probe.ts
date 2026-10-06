@@ -25,6 +25,7 @@
 import { Unowned } from 'alchemy/AdoptPolicy';
 import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
+import type * as Tracer from 'effect/Tracer';
 import type { Owner } from './adopt.ts';
 import { resumes } from './resume.ts';
 import { forgetRefusedCreate, recordedInstance } from './rows.ts';
@@ -41,10 +42,31 @@ import { forgetRefusedCreate, recordedInstance } from './rows.ts';
  *   which refuses it ("Cannot adopt resource … Re-run with `--adopt`") unless adoption is on.
  * ★ THE ONE PROOF AN APPLY-TIME READ MAY USE IS THE PLAN'S: the diff's own recovery read noted this
  *   instance as a proven resume (resume.ts), and that note is what `resumes` answers.
+ * ⛔ ONLY THE CREATE'S OWN READ, NOT THE DELETE PATH'S. beta.81 wraps BOTH in a `provider.read`
+ *   span: the deferred-adoption read runs inside `apply.resource` (the create's span), while the
+ *   deletion recovery read (Apply.ts, a row to delete that never recorded attributes) runs in
+ *   collectGarbage, under no such span. 🔴 Treating the second as the first answered `Unowned` for
+ *   our own interrupted create: the engine skipped `provider.delete` and erased the row, leaving a
+ *   live object nothing tracked (red team, kit PR 359, 2026-10-06; adopt-recovery.test.ts). The
+ *   delete's recovery read keeps the state-row proof (`recordedInstance` + `settled`), as before.
  */
+const inApplyResource = (span: Tracer.AnySpan | undefined): boolean => {
+  let at = span;
+  while (at !== undefined && at._tag === 'Span') {
+    if (at.name === 'apply.resource') return true;
+    at = Option.getOrUndefined(at.parent);
+  }
+  return false;
+};
+
+const isCreatesRead = (span: Option.Option<Tracer.Span>): boolean => {
+  const current = Option.getOrUndefined(span);
+  return current?.name === 'provider.read' && inApplyResource(current);
+};
+
 const readsAtApply: Effect.Effect<boolean> = Effect.map(
   Effect.option(Effect.currentSpan),
-  (span) => Option.isSome(span) && span.value.name === 'provider.read',
+  isCreatesRead,
 );
 
 /**

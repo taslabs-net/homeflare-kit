@@ -13,7 +13,7 @@
  *   the workspace and points the smoke copy's alias at that tarball with `file:`. The imports the
  *   smoke test then runs are the same ones a consumer runs once the release has published.
  * ⛔ Only an alias onto a WORKSPACE package is ever swapped, and only when npm answers 404 for its
- *   exact version OR the published copy's dependency fields differ from the freshly packed ones.
+ *   exact version OR the published copy's files differ from the freshly packed ones.
  *   Anything else installs from the registry exactly as a consumer's would.
  * 🔴 A BUMPED DEPENDENCY WITHOUT A BUMPED VERSION LOOKS PUBLISHED. Measured 2026-10-06 (kit PR 359):
  *   the effect 4 move changed the distilled siblings' dependencies while changesets bumps their
@@ -23,6 +23,8 @@
  */
 import { Glob } from 'bun';
 import { editPackedManifest, packForPublish } from './pack.ts';
+import { publishedContents } from './published-tarball.ts';
+import { type Contents, contentsOfTarball, sameContents } from './tarball-contents.ts';
 
 const FIELDS = ['dependencies', 'optionalDependencies', 'peerDependencies'] as const;
 const ALIAS = /^npm:(@?[^@]+)@(.+)$/;
@@ -75,56 +77,15 @@ export async function isPublished(
 }
 
 /**
- * The registry's manifest for this exact version, or null on 404. Anything else throws, for the
- * same reason as `isPublished`.
- */
-export async function publishedManifest(
-  name: string,
-  version: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<Record<string, unknown> | null> {
-  const url = `https://registry.npmjs.org/${name.replaceAll('/', '%2f')}/${encodeURIComponent(version)}`;
-  const res = await fetchImpl(url, { method: 'GET' });
-  if (res.status === 200) return (await res.json()) as Record<string, unknown>;
-  if (res.status === 404) return null;
-  throw new Error(`npm registry answered ${res.status} for ${name}@${version}`);
-}
-
-/** The dependency fields of a manifest, key-sorted so order never reads as a difference. */
-function dependencyFields(manifest: Record<string, unknown>): string {
-  return JSON.stringify(
-    FIELDS.map((field) => {
-      const deps = manifest[field];
-      return typeof deps === 'object' && deps !== null
-        ? Object.entries(deps as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))
-        : [];
-    }),
-  );
-}
-
-/**
  * The selection rule: a sibling is installed from the workspace when npm has no such version, or
- * when its published dependencies differ from the packed ones (same version, changed contents).
+ * when the packed FILES differ from the published ones (same version, changed contents) — its
+ * code, declarations, `exports` and dependencies alike (tarball-contents.ts).
+ * ⛔ NOT THE DEPENDENCY FIELDS ALONE (red team, kit PR 359, 2026-10-06): a source-only or
+ *   exports-only change left them equal, so the smoke installed the published copy and never
+ *   exercised the pending release.
  */
-export function needsWorkspaceCopy(
-  published: Record<string, unknown> | null,
-  packed: Record<string, unknown>,
-): boolean {
-  return published === null || dependencyFields(published) !== dependencyFields(packed);
-}
-
-/** Read `package/package.json` out of a tarball without extracting it to disk. */
-async function readPackedManifest(tarball: string): Promise<Record<string, unknown>> {
-  const p = Bun.spawn(['tar', '-xzOf', tarball, 'package/package.json'], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  const [out, err] = await Promise.all([
-    new Response(p.stdout).text(),
-    new Response(p.stderr).text(),
-  ]);
-  if ((await p.exited) !== 0) throw new Error(`tar read of ${tarball} failed\n${err}`);
-  return JSON.parse(out) as Record<string, unknown>;
+export function needsWorkspaceCopy(published: Contents | null, packed: Contents): boolean {
+  return published === null || !sameContents(published, packed);
 }
 
 /** Map each workspace package name to its directory, from the root `workspaces` globs. */
@@ -145,7 +106,8 @@ async function workspacePackages(repoRoot: string): Promise<Map<string, string>>
 
 /**
  * Point every alias in the smoke tarball whose target version is not on npm, or whose
- * dependencies differ from the published copy's, at a freshly packed tarball of the workspace sibling. Returns what was swapped, so the caller can say so loudly.
+ * files differ from the published copy's, at a freshly packed tarball of the workspace sibling.
+ * Returns what was swapped, so the caller can say so loudly.
  */
 export async function swapUnpublishedSiblings(
   tarball: string,
@@ -160,9 +122,9 @@ export async function swapUnpublishedSiblings(
       // oxlint-disable-next-line no-await-in-loop
       const sibling = await packForPublish(dir, scratch);
       // oxlint-disable-next-line no-await-in-loop
-      const published = await publishedManifest(alias.target, alias.version);
+      const published = await publishedContents(alias.target, alias.version);
       // oxlint-disable-next-line no-await-in-loop
-      if (!needsWorkspaceCopy(published, await readPackedManifest(sibling))) {
+      if (!needsWorkspaceCopy(published, await contentsOfTarball(sibling))) {
         // oxlint-disable-next-line no-await-in-loop
         await Bun.file(sibling).delete();
         continue;

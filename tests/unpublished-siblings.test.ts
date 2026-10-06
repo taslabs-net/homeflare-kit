@@ -1,9 +1,13 @@
-import { describe, expect, test } from 'bun:test';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { publishedContents } from '../scripts/published-tarball.ts';
+import { contentsOfTarball } from '../scripts/tarball-contents.ts';
 import {
   aliasesOntoWorkspace,
   isPublished,
   needsWorkspaceCopy,
-  publishedManifest,
 } from '../scripts/unpublished-siblings.ts';
 
 const workspace = new Map([
@@ -70,39 +74,131 @@ describe('isPublished', () => {
   });
 });
 
-describe('needsWorkspaceCopy', () => {
-  const core = (v: string) => ({ dependencies: { '@distilled.cloud/core': v, effect: '4.0.1' } });
+/** A real tarball of `files` (path under `package/` to text), packed the way npm lays one out. */
+async function tarballOf(dir: string, name: string, files: Record<string, string>) {
+  await mkdir(join(dir, name, 'package'), { recursive: true });
+  for (const [path, text] of Object.entries(files)) {
+    // oxlint-disable-next-line no-await-in-loop
+    await Bun.write(join(dir, name, 'package', path), text);
+  }
+  const out = join(dir, `${name}.tgz`);
+  const tar = Bun.spawn(['tar', '-czf', out, '-C', join(dir, name), 'package']);
+  expect(await tar.exited).toBe(0);
+  return out;
+}
 
-  test('an unpublished version always comes from the workspace', () => {
-    expect(needsWorkspaceCopy(null, core('1.0.0-rc.13'))).toBe(true);
+describe('needsWorkspaceCopy, over real tarballs', () => {
+  const base = (over: Record<string, string> = {}) => ({
+    'package.json': JSON.stringify({
+      name: 'sib',
+      version: '0.2.0',
+      exports: { '.': './dist/index.js' },
+      dependencies: { '@distilled.cloud/core': '1.0.0-rc.13' },
+    }),
+    'dist/index.js': 'export const a = 1;\n',
+    'dist/index.d.ts': 'export declare const a: number;\n',
+    ...over,
+  });
+  const manifest = (over: Record<string, unknown>) =>
+    JSON.stringify({ ...JSON.parse(base()['package.json']), ...over });
+
+  let dir = '';
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'siblings-test-'));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
   });
 
-  test('a published copy with changed dependencies comes from the workspace', () => {
-    expect(needsWorkspaceCopy(core('1.0.0-rc.12'), core('1.0.0-rc.13'))).toBe(true);
-    expect(needsWorkspaceCopy({}, core('1.0.0-rc.13'))).toBe(true);
+  const differs = async (change: Record<string, string>) =>
+    needsWorkspaceCopy(
+      await contentsOfTarball(await tarballOf(dir, 'published', base())),
+      await contentsOfTarball(await tarballOf(dir, 'packed', base(change))),
+    );
+
+  test('an unpublished version always comes from the workspace', async () => {
+    const packed = await contentsOfTarball(await tarballOf(dir, 'packed', base()));
+    expect(needsWorkspaceCopy(null, packed)).toBe(true);
   });
 
-  test('an identical published copy installs from npm, whatever the key order', () => {
-    const reordered = { dependencies: { effect: '4.0.1', '@distilled.cloud/core': '1.0.0-rc.13' } };
-    expect(needsWorkspaceCopy(reordered, core('1.0.0-rc.13'))).toBe(false);
+  test('identical files install from npm, whatever the manifest key order', async () => {
+    const reordered = JSON.stringify({
+      dependencies: { '@distilled.cloud/core': '1.0.0-rc.13' },
+      exports: { '.': './dist/index.js' },
+      version: '0.2.0',
+      name: 'sib',
+    });
+    expect(await differs({})).toBe(false);
+    expect(await differs({ 'package.json': reordered })).toBe(false);
   });
 
-  test('a changed peer or optional dependency counts too', () => {
-    expect(needsWorkspaceCopy({}, { peerDependencies: { effect: '^4' } })).toBe(true);
-    expect(needsWorkspaceCopy({}, { optionalDependencies: { x: '1' } })).toBe(true);
+  test('a source-only change comes from the workspace', async () => {
+    expect(await differs({ 'dist/index.js': 'export const a = 2;\n' })).toBe(true);
+  });
+
+  test('a declarations-only change comes from the workspace', async () => {
+    expect(await differs({ 'dist/index.d.ts': 'export declare const a: string;\n' })).toBe(true);
+  });
+
+  test('an exports-only change comes from the workspace', async () => {
+    const exports = { '.': './dist/other.js' };
+    expect(await differs({ 'package.json': manifest({ exports }) })).toBe(true);
+  });
+
+  test('a changed dependency comes from the workspace', async () => {
+    const deps = { '@distilled.cloud/core': '1.0.0-rc.14' };
+    expect(await differs({ 'package.json': manifest({ dependencies: deps }) })).toBe(true);
+  });
+
+  test('an added or removed file comes from the workspace', async () => {
+    expect(await differs({ 'dist/extra.js': 'export {};\n' })).toBe(true);
   });
 });
 
-describe('publishedManifest', () => {
+describe('publishedContents', () => {
   const reply = (status: number, body?: unknown) =>
     (async () =>
       new Response(body === undefined ? null : JSON.stringify(body), {
         status,
       })) as unknown as typeof fetch;
 
-  test('200 returns the manifest, 404 null, an outage throws', async () => {
-    expect(await publishedManifest('a', '1', reply(200, { name: 'a' }))).toEqual({ name: 'a' });
-    expect(await publishedManifest('a', '1', reply(404))).toBeNull();
-    await expect(publishedManifest('a', '1', reply(503))).rejects.toThrow(/answered 503/);
+  test('404 is null, and an outage fails loudly instead of reading as unpublished', async () => {
+    expect(await publishedContents('a', '1', reply(404))).toBeNull();
+    await expect(publishedContents('a', '1', reply(503))).rejects.toThrow(/answered 503/);
+  });
+
+  test('a manifest with no tarball url fails', async () => {
+    await expect(publishedContents('a', '1', reply(200, { name: 'a' }))).rejects.toThrow(
+      /lists no tarball/,
+    );
+  });
+
+  test('a tarball download that fails throws', async () => {
+    const calls = [
+      new Response(JSON.stringify({ dist: { tarball: 'https://x/a.tgz' } })),
+      new Response(null, { status: 502 }),
+    ];
+    const fetchImpl = (async () => calls.shift()) as unknown as typeof fetch;
+    await expect(publishedContents('a', '1', fetchImpl)).rejects.toThrow(/tarball answered 502/);
+  });
+
+  test('the downloaded tarball is read by content', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'siblings-test-'));
+    try {
+      const tgz = await tarballOf(dir, 'pub', { 'package.json': '{}', 'a.js': 'x' });
+      const bytes = await Bun.file(tgz).arrayBuffer();
+      const calls = [
+        new Response(JSON.stringify({ dist: { tarball: 'https://x/a.tgz' } })),
+        new Response(bytes),
+      ];
+      const fetchImpl = (async () => calls.shift()) as unknown as typeof fetch;
+      const got = await publishedContents('a', '1', fetchImpl);
+      expect([...(got ?? new Map()).keys()].sort()).toEqual([
+        'package/a.js',
+        'package/package.json',
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
