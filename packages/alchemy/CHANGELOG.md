@@ -2,6 +2,17 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.48.1
+
+### Patch Changes
+
+- [#366](https://github.com/taslabs-net/homeflare-kit/pull/366) [`7090db1`](https://github.com/taslabs-net/homeflare-kit/commit/7090db182ad67ec12801c0f1c745316cc2461f06) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Follow-up minors for the `talos-openbao` cluster adapter: a failed write or a failed close of a
+  credential temp file (disk full, EIO/EDQUOT at close) now removes the already-created 0600 file
+  instead of leaving it behind; the `talosctl version --client` probe has a 10 s deadline
+  (overridable with `TalosRunOptions.versionProbeTimeout`) and fails closed with `TalosBinaryRefused`
+  instead of hanging, killing a hung child with its process group; the `TalosClusterIdentityTimeout`
+  text and the docs now say what the code does (a 5 s uid read inside the 10 s connect deadline).
+
 ## 0.48.0
 
 ### Minor Changes
