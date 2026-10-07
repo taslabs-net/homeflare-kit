@@ -1,15 +1,42 @@
-# Peers — and why each pin exists
-
-The install line for `@homeflare/alchemy`, and why every peer on it and every entry in the
-`overrides` block is required. The block itself, which every consumer copies, is in the
-[README](../README.md#peers--and-one-override-you-need).
+# Peers — and one override you need
 
 ```sh
 bun add @homeflare/alchemy alchemy@2.0.0-beta.81 effect@4.0.1 \
         @effect/platform-node@4.0.1 mime@4.1.0 \
         @distilled.cloud/cloudflare@1.0.0-rc.13 @distilled.cloud/forgejo@1.0.0-rc.13 \
+        @distilled.cloud/discord@1.0.0-rc.13 @distilled.cloud/google-workspace@1.0.0-rc.13 \
+        @distilled.cloud/argocd@1.0.0-rc.13 \
         @effect/sql-pg@4.0.1
 ```
+
+⛔ **Every one of those is required, and you also need an `overrides` block** — see
+below. The install succeeds without them and the import throws.
+
+★ **The machine-readable source of truth** lives in this package's `package.json` under the
+`homeflare.consumer` field. It carries the exact pins, the overrides below, and the import
+moves for `effect/unstable/*` as an ordered **array of `{"from", "to"}` pairs** — not an
+object keyed by the old path. Order is load-bearing: the most specific path comes first
+(`httpapi` before its parent `http`), because consumers apply the moves in published order.
+The install line, the overrides block in this doc, and the smoke test install are all
+asserted against that field; change the field first, then copy its `overrides` block here.
+
+⛔ **Add this to your `package.json`, or the install works and the import throws:**
+
+```json
+{
+  "overrides": {
+    "effect": "4.0.1",
+    "@effect/platform-node": "4.0.1",
+    "@effect/platform-node-shared": "4.0.1",
+    "@effect/platform-bun": "4.0.1",
+    "rolldown": "1.2.8",
+    "redis": "6.3.0"
+  }
+}
+```
+
+Why each peer is required and each pin exists — the measurements, and the error a missing one
+produces — is below.
 
 🔴 **Why, measured 2026-09-16 on 0.1.0 and re-checked 2026-09-17 against Alchemy 78.**
 Effect's `rc` line is not semver-compatible with itself. Alchemy 78's peer is

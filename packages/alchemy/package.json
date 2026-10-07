@@ -176,5 +176,115 @@
     "alchemy": "2.0.0-beta.81",
     "effect": "4.0.1",
     "mime": "4.1.0"
+  },
+  "homeflare": {
+    "consumer": {
+      "pins": {
+        "effect": "4.0.1",
+        "@effect/ai-openai-compat": "4.0.1",
+        "@effect/platform-bun": "4.0.1",
+        "@effect/platform-node": "4.0.1",
+        "@effect/platform-node-shared": "4.0.1",
+        "@effect/sql-pg": "4.0.1",
+        "alchemy": "2.0.0-beta.81",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.81",
+        "@distilled.cloud/core": "1.0.0-rc.13",
+        "@distilled.cloud/argocd": "1.0.0-rc.13",
+        "@distilled.cloud/cloudflare": "1.0.0-rc.13",
+        "@distilled.cloud/discord": "1.0.0-rc.13",
+        "@distilled.cloud/forgejo": "1.0.0-rc.13",
+        "@distilled.cloud/google-workspace": "1.0.0-rc.13",
+        "mime": "4.1.0"
+      },
+      "overrides": {
+        "effect": "4.0.1",
+        "@effect/platform-bun": "4.0.1",
+        "@effect/platform-node": "4.0.1",
+        "@effect/platform-node-shared": "4.0.1",
+        "rolldown": "1.2.8",
+        "redis": "6.3.0"
+      },
+      "importMoves": [
+        {
+          "from": "effect/unstable/httpapi/",
+          "to": "effect/http-api/"
+        },
+        {
+          "from": "effect/unstable/ai/",
+          "to": "effect/ai/"
+        },
+        {
+          "from": "effect/unstable/cli/",
+          "to": "effect/cli/"
+        },
+        {
+          "from": "effect/unstable/cluster/",
+          "to": "effect/cluster/"
+        },
+        {
+          "from": "effect/unstable/devtools/",
+          "to": "effect/devtools/"
+        },
+        {
+          "from": "effect/unstable/encoding/",
+          "to": "effect/encoding/"
+        },
+        {
+          "from": "effect/unstable/eventlog/",
+          "to": "effect/eventlog/"
+        },
+        {
+          "from": "effect/unstable/http/",
+          "to": "effect/http/"
+        },
+        {
+          "from": "effect/unstable/net/",
+          "to": "effect/net/"
+        },
+        {
+          "from": "effect/unstable/observability/",
+          "to": "effect/observability/"
+        },
+        {
+          "from": "effect/unstable/persistence/",
+          "to": "effect/persistence/"
+        },
+        {
+          "from": "effect/unstable/process/",
+          "to": "effect/process/"
+        },
+        {
+          "from": "effect/unstable/reactivity/",
+          "to": "effect/reactivity/"
+        },
+        {
+          "from": "effect/unstable/rpc/",
+          "to": "effect/rpc/"
+        },
+        {
+          "from": "effect/unstable/schema/",
+          "to": "effect/schema/"
+        },
+        {
+          "from": "effect/unstable/socket/",
+          "to": "effect/socket/"
+        },
+        {
+          "from": "effect/unstable/sql/",
+          "to": "effect/sql/"
+        },
+        {
+          "from": "effect/unstable/workers/",
+          "to": "effect/workers/"
+        },
+        {
+          "from": "effect/unstable/workflow/",
+          "to": "effect/workflow/"
+        }
+      ],
+      "unresolved": [
+        "effect/unstable/arbitrary/"
+      ]
+    }
   }
 }
