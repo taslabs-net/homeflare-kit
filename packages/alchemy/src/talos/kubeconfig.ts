@@ -29,6 +29,7 @@
  *       `kubeconfig` kind (absent path falls back to `$KUBECONFIG`) nor `client-cert` (PEM on
  *       every workload's attributes, alchemy `Connection.ts`).
  */
+import { readFile } from 'node:fs/promises';
 import { chmodSync } from 'node:fs';
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
@@ -178,7 +179,7 @@ export const reconcileKubeconfig = (
       );
       const raw = yield* Effect.tryPromise({
         catch: (cause) => new Error(`${outPath}: reading generated kubeconfig: ${String(cause)}`),
-        try: () => Bun.file(outPath).text(),
+        try: () => readFile(outPath, 'utf8'),
       });
       if (raw.trim() === '') {
         return yield* Effect.die(
