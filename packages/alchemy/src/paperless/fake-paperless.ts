@@ -18,7 +18,7 @@ import { type Credentials, credentials } from '@distilled.cloud/paperless-ngx/Cr
 import type { PaperlessNgxOpContext } from '@distilled.cloud/paperless-ngx/Protocol';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 
 export const FAKE_BASE = 'https://paperless.example.com';
 export const FAKE_TOKEN = 'placeholder-paperless-token';

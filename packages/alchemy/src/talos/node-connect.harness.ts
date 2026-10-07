@@ -12,7 +12,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { ClusterAdapter } from 'alchemy/Kubernetes/ClusterAdapter';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import { TalosOpenBaoAdapter, talosOpenBaoConnection } from './cluster-adapter.ts';
 import { fakeSpawner } from './fake-process.ts';
 

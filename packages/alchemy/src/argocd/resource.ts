@@ -22,7 +22,7 @@ import type { Input } from 'alchemy/Input';
 import { CredentialsFromEnv } from '@distilled.cloud/argocd/Credentials';
 import type { ArgocdOpContext } from '@distilled.cloud/argocd/Protocol';
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 
 /** What every handler needs from the caller's runtime, once `argocdHandlers` bakes in credentials. */
 export type ArgocdRequirements = HttpClient.HttpClient;

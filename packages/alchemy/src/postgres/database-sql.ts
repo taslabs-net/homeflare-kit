@@ -24,7 +24,7 @@
  *   Measured 2026-10-01: the former quote-only escaper allowed comment SQL injection when
  *   that setting was off; an input backslash escaped the first quote of a doubled pair.
  */
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import * as Effect from 'effect/Effect';
 import type { PostgresDatabaseAttributes, PostgresDatabaseProps } from './database-attrs.ts';
 
@@ -103,7 +103,7 @@ export const isDuplicateDatabaseRace = (error: SqlError): boolean => {
   );
 };
 
-const ROLE_EXISTS_SQL = 'SELECT 1 AS present FROM pg_roles WHERE rolname = $1';
+const ROLE_EXISTS_SQL = 'SELECT 1 AS present FROM pg_catalog.pg_roles WHERE rolname = $1';
 
 /** `OWNER` is checked against `pg_roles` before any `CREATE`, so a missing role is
  * `PostgresDatabaseOwnerMissing` at reconcile time rather than the server's own
@@ -114,7 +114,7 @@ export const roleExists = (pg: PgExecutor, role: string): Effect.Effect<boolean,
     (rows) => rows.length > 0,
   );
 
-const DATABASE_EXISTS_SQL = 'SELECT 1 AS present FROM pg_database WHERE datname = $1';
+const DATABASE_EXISTS_SQL = 'SELECT 1 AS present FROM pg_catalog.pg_database WHERE datname = $1';
 
 /**
  * Does one database of the cluster exist? `Postgres.Schema` runs this over the FAMILY
@@ -152,8 +152,8 @@ export const databaseExists = (pg: PgExecutor, name: string): Effect.Effect<bool
 const SELECT_DATABASE_SQL = `SELECT
     d.oid AS oid,
     d.datname AS name,
-    pg_get_userbyid(d.datdba) AS owner,
-    pg_encoding_to_char(d.encoding) AS encoding,
+    pg_catalog.pg_get_userbyid(d.datdba) AS owner,
+    pg_catalog.pg_encoding_to_char(d.encoding) AS encoding,
     CASE d.datlocprovider
       WHEN 'b' THEN 'builtin' WHEN 'i' THEN 'icu' WHEN 'c' THEN 'libc'
       ELSE 'libc'
@@ -164,8 +164,8 @@ const SELECT_DATABASE_SQL = `SELECT
     d.datconnlimit AS "connectionLimit",
     d.datistemplate AS "isTemplate",
     t.spcname AS tablespace
-  FROM pg_database d
-  JOIN pg_tablespace t ON t.oid = d.dattablespace
+  FROM pg_catalog.pg_database d
+  JOIN pg_catalog.pg_tablespace t ON t.oid = d.dattablespace
   WHERE d.datname = $1`;
 
 /** The read: one bound `SELECT` on `pg_database`, joined to the two functions that turn its raw

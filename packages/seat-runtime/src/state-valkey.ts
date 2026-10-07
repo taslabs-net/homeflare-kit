@@ -31,7 +31,7 @@ import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import * as Redis from 'effect/unstable/persistence/Redis';
+import * as Redis from 'effect/persistence/Redis';
 import { valkeyFields } from './state-dsn.ts';
 import { keepConnected } from './state-valkey-connection.ts';
 import { instrumentedSend } from './state-valkey-send.ts';

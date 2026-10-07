@@ -15,7 +15,7 @@
  *   wedge a seat forever, so every command carries `commandTimeout` too.
  */
 import * as Effect from 'effect/Effect';
-import * as Redis from 'effect/unstable/persistence/Redis';
+import * as Redis from 'effect/persistence/Redis';
 import type * as Duration from 'effect/Duration';
 import { scrubbedError } from './state-valkey-scrub.ts';
 

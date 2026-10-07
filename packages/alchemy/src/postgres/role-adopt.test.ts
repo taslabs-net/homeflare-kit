@@ -13,6 +13,7 @@ import * as Effect from 'effect/Effect';
 import { postgresRunnerConnection } from './connection.ts';
 import { parseLiteral } from './fake-sql-quote.ts';
 import { makeFakeSql } from './fake-sql.ts';
+import { stripPin } from './search-path.ts';
 import { type PsqlRunner } from './psql-executor.ts';
 import { postgresRoleHandlers } from './role-provider.ts';
 import type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts';
@@ -42,7 +43,8 @@ const liveRole = (): PostgresRoleAttributes => ({
  */
 const runnerFor =
   (fake: ReturnType<typeof makeFakeSql>): PsqlRunner =>
-  async ({ stdin }) => {
+  async ({ stdin: raw }) => {
+    const stdin = stripPin(raw);
     const wrapped = /^SELECT coalesce\(json_agg\(t\), '\[\]'::json\)::text FROM \((.*)\) t;$/s.exec(
       stdin,
     );

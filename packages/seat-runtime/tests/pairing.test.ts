@@ -3,7 +3,7 @@
  *
  * 🔴 WHY EXACT AND SAME-RC. Effect release candidates break each other (measured 2026-09-16:
  *   `>=4.0.0-rc.112` resolved to rc.115 and `Config.string` vanished), and rc.118 dropped the
- *   `unstable/` prefix outright (`effect/unstable/ai` became `effect/ai`; rc.116 and rc.117
+ *   `unstable/` prefix outright (`effect/ai` became `effect/ai`; rc.116 and rc.117
  *   keep it). `@effect/ai-openai-compat` peers on `effect ^4.0.0-rc.X`, so a caret happily
  *   admits a newer effect than the one this code was typechecked against. The scout measured
  *   effect rc.115 with compat rc.115 clean (install, tsc 7.0.2, runtime), and mixed with
@@ -35,7 +35,7 @@ const sdk = await read(
 const sqlPg = await read(new URL('../node_modules/@effect/sql-pg/package.json', import.meta.url));
 const lock = await Bun.file(new URL('../../../bun.lock', import.meta.url)).text();
 
-const PIN = '4.0.0-rc.115';
+const PIN = '4.0.1';
 
 describe('installed versions', () => {
   test('effect and @effect/ai-openai-compat are the same exact rc', () => {
@@ -46,7 +46,7 @@ describe('installed versions', () => {
 
   test('the installed effect satisfies the range compat peers on', () => {
     const range = compat.peerDependencies?.['effect'] ?? '';
-    expect(range).toMatch(/rc\.\d+/);
+    expect(range).toMatch(/^\^\d+\.\d+\.\d+$/);
     expect(Bun.semver.satisfies(effect.version ?? '', range)).toBe(true);
   });
 
@@ -55,7 +55,7 @@ describe('installed versions', () => {
     //   speaks the Postgres wire protocol itself over node:net, so it adds no driver to the tree.
     expect(sqlPg.version).toBe(PIN);
     const range = sqlPg.peerDependencies?.['effect'] ?? '';
-    expect(range).toMatch(/rc\.\d+/);
+    expect(range).toMatch(/^\^\d+\.\d+\.\d+$/);
     expect(Bun.semver.satisfies(effect.version ?? '', range)).toBe(true);
     expect(Object.keys(sqlPg.dependencies ?? {})).toEqual([]);
   });

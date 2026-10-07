@@ -12,7 +12,7 @@
  *   halves live in their own files under the same rule.
  */
 import * as Effect from 'effect/Effect';
-import { SqlError, SqlSyntaxError, UnknownError } from 'effect/unstable/sql/SqlError';
+import { SqlError, SqlSyntaxError, UnknownError } from 'effect/sql/SqlError';
 import type { PostgresDatabaseAttributes } from './database-attrs.ts';
 import type { PgExecutor } from './database-sql.ts';
 import { parseCreate } from './fake-sql-parse.ts';
@@ -65,6 +65,10 @@ export interface FakeSqlOptions {
   readonly schemas?: ReadonlyArray<PostgresSchemaAttributes>;
   /** Names of schemas the fake answers `schemaIsEmpty` with `false` for. */
   readonly schemasWithRelations?: ReadonlyArray<string>;
+  /** Per schema name, how many objects in OTHER schemas depend on it (a cascade would drop
+   * them): what the atomic drop's `pg_depend` count answers. */
+  readonly dependentsOutside?: Readonly<Record<string, number>>;
+  readonly sequencesIn?: Readonly<Record<string, number>>; // per schema: sequences held (HF004)
   /** Accept the NEXT `CREATE SCHEMA` (no error) but record nothing — the S10 case where the
    * write's own report is a lie and the immediate re-read finds nothing. */
   readonly swallowNextCreateSchema?: boolean;
@@ -93,6 +97,7 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   >();
   const schemas = seedSchemas(options.schemas, options.database ?? 'postgres');
   const relationsIn = new Set(options.schemasWithRelations ?? []);
+  const dependentsOutside = new Map(Object.entries(options.dependentsOutside ?? {}));
   let raceRemaining = options.raceNextCreate === true ? 1 : 0;
   let failNext = options.failNext;
   let oidCounter = 20000;
@@ -111,6 +116,8 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
   const schemaState: FakeSchemaState = {
     schemas,
     relationsIn,
+    dependentsOutside,
+    sequencesIn: new Map(Object.entries(options.sequencesIn ?? {})),
     database: options.database ?? 'postgres',
     standardConformingStrings: options.standardConformingStrings ?? true,
     sessionRole: options.currentUser ?? 'postgres',
@@ -139,7 +146,7 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
         );
       }
 
-      if (text.startsWith('SELECT 1 AS present FROM pg_roles')) {
+      if (text.startsWith('SELECT 1 AS present FROM pg_catalog.pg_roles')) {
         const role = params[0] as string;
         return Effect.succeed(
           (roleNames.has(role) || roleRows.has(role)
@@ -151,14 +158,14 @@ export const makeFakeSql = (options: FakeSqlOptions = {}): FakeSql => {
       // ⚠️ startsWith, BEFORE the `FROM pg_database` branch: the full-row select also contains
       //   `FROM pg_database`, but starts with `SELECT d.oid` — only the existence probe starts
       //   with `SELECT 1 AS present`.
-      if (text.startsWith('SELECT 1 AS present FROM pg_database')) {
+      if (text.startsWith('SELECT 1 AS present FROM pg_catalog.pg_database')) {
         const name = params[0] as string;
         return Effect.succeed(
           (databases.has(name) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
         );
       }
 
-      if (text.includes('FROM pg_database')) {
+      if (text.includes('FROM pg_catalog.pg_database')) {
         const name = params[0] as string;
         const row = databases.get(name);
         return Effect.succeed((row === undefined ? [] : [row]) as unknown as ReadonlyArray<A>);

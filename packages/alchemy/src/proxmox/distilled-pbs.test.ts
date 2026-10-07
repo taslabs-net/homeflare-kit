@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test';
 import * as config from '@distilled.cloud/proxmox-backup/config';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import type { PbsTarget, PveCredential } from './credentials.ts';
 import { runPbsWith } from './distilled-pbs.ts';
 

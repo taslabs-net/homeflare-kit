@@ -2,6 +2,27 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.47.1
+
+### Patch Changes
+
+- [#363](https://github.com/taslabs-net/homeflare-kit/pull/363) [`797ce0d`](https://github.com/taslabs-net/homeflare-kit/commit/797ce0d28793750646f4983505837a52f5650276) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Adds `homeflare.consumer` to the published manifest: the machine-readable source of truth for peer pins, overrides, and Effect `unstable/` import moves. The README and smoke test PINS are now asserted against this field.
+
+## 0.47.0
+
+### Minor Changes
+
+- [#359](https://github.com/taslabs-net/homeflare-kit/pull/359) [`f43b0a5`](https://github.com/taslabs-net/homeflare-kit/commit/f43b0a5673d3660181b3dc7eb5342096c67cd38c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Move to effect and `@effect/*` 4.0.1, alchemy 2.0.0-beta.81 and `@distilled.cloud/*` 1.0.0-rc.13. Consumers must install effect 4.0.1 (the peer was an exact rc.115): every import path moves from `effect/unstable/*` to `effect/*`. The distilled packages implement the `parseError` option distilled core rc.13 now requires of a REST protocol, raising each package's own `<Sdk>ParseError`. alchemy beta.81 probes a create whose props were Outputs at apply, so the ownership layer now answers `Unowned` to that apply-time read unless the plan proved the resume, forgets the row the engine's refusal leaves behind, and `Release.Binary` judges that create as a create: another owner's object, or other bytes at a binary path, are still refused without `--adopt`. `@homeflare/config` publishes the new `ESTATE_VERSIONS`.
+
+## 0.46.1
+
+### Patch Changes
+
+- [#357](https://github.com/taslabs-net/homeflare-kit/pull/357) [`d7b6357`](https://github.com/taslabs-net/homeflare-kit/commit/d7b6357a18e7e580a933eb656c7a813e03f2d96a) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Postgres: pin `search_path = pg_catalog, pg_temp` on every session and schema-qualify every
+  catalog reference; `Postgres.Schema` delete now proves and drops in one atomic `DO` block under an
+  advisory lock, and `cascade: true` refuses (typed, count only) when objects in other schemas
+  depend on the schema.
+
 ## 0.46.0
 
 ### Minor Changes

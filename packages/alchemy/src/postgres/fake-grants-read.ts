@@ -6,7 +6,7 @@
  * cycle.
  */
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { AclObject } from './fake-grants-parse.ts';
 
 /** One `aclitem` as the fake stores it: one (object, grantee, grantor) with the words that
@@ -96,17 +96,17 @@ export const answerRead = <A extends object>(
 ): Effect.Effect<ReadonlyArray<A>, SqlError> | undefined => {
   const { acl, schemas, roles, databases, tables } = model;
 
-  if (text.startsWith('SELECT 1 AS present FROM pg_roles')) {
+  if (text.startsWith('SELECT 1 AS present FROM pg_catalog.pg_roles')) {
     return Effect.succeed(
       (roles.has(params[0] as string) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
     );
   }
-  if (text.startsWith('SELECT 1 AS present FROM pg_namespace')) {
+  if (text.startsWith('SELECT 1 AS present FROM pg_catalog.pg_namespace')) {
     return Effect.succeed(
       (schemas.has(params[0] as string) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
     );
   }
-  if (text.startsWith('SELECT 1 AS present FROM pg_database')) {
+  if (text.startsWith('SELECT 1 AS present FROM pg_catalog.pg_database')) {
     return Effect.succeed(
       (databases.has(params[0] as string) ? [{ present: 1 }] : []) as unknown as ReadonlyArray<A>,
     );

@@ -17,7 +17,7 @@
  *   `{"data": null}`. That is why `reconcile` below READS BACK and refuses when the object is still
  *   absent, rather than trusting a status code — see the ⛔ in that function.
  */
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import type { PveForm } from './client.ts';
 import type { EndpointKey } from './constraints.ts';
 import type { ApiTarget, PbsTarget, PveRole, PveTarget } from './credentials.ts';

@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/distilled-proxmox",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Interim npm home for @distilled.cloud/proxmox — see docs/distilled-interim.md. Not published upstream yet; the kit aliases @distilled.cloud/proxmox onto this package until it is.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/distilled-proxmox#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
@@ -74,12 +74,12 @@
     "smoke": "bun run scripts/smoke.ts"
   },
   "dependencies": {
-    "@distilled.cloud/core": "1.0.0-rc.12"
+    "@distilled.cloud/core": "1.0.0-rc.13"
   },
   "devDependencies": {
     "@types/bun": "catalog:"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.115"
+    "effect": "4.0.1"
   }
 }

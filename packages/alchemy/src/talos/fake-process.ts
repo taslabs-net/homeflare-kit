@@ -21,8 +21,8 @@ import { fileURLToPath } from 'node:url';
 import * as Effect from 'effect/Effect';
 import * as Sink from 'effect/Sink';
 import * as Stream from 'effect/Stream';
-import type { Command } from 'effect/unstable/process/ChildProcess';
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import type { Command } from 'effect/process/ChildProcess';
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import { trustBoundaryForTests } from './trust-boundary.seam.ts';
 
 export type FakeResult = {

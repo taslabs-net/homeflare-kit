@@ -10,7 +10,7 @@
  */
 import { type Credentials, credentials } from '@distilled.cloud/forgejo/Credentials';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 
 export const FAKE_BASE = 'https://forgejo.example.com';
 export const FAKE_TOKEN = 'placeholder-forgejo-token';

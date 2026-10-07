@@ -36,6 +36,11 @@ export type DeployOptions = { readonly adopt?: boolean };
 export interface FakeStack {
   /** Plan, then apply, `body`. Resolves to the plan; rejects with the apply's failure. */
   readonly deploy: (body: StackBody, options?: DeployOptions) => Promise<Planned>;
+  /**
+   * `alchemy destroy` of `body`: the body is still evaluated (its declarations stay in the Stack
+   * service), and the plan is Alchemy's own `Plan.destroy`. Resolves to the plan's actions.
+   */
+  readonly destroy: (body: StackBody) => Promise<Planned>;
 }
 
 type Node = { readonly action: string };
@@ -82,11 +87,14 @@ export const fakeStack = <ROut, E, RIn>(
    *   diff uses to tell reconcile it resumes an interrupted create (ownership/resume.ts).
    * ★ `--adopt` reaches registration, plan and apply alike, as the Alchemist session provides it.
    */
-  const deploy = (body: StackBody, options: DeployOptions = {}) =>
+  const destroying = Alchemy.Plan.destroy as unknown as (
+    compiled: unknown,
+  ) => Effect.Effect<PlanView, unknown, never>;
+  const run = (body: StackBody, options: DeployOptions, planner: typeof plan) =>
     Effect.gen(function* () {
       const compiled = yield* stack(name, { providers, state }, body);
       return yield* Effect.gen(function* () {
-        const planned = yield* plan(compiled);
+        const planned = yield* planner(compiled);
         yield* apply(planned);
         return actionsOf(planned);
       }).pipe(provideFreshArtifactStore, Effect.provide(Layer.succeedContext(compiled.services)));
@@ -99,7 +107,9 @@ export const fakeStack = <ROut, E, RIn>(
     );
 
   return {
-    deploy: (body, options) => Effect.runPromise(deploy(body, options) as Effect.Effect<Planned>),
+    deploy: (body, options) =>
+      Effect.runPromise(run(body, options ?? {}, plan) as Effect.Effect<Planned>),
+    destroy: (body) => Effect.runPromise(run(body, {}, destroying) as Effect.Effect<Planned>),
   };
 };
 

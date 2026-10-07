@@ -11,14 +11,14 @@
  *   queries, still inside the read's one bounded burst.
  */
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 
 /** `pg_namespace.nspowner = <role>` for one schema. No rows when the schema is absent —
  * the caller then reads the fact as `false`. */
 const SCHEMA_OWNER_SQL = `SELECT
-    n.nspowner = (SELECT oid FROM pg_roles WHERE rolname = $2) AS role_owns
-  FROM pg_namespace n
+    n.nspowner = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $2) AS role_owns
+  FROM pg_catalog.pg_namespace n
   WHERE n.nspname = $1`;
 
 export const readSchemaOwnership = (
@@ -34,9 +34,9 @@ export const readSchemaOwnership = (
 /** Every relation in the schema the declared role OWNS, all relkinds (the table class is
  * not relkind-filtered, and neither is this). */
 const OWNED_TABLES_SQL = `SELECT c.relname AS table
-  FROM pg_class c
-  WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)
-    AND c.relowner = (SELECT oid FROM pg_roles WHERE rolname = $2)
+  FROM pg_catalog.pg_class c
+  WHERE c.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $1)
+    AND c.relowner = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $2)
   ORDER BY c.relname`;
 
 export const readOwnedTables = (

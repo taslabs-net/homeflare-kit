@@ -84,9 +84,9 @@ test('reads INHERIT and repairs another grantor row for declared NOINHERIT', asy
   expect(before?.memberships).toEqual([
     { parent: 'parent', grantor: 'other', admin: false, set: false, inherit: true },
   ]);
-  expect(fake.statements.find((s) => s.text.includes('FROM pg_auth_members'))?.text).toContain(
-    'm.inherit_option AS inherit',
-  );
+  expect(
+    fake.statements.find((s) => s.text.includes('FROM pg_catalog.pg_auth_members'))?.text,
+  ).toContain('m.inherit_option AS inherit');
   expect(await Effect.runPromise(diffPostgresRole(props, live, {}, { found: before }))).toEqual({
     action: 'update',
   });

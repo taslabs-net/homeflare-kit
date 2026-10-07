@@ -11,7 +11,7 @@ import * as Output from 'alchemy/Output';
 import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import { engineOver } from '../verify/fake-engine.ts';
 import { connectTalosOpenBao, talosOpenBaoConnection } from './cluster-adapter.ts';
 import { UIDS, config, failure, providerLayer, vault } from './cluster-adapter.fixtures.ts';

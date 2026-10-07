@@ -4,6 +4,7 @@
  * Refusals use checked catalog facts or raw SQLSTATE (42P06 / 2BP01), never driver message text.
  */
 import * as Data from 'effect/Data';
+import type { PostgresSchemaCascadeSequencesRefused } from './schema-sequence-error.ts';
 
 /** A declared name would be silently truncated (same as `PostgresDatabaseNameRefused`). */
 export class PostgresSchemaNameRefused extends Data.TaggedError('PostgresSchemaNameRefused')<{
@@ -90,6 +91,29 @@ export class PostgresSchemaDropNotEmptyError extends Data.TaggedError(
     return (
       `Postgres.Schema "${this.schema}": DROP SCHEMA refused because the schema is not empty and ` +
       'cascade is false. Declare cascade: true to drop its contents, or empty it by hand first.'
+    );
+  }
+}
+
+/**
+ * `cascade: true` refused: `DROP SCHEMA … CASCADE` would also drop objects that live in OTHER
+ * schemas because they depend on something in this one (a view, a foreign key or a trigger
+ * another stack owns). The refusal carries the COUNT only — never an object name, so the error
+ * cannot disclose another owner's catalog. Nothing was dropped: move or drop those dependents
+ * deliberately, or empty this schema by hand and declare `cascade: false`.
+ */
+export class PostgresSchemaCascadeCrossSchemaRefused extends Data.TaggedError(
+  'PostgresSchemaCascadeCrossSchemaRefused',
+)<{
+  readonly schema: string;
+  /** How many dependent objects live outside this schema (at least one when raised). */
+  readonly dependents: number;
+}> {
+  override get message(): string {
+    return (
+      `Postgres.Schema "${this.schema}": cascade: true refused — ${String(this.dependents)} ` +
+      'dependent object(s) outside this schema would be dropped with it. No DROP was issued. ' +
+      'Remove or move those dependents first.'
     );
   }
 }
@@ -204,6 +228,8 @@ export type PostgresSchemaError =
   | PostgresSchemaDrift
   | PostgresSchemaCreateVanished
   | PostgresSchemaDropNotEmptyError
+  | PostgresSchemaCascadeCrossSchemaRefused
+  | PostgresSchemaCascadeSequencesRefused
   | PostgresSchemaDeleteForeignRefused
   | PostgresSchemaWrongDatabase
   | PostgresSchemaDatabaseRefused;

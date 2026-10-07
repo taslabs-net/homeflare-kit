@@ -21,7 +21,7 @@ import { STATE_CONSUMER } from './smoke-state.ts';
 const pkgRoot = new URL('../', import.meta.url).pathname;
 
 /** The pin, exactly as the README's install line writes it. */
-const RC = '4.0.0-rc.115';
+const RC = '4.0.1';
 const PEER = `effect@${RC}`;
 const PLATFORM = `@effect/platform-bun@${RC}`;
 
@@ -40,8 +40,8 @@ async function run(cmd: readonly string[], cwd: string): Promise<string> {
 
 const CONSUMER = `import { Effect, Layer } from 'effect';
 import * as ConfigProvider from 'effect/ConfigProvider';
-import { Chat, EmbeddingModel, LanguageModel, Toolkit } from 'effect/unstable/ai';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import { Chat, EmbeddingModel, LanguageModel, Toolkit } from 'effect/ai';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { McpToolkitError, SeatModel, SeatObs, VERSION, mcpToolkit, runRounds } from '@homeflare/seat-runtime';
 
 const seen: { url: string; tags: string | null; auth: string | null; body: string }[] = [];

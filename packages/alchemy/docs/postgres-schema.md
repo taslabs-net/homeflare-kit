@@ -97,7 +97,28 @@ empty, or when `cascade: true` is declared.
   as the same typed tag. `2BP01` is class `2B`, so both transports wrap it as `UnknownError`
   with the raw code on `reason.cause.code` — the classifier reads that code, not the tag.
 - With `cascade: true` the drop is `DROP SCHEMA IF EXISTS … CASCADE` and removes the schema's
-  objects too. The `IF EXISTS` makes delete idempotent.
+  objects too — and, because Postgres cascades through `pg_depend`, anything in ANOTHER schema
+  that depends on them (a view, a foreign key, a trigger another stack owns). So before a
+  cascade drop the atomic block counts those dependents and refuses with
+  `PostgresSchemaCascadeCrossSchemaRefused`, naming the COUNT only (never another owner's
+  object names). A dependent whose catalog class is not recognised counts as foreign: the check
+  fails closed. The `IF EXISTS` makes delete idempotent.
+- Known limit: `cascade: true` over a schema that holds a sequence (every serial or identity
+  column owns one) is refused with `PostgresSchemaCascadeSequencesRefused` (`HF004`, count only).
+  A sequence cannot be locked, so a concurrent view over it could escape the dependency proof;
+  drop the schema's contents first, then declare `cascade: false`.
+- The proof and the drop are ONE statement. The re-read, the emptiness (or dependents) check and
+  the `DROP` run in a single `DO` block, so on the runner transport it is one `psql`. The block
+  takes `pg_advisory_xact_lock(<schema oid>)`, re-verifies the persisted `oid` + `owner` inside
+  the transaction, and only then drops; a schema replaced after the read is
+  `PostgresSchemaDeleteForeignRefused`. The lock is cooperative (it serialises two runs of this
+  provider, not an arbitrary `CREATE TABLE`); a creator that slips in after the check is still
+  caught by the server's own `2BP01` on a plain drop.
+- Every session pins `search_path = pg_catalog, pg_temp` (`search-path.ts`) and every SQL
+  builder writes `pg_catalog.<name>`, so a role that can create objects in a schema on its
+  path cannot forge `pg_namespace` and fake the delete proof. Runner path: the script is
+  prefixed with the `SET`; socket path: the one reserved connection an operation uses is pinned
+  first (`search-path.test.ts` greps the builders for an unqualified catalog name).
 - A `cascade` change is a real change: it answers `update` (compared against the previous
   declaration's persisted props), so the flipped value reaches state and the eventual drop
   uses it — a schema first declared `cascade: true` stops dropping with CASCADE once the

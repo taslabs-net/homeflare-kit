@@ -29,7 +29,7 @@
 import * as keys from '@distilled.cloud/litellm/key_management';
 import * as Effect from 'effect/Effect';
 import * as Predicate from 'effect/Predicate';
-import { isHttpClientError } from 'effect/unstable/http/HttpClientError';
+import { isHttpClientError } from 'effect/http/HttpClientError';
 import {
   LitellmKeyAliasEmptyError,
   LitellmKeyAmbiguousAliasError,

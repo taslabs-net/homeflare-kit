@@ -54,15 +54,15 @@ try {
   console.log('installing…');
   await run(['bun', 'add', tarball], scratch);
   // The peer dependency — bun does not install it automatically.
-  await run(['bun', 'add', 'effect@4.0.0-rc.115'], scratch);
+  await run(['bun', 'add', 'effect@4.0.1'], scratch);
 
   await Bun.write(
     join(scratch, 'consumer.ts'),
     `import * as Opnsense from '@homeflare/distilled-opnsense';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
-import * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
+import * as HttpClient from 'effect/http/HttpClient';
+import * as HttpClientResponse from 'effect/http/HttpClientResponse';
 
 // Fake HttpClient: captures the outgoing request instead of sending it, and
 // answers with a canned 200 (the whole-model {"general": {...}} envelope)

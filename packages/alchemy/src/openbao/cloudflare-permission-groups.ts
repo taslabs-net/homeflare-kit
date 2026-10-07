@@ -32,7 +32,7 @@
  */
 import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { baoRead } from './bao-http.ts';
 import type { BaoError } from './bao-status.ts';
 import { groupKey } from './cloudflare-group-scope.ts';

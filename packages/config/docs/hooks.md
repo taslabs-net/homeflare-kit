@@ -98,16 +98,22 @@ The base comes from git. The hook reads the pushed refs on stdin:
 
 The lanes are the repo's own `check`, read as an `&&` chain:
 
-- `bun test …` becomes `bun test … --changed=<base>`. Bun follows the import graph
-  and runs only the test files the changed files can reach.
+- `bun test …` becomes `bun test … --changed=<base>` only when every changed path
+  is a module (`.ts`, `.tsx`, `.js`, `.mjs`, not `.d.ts`). Bun's `--changed` follows imports
+  only. Measured 2026-10-06: a docs edit and a vendored `.py` reported "no test
+  files are affected", so the tests that read them never ran. Choosing those
+  tests by reading source was dropped for safety: a miss still reached CI, and a
+  path in the lane command could forge a log line. Any non-module path runs the
+  suite in full. The line is a count — `N non-module file(s) — tests in full` —
+  never a path. The cost is that a docs, fixture, or vendored push runs every test.
 - `build*` and `smoke*` scripts are skipped. CI runs them on every pull request.
 - A script that hides a `bun test` or a build is expanded. For example
   `check → verify → bun test` becomes a narrowed test lane. Any other script runs
   under its own name, exactly as written.
 - A test script that is not a plain `bun test`, such as vitest with coverage thresholds
   or `node --test`, runs in full and is labelled `(IN FULL)`.
-- A push that changes a `package.json`, `bun.lock`, `bunfig.toml` or `tsconfig*.json`
-  runs the tests in full. Imports cannot see those files, but every test runs on them.
+- `package.json`, `bun.lock`, `bunfig.toml` and `tsconfig*.json` are non-module
+  files, so a push that changes one still runs the suite in full.
 - ⛔ A `check` whose every lane is skipped, such as only `build`, **fails** the push. It
   used to print "0 lane(s) passed" and exit 0.
 
@@ -154,11 +160,7 @@ Only a file that starts with `# HomeFlare shared git hook` is compared. A hook f
 wrote for itself, such as this repository's own `.husky/`, which runs kit-only scripts
 after the shared runner, is not, and `install` would overwrite it.
 
-⚠️ **A package in a subdirectory is not supported.** The wrapper and the `node_modules`
-check look for `node_modules` at the repository root, because git runs a hook there. A
-layout whose package lives in a subdirectory with its own `node_modules` would fail with
-"run `bun install`" and no way for that to fix it. No estate repo has that layout, so it
-is stated and not handled.
+⚠️ A package in a subdirectory is not supported. See [hooks-layout.md](./hooks-layout.md).
 
 `activate` does nothing under `CI`, or outside a git work tree. It never fails, because it
 runs inside `bun install`.

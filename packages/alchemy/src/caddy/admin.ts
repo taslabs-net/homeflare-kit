@@ -30,7 +30,7 @@
  *   config.ts is the one place that `Effect.provide`s it, scoped to exactly the effects that call
  *   `@distilled.cloud/caddy`'s operations.
  */
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import * as Context from 'effect/Context';
 import * as Layer from 'effect/Layer';
 import type { Credentials } from '@distilled.cloud/caddy';

@@ -14,7 +14,7 @@
  *   for provides no HTTP layer, and a missing one fails only at the first install.
  */
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { type HostRunner, hostRunnerLayer } from '../launchd/runner.ts';
 import { ReleaseBinaryProvider } from './binary.ts';
 

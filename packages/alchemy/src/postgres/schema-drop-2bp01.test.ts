@@ -11,12 +11,13 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 import { classifyInstalled } from './installed-classifier.ts';
 import { postgresRunnerConnection } from './connection.ts';
 import { type PsqlRunner, makePsqlExecutor } from './psql-executor.ts';
 import { isDependentObjectsError } from './schema-sql.ts';
+import { stripPin } from './search-path.ts';
 import { PostgresSchemaDropNotEmptyError } from './schema-errors.ts';
 import { dropWithClient, postgresSchemaHandlers } from './schema.ts';
 import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
@@ -25,16 +26,16 @@ const baseProps: PostgresSchemaProps = { name: 'ledger', database: 'postgres', o
 
 const socket2bp01 = (): Promise<SqlError> => classifyInstalled('2BP01');
 
-/** Emptiness check says empty; the following DROP is the server's real `2BP01`. */
+/** The live row is ours; the atomic `DO` drop is the server's real `2BP01`. */
 const emptyThenRefuse = (drop: Effect.Effect<ReadonlyArray<object>, SqlError>): PgExecutor => ({
   unsafe: <A extends object>(text: string) => {
-    if (text.startsWith('SELECT current_database()')) {
-      return Effect.succeed([{ database: 'postgres' }] as unknown as ReadonlyArray<A>);
+    if (text.startsWith('DO ')) return drop as Effect.Effect<ReadonlyArray<A>, SqlError>;
+    if (text.includes('FROM pg_catalog.pg_namespace')) {
+      return Effect.succeed([
+        { name: 'ledger', oid: 1, owner: 'tim', comment: null, database: 'postgres' },
+      ] as unknown as ReadonlyArray<A>);
     }
-    if (text.includes('AS empty')) {
-      return Effect.succeed([{ empty: true }] as unknown as ReadonlyArray<A>);
-    }
-    return drop as Effect.Effect<ReadonlyArray<A>, SqlError>;
+    return Effect.succeed([{ database: 'postgres' }] as unknown as ReadonlyArray<A>);
   },
   transaction: () => Effect.void,
 });
@@ -54,12 +55,18 @@ describe('2BP01 classification', () => {
   });
 
   test('the runner transport classifies a verbose 2BP01 line as the typed not-empty tag', async () => {
-    const run: PsqlRunner = ({ stdin }) => {
-      if (stdin.includes('current_database()')) {
-        return Promise.resolve({ code: 0, stdout: '[{"database":"postgres"}]', stderr: '' });
+    const run: PsqlRunner = ({ stdin: raw }) => {
+      const stdin = stripPin(raw);
+      if (!stdin.startsWith('DO ') && stdin.includes('FROM pg_catalog.pg_namespace')) {
+        return Promise.resolve({
+          code: 0,
+          stdout:
+            '[{"name":"ledger","oid":"1","owner":"tim","comment":null,"database":"postgres"}]',
+          stderr: '',
+        });
       }
-      if (stdin.includes('AS empty')) {
-        return Promise.resolve({ code: 0, stdout: '[{"empty":true}]', stderr: '' });
+      if (!stdin.startsWith('DO ') && stdin.includes('current_database()')) {
+        return Promise.resolve({ code: 0, stdout: '[{"database":"postgres"}]', stderr: '' });
       }
       return Promise.resolve({
         code: 3,
@@ -92,18 +99,23 @@ describe('2BP01 classification', () => {
     // Order is load-bearing (schema-handlers.test.ts#route): the probe must answer PRESENT so
     // the absent-database short-circuit does not swallow the test, and the ownership re-read
     // must answer the row the persisted output vouches for, so the delete reaches the DROP.
-    const run: PsqlRunner = ({ stdin }) => {
-      if (stdin.includes('AS empty')) {
-        return Promise.resolve({ code: 0, stdout: '[{"empty":true}]', stderr: '' });
+    const run: PsqlRunner = ({ stdin: raw }) => {
+      const stdin = stripPin(raw);
+      if (stdin.startsWith('DO ')) {
+        return Promise.resolve({
+          code: 3,
+          stdout: '',
+          stderr: 'ERROR:  2BP01: dependent objects still exist\n',
+        });
       }
-      if (stdin.includes('FROM pg_namespace')) {
+      if (stdin.includes('FROM pg_catalog.pg_namespace')) {
         return Promise.resolve({
           code: 0,
           stdout: '[{"name":"ledger","oid":1,"owner":"tim"}]',
           stderr: '',
         });
       }
-      if (stdin.includes('FROM pg_database')) {
+      if (stdin.includes('FROM pg_catalog.pg_database')) {
         return Promise.resolve({ code: 0, stdout: '[{"present":1}]', stderr: '' });
       }
       if (stdin.includes('current_database()')) {

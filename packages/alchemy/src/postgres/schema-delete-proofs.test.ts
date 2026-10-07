@@ -65,7 +65,7 @@ describe('delete drops only what it can prove it created (Important 1)', () => {
           ),
         ),
     );
-    expect(stdins.some((s) => s.startsWith('DROP SCHEMA'))).toBe(false);
+    expect(stdins.some((s) => s.startsWith('DO '))).toBe(false);
   });
 
   test('refuses on oid mismatch, CASCADE included — no DROP issued', async () => {
@@ -91,7 +91,7 @@ describe('delete drops only what it can prove it created (Important 1)', () => {
       lastOid: 16442,
       lastOwner: 'seat_role',
     });
-    expect(stdins.some((s) => s.startsWith('DROP SCHEMA'))).toBe(false);
+    expect(stdins.some((s) => s.startsWith('DO '))).toBe(false);
     // Refused before the guarded drop, so the emptiness check never ran either.
     expect(stdins.some((s) => s.includes('AS empty'))).toBe(false);
   });
@@ -118,7 +118,7 @@ describe('delete drops only what it can prove it created (Important 1)', () => {
       lastOid: 16442,
       lastOwner: 'seat_role',
     });
-    expect(stdins.some((s) => s.startsWith('DROP SCHEMA'))).toBe(false);
+    expect(stdins.some((s) => s.startsWith('DO '))).toBe(false);
   });
 
   test('a live row with no persisted proof fails closed — the delete client core refuses', async () => {
@@ -134,7 +134,7 @@ describe('delete drops only what it can prove it created (Important 1)', () => {
       lastOid: undefined,
       lastOwner: undefined,
     });
-    expect(stdins.some((s) => s.startsWith('DROP SCHEMA'))).toBe(false);
+    expect(stdins.some((s) => s.startsWith('DO '))).toBe(false);
   });
 });
 
@@ -153,7 +153,7 @@ describe('a missing declared database is schema absent (Important 2)', () => {
         ),
     );
     expect(stdins.length).toBe(1);
-    expect(stdins[0]).toContain('FROM pg_database');
+    expect(stdins[0]).toContain('FROM pg_catalog.pg_database');
     expect(argvs.length).toBe(1);
     expect(argvs[0]?.at(-1)).toBe('postgres');
   });
@@ -169,7 +169,7 @@ describe('a missing declared database is schema absent (Important 2)', () => {
     );
     expect(result).toBeUndefined();
     expect(stdins.length).toBe(1);
-    expect(stdins[0]).toContain('FROM pg_database');
+    expect(stdins[0]).toContain('FROM pg_catalog.pg_database');
   });
 
   test('the `database` override reaches `psql -d`: the probe targets the family database, the rest the declared one', async () => {
@@ -185,7 +185,7 @@ describe('a missing declared database is schema absent (Important 2)', () => {
           ),
         ),
     );
-    expect(stdins.some((s) => s.startsWith('DROP SCHEMA'))).toBe(true);
+    expect(stdins.some((s) => s.startsWith('DO '))).toBe(true);
     expect(argvs[0]?.at(-1)).toBe('postgres');
     expect(argvs.slice(1).every((argv) => argv.at(-1) === 'agents')).toBe(true);
   });

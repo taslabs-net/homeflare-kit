@@ -10,7 +10,7 @@ describe('pre-push test lane failure messages', () => {
       code: 4,
       leaks: [],
       why: '`tests` failed',
-      fix: 'bun test — until it is green',
+      fix: 'tests — until it is green',
     },
     {
       name: 'leaks after passing tests',
@@ -60,7 +60,7 @@ describe('pre-push test lane failure messages', () => {
       expect(exit).toHaveBeenCalledWith(1);
       const detail = cleanupError === undefined ? why : `${why}\n  ${cleanupError}`;
       expect(stderr.mock.calls.flat().join('')).toBe(
-        `  run  bun test  (IN FULL)\n\n✗ pre-push: ${detail}\n  fix:    ${fix}\n\n`,
+        `  run  tests  (IN FULL)\n\n✗ pre-push: ${detail}\n  fix:    ${fix}\n\n`,
       );
     } finally {
       exit.mockRestore();

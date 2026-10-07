@@ -10,7 +10,7 @@ import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Layer from 'effect/Layer';
 import * as Path from 'effect/Path';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import type { Reply, Seen } from './fake-bao.ts';
 import { parseDuration } from './mount-form.ts';
 import { trimTrailing } from './mount-path.ts';

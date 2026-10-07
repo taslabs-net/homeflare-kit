@@ -29,7 +29,7 @@
 import { Resource } from 'alchemy';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { type Environment } from '../secrets/write-only.ts';
 import type { PostgresRoleAttributes, PostgresRoleProps } from './role-attrs.ts';
 import { nameByteRefusal, validUntilRefusal } from './role-attrs.ts';

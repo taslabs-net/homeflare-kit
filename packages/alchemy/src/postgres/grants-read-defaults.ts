@@ -7,7 +7,7 @@
  * header for the doctrine), never the `aclitem` text.
  */
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 import { type AclRow, encodeWord } from './grants-words.ts';
 
@@ -15,14 +15,14 @@ import { type AclRow, encodeWord } from './grants-words.ts';
  * role's words, whatever role created the entry. Sorted by forRole so two reads of the
  * same state compare equal. */
 const DEFAULTS_SQL = `SELECT
-    pg_get_userbyid(d.defaclrole) AS for_role,
+    pg_catalog.pg_get_userbyid(d.defaclrole) AS for_role,
     a.privilege_type AS privilege,
     a.is_grantable AS grantable
-  FROM pg_default_acl d
-  CROSS JOIN LATERAL aclexplode(d.defaclacl) AS a
-  WHERE d.defaclnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)
+  FROM pg_catalog.pg_default_acl d
+  CROSS JOIN LATERAL pg_catalog.aclexplode(d.defaclacl) AS a
+  WHERE d.defaclnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $1)
     AND d.defaclobjtype = 'r'
-    AND a.grantee = (SELECT oid FROM pg_roles WHERE rolname = $2)
+    AND a.grantee = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $2)
   ORDER BY for_role`;
 
 export interface LiveDefault {

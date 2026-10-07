@@ -20,7 +20,7 @@ const smoke = await Bun.file(new URL('scripts/smoke.ts', root)).text();
 
 describe('install contract', () => {
   test('the peer is pinned exactly, because effect rc versions break each other', () => {
-    expect(pkg.peerDependencies['effect']).toMatch(/^\d+\.\d+\.\d+-rc\.\d+$/);
+    expect(pkg.peerDependencies['effect']).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   test('the README install line, its overrides and the smoke install carry one pin', () => {

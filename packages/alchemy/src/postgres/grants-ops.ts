@@ -44,7 +44,7 @@
 import type { Input } from 'alchemy/Input';
 import * as Effect from 'effect/Effect';
 import { isResolved } from 'alchemy/Diff';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PostgresGrantsAttributes, PostgresGrantsProps } from './grants-attrs.ts';
 import { roleExists } from './database-sql.ts';
 import type { PgExecutor } from './database-sql.ts';

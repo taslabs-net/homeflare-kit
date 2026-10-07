@@ -11,10 +11,10 @@
 import { OpenAiClient, OpenAiEmbeddingModel, OpenAiLanguageModel } from '@effect/ai-openai-compat';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import * as EmbeddingModel from 'effect/unstable/ai/EmbeddingModel';
-import type * as LanguageModel from 'effect/unstable/ai/LanguageModel';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as EmbeddingModel from 'effect/ai/EmbeddingModel';
+import type * as LanguageModel from 'effect/ai/LanguageModel';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
+import * as HttpClient from 'effect/http/HttpClient';
 import { joinTags, stampRequest } from './stamp.ts';
 
 export type SeatClientOptions = {

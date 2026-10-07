@@ -49,7 +49,9 @@ export {
   diffPostgresSchema,
   isPostgresSchema,
 } from './schema.ts';
+export { PostgresSchemaCascadeSequencesRefused } from './schema-sequence-error.ts';
 export {
+  PostgresSchemaCascadeCrossSchemaRefused,
   PostgresSchemaCreateVanished,
   PostgresSchemaExistsRefused,
   PostgresSchemaIdentityRefused,

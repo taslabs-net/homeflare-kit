@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import * as Effect from 'effect/Effect';
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import { reservedTempPath, writeKvValue } from './credentials-write.ts';
 import { type FakeCall, fakeSpawner } from './fake-process.ts';
 

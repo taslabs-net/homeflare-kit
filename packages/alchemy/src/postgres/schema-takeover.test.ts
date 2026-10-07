@@ -5,6 +5,7 @@ import { postgresSchemaHandlers, reconcileWithClient } from './schema.ts';
 import { postgresRunnerConnection } from './connection.ts';
 import { makeFakeSql } from './fake-sql.ts';
 import { readArgs, router, runnerWith } from './schema-test-kit.ts';
+import { stripPin } from './search-path.ts';
 import type { PostgresSchemaAttributes } from './schema-attrs.ts';
 
 const props = { name: 'ledger', database: 'postgres', owner: 'postgres', cascade: true };
@@ -101,21 +102,23 @@ test('same-owner create race is a typed exists refusal, never a comment or adopt
 
 test('runner 42P06 becomes an adoption refusal; other SQLSTATEs remain SqlError', async () => {
   for (const code of ['42P06', '42501']) {
-    const run = ({ stdin }: { stdin: string }) =>
-      Promise.resolve(
+    const run = ({ stdin: raw }: { stdin: string }) => {
+      const stdin = stripPin(raw);
+      return Promise.resolve(
         stdin.startsWith('CREATE')
           ? { code: 3, stdout: '', stderr: `ERROR:  ${code}: refused` }
           : {
               code: 0,
               stdout:
-                stdin.includes('current_database()') && !stdin.includes('pg_namespace')
+                stdin.includes('current_database()') && !stdin.includes('pg_catalog.pg_namespace')
                   ? '[{"database":"postgres"}]'
-                  : stdin.includes('pg_roles')
+                  : stdin.includes('pg_catalog.pg_roles')
                     ? '[{"present":1}]'
                     : '[]',
               stderr: '',
             },
       );
+    };
     const error = await Effect.runPromise(
       postgresSchemaHandlers
         .reconcile(args())

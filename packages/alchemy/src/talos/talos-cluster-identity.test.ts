@@ -3,7 +3,7 @@
  */
 import { expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import { fakeApiServer } from './fake-apiserver.ts';
 import { fakeSpawner } from './fake-process.ts';
 import {

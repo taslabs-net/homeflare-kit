@@ -4,7 +4,7 @@ import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Path from 'effect/Path';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { refuseTakeover } from '../ownership/adopt.ts';
 import { ownedRead } from '../ownership/probe.ts';
 import { provingResumes } from '../ownership/resume.ts';

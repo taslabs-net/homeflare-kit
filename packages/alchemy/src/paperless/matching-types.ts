@@ -14,7 +14,7 @@
  */
 import type { PaperlessNgxOpContext } from '@distilled.cloud/paperless-ngx/Protocol';
 import type * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import type { EndpointKey, PaperlessBody } from './constraints.ts';
 
 /**

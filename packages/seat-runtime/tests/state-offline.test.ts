@@ -8,8 +8,8 @@
 import { describe, expect, test } from 'bun:test';
 import { Effect, Layer } from 'effect';
 import * as ConfigProvider from 'effect/ConfigProvider';
-import * as Redis from 'effect/unstable/persistence/Redis';
-import { SqlError } from 'effect/unstable/sql/SqlError';
+import * as Redis from 'effect/persistence/Redis';
+import { SqlError } from 'effect/sql/SqlError';
 import { SeatState } from '../src/state.ts';
 import { freePort } from './state-servers.ts';
 import { printed } from './printed.ts';

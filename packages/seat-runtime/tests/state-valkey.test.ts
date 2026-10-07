@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { Effect, Queue, Redacted, type Scope } from 'effect';
-import * as Redis from 'effect/unstable/persistence/Redis';
+import * as Redis from 'effect/persistence/Redis';
 import { SeatState } from '../src/state.ts';
 import { printed } from './printed.ts';
 import { type ScratchValkey, VALKEY_BINARY, startValkey, suiteWith } from './state-servers.ts';

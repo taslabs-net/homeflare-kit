@@ -15,7 +15,7 @@
  *   same grantee SURVIVES silently (the survival `PostgresGrantsRepairRefused` surfaces), and
  *   a grantee that re-granted onward fails like the server without CASCADE (`2BP01`).
  */
-import { SqlError, SqlSyntaxError } from 'effect/unstable/sql/SqlError';
+import { SqlError, SqlSyntaxError } from 'effect/sql/SqlError';
 import type { AclObject } from './fake-grants-parse.ts';
 import { type FakeGrantsModel, revokesAsOwner } from './fake-grants-read.ts';
 

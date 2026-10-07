@@ -19,7 +19,10 @@ import { FAMILIES, type Family, upstream, withEstate } from './fake-families.ts'
 import { writesOf } from './fake-stack.ts';
 
 const NOT_OWNED = /Cannot adopt resource 'Z'.*not owned by this stack.*--adopt/s;
-const TAKEOVER = /: already exists, and this stack holds no state for it.*Nothing was written/s;
+// ★ beta.81 probes a create with an Output prop at apply itself, so ITS refusal fires first; the
+//   kit's refuseTakeover is the backstop. Either way each test asserts nothing was written.
+const TAKEOVER =
+  /Cannot adopt resource 'Z'.*--adopt|: already exists, and this stack holds no state for it.*Nothing was written/s;
 const STILL_REFUSED = /Cannot adopt resource 'Z'.*--adopt/s;
 
 /** `Z` names `a`, with its knob an Output until apply: the upstream AppRole is created with it. */

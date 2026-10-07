@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Effect, Layer } from 'effect';
 import * as ConfigProvider from 'effect/ConfigProvider';
-import { Chat } from 'effect/unstable/ai';
+import { Chat } from 'effect/ai';
 import { SeatModel, SeatObs, mcpToolkit, runRounds } from '../src/index.ts';
 import { type McpStub, startMcpStub } from './mcp-stub.ts';
 import { type Stub, startStub, until } from './stub.ts';

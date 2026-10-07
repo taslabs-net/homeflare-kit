@@ -26,8 +26,8 @@
  */
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { OtlpSerialization } from 'effect/unstable/observability';
-import type { OtlpLogger, OtlpResource, OtlpTracer } from 'effect/unstable/observability';
+import { OtlpSerialization } from 'effect/observability';
+import type { OtlpLogger, OtlpResource, OtlpTracer } from 'effect/observability';
 import { REDACTED, type RedactionPolicy } from './redact.ts';
 
 const URL_PATTERN = /https?:\/\/[^\s"'<>)]+/g;

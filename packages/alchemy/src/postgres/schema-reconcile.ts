@@ -1,6 +1,6 @@
 /** Schema reconcile: prove the stored target and identity before asserting a live row. */
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import { type PgExecutor, roleExists } from './database-sql.ts';
 import {
   type PostgresSchemaAttributes,

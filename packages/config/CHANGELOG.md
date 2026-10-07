@@ -1,5 +1,25 @@
 # @homeflare/config
 
+## 0.16.2
+
+### Patch Changes
+
+- [#359](https://github.com/taslabs-net/homeflare-kit/pull/359) [`f43b0a5`](https://github.com/taslabs-net/homeflare-kit/commit/f43b0a5673d3660181b3dc7eb5342096c67cd38c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Move to effect and `@effect/*` 4.0.1, alchemy 2.0.0-beta.81 and `@distilled.cloud/*` 1.0.0-rc.13. Consumers must install effect 4.0.1 (the peer was an exact rc.115): every import path moves from `effect/unstable/*` to `effect/*`. The distilled packages implement the `parseError` option distilled core rc.13 now requires of a REST protocol, raising each package's own `<Sdk>ParseError`. alchemy beta.81 probes a create whose props were Outputs at apply, so the ownership layer now answers `Unowned` to that apply-time read unless the plan proved the resume, forgets the row the engine's refusal leaves behind, and `Release.Binary` judges that create as a create: another owner's object, or other bytes at a binary path, are still refused without `--adopt`. `@homeflare/config` publishes the new `ESTATE_VERSIONS`.
+
+## 0.16.1
+
+### Patch Changes
+
+- [#360](https://github.com/taslabs-net/homeflare-kit/pull/360) [`09298b0`](https://github.com/taslabs-net/homeflare-kit/commit/09298b0f80da61e86675e20971a3dc020f9f8085) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Pre-push lanes run with `NODE_DISABLE_COMPILE_CACHE=1`: npm enables Node's module compile cache at
+  startup, which left `node-compile-cache` in the temp guard's `TMPDIR` and made it refuse every push
+  of an npm repo for a directory its tests never created. The guard is otherwise unchanged.
+
+## 0.16.0
+
+### Minor Changes
+
+- [#356](https://github.com/taslabs-net/homeflare-kit/pull/356) [`ac87d3f`](https://github.com/taslabs-net/homeflare-kit/commit/ac87d3fa69556cbe9be21bd3cd4e0f21033b11bf) Thanks [@taslabs-net](https://github.com/taslabs-net)! - pre-push runs the test suite in full when a push changes any file that is not a module (`.ts`, `.tsx`, `.js`, or `.mjs`). A `.d.ts` is not a module: it ends in `.ts`, and `--changed` does not follow it, so a declaration-only push ran zero tests. `bun test --changed` follows imports only, so a docs file or a vendored script was skipped and the failure showed up in CI. Choosing tests by reading their source was dropped: a miss still shipped, and a path in the lane could forge a log line. A module-only push stays on `--changed`. One non-module path widens the push even when a module changed beside it. A `package.json`, lockfile, `bunfig.toml`, or `tsconfig` still runs the suite in full, because those files are not modules. The lane log is a fixed reason and a count, never a path. The cost is that a non-module push runs every test.
+
 ## 0.15.1
 
 ### Patch Changes

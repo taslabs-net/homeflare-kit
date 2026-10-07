@@ -48,10 +48,10 @@
     "typescript": "catalog:"
   },
   "overrides": {
-    "@effect/platform-bun": "4.0.0-rc.115",
-    "@effect/platform-node": "4.0.0-rc.115",
-    "@effect/platform-node-shared": "4.0.0-rc.115",
-    "effect": "4.0.0-rc.115"
+    "@effect/platform-bun": "4.0.1",
+    "@effect/platform-node": "4.0.1",
+    "@effect/platform-node-shared": "4.0.1",
+    "effect": "4.0.1"
   },
   "engines": {
     "bun": ">=1.4.0",
@@ -66,11 +66,11 @@
     "@types/bun": "1.4.2",
     "@changesets/cli": "3.0.3",
     "@changesets/changelog-github": "1.0.1",
-    "alchemy": "2.0.0-beta.79",
-    "@alchemy.run/frontend-frameworks": "2.0.0-beta.79",
-    "effect": "4.0.0-rc.115",
-    "@effect/ai-openai-compat": "4.0.0-rc.115",
-    "@effect/sql-pg": "4.0.0-rc.115",
+    "alchemy": "2.0.0-beta.81",
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.81",
+    "effect": "4.0.1",
+    "@effect/ai-openai-compat": "4.0.1",
+    "@effect/sql-pg": "4.0.1",
     "@modelcontextprotocol/sdk": "1.31.0",
     "mime": "4.1.0",
     "yaml": "2.9.1",

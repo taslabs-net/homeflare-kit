@@ -15,14 +15,14 @@ import * as ConfigProvider from 'effect/ConfigProvider';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Schema from 'effect/Schema';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import {
   type OtlpExporter,
   OtlpLogger,
   OtlpMetrics,
   OtlpSerialization,
   OtlpTracer,
-} from 'effect/unstable/observability';
+} from 'effect/observability';
 
 /**
  * CT100's Victoria services, one path each. Verified 2026-09-29 by GET against the live

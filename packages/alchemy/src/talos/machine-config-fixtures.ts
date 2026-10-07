@@ -6,7 +6,7 @@
  *   Talos machine config, CA key or bootstrap token. No provider imports this file.
  */
 import * as Effect from 'effect/Effect';
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import { type FakeCall, fakeSpawner } from './fake-process.ts';
 import type { MachineConfigProps } from './talos-machine-config.ts';
 import { configDigest } from './values.ts';

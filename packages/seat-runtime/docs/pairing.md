@@ -13,7 +13,9 @@ Measured 2026-09-29 (a scratch install, then this package's tests and smoke):
 - ⚠️ compat beta.107 beside effect rc.115 also installed and passed the same small surface
   (the scout's `pairBeta`). Nothing wider was tried, so the rule stays **same exact rc**.
 - 🔴 **rc.118 drops the `unstable/` prefix**: `effect/unstable/ai` becomes `effect/ai`. rc.116
-  and rc.117 keep it. The estate is pinned at rc.115, so do not bump one package alone.
+  and rc.117 keep it. ★ Since 2026-10-06 the estate is on effect 4.0.1 and the kit imports the
+  prefix-free paths (`effect/ai`); the rc.115 measurements on this page are historical. Do not
+  bump one package alone.
 - 🔴 **`@effect/platform-node-shared` resolves to rc.118** under `@effect/platform-bun`
   rc.115 on a fresh install, and the process dies at import (`Cannot find module
 effect/process/ChildProcess`). Only a **root** `overrides` fixes it. An `overrides` field in

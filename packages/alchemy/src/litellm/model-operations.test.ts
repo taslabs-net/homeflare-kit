@@ -10,7 +10,7 @@ import { credentials } from '@distilled.cloud/litellm/Credentials';
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { FAKE_BASE } from './fake-litellm.ts';
 import { modelRow, startFakeModelLitellm } from './fake-model-litellm.ts';
 import { deleteModel, listModels, readModelRow } from './model-operations.ts';

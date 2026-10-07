@@ -8,7 +8,7 @@ import { Manifest, ManifestProvider } from 'alchemy/Kubernetes/Manifest';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import { TalosOpenBaoAdapter } from './cluster-adapter.ts';
 import { type FakeCall, type FakeHandler, fakeSpawner } from './fake-process.ts';
 

@@ -4,7 +4,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { Cause, Effect } from 'effect';
-import * as Redis from 'effect/unstable/persistence/Redis';
+import * as Redis from 'effect/persistence/Redis';
 import { instrumentedSend } from '../src/state-valkey-send.ts';
 import { withSpans } from './state-trace.ts';
 

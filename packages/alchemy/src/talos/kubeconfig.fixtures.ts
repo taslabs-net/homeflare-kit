@@ -6,7 +6,7 @@
  *   plain words at run time rather than written out literally.
  */
 import * as Effect from 'effect/Effect';
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import { type FakeCall, fakeSpawner } from './fake-process.ts';
 import type { KubeconfigProps } from './kubeconfig.ts';
 

@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { destroyFs } from './ceph-fs-distilled.ts';
 import { FAKE_TARGET, withoutBao } from './fake-pve.ts';
 

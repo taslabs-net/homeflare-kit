@@ -3,7 +3,7 @@
 `telemetryLayer` builds an OTLP/HTTP `Layer` for a stack's own `providers` — spans, logs and
 metrics from `Effect.withSpan`, `HttpClient` calls and alchemy's own plan/apply engine, exported to
 whatever OTLP collector a consumer names. Read 2026-09-26 against `alchemy@2.0.0-beta.79` and
-`effect@4.0.0-rc.115`'s `effect/unstable/observability` module (this file names no estate host — see
+`effect@4.0.0-rc.115`'s `effect/unstable/observability` module (now `effect/observability`, effect 4.0.1) (this file names no estate host — see
 below). See `telemetry-spike.md` for what was actually measured arriving at a collector.
 
 Bodies are sent **protobuf-encoded** (`content-type: application/x-protobuf`), not JSON — measured

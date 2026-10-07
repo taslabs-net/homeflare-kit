@@ -4,7 +4,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { Cause, Effect, Exit, Layer, Schema } from 'effect';
-import { Chat, Tool, Toolkit } from 'effect/unstable/ai';
+import { Chat, Tool, Toolkit } from 'effect/ai';
 import { type Round, runRounds } from '../src/index.ts';
 import { type FakeModel, fakeModel } from './fake-model.ts';
 

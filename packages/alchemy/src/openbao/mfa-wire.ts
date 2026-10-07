@@ -25,7 +25,7 @@
  *   (identity/mfa.go:172-183), which HTTP answers 204. So this never writes by id.
  */
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { BaoEnv, baoCall, baoDelete, baoRead } from './bao-http.ts';
 import { envNamespace, namespacePath } from './bao-namespace.ts';
 import type { BaoError } from './bao-status.ts';

@@ -5,8 +5,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { Effect, Schema } from 'effect';
-import { Tool } from 'effect/unstable/ai';
-import * as OpenAiStructuredOutput from 'effect/unstable/ai/OpenAiStructuredOutput';
+import { Tool } from 'effect/ai';
+import * as OpenAiStructuredOutput from 'effect/ai/OpenAiStructuredOutput';
 import { mcpTool } from '../src/mcp-tool.ts';
 
 const SERVER_SCHEMA = {

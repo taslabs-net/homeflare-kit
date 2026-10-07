@@ -4,10 +4,10 @@
 import { describe, expect, test } from 'bun:test';
 import { OpenAiClient, OpenAiLanguageModel } from '@effect/ai-openai-compat';
 import { Effect, Layer, Redacted } from 'effect';
-import { LanguageModel } from 'effect/unstable/ai';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import * as HttpBody from 'effect/unstable/http/HttpBody';
-import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
+import { LanguageModel } from 'effect/ai';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
+import * as HttpBody from 'effect/http/HttpBody';
+import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import { joinTags, stampRequest } from '../src/stamp.ts';
 import { startStub } from './stub.ts';
 

@@ -72,7 +72,7 @@ describe('the scanner', () => {
     expect(['crypto', 'fs/promises', 'node:module', 'bun:sqlite'].every(isRuntimeSpecific)).toBe(
       true,
     );
-    expect(['effect', 'effect/unstable/ai', 'zod/v4', 'ajv'].some(isRuntimeSpecific)).toBe(false);
+    expect(['effect', 'effect/ai', 'zod/v4', 'ajv'].some(isRuntimeSpecific)).toBe(false);
   });
 });
 

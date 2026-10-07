@@ -36,7 +36,7 @@ import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import type { DiscordOpContext } from '@distilled.cloud/discord/Protocol';
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { CredentialsFromEnv } from './credentials.ts';
 
 /**

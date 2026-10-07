@@ -24,8 +24,8 @@ import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import type * as SqlClient from 'effect/unstable/sql/SqlClient';
-import { ConnectionError, SqlError } from 'effect/unstable/sql/SqlError';
+import type * as SqlClient from 'effect/sql/SqlClient';
+import { ConnectionError, SqlError } from 'effect/sql/SqlError';
 import { postgresFields } from './state-dsn.ts';
 
 export type PostgresOptions = {

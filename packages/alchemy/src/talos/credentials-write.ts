@@ -19,8 +19,8 @@ import { unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as ChildProcess from 'effect/unstable/process/ChildProcess';
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import * as ChildProcess from 'effect/process/ChildProcess';
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import { baoEnv } from './bao-env.ts';
 import { resolveBao } from './talosctl-binary.ts';
 

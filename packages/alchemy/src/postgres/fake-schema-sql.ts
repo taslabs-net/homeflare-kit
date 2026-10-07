@@ -9,7 +9,8 @@
  *   answers for the connection it opened — and `schemaIsEmpty` from a seeded relation set.
  */
 import * as Effect from 'effect/Effect';
-import { SqlError, SqlSyntaxError, UnknownError } from 'effect/unstable/sql/SqlError';
+import { SqlError, SqlSyntaxError, UnknownError } from 'effect/sql/SqlError';
+import { applyAtomicDrop } from './fake-schema-drop.ts';
 import { parseCommentSchema, parseCreateSchema, parseDropSchema } from './fake-sql-parse.ts';
 import type { PostgresSchemaAttributes } from './schema-attrs.ts';
 
@@ -18,6 +19,11 @@ export interface FakeSchemaState {
   readonly schemas: Map<string, PostgresSchemaAttributes>;
   /** Names of schemas this fake pretends hold at least one relation. */
   readonly relationsIn: Set<string>;
+  /** Per schema name: how many objects in OTHER schemas depend on it (what the atomic drop's
+   * `pg_depend` count answers). Absent means none. */
+  readonly dependentsOutside: Map<string, number>;
+  /** Per schema name: how many sequences it holds (a cascade drop refuses any: `HF004`). */
+  readonly sequencesIn: Map<string, number>;
   /** What `current_database()` answers, and the stamp on every read row. */
   readonly database: string;
   /** What `current_user` answers, and the owner of a `CREATE SCHEMA` without `AUTHORIZATION`. */
@@ -44,6 +50,9 @@ export const applySchemaStatement = <A extends object>(
   text: string,
   params: ReadonlyArray<unknown>,
 ): Effect.Effect<ReadonlyArray<A>, SqlError> | undefined => {
+  // The atomic drop's text contains every marker below; matched first, by its own prefix.
+  if (text.startsWith('DO ')) return applyAtomicDrop(state, text);
+
   if (text.startsWith('SELECT current_database()')) {
     return Effect.succeed([{ database: state.database }] as unknown as ReadonlyArray<A>);
   }
@@ -57,7 +66,7 @@ export const applySchemaStatement = <A extends object>(
     return Effect.succeed([{ empty: !state.relationsIn.has(name) }] as unknown as ReadonlyArray<A>);
   }
 
-  if (text.includes('FROM pg_namespace')) {
+  if (text.includes('FROM pg_catalog.pg_namespace')) {
     const name = params[0] as string;
     const row = state.schemas.get(name);
     return Effect.succeed(

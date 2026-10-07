@@ -1,6 +1,6 @@
 {
   "name": "@homeflare/distilled-openbao",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Interim npm home for @distilled.cloud/openbao — see docs/distilled-interim.md. Not published upstream yet; the kit aliases @distilled.cloud/openbao onto this package until it is.",
   "homepage": "https://github.com/taslabs-net/homeflare-kit/tree/main/packages/distilled-openbao#readme",
   "bugs": "https://github.com/taslabs-net/homeflare-kit/issues",
@@ -74,12 +74,12 @@
     "smoke": "bun run scripts/smoke.ts"
   },
   "dependencies": {
-    "@distilled.cloud/core": "1.0.0-rc.12"
+    "@distilled.cloud/core": "1.0.0-rc.13"
   },
   "devDependencies": {
     "@types/bun": "catalog:"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.115"
+    "effect": "4.0.1"
   }
 }

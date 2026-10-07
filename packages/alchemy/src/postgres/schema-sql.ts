@@ -9,7 +9,7 @@
  * ★ The schema name is a single `ColId` token, so `quoteIdent` (single-token quoting) is
  *   correct — same rule as `Postgres.Database`'s name.
  */
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import * as Effect from 'effect/Effect';
 import type { PostgresSchemaAttributes, PostgresSchemaProps } from './schema-attrs.ts';
 import { quoteIdent, quoteStringLiteral } from './database-sql.ts';
@@ -32,10 +32,10 @@ export const buildDropSchemaSql = (name: string, cascade: boolean): string =>
 const SELECT_SCHEMA_SQL = `SELECT
     n.oid AS oid,
     n.nspname AS name,
-    pg_get_userbyid(n.nspowner) AS owner,
-    obj_description(n.oid, 'pg_namespace') AS comment,
+    pg_catalog.pg_get_userbyid(n.nspowner) AS owner,
+    pg_catalog.obj_description(n.oid, 'pg_namespace') AS comment,
     current_database() AS database
-  FROM pg_namespace n
+  FROM pg_catalog.pg_namespace n
   WHERE n.nspname = $1`;
 
 /** The read: one bound `SELECT` on `pg_namespace`. `undefined` when absent. The row carries
@@ -84,18 +84,23 @@ export const currentUser = (pg: PgExecutor): Effect.Effect<string, SqlError> =>
  *
  * ⚠️ THE FAKE (`fake-schema-sql.ts`) ROUTES THIS STATEMENT BY `AS empty` + `pg_class` — keep both
  *   markers in any rewrite, and keep this check matched BEFORE the plain `pg_namespace` branch
- *   (this SQL contains `FROM pg_namespace` too, inside its `WITH`).
+ *   (this SQL contains `FROM pg_catalog.pg_namespace` too, inside its `WITH`).
  */
-const SCHEMA_EMPTY_SQL = `WITH ns AS (SELECT oid FROM pg_namespace WHERE nspname = $1)
-  SELECT NOT EXISTS (
-    SELECT 1 FROM pg_class c WHERE c.relnamespace = (SELECT oid FROM ns)
+/** The four-catalog emptiness predicate over a namespace oid expression — shared by this read
+ * and by the atomic drop's in-transaction check (`schema-drop-sql.ts`), so the two cannot
+ * disagree about what "empty" means. */
+export const emptyPredicate = (ns: string): string => `NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_class c WHERE c.relnamespace = ${ns}
   ) AND NOT EXISTS (
-    SELECT 1 FROM pg_proc p WHERE p.pronamespace = (SELECT oid FROM ns)
+    SELECT 1 FROM pg_catalog.pg_proc p WHERE p.pronamespace = ${ns}
   ) AND NOT EXISTS (
-    SELECT 1 FROM pg_type t WHERE t.typnamespace = (SELECT oid FROM ns)
+    SELECT 1 FROM pg_catalog.pg_type t WHERE t.typnamespace = ${ns}
   ) AND NOT EXISTS (
-    SELECT 1 FROM pg_operator o WHERE o.oprnamespace = (SELECT oid FROM ns)
-  ) AS empty`;
+    SELECT 1 FROM pg_catalog.pg_operator o WHERE o.oprnamespace = ${ns}
+  )`;
+
+const SCHEMA_EMPTY_SQL = `WITH ns AS (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = $1)
+  SELECT ${emptyPredicate('(SELECT oid FROM ns)')} AS empty`;
 
 /** `true` when the schema holds none of the four object catalogs above (used before a
  * non-cascade `DROP SCHEMA`). */

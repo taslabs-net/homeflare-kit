@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as Cause from 'effect/Cause';
-import * as HttpClientError from 'effect/unstable/http/HttpClientError';
+import * as HttpClientError from 'effect/http/HttpClientError';
 import { isPreSendTransport, isTransportFailure } from './members.ts';
 
 const transport = (cause: Error) =>

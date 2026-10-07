@@ -11,7 +11,7 @@
  */
 import { type Credentials, credentials } from '@distilled.cloud/netbox/Credentials';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 
 export const FAKE_BASE = 'https://netbox.example.com';
 export const FAKE_TOKEN = 'placeholder-netbox-token';

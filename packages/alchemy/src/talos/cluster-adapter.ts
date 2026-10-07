@@ -57,7 +57,7 @@ import type { Connection } from 'alchemy/Kubernetes/Connection';
 import type * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import type * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner';
+import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import {
   type TalosClusterIdentityMismatch,
   TalosClusterIdentityMissing,

@@ -16,7 +16,7 @@ import { describe, expect, test } from 'bun:test';
 import { credentials } from '@distilled.cloud/litellm/Credentials';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import { FAKE_BASE, startFakeLitellm } from './fake-litellm.ts';
 import {
   type LitellmRequirements,

@@ -28,7 +28,7 @@ import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import type { OpnsenseOpContext } from '@distilled.cloud/opnsense/Protocol';
 import * as Effect from 'effect/Effect';
-import type * as HttpClient from 'effect/unstable/http/HttpClient';
+import type * as HttpClient from 'effect/http/HttpClient';
 import { CredentialsFromEnv } from './credentials.ts';
 import { refuseWrite } from './policy.ts';
 

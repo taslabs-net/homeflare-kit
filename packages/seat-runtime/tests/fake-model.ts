@@ -7,7 +7,7 @@
  *   compat would have been handed: `ProviderOptions.tools` empty means no `tools` on the wire.
  */
 import { Effect, Layer, Stream } from 'effect';
-import { AiError, LanguageModel } from 'effect/unstable/ai';
+import { AiError, LanguageModel } from 'effect/ai';
 
 /** What one model call was handed. */
 export type Sent = {

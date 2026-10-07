@@ -19,7 +19,7 @@
  *   refused, and nothing is dropped.
  */
 import * as Effect from 'effect/Effect';
-import type { SqlError } from 'effect/unstable/sql/SqlError';
+import type { SqlError } from 'effect/sql/SqlError';
 import type { PgExecutor } from './database-sql.ts';
 import {
   type PostgresSchemaAttributes,

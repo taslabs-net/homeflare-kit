@@ -2,18 +2,9 @@
 
 Custom [Alchemy](https://alchemy.run) providers for gaps the vendor SDK leaves.
 
-```sh
-bun add @homeflare/alchemy alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 \
-        @effect/platform-node@4.0.0-rc.115 mime@4.1.0 \
-        @distilled.cloud/cloudflare@1.0.0-rc.12 @distilled.cloud/forgejo@1.0.0-rc.12 \
-        @distilled.cloud/discord@1.0.0-rc.12 @distilled.cloud/google-workspace@1.0.0-rc.12 \
-        @distilled.cloud/argocd@1.0.0-rc.12 \
-        @effect/sql-pg@4.0.0-rc.115
-```
-
-⛔ **Every one of those is required, and you also need an `overrides` block** — see
-[Peers](#peers--and-one-override-you-need) below. The install succeeds without them and
-the import throws.
+⛔ **Every peer on the install line is required, and you also need an `overrides` block**
+— see [docs/peers.md](./docs/peers.md). The install succeeds without them and the import
+throws.
 
 ★ **Why a custom provider at all.** When Alchemy has no property for something, the
 alternative is a runbook step a human runs once — and a plan can never show a missing
@@ -390,26 +381,9 @@ subpath reads its credential, and why an empty one fails closed: [docs/credentia
 
 ## Peers — and one override you need
 
-⚠️ Peers, not dependencies: Alchemy's resource registry and Effect's context both break if
-two copies load in one process.
-
-⛔ **Add this to your `package.json`, or the install works and the import throws:**
-
-```json
-{
-  "overrides": {
-    "effect": "4.0.0-rc.115",
-    "@effect/platform-node": "4.0.0-rc.115",
-    "@effect/platform-node-shared": "4.0.0-rc.115",
-    "@effect/platform-bun": "4.0.0-rc.115",
-    "rolldown": "1.2.8",
-    "redis": "6.3.0"
-  }
-}
-```
-
-Why each peer is required and each pin exists — the measurements, and the error a missing one
-produces: [docs/peers.md](./docs/peers.md).
+The install command, the required `overrides` block, why each pin exists, and the
+`homeflare.consumer` machine-readable source of truth are all in
+[docs/peers.md](./docs/peers.md).
 
 ## License
 
