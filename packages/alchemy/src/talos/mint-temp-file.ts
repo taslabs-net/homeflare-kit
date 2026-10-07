@@ -39,19 +39,22 @@ export const mintKvTempFile = (
       Effect.try({
         try: () => {
           const fd = openSync(path, 'wx', 0o600);
+          // ⛔ The release below registers only after this step succeeds, so ANY failure here (a
+          //   disk-full write, or a close that errors: EIO/EDQUOT surface at close on a quota'd
+          //   tmpdir) would leave the 0600 file, possibly holding part of the credential, behind.
           try {
-            writeFileSync(fd, raw);
+            try {
+              writeFileSync(fd, raw);
+            } finally {
+              closeSync(fd);
+            }
           } catch (cause) {
-            // ⛔ The release below registers only after this step succeeds, so a failed write (disk
-            //   full) would leave the 0600 file, possibly holding part of the credential, behind.
             try {
               unlinkSync(path);
             } catch {
               // nothing more to remove
             }
             throw cause;
-          } finally {
-            closeSync(fd);
           }
         },
         catch: (cause) => new Error(`writing ${label} temp file: ${String(cause)}`),

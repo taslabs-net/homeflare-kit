@@ -121,7 +121,11 @@ test('a version probe that never answers is refused with a typed error, not awai
     const outcome = await Effect.runPromise(
       Effect.flip(
         Effect.provideService(
-          talosctl(['version'], { talosconfigPath: 'unused.yaml' }),
+          // The default is 10 s (asserted below); a short override keeps the suite fast.
+          talosctl(['version'], {
+            talosconfigPath: 'unused.yaml',
+            versionProbeTimeout: '2 seconds',
+          }),
           ChildProcessSpawner.ChildProcessSpawner,
           ChildProcessSpawner.make(() => Effect.never),
         ),
@@ -129,6 +133,31 @@ test('a version probe that never answers is refused with a typed error, not awai
     );
     expect(outcome).toBeInstanceOf(TalosBinaryRefused);
     expect(outcome.message).toContain('did not answer within');
-    expect(Date.now() - started).toBeLessThan(Duration.toMillis(VERSION_PROBE_TIMEOUT) + 2000);
+    expect(Date.now() - started).toBeLessThan(4000);
   });
+});
+
+test('the probe deadline is overridable per call and still fails closed', async () => {
+  await withEnv(fixture, async () => {
+    const started = Date.now();
+    const outcome = await Effect.runPromise(
+      Effect.flip(
+        Effect.provideService(
+          talosctl(['version'], {
+            talosconfigPath: 'unused.yaml',
+            versionProbeTimeout: '1 seconds',
+          }),
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() => Effect.never),
+        ),
+      ),
+    );
+    expect(outcome).toBeInstanceOf(TalosBinaryRefused);
+    expect(outcome.message).toContain('did not answer within 1s');
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+});
+
+test('the default probe deadline is 10 s', () => {
+  expect(Duration.toSeconds(VERSION_PROBE_TIMEOUT)).toBe(10);
 });

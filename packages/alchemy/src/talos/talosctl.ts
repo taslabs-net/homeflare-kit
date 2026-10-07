@@ -78,6 +78,13 @@ export type TalosRunOptions = {
    * since insecure mode ignores the file's certs rather than requiring their absence.
    */
   readonly insecure?: boolean;
+  /**
+   * Deadline for the `version --client` probe of the binary; past it the binary is refused (fails
+   * closed, never skipped). A cold first run of the Go binary under CI load can exceed a tight
+   * limit, so a caller may raise it.
+   * @default {@link VERSION_PROBE_TIMEOUT} (10 s)
+   */
+  readonly versionProbeTimeout?: Duration.Input;
 };
 
 const capture = (binary: string, argv: readonly string[]) =>
@@ -121,9 +128,11 @@ const capture = (binary: string, argv: readonly string[]) =>
  * ⛔ THE VERSION PROBE IS BOUNDED. `talosctl version --client` talks to no cluster and answers in
  *   milliseconds, so a probe silent for this long is a hung or hostile binary: it is refused
  *   (failed closed, typed) instead of parking the caller forever. Interrupting the scope kills the
- *   child with its process group.
+ *   child with its process group (proved against a real hanging child by talosctl-probe-kill.test.ts).
+ * ⚠️ 10 s, not 3 s: a cold first run of the Go binary under CI load can take seconds, and a
+ *   refusal there is a false alarm. Override per call with `TalosRunOptions.versionProbeTimeout`.
  */
-export const VERSION_PROBE_TIMEOUT = Duration.seconds(3);
+export const VERSION_PROBE_TIMEOUT = Duration.seconds(10);
 
 /** ⚠️ EXACT TOKEN MATCH: `includes` would accept v1.14.20 for v1.14.2. */
 const reportsPinnedVersion = (stdout: string) =>
@@ -133,15 +142,19 @@ const reportsPinnedVersion = (stdout: string) =>
  * ⛔ AN OVERRIDE MUST REPORT THE PINNED CLIENT VERSION (`version --client`, no talosconfig, so
  *   nothing secret reaches an untrusted binary before it is vetted).
  */
-const checkOverrideVersion = (binary: string, source: string) =>
+const checkOverrideVersion = (
+  binary: string,
+  source: string,
+  timeout: Duration.Input = VERSION_PROBE_TIMEOUT,
+) =>
   capture(binary, ['version', '--client']).pipe(
     Effect.timeoutOrElse({
-      duration: VERSION_PROBE_TIMEOUT,
+      duration: timeout,
       orElse: () =>
         Effect.fail(
           new TalosBinaryRefused(
             'version --client',
-            `${source} did not answer within ${String(Duration.toSeconds(VERSION_PROBE_TIMEOUT))}s`,
+            `${source} did not answer within ${String(Duration.toSeconds(timeout))}s`,
             binary,
           ),
         ),
@@ -174,7 +187,7 @@ export const talosctl = (args: readonly string[], options: TalosRunOptions) =>
           : TALOSCTL_BINARY_ENV;
     // ⛔ Launch exactly the vetted canonical path, for the probe and the credentialed call alike.
     const binary = yield* checkBinaryPath(resolved, source);
-    yield* checkOverrideVersion(binary, source);
+    yield* checkOverrideVersion(binary, source, options.versionProbeTimeout);
     const argv = [
       ...args,
       '--talosconfig',
