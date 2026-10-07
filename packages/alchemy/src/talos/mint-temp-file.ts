@@ -3,7 +3,7 @@
  * credentials.ts (2026-10-06, red team PR 355) once the Node-runtime fix pushed that file past the
  * 250-line cap; the split mirrors credentials-write.ts, which was split out for its own header.
  */
-import { closeSync, openSync, writeFileSync } from 'node:fs';
+import { closeSync, openSync, unlinkSync, writeFileSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -39,10 +39,22 @@ export const mintKvTempFile = (
       Effect.try({
         try: () => {
           const fd = openSync(path, 'wx', 0o600);
+          // ⛔ The release below registers only after this step succeeds, so ANY failure here (a
+          //   disk-full write, or a close that errors: EIO/EDQUOT surface at close on a quota'd
+          //   tmpdir) would leave the 0600 file, possibly holding part of the credential, behind.
           try {
-            writeFileSync(fd, raw);
-          } finally {
-            closeSync(fd);
+            try {
+              writeFileSync(fd, raw);
+            } finally {
+              closeSync(fd);
+            }
+          } catch (cause) {
+            try {
+              unlinkSync(path);
+            } catch {
+              // nothing more to remove
+            }
+            throw cause;
           }
         },
         catch: (cause) => new Error(`writing ${label} temp file: ${String(cause)}`),

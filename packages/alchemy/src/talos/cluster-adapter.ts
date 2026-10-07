@@ -33,7 +33,8 @@
  *   (`TalosClusterMoved`); a move is a NEW identity resource per physical cluster, so the old
  *   rows keep their old uid and their cleanup reaches only the old cluster.
  * ⛔ ONE 10 s DEADLINE covers the vault read AND the uid GET (`withConnectDeadline`): a hung `bao`
- *   or silent apiserver fails with `TalosOpenBaoConnectTimeout` and the `bao` child is killed.
+ *   fails with `TalosOpenBaoConnectTimeout` and the `bao` child is killed. The uid GET has its own
+ *   5 s deadline inside it, so a silent apiserver fails first with `TalosClusterIdentityTimeout`.
  *   ⚠️ The in-flight HTTPS GET is NOT aborted: upstream `readObject` takes no signal
  *   (`internal/client.ts:75`), so the socket lives until the OS gives up. Left for the upstream ask.
  *

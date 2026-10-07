@@ -6,11 +6,17 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, expect, test } from 'bun:test';
+import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import { type FakeCall, fakeSpawner } from './fake-process.ts';
 import { trustBoundaryForTests } from './trust-boundary.seam.ts';
-import { TALOSCTL_BINARY_ENV, talosctl } from './talosctl.ts';
+import {
+  TALOSCTL_BINARY_ENV,
+  TalosBinaryRefused,
+  VERSION_PROBE_TIMEOUT,
+  talosctl,
+} from './talosctl.ts';
 
 // ⚠️ A real, vetted file in a private directory: the system `sh` or `bun` may be a symlink or live
 //   in a writable directory, which the vetting (correctly) refuses.
@@ -107,4 +113,51 @@ test('a default talosctl that is not on PATH is refused, never run by bare name'
       expect(calls).toEqual([]);
     }),
   );
+});
+
+test('a version probe that never answers is refused with a typed error, not awaited forever', async () => {
+  await withEnv(fixture, async () => {
+    const started = Date.now();
+    const outcome = await Effect.runPromise(
+      Effect.flip(
+        Effect.provideService(
+          // The default is 10 s (asserted below); a short override keeps the suite fast.
+          talosctl(['version'], {
+            talosconfigPath: 'unused.yaml',
+            versionProbeTimeout: '2 seconds',
+          }),
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() => Effect.never),
+        ),
+      ),
+    );
+    expect(outcome).toBeInstanceOf(TalosBinaryRefused);
+    expect(outcome.message).toContain('did not answer within');
+    expect(Date.now() - started).toBeLessThan(4000);
+  });
+});
+
+test('the probe deadline is overridable per call and still fails closed', async () => {
+  await withEnv(fixture, async () => {
+    const started = Date.now();
+    const outcome = await Effect.runPromise(
+      Effect.flip(
+        Effect.provideService(
+          talosctl(['version'], {
+            talosconfigPath: 'unused.yaml',
+            versionProbeTimeout: '1 seconds',
+          }),
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() => Effect.never),
+        ),
+      ),
+    );
+    expect(outcome).toBeInstanceOf(TalosBinaryRefused);
+    expect(outcome.message).toContain('did not answer within 1s');
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+});
+
+test('the default probe deadline is 10 s', () => {
+  expect(Duration.toSeconds(VERSION_PROBE_TIMEOUT)).toBe(10);
 });

@@ -8,8 +8,9 @@ The design, the identity rule and the failure modes are in the header of
 
 ## Connect deadline
 
-Vault read and uid GET share one 10 s deadline. A hung `bao` or a silent apiserver fails closed
-with `TalosOpenBaoConnectTimeout` (the `bao` child is killed with its process group). The HTTPS
+The vault read and the uid GET share one 10 s deadline, and the uid GET has its own 5 s deadline
+inside it. A hung `bao` fails closed with `TalosOpenBaoConnectTimeout` (the `bao` child is killed
+with its process group); a silent apiserver fails closed first, with `TalosClusterIdentityTimeout`. The HTTPS
 GET itself cannot be cancelled: upstream `readObject` takes no abort signal, so the request may
 linger until the OS gives up. That is an upstream ask, not something to re-implement here.
 
