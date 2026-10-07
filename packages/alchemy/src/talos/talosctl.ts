@@ -117,6 +117,14 @@ const capture = (binary: string, argv: readonly string[]) =>
     );
   });
 
+/**
+ * ⛔ THE VERSION PROBE IS BOUNDED. `talosctl version --client` talks to no cluster and answers in
+ *   milliseconds, so a probe silent for this long is a hung or hostile binary: it is refused
+ *   (failed closed, typed) instead of parking the caller forever. Interrupting the scope kills the
+ *   child with its process group.
+ */
+export const VERSION_PROBE_TIMEOUT = Duration.seconds(3);
+
 /** ⚠️ EXACT TOKEN MATCH: `includes` would accept v1.14.20 for v1.14.2. */
 const reportsPinnedVersion = (stdout: string) =>
   stdout.split(/[^\w.+-]+/).includes(TALOSCTL_PINNED_VERSION);
@@ -127,6 +135,17 @@ const reportsPinnedVersion = (stdout: string) =>
  */
 const checkOverrideVersion = (binary: string, source: string) =>
   capture(binary, ['version', '--client']).pipe(
+    Effect.timeoutOrElse({
+      duration: VERSION_PROBE_TIMEOUT,
+      orElse: () =>
+        Effect.fail(
+          new TalosBinaryRefused(
+            'version --client',
+            `${source} did not answer within ${String(Duration.toSeconds(VERSION_PROBE_TIMEOUT))}s`,
+            binary,
+          ),
+        ),
+    }),
     Effect.flatMap((out) =>
       out.exitCode === 0 && reportsPinnedVersion(out.stdout)
         ? Effect.void

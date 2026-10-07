@@ -97,6 +97,8 @@ test('a silent apiserver fails closed with TalosClusterIdentityTimeout', async (
       Effect.runPromise(Effect.provideService(read, spawn, fakeSpawner(vault))),
     );
     expect(message).toContain('TalosClusterIdentityTimeout');
+    // The text names the identity read's own deadline inside the 10 s connect deadline.
+    expect(message).toContain("the identity read's own deadline, inside the 10 s connect deadline");
   } finally {
     api.restore();
   }

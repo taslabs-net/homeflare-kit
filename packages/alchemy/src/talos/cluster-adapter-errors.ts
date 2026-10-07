@@ -155,7 +155,8 @@ export class TalosClusterIdentityTimeout extends Data.TaggedError('TalosClusterI
   override get message(): string {
     return (
       `talos-openbao cluster '${this.cluster}': no answer to the kube-system uid read within ` +
-      `${this.seconds}s. Refused (failed closed) rather than waiting on a silent apiserver.`
+      `${this.seconds}s (the identity read's own deadline, inside the 10 s connect deadline). ` +
+      'Refused (failed closed) rather than waiting on a silent apiserver.'
     );
   }
 }
