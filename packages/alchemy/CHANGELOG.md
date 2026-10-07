@@ -2,6 +2,12 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.47.1
+
+### Patch Changes
+
+- [#363](https://github.com/taslabs-net/homeflare-kit/pull/363) [`797ce0d`](https://github.com/taslabs-net/homeflare-kit/commit/797ce0d28793750646f4983505837a52f5650276) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Adds `homeflare.consumer` to the published manifest: the machine-readable source of truth for peer pins, overrides, and Effect `unstable/` import moves. The README and smoke test PINS are now asserted against this field.
+
 ## 0.47.0
 
 ### Minor Changes
