@@ -14,5 +14,21 @@
     "rewriteRelativeImportExtensions": true
   },
   "include": ["src"],
-  "exclude": ["tests", "scripts", "**/*.test.ts"]
+  // ⛔ The trust-boundary seam MUST NOT ship a declaration: it is the only module that can
+  //   register a directory the talosctl ancestor walk may stop above. tsc re-includes an
+  //   excluded file that an included file imports, so the seam's static importer and its own
+  //   importers (all test-only) are excluded with it — otherwise `trust-boundary.seam.d.ts`
+  //   is emitted and scripts/smoke.ts:103 fails the release. None of these is on the public
+  //   API barrel (talos/index.ts); they exist for the offline test suite only.
+  "exclude": [
+    "tests",
+    "scripts",
+    "**/*.test.ts",
+    "**/talos/trust-boundary.seam.ts",
+    "**/talos/fake-process.ts",
+    "**/talos/cluster-adapter.fixtures.ts",
+    "**/talos/kubeconfig.fixtures.ts",
+    "**/talos/machine-config-fixtures.ts",
+    "**/talos/node-connect.harness.ts"
+  ]
 }

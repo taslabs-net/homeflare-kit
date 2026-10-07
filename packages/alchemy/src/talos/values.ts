@@ -6,6 +6,7 @@
  *   reconcile time; tests use fixtures only.
  */
 import { createHash } from 'node:crypto';
+import { parseYaml } from './yaml-parse.ts';
 
 /** Trim trailing whitespace only — leading space in YAML is meaningful. */
 export const canonicalText = (text: string) => text.trimEnd();
@@ -39,12 +40,7 @@ export const configDigest = (text: string) => sha256(text);
  *   silently picking one would repeat the exact shipped bug.
  */
 export const extractMachineConfigSpec = (wrapperYaml: string): string | undefined => {
-  let doc: unknown;
-  try {
-    doc = Bun.YAML.parse(wrapperYaml);
-  } catch {
-    return undefined;
-  }
+  let doc = parseYaml(wrapperYaml);
   if (Array.isArray(doc)) {
     if (doc.length !== 1) return undefined;
     doc = doc[0];
@@ -77,12 +73,9 @@ export const kubeconfigMetadata = (
   yamlText: string,
   contextName: string,
 ): { endpoint: string; caFingerprint: string; clientFingerprint: string } | undefined => {
-  let doc: KubeconfigDoc;
-  try {
-    doc = Bun.YAML.parse(yamlText) as KubeconfigDoc;
-  } catch {
-    return undefined;
-  }
+  const parsed = parseYaml(yamlText);
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+  const doc = parsed as KubeconfigDoc;
 
   const ctx = doc.contexts?.find((row) => row.name === contextName)?.context;
   const clusterName = ctx?.cluster;

@@ -18,9 +18,34 @@
  *   (talos-bootstrap.ts's own header) and kubeconfig landing in OpenBao, written once at bring-up
  *   (kubeconfig.ts's own header) — plus `Talos.ClusterHealth`'s error handling no longer conflates a
  *   vault/transport failure with "cluster not healthy yet" (talos-cluster-health.ts's own header).
+ * ★ `talos-openbao` (K-A5) is how `Kubernetes.*` reaches the cluster: `TalosOpenBaoAdapter`,
+ *   `talosOpenBaoConnection(<pinned uid literal>)` (or `cluster: health`) as the persisted
+ *   `{ kind, uid }` connection — `Talos.Kubeconfig` and `Talos.ClusterIdentity` persist none — and
+ *   `HF_TALOSCTL` to pin the talosctl binary.
  * ★ Anything unlisted is still reachable by path if you genuinely need it — that is a
  *   deliberate, visible act rather than an accident of barrelling.
  */
+export {
+  TalosClusterIdentityMismatch,
+  TalosClusterIdentityMissing,
+  TalosClusterIdentityTimeout,
+  TalosClusterIdentityUnreadable,
+  TalosClusterMoved,
+  TalosKubeconfigUnreadable,
+  TalosOpenBaoAdapter,
+  TalosOpenBaoAmbiguousUid,
+  TalosOpenBaoLegacyAuth,
+  TalosOpenBaoAuthKind,
+  TalosOpenBaoConnectTimeout,
+  type TalosOpenBaoCluster,
+  type TalosOpenBaoConfig,
+  TalosOpenBaoUnknownCluster,
+  TalosUidNotLiteral,
+  TalosVaultKeyMissing,
+  connectTalosOpenBao,
+  talosOpenBaoCluster,
+  talosOpenBaoConnection,
+} from './cluster-adapter.ts';
 export type { TalosCredential, TalosTarget } from './credentials.ts';
 export {
   type KubeconfigAttributes,
@@ -36,6 +61,12 @@ export {
   TalosBootstrapProvider,
 } from './talos-bootstrap.ts';
 export {
+  type ClusterIdentityAttributes,
+  type ClusterIdentityProps,
+  TalosClusterIdentity,
+  TalosClusterIdentityProvider,
+} from './talos-cluster-identity.ts';
+export {
   type ClusterHealthAttributes,
   type ClusterHealthProps,
   TalosClusterHealth,
@@ -47,3 +78,4 @@ export {
   TalosMachineConfig,
   TalosMachineConfigProvider,
 } from './talos-machine-config.ts';
+export { DEFAULT_TALOSCTL_BINARY, TALOSCTL_BINARY_ENV } from './talosctl.ts';

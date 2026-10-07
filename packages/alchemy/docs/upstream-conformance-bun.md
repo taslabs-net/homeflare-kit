@@ -4,7 +4,7 @@ Status: extracted from the [conformance ledger](./upstream-conformance.md); its 
 measurements and open findings are preserved below.
 
 These are non-test files under `src/` that the standard (S42) says must be portable. "Exp"
-marks files exported from a subpath `index.ts`. `git grep` on `origin/main` finds 23 non-test
+marks files exported from a subpath `index.ts`. `git grep` on `origin/main` finds 24 non-test
 files under `src/` that call `Bun.*` or import `node:*`/`bun:*`. Six of them are outside
 S42's scope:
 
@@ -13,9 +13,21 @@ S42's scope:
 - `proxmox/provision-cli-fake.ts`, which is used only by tests;
 - `verify/args.ts`, which belongs to the CLI and so is tooling under S43.
 
-That leaves 17 files. The table lists them, plus `provision-cli-fake.ts`, which should move
-out of `src/`. The six out-of-scope files still ship in the tarball's `src/`, but no export
+That leaves 18 files. PR 355 brings the count on this branch to 29 by adding
+`talos/talosctl-binary.ts` and `talos/trust-boundary.ts` (both in scope below), making
+`talos/fake-process.ts` node-loading — on `origin/main` it imported only `effect/*`; here it
+imports `node:fs`, `node:path` and `node:url` — and adding `talos/fake-apiserver.ts`,
+`talos/node-connect.harness.ts` and the test seam `talos/trust-boundary.seam.ts`, three more
+Node-loaded loopback fakes that are test-side under S44 like the other fakes. With those three
+fakes and the seam, ten files on this branch are outside S42's scope, leaving 19 in scope. The
+table lists those 19, plus `provision-cli-fake.ts`, which should move out of `src/`. The
+out-of-scope files other than the seam still ship in the tarball's `src/`, but no export
 reaches them.
+⚠️ PR 355 red team re-measured 2026-10-06: `talos/credentials.ts` and
+`talos/talos-machine-config.ts` no longer call `Bun.*` or import `node:*`/`bun:*` (the temp-file
+mint moved to `talos/mint-temp-file.ts`, and `credentials.ts` reads through `resolveBao`), so
+they left the table and `talos/mint-temp-file.ts` took their row's place; `talos/credentials-write.ts`
+(always node-loaded, previously unlisted) is the +1 that had made the prose count one short.
 ⚠️ The first version of this table said 16 files and left out `launchd/job-form.ts`.
 ⚠️ Corrected 2026-09-22: 14 of the 17 break upstream's rule. `launchd/job-form.ts`,
 `proxmox/write-only.ts` and `proxmox/pbs-notification-target-wire.ts` use only synchronous
@@ -24,27 +36,45 @@ reaches them.
 among them `Fly/Secret.ts` and `Railway/Variable.ts`. They were listed under a blanket
 `node:*` ban that upstream does not have.
 
-| file                                                       | API                                          | exp | portable replacement                         |
-| ---------------------------------------------------------- | -------------------------------------------- | --- | -------------------------------------------- |
-| `openbao/cloudflare-roles-config.ts`                       | `Bun.YAML`                                   | yes | parse on the tooling side; pass data in      |
-| `openbao/digest.ts` (14 importers)                         | `Bun.CryptoHasher`                           | —   | `Crypto.digest` + hex; keep `canonical()` ⚠️ |
-| `openbao/cloudflare-parity-snapshot.ts`                    | `Bun.file`, `Bun.Glob`                       | —   | `FileSystem` + `Path`                        |
-| `openbao/approle-login-form.ts`                            | `Bun.file`                                   | —   | `FileSystem.readFileString`                  |
-| `openbao/approle-login-result.ts`                          | `Bun.inspect`                                | —   | a plain formatter                            |
-| `openbao/forgejo-bootstrap.ts`                             | `Bun.spawn`                                  | —   | unreferenced; `ChildProcessSpawner` or drop  |
-| `talos/credentials.ts`                                     | `Bun.write/file/env/randomUUIDv7`, `node:fs` | —   | `FileSystem.makeTempFileScoped`              |
-| `talos/kubeconfig.ts`                                      | `Bun.file`                                   | yes | `FileSystem`                                 |
-| `talos/talos-machine-config.ts`                            | `Bun.file`                                   | yes | `FileSystem`                                 |
-| `talos/values.ts`                                          | `Bun.YAML`, `node:crypto`                    | —   | tooling-side parse; hash may stay            |
-| `launchd/local-runner.ts`                                  | `node:child_process`, `node:fs/promises`     | yes | H3 above                                     |
-| `launchd/sudo-stage.ts`                                    | `node:fs/promises`, `node:os`, `node:path`   | —   | `FileSystem`, `Path`                         |
-| `launchd/job-form.ts`                                      | `node:crypto` (`createHash`)                 | —   | allowed in `Effect.sync`                     |
-| `linux/ssh-runner.ts`                                      | `node:child_process`, `node:crypto`          | yes | H3 above                                     |
-| `caddy/caddy-http-client.ts`                               | `node:http`, `node:stream` (unix socket)     | yes | inherent — an Effect `HttpClient`, not H3 ⚠️ |
-| `proxmox/write-only.ts`, `pbs-notification-target-wire.ts` | `node:crypto`, `node:buffer`                 | —   | allowed in `Effect.sync` ⚠️                  |
-| `proxmox/provision-cli-fake.ts`                            | `Bun.spawn`, `node:fs`                       | —   | test-only; move out of `src/`                |
+| file                                                       | API                                                       | exp | portable replacement                         |
+| ---------------------------------------------------------- | --------------------------------------------------------- | --- | -------------------------------------------- |
+| `openbao/cloudflare-roles-config.ts`                       | `Bun.YAML`                                                | yes | parse on the tooling side; pass data in      |
+| `openbao/digest.ts` (14 importers)                         | `Bun.CryptoHasher`                                        | —   | `Crypto.digest` + hex; keep `canonical()` ⚠️ |
+| `openbao/cloudflare-parity-snapshot.ts`                    | `Bun.file`, `Bun.Glob`                                    | —   | `FileSystem` + `Path`                        |
+| `openbao/approle-login-form.ts`                            | `Bun.file`                                                | —   | `FileSystem.readFileString`                  |
+| `openbao/approle-login-result.ts`                          | `Bun.inspect`                                             | —   | a plain formatter                            |
+| `openbao/forgejo-bootstrap.ts`                             | `Bun.spawn`                                               | —   | unreferenced; `ChildProcessSpawner` or drop  |
+| `talos/credentials-write.ts`                               | `node:fs/promises`, `node:crypto`, `node:os`, `node:path` | —   | `FileSystem.makeTempFileScoped`              |
+| `talos/mint-temp-file.ts`                                  | `node:fs`, `node:crypto`, `node:os`, `node:path`          | —   | `FileSystem.makeTempFileScoped`              |
+| `talos/kubeconfig.ts`                                      | `Bun.file`, `node:fs`                                     | yes | `FileSystem`                                 |
+| `talos/values.ts`                                          | `node:crypto`                                             | —   | allowed in `Effect.sync`                     |
+| `talos/talosctl-binary.ts`                                 | `node:fs`, `node:path` (binary vetting) ⚠️                | —   | recorded difference, below                   |
+| `talos/trust-boundary.ts`                                  | `node:fs` (`realpathSync`, test seam)                     | —   | recorded difference, below                   |
+| `launchd/local-runner.ts`                                  | `node:child_process`, `node:fs/promises`                  | yes | H3 above                                     |
+| `launchd/sudo-stage.ts`                                    | `node:fs/promises`, `node:os`, `node:path`                | —   | `FileSystem`, `Path`                         |
+| `launchd/job-form.ts`                                      | `node:crypto` (`createHash`)                              | —   | allowed in `Effect.sync`                     |
+| `linux/ssh-runner.ts`                                      | `node:child_process`, `node:crypto`                       | yes | H3 above                                     |
+| `caddy/caddy-http-client.ts`                               | `node:http`, `node:stream` (unix socket)                  | yes | inherent — an Effect `HttpClient`, not H3 ⚠️ |
+| `proxmox/write-only.ts`, `pbs-notification-target-wire.ts` | `node:crypto`, `node:buffer`                              | —   | allowed in `Effect.sync` ⚠️                  |
+| `proxmox/provision-cli-fake.ts`                            | `Bun.spawn`, `node:fs`                                    | —   | test-only; move out of `src/`                |
 
 The ⚠️ rows:
+
+- `talos/talosctl-binary.ts` (added 2026-10-06, hunt round 5; extracted from `talosctl.ts` in
+  round 6, where it also walks every ancestor directory): the binary vetting needs `lstat` and a
+  synchronous PATH walk. `effect/FileSystem` has `stat` (follows symlinks) and `readLink`
+  but no `lstat`, so "not a symlink" cannot be asked of it without a second probe, and the
+  Service would become a requirement of every `talosctl` caller and test (the offline fakes
+  provide only a `ChildProcessSpawner`). The published `dist/` also runs on Node, where
+  `Bun.which` is absent. The calls are synchronous, read-only, inside `Effect.try`; no
+  write, no async. Revisit when `FileSystem` gains `lstat`.
+
+- `talos/trust-boundary.ts` (added 2026-10-06 by PR 355): the same `node:fs` rationale as
+  `talos/talosctl-binary.ts`, which imports it. Its query resolves the directory with
+  `realpathSync` so the boundary compare is canonical; the call is synchronous, read-only and
+  made inside `Effect.try`. The register function lives in `talos/trust-boundary.seam.ts`
+  (test-side, excluded from the tarball), so the shipped module offers no way to stop the walk
+  early. Revisit together with `talosctl-binary.ts` when `FileSystem` gains `lstat`.
 
 - `openbao/digest.ts`: every `Bao.*` family persists this digest in state, so a swap must
   hash the same bytes (`canonical()`, lowercase hex), or every row plans an update.
@@ -63,5 +93,12 @@ The ⚠️ rows:
   more-portable replacement to point to; the file already conforms to S19 (no async/await,
   no raw `Promise` — `Effect.callback`/`Effect.tryPromise` throughout).
 
-Test runners: 51 files import `node:test`/`node:assert` (openbao 42, proxmox 7, forgejo 1,
-talos 1), and 126 import `bun:test`. S43 says `bun:test`.
+Test runners: 63 files import `node:test`/`node:assert` (openbao 41, proxmox 10, forgejo 1,
+talos 11), and 395 import `bun:test`. S43 says `bun:test`.
+
+Measured 2026-10-06 from this worktree with:
+`grep -rl --include='*.ts' -e 'node:test' -e 'node:assert' src/ | wc -l` (per directory, the same
+grep scoped to `src/<area>`), and `grep -rl --include='*.ts' -e 'bun:test' src/ | wc -l`.
+
+Re-measured 2026-10-06 (PR 355 red team) — the in-scope table rows above:
+`grep -rlE --include='*.ts' "from ['\"](node|bun):|Bun\\.[A-Za-z]" src/talos/ | grep -v '\\.test\\.ts' | grep -vE 'fake-|harness|\\\\.seam\\\\.'`

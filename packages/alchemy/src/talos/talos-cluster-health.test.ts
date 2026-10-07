@@ -4,9 +4,11 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
 import { type FakeCall, fakeSpawner } from './fake-process.ts';
+import { talosOpenBaoConnection } from './cluster-adapter.ts';
 import {
   diffClusterHealth,
   readClusterHealth,
@@ -14,7 +16,14 @@ import {
 } from './talos-cluster-health.ts';
 
 const TARGET = { cluster: 'c1', mount: 'talos-c1' };
-const props = () => ({ controlPlaneNodes: ['198.51.100.10'], target: TARGET });
+const connection = talosOpenBaoConnection('uid-c1');
+const props = () => ({ connection, controlPlaneNodes: ['198.51.100.10'], target: TARGET });
+const prior = (healthy: boolean) => ({
+  connection,
+  controlPlaneNodes: '198.51.100.10',
+  healthy,
+  workerNodes: '',
+});
 
 const run = <A, E>(
   effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,
@@ -54,6 +63,7 @@ describe('readClusterHealth', () => {
   it('reports healthy:true when talosctl health exits zero', async () => {
     const result = await run(readClusterHealth(props()), healthy);
     assert.equal(result.healthy, true);
+    assert.deepEqual(result.connection, connection);
   });
 
   it('propagates a vault/transport failure instead of reporting healthy:false', async () => {
@@ -64,30 +74,105 @@ describe('readClusterHealth', () => {
   });
 });
 
+/** A talosctl vetting refusal (relative HF_TALOSCTL): the binary never runs, so it is no verdict. */
+const withRefusedBinary = async <A>(body: () => Promise<A>): Promise<A> => {
+  const saved = process.env['HF_TALOSCTL'];
+  process.env['HF_TALOSCTL'] = 'relative/talosctl';
+  try {
+    return await body();
+  } finally {
+    if (saved === undefined) delete process.env['HF_TALOSCTL'];
+    else process.env['HF_TALOSCTL'] = saved;
+  }
+};
+const refusal = (error: unknown) =>
+  error instanceof Error &&
+  error.name === 'TalosBinaryRefused' &&
+  error.message.includes('absolute');
+
+describe('a talosctl vetting refusal is never a health verdict (fails on 37d835a: healthy:false)', () => {
+  it('read propagates it', async () => {
+    await withRefusedBinary(() =>
+      assert.rejects(run(readClusterHealth(props()), healthy), refusal),
+    );
+  });
+
+  it('diff propagates it instead of planning an update', async () => {
+    await withRefusedBinary(() =>
+      assert.rejects(run(diffClusterHealth(props(), prior(true)), healthy), refusal),
+    );
+  });
+
+  it('reconcile propagates it without the "cluster not healthy" mislabel', async () => {
+    await withRefusedBinary(() =>
+      assert.rejects(
+        run(reconcileClusterHealth(props()), healthy),
+        (error: unknown) => refusal(error) && !String(error).includes('cluster not healthy'),
+      ),
+    );
+  });
+});
+
 describe('diffClusterHealth', () => {
   it('plans update when the cluster genuinely reports unhealthy', async () => {
-    const result = await run(
-      diffClusterHealth(props(), {
-        controlPlaneNodes: '198.51.100.10',
-        healthy: false,
-        workerNodes: '',
-      }),
-      unhealthy,
-    );
+    const result = await run(diffClusterHealth(props(), prior(false)), unhealthy);
     assert.equal(result?.action, 'update');
   });
 
   it('propagates a vault/transport failure rather than planning update silently', async () => {
-    await assert.rejects(
-      run(
-        diffClusterHealth(props(), {
-          controlPlaneNodes: '198.51.100.10',
-          healthy: false,
-          workerNodes: '',
-        }),
-        vaultDown,
-      ),
+    await assert.rejects(run(diffClusterHealth(props(), prior(false)), vaultDown));
+  });
+
+  it('plans noop when the cluster is healthy and the connection is unchanged', async () => {
+    const result = await run(diffClusterHealth(props(), prior(true)), healthy);
+    assert.equal(result?.action, 'noop');
+  });
+
+  it('plans update when the cluster is healthy but the connection changed', async () => {
+    const drifted = talosOpenBaoConnection('uid-other');
+    const result = await run(
+      diffClusterHealth(props(), { ...prior(true), connection: drifted }),
+      healthy,
     );
+    assert.equal(result?.action, 'update');
+  });
+
+  it('plans update when only the cluster uid changed (a real move)', async () => {
+    const moved = talosOpenBaoConnection('uid-c2');
+    const result = await run(
+      diffClusterHealth(props(), { ...prior(true), connection: moved }),
+      healthy,
+    );
+    assert.equal(result?.action, 'update');
+  });
+
+  it('plans update, not a throw, for a row saved before `connection` existed', async () => {
+    const { connection: _dropped, ...old } = prior(true);
+    const result = await run(
+      diffClusterHealth(props(), old as unknown as ReturnType<typeof prior>),
+      healthy,
+    );
+    assert.equal(result?.action, 'update');
+  });
+});
+
+describe('diffClusterHealth — a legacy auth.cluster row (fails if the hasOwn guard is deleted)', () => {
+  it('plans update for a healthy cluster whose saved row still carries auth.cluster', async () => {
+    const legacy = { auth: { ...talosOpenBaoConnection('uid-c1').auth, cluster: 'c1' } };
+    const result = await run(
+      diffClusterHealth(props(), { ...prior(true), connection: legacy as never }),
+      healthy,
+    );
+    assert.equal(result?.action, 'update');
+  });
+});
+
+describe('diffClusterHealth — a non-literal connection is a TYPED failure', () => {
+  it('fails (flip would reject on a defect) with TalosUidNotLiteral for an Output uid', async () => {
+    const output = Output.literal('uid-c1') as unknown as string;
+    const bad = { ...props(), connection: { auth: { kind: 'talos-openbao', uid: output } } };
+    const error = await run(Effect.flip(diffClusterHealth(bad as never, prior(true))), healthy);
+    assert.equal((error as { _tag: string })._tag, 'TalosUidNotLiteral');
   });
 });
 
@@ -96,6 +181,7 @@ describe('check — I1 fix: --nodes names ONE contact node, not the whole cluste
     const calls: FakeCall[] = [];
     await run(
       readClusterHealth({
+        connection,
         controlPlaneNodes: ['198.51.100.10', '198.51.100.11', '198.51.100.12'],
         target: TARGET,
       }),
@@ -116,7 +202,7 @@ describe('check — I1 fix: --nodes names ONE contact node, not the whole cluste
 
   it('fails closed instead of spawning talosctl when controlPlaneNodes is empty', async () => {
     await assert.rejects(
-      run(readClusterHealth({ controlPlaneNodes: [], target: TARGET }), healthy),
+      run(readClusterHealth({ connection, controlPlaneNodes: [], target: TARGET }), healthy),
       (error: unknown) =>
         error instanceof Error && error.message.includes('controlPlaneNodes is empty'),
     );

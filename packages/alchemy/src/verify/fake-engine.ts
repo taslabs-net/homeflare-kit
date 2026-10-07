@@ -143,6 +143,8 @@ export interface FakeEngine {
    * `verify.ts`'s `readWithState`, which already wraps that same call in `Effect.catchCause`.
    */
   readonly drift: (body: Body) => Promise<Record<string, DriftRow>>;
+  /** `alchemy drift --repair` (`Alchemy.Drift.repair`): read, then reconcile what drifted. */
+  readonly repair: (body: Body) => Promise<Record<string, DriftRow>>;
   /**
    * Every state row the store holds, as JSON — what a Postgres store would persist. ★ For tests
    * that must prove a value NEVER reaches state (proxmox/pbs-notification-target-state.test.ts).
@@ -172,6 +174,8 @@ export const engineOver = <ROut, E, RIn>(
     name: string;
     stage: string;
   }) => Effect.Effect<{ resources: Record<string, DriftRow> }, unknown>;
+
+  const repairDrift = Alchemy.Drift.repair as unknown as typeof detectDrift;
 
   const run = <A>(body: Body, next: (compiled: Compiled) => Effect.Effect<A, unknown, unknown>) =>
     Effect.runPromise(
@@ -205,6 +209,12 @@ export const engineOver = <ROut, E, RIn>(
     drift: (body) =>
       run(body, (compiled) =>
         detectDrift({ name: compiled.name, stage: compiled.stage }).pipe(
+          Effect.map((detected) => detected.resources),
+        ),
+      ),
+    repair: (body) =>
+      run(body, (compiled) =>
+        repairDrift({ name: compiled.name, stage: compiled.stage }).pipe(
           Effect.map((detected) => detected.resources),
         ),
       ),

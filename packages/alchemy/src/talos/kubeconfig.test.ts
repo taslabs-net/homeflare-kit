@@ -9,57 +9,14 @@
 import assert from 'node:assert/strict';
 import { existsSync, writeFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import * as Effect from 'effect/Effect';
-import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
-import { type FakeCall, fakeSpawner } from './fake-process.ts';
+import type { FakeCall } from './fake-process.ts';
+import { fixtureKubeconfig, props, run } from './kubeconfig.fixtures.ts';
 import {
   type KubeconfigAttributes,
-  type KubeconfigProps,
   diffKubeconfig as diff,
   readKubeconfig as read,
   reconcileKubeconfig as reconcile,
 } from './kubeconfig.ts';
-
-const b64 = (words: string) => Buffer.from(words).toString('base64');
-
-const fixtureKubeconfig = (marker: string) => `
-apiVersion: v1
-kind: Config
-clusters:
-  - name: hf-c1
-    cluster:
-      server: https://192.0.2.50:6443
-      certificate-authority-data: ${b64(`not a ca ${marker}`)}
-contexts:
-  - name: admin@hf-c1
-    context: { cluster: hf-c1, user: admin@hf-c1 }
-users:
-  - name: admin@hf-c1
-    user:
-      client-certificate-data: ${b64(`not a certificate ${marker}`)}
-      client-key-data: ${b64(`not a key ${marker}`)}
-current-context: admin@hf-c1
-`;
-
-const TARGET = { cluster: 'c1', mount: 'talos-c1' };
-const props = (): KubeconfigProps => ({
-  context: 'admin@hf-c1',
-  node: '198.51.100.10',
-  target: TARGET,
-});
-
-const run = <A, E>(
-  effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,
-  handler: (c: FakeCall) => { stdout?: string; stderr?: string; exitCode?: number },
-  calls: FakeCall[] = [],
-) =>
-  Effect.runPromise(
-    Effect.provideService(
-      effect,
-      ChildProcessSpawner.ChildProcessSpawner,
-      fakeSpawner(handler, calls),
-    ),
-  );
 
 describe('reconcile — CREATE writes talosctl kubeconfig output into the vault, never a host path', () => {
   it('mints the temp file, writes its content to vault via stdin, cleans up the temp file', async () => {
@@ -85,13 +42,10 @@ describe('reconcile — CREATE writes talosctl kubeconfig output into the vault,
 
     assert.equal(result.endpoint, 'https://192.0.2.50:6443');
     assert.equal(result.context, 'admin@hf-c1');
-    assert.equal(result.connection.auth.kind, 'kubeconfig');
-    // ⛔ I2 (LAND red team): NEVER undefined — an undefined `path` here would let the stock
-    // KubeConfigAdapter fall back to $KUBECONFIG/~/.kube/config. It must be a path that can never
-    // resolve, so a consumer that isn't yet wired to mintKubeconfig fails loudly instead of quietly
-    // reaching the operator's own cluster.
-    const authPath = (result.connection.auth as { path?: string }).path;
-    assert.ok(typeof authPath === 'string' && authPath.length > 0);
+    assert.equal('connection' in result, false, 'the identity resource owns the connection');
+    assert.equal(JSON.stringify(result).includes('talos-first-boot-unwired'), false);
+    assert.equal(JSON.stringify(result).includes('BEGIN CERTIFICATE'), false);
+    assert.equal(JSON.stringify(result).includes('PRIVATE KEY'), false);
 
     const put = calls.find((c) => c.command === 'bao' && c.args[1] === 'put');
     assert.ok(put);
@@ -110,7 +64,6 @@ describe('reconcile — write-once: a second reconcile never re-runs talosctl ku
     const priorOutput: KubeconfigAttributes = {
       certificateAuthorityFingerprint: 'x',
       clientCertificateFingerprint: 'x',
-      connection: { auth: { context: 'admin@hf-c1', kind: 'kubeconfig' } },
       context: 'admin@hf-c1',
       credentialGeneration: 'x',
       endpoint: 'https://192.0.2.50:6443',
@@ -205,7 +158,6 @@ describe('reconcile — belt-and-suspenders: a defined-but-empty output is treat
     const staleEmptyOutput: KubeconfigAttributes = {
       certificateAuthorityFingerprint: '',
       clientCertificateFingerprint: '',
-      connection: { auth: { context: 'admin@hf-c1', kind: 'kubeconfig' } },
       context: 'admin@hf-c1',
       credentialGeneration: '',
       endpoint: '',

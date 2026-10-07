@@ -18,6 +18,9 @@
     "dist",
     "docs",
     "src",
+    "!src/**/fixtures",
+    "!src/**/trust-boundary.seam.ts",
+    "!dist/**/trust-boundary.seam.*",
     "README.md",
     "LICENSE"
   ],
@@ -149,7 +152,8 @@
     "@distilled.cloud/paperless-ngx": "npm:@homeflare/distilled-paperless-ngx@0.3.1",
     "@distilled.cloud/proxmox": "npm:@homeflare/distilled-proxmox@0.3.5",
     "@distilled.cloud/proxmox-backup": "npm:@homeflare/distilled-proxmox-backup@0.3.2",
-    "@distilled.cloud/unifi-network": "npm:@homeflare/distilled-unifi-network@0.4.1"
+    "@distilled.cloud/unifi-network": "npm:@homeflare/distilled-unifi-network@0.4.1",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@distilled.cloud/argocd": "1.0.0-rc.13",

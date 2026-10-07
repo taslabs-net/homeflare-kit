@@ -1,11 +1,17 @@
 /**
- * `Talos.Kubeconfig`'s attribute builder and its `Kubernetes.Connection` — split out of
- * kubeconfig.ts (LAND, 2026-09-26, C1/I2 fixes) once fixing those findings pushed the file over the
- * 250-line cap, the same reason machine-config-read.ts/machine-config-poll.ts/talos-errors.ts were
- * split out of talos-machine-config.ts before it. Only `import type` comes back from kubeconfig.ts,
- * so there is no runtime cycle between the two files.
+ * `Talos.Kubeconfig`'s attribute builder — split out of kubeconfig.ts (LAND, 2026-09-26, C1/I2
+ * fixes) once fixing those findings pushed the file over the 250-line cap. Only `import type`
+ * comes back from kubeconfig.ts, so there is no runtime cycle.
+ *
+ * ⛔ NO `connection` HERE. A connection names the PHYSICAL cluster (`{ kind, uid }`,
+ *   cluster-adapter.ts's identity rule) and the uid is only knowable from the cluster, which does
+ *   not exist yet when this resource writes the vault key. Workloads get their connection from the
+ *   operator's pinned literal (`talosOpenBaoConnection(uid)`) or `Talos.ClusterHealth`'s
+ *   pass-through; `Talos.ClusterIdentity` publishes `{ uid }` only; a name-only connection
+ *   (`cluster` present) is refused by the adapter as legacy. Neither the
+ *   stock `kubeconfig` kind (an absent path falls back to `$KUBECONFIG`) nor `client-cert` (PEM on
+ *   every workload's attributes, `Connection.ts` v2.0.0-beta.79 lines 12-14) is ever used.
  */
-import type { Connection } from 'alchemy/Kubernetes/Connection';
 import type { KubeconfigAttributes, KubeconfigProps } from './kubeconfig.ts';
 import { kubeconfigMetadata, sha256 } from './values.ts';
 
@@ -15,27 +21,6 @@ const generation = (meta: {
   clientFingerprint: string;
   context: string;
 }) => sha256(`${meta.context}\n${meta.endpoint}\n${meta.caFingerprint}\n${meta.clientFingerprint}`);
-
-/**
- * ⛔ I2 FIX (LAND red team, 2026-09-26) — NEVER LEAVE `path` UNDEFINED. An undefined `path` here
- *   made the stock `Kubernetes.KubeConfigAdapter` fall back to `$KUBECONFIG`/`~/.kube/config`
- *   (alchemy `Kubernetes/internal/kubeconfig.ts`'s `resolveKubeConfigPath`, wired in
- *   `BuiltinAdapters.ts`) — exactly the un-vaulted, possibly-stale-context exposure this whole
- *   family exists to remove. A consumer wiring `Kubernetes.*` to `kube.connection` (this
- *   attribute's own doc invites exactly that) would silently connect through whatever
- *   `admin@<cluster>` context happens to be on the operator's machine. `Kubernetes.ClusterAdapter`
- *   is not yet wired to `mintKubeconfig` (kubeconfig.ts's own header) — no real path exists for
- *   this connection to use — so it must fail LOUDLY instead of silently succeeding against a
- *   stranger's cluster. A path that can never resolve does that: `resolveKubeContext` fails at
- *   `fs.readFileString` naming this exact sentinel, instead of reading whatever real file happens
- *   to be on `$KUBECONFIG`.
- */
-const UNWIRED_KUBECONFIG_PATH =
-  '/talos-first-boot-unwired/wire-Kubernetes.ClusterAdapter-to-mintKubeconfig';
-
-const toConnection = (props: KubeconfigProps): Connection => ({
-  auth: { context: props.context, kind: 'kubeconfig', path: UNWIRED_KUBECONFIG_PATH },
-});
 
 /** Parse `raw` kubeconfig YAML into public, persistable attributes, or `undefined` if it fails to. */
 export const buildAttrs = (
@@ -47,7 +32,6 @@ export const buildAttrs = (
   return {
     certificateAuthorityFingerprint: meta.caFingerprint,
     clientCertificateFingerprint: meta.clientFingerprint,
-    connection: toConnection(props),
     context: props.context,
     credentialGeneration: generation({ ...meta, context: props.context }),
     endpoint: meta.endpoint,

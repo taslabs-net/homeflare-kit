@@ -30,12 +30,17 @@
  *   assigns, and `bao kv get` inserts the KV-v2 `data/` API segment itself — a key already
  *   prefixed `data/` reads `<mount>/data/data/<key>`, which the OLD default did.
  */
-import { closeSync, openSync, writeFileSync } from 'node:fs';
+import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import type * as Scope from 'effect/Scope';
 import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/process/ChildProcess';
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
+import { baoEnv } from './bao-env.ts';
+import { resolveBao } from './talosctl-binary.ts';
+import { mintKvTempFile } from './mint-temp-file.ts';
+
+export { mintKvTempFile } from './mint-temp-file.ts';
 
 /** Where credentials come from. HomeFlare-specific mount names live in the stack, not here. */
 export type TalosTarget = {
@@ -81,10 +86,34 @@ export const readKvValue = (
 ): Effect.Effect<string, Error, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    // ⛔ `bao` fetches the cluster credentials, so it is resolved and VETTED before any env is built
+    //   or passed: a fake `bao` in a group/world-writable PATH folder is refused here, never launched.
+    const bao = yield* resolveBao();
+    const env = baoEnv();
+    if (env === undefined) {
+      return yield* Effect.fail(
+        new Error(
+          `bao kv get ${mount}/${key} refused: BAO_ADDR and BAO_TOKEN must both be set. ` +
+            "Without them bao would fall back to a cached login in the operator's home.",
+        ),
+      );
+    }
     const result = yield* ChildProcess.make(
-      'bao',
+      bao,
       ['kv', 'get', '-format=json', `${mount}/${key}`],
-      { detached: false, extendEnv: true, stderr: 'pipe', stdin: 'ignore', stdout: 'pipe' },
+      // ⛔ NO `detached: false`, AND `forceKillAfter` IS SET (round-4 review). Effect detaches on
+      //   Unix so `bao` leads its own process group, and the scope finalizer signals the WHOLE group
+      //   (`NodeChildProcessSpawner`: `kill(-pid)`). With `detached: false` a `bao` that forked a
+      //   sleeper left the grandchild alive, and without `forceKillAfter` a `bao` that ignores
+      //   SIGTERM kept connect blocked past its deadline. 1 s after SIGTERM the group gets SIGKILL.
+      {
+        env,
+        extendEnv: false,
+        forceKillAfter: Duration.seconds(1),
+        stderr: 'pipe',
+        stdin: 'ignore',
+        stdout: 'pipe',
+      },
     ).pipe(
       spawner.spawn,
       Effect.flatMap((child) =>
@@ -114,7 +143,15 @@ export const readKvValue = (
       );
     }
 
-    const parsed = JSON.parse(result.stdout) as { data?: { data?: Record<string, unknown> } };
+    // ⛔ A V8 SyntaxError quotes the offending input; this stdout may hold the secret itself.
+    let parsed: { data?: { data?: Record<string, unknown> } };
+    try {
+      parsed = JSON.parse(result.stdout) as typeof parsed;
+    } catch {
+      return yield* Effect.fail(
+        new Error(`bao kv get ${mount}/${key} returned output that is not JSON (not echoed).`),
+      );
+    }
     const data = parsed.data?.data;
     for (const field of fields) {
       const raw = data?.[field];
@@ -129,44 +166,13 @@ export const readKvValue = (
   });
 
 /**
- * Write `raw` to a session-temp, 0600, exclusively-created file whose lifetime is the CALLER's
- * `Effect.scoped`, not this call's. See the ⛔ C1 FIX note at the top of this file.
- *
- * ⛔ 0600, CREATED EXCLUSIVELY, AND `Bun.write` CANNOT DO EITHER. This file can hold a cluster
- *   admin client certificate or a machine config's bootstrap token. `Bun.write` takes no mode, so
- *   it lands at the process umask — world-readable on this estate — for as long as the resource
- *   runs. The name is unguessable, and "unguessable" is not a permission.
- * ⚠️ `wx` IS THE OTHER HALF. `O_EXCL` means this cannot be made to write through a path an
- *   attacker pre-created (the classic /tmp symlink race), and with a UUIDv7 name a collision is a
- *   genuine error rather than something to paper over.
- * ⚠️ A HARD KILL (SIGKILL, power loss) skips the finalizer and leaves the file behind. 0600 is
- *   what makes that survivable rather than a disclosure.
+ * ★ MEASURED AGAINST OPENBAO v2.6.2 (C1 fix, LAND red team, 2026-09-26 — isolated in-memory
+ *   dev server): `bao kv get` on an unwritten KV-v2 key exits 2 with stderr exactly
+ *   `No value found at <mount>/data/<key>`. `readKvValue`'s Error embeds that text. It is the
+ *   only signal treated as "not written yet"; a permission denial or a transport failure is not.
  */
-export const mintKvTempFile = (
-  raw: string,
-  label: string,
-): Effect.Effect<{ readonly path: string }, Error, Scope.Scope> =>
-  Effect.gen(function* () {
-    const path = `${Bun.env['TMPDIR'] ?? '/tmp'}/hf-talos-${label}-${Bun.randomUUIDv7()}.yaml`;
-    yield* Effect.acquireRelease(
-      Effect.try({
-        try: () => {
-          const fd = openSync(path, 'wx', 0o600);
-          try {
-            writeFileSync(fd, raw);
-          } finally {
-            closeSync(fd);
-          }
-        },
-        catch: (cause) => new Error(`writing ${label} temp file: ${String(cause)}`),
-      }),
-      () =>
-        Effect.tryPromise({ try: () => Bun.file(path).delete(), catch: () => undefined }).pipe(
-          Effect.orElseSucceed(() => undefined),
-        ),
-    );
-    return { path };
-  });
+export const isVaultKeyAbsent = (error: unknown): boolean =>
+  error instanceof Error && /no value found at/i.test(error.message);
 
 /**
  * Mint one talosconfig file for `target`.
@@ -188,10 +194,10 @@ export const mintTalosconfig = (
 
 /**
  * Mint one temp kubeconfig file from the vault copy `Talos.Kubeconfig` writes at bring-up
- * (K-talos-first-boot, 2026-09-26) — the consumer-side counterpart to {@link mintTalosconfig},
- * named as the future seam for `Kubernetes.ClusterAdapter` in
- * docs/plans/2026-09-26-talos-secrets-flow.md ("consumers mint it the way the talosconfig is
- * minted"). Not yet wired to that adapter — this only makes the read+materialize step exist.
+ * (K-talos-first-boot, 2026-09-26) — the file-shaped counterpart to {@link mintTalosconfig}.
+ * `Kubernetes.ClusterAdapter` `talos-openbao` does not use it: connect reads the bytes with
+ * {@link readKvValue} and keeps them in memory. This remains for a caller that must hand a
+ * path to a process.
  */
 export const mintKubeconfig = (
   target: TalosTarget,

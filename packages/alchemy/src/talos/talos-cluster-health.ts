@@ -22,13 +22,19 @@
  *   rollout would never learn the real problem was vault. Both `read` and `reconcile` now only
  *   catch `TalosError` (`talosctl health` itself ran and exited non-zero — the one case this
  *   family may honestly call "not healthy"); anything else propagates untouched.
+ * ★ `connection` IS A PASS-THROUGH so this resource is `ClusterLike`. Later rows take
+ *   `cluster: health`. The health check itself still uses `target` and `talosctl`; the field is
+ *   copied onto attributes and is not a credential. It is required: an optional field would not
+ *   satisfy `{ connection: Connection }`.
  */
 import { Resource } from 'alchemy';
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
+import type { TalosOpenBaoConnection } from './cluster-adapter.ts';
 import { mintTalosconfig } from './credentials.ts';
+import { literalConnectionRefusal, withLiteralConnection } from './literal-connection.ts';
 import type { TalosRequirements, WithTarget } from './resource.ts';
 import { TalosError, talosctl } from './talosctl.ts';
 
@@ -49,12 +55,19 @@ export interface ClusterHealthProps extends WithTarget {
    * on kube-proxy and CoreDNS, both of which wait on a CNI that does not exist yet at bootstrap.
    */
   after?: readonly unknown[];
+  /**
+   * Kubernetes connection copied onto attributes so a later row can take `cluster: this`.
+   * Not read by the health check. Persist only a secret-free connection (`talos-openbao`).
+   */
+  connection: TalosOpenBaoConnection;
 }
 
 export interface ClusterHealthAttributes {
   healthy: boolean;
   controlPlaneNodes: string;
   workerNodes: string;
+  /** Same object as the prop. Makes these attributes `ClusterLike`. */
+  connection: TalosOpenBaoConnection;
 }
 
 export interface TalosClusterHealth extends Resource<
@@ -65,10 +78,33 @@ export interface TalosClusterHealth extends Resource<
   TalosRequirements
 > {}
 
-export const TalosClusterHealth = Resource<TalosClusterHealth>('Talos.ClusterHealth');
+// ⛔ Declaration-time literal guard: a fresh resource skips `diff` (see `withLiteralConnection`).
+export const TalosClusterHealth = withLiteralConnection(
+  Resource<TalosClusterHealth>('Talos.ClusterHealth'),
+);
 
 const nodeCsv = (nodes: readonly string[] | undefined) =>
   nodes === undefined || nodes.length === 0 ? '' : nodes.join(',');
+
+const attributes = (props: ClusterHealthProps, healthy: boolean): ClusterHealthAttributes => ({
+  connection: props.connection,
+  controlPlaneNodes: nodeCsv(props.controlPlaneNodes),
+  healthy,
+  workerNodes: nodeCsv(props.workerNodes),
+});
+
+/**
+ * ⚠️ A ROW SAVED BEFORE `connection` EXISTED HAS NONE — `right` is `undefined` at runtime despite
+ *   the type, and reading `right.auth` threw on a healthy cluster. Missing means "update".
+ */
+const sameConnection = (
+  left: TalosOpenBaoConnection,
+  right: TalosOpenBaoConnection | undefined,
+): boolean =>
+  right?.auth?.kind === left.auth.kind &&
+  right.auth.uid === left.auth.uid &&
+  // ⚠️ A row that still carries the legacy `auth.cluster` alias must update, so it leaves state.
+  !Object.hasOwn(right.auth, 'cluster');
 
 const healthArgs = (props: ClusterHealthProps, waitTimeout: string) => {
   const args = ['health', '--wait-timeout', waitTimeout];
@@ -113,11 +149,7 @@ const check = (props: ClusterHealthProps, waitTimeout: string) =>
         nodes: [contact],
         talosconfigPath: credential.talosconfigPath,
       });
-      return {
-        controlPlaneNodes: nodeCsv(props.controlPlaneNodes),
-        healthy: true,
-        workerNodes: nodeCsv(props.workerNodes),
-      };
+      return attributes(props, true);
     }),
   );
 
@@ -132,13 +164,7 @@ const isTalosError = (cause: unknown): cause is TalosError => cause instanceof T
 /** ★ EXPORTED for talos-cluster-health.test.ts — see talos-bootstrap.ts's own note on the pattern. */
 export const readClusterHealth = (props: ClusterHealthProps) =>
   check(props, '5s').pipe(
-    Effect.catchIf(isTalosError, () =>
-      Effect.succeed({
-        controlPlaneNodes: nodeCsv(props.controlPlaneNodes),
-        healthy: false,
-        workerNodes: nodeCsv(props.workerNodes),
-      }),
-    ),
+    Effect.catchIf(isTalosError, () => Effect.succeed(attributes(props, false))),
   );
 
 export const diffClusterHealth = (
@@ -146,9 +172,15 @@ export const diffClusterHealth = (
   output: ClusterHealthAttributes | undefined,
 ) =>
   Effect.gen(function* () {
+    // ⛔ `cluster: health` hands this connection to workloads: refuse an Output here, while it is
+    //   still an Input (`literal-connection.ts`).
+    const refused = literalConnectionRefusal((news as { connection?: unknown }).connection);
+    if (refused !== undefined) return yield* Effect.fail(refused);
     if (output === undefined || !isResolved(news)) return undefined;
     const live = yield* readClusterHealth(news);
-    if (live.healthy) return { action: 'noop' } as const;
+    if (live.healthy && sameConnection(live.connection, output.connection)) {
+      return { action: 'noop' } as const;
+    }
     return { action: 'update' } as const;
   });
 
