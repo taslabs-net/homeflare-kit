@@ -74,6 +74,12 @@ Guide, the enrolment step and every replace case: [docs/mesh-node.md](./docs/mes
 A remotely configured Cloudflare Tunnel declared **without its connector token in state**
 (`Cloudflare.Tunnel.Tunnel` stores it in plaintext): [docs/cloudflared-tunnel.md](./docs/cloudflared-tunnel.md).
 
+## SaasOidcApplication
+
+A Cloudflare Access SaaS application of auth type `oidc` (Access as the OpenID Connect provider for
+one relying party), exposing `issuer`, `clientId` and `jwksEndpoint`. Guide, the client-secret
+rules, adoption and drift: [docs/saas-oidc.md](./docs/saas-oidc.md).
+
 ## Website.Astro / Website.Vite
 
 House flags on Alchemy's own stacks — the two this estate actually ships.

@@ -13,7 +13,7 @@
  *   `Cloudflare.providers()` does (an Alchemy profile, or `CLOUDFLARE_API_TOKEN` +
  *   `CLOUDFLARE_ACCOUNT_ID` in CI) — a lock and the Gateway rules that reference the same bucket
  *   land in the same account.
- * ⚠️ THE LAYER IS BUILT TWICE ON PURPOSE, once per provider, even when the stack also merges
+ * ⚠️ THE LAYER IS BUILT ONCE PER PROVIDER ON PURPOSE, even when the stack also merges
  *   `Cloudflare.providers()`. `Layer.provide`, not `provideMerge`: each feeds its own provider
  *   only and adds nothing to the stack's context.
  */
@@ -23,18 +23,26 @@ import * as Layer from 'effect/Layer';
 import { CloudflaredTunnel, CloudflaredTunnelProvider } from './cloudflared-tunnel.ts';
 import { MeshNode, MeshNodeProvider } from './mesh-node.ts';
 import { R2BucketLock, R2BucketLockProvider } from './r2-bucket-lock.ts';
+import { SaasOidcApplication, SaasOidcApplicationProvider } from './saas-oidc.ts';
 
 export class Providers extends Provider.ProviderCollection<Providers>()('HomeflareCloudflare') {}
 
-// ⛔ `orDie` ON EACH of the three, as `Cloudflare.providers()` ends with: a stack's providers layer must not
+// ⛔ `orDie` ON EACH of the four, as `Cloudflare.providers()` ends with: a stack's providers layer must not
 //   fail, and a profile that cannot resolve is a defect carrying Alchemy's own sentence.
 export const providers = () =>
-  Layer.effect(Providers, Provider.collection([R2BucketLock, MeshNode, CloudflaredTunnel])).pipe(
+  Layer.effect(
+    Providers,
+    Provider.collection([R2BucketLock, MeshNode, CloudflaredTunnel, SaasOidcApplication]),
+  ).pipe(
     Layer.provide(
       Layer.mergeAll(
         R2BucketLockProvider().pipe(Layer.provide(Cloudflare.CloudflareApiLive()), Layer.orDie),
         MeshNodeProvider().pipe(Layer.provide(Cloudflare.CloudflareApiLive()), Layer.orDie),
         CloudflaredTunnelProvider().pipe(
+          Layer.provide(Cloudflare.CloudflareApiLive()),
+          Layer.orDie,
+        ),
+        SaasOidcApplicationProvider().pipe(
           Layer.provide(Cloudflare.CloudflareApiLive()),
           Layer.orDie,
         ),

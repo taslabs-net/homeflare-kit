@@ -153,7 +153,7 @@ export type FakeMesh = ReturnType<typeof fakeMesh>;
 
 /** distilled Credentials + the real FetchHttpClient over the fake — what a Bun script provides. */
 export const fakeClientLayer = (
-  fake: Pick<FakeMesh, 'fetch'>,
+  fake: { readonly fetch: typeof globalThis.fetch },
   credentials: Layer.Layer<Credentials> = fromApiToken({
     apiToken: FAKE_API_TOKEN,
     apiBaseUrl: FAKE_BASE,
@@ -167,7 +167,7 @@ export const fakeClientLayer = (
 
 /** …plus the account, as Alchemy's CloudflareEnvironment hands it to a provider. */
 export const fakeProviderLayer = (
-  fake: Pick<FakeMesh, 'fetch'>,
+  fake: { readonly fetch: typeof globalThis.fetch },
   accountId: string = FAKE_ACCOUNT,
 ) =>
   Layer.mergeAll(

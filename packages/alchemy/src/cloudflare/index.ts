@@ -1,10 +1,15 @@
 /**
  * Cloudflare providers for Alchemy — the gaps the vendor SDK leaves.
  *
- * ★ Built on vendor SDKs, not hand-rolled HTTP. `R2BucketLock`, `MeshNode` and `CloudflaredTunnel` all call
- *   `@distilled.cloud/cloudflare`, the SDK Alchemy's own Cloudflare providers use — R2BucketLock
- *   over `/r2` (`getBucketLock`/`putBucketLock`), MeshNode over `/zero-trust`, because
- *   `cloudflare@4.5.0` cannot create an HA node (mesh-node-api.ts). None invents a path string.
+ * ★ Built on vendor SDKs, not hand-rolled HTTP. `R2BucketLock`, `MeshNode`, `CloudflaredTunnel` and
+ *   `SaasOidcApplication` all call `@distilled.cloud/cloudflare`, the SDK Alchemy's own Cloudflare
+ *   providers use — R2BucketLock over `/r2` (`getBucketLock`/`putBucketLock`), MeshNode over
+ *   `/zero-trust`, because `cloudflare@4.5.0` cannot create an HA node (mesh-node-api.ts). None
+ *   invents a path string.
+ * ⚠️ ONE EXCEPTION, A READ: `SaasOidcApplication` writes and looks up names through the SDK, but its
+ *   responses drop `saas_app`, so `getApp` reads that one object from the wire JSON — the same
+ *   `GET /accounts/{account_id}/access/apps/{app_id}` the SDK's get verb sends, over the SDK's own
+ *   `HttpClient`, credentials and base URL (saas-oidc-api.ts).
  */
 export type { R2LockRule } from './lock-rules.ts';
 export { R2BucketLock, type R2BucketLockProps } from './r2-bucket-lock.ts';
@@ -22,6 +27,14 @@ export type {
   CloudflaredTunnelProps,
 } from './cloudflared-tunnel-form.ts';
 export { CloudflaredTunnelError } from './cloudflared-tunnel-api.ts';
+export { SaasOidcApplication, SaasOidcApplicationProvider } from './saas-oidc.ts';
+export type {
+  OidcGrantType,
+  OidcScope,
+  SaasOidcApplicationAttributes,
+  SaasOidcApplicationProps,
+} from './saas-oidc-form.ts';
+export { SaasOidcError } from './saas-oidc-error.ts';
 export { providers } from './providers.ts';
 export {
   astroWebsite,
