@@ -12,7 +12,7 @@ why a difference is an input or an exception and never a hand edit — is in
 | `repository` | The same, plus the Dependabot target                                                                         | As above                                                                                         |
 | `runner`     | `runs-on:` in every job, whether `.github/actionlint.yaml` exists, and the header's billing note             | 12 repositories on the mini, 1 (`homeflare-kit`) on `ubuntu-latest`. One variable, three files   |
 | `publishes`  | `access: public\|restricted`, whether `privatePackages` is written, whether Dependabot watches `/packages/*` | `@changesets/cli` versions **nothing** when `privatePackages.version` is absent — a silent no-op |
-| `node`       | `actions/setup-node@v6` before `setup-bun`, in `check` and every bun extra job                               | See below                                                                                        |
+| `node`       | `actions/setup-node@v7` before `setup-bun`, in `check` and every bun extra job                               | See below                                                                                        |
 | `extraJobs`  | One job per entry, its stated reason above it, and its id in the `ci` aggregate's `needs`                    | 4 genuinely different jobs across 3 repositories                                                 |
 | `exceptions` | Nothing — it removes a file from the drift comparison                                                        | The escape hatch, priced so it is used last                                                      |
 

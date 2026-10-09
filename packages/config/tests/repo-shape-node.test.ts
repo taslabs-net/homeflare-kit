@@ -8,6 +8,9 @@
  *   floor). Excepting `ci.yml` in both would have handed the estate's two most
  *   complicated CI files straight back to hand-editing.
  *
+ * ★ THE CURRENT PIN IS `actions/setup-node@v7`. The render moved from the v6 those two
+ *   files carried on 2026-09-22 to v7, and every assertion below expects v7.
+ *
  * ⛔ EVERY WORKFLOW ASSERTION PARSES THE YAML. Grepping for `setup-node` would pass on a
  *   file GitHub cannot load, and on one where the step landed in the wrong job.
  */
@@ -49,14 +52,14 @@ describe('node: is an input, and it reaches exactly the jobs that install', () =
     //   repositories had written by hand.
     expect(uses(jobs(WITH_NODE)['check'])).toEqual([
       'actions/checkout@v7',
-      'actions/setup-node@v6',
+      'actions/setup-node@v7',
       'oven-sh/setup-bun@v2',
     ]);
   });
 
   test('the node step pins the declared major and declines the npm cache', () => {
     const step = (jobs(WITH_NODE)['check']?.steps ?? []).find(
-      (candidate) => candidate.uses === 'actions/setup-node@v6',
+      (candidate) => candidate.uses === 'actions/setup-node@v7',
     );
     expect(step?.with).toEqual({ 'node-version': 24, 'package-manager-cache': 'false' });
   });
@@ -77,7 +80,7 @@ describe('node: is an input, and it reaches exactly the jobs that install', () =
         }),
       ],
     };
-    expect(uses(jobs(shape)['build'])).toContain('actions/setup-node@v6');
+    expect(uses(jobs(shape)['build'])).toContain('actions/setup-node@v7');
   });
 
   test('a non-integer or non-positive major fails the render, not the job', () => {
