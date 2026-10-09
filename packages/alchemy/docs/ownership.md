@@ -101,8 +101,8 @@ escalating to `--adopt` only on `OwnedBySomeoneElse`
 families above that escalation always comes (decided 2026-09-21): an object whose row is gone is
 `Unowned`, so the deploy needs `--adopt`, or `adopt(true)` on its declaration. `MeshNode`
 ([mesh-node.md](./mesh-node.md)), `CloudflaredTunnel`
-([cloudflared-tunnel.md](./cloudflared-tunnel.md)) and `R2BucketLock` (`src/cloudflare/r2-bucket-lock.ts`) need it
-too. A `CaddyConfig` running the declared config re-imports without it, and so does every family
+([cloudflared-tunnel.md](./cloudflared-tunnel.md)), `SaasOidcApplication` ([saas-oidc.md](./saas-oidc.md)) and
+`R2BucketLock` (`src/cloudflare/r2-bucket-lock.ts`) need it too. A `CaddyConfig` running the declared config re-imports without it, and so does every family
 whose `read` never answers `Unowned`: the `pveHandlers` resources (Limits), the `forgejoHandlers`
 resources and the Talos resources. Read the takeover first with `hf-adopt-verify`
 ([adopt-verify.md](./adopt-verify.md)).

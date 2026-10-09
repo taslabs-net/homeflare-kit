@@ -22,6 +22,14 @@ export type {
   CloudflaredTunnelProps,
 } from './cloudflared-tunnel-form.ts';
 export { CloudflaredTunnelError } from './cloudflared-tunnel-api.ts';
+export { SaasOidcApplication, SaasOidcApplicationProvider } from './saas-oidc.ts';
+export type {
+  OidcGrantType,
+  OidcScope,
+  SaasOidcApplicationAttributes,
+  SaasOidcApplicationProps,
+} from './saas-oidc-form.ts';
+export { SaasOidcError } from './saas-oidc-api.ts';
 export { providers } from './providers.ts';
 export {
   astroWebsite,
