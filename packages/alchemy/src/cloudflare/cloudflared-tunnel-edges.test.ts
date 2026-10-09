@@ -1,10 +1,10 @@
 /**
  * CloudflaredTunnelProvider's refusals and recoveries — the cases a mutation of each guard must
- * break: the two-match refusal, the tunnel-type check, the tombstone check, the 404 on a stored id,
- * the stored account, the 1013 race, the `local` refusal and delete's id precondition.
+ * break: the two-match refusal, the tunnel-type check, the tombstone check, the 404 on a stored id
+ * (read says missing), the stored account, the 1013 race, the `local` refusal, delete's id
+ * precondition and a tunnel vanishing mid-delete.
  */
 import { describe, expect, test } from 'bun:test';
-import { Unowned } from 'alchemy/AdoptPolicy';
 import * as Effect from 'effect/Effect';
 import { extra, ids, read, reconcile, run, stored, writes } from './cloudflared-tunnel-harness.ts';
 import { FAKE_ACCOUNT, fakeFailure } from './fake-mesh.ts';
@@ -46,18 +46,30 @@ describe('CloudflaredTunnelProvider edges', () => {
     expect(failure.message).toContain(b.id);
   });
 
-  test('a stored id the API no longer knows (404): read falls back to the name, reconcile creates', async () => {
+  test('a stored id the API no longer knows (404): read says missing and never probes the name, reconcile creates', async () => {
     const fake = fakeTunnels();
-    const tunnel = fake.seed({ name: 'k8s-admin' });
-    const gone = stored(FAKE_ACCOUNT, { id: UNKNOWN_ID, name: 'k8s-other' });
-    const probe = await run(fake, (p) => read(p, props, gone));
-    expect(Unowned.is(probe)).toBe(true);
-    expect(probe).toMatchObject({ id: tunnel.id });
+    // ⚠️ A same-named foreign tunnel: Drift treats what read returns as ours, so adopting it
+    // here would bypass adopt(true). The probe is for a row-less read only.
+    fake.seed({ name: 'k8s-admin' });
+    const gone = stored(FAKE_ACCOUNT, { id: UNKNOWN_ID, name: 'k8s-admin' });
+    expect(await run(fake, (p) => read(p, props, gone))).toBeUndefined();
+    expect(fake.seen.map((s) => s.method)).toEqual(['GET']);
+    expect(fake.seen.some((s) => s.path.includes('/tunnels?'))).toBe(false);
 
     const fresh = fakeTunnels();
     const created = await run(fresh, (p) => reconcile(p, { name: 'k8s-other' }, gone));
     expect(created.id).not.toBe(UNKNOWN_ID);
     expect(writes(fresh)).toEqual(['POST']);
+  });
+
+  test('a gone row over a same-named foreign tunnel: reconcile refuses and names it, writes nothing', async () => {
+    const fake = fakeTunnels();
+    const foreign = fake.seed({ name: 'k8s-admin' });
+    const gone = stored(FAKE_ACCOUNT, { id: UNKNOWN_ID });
+    const failure = await run(fake, (p) => Effect.flip(reconcile(p, props, gone)));
+    expect(failure.message).toContain(foreign.id);
+    expect(failure.message).toContain('already exists');
+    expect(writes(fake)).toEqual([]);
   });
 
   test('read refreshes in the account the tunnel was written to, not the current environment', async () => {
@@ -66,7 +78,7 @@ describe('CloudflaredTunnelProvider edges', () => {
     const output = stored(FAKE_ACCOUNT, { id: tunnel.id });
     // ⚠️ The fake throws on any other account, so reading in OTHER_ACCOUNT fails this test.
     const fresh = await run(fake, (p) => read(p, props, output), OTHER_ACCOUNT);
-    expect(fresh).toMatchObject({ id: tunnel.id, accountId: FAKE_ACCOUNT, status: 'healthy' });
+    expect(fresh).toMatchObject({ id: tunnel.id, accountId: FAKE_ACCOUNT });
   });
 
   test('a rename onto a name another tunnel holds is refused, not forced', async () => {
@@ -137,6 +149,15 @@ describe('CloudflaredTunnelProvider edges', () => {
     );
     expect(failure.message).toContain('empty id');
     expect(fake.seen).toHaveLength(0);
+  });
+
+  test('a tunnel that vanishes between the pre-read and the DELETE is a successful delete', async () => {
+    const fake = fakeTunnels({ onDelete: () => fakeFailure(404, 1002, 'Tunnel not found') });
+    const tunnel = fake.seed({ name: 'k8s-admin' });
+    await run(fake, (p) =>
+      p.delete({ ...ids, ...extra, olds: props, output: stored(FAKE_ACCOUNT, { id: tunnel.id }) }),
+    );
+    expect(writes(fake)).toEqual(['DELETE']);
   });
 
   test('delete while connectors are attached surfaces the API refusal, and deletes nothing', async () => {

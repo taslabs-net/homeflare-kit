@@ -16,7 +16,7 @@
  */
 import type { Diff } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
-import { CloudflaredTunnelError, type TunnelStatus } from './cloudflared-tunnel-api.ts';
+import { CloudflaredTunnelError } from './cloudflared-tunnel-api.ts';
 
 export interface CloudflaredTunnelProps {
   /**
@@ -36,8 +36,8 @@ export interface CloudflaredTunnelAttributes {
    */
   readonly accountId: string;
   readonly name: string;
-  /** As of the last read or write; it moves on its own as connectors attach and drop. */
-  readonly status: TunnelStatus | undefined;
+  // ★ No `status`: it moves on its own as connectors attach and drop, so a stored copy would make
+  //   every `alchemy drift` report this tunnel as drifted. Health is the API's or the metrics' to say.
 }
 
 /** ⛔ Fail closed on a declaration the API would accept but nobody meant. */

@@ -22,14 +22,10 @@ import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as Stream from 'effect/Stream';
 
-/** `inactive` (never run), `degraded`, `healthy` or `down` — Cloudflare's own four. */
-export type TunnelStatus = 'inactive' | 'degraded' | 'healthy' | 'down';
-
 /** A live tunnel as this package sees it. ⛔ There is no token or secret field, on purpose. */
 export interface ObservedTunnel {
   readonly id: string;
   readonly name: string;
-  readonly status: TunnelStatus | undefined;
   /** `undefined` when the response omitted it; only an explicit `local` is refused (lifecycle). */
   readonly configSrc: 'cloudflare' | 'local' | undefined;
 }
@@ -42,13 +38,10 @@ export class CloudflaredTunnelError extends Data.TaggedError('CloudflaredTunnelE
 type Raw = {
   readonly id?: string | null;
   readonly name?: string | null;
-  readonly status?: string | null;
   readonly configSrc?: string | null;
   readonly tunType?: string | null;
   readonly deletedAt?: string | null;
 };
-
-const STATUSES: readonly string[] = ['inactive', 'degraded', 'healthy', 'down'];
 
 /**
  * ⚠️ A DELETED TUNNEL IS NOT A TUNNEL. Cloudflare keeps deleted tunnels (every response carries
@@ -62,13 +55,9 @@ export const observe = (raw: Raw): ObservedTunnel | undefined => {
   if (typeof raw.id !== 'string' || raw.id.length === 0) return undefined;
   if (raw.deletedAt !== undefined && raw.deletedAt !== null) return undefined;
   if (typeof raw.tunType === 'string' && raw.tunType !== 'cfd_tunnel') return undefined;
-  const status =
-    typeof raw.status === 'string' && STATUSES.includes(raw.status)
-      ? (raw.status as TunnelStatus)
-      : undefined;
   const configSrc =
     raw.configSrc === 'cloudflare' || raw.configSrc === 'local' ? raw.configSrc : undefined;
-  return { id: raw.id, name: raw.name ?? '', status, configSrc };
+  return { id: raw.id, name: raw.name ?? '', configSrc };
 };
 
 /** The tunnel with this id, or `undefined` when it is gone (404 / code 1002, or soft-deleted). */
@@ -126,17 +115,21 @@ export const createTunnel = (accountId: string, name: string) =>
 export const renameTunnel = (accountId: string, tunnelId: string, name: string) =>
   zeroTrust
     .patchTunnelCloudflared({ accountId, tunnelId, name })
-    .pipe(
-      Effect.map(
-        (raw) => observe(raw) ?? { id: tunnelId, name, status: undefined, configSrc: undefined },
-      ),
-    );
+    .pipe(Effect.map((raw) => observe(raw) ?? { id: tunnelId, name, configSrc: undefined }));
+
+/**
+ * ⚠️ The SDK types `deleteTunnelCloudflared`'s errors as `CloudflareOpError`, which has no
+ *   `NotFound`, yet a 404 reaches the caller as `NotFound` at runtime (protocol.ts `HTTP_STATUS_MAP`,
+ *   measured through the fake). So the tag is matched by name, not by `catchTag`'s typed union.
+ */
+const isNotFound = (error: { readonly _tag: string }) => error._tag === 'NotFound';
 
 /**
  * ⛔ DELETE BY THE STORED ID ONLY, AFTER A READ BY THAT ID. Never by name: a name can have been
  *   re-used by another tunnel since this one was written, and a delete cannot be taken back. An
  *   empty id is refused before any request (a blank path segment would address the collection).
- * ★ Idempotent: a tunnel already gone or soft-deleted is a successful delete. The API refuses a
+ * ★ Idempotent: a tunnel already gone or soft-deleted is a successful delete, including one that
+ *   vanishes between the read and the DELETE (see `isNotFound`). The API refuses a
  *   delete while connectors are attached ("The tunnel must have no active connections", SDK doc on
  *   `deleteTunnelCloudflared`); that error passes through, since the operator must stop cloudflared.
  */
@@ -149,5 +142,7 @@ export const deleteTunnel = (accountId: string, tunnelId: string) =>
     }
     const live = yield* getTunnel(accountId, tunnelId);
     if (live === undefined) return;
-    yield* zeroTrust.deleteTunnelCloudflared({ accountId, tunnelId });
+    yield* zeroTrust
+      .deleteTunnelCloudflared({ accountId, tunnelId })
+      .pipe(Effect.catchIf(isNotFound, () => Effect.void));
   });

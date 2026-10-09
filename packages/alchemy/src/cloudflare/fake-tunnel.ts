@@ -45,6 +45,8 @@ export type FakeTunnelOptions = {
   readonly perPage?: number;
   /** Return a Response to answer the POST with it instead (e.g. `fakeFailure(409, 1013, …)`). */
   readonly onCreate?: (name: string) => Response | void;
+  /** Return a Response to answer the DELETE with it instead (e.g. the tunnel vanishing mid-delete). */
+  readonly onDelete?: (id: string) => Response | void;
 };
 
 export const fakeTunnels = (options: FakeTunnelOptions = {}) => {
@@ -119,6 +121,8 @@ export const fakeTunnels = (options: FakeTunnelOptions = {}) => {
       return ok(wire(tunnel));
     }
     if (method === 'DELETE') {
+      const override = options.onDelete?.(tunnel.id);
+      if (override !== undefined) return override;
       if (tunnel.deleted_at !== null) return fakeFailure(404, 1002, 'Tunnel not found');
       if (tunnel.connected) return fakeFailure(400, 1000, 'tunnel has active connections');
       tunnel.deleted_at = '2026-10-09T01:00:00Z';

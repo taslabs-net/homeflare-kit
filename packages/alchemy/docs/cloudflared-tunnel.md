@@ -37,9 +37,9 @@ const admin = yield * CloudflaredTunnel('k8s-admin', { name: 'k8s-admin' });
 | ------ | -------- | --------------------------------------------------------------------- |
 | `name` | `string` | Unique per account. The identity used for adoption. Renames in place. |
 
-Attributes: `id`, `accountId`, `name` and `status` (`inactive`, `degraded`, `healthy` or `down`, as
-of the last read or write). ⛔ There is no token, secret or `tunnelSecret` attribute, and none is
-sent: Cloudflare generates and keeps the tunnel secret. `accountId` is not a secret; it is what
+Attributes: `id`, `accountId` and `name`. ★ There is no `status`: it moves as connectors attach and
+drop, so a stored copy would make every `alchemy drift` flag the tunnel; read health from the API
+or the metrics. ⛔ There is no token, secret or `tunnelSecret` attribute, and none is sent: Cloudflare generates and keeps the tunnel secret. `accountId` is not a secret; it is what
 `read` and `delete` address, so they never act on whatever account the environment names today.
 
 The account and credentials come from Alchemy's own Cloudflare environment
@@ -68,11 +68,11 @@ package calls that endpoint, `observe` copies named fields only, and
 
 ## What each change does
 
-| change                 | answer                  | what happens on Cloudflare                                         |
-| ---------------------- | ----------------------- | ------------------------------------------------------------------ |
-| `name`                 | `update`                | `PATCH`. The id, connectors and `cfargotunnel.com` target survive. |
-| account (provider env) | `replace`, create-first | A new tunnel in the new account. Under `retain` the old one stays. |
-| nothing                | none                    | Zero writes, and no token read: a plan is GETs and one list only.  |
+| change                 | answer                  | what happens on Cloudflare                                                                                           |
+| ---------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `name`                 | `update`                | `PATCH`. The id, connectors and `cfargotunnel.com` target survive.                                                   |
+| account (provider env) | `replace`, create-first | A new tunnel in the new account. Under `retain` the old one stays.                                                   |
+| nothing                | none                    | Zero writes and no token read. An existing row's plan makes no request (`diff` is pure); the cold probe is one list. |
 
 ⛔ **Removal policy: `retain` by default**, like MeshNode and the other kit resources whose deletion
 breaks their consumers. Deleting a tunnel drops its remote configuration and orphans every DNS record
@@ -88,7 +88,11 @@ refuses to take it over until the resource is wrapped in `adopt(true)` (or `--ad
 deleted tunnel, a tunnel of another type (a `warp_connector` Mesh node shares the name space) and a
 prefix match are never matched, and a name that matches two live tunnels is refused. Adoption is
 idempotent: the adopted row holds the id, so a repeat deploy takes the owned path and writes
-nothing. Without `adopt(true)`, a create whose name is held by another tunnel refuses and names the
+nothing. ⛔ The name probe runs only when there is **no** stored row. A stored id that the API no
+longer resolves (deleted out of band) reads as missing, never as a same-named tunnel: `alchemy drift`
+treats what `read` returns as already ours, so a probe there would write a foreign tunnel into this
+row without `adopt(true)`. Drift reports it missing and recreates, and the create refuses and
+names the holder. Without `adopt(true)`, a create whose name is held by another tunnel refuses and names the
 holder; it never converges on it, and the sentence says not to delete it.
 
 An interrupted create (the tunnel was made, its state was not saved) is found the same way on the
@@ -103,8 +107,10 @@ never a name: it reads that id first, does nothing when the tunnel is already go
 and refuses an empty id before any request. The API refuses a delete while connectors are attached
 ("The tunnel must have no active connections", the SDK's own doc on `deleteTunnelCloudflared`); that
 error passes through unchanged, so scale cloudflared to zero first. No retry loop is added: a
-connector does not detach within seconds on its own. ⚠️ Whether the API answers a delete of an
-already-deleted tunnel with 404 / code 1002 is unmeasured here; the pre-read makes it moot.
+connector does not detach within seconds on its own. A tunnel that vanishes between the pre-read and
+the DELETE is a successful delete: the 404 reaches the caller as `NotFound` at runtime though the SDK's
+typed error union omits it (`protocol.ts`, `HTTP_STATUS_MAP`), so it is matched by tag name and caught. ⚠️ UNVERIFIED against the real API: the fake
+answers 404 / code 1002 there, the same shape `getTunnelCloudflared` documents.
 
 `list` is empty and `nuke` skips this type: Alchemy's own `Tunnel.Tunnel` already enumerates every
 `cfd_tunnel` for `alchemy unsafe nuke` (fetching each token to do it), and a second listing would
@@ -112,8 +118,8 @@ delete each tunnel twice.
 
 ## Tests
 
-Four files in `src/cloudflare/` run the provider against a fake API (`fake-tunnel.ts`) that hands out
-a token on every surface it can:
+Three test files in `src/cloudflare/` (plus `cloudflared-tunnel-harness.ts`, their shared helpers)
+run the provider against a fake API (`fake-tunnel.ts`) that hands out a token on every surface it can:
 
 - `cloudflared-tunnel.test.ts`: the lifecycle; the create body is `{name, config_src}` and no
   request ever touches `/token`.

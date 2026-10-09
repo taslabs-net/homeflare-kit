@@ -78,7 +78,6 @@ export const stored = (
   id: 'x',
   accountId,
   name: 'k8s-admin',
-  status: undefined,
   ...over,
 });
 

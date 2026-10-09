@@ -42,12 +42,12 @@ describe('CloudflaredTunnel state serialization', () => {
     expect(tokenReads(fake)).toBe(0);
   });
 
-  test('the attributes in the row are exactly id, accountId, name and status', async () => {
+  test('the attributes in the row are exactly id, accountId and name', async () => {
     const fake = fakeTunnels();
     const stack = engine(fake);
     await stack.deploy(admin());
     const row = stack.rows['tunnel']?.['test']?.[ADMIN] as { attr?: object } | undefined;
-    expect(Object.keys(row?.attr ?? {}).sort()).toEqual(['accountId', 'id', 'name', 'status']);
+    expect(Object.keys(row?.attr ?? {}).sort()).toEqual(['accountId', 'id', 'name']);
   });
 
   test('negative control: the same encoder writes a Redacted token as a plaintext marker', () => {

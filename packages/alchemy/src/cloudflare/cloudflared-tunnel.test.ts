@@ -38,8 +38,8 @@ describe('CloudflaredTunnelProvider', () => {
     const out = await run(fake, (p) => reconcile(p, props));
     const post = fake.seen.find((s) => s.method === 'POST');
     expect(post?.body).toEqual({ name: 'k8s-admin', config_src: 'cloudflare' });
-    expect(out).toMatchObject({ name: 'k8s-admin', accountId: FAKE_ACCOUNT, status: 'inactive' });
-    expect(Object.keys(out).sort()).toEqual(['accountId', 'id', 'name', 'status']);
+    expect(out).toMatchObject({ name: 'k8s-admin', accountId: FAKE_ACCOUNT });
+    expect(Object.keys(out).sort()).toEqual(['accountId', 'id', 'name']);
     expect(JSON.stringify(out)).not.toContain('fake-tunnel-token');
     expect(tokenReads(fake)).toBe(0);
     expect(new Set(fake.auth)).toEqual(new Set([`Bearer ${FAKE_API_TOKEN}`]));
@@ -57,7 +57,7 @@ describe('CloudflaredTunnelProvider', () => {
       }),
     );
     expect(Unowned.is(owned)).toBe(false);
-    expect(owned).toMatchObject({ id: tunnel.id, status: 'healthy' });
+    expect(owned).toMatchObject({ id: tunnel.id, name: 'k8s-admin' });
     expect(Unowned.is(probe)).toBe(true);
     expect(probe).toMatchObject({ id: tunnel.id, name: 'k8s-admin' });
     expect(tokenReads(fake)).toBe(0);

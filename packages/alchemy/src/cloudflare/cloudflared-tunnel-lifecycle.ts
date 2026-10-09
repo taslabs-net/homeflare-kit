@@ -23,14 +23,20 @@ const attributesOf = (tunnel: ObservedTunnel, accountId: string): CloudflaredTun
   id: tunnel.id,
   accountId,
   name: tunnel.name,
-  status: tunnel.status,
 });
 
 /**
- * Owned: refresh by the stored id. Cold: find the live tunnel by exact name and hand it back
- * `Unowned`, so Alchemy refuses to take it over until the stack says `adopt(true)` — a
- * `cfd_tunnel` carries no ownership marker to prove it was ours. Adoption is idempotent: the
+ * Owned: refresh by the stored id. Cold (no stored row): find the live tunnel by exact name and
+ * hand it back `Unowned`, so Alchemy refuses to take it over until the stack says `adopt(true)` —
+ * a `cfd_tunnel` carries no ownership marker to prove it was ours. Adoption is idempotent: the
  * adopted row holds the id, so every later `read` takes the owned path and writes nothing.
+ *
+ * ⛔ A STORED ID THAT NO LONGER RESOLVES IS "MISSING", NEVER A NAME PROBE. Drift (alchemy beta.81
+ *   src/Drift.ts) passes the row's output and treats whatever `read` returns as already ours
+ *   (`stripUnowned`), then repairs by reconciling onto it. A by-name fallback there would write a
+ *   same-named tunnel somebody else made into this row, bypassing `adopt(true)`; a later rename
+ *   would PATCH it and `RemovalPolicy.destroy` would DELETE it. Returning `undefined` makes Drift
+ *   report "missing" and recreate through `reconcile`, where `createFresh` names the holder.
  */
 export const readCloudflaredTunnel = (
   accountId: string,
@@ -41,9 +47,9 @@ export const readCloudflaredTunnel = (
     const account = output?.accountId ?? accountId;
     if (output !== undefined) {
       const tunnel = yield* getTunnel(account, output.id);
-      if (tunnel !== undefined) return attributesOf(tunnel, account);
+      return tunnel === undefined ? undefined : attributesOf(tunnel, account);
     }
-    const name = olds?.name ?? output?.name;
+    const name = olds?.name;
     if (name === undefined) return undefined;
     const match = yield* findTunnelByName(account, name);
     return match === undefined ? undefined : Unowned(attributesOf(match, account));

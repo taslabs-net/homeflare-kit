@@ -21,7 +21,7 @@ export type {
   CloudflaredTunnelAttributes,
   CloudflaredTunnelProps,
 } from './cloudflared-tunnel-form.ts';
-export { CloudflaredTunnelError, type TunnelStatus } from './cloudflared-tunnel-api.ts';
+export { CloudflaredTunnelError } from './cloudflared-tunnel-api.ts';
 export { providers } from './providers.ts';
 export {
   astroWebsite,
