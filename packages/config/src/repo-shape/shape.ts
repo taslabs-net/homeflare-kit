@@ -210,7 +210,7 @@ export interface RepoShape {
    *       three tests fail with `Executable not found in $PATH: "node"` (measured on the
    *       runner, 2026-09-22).
    *     · homeflare-blog — Payload requires Node >= 24.15, so every lane needs it.
-   *   Both repositories carried the same hand-written `actions/setup-node@v6` block
+   *   Both repositories carried the same hand-written `actions/setup-node@v7` block
    *   before this existed. Excepting `ci.yml` instead would hand the estate's two most
    *   complicated CI files back to hand-editing, which is the opposite of the point.
    *

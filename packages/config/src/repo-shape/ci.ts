@@ -21,7 +21,7 @@ export const ACTIONLINT_VERSION = '1.7.12';
 
 const CHECKOUT = 'actions/checkout@v7';
 const SETUP_BUN = 'oven-sh/setup-bun@v2';
-const SETUP_NODE = 'actions/setup-node@v6';
+const SETUP_NODE = 'actions/setup-node@v7';
 
 function runnerNote(shape: RepoShape): string {
   if (shape.runner !== 'mini') {
