@@ -2,6 +2,48 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.49.0
+
+### Minor Changes
+
+- [#371](https://github.com/taslabs-net/homeflare-kit/pull/371) [`7f1a989`](https://github.com/taslabs-net/homeflare-kit/commit/7f1a989761073c139c38dc6c1c4a859c54bf109c) Thanks [@taslabs-net](https://github.com/taslabs-net)! - `@homeflare/alchemy/cloudflare` gains `CloudflaredTunnel` (`Cloudflare.CloudflaredTunnel`), a Cloudflare Tunnel of the cloudflared kind (`cfd_tunnel`) declared without its connector token ever touching Alchemy state. Alchemy's own `Cloudflare.Tunnel.Tunnel` (beta.81) calls `getTunnelCloudflaredToken` in `reconcile`, `read` and `list` and keeps the result as a `Redacted` attribute, which the state encoder writes as plaintext `{"__redacted__": "<token>"}`; this resource never calls the token endpoint, copies named response fields only, and its attributes are `id`, `accountId` and `name` (no `status`: it moves as connectors attach and would make every drift check flag the tunnel). `cloudflared-tunnel-state.test.ts` runs Alchemy's real plan/apply and asserts the encoded state holds no `__redacted__` marker, no `token` key and no token value, with a negative control. The tunnel is created `config_src: "cloudflare"` (explicitly sent; create-only), a locally configured tunnel found by name is refused on adoption, `name` renames in place (`PATCH`), adoption is by exact name among `cfd_tunnel`s (`Unowned` until `adopt(true)`, idempotent), the default removal policy is `retain`, and `delete` addresses the stored id and account only, after a read of that id, refusing an empty id. It declares the tunnel object only: no ingress rules, routes, DNS or connector Deployment. `MeshNode`'s fake gained a type-only widening (`fakeClientLayer` and `fakeProviderLayer` take `Pick<FakeMesh, 'fetch'>`) so the two fakes share the layer helpers. Walked against `@distilled.cloud/cloudflare@1.0.0-rc.13` (`src/services/zero_trust.ts`: `createTunnelCloudflared`, `getTunnelCloudflared`, `patchTunnelCloudflared`, `deleteTunnelCloudflared`, `listTunnels`) and `alchemy@2.0.0-beta.81`, read 2026-10-09; the API surface was not exercised live. Guide: `docs/cloudflared-tunnel.md`.
+
+- [#370](https://github.com/taslabs-net/homeflare-kit/pull/370) [`9874e74`](https://github.com/taslabs-net/homeflare-kit/commit/9874e744351e1497d01d0b6dafd9dcfc2aa429ae) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `SaasOidcApplication` (`HomeFlare.Access.SaasOidcApplication`) to `@homeflare/alchemy/cloudflare`,
+  moved from homeflare-openbao's `src/cloudflare/saas-oidc.ts` for the Kubernetes platform's Headlamp
+  login (ledger row `k8s-kit-saas-oidc`). A Cloudflare Access SaaS application of auth type `oidc`:
+  Alchemy `Access.Application` has no `saas_app` (checked in beta.81), and distilled rc.13 decodes a
+  saas app's GET and create response without it, so the client id is read from the wire JSON.
+
+  - The type id is kept verbatim, because Alchemy state is keyed by it and openbao's live
+    `OpenBaoOidcSaas` row was written under it. A test seeds a row in the old shape and proves the
+    next deploy updates it in place.
+  - New required prop `teamDomain` replaces the hardcoded team domain in the issuer. A declaration
+    that disagrees with the host Cloudflare reports for an existing app is refused before any write.
+    A first create is checked against the account's Zero Trust organization (`auth_domain`) before
+    any write; where the token cannot read it (it needs `Access: Organizations Read`, which the app
+    write does not), the create goes on, a wrong team then writes the app and fails the run, leaving a
+    live app with no state row (the known limit and its cleanup are in `docs/saas-oidc.md`).
+  - The attributes expose `issuer`, `clientId` and `jwksEndpoint`, plus the other OIDC endpoints and
+    `teamDomain`.
+  - The client secret is never read, stored or logged (tests cover `allowPkceWithoutClientSecret`
+    with the `authorization_code_with_pkce` grant, and serialise the engine's state after a create
+    whose response carries a secret). A write refuses to run while `DISTILLED_DEBUG_HTTP` is set (an
+    operator-only switch: the SDK prints the response, this package cannot stop it). The SDK's
+    `CloudflareParseError` carries the whole parsed response, so every SDK call of the resource catches
+    it and rethrows a `SaasOidcError` that names the operation and carries no body, field or cause.
+  - `policies` is declared in ascending precedence, so a reorder is drift and is synced (the openbao
+    copy compared them as a set).
+  - Behaviour differences from the openbao copy: `retain` is now the default removal policy;
+    `allowPkceWithoutClientSecret: true` without the PKCE grant is refused; an `applicationId` that is
+    not a saas app is refused instead of rewritten; two same-named saas apps are refused instead of
+    picking the first; delete folds only `AccessApplicationNotFound` instead of every error.
+
+  - Open question for Tim: the one raw `GET` of the app is hand-written (lane contract 1) because the
+    SDK drops `saas_app`; see `docs/saas-oidc.md`.
+
+  Walked against `alchemy@2.0.0-beta.81` and `@distilled.cloud/cloudflare@1.0.0-rc.13`. Guide:
+  `packages/alchemy/docs/saas-oidc.md`.
+
 ## 0.48.1
 
 ### Patch Changes
