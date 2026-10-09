@@ -4,7 +4,7 @@
  * ★ Built on vendor SDKs, not hand-rolled HTTP. `R2BucketLock`, `MeshNode` and `CloudflaredTunnel` all call
  *   `@distilled.cloud/cloudflare`, the SDK Alchemy's own Cloudflare providers use — R2BucketLock
  *   over `/r2` (`getBucketLock`/`putBucketLock`), MeshNode over `/zero-trust`, because
- *   `cloudflare@4.5.0` cannot create an HA node (mesh-node-api.ts). Neither invents a path string.
+ *   `cloudflare@4.5.0` cannot create an HA node (mesh-node-api.ts). None invents a path string.
  */
 export type { R2LockRule } from './lock-rules.ts';
 export { R2BucketLock, type R2BucketLockProps } from './r2-bucket-lock.ts';

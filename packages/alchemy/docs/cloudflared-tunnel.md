@@ -16,8 +16,11 @@ this tunnel's `id`. Read 2026-10-09 against `alchemy@2.0.0-beta.81` and
   LocalState, HttpStateStore and PostgresState all call before writing). The state store is not
   encrypted, and the token is what `cloudflared tunnel run --token` accepts, so anyone who can read
   state can run a connector for the tunnel and receive its traffic.
-- **Its plans need a Write token.** The token endpoint needs a Write permission, so even a plan
-  would. `CloudflaredTunnel` never calls it, so a plan runs on a read token.
+- **Its plans need a Write token.** The token endpoint is expected to need a Write permission, so even a plan
+  would. **UNVERIFIED for `cfd_tunnel`**: the only citation is the sibling Mesh node token endpoint
+  ("Cloudflare One Connectors Write", per its API reference, read 2026-09-21; see
+  `src/cloudflare/mesh-node-form.ts`), and the `cfd_tunnel` token endpoint's permission was not
+  read. `CloudflaredTunnel` never calls it, so a plan does not depend on the answer.
 
 `CloudflaredTunnel` follows the same pattern as [MeshNode](./mesh-node.md): attributes with no
 secret, adoption by exact name, `retain` by default. The type string is `CloudflaredTunnel`, not
@@ -39,7 +42,10 @@ const admin = yield * CloudflaredTunnel('k8s-admin', { name: 'k8s-admin' });
 
 Attributes: `id`, `accountId` and `name`. ★ There is no `status`: it moves as connectors attach and
 drop, so a stored copy would make every `alchemy drift` flag the tunnel; read health from the API
-or the metrics. ⛔ There is no token, secret or `tunnelSecret` attribute, and none is sent: Cloudflare generates and keeps the tunnel secret. `accountId` is not a secret; it is what
+or the metrics. ⛔ There is no token, secret or `tunnelSecret` attribute, and none is sent. The request schema documents `tunnel_secret` as the password for a _locally-managed_ tunnel
+(`@distilled.cloud/cloudflare@1.0.0-rc.13`, `src/services/zero_trust.ts`, `CreateTunnelCloudflaredRequest`);
+this resource always sends `config_src: "cloudflare"`. **UNVERIFIED**: that Cloudflare itself generates and
+keeps a secret when `tunnel_secret` is omitted for such a tunnel; the schema says only that the field is optional. `accountId` is not a secret; it is what
 `read` and `delete` address, so they never act on whatever account the environment names today.
 
 The account and credentials come from Alchemy's own Cloudflare environment

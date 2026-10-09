@@ -14,8 +14,10 @@
  *   `encodeState` (State/StateEncoding.ts) writes into state as `{"__redacted__": "<token>"}`:
  *   plaintext, and the token runs the tunnel. This package never holds it, so there is nothing to
  *   leak. See cloudflared-tunnel-form.ts.
- * ⚠️ `createTunnelCloudflared` takes no `tunnelSecret` here either: omitted, Cloudflare generates
- *   the secret and keeps it, and a remotely managed tunnel never needs it on our side.
+ * ⚠️ `createTunnelCloudflared` takes no `tunnelSecret` here either: the schema calls the field the
+ *   password for a locally-managed tunnel and marks it optional (distilled rc.13 zero_trust.ts,
+ *   `CreateTunnelCloudflaredRequest`); that Cloudflare generates one when it is omitted is
+ *   UNVERIFIED, and a remotely managed tunnel needs no secret on our side.
  */
 import * as zeroTrust from '@distilled.cloud/cloudflare/zero-trust';
 import * as Data from 'effect/Data';

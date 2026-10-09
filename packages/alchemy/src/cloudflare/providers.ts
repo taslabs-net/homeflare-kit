@@ -26,7 +26,7 @@ import { R2BucketLock, R2BucketLockProvider } from './r2-bucket-lock.ts';
 
 export class Providers extends Provider.ProviderCollection<Providers>()('HomeflareCloudflare') {}
 
-// ⛔ `orDie` ON BOTH, as `Cloudflare.providers()` ends with: a stack's providers layer must not
+// ⛔ `orDie` ON EACH of the three, as `Cloudflare.providers()` ends with: a stack's providers layer must not
 //   fail, and a profile that cannot resolve is a defect carrying Alchemy's own sentence.
 export const providers = () =>
   Layer.effect(Providers, Provider.collection([R2BucketLock, MeshNode, CloudflaredTunnel])).pipe(
