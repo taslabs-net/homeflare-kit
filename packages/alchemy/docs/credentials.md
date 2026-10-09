@@ -3,7 +3,7 @@
 Moved out of the README (2026-09-21) to make room under its 200-line cap; the text is unchanged.
 
 `CLOUDFLARE_API_TOKEN` is read from the environment at call time, never at module scope.
-`MeshNode` instead resolves credentials and the account the way `Cloudflare.providers()` does
+`MeshNode` and `CloudflaredTunnel` instead resolve credentials and the account the way `Cloudflare.providers()` does
 (an Alchemy profile, or `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` in CI).
 
 ⛔ **Mint a short-lived, scoped token** — do not reuse a long-lived one, and never a Global

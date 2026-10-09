@@ -66,6 +66,9 @@ then tidiness.
    type string `Cloudflare.MeshNode` sits inside upstream's own namespace (H14).
    **Options:** contribute `ha` upstream and raise the token-in-state concern, then switch;
    or keep the house resource as a recorded divergence. **Decision:** maintainer.
+   `cloudflare/CloudflaredTunnel` is the same divergence for `Cloudflare.Tunnel.Tunnel`
+   ([cloudflared-tunnel.md](./cloudflared-tunnel.md)): the token in state is the concern to raise
+   upstream, and its type string `Cloudflare.CloudflaredTunnel` also sits in upstream's namespace (H14).
 4. **Unguarded `Bun.*`, and the `node:*` modules upstream names, in shipped provider code**
    (S42). This is listed in [the Bun line](#the-bun-line). The exported `Bun.*` paths crash
    under Node, which is the runtime this package promises its consumers. The `node:*` paths

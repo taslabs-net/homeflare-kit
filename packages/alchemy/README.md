@@ -69,6 +69,26 @@ const door = yield * MeshNode('vault-door', { name: 'door-a', ha: false });
 
 Guide, the enrolment step and every replace case: [docs/mesh-node.md](./docs/mesh-node.md).
 
+## CloudflaredTunnel
+
+A Cloudflare Tunnel (`cfd_tunnel`, remotely configured), declared **without its connector token in
+state**. Alchemy's `Cloudflare.Tunnel.Tunnel` stores the token as a `Redacted` attribute and the
+state encoder writes it in plaintext; this one never calls the token endpoint.
+
+```ts
+import { CloudflaredTunnel, providers } from '@homeflare/alchemy/cloudflare';
+
+const admin = yield * CloudflaredTunnel('k8s-admin', { name: 'k8s-admin' });
+// admin.id → `${admin.id}.cfargotunnel.com` is the DNS target
+```
+
+- **`name`** renames in place (`PATCH`). Attributes are `id`, `accountId`, `name`, `status`: no secret.
+- Existing tunnels are adopted by exact name, `Unowned` until `adopt(true)`; a `local` one is refused.
+- ⛔ **It retains on destroy** (deleting a tunnel drops its ingress rules and orphans its DNS), and
+  `delete` addresses the stored id only. No ingress, routes or connector: those are other declarations.
+
+Guide: [docs/cloudflared-tunnel.md](./docs/cloudflared-tunnel.md).
+
 ## Website.Astro / Website.Vite
 
 House flags on Alchemy's own stacks — the two this estate actually ships.
