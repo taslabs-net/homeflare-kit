@@ -8,6 +8,9 @@
  *   floor). Excepting `ci.yml` in both would have handed the estate's two most
  *   complicated CI files straight back to hand-editing.
  *
+ * ★ THE CURRENT PIN IS `actions/setup-node@v7`. The render moved from the v6 those two
+ *   files carried on 2026-09-22 to v7, and every assertion below expects v7.
+ *
  * ⛔ EVERY WORKFLOW ASSERTION PARSES THE YAML. Grepping for `setup-node` would pass on a
  *   file GitHub cannot load, and on one where the step landed in the wrong job.
  */

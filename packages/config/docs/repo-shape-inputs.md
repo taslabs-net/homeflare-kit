@@ -26,7 +26,7 @@ Bun-only prologue is right for twelve repositories and _silently wrong_ for two:
   tests fail with `Executable not found in $PATH: "node"`, measured on the runner.
 - **homeflare-blog** — Payload requires Node >= 24.15, so every lane needs it.
 
-Both had written the identical `actions/setup-node@v7` block by hand before this existed.
+Both had written the identical `actions/setup-node@v6` block by hand before this existed.
 The alternative was `except({ file: '.github/workflows/ci.yml', … })` in both — which
 would have handed the estate's two most complicated CI files back to hand-editing, in the
 round whose whole purpose was to stop that.
