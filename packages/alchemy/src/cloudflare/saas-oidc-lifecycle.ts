@@ -5,14 +5,8 @@
 import { Unowned } from 'alchemy/AdoptPolicy';
 import { createPhysicalName } from 'alchemy/PhysicalName';
 import * as Effect from 'effect/Effect';
-import {
-  SaasOidcError,
-  createApp,
-  deleteApp,
-  findSaasByName,
-  getApp,
-  updateApp,
-} from './saas-oidc-api.ts';
+import { createApp, deleteApp, findSaasByName, getApp, updateApp } from './saas-oidc-api.ts';
+import { SaasOidcError } from './saas-oidc-error.ts';
 import {
   type SaasOidcApplicationAttributes,
   type SaasOidcApplicationProps,
@@ -22,6 +16,7 @@ import {
   validateSaasOidc,
   writeBody,
 } from './saas-oidc-form.ts';
+import { checkTeamBeforeCreate } from './saas-oidc-team.ts';
 import type { ObservedApp } from './saas-oidc-wire.ts';
 
 const resolveName = (id: string, name: string | undefined) =>
@@ -114,14 +109,18 @@ export const reconcileSaasOidc = (
       { byIdOnly: ownedId !== undefined },
     );
     // ⛔ BEFORE ANY WRITE TO AN EXISTING APP: a wrong team domain must not cost it an update.
-    //   ⚠️ A CREATE CANNOT BE CHECKED FIRST (no app exists to compare with): a wrong `teamDomain`
-    //   on a first create writes the app, then the check after the write fails the run. The app is
-    //   live with no state row; docs/saas-oidc.md says what to do.
+    //   A FIRST CREATE has no app to compare with, so it is checked against the account's Zero
+    //   Trust organization instead (`checkTeamBeforeCreate`, below). ⚠️ That read needs a token
+    //   permission the app write does not (saas-oidc-team.ts): where it cannot be read, a wrong
+    //   `teamDomain` still writes the app and then fails the post-write check, leaving a live app
+    //   with no state row. docs/saas-oidc.md says what to do.
     const wrongTeam =
       observed === undefined ? undefined : checkTeam(news.teamDomain, observed, output?.teamDomain);
     if (wrongTeam !== undefined) return yield* Effect.fail(wrongTeam);
     const write = writeBody(news, name);
     if (observed === undefined) {
+      const wrongOrganization = yield* checkTeamBeforeCreate(accountId, news.teamDomain);
+      if (wrongOrganization !== undefined) return yield* Effect.fail(wrongOrganization);
       const createdId = yield* createApp(accountId, write);
       observed = yield* getApp(accountId, createdId);
       if (observed === undefined) return yield* missing('create');

@@ -62,6 +62,27 @@ export const record = (value: unknown): Record<string, unknown> | undefined =>
     : undefined;
 
 /**
+ * The policy ids in the order Access applies them. Each policy on the wire carries a `precedence`
+ * ("The order of execution for this policy", zero_trust.ts:13630-13631), and the declared list is
+ * "in ascending order of precedence" (zero_trust.ts:9774). Sorted by it only when EVERY entry
+ * reports one (ties keep array order); otherwise the array order stands, since a partial ranking
+ * says nothing about where the unranked entries sit.
+ */
+const policyIds = (policies: ReadonlyArray<unknown>): ReadonlyArray<string> => {
+  const entries = policies.flatMap((policy, index) => {
+    const id = str(record(policy)?.['id']);
+    const precedence = record(policy)?.['precedence'];
+    return id === undefined
+      ? []
+      : [{ id, index, precedence: typeof precedence === 'number' ? precedence : undefined }];
+  });
+  if (!entries.every((entry) => entry.precedence !== undefined)) return entries.map((e) => e.id);
+  return [...entries]
+    .sort((a, b) => (a.precedence ?? 0) - (b.precedence ?? 0) || a.index - b.index)
+    .map((entry) => entry.id);
+};
+
+/**
  * Named fields only, from Cloudflare's snake_case JSON. ⛔ `client_secret` is not among them, and
  * `public_key`, `custom_claims` and `hybrid_and_implicit_options` are not used by this resource.
  */
@@ -77,10 +98,7 @@ export const parseApp = (raw: Record<string, unknown>): ObservedApp => {
     domain: str(raw['domain']),
     createdAt: str(raw['created_at']),
     updatedAt: str(raw['updated_at']),
-    policyIds: policies.flatMap((policy) => {
-      const id = str(record(policy)?.['id']);
-      return id === undefined ? [] : [id];
-    }),
+    policyIds: policyIds(policies),
     saasApp:
       saas === undefined
         ? undefined

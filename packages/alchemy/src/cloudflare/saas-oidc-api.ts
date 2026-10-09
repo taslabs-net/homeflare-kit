@@ -21,30 +21,38 @@
  *   only and never reads `client_secret`. TWO paths remain where the SDK itself holds or prints the
  *   raw body (`@distilled.cloud/cloudflare@1.0.0-rc.13`, protocol.ts):
  *   1. `DISTILLED_DEBUG_HTTP` makes it `console.error` the first 400 characters of every response
- *      (line 334), so `refuseDebugHttp` stops a write while it is set.
+ *      (line 334), so `refuseDebugHttp` stops a write while it is set. THIS ONE STAYS AN
+ *      OPERATOR-ONLY SWITCH: the package can refuse to run, it cannot stop the SDK printing.
  *   2. A response that fails schema validation becomes `CloudflareParseError({ body, cause })`
- *      (lines 452-457), and `body` is the whole parsed response, create response included. This
- *      package does not read, log or store that field, but the error value carries it, so anything
- *      that prints or serialises a raw SDK error from this resource's calls can show the secret.
+ *      (lines 452-457), whose `body` is the whole parsed response, create response included.
+ *      ⛔ SANITISED HERE: every SDK call of this resource (create, update, list, delete, and the
+ *      organization read in saas-oidc-team.ts) catches that tag at the call and fails with a
+ *      `SaasOidcError` that names the operation and nothing from the response. Why, when it can
+ *      happen at all, and what rc.13 will and will not raise: saas-oidc-error.ts (`withheld`).
+ *      The raw `get` below is not an SDK call and never builds that error.
  *   A PUBLIC PKCE client (`allowPkceWithoutClientSecret: true`) has no secret at all, so neither
  *   path exposes one for the Headlamp app.
  */
 import { Credentials, formatHeaders } from '@distilled.cloud/cloudflare/Credentials';
 import * as zeroTrust from '@distilled.cloud/cloudflare/zero-trust';
-import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as Schedule from 'effect/Schedule';
 import * as Stream from 'effect/Stream';
 import * as HttpClient from 'effect/http/HttpClient';
 import * as HttpClientRequest from 'effect/http/HttpClientRequest';
+import { SaasOidcError, withheld } from './saas-oidc-error.ts';
 import { type AppWrite, parseApp, record } from './saas-oidc-wire.ts';
 
-/** A refusal or failure, carrying the sentence an operator needs. Never a secret. */
-export class SaasOidcError extends Data.TaggedError('SaasOidcError')<{
-  readonly message: string;
-  /** The HTTP status when the failure is a response (0 for a transport failure). */
-  readonly status?: number;
-}> {}
+/**
+ * The two SDK writes, as properties of an object so saas-oidc-parse-error.test.ts can stand in for
+ * one: rc.13 cannot be made to fail a create or update with `CloudflareParseError` (the ⚠️ in
+ * saas-oidc-error.ts), and the catch on those two calls still has to be proven wired. Nothing
+ * else assigns here.
+ */
+export const sdkWrites = {
+  create: zeroTrust.createAccessApplicationForAccount,
+  update: zeroTrust.updateAccessApplicationForAccount,
+};
 
 const TRANSIENT_STATUS = (status: number): boolean =>
   status === 403 || status === 429 || status >= 500;
@@ -132,6 +140,7 @@ export const findSaasByName = (accountId: string, name: string) =>
   zeroTrust.listAccessApplicationsForAccount.items({ accountId }).pipe(
     Stream.filter((app) => app.type === 'saas' && app.name === name),
     Stream.runCollect,
+    Effect.catchTag('CloudflareParseError', withheld('application list')),
     retryTransient,
     Effect.flatMap((chunk) => {
       const ids = Array.from(chunk).flatMap((app) => (app.id == null ? [] : [app.id]));
@@ -174,9 +183,12 @@ const sdkBody = (write: AppWrite) => ({
 export const createApp = (accountId: string, write: AppWrite) =>
   refuseDebugHttp.pipe(
     Effect.andThen(
-      zeroTrust
-        .createAccessApplicationForAccount({ accountId, ...sdkBody(write) })
-        .pipe(retryTransient),
+      sdkWrites
+        .create({ accountId, ...sdkBody(write) })
+        .pipe(
+          Effect.catchTag('CloudflareParseError', withheld('application create')),
+          retryTransient,
+        ),
     ),
     Effect.flatMap((created) =>
       created.id == null
@@ -188,16 +200,25 @@ export const createApp = (accountId: string, write: AppWrite) =>
 export const updateApp = (accountId: string, appId: string, write: AppWrite) =>
   refuseDebugHttp.pipe(
     Effect.andThen(
-      zeroTrust
-        .updateAccessApplicationForAccount({ accountId, appId, ...sdkBody(write) })
-        .pipe(retryTransient),
+      sdkWrites
+        .update({ accountId, appId, ...sdkBody(write) })
+        .pipe(
+          Effect.catchTag('CloudflareParseError', withheld('application update')),
+          retryTransient,
+        ),
     ),
     Effect.asVoid,
   );
 
-/** Idempotent: an app already gone is a successful delete. Any other failure propagates. */
+/**
+ * Idempotent: an app already gone is a successful delete. Any other failure propagates, except
+ * that a response the SDK cannot validate is withheld (see `withheld`).
+ */
 export const deleteApp = (accountId: string, appId: string) =>
   zeroTrust.deleteAccessApplicationForAccount({ accountId, appId }).pipe(
     Effect.asVoid,
-    Effect.catchTag('AccessApplicationNotFound', () => Effect.void),
+    Effect.catchTags({
+      AccessApplicationNotFound: () => Effect.void,
+      CloudflareParseError: withheld('application delete'),
+    }),
   );

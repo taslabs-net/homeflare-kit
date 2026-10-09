@@ -62,18 +62,18 @@ const headlamp =
 // headlamp.issuer, headlamp.clientId, headlamp.jwksEndpoint
 ```
 
-| prop                                           | notes                                                                                       |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `teamDomain`                                   | **Required.** Bare hostname of the Zero Trust team, no scheme or path.                      |
-| `applicationId`                                | Optional. Set it to adopt a known live app; otherwise the app is found by exact `name`.     |
-| `name`                                         | Optional. Defaults to a physical name from the logical id.                                  |
-| `policies`                                     | Reusable Access policy ids, in precedence order.                                            |
-| `sessionDuration`, `allowedIdps`               | Optional. Written on create and on any sync. `sessionDuration` defaults to `24h`.           |
-| `autoRedirectToIdentity`, `appLauncherVisible` | Optional. `appLauncherVisible` defaults to `false`.                                         |
-| `saasApp.redirectUris`, `scopes`, `grantTypes` | The OIDC client's settings.                                                                 |
-| `saasApp.accessTokenLifetime`                  | `m` or `h` units, `1m` to `24h` (the SDK field doc).                                        |
-| `saasApp.refreshTokenLifetime`                 | Optional. Needed for the `refresh_tokens` grant.                                            |
-| `saasApp.allowPkceWithoutClientSecret`         | `true` = public client. Needs the `authorization_code_with_pkce` grant (refused otherwise). |
+| prop                                           | notes                                                                                        |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `teamDomain`                                   | **Required.** Bare hostname of the Zero Trust team, no scheme or path.                       |
+| `applicationId`                                | Optional. Set it to adopt a known live app; otherwise the app is found by exact `name`.      |
+| `name`                                         | Optional. Defaults to a physical name from the logical id.                                   |
+| `policies`                                     | Reusable Access policy ids, in ascending precedence. The order is declared: a reorder syncs. |
+| `sessionDuration`, `allowedIdps`               | Optional. Written on create and on any sync. `sessionDuration` defaults to `24h`.            |
+| `autoRedirectToIdentity`, `appLauncherVisible` | Optional. `appLauncherVisible` defaults to `false`.                                          |
+| `saasApp.redirectUris`, `scopes`, `grantTypes` | The OIDC client's settings.                                                                  |
+| `saasApp.accessTokenLifetime`                  | `m` or `h` units, `1m` to `24h` (the SDK field doc).                                         |
+| `saasApp.refreshTokenLifetime`                 | Optional. Needed for the `refresh_tokens` grant.                                             |
+| `saasApp.allowPkceWithoutClientSecret`         | `true` = public client. Needs the `authorization_code_with_pkce` grant (refused otherwise).  |
 
 Attributes: everything above that Cloudflare reports, plus `applicationId`, `aud`, `clientId`,
 `accountId`, `teamDomain`, `domain`, and the OIDC URLs `issuer`
@@ -85,11 +85,24 @@ account's. A declared `teamDomain` that disagrees with the host Cloudflare repor
 `domain` is refused before any write to an existing app, so the issuer cannot point at a different
 team. When Cloudflare reports no `domain` at all, the team already recorded in the row stands in: a
 declaration that changes it is refused too (the issuer is a declared stable and cannot move).
-⚠️ **A first create cannot be checked first** (no app exists to compare): a wrong `teamDomain`
-on a create writes one app, then fails the run, leaving a live app with no state row. The next run
-finds it by name as `Unowned`; fix the `teamDomain` and declare `adopt(true)` (or delete the stray
-app). A pre-create check would need the Zero Trust organization read (`auth_domain`), which is an
-extra token scope; UNVERIFIED here, so not built.
+
+★ **A first create is checked against the account's organization, when it can be read.** No app
+exists to compare, so before the first write the resource reads the Zero Trust organization
+(`GET /accounts/{account_id}/access/organizations`, the SDK's `listOrganizationsForAccount`; its
+`auth_domain` is the team domain, the same read Alchemy's `Access.Organization` does) and refuses a
+`teamDomain` that differs, with **no write**. It is one attempt, so a token that may not read it does
+not wait on retries.
+
+⚠️ **Known limit: that read needs a token permission the app write does not.** Cloudflare's docs
+(read 2026-10-09, not measured against a live token) give `Access: Organizations Read` (or
+`Access: Organizations, Identity Providers, and Groups Read`) for it, and `Access: Apps and Policies
+Write` for creating the app. Where the token cannot read the organization (a 401 or 403, or no
+organization), the check gives no answer and the create goes on as before: a wrong `teamDomain` then
+writes one app, the post-write check fails the run, and a live app is left with no state row.
+**Cleanup:** the next run finds it by name as `Unowned`; fix the `teamDomain` and declare
+`adopt(true)`, or delete the stray app in the Zero Trust dashboard. **To close the limit**, add
+`Access: Organizations Read` to the token the deploy runs with. Any other failure of the read (a
+throttle, a 5xx) fails the run before a write; run again.
 
 ## The client secret
 
@@ -103,11 +116,20 @@ hands a secret out, and asserts it is absent.
 rc.13, `protocol.ts`), so "never logged" is a claim about this package, not about the SDK:
 
 1. `DISTILLED_DEBUG_HTTP` makes it `console.error` the first 400 characters of every response
-   (line 334). A write refuses to run while it is set.
+   (line 334). A write refuses to run while it is set. **This one stays an operator-only switch:**
+   the package can refuse to run, it cannot stop the SDK printing, so never set it for a deploy.
 2. A response that fails schema validation becomes `CloudflareParseError({ body, cause })`
    (lines 452-457), and `body` is the whole parsed response, a create response with its secret
-   included. This package neither reads nor logs that field, but the error value carries it, so
-   anything that prints or serialises a raw SDK error from a create can show the secret.
+   included. **Sanitized in this package:** every SDK call of the resource (create, update, list,
+   delete, and the organization read) catches that tag at the call and fails with a `SaasOidcError`
+   that names the operation and carries no body, no response field and no cause
+   (`saas-oidc-error.ts`). `saas-oidc-parse-error.test.ts` forces the error with a fake
+   `client_secret` planted and checks the message, the fields, `String(err)`, `JSON.stringify(err)`
+   and the printed cause. The raw `GET` is not an SDK call and never builds that error.
+   The error exists only under strict response validation (`ResponseValidation.strict`, which
+   neither Alchemy nor this kit turns on; the default is lenient). Measured 2026-10-09: rc.13
+   decodes a create or update response against `S.Unknown`, so it cannot raise the error for those
+   two today; the catch stays so a later SDK that types them cannot start leaking.
 
 Neither exposes anything for a public PKCE client, which has no secret.
 
@@ -145,7 +167,10 @@ no create, no delete, the same application and client ids.
 - **Created** when no app has the id or the exact name. Names are not unique in Access, so two
   saas apps with the declared name are refused: set `applicationId`.
 - **Synced** (one PUT of the whole declaration) when the name, auth type, redirect URIs, scopes,
-  grant types, either token lifetime, the PKCE flag or the policy set differ. Set order is ignored.
+  grant types, either token lifetime, the PKCE flag or the policies differ. Order is ignored for
+  redirect URIs, scopes and grant types. **It is not ignored for `policies`:** they are declared in
+  ascending precedence, so a reorder is drift (the live order is read from each policy's
+  `precedence`).
 - ⚠️ **Not drift-checked:** `sessionDuration`, `allowedIdps`, `autoRedirectToIdentity`,
   `appLauncherVisible`, `appLauncherUrl`. They are written on create and on any sync, but a change
   to only those does not trigger one. This is carried over from the openbao copy unchanged.

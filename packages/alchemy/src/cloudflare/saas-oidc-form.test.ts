@@ -158,6 +158,52 @@ describe('needsSync', () => {
   });
 });
 
+describe('policy order is part of the declaration', () => {
+  const ranked = (policies: Array<{ id: string; precedence?: number }>) =>
+    live({ policies: policies });
+
+  test('the same policies in a different order are drift', () => {
+    const props = publicClient({ policies: ['policy-a', 'policy-b'] });
+    const inOrder = ranked([
+      { id: 'policy-a', precedence: 1 },
+      { id: 'policy-b', precedence: 2 },
+    ]);
+    const swapped = ranked([
+      { id: 'policy-b', precedence: 1 },
+      { id: 'policy-a', precedence: 2 },
+    ]);
+    expect(needsSync(props, inOrder, 'Headlamp')).toBe(false);
+    expect(needsSync(props, swapped, 'Headlamp')).toBe(true);
+    expect(needsSync({ ...props, policies: ['policy-b', 'policy-a'] }, inOrder, 'Headlamp')).toBe(
+      true,
+    );
+  });
+
+  test('the live order is the API precedence, whatever order the array arrives in', () => {
+    const arrival = ranked([
+      { id: 'policy-b', precedence: 2 },
+      { id: 'policy-a', precedence: 1 },
+    ]);
+    expect(arrival.policyIds).toEqual(['policy-a', 'policy-b']);
+    expect(
+      needsSync(publicClient({ policies: ['policy-a', 'policy-b'] }), arrival, 'Headlamp'),
+    ).toBe(false);
+  });
+
+  test('without a precedence on every entry the array order stands', () => {
+    const partial = ranked([{ id: 'policy-b', precedence: 2 }, { id: 'policy-a' }]);
+    expect(partial.policyIds).toEqual(['policy-b', 'policy-a']);
+  });
+
+  test('a missing or extra policy is drift too', () => {
+    const one = ranked([{ id: 'policy-a', precedence: 1 }]);
+    expect(needsSync(publicClient({ policies: ['policy-a', 'policy-b'] }), one, 'Headlamp')).toBe(
+      true,
+    );
+    expect(needsSync(publicClient({ policies: [] }), one, 'Headlamp')).toBe(true);
+  });
+});
+
 describe('writeBody', () => {
   test('a public client sends the PKCE grant and the flag, and no client secret field', () => {
     const body = writeBody(publicClient(), 'Headlamp');

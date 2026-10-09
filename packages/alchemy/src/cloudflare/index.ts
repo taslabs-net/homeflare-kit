@@ -29,7 +29,7 @@ export type {
   SaasOidcApplicationAttributes,
   SaasOidcApplicationProps,
 } from './saas-oidc-form.ts';
-export { SaasOidcError } from './saas-oidc-api.ts';
+export { SaasOidcError } from './saas-oidc-error.ts';
 export { providers } from './providers.ts';
 export {
   astroWebsite,

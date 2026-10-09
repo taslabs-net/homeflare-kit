@@ -10,6 +10,7 @@ import { type CompiledStack, make as makeStack } from 'alchemy/Stack';
 import { Stage } from 'alchemy/Stage';
 import * as State from 'alchemy/State';
 import * as Cause from 'effect/Cause';
+import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
 import * as Layer from 'effect/Layer';
@@ -18,6 +19,21 @@ import { type FakeAccess, TEAM } from './fake-access.ts';
 import { fakeProviderLayer } from './fake-mesh.ts';
 import type { SaasOidcApplicationAttributes, SaasOidcApplicationProps } from './saas-oidc-form.ts';
 import { SaasOidcApplication, SaasOidcApplicationProvider } from './saas-oidc.ts';
+
+/**
+ * ⚠️ THE SDK'S STRICT VALIDATION SWITCH, REBUILT BY KEY. A `CloudflareParseError` exists only under
+ *   `ResponseValidation.strict` (`@distilled.cloud/core` response-validation.ts:43-52, :104-116);
+ *   the default is lenient. `@distilled.cloud/core` is not a dependency of this package, so this
+ *   declares a reference with the SAME string key and provides `'strict'` for it: the SDK reads the
+ *   mode from the fiber's context by that key. saas-oidc-parse-error.test.ts first proves the raw
+ *   SDK really fails under it, so a renamed key fails that test instead of passing vacuously.
+ */
+const ResponseValidation = Context.Reference<'lenient' | 'strict'>(
+  '@distilled.cloud/core/ResponseValidation',
+  { defaultValue: () => 'lenient' },
+);
+export const strict = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  effect.pipe(Effect.provideService(ResponseValidation, 'strict'));
 
 export const ids = { fqn: 'stack/headlamp', id: 'headlamp', instanceId: 'i-1' };
 export const extra = { bindings: [] as never, session: undefined as never };

@@ -1,6 +1,7 @@
 /**
- * `HomeFlare.Access.SaasOidcApplication` — its props, its attributes, and the pure helpers the
- * lifecycle uses: validation, the issuer URLs, drift, the write body and the attribute mapping.
+ * `HomeFlare.Access.SaasOidcApplication` — the pure helpers the lifecycle uses: validation, the
+ * issuer URLs, drift, the write body and the attribute mapping. The props and attributes types are
+ * declared in saas-oidc-props.ts and re-exported here.
  *
  * ⛔ THE ATTRIBUTES NEVER HOLD THE CLIENT SECRET, and nothing here can: `ObservedApp`
  *   (saas-oidc-api.ts) has no field for it. A client that authenticates with PKCE alone declares
@@ -10,85 +11,18 @@
  *   same host in the app's own `domain` field (Alchemy's `Access.Application` doc: for `saas`
  *   "Cloudflare uses the OIDC issuer"), and `checkTeam` refuses a declaration that disagrees with it.
  */
-import { SaasOidcError } from './saas-oidc-api.ts';
+import { SaasOidcError } from './saas-oidc-error.ts';
+import type { SaasOidcApplicationAttributes, SaasOidcApplicationProps } from './saas-oidc-props.ts';
 import type { AppWrite, ObservedApp } from './saas-oidc-wire.ts';
 
-export type OidcGrantType =
-  | 'authorization_code'
-  | 'authorization_code_with_pkce'
-  | 'refresh_tokens'
-  | 'hybrid'
-  | 'implicit';
-
-export type OidcScope = 'openid' | 'email' | 'profile' | 'groups';
-
-export interface SaasOidcApplicationProps {
-  /**
-   * Live Access application UUID. Set this when adopting a SaaS app that already exists. Without
-   * it the app is found by exact `name` among saas apps, which also works but refuses two matches.
-   */
-  readonly applicationId?: string;
-  /** The app's name. Defaults to a physical name derived from the logical id. */
-  readonly name?: string;
-  /**
-   * The Zero Trust team domain the issuer lives on, a bare hostname such as
-   * `example.cloudflareaccess.com`: no scheme, no path. Not read from the environment, so the
-   * issuer in the attributes is the one the declaration says.
-   */
-  readonly teamDomain: string;
-  /** Access session length, e.g. `24h`. Written on create and sync; defaults to `24h`. */
-  readonly sessionDuration?: string;
-  /** IdP ids the app may use. Omit for all of the account's. */
-  readonly allowedIdps?: ReadonlyArray<string>;
-  readonly autoRedirectToIdentity?: boolean;
-  /** Show the app in the App Launcher. Defaults to `false`. */
-  readonly appLauncherVisible?: boolean;
-  /** Ids of reusable Access policies, in precedence order. */
-  readonly policies: ReadonlyArray<string>;
-  readonly saasApp: {
-    readonly authType: 'oidc';
-    /** The permitted URLs for Cloudflare to return authorization codes and tokens to. */
-    readonly redirectUris: ReadonlyArray<string>;
-    readonly scopes: ReadonlyArray<OidcScope>;
-    readonly grantTypes: ReadonlyArray<OidcGrantType>;
-    /** `m` or `h` units, from `1m` to `24h` (the SDK field doc). */
-    readonly accessTokenLifetime: string;
-    /** Needed for the `refresh_tokens` grant. */
-    readonly refreshTokenLifetime?: string;
-    /**
-     * `true` makes this a PUBLIC client: the token endpoint does not require a client secret when
-     * the `authorization_code_with_pkce` grant is used. Defaults to `false` (a confidential client).
-     */
-    readonly allowPkceWithoutClientSecret?: boolean;
-    readonly appLauncherUrl?: string;
-  };
-}
-
-export interface SaasOidcApplicationAttributes {
-  readonly applicationId: string;
-  readonly aud: string;
-  readonly domain: string;
-  readonly name: string;
-  readonly accountId: string;
-  readonly teamDomain: string;
-  /** The OIDC client id, for the relying party's configuration. */
-  readonly clientId: string;
-  /** `https://<teamDomain>/cdn-cgi/access/sso/oidc/<clientId>`. */
-  readonly issuer: string;
-  readonly authorizationEndpoint: string;
-  readonly tokenEndpoint: string;
-  /** The signing keys, for a verifier that validates ID tokens. */
-  readonly jwksEndpoint: string;
-  readonly userinfoEndpoint: string;
-  readonly configurationEndpoint: string;
-  readonly redirectUris: ReadonlyArray<string>;
-  readonly scopes: ReadonlyArray<string>;
-  readonly grantTypes: ReadonlyArray<string>;
-  readonly accessTokenLifetime: string;
-  readonly refreshTokenLifetime: string;
-  readonly createdAt: string | undefined;
-  readonly updatedAt: string | undefined;
-}
+// The declared shape lives in saas-oidc-props.ts (every field documented there); re-exported so
+// the module that always held it keeps answering to its old name.
+export type {
+  OidcGrantType,
+  OidcScope,
+  SaasOidcApplicationAttributes,
+  SaasOidcApplicationProps,
+} from './saas-oidc-props.ts';
 
 const HOSTNAME = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/;
 
@@ -176,9 +110,20 @@ const sameSet = (a: ReadonlyArray<string>, b: ReadonlyArray<string> | undefined)
   JSON.stringify([...a].sort()) === JSON.stringify([...(b ?? [])].sort());
 
 /**
+ * ⛔ ORDER MATTERS FOR POLICIES: `policies` is "in ascending order of precedence" (the SDK's own
+ *   field doc, zero_trust.ts:9774), so `[a, b]` and `[b, a]` are different declarations. A set
+ *   compare here would let a reorder go unnoticed and leave the live precedence unchanged.
+ *   `parseApp` hands the observed ids over already ordered by the API's `precedence`.
+ */
+const sameList = (a: ReadonlyArray<string>, b: ReadonlyArray<string> | undefined): boolean => {
+  const other = b ?? [];
+  return a.length === other.length && a.every((item, index) => item === other[index]);
+};
+
+/**
  * Does the live app differ from the declaration? Compared: name, auth type, redirect URIs, scopes,
- * grant types, both lifetimes, the PKCE flag and the policy set — the openbao copy's set, kept so
- * adopting a live app is not newly a write.
+ * grant types (each as a set), both lifetimes, the PKCE flag and the policies IN ORDER — the
+ * openbao copy's set plus the policy order, kept so adopting a live app is not newly a write.
  * ⚠️ NOT COMPARED: `sessionDuration`, `allowedIdps`, `autoRedirectToIdentity`, `appLauncherVisible`,
  *   `appLauncherUrl`. They are written on create and on any sync, but a change to only those does
  *   not trigger one. Carried over unchanged; see saas-oidc.md.
@@ -199,7 +144,7 @@ export const needsSync = (
     refreshLifetime(news) !== (saas?.refreshTokenLifetime ?? '') ||
     (saas?.allowPkceWithoutClientSecret ?? false) !==
       (news.saasApp.allowPkceWithoutClientSecret ?? false) ||
-    !sameSet(news.policies, observed.policyIds)
+    !sameList(news.policies, observed.policyIds)
   );
 };
 

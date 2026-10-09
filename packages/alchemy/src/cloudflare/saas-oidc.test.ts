@@ -121,6 +121,25 @@ describe('reconcile against a live app', () => {
     expect(JSON.stringify(fake.seen)).not.toContain(FAKE_CLIENT_SECRET);
   });
 
+  test('a reordered policy list is one PUT that carries the new order', async () => {
+    const fake = fakeAccess();
+    const base = publicClient({ policies: ['policy-a', 'policy-b'] });
+    const swapped = { ...base, policies: ['policy-b', 'policy-a'] };
+    const second = await run(fake, (p) =>
+      Effect.gen(function* () {
+        const created = yield* reconcile(p, base);
+        return yield* reconcile(p, swapped, created);
+      }),
+    );
+    expect(second.applicationId).toBeDefined();
+    expect(writes(fake)).toEqual(['POST', 'PUT']);
+    expect(fake.seen.filter((s) => s.method === 'PUT')[0]?.body).toMatchObject({
+      policies: ['policy-b', 'policy-a'],
+    });
+    // The fake holds the new order, so the next read sees it in sync.
+    expect(fake.apps.get(second.applicationId)?.policies).toEqual(['policy-b', 'policy-a']);
+  });
+
   test("a declared team that is not the app's team is refused before any write", async () => {
     const fake = fakeAccess({ team: 'real.cloudflareaccess.com' });
     const live = fake.seed({ name: 'Headlamp' });
