@@ -92,6 +92,13 @@ describe('issuer', () => {
     );
   });
 
+  test('the client secret the wire carries reaches neither the parse nor the attributes', () => {
+    expect(JSON.stringify(live())).not.toContain('must-never-be-read');
+    expect(
+      JSON.stringify(toAttributes(live(), 'acct', 'x', 'example.cloudflareaccess.com')),
+    ).not.toContain('must-never-be-read');
+  });
+
   test('an app with no client id is not describable', () => {
     expect(toAttributes(live({ saas_app: { auth_type: 'oidc' } }), 'a', 'x', 'e.test.com')).toBe(
       undefined,

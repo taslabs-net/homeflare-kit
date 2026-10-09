@@ -68,7 +68,28 @@ export const SaasOidcApplicationProvider = () =>
         Effect.provideContext(effect, services);
 
       return SaasOidcApplication.Provider.of({
-        stables: ['applicationId', 'aud', 'clientId', 'accountId'],
+        /**
+         * ★ THE ISSUER AND EVERY ENDPOINT ARE STABLE. They depend only on the team domain and the
+         *   client id, and `checkTeam` refuses any team other than the app's own host, so no update
+         *   of this app can move them. Alchemy's plan (Plan.ts `withStables`, beta.81) keeps ONLY
+         *   the listed attributes resolved for consumers of an updated resource; without them, a
+         *   redirect-URI change would leave `app.issuer` unresolved and re-plan every consumer
+         *   (the Talos KubeAuthenticationConfig, so a kube-apiserver restart on each node).
+         * ⚠️ `teamDomain` is NOT listed: state written by the openbao copy has no such attribute,
+         *   so a consumer would read `undefined` on the first plan after the move.
+         */
+        stables: [
+          'applicationId',
+          'aud',
+          'clientId',
+          'accountId',
+          'issuer',
+          'authorizationEndpoint',
+          'tokenEndpoint',
+          'jwksEndpoint',
+          'userinfoEndpoint',
+          'configurationEndpoint',
+        ],
         /**
          * ⛔ EMPTY, AND `nuke.skip`. Alchemy's own `Cloudflare.Access.Application` already lists
          *   every Access application in the account for `alchemy unsafe nuke` (its `list`, saas

@@ -23,5 +23,8 @@ saas app's GET and create response without it, so the client id is read from the
   not a saas app is refused instead of rewritten; two same-named saas apps are refused instead of
   picking the first; delete folds only `AccessApplicationNotFound` instead of every error.
 
+- Open question for Tim: the one raw `GET` of the app is hand-written (lane contract 1) because the
+  SDK drops `saas_app`; see `docs/saas-oidc.md`.
+
 Walked against `alchemy@2.0.0-beta.81` and `@distilled.cloud/cloudflare@1.0.0-rc.13`. Guide:
 `packages/alchemy/docs/saas-oidc.md`.

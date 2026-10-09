@@ -32,7 +32,12 @@ const resolveName = (id: string, name: string | undefined) =>
  * is NOT type `saas` is refused, never rewritten: `applicationId` pointing at a self-hosted app
  * would otherwise have its type overwritten by the update.
  */
-const observe = (accountId: string, knownId: string | undefined, name: string) =>
+const observe = (
+  accountId: string,
+  knownId: string | undefined,
+  name: string,
+  options: { readonly byIdOnly?: boolean } = {},
+) =>
   Effect.gen(function* () {
     const byId = knownId === undefined ? undefined : yield* getApp(accountId, knownId);
     if (byId !== undefined) {
@@ -45,12 +50,15 @@ const observe = (accountId: string, knownId: string | undefined, name: string) =
       }
       return byId;
     }
+    // ★ An OWNED row's app that is gone stays gone: another saas app with the same name is not it,
+    //   and its applicationId and clientId (declared stables) must not change under the row.
+    if (options.byIdOnly === true) return undefined;
     const foundId = yield* findSaasByName(accountId, name);
     return foundId === undefined ? undefined : yield* getApp(accountId, foundId);
   });
 
 /**
- * Owned: refresh by the stored id. Cold: find the app by `applicationId` or exact name and hand it
+ * Owned: refresh by the stored id ONLY (gone is `undefined`, never a same-named app). Cold: find the app by `applicationId` or exact name and hand it
  * back `Unowned`, so Alchemy refuses to take it over until the stack says `adopt(true)`.
  * ★ `olds` MAY PREDATE `teamDomain` (state written by the openbao copy of this resource): the host
  *   Cloudflare reports for the app stands in, so the first plan after the move can still read.
@@ -63,7 +71,10 @@ export const readSaasOidc = (
 ) =>
   Effect.gen(function* () {
     const name = yield* resolveName(id, output?.name ?? olds?.name);
-    const observed = yield* observe(accountId, output?.applicationId ?? olds?.applicationId, name);
+    const owned = output?.applicationId;
+    const observed = yield* observe(accountId, owned ?? olds?.applicationId, name, {
+      byIdOnly: owned !== undefined,
+    });
     if (observed === undefined) return undefined;
     const attributes = toAttributes(
       observed,
@@ -72,7 +83,7 @@ export const readSaasOidc = (
       output?.teamDomain ?? olds?.teamDomain,
     );
     if (attributes === undefined) return undefined;
-    return output?.applicationId !== undefined ? attributes : Unowned(attributes);
+    return owned !== undefined ? attributes : Unowned(attributes);
   });
 
 const missing = (what: string) =>
@@ -98,7 +109,10 @@ export const reconcileSaasOidc = (
       output?.applicationId ?? news.applicationId,
       name,
     );
-    // ⛔ BEFORE ANY WRITE: a wrong team domain must not cost an update to the wrong app.
+    // ⛔ BEFORE ANY WRITE TO AN EXISTING APP: a wrong team domain must not cost it an update.
+    //   ⚠️ A CREATE CANNOT BE CHECKED FIRST (no app exists to compare with): a wrong `teamDomain`
+    //   on a first create writes the app, then the check after the write fails the run. The app is
+    //   live with no state row; docs/saas-oidc.md says what to do.
     const wrongTeam = observed === undefined ? undefined : checkTeam(news.teamDomain, observed);
     if (wrongTeam !== undefined) return yield* Effect.fail(wrongTeam);
     const write = writeBody(news, name);

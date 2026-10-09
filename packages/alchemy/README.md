@@ -76,24 +76,9 @@ A remotely configured Cloudflare Tunnel declared **without its connector token i
 
 ## SaasOidcApplication
 
-A Cloudflare Access SaaS application of auth type `oidc`: Access as the OpenID Connect provider for
-one relying party. Alchemy's `Access.Application` has no `saas_app`, and the SDK drops it from its
-responses, so the client id is read from the wire JSON. The team domain is a prop, and the
-attributes expose `issuer`, `clientId` and `jwksEndpoint`.
-
-```ts
-import { SaasOidcApplication } from '@homeflare/alchemy/cloudflare';
-
-const app = yield * SaasOidcApplication('Headlamp', { teamDomain, policies, saasApp });
-// app.issuer, app.clientId, app.jwksEndpoint
-```
-
-- ⛔ **The client secret is never read, stored or logged.** A public client declares
-  `allowPkceWithoutClientSecret: true` with the PKCE grant, and then no secret exists.
-- ⛔ **The type id is a state key** (moved from homeflare-openbao verbatim) and it **retains on
-  destroy**: deleting the app deletes the client id every relying party uses.
-
-Guide, adoption and what counts as drift: [docs/saas-oidc.md](./docs/saas-oidc.md).
+A Cloudflare Access SaaS application of auth type `oidc` (Access as the OpenID Connect provider for
+one relying party), exposing `issuer`, `clientId` and `jwksEndpoint`. Guide, the client-secret
+rules, adoption and drift: [docs/saas-oidc.md](./docs/saas-oidc.md).
 
 ## Website.Astro / Website.Vite
 

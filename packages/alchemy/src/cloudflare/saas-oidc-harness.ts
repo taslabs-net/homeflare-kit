@@ -93,10 +93,13 @@ type Rows = Record<string, Record<string, Record<string, State.ResourceState>>>;
  *   mesh-node-harness.ts does. `rows` is that store, so a test can serialise exactly what Alchemy
  *   would persist.
  */
-export const engine = (fake: FakeAccess) => {
+export const engine = (fake: FakeAccess, extra: Layer.Layer<never, never, never> = Layer.empty) => {
   const rows: Rows = {};
   const state = Layer.succeed(State.State, State.InMemoryService(rows));
-  const providers = SaasOidcApplicationProvider().pipe(Layer.provide(fakeProviderLayer(fake)));
+  const providers = Layer.mergeAll(
+    SaasOidcApplicationProvider().pipe(Layer.provide(fakeProviderLayer(fake))),
+    extra,
+  );
   const deploy = <A, E, R>(declare: Effect.Effect<A, E, R>) =>
     Effect.runPromiseExit(
       declare.pipe(

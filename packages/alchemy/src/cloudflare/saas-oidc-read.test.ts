@@ -35,6 +35,14 @@ describe('read', () => {
     expect(refreshed).toEqual(created);
   });
 
+  test('an owned row whose app is gone reads undefined, not a same-named app', async () => {
+    const fake = fakeAccess();
+    const made = await run(fake, (p) => reconcile(p, publicClient()));
+    fake.apps.delete(made.applicationId);
+    fake.seed({ name: 'Headlamp', policies: ['policy-admin'], saas_app: LIVE_OIDC });
+    expect(await run(fake, (p) => read(p, publicClient(), made))).toBeUndefined();
+  });
+
   test('adopts by applicationId from state that predates the teamDomain prop', async () => {
     const fake = fakeAccess();
     const live = fake.seed({ name: 'OpenBao', policies: ['policy-admin'], saas_app: LIVE_OIDC });

@@ -18,8 +18,25 @@ them. Read 2026-10-09 against `alchemy@2.0.0-beta.81` and
   2026-10-09). So the client id, redirect URIs, scopes and grants are read from the wire JSON by
   one raw `GET /accounts/{account_id}/access/apps/{app_id}`, over the same `HttpClient` and
   credentials the SDK uses. That one read is the only hand-written call; it adds no path.
+  ❓ **Open question for Tim (lane contract 1, SDKs over hand-rolling):** the raw GET exists only
+  because rc.13 decodes the GET without `saas_app`. Approve it until upstream decodes the field, or
+  hold this resource.
 - Track upstream: when Alchemy's `Access.Application` gains `saas_app` (and distilled decodes it),
   this resource should be retired in its favour. Nothing is filed upstream from here.
+
+## At a glance
+
+```ts
+import { SaasOidcApplication } from '@homeflare/alchemy/cloudflare';
+
+const app = yield * SaasOidcApplication('Headlamp', { teamDomain, policies, saasApp });
+// app.issuer, app.clientId, app.jwksEndpoint
+```
+
+- ⛔ **The client secret is never read, stored or logged.** A public client declares
+  `allowPkceWithoutClientSecret: true` with the PKCE grant, and then no secret exists.
+- ⛔ **The type id is a state key** (moved from homeflare-openbao verbatim) and it **retains on
+  destroy**: deleting the app deletes the client id every relying party uses.
 
 ## Declaring an app
 
@@ -65,7 +82,12 @@ Attributes: everything above that Cloudflare reports, plus `applicationId`, `aud
 
 ★ **The team domain is a prop, not a constant.** The openbao copy this came from hardcoded one
 account's. A declared `teamDomain` that disagrees with the host Cloudflare reports in the app's own
-`domain` is refused before any write, so the issuer cannot point at a different team.
+`domain` is refused before any write to an existing app, so the issuer cannot point at a different
+team. ⚠️ **A first create cannot be checked first** (no app exists to compare): a wrong `teamDomain`
+on a create writes one app, then fails the run, leaving a live app with no state row. The next run
+finds it by name as `Unowned`; fix the `teamDomain` and declare `adopt(true)` (or delete the stray
+app). A pre-create check would need the Zero Trust organization read (`auth_domain`), which is an
+extra token scope; UNVERIFIED here, so not built.
 
 ## The client secret
 
@@ -97,9 +119,16 @@ no create, no delete, the same application and client ids.
   stands in until the next reconcile stores the declared one.
 - homeflare-openbao's stack must merge this package's `providers()` (the kit's collection) where it
   merged `Cloudflare.providers()` for this type, and add `teamDomain` to its declaration.
+- An **owned** row whose app was deleted out of band reads as gone, never as a same-named app; the
+  next reconcile then creates a new one (a new client id). The name fallback is for a cold read.
 - A live app is `Unowned` until the declaration says `adopt(true)`, like every kit resource.
 
 ## What a change does
+
+- **The issuer and every endpoint are `stables`**: an update (a redirect URI, a policy) leaves
+  `app.issuer` and the others resolved for consumers at plan time, so a Talos
+  `KubeAuthenticationConfig` that reads them is not re-planned. `teamDomain` is deliberately not
+  stable (the openbao row has no such attribute). `saas-oidc-stable.test.ts` runs the engine.
 
 - **Created** when no app has the id or the exact name. Names are not unique in Access, so two
   saas apps with the declared name are refused: set `applicationId`.
