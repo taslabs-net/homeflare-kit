@@ -104,16 +104,21 @@ export const reconcileSaasOidc = (
     const invalid = validateSaasOidc(news);
     if (invalid !== undefined) return yield* Effect.fail(invalid);
     const name = yield* resolveName(id, news.name);
+    // ★ A stored applicationId means the row owns THAT app: if it is gone, create (or refuse),
+    //   never adopt whatever app now carries the name. Only a cold run may look up by name.
+    const ownedId = output?.applicationId;
     let observed: ObservedApp | undefined = yield* observe(
       accountId,
-      output?.applicationId ?? news.applicationId,
+      ownedId ?? news.applicationId,
       name,
+      { byIdOnly: ownedId !== undefined },
     );
     // ⛔ BEFORE ANY WRITE TO AN EXISTING APP: a wrong team domain must not cost it an update.
     //   ⚠️ A CREATE CANNOT BE CHECKED FIRST (no app exists to compare with): a wrong `teamDomain`
     //   on a first create writes the app, then the check after the write fails the run. The app is
     //   live with no state row; docs/saas-oidc.md says what to do.
-    const wrongTeam = observed === undefined ? undefined : checkTeam(news.teamDomain, observed);
+    const wrongTeam =
+      observed === undefined ? undefined : checkTeam(news.teamDomain, observed, output?.teamDomain);
     if (wrongTeam !== undefined) return yield* Effect.fail(wrongTeam);
     const write = writeBody(news, name);
     if (observed === undefined) {
@@ -129,7 +134,7 @@ export const reconcileSaasOidc = (
       observed = yield* getApp(accountId, appId);
       if (observed === undefined) return yield* missing('update');
     }
-    const teamAfterWrite = checkTeam(news.teamDomain, observed);
+    const teamAfterWrite = checkTeam(news.teamDomain, observed, output?.teamDomain);
     if (teamAfterWrite !== undefined) return yield* Effect.fail(teamAfterWrite);
     const attributes = toAttributes(observed, accountId, name, news.teamDomain);
     if (attributes === undefined) {

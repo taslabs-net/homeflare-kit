@@ -14,7 +14,7 @@ import type * as Layer from 'effect/Layer';
 import { FAKE_CLIENT_SECRET, TEAM, fakeAccess } from './fake-access.ts';
 import { FAKE_ACCOUNT } from './fake-mesh.ts';
 import { providers } from './providers.ts';
-import { publicClient, reconcile, run, writes } from './saas-oidc-harness.ts';
+import { LIVE_OIDC, publicClient, reconcile, run, writes } from './saas-oidc-harness.ts';
 import { SaasOidcApplication } from './saas-oidc.ts';
 
 // ⛔ Compile-time: a stack's `providers` must be `Layer<…, never, StackServices>`. A provider with
@@ -134,6 +134,31 @@ describe('reconcile against a live app', () => {
     );
     expect(String(failure)).toContain('real.cloudflareaccess.com');
     expect(writes(fake)).toEqual([]);
+  });
+
+  test('an owned row whose app was deleted out of band never adopts a same-named app', async () => {
+    const fake = fakeAccess();
+    const made = await run(fake, (p) => reconcile(p, publicClient()));
+    fake.apps.delete(made.applicationId);
+    const impostor = fake.seed({
+      name: 'Headlamp',
+      policies: ['policy-admin'],
+      saas_app: LIVE_OIDC,
+    });
+    const before = fake.seen.length;
+    const out = await run(fake, (p) => reconcile(p, publicClient(), made));
+    // A fresh app is created; the same-named one is neither adopted nor written.
+    expect(out.applicationId).not.toBe(impostor.id);
+    expect(out.applicationId).not.toBe(made.applicationId);
+    expect(
+      fake.seen
+        .slice(before)
+        .filter((r) => r.method !== 'GET')
+        .map((r) => r.method),
+    ).toEqual(['POST']);
+    expect(fake.apps.get(impostor.id)?.saas_app?.['client_id']).toBe(
+      impostor.saas_app?.['client_id'],
+    );
   });
 
   test('an id that is not a saas app is refused, never rewritten', async () => {

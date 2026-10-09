@@ -18,9 +18,16 @@
  * ⛔ THE CLIENT SECRET NEVER REACHES THIS PACKAGE'S MEMORY. The field doc on the SDK schema says
  *   "The application client secret, only returned on POST request". The create response is
  *   decoded by the SDK, whose `saasApp`-less variant drops it, and `getApp` copies named fields
- *   only and never reads `client_secret`. The one way it still escapes is the SDK printing the raw
- *   body: `DISTILLED_DEBUG_HTTP` makes protocol.ts `console.error` the first 400 characters of every
- *   response, so `refuseDebugHttp` stops a write while it is set.
+ *   only and never reads `client_secret`. TWO paths remain where the SDK itself holds or prints the
+ *   raw body (`@distilled.cloud/cloudflare@1.0.0-rc.13`, protocol.ts):
+ *   1. `DISTILLED_DEBUG_HTTP` makes it `console.error` the first 400 characters of every response
+ *      (line 334), so `refuseDebugHttp` stops a write while it is set.
+ *   2. A response that fails schema validation becomes `CloudflareParseError({ body, cause })`
+ *      (lines 452-457), and `body` is the whole parsed response, create response included. This
+ *      package does not read, log or store that field, but the error value carries it, so anything
+ *      that prints or serialises a raw SDK error from this resource's calls can show the secret.
+ *   A PUBLIC PKCE client (`allowPkceWithoutClientSecret: true`) has no secret at all, so neither
+ *   path exposes one for the Headlamp app.
  */
 import { Credentials, formatHeaders } from '@distilled.cloud/cloudflare/Credentials';
 import * as zeroTrust from '@distilled.cloud/cloudflare/zero-trust';

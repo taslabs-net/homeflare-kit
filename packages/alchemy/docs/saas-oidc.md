@@ -83,7 +83,9 @@ Attributes: everything above that Cloudflare reports, plus `applicationId`, `aud
 ★ **The team domain is a prop, not a constant.** The openbao copy this came from hardcoded one
 account's. A declared `teamDomain` that disagrees with the host Cloudflare reports in the app's own
 `domain` is refused before any write to an existing app, so the issuer cannot point at a different
-team. ⚠️ **A first create cannot be checked first** (no app exists to compare): a wrong `teamDomain`
+team. When Cloudflare reports no `domain` at all, the team already recorded in the row stands in: a
+declaration that changes it is refused too (the issuer is a declared stable and cannot move).
+⚠️ **A first create cannot be checked first** (no app exists to compare): a wrong `teamDomain`
 on a create writes one app, then fails the run, leaving a live app with no state row. The next run
 finds it by name as `Unowned`; fix the `teamDomain` and declare `adopt(true)` (or delete the stray
 app). A pre-create check would need the Zero Trust organization read (`auth_domain`), which is an
@@ -93,11 +95,21 @@ extra token scope; UNVERIFIED here, so not built.
 
 ⛔ **It is never read, stored or logged by this package.** The SDK schema's own doc says the secret
 is "only returned on POST request". The create response is decoded by the SDK (which drops it, see
-above); the raw read copies named fields and has no field for it; the attributes have none; and a
-create refuses to run while `DISTILLED_DEBUG_HTTP` is set, because distilled would then print the
-first 400 characters of the response to stderr (`protocol.ts`). `saas-oidc-state.test.ts` serialises
-the whole in-memory state after a create whose fake response hands a secret out, and asserts it is
-absent.
+above); the raw read copies named fields and has no field for it; the attributes have none.
+`saas-oidc-state.test.ts` serialises the whole in-memory state after a create whose fake response
+hands a secret out, and asserts it is absent.
+
+⚠️ **Two paths where the SDK itself holds or prints the raw body** (`@distilled.cloud/cloudflare`
+rc.13, `protocol.ts`), so "never logged" is a claim about this package, not about the SDK:
+
+1. `DISTILLED_DEBUG_HTTP` makes it `console.error` the first 400 characters of every response
+   (line 334). A write refuses to run while it is set.
+2. A response that fails schema validation becomes `CloudflareParseError({ body, cause })`
+   (lines 452-457), and `body` is the whole parsed response, a create response with its secret
+   included. This package neither reads nor logs that field, but the error value carries it, so
+   anything that prints or serialises a raw SDK error from a create can show the secret.
+
+Neither exposes anything for a public PKCE client, which has no secret.
 
 - **A public client has no secret to keep** (`allowPkceWithoutClientSecret: true` with the PKCE
   grant). That is the design for Headlamp (Q6 of the Kubernetes platform decisions).

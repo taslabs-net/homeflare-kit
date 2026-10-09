@@ -111,6 +111,18 @@ describe('issuer', () => {
     );
     expect(checkTeam('EXAMPLE.cloudflareaccess.com', live())).toBeUndefined();
   });
+
+  test('with no domain reported, a declaration that moves the recorded team is refused', () => {
+    const noDomain = live({ domain: undefined });
+    expect(
+      checkTeam('other.cloudflareaccess.com', noDomain, 'example.cloudflareaccess.com')?.message,
+    ).toContain('issuer cannot move');
+    expect(
+      checkTeam('EXAMPLE.cloudflareaccess.com', noDomain, 'example.cloudflareaccess.com'),
+    ).toBeUndefined();
+    // Nothing recorded (first create, cold adoption): nothing to compare, the declaration stands.
+    expect(checkTeam('other.cloudflareaccess.com', noDomain)).toBeUndefined();
+  });
 });
 
 describe('needsSync', () => {

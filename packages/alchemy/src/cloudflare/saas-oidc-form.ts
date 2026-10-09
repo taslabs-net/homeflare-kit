@@ -122,13 +122,30 @@ const hostOf = (domain: string): string => domain.split('/')[0]?.toLowerCase() ?
 /**
  * ⛔ A DECLARED TEAM DOMAIN THAT DISAGREES WITH THE APP'S OWN `domain` is refused: the issuer in
  *   the attributes would point at a different team than the one that holds the app.
+ * ⛔ WHEN CLOUDFLARE REPORTS NO `domain` there is nothing to compare, so the team the row already
+ *   recorded (`knownTeam`, from state) stands in: a declaration that moves it is refused, because
+ *   `issuer` is a declared stable and must not move under the row. With no `knownTeam` either
+ *   (a first create or a cold adoption) there is nothing to compare against and the declaration
+ *   stands.
  */
-export const checkTeam = (teamDomain: string, app: ObservedApp): SaasOidcError | undefined =>
-  app.domain === undefined || hostOf(app.domain) === teamDomain.toLowerCase()
+export const checkTeam = (
+  teamDomain: string,
+  app: ObservedApp,
+  knownTeam?: string,
+): SaasOidcError | undefined => {
+  if (app.domain === undefined) {
+    return knownTeam === undefined || knownTeam.toLowerCase() === teamDomain.toLowerCase()
+      ? undefined
+      : new SaasOidcError({
+          message: `SaasOidcApplication declares teamDomain "${teamDomain}" but the row recorded "${knownTeam}" and Cloudflare reports no domain for the app to confirm the change. The issuer cannot move; revert the declaration.`,
+        });
+  }
+  return hostOf(app.domain) === teamDomain.toLowerCase()
     ? undefined
     : new SaasOidcError({
         message: `SaasOidcApplication declares teamDomain "${teamDomain}" but Cloudflare reports the app on "${hostOf(app.domain)}".`,
       });
+};
 
 const refreshLifetime = (props: SaasOidcApplicationProps): string =>
   props.saasApp.refreshTokenLifetime ?? '';
