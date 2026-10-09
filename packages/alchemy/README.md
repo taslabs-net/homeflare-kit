@@ -69,6 +69,11 @@ const door = yield * MeshNode('vault-door', { name: 'door-a', ha: false });
 
 Guide, the enrolment step and every replace case: [docs/mesh-node.md](./docs/mesh-node.md).
 
+## CloudflaredTunnel
+
+A remotely configured Cloudflare Tunnel declared **without its connector token in state**
+(`Cloudflare.Tunnel.Tunnel` stores it in plaintext): [docs/cloudflared-tunnel.md](./docs/cloudflared-tunnel.md).
+
 ## Website.Astro / Website.Vite
 
 House flags on Alchemy's own stacks — the two this estate actually ships.

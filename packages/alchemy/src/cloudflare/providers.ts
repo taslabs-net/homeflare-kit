@@ -20,19 +20,24 @@
 import * as Cloudflare from 'alchemy/Cloudflare';
 import * as Provider from 'alchemy/Provider';
 import * as Layer from 'effect/Layer';
+import { CloudflaredTunnel, CloudflaredTunnelProvider } from './cloudflared-tunnel.ts';
 import { MeshNode, MeshNodeProvider } from './mesh-node.ts';
 import { R2BucketLock, R2BucketLockProvider } from './r2-bucket-lock.ts';
 
 export class Providers extends Provider.ProviderCollection<Providers>()('HomeflareCloudflare') {}
 
-// ⛔ `orDie` ON BOTH, as `Cloudflare.providers()` ends with: a stack's providers layer must not
+// ⛔ `orDie` ON EACH of the three, as `Cloudflare.providers()` ends with: a stack's providers layer must not
 //   fail, and a profile that cannot resolve is a defect carrying Alchemy's own sentence.
 export const providers = () =>
-  Layer.effect(Providers, Provider.collection([R2BucketLock, MeshNode])).pipe(
+  Layer.effect(Providers, Provider.collection([R2BucketLock, MeshNode, CloudflaredTunnel])).pipe(
     Layer.provide(
       Layer.mergeAll(
         R2BucketLockProvider().pipe(Layer.provide(Cloudflare.CloudflareApiLive()), Layer.orDie),
         MeshNodeProvider().pipe(Layer.provide(Cloudflare.CloudflareApiLive()), Layer.orDie),
+        CloudflaredTunnelProvider().pipe(
+          Layer.provide(Cloudflare.CloudflareApiLive()),
+          Layer.orDie,
+        ),
       ),
     ),
   );

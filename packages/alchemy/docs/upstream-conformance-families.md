@@ -72,7 +72,7 @@ HttpClient` client. The old status-carrying `NetboxError` and its `cause.status 
       in lifecycle operations; it is not a separate credentials-layer prohibition. The same
       shape in NetBox is therefore not an S20 follow-up. See [LiteLLM's Q6 resolution](./litellm.md#credentials).
 11. **Every family repeats `list: () => Effect.succeed([])`**, 30 times, and only
-    `R2BucketLock` and `MeshNode` declare `nuke`. The constructor already defaults `list`
+    `R2BucketLock`, `MeshNode` and `CloudflaredTunnel` declare `nuke`. The constructor already defaults `list`
     (S12). **Fix:** write the reason where it differs, and declare `nuke: { skip: true }`
     where nuke must never reach the object.
 12. **Resource JSDoc is not in upstream's generator format.** Zero files use `@resource`,

@@ -151,7 +151,7 @@ try {
   //   throws on load, both pass a pack-only check and fail here.
   await Bun.write(
     join(scratch, 'consumer.ts'),
-    `import { MeshNode, MeshNodeError, MeshNodeProvider, R2BucketLock, astroWebsite, fetchMeshNodeToken, providers, viteWebsite } from '@homeflare/alchemy/cloudflare';
+    `import { CloudflaredTunnel, CloudflaredTunnelError, CloudflaredTunnelProvider, MeshNode, MeshNodeError, MeshNodeProvider, R2BucketLock, astroWebsite, fetchMeshNodeToken, providers, viteWebsite } from '@homeflare/alchemy/cloudflare';
 import { ForgejoOrgLabel } from '@homeflare/alchemy/forgejo';
 import { declareRepoPolicy, repoPolicy } from '@homeflare/alchemy/github';
 import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles } from '@homeflare/alchemy/openbao';
@@ -182,7 +182,7 @@ import { OpnsenseWriteRefused, isOpnsenseFirewallAlias, providers as opnsensePro
 import { ArgocdCluster, ArgocdRepoCreds, ArgocdRepository, providers as argocdProviders } from '@homeflare/alchemy/argocd';
 
 for (const [name, value] of Object.entries({
-  MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers,
+  MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers, CloudflaredTunnel, CloudflaredTunnelProvider,
   R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, declareRepoPolicy, repoPolicy, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, declareProvisionBaseline,
   PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxNotificationMatcher,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
@@ -272,6 +272,9 @@ if (!vmalertUrl.endsWith('/v1.151.0/vmutils-darwin-arm64-v1.151.0.tar.gz') || id
 //   (it is a peer, like alchemy) throws at the import above, not in a stack days later.
 if (new MeshNodeError({ message: 'smoke' }).message !== 'smoke') {
   throw new Error('MeshNodeError from dist did not construct');
+}
+if (new CloudflaredTunnelError({ message: 'smoke' }).message !== 'smoke') {
+  throw new Error('CloudflaredTunnelError from dist did not construct');
 }
 
 // ★ The Caddy transport too: it builds its target from node:http, so a dist that cannot load that
