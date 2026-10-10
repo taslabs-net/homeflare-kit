@@ -5,7 +5,7 @@
  * ★ MIRRORS `../discord/resource.ts` (S7-S10, H1, H5), NOT `../netbox/resource.ts`. Both are
  *   "marker-less API" families (S8): UniFi Network objects carry no tag or metadata field this
  *   stack could stamp as ownership, so a cold read of a match is `Unowned(attrs)` exactly like
- *   `Cloudflare/Snippets/Snippet.ts@v2.0.0-beta.79#read`, the reference implementation S8 and H1
+ *   `Cloudflare/Snippets/Snippet.ts@v2.0.0-beta.81#read`, the reference implementation S8 and H1
  *   both cite. `adopt(true)`, piped on by each resource's convenience constructor (H5), turns
  *   that into a silent one-time bind instead of an `OwnedBySomeoneElse` refusal.
  *
@@ -16,7 +16,7 @@
  *   A spec without `update` (every family but Network) can only ever refuse or report a match.
  *
  * ⚠️ RECONCILE STILL HAS TO SUCCEED ON AN EXACT-MATCH ADOPTION, NOT JUST REFUSE UNCONDITIONALLY.
- *   Measured against `Plan.ts@v2.0.0-beta.79` (`forceUpdateAfterAdoption`, H6): beta.79 forces
+ *   Measured against `Plan.ts@v2.0.0-beta.81` (`forceUpdateAfterAdoption`, H6): beta.81 forces
  *   ONE reconcile call after every cold adoption, whether or not the diff said noop — so a
  *   resource whose `reconcile` always failed would break the ordinary "adopt an unchanged
  *   object" deploy, not just a real write. The fix, exactly like `discordOperations.reconcile`:
@@ -37,13 +37,13 @@
 import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
-import { CredentialsFromEnv } from '@distilled.cloud/unifi-network/Credentials';
+import { Credentials, CredentialsFromEnv } from '@distilled.cloud/unifi-network/Credentials';
 import type { UnifiNetworkOpContext } from '@distilled.cloud/unifi-network/Protocol';
 import * as Effect from 'effect/Effect';
 import type * as HttpClient from 'effect/http/HttpClient';
 import { refuseWrite } from './policy.ts';
 import { type ReconcileArgs, type UnifiUpdate, updateReconcile } from './update-reconcile.ts';
-import { GetOnlyHttpClient, guardedHttpClient } from './wire-guard.ts';
+import { type AllowedWrite, guardedHttpClient } from './wire-guard.ts';
 
 /** What every handler needs from the caller's runtime once `CredentialsFromEnv` is baked in. */
 export type UnifiRequirements = HttpClient.HttpClient;
@@ -123,8 +123,15 @@ export const unifiHandlers = <Props extends object, Live, Attributes extends obj
   const ops = unifiOperations(spec);
   const withCredentials = <A, Err>(
     effect: Effect.Effect<A, Err, UnifiNetworkOpContext>,
-    guard: typeof GetOnlyHttpClient = GetOnlyHttpClient,
-  ) => effect.pipe(Effect.provide(guard), Effect.provide(CredentialsFromEnv));
+    allow: ReadonlyArray<AllowedWrite> = [],
+  ) =>
+    Effect.gen(function* () {
+      // ⛔ The guard anchors the allowed PUT to the CONFIGURED base URL (`wire-guard.ts`), so it is
+      //   read from the same credentials the SDK uses.
+      const { apiBaseUrl } = yield* yield* Credentials;
+      return yield* effect.pipe(Effect.provide(guardedHttpClient(allow, apiBaseUrl)));
+    }).pipe(Effect.provide(CredentialsFromEnv)) as Effect.Effect<A, Err, HttpClient.HttpClient>;
+
   return {
     list: () => Effect.succeed([]),
     read: (args: { olds: Props; output: Attributes | undefined }) =>
@@ -144,7 +151,9 @@ export const unifiHandlers = <Props extends object, Live, Attributes extends obj
           output: args.output,
           note: (message) => args.session.note(message),
         }),
-        guardedHttpClient(spec.update ? [spec.update.allowedWrite(args.news)] : []),
+        // ⛔ From `news` (the ids the write will use), never `olds`; reconcile also refuses when
+        //   `olds` names another object (`update-reconcile.ts`).
+        spec.update ? [spec.update.allowedWrite(args.news)] : [],
       ),
     delete: (args: { olds: Props }) => withCredentials(ops.destroy(args.olds)),
   };

@@ -14,8 +14,13 @@
  *   lands in `unset`, and the family's `write` removes it from the body.
  *
  * ⛔ FIRST DEPLOY IS ADOPT-ONLY BY CONSTRUCTION (F1, LOW-8). Without BOTH `olds` and `output` there
- *   is no last-deployed baseline to patch against, so the write refuses. That also covers beta.79's
+ *   is no last-deployed baseline to patch against, so the write refuses. That also covers beta.81's
  *   forced post-adoption reconcile (H6): on a match (step 2) it returns live with zero writes.
+ *   `olds` must also name the SAME object as `news` (`UnifiIdentityChanged`).
+ *
+ * ⛔ SCOPE (`update.checkScope`) runs before the note and any request: the family decides what a
+ *   patch may touch (`network-scope.ts`). An omitted optional block is turned OFF by a whole-object
+ *   PUT, so removing a key is allowed only for an explicit allowlist.
  *
  * ⚠️ NOTES AND ERRORS CARRY FIELD NAMES ONLY, NEVER VALUES.
  */
@@ -23,7 +28,12 @@ import { deepEqual } from 'alchemy/Diff';
 import type { UnifiNetworkOpContext } from '@distilled.cloud/unifi-network/Protocol';
 import * as Effect from 'effect/Effect';
 import type { FieldDrift } from './drift.ts';
-import { UnifiLiveDriftedSinceDeploy, UnifiUpdateDidNotConverge, refuseWrite } from './policy.ts';
+import {
+  UnifiIdentityChanged,
+  UnifiLiveDriftedSinceDeploy,
+  UnifiUpdateDidNotConverge,
+  refuseWrite,
+} from './policy.ts';
 import type { UnifiSpec } from './resource.ts';
 import type { AllowedWrite } from './wire-guard.ts';
 
@@ -36,6 +46,8 @@ export type UnifiUpdate<Props extends object, Live, E2> = {
   /** Declarable keys; never the identity keys. */
   readonly patchKeys: ReadonlyArray<keyof Props>;
   readonly driftOf: (live: Live, props: Props) => ReadonlyArray<FieldDrift>;
+  /** Refuses (typed, before any note or request) a patch outside this family's write scope. */
+  readonly checkScope: (live: Live, patch: Patch<Props>, props: Props) => Effect.Effect<void, E2>;
   readonly write: (
     live: Live,
     patch: Patch<Props>,
@@ -81,6 +93,11 @@ export const updateReconcile = <Props extends object, Live, Attributes extends o
     if (update === undefined || olds === undefined || output === undefined) {
       return yield* refuseWrite(spec.type, identity, 'update');
     }
+    // ⛔ `olds` is the baseline for THIS object only; another site or network id is no baseline.
+    const previous = spec.describe(olds);
+    if (previous !== identity) {
+      return yield* new UnifiIdentityChanged({ type: spec.type, identity, previous });
+    }
     const drifted = update.driftOf(live, olds).map((d) => d.field);
     if (drifted.length > 0) {
       return yield* new UnifiLiveDriftedSinceDeploy({
@@ -93,6 +110,7 @@ export const updateReconcile = <Props extends object, Live, Attributes extends o
     if (Object.keys(patch.set).length === 0 && patch.unset.length === 0) {
       return yield* refuseWrite(spec.type, identity, 'update');
     }
+    yield* update.checkScope(live, patch, news);
     yield* note(
       `${spec.type} ${identity}: PUT changes [${Object.keys(patch.set).join(', ')}] ` +
         `removes [${patch.unset.map(String).join(', ')}]`,

@@ -9,7 +9,11 @@
 export {
   UNIFI_READ_ONLY_POLICY,
   UNIFI_WRITE_POLICY,
+  UnifiFieldNotRemovable,
+  UnifiIdentityChanged,
+  UnifiImmutableFieldChanged,
   UnifiLiveDriftedSinceDeploy,
+  UnifiManagementNetworkRefused,
   UnifiUpdateDidNotConverge,
   UnifiUpdateWouldBeNoop,
   UnifiWriteRefused,

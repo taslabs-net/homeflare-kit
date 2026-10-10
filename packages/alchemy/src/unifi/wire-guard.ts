@@ -7,11 +7,12 @@
  * never reaches the vendor API. `write-op-reference.test.ts` proves no such call exists outside
  * `network-update.ts`; this is what stops one from ever taking effect.
  *
- * ★ GET ALWAYS PASSES; ANY OTHER METHOD PASSES ONLY WHEN `(method, pathname)` MATCHES AN ENTRY OF
- *   THE `allow` LIST. `unifiHandlers` builds that list PER ROW (`spec.update.allowedWrite(news)`):
- *   the one PUT that can pass is to this row's own `/v1/sites/<siteId>/networks/<networkId>`. A PUT
- *   to another network id, the list route, or another family dies here. The match is a suffix
- *   match because the local and cloud-connector base paths differ.
+ * ★ A GET ALWAYS PASSES THE REQUEST GUARD; ANY OTHER METHOD PASSES ONLY WHEN `(method, pathname)`
+ *   MATCHES AN ENTRY OF THE `allow` LIST. `unifiHandlers` builds that list PER ROW
+ *   (`spec.update.allowedWrite(news)`): the one PUT that can pass is to this row's own
+ *   `/v1/sites/<siteId>/networks/<networkId>` under the CONFIGURED base URL (local and
+ *   cloud-connector base paths differ, so the base is passed in and compared exactly, `isAllowed`).
+ *   A PUT to another network id, the list route, or another family dies here.
  *
  * ⚠️ `Effect.die`, NOT A TYPED FAILURE — every generated SDK operation declares its OWN closed
  *   error union from the pinned OpenAPI spec and generated files are never hand-edited, so a typed
@@ -19,18 +20,28 @@
  *   sound way to add a "structurally impossible" failure underneath types this package does not
  *   own, like `openbao`'s `refuse()` helpers.
  *
- * ⛔ REDIRECTS (LOW-7). With a non-empty `allow` list the layer sets fetch `redirect: 'manual'` and
- *   dies on any 3xx answer to a non-GET. Default fetch re-sends a PUT body on 307/308 to a
- *   `Location` this request guard never saw — an allowed PUT could be carried to an arbitrary URL.
+ * ⛔ REDIRECTS (LOW-7), REFUSED FOR EVERY METHOD — GETs included, 2026-10-10. The layer sets fetch
+ *   `redirect: 'manual'` on EVERY guarded request and the guard dies on any 3xx answer. Default
+ *   fetch follows a redirect and re-sends the request to a `Location` this guard never saw — a PUT
+ *   with its body on 307/308, a GET still carrying the API-key header — so following is never
+ *   safe. Scoping `manual` to a non-empty allow list (the pre-2026-10-10 shape) also made the two
+ *   postures DIVERGE by accident: reconcile's own GETs ran manual, so a 3xx surfaced raw and failed
+ *   the SDK decode, while read/diff under `GetOnlyHttpClient` followed the redirect silently. One
+ *   rule for both postures now: a redirect is refused everywhere, fail closed.
  */
 import * as Effect from 'effect/Effect';
-import * as Layer from 'effect/Layer';
+import * as Option from 'effect/Option';
 import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import * as HttpClient from 'effect/http/HttpClient';
+import type * as HttpClientResponse from 'effect/http/HttpClientResponse';
 import { UNIFI_WRITE_POLICY } from './policy.ts';
 
-/** One non-GET request the guard may let through. */
-export type AllowedWrite = { readonly method: 'PUT'; readonly path: RegExp };
+/**
+ * One non-GET request the guard may let through. `tail` is the exact route below the configured
+ * base URL (`/v1/sites/<site>/networks/<id>`): the guard compares the request's origin and path to
+ * `baseUrl + tail` and requires an empty query and fragment (`isAllowed`).
+ */
+export type AllowedWrite = { readonly method: 'PUT'; readonly tail: string };
 
 export class UnifiRefusedRequest extends Error {
   constructor(
@@ -61,25 +72,54 @@ export type UnifiNonGetRequest = UnifiRefusedRequest;
  */
 const requestPath = (url: string): string => {
   try {
-    return new URL(url).pathname;
+    // ⛔ The cloud connector path is `/v1/connector/consoles/<consoleId>/...`: the id is dropped too.
+    return new URL(url).pathname.replace(/(\/consoles\/)[^/]*/g, '$1<redacted>');
   } catch {
     return '<unparseable request url>';
   }
 };
 
-const isAllowed = (allow: ReadonlyArray<AllowedWrite>, method: string, path: string) =>
-  allow.some((entry) => entry.method === method && entry.path.test(path));
+/**
+ * ⛔ ANCHORED TO THE CONFIGURED BASE URL, NOT A SUFFIX. The request must share the base's origin,
+ *   its path must be exactly `<base path><tail>` (so `//v1/...`, another base path or a nested
+ *   `/v1/sites/X/v1/sites/s/...` all miss), and it must carry no query or fragment (`?force=true`).
+ *   Without a base URL nothing is allowed: fail closed.
+ */
+const isAllowed = (
+  allow: ReadonlyArray<AllowedWrite>,
+  baseUrl: string | undefined,
+  method: string,
+  url: string,
+) => {
+  if (baseUrl === undefined) return false;
+  try {
+    const base = new URL(baseUrl);
+    const target = new URL(url);
+    if (target.origin !== base.origin || target.search !== '' || target.hash !== '') return false;
+    const basePath = base.pathname.replace(/\/+$/, '');
+    return allow.some(
+      (entry) => entry.method === method && target.pathname === `${basePath}${entry.tail}`,
+    );
+  } catch {
+    return false;
+  }
+};
 
-const guard = (allow: ReadonlyArray<AllowedWrite>) => (client: HttpClient.HttpClient) =>
+const guard = (
+  client: HttpClient.HttpClient,
+  allow: ReadonlyArray<AllowedWrite>,
+  baseUrl: string | undefined,
+) =>
   client.pipe(
     HttpClient.mapRequestEffect((request) =>
-      request.method === 'GET' || isAllowed(allow, request.method, requestPath(request.url))
+      request.method === 'GET' || isAllowed(allow, baseUrl, request.method, request.url)
         ? Effect.succeed(request)
         : Effect.die(new UnifiRefusedRequest(request.method, requestPath(request.url))),
     ),
     HttpClient.transformResponse((response) =>
       Effect.flatMap(response, (res) =>
-        res.request.method !== 'GET' && res.status >= 300 && res.status < 400
+        // ⛔ ANY METHOD: a GET's 3xx is refused exactly like a PUT's — see REDIRECTS in the header.
+        res.status >= 300 && res.status < 400
           ? Effect.die(
               new UnifiRefusedRequest(
                 res.request.method,
@@ -97,12 +137,35 @@ const guard = (allow: ReadonlyArray<AllowedWrite>) => (client: HttpClient.HttpCl
  * for everything downstream, with the guarded version. Exported so `wire-guard.test.ts` can prove
  * the mechanism against a bare `HttpClient`, without `CredentialsFromEnv` or any env var.
  */
-export const guardedHttpClient = (allow: ReadonlyArray<AllowedWrite>) => {
-  const layer = HttpClient.layerMergedContext(Effect.map(HttpClient.HttpClient, guard(allow)));
-  return allow.length === 0
-    ? layer
-    : layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit)({ redirect: 'manual' })));
+export const guardedHttpClient = (allow: ReadonlyArray<AllowedWrite>, baseUrl?: string) => {
+  return HttpClient.layerMergedContext(
+    Effect.map(HttpClient.HttpClient, (client) =>
+      // ⛔ MANUAL REDIRECT ON BOTH POSTURES, not just an allow list: the response guard refuses a
+      //   3xx for GETs too, and under the default 'follow' a GET redirect is silently followed —
+      //   the guard would never see it, and read/diff would diverge from reconcile again.
+      HttpClient.transform(guard(client, allow, baseUrl), manualRedirect),
+    ),
+  );
 };
 
-/** No write may pass; the posture of `read`/`diff`/`delete` and of every non-updatable family. */
+/**
+ * ⛔ `redirect: 'manual'` IS SET PER REQUEST, ON THE CALLING FIBER'S `RequestInit`. A layer-provided
+ *   `RequestInit` is silently REPLACED by an outer one (Effect 4.0.1 `layerMergedContext` merges the
+ *   caller's context over the layer's), which would turn redirects back on. Same read-merge-provide
+ *   pattern as `openbao/bao-http.ts`'s `overSocket`; outer fetch options are kept.
+ */
+const manualRedirect = <E, R>(
+  effect: Effect.Effect<HttpClientResponse.HttpClientResponse, E, R>,
+): Effect.Effect<HttpClientResponse.HttpClientResponse, E, R> =>
+  Effect.flatMap(Effect.serviceOption(FetchHttpClient.RequestInit), (existing) =>
+    Effect.provideService(effect, FetchHttpClient.RequestInit, {
+      ...Option.getOrElse(existing, () => ({})),
+      redirect: 'manual',
+    }),
+  );
+
+/**
+ * No write may pass; the posture of `read`/`diff`/`delete` and of every non-updatable family. A 3xx
+ * answer to a GET is refused here exactly as under the allow-list posture — see REDIRECTS above.
+ */
 export const GetOnlyHttpClient = guardedHttpClient([]);

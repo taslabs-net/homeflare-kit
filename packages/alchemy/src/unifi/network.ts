@@ -11,7 +11,7 @@
  *   `FirewallZone`; `FirewallPolicy`'s several discriminated filter variants and its
  *   list-replacing ordering endpoint are a bigger, separate PR).
  *
- * ⛔ THE WHOLE-OBJECT-PUT TRAP (`docs/unifi-api-notes.md`) FIRES HERE, THROUGH `network-update.ts`;
+ * ⛔ THE WHOLE-OBJECT-PUT TRAP (packages/distilled-unifi-network/README.md) FIRES HERE, THROUGH `network-update.ts`;
  *   see its header. `updateNetwork` is a `PUT` that disables `dhcpGuarding`/`ipv4Configuration`/
  *   `ipv6Configuration` outright when the caller omits them, so the body is the raw live object
  *   plus only the fields the declaration changed since the last deploy — never props alone.
@@ -24,13 +24,14 @@ import * as networks from '@distilled.cloud/unifi-network/networks';
 import * as Effect from 'effect/Effect';
 import { type NetworkAttributes, type NetworkProps, attributesOf } from './network-form.ts';
 import { driftOf, matches } from './network-drift.ts';
+import { type ScopeError, checkNetworkWriteScope } from './network-scope.ts';
 import { writeNetwork } from './network-update.ts';
 import type { UnifiUpdateWouldBeNoop } from './policy.ts';
 import type { UnifiRequirements, UnifiSpec } from './resource.ts';
 import { unifiHandlers } from './resource.ts';
 import type { AllowedWrite } from './wire-guard.ts';
 
-type UpdateError = networks.UpdateNetworkError | UnifiUpdateWouldBeNoop;
+type UpdateError = networks.UpdateNetworkError | UnifiUpdateWouldBeNoop | ScopeError;
 
 export type { NetworkAttributes, NetworkProps } from './network-form.ts';
 export { declareNetwork } from './network-form.ts';
@@ -52,10 +53,11 @@ export const UnifiNetwork = Resource<UnifiNetwork>('Unifi.Network', {
 });
 
 /**
- * `network('lan', props)` — `adopt(true)` piped on by default (H5). This family never writes, so
- * the only thing a first deploy against an existing network could ever do is bind to it or refuse
- * `OwnedBySomeoneElse`; piping `adopt(true)` here picks the former without a stack having to
- * remember `--adopt`, mirroring `discord/application-command.ts`'s `applicationCommand`.
+ * `network('lan', props)` — `adopt(true)` piped on by default (H5). A cold first deploy against an
+ * existing network can still only bind to it or refuse `OwnedBySomeoneElse` — the update path
+ * needs prior Alchemy state (`update-reconcile.ts`), so it cannot fire on adoption. Piping
+ * `adopt(true)` here picks the bind without a stack having to remember `--adopt`, mirroring
+ * `discord/application-command.ts`'s `applicationCommand`.
  */
 export const network = (id: string, props: NetworkProps) =>
   UnifiNetwork(id, props).pipe(adopt(true));
@@ -85,14 +87,14 @@ export const NETWORK_PATCH_KEYS: ReadonlyArray<keyof NetworkProps> = [
   'deviceId',
 ];
 
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/** The only PUT that may pass for this row: its own `/v1/sites/<siteId>/networks/<networkId>`. */
+/**
+ * The only PUT that may pass for this row: its own `/v1/sites/<siteId>/networks/<networkId>` under
+ * the configured base URL. ⛔ Built from the row's NEW props (the ids the write is about to use) and
+ * compared by exact string against the request path, so no id can act as a pattern.
+ */
 export const networkAllowedWrite = (props: NetworkProps): AllowedWrite => ({
   method: 'PUT',
-  path: new RegExp(
-    `/v1/sites/${escapeRegExp(props.siteId)}/networks/${escapeRegExp(props.networkId)}$`,
-  ),
+  tail: `/v1/sites/${props.siteId}/networks/${props.networkId}`,
 });
 
 export const spec: UnifiSpec<
@@ -114,6 +116,7 @@ export const spec: UnifiSpec<
     allowedWrite: networkAllowedWrite,
     patchKeys: NETWORK_PATCH_KEYS,
     driftOf,
+    checkScope: checkNetworkWriteScope,
     write: writeNetwork,
   },
 };

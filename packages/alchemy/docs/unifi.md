@@ -67,12 +67,15 @@ objects carry no tag or metadata field this stack could stamp), and `adopt(true)
 a silent bind instead of an `OwnedBySomeoneElse` refusal — the deploy never needs `--adopt`.
 
 ⚠️ **A forced post-adoption reconcile still runs once (H6), and it still makes no write.**
-Beta.79 forces one `reconcile` call after every cold adoption whether or not `diff` said noop.
+Beta.81 forces one `reconcile` call after every cold adoption whether or not `diff` said noop.
 `resource.ts`'s `reconcile` handles this the same way `discord/resource.ts` does: it reads the
 live object again; an exact match returns the live attributes and calls nothing, a missing object
 refuses `create`, and drift refuses `update` unless the row has prior state (`olds` AND `output`)
 and a `Unifi.Network` spec: then `update-reconcile.ts` refuses if live differs from `olds` (a hand
 edit), else PUTs live-plus-the-`news≠olds`-patch (`network-update.ts`; a dropped key is removed).
+
+The limits on that PUT (removable allowlist, management LAN, immutable fields, anchored path,
+no retry) are in [`unifi-network-write.md`](./unifi-network-write.md).
 
 ## `list` answers `[]`
 
@@ -87,18 +90,13 @@ import-layer guard can reuse it), installed in `unifiHandlers`, stops it one lay
 WIRE: any non-`GET` dies with `UnifiRefusedRequest` (alias `UnifiNonGetRequest`; PATH only, never
 the host — a cloud base URL embeds the Console ID) unless `(method, path)` matches the row's own
 allow entry, `PUT /v1/sites/<siteId>/networks/<networkId>`, supplied only to `reconcile` and only
-by a spec with `update`. A non-empty list also sets fetch `redirect: 'manual'` and dies on any 3xx
-to a non-GET (fetch would re-send a PUT body to a URL the guard never saw).
-`write-op-reference.test.ts` is the matching static check: it harvests the SDK's real write-op
-export names straight from its own service modules (every name starting
-`create`/`update`/`delete`/`patch`/`execute`/`remove`/`adopt`) and fails any file that mentions
-the SDK's package specifier and contains one of those names as a token anywhere — an identifier, a
-bracket key, a destructured binding, a re-export or a dynamic-import property access all read the
-same way, so one scan catches every syntax form without parsing which one it is. Its
-`WRITE_OP_ALLOWLIST` is exactly `network-update.ts` → `updateNetwork`; any other file naming that
-op, or that file naming `createNetwork`/`deleteNetwork`, is an offense. `wire-guard.test.ts`
-proves the guard directly against a fake `HttpClient`, AND that `unifiHandlers` installs it (the
-family tests call `unifiOperations(spec)` and never exercise `withCredentials`).
+by a spec with `update`. The guard also sets fetch `redirect: 'manual'` on every request, GETs
+included, and dies on any 3xx answer (fetch would re-send the request — a PUT with its body, a GET
+with the API key — to a URL the guard never saw).
+`wire-guard.test.ts` proves the guard directly against a fake `HttpClient`, AND that
+`unifiHandlers` installs it (the family tests call `unifiOperations(spec)` and never exercise
+`withCredentials`). The static check `write-op-reference.test.ts` is described in
+[`unifi-network-write.md`](./unifi-network-write.md).
 
 ## Pagination helper
 
@@ -145,8 +143,7 @@ UniFi Network Integration API **10.4.57** (OpenAPI 3.1.0, 44 paths), via
 (`docs/distilled-interim.md`). Traps in the underlying API that this read-only family cannot
 trigger but a future write path must respect — whole-object `PUT`, ordering endpoints that
 replace the whole list, `removeDevice` unadopting and factory-resetting hardware — are recorded
-in the distilled package's own `README.md` and in the estate's `docs/unifi-api-notes.md`
-(outside this repo).
+in the distilled package's own `README.md` (`packages/distilled-unifi-network`).
 
 ## Spec-version check against the live-measured console (2026-09-24)
 
@@ -193,8 +190,10 @@ attributed, declared or compared. Both declaration renderers and both `matches` 
 `value == null` / `deepEqual(..., { stripNullish: true })` consistently, per `network-form.ts`'s
 own header. No departure found — nothing in this family needed changing.
 
-⚠️ **Correction (2026-09-26):** the line above is no longer true as written. `resource.ts` now
-has exactly one `Effect.die` — `wire-guard.ts`'s guard (see "Defense in depth" above) —
-classified in its own comment per distilled-doctrine's "classify every die/orDie": it raises a
-NEW defect for a failure mode outside every generated SDK operation's declared error union, never
-converts an existing typed failure the way `orDie` would. Still no `Effect.orDie` anywhere.
+⚠️ **Correction (2026-09-26, recounted 2026-10-10):** the line above is no longer true as written.
+The family has exactly TWO `Effect.die` call sites, both in `wire-guard.ts`'s guard (see "Defense
+in depth" above): the request-side refusal of a non-GET off the row's allow list, and the
+response-side refusal of a 3xx answer. Each raises a NEW defect for a failure mode outside every
+generated SDK operation's declared error union, per distilled-doctrine's "classify every
+die/orDie" — neither converts an existing typed failure the way `orDie` would. Still no
+`Effect.orDie` anywhere.

@@ -12,6 +12,7 @@ import * as Retry from '@distilled.cloud/unifi-network/Retry';
 import * as Effect from 'effect/Effect';
 import { fakeFailure, fakeUnifi, fakeUnifiLayer } from './fake-unifi.ts';
 import { NETWORK_PATCH_KEYS, type NetworkProps, spec } from './network.ts';
+import { SERVER_FIELDS } from './network-update.ts';
 import {
   UnifiLiveDriftedSinceDeploy,
   UnifiUpdateDidNotConverge,
@@ -183,6 +184,37 @@ describe('Unifi.Network update', () => {
     const { fake, exit } = reconcile(answering(live()), BASE, BASE);
     expect((await exit)._tag).toBe('Success');
     expect(fake.seen.map((s) => s.method)).toEqual(['GET']);
+  });
+});
+
+describe('SERVER_FIELDS: one list drives the strip', () => {
+  // ⛔ PINNED, like NETWORK_PATCH_KEYS above: the values are load-bearing (id travels as the path
+  //   param instead; default/metadata are controller-owned), so the list cannot be quietly
+  //   emptied or widened. The body test below proves the list is actually USED on the wire.
+  test('is exactly the three controller-owned keys', () => {
+    expect([...SERVER_FIELDS]).toEqual(['id', 'default', 'metadata']);
+  });
+
+  test('the PUT body omits exactly those keys from live — every one of them, no other live key', async () => {
+    const liveBody = live();
+    const news = { ...BASE, name: 'Compute2' } as NetworkProps;
+    const { fake, exit } = reconcile(
+      answering(liveBody, () => Response.json({ ...liveBody, name: 'Compute2' })),
+      news,
+      BASE,
+    );
+    expect((await exit)._tag).toBe('Success');
+    const body = putBody(fake.seen)[0] as Record<string, unknown>;
+    const server: ReadonlyArray<string> = SERVER_FIELDS;
+    // Exactly, both ways: every SERVER_FIELDS key is gone from the body ...
+    expect(Object.keys(body).filter((k) => server.includes(k))).toEqual([]);
+    // ... and no other live key was stripped on the way. The two identity ids are the one
+    // legitimate extra omission: they travel as the PUT's PATH params — `answering` serves only
+    // PATH, which embeds them — never as body fields.
+    const ids = ['siteId', 'networkId'];
+    expect(
+      Object.keys(liveBody).filter((k) => !server.includes(k) && !ids.includes(k) && !(k in body)),
+    ).toEqual([]);
   });
 });
 

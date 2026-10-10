@@ -14,6 +14,7 @@ import type { UnifiNetworkOpContext } from '@distilled.cloud/unifi-network/Proto
 import * as Effect from 'effect/Effect';
 import { fakeUnifiLayer } from './fake-unifi.ts';
 import {
+  type UnifiIdentityChanged,
   type UnifiLiveDriftedSinceDeploy,
   type UnifiUpdateDidNotConverge,
   UnifiWriteRefused,
@@ -58,7 +59,10 @@ const run = <A, E>(effect: Effect.Effect<A, E, UnifiNetworkOpContext>) =>
 const refusal = async (
   effect: Effect.Effect<
     unknown,
-    UnifiWriteRefused | UnifiLiveDriftedSinceDeploy | UnifiUpdateDidNotConverge,
+    | UnifiWriteRefused
+    | UnifiLiveDriftedSinceDeploy
+    | UnifiUpdateDidNotConverge
+    | UnifiIdentityChanged,
     UnifiNetworkOpContext
   >,
 ) => {

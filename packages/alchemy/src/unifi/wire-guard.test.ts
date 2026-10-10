@@ -61,11 +61,15 @@ const neverReached = (what: string) =>
   });
 
 describe('GetOnlyHttpClient (empty allow list)', () => {
-  test('a GET passes through unchanged and reaches the transport', async () => {
+  test("a GET passes through and reaches the transport under redirect: 'manual' (LOW-7)", async () => {
     const fake = fakeUnifi(() => Response.json({ ok: true }));
     const exit = await send('GET', `${ROOT}/v1/sites/s/networks`, fake.fetch, GetOnlyHttpClient);
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(fake.seen).toEqual([{ method: 'GET', path: `${ROOT}/v1/sites/s/networks` }]);
+    // 'manual' on GETs is DELIBERATE since 2026-10-10: the response guard refuses a GET's 3xx too,
+    // and under the default 'follow' the guard would never see it (the redirect would be followed).
+    expect(fake.seen).toEqual([
+      { method: 'GET', path: `${ROOT}/v1/sites/s/networks`, redirect: 'manual' },
+    ]);
   });
 
   test.each(['POST', 'PUT', 'PATCH', 'DELETE'])('%s dies before the transport', async (method) => {
@@ -79,7 +83,7 @@ describe('GetOnlyHttpClient (empty allow list)', () => {
 describe('guardedHttpClient with the row allow entry', () => {
   test('the one PUT to this row reaches the transport, with fetch redirect: manual', async () => {
     const fake = fakeUnifi(() => Response.json({ ok: true }));
-    const exit = await send('PUT', NET_PATH, fake.fetch, guardedHttpClient(ALLOW));
+    const exit = await send('PUT', NET_PATH, fake.fetch, guardedHttpClient(ALLOW, FAKE_BASE));
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(fake.seen).toEqual([{ method: 'PUT', path: NET_PATH, redirect: 'manual' }]);
   });
@@ -97,7 +101,10 @@ describe('guardedHttpClient with the row allow entry', () => {
     ['DELETE on the row path', 'DELETE', NET_PATH],
   ])('%s dies before the transport', async (_name, method, path) => {
     const fake = neverReached(`${method} ${path}`);
-    expectRefused(await send(method, path, fake.fetch, guardedHttpClient(ALLOW)), method);
+    expectRefused(
+      await send(method, path, fake.fetch, guardedHttpClient(ALLOW, FAKE_BASE)),
+      method,
+    );
     expect(fake.seen).toEqual([]);
   });
 
@@ -105,7 +112,10 @@ describe('guardedHttpClient with the row allow entry', () => {
     const fake = fakeUnifi(
       () => new Response(null, { status: 307, headers: { location: 'https://evil.example/x' } }),
     );
-    expectRefused(await send('PUT', NET_PATH, fake.fetch, guardedHttpClient(ALLOW)), 'PUT');
+    expectRefused(
+      await send('PUT', NET_PATH, fake.fetch, guardedHttpClient(ALLOW, FAKE_BASE)),
+      'PUT',
+    );
     expect(fake.seen).toHaveLength(1);
     expect(fake.seen[0]?.redirect).toBe('manual');
   });
@@ -133,9 +143,10 @@ const probeSpec = (
   ...(withUpdate
     ? {
         update: {
-          allowedWrite: () => ({ method: 'PUT' as const, path: /\/probe$/ }),
+          allowedWrite: () => ({ method: 'PUT' as const, tail: '/probe' }),
           patchKeys: [],
           driftOf: () => [],
+          checkScope: () => Effect.void,
           write: (live: ProbeProps) => Effect.succeed(live),
         },
       }
@@ -167,7 +178,7 @@ describe('guards are installed in unifiHandlers (IMPORTANT-1, red team 2026-09-2
       fake.fetch,
     );
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(fake.seen).toEqual([{ method: 'GET', path: `${ROOT}/probe` }]);
+    expect(fake.seen).toEqual([{ method: 'GET', path: `${ROOT}/probe`, redirect: 'manual' }]);
   });
 
   test('read dies on a PUT even when the spec declares update (guard scope is reconcile only)', async () => {

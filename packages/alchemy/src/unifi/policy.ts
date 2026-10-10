@@ -1,5 +1,7 @@
 /**
- * The one refusal every `Unifi.*` write handler returns — never an SDK write call.
+ * The one refusal every refused `Unifi.*` write returns. The family makes exactly one SDK write
+ * call — `networks.updateNetwork`, through `network-update.ts` — and that is the only write that
+ * never sees this error.
  *
  * ⛔ TIM'S RULE, 2026-09-24: UniFi (and OPNsense) are READ-ONLY. LIFTED FOR EXACTLY ONE CASE on
  *   2026-10-10 (Tim): `Unifi.Network` update, through `update-reconcile.ts` + `network-update.ts`.
@@ -55,7 +57,9 @@ export class UnifiLiveDriftedSinceDeploy extends Data.TaggedError('UnifiLiveDrif
   override get message(): string {
     return (
       `${this.type} ${this.identity}: live differs from the last deployed state on ` +
-      `${fieldList(this.fields)}; refusing to PUT over a hand edit. Re-import first.`
+      `${fieldList(this.fields)}; refusing to PUT over it. Two causes look identical from here: a ` +
+      'hand edit on the console, or an earlier PUT that landed but did not converge ' +
+      '(UnifiUpdateDidNotConverge). Re-import the live object first.'
     );
   }
 }
@@ -77,6 +81,61 @@ export class UnifiUpdateDidNotConverge extends Data.TaggedError('UnifiUpdateDidN
   readonly fields: ReadonlyArray<string>;
 }> {
   override get message(): string {
-    return `${this.type} ${this.identity}: PUT answered but ${fieldList(this.fields)} still differ from the declaration.`;
+    return (
+      `${this.type} ${this.identity}: the PUT LANDED, but live now differs from the declaration on ` +
+      `${fieldList(this.fields)}. The change is on the console and is not rolled back; the next ` +
+      'deploy will see this as drift. Recovery is a re-import of the live object.'
+    );
+  }
+}
+
+// ⛔ THE FOUR ERRORS BELOW BOUND THE WRITE SCOPE (`network-scope.ts`, `update-reconcile.ts`): the
+//   one intended consumer is a single VLAN's `ipv6Configuration`. Field names only, as above.
+
+/** A patch would remove a key outside the removable allowlist (an omitted block is turned off). */
+export class UnifiFieldNotRemovable extends Data.TaggedError('UnifiFieldNotRemovable')<{
+  readonly type: string;
+  readonly identity: string;
+  readonly fields: ReadonlyArray<string>;
+}> {
+  override get message(): string {
+    return (
+      `${this.type} ${this.identity}: refusing to remove ${fieldList(this.fields)}; a whole-object ` +
+      'PUT turns an omitted block off, and only the removable allowlist may be dropped.'
+    );
+  }
+}
+
+/** The live object is the site's default (management) network: never written. */
+export class UnifiManagementNetworkRefused extends Data.TaggedError(
+  'UnifiManagementNetworkRefused',
+)<{
+  readonly type: string;
+  readonly identity: string;
+}> {
+  override get message(): string {
+    return `${this.type} ${this.identity}: live is the default (management) network; refusing any write to it.`;
+  }
+}
+
+/** A patch changes a field that decides where the network lives or what serves it. */
+export class UnifiImmutableFieldChanged extends Data.TaggedError('UnifiImmutableFieldChanged')<{
+  readonly type: string;
+  readonly identity: string;
+  readonly fields: ReadonlyArray<string>;
+}> {
+  override get message(): string {
+    return `${this.type} ${this.identity}: refusing to change ${fieldList(this.fields)}; those fields are never written.`;
+  }
+}
+
+/** `olds` and `news` name different objects: the prior state is no baseline for this write. */
+export class UnifiIdentityChanged extends Data.TaggedError('UnifiIdentityChanged')<{
+  readonly type: string;
+  readonly identity: string;
+  readonly previous: string;
+}> {
+  override get message(): string {
+    return `${this.type} ${this.identity}: the last deploy named ${this.previous}; refusing to PUT against another object.`;
   }
 }
