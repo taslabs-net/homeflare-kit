@@ -10,10 +10,12 @@ export {
   type ReadyAttributes,
   type ReadyProps,
 } from './ready.ts';
+export type { ReadyCheck } from './ready-checks.ts';
 export {
+  KubernetesReadyBadAfter,
+  KubernetesReadyBadCheck,
   KubernetesReadyBadDuration,
   KubernetesReadyTimeout,
   KubernetesRolloutFailed,
-  type ReadyCheck,
-} from './ready-checks.ts';
+} from './ready-errors.ts';
 export { KubernetesReadyApiError, KubernetesReadyGetTimeout } from './ready-poll.ts';

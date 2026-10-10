@@ -29,6 +29,8 @@ export const depCheck: ReadyCheck = {
 };
 export const crdCheck: ReadyCheck = { kind: 'CustomResourceDefinition', name: 'x.cilium.io' };
 
+export const checksOf = (): ReadyCheck[] => [dsCheck, depCheck, crdCheck];
+
 export const readyDs = {
   metadata: { generation: 2 },
   status: {
@@ -47,6 +49,26 @@ export const readyDep = {
 export const readyCrd = { status: { conditions: [{ status: 'True', type: 'Established' }] } };
 
 export const get = (path: string) => `GET ${HOST}${path}`;
+
+export const IDENTITY_PATH = '/api/v1/namespaces/kube-system';
+
+/**
+ * A live table whose `key` answers `entries[n]` on the n-th request (the last one thereafter):
+ * a cluster that is flaky for a while and then recovers, without real timers.
+ */
+export const sequence = (
+  objects: Record<string, FakeObject>,
+  key: string,
+  entries: readonly (FakeObject | undefined)[],
+): Record<string, FakeObject> => {
+  let calls = 0;
+  return new Proxy(objects, {
+    get: (target, prop) => {
+      if (prop !== key) return target[prop as string];
+      return entries[Math.min(calls++, entries.length - 1)];
+    },
+  });
+};
 
 /**
  * Run `effect` against the fake cluster. `objects` is the live table: a test may mutate it from

@@ -10,8 +10,7 @@ import * as Cause from 'effect/Cause';
 import * as Output from 'alchemy/Output';
 import { talosOpenBaoConnection } from '../talos/cluster-adapter.ts';
 import type { FakeObject } from '../talos/fake-apiserver.ts';
-import { diffReady, parseGoDuration, readReady, reconcileReady } from './ready.ts';
-import { KubernetesReady } from './ready.ts';
+import { KubernetesReady, diffReady, parseGoDuration, readReady, reconcileReady } from './ready.ts';
 import {
   CRD_PATH,
   DEP_PATH,
@@ -144,11 +143,12 @@ test('diff: noop when ready and unchanged; update when pending, changed checks o
   expect(await run(allReady(), { ...prior(), checks: 'DaemonSet/kube-system/other' })).toEqual({
     action: 'update',
   });
+  // connection is `stables`: a changed (or missing) one REPLACES, so dependants see the new one
   expect(
     await run(allReady(), { ...prior(), connection: talosOpenBaoConnection('uid-c2') }),
-  ).toEqual({ action: 'update' });
+  ).toEqual({ action: 'replace' });
   const { connection: _gone, ...legacy } = prior();
-  expect(await run(allReady(), legacy as never)).toEqual({ action: 'update' });
+  expect(await run(allReady(), legacy as never)).toEqual({ action: 'replace' });
   const pending = { ...allReady(), [get(CRD_PATH)]: { status: 404 } };
   expect(await run(pending, prior())).toEqual({ action: 'update' });
 });

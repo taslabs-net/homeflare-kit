@@ -41,9 +41,8 @@ const pollOutcome = (objects: Record<string, FakeObject>, mutate?: () => void) =
     objects,
     driven(
       Effect.gen(function* () {
-        const transport = yield* connectCluster(connection);
         mutate?.();
-        yield* poll(transport, checks, WAIT, EVERY);
+        yield* poll(() => connectCluster(connection), checks, WAIT, EVERY);
       }),
     ).pipe(
       Effect.map((exit) =>
@@ -96,7 +95,9 @@ for (const [name, entry, expected] of [
 }
 
 test('transientOf: tolerable classes only; 4xx, tagged adapter errors and non-errors are not', () => {
-  expect(transientOf(new Error('ECONNRESET'))).toEqual({ tag: 'TransportError' });
+  expect(transientOf(new Error('Failed Kubernetes GET /x: ECONNRESET'))).toEqual({
+    tag: 'TransportError',
+  });
   expect(transientOf({ _tag: 'KubernetesApiError', statusCode: 502 })).toEqual({
     status: 502,
     tag: 'KubernetesApiError',
@@ -107,6 +108,9 @@ test('transientOf: tolerable classes only; 4xx, tagged adapter errors and non-er
     { _tag: 'KubernetesApiError', statusCode: 403 },
     { _tag: 'KubernetesApiError', statusCode: 404 },
     { _tag: 'TalosVaultKeyMissing' },
+    // an untagged Error that is not upstream's transport wrapper is a defect (path-builder throw)
+    new Error('Kubernetes object apps/v1/Deployment/x requires a namespace'),
+    new Error('ECONNRESET'),
     Object.assign(new Error('tagged'), { _tag: 'TalosOpenBaoConnectTimeout' }),
     'a string',
   ]) {
@@ -169,7 +173,7 @@ test('a single pass tolerates 404 only: 5xx, 429, timeout and transport errors p
         ),
       ),
     );
-  expect(await run({ status: 404 })).toEqual({
+  expect(await run({ status: 404 })).toMatchObject({
     failed: [],
     pending: ['Deployment/kube-system/cilium-operator'],
   });

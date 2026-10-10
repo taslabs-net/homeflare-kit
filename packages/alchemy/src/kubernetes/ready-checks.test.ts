@@ -34,7 +34,8 @@ test('DaemonSet: ready only when the generation is seen and updated and availabl
 });
 
 test('DaemonSet: minReady 2 passes 2/3, minReady 3 does not, default is desiredNumberScheduled', () => {
-  const two = { ...fullDs, numberAvailable: 2, numberReady: 2, updatedNumberScheduled: 2 };
+  // all 3 on the new template, one down: 2 updated-and-available meets minReady 2
+  const two = { ...fullDs, numberAvailable: 2, numberReady: 2 };
   expect(dsVerdict(two, 2, 2)).toBe('ready');
   expect(dsVerdict(two, 2, 3)).toBe('pending');
   expect(dsVerdict(two)).toBe('pending');

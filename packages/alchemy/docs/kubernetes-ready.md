@@ -36,30 +36,55 @@ The provider requires `ChildProcessSpawner` (the adapter shells to `bao`).
 
 The rules are `kubectl rollout status` (kubectl v0.34.0 `rollout_status.go`), not "Available":
 
-| kind                     | ready when                                                                                                                                    |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| DaemonSet                | `observedGeneration >= generation`, `updatedNumberScheduled >= minReady`, `numberAvailable >= minReady`                                       |
-| Deployment               | `observedGeneration >= generation`, `updatedReplicas == spec.replicas`, `replicas == updatedReplicas`, `availableReplicas >= updatedReplicas` |
-| CustomResourceDefinition | condition `Established` is `True`                                                                                                             |
+| kind                     | ready when                                                                                                                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DaemonSet                | `updateStrategy` is `RollingUpdate`, `observedGeneration >= generation`, `updatedNumberScheduled >= minReady`, `numberAvailable - (desiredNumberScheduled - updatedNumberScheduled) >= minReady` |
+| Deployment               | `observedGeneration >= generation`, `updatedReplicas == spec.replicas`, `replicas == updatedReplicas`, `availableReplicas >= updatedReplicas`                                                    |
+| CustomResourceDefinition | condition `Established` is `True`                                                                                                                                                                |
 
 `minReady` defaults to `desiredNumberScheduled`, and a DaemonSet that wants zero pods is never ready.
+`numberAvailable` also counts available pods of the OLD template, so it is never compared to
+`minReady` alone: subtracting `desired - updated` (the most old pods there can be) leaves a lower
+bound on pods that are both updated and available. Without it, minReady 2 of 4 with two crashlooping
+new pods and two healthy old ones would pass.
 A Deployment whose `Progressing` condition has reason `ProgressDeadlineExceeded` (for the
-generation the controller has observed) is a typed failure, `KubernetesRolloutFailed`, not pending.
+generation the controller has observed), and a DaemonSet whose `updateStrategy` is not
+`RollingUpdate` (absent counts as `RollingUpdate`), are typed failures, `KubernetesRolloutFailed`
+(`reason`), not pending.
+
+## Refused at declaration
+
+- `checks` must be non-empty; each needs a known `kind`, a non-empty `name`, a non-empty
+  `namespace` for DaemonSet and Deployment, and `minReady` (DaemonSet only) an integer >= 1:
+  `KubernetesReadyBadCheck { index, problem }`.
+- `after` must hold lazy Outputs of the chart (`chart.objects`): `KubernetesReadyBadAfter { index }`
+  for a plain value, a bare `chart`, or a stable such as `chart.connection`. Those resolve at plan
+  time, so the row would plan `noop` before the chart's update and the gate would be skipped.
 
 ## Errors
 
-| outcome                                                        | `read` / `diff` (one pass) | `reconcile` (poll)                                  |
-| -------------------------------------------------------------- | -------------------------- | --------------------------------------------------- |
-| 404 (`_tag` `KubernetesNotFound`, or `KubernetesApiError` 404) | pending                    | pending                                             |
-| per-GET timeout (5 s), 5xx, 429, transport `Error`             | propagates                 | pending, recorded as `lastTransient` (tag + status) |
-| 401, 403, other 4xx                                            | propagates                 | propagates                                          |
-| connect, uid mismatch, vault (`bao`) failure                   | propagates                 | propagates                                          |
+| outcome                                                        | `read` / `diff` (one pass) | `reconcile` (poll)                                        |
+| -------------------------------------------------------------- | -------------------------- | --------------------------------------------------------- |
+| 404 (`_tag` `KubernetesNotFound`, or `KubernetesApiError` 404) | pending                    | pending                                                   |
+| per-GET timeout (5 s), 5xx, 429, upstream transport `Error`    | propagates                 | pending, recorded as `lastTransient` (tag + status)       |
+| the same on the connect's identity GET (incl. its 5 s timeout) | propagates                 | connect retried every `pollInterval`, inside the deadline |
+| 401, 403, other 4xx                                            | propagates                 | propagates                                                |
+| uid mismatch, vault (`bao`) failure                            | propagates                 | propagates                                                |
+| any other untagged `Error` (a defect, e.g. an empty namespace) | propagates                 | propagates                                                |
+
+- "Upstream transport `Error`" is only the `Failed Kubernetes ...` wrapper (alchemy `client.ts`).
+- `lastTransient` is the transient of the LAST pass; one that has cleared is not blamed.
+- `read` with no prior output (Alchemy's deferred adoption read on a first create) returns
+  `undefined` without touching the cluster: the row owns nothing to adopt.
+- Every error leaving a GET, the connect's identity GET included, is scrubbed of the response body.
 
 - 404 is matched by tag string with no import, so it is proof against alchemy raising
   `KubernetesNotFound` instead of `KubernetesApiError` (standing watch: drop the second shape once
   upstream settles).
-- A deadline fails with `KubernetesReadyTimeout { failing, seconds, lastTransient? }`. `failing`
-  holds **check keys** (`DaemonSet/kube-system/cilium`) only.
+- A deadline fails with `KubernetesReadyTimeout { failing, seconds, lastTransient?, states? }`.
+  `failing` holds **check keys** (`DaemonSet/kube-system/cilium`) only; `states` records per key
+  what the last pass saw: `{ notFound: true }` (a 404 that never resolves) or `{ counts }`
+  (generation and rollout numbers), so a missing object reads differently from a slow rollout.
 - A propagated apiserver refusal is rewrapped as `KubernetesReadyApiError { method, path,
 statusCode }`: upstream's `KubernetesApiError` message quotes up to 1000 bytes of the response
   body, which this row does not republish.
@@ -71,8 +96,10 @@ statusCode }`: upstream's `KubernetesApiError` message quotes up to 1000 bytes o
 
 - `read`: one pass, `ready: false` when any check is pending. Never waits.
 - `diff`: refuses a non-literal `connection` (`TalosUidNotLiteral`, also at declaration);
-  `undefined` when unresolved; `noop` when the live pass is ready and the connection and check
-  keys are unchanged; otherwise `update`. It is live on every plan, like `Talos.ClusterHealth`.
+  `undefined` when unresolved; `replace` when the connection differs (it is in `stables`, so
+  dependants would otherwise see the old one for a deploy; `delete` is a no-op, so nothing live
+  is touched); `noop` when the live pass is ready and the check keys are unchanged; otherwise
+  `update`. It is live on every plan, like `Talos.ClusterHealth`.
 - `reconcile`: polls until every check passes or fails typed.
 - `delete` is a no-op and `list` is empty: the row owns nothing in the cluster. `connection` is
   `stables`, and is copied onto the attributes so the row is `ClusterLike`.

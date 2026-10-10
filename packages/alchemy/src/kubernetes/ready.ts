@@ -18,16 +18,19 @@
  * `KubernetesApiError`); only the fake apiserver was used. Not exercised against a live cluster.
  */
 import { Resource } from 'alchemy';
-import { connectCluster } from 'alchemy/Kubernetes/internal/client';
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
+import type { Output } from 'alchemy/Output';
 import * as Provider from 'alchemy/Provider';
 import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import type { TalosOpenBaoConnection } from '../talos/cluster-adapter.ts';
 import { literalConnectionRefusal, withLiteralConnection } from '../talos/literal-connection.ts';
 import type { TalosRequirements } from '../talos/resource.ts';
-import { KubernetesReadyBadDuration, type ReadyCheck, checksCsv } from './ready-checks.ts';
+import { type ReadyCheck, checksCsv } from './ready-checks.ts';
+import { connectOnce, connectTolerant } from './ready-connect.ts';
+import { declaredReady } from './ready-declare.ts';
+import { KubernetesReadyBadDuration } from './ready-errors.ts';
 import { pass, poll } from './ready-poll.ts';
 
 export interface ReadyProps {
@@ -38,8 +41,12 @@ export interface ReadyProps {
   waitTimeout?: string;
   /** Pause between passes, Go style. Default `10s`. */
   pollInterval?: string;
-  /** Ordering edge, e.g. `[chart.objects]`. */
-  after?: readonly unknown[];
+  /**
+   * Ordering edge: lazy Outputs of the chart, e.g. `[chart.objects]`. ⛔ Not `chart.connection` or
+   * any other stable: those resolve at plan time and the row would plan `noop` before the chart
+   * updates (refused at declaration, `ready-declare.ts`).
+   */
+  after?: readonly Output<unknown>[];
 }
 
 export interface ReadyAttributes {
@@ -58,8 +65,8 @@ export interface KubernetesReady extends Resource<
 > {}
 
 // ⛔ Declaration-time literal guard: a fresh resource skips `diff` (see `withLiteralConnection`).
-export const KubernetesReady = withLiteralConnection(
-  Resource<KubernetesReady>('HomeFlare.Kubernetes.Ready'),
+export const KubernetesReady = declaredReady(
+  withLiteralConnection(Resource<KubernetesReady>('HomeFlare.Kubernetes.Ready')),
 );
 
 const UNITS: Record<string, number> = { h: 3_600_000, m: 60_000, s: 1000 };
@@ -93,7 +100,7 @@ const sameConnection = (left: TalosOpenBaoConnection, right: TalosOpenBaoConnect
 /** One pass: `ready` only when every check is ready. A terminal failure is not ready either. */
 export const readReady = (props: ReadyProps) =>
   Effect.gen(function* () {
-    const transport = yield* connectCluster(props.connection);
+    const transport = yield* connectOnce(props.connection);
     const result = yield* pass(transport, props.checks, false);
     return attributes(props, result.pending.length === 0 && result.failed.length === 0);
   });
@@ -102,8 +109,8 @@ export const reconcileReady = (props: ReadyProps) =>
   Effect.gen(function* () {
     const waitTimeout = yield* parseGoDuration('waitTimeout', props.waitTimeout ?? '10m0s');
     const pollInterval = yield* parseGoDuration('pollInterval', props.pollInterval ?? '10s');
-    const transport = yield* connectCluster(props.connection);
-    yield* poll(transport, props.checks, waitTimeout, pollInterval);
+    const connect = connectTolerant(props.connection, pollInterval);
+    yield* poll(connect, props.checks, waitTimeout, pollInterval);
     return attributes(props, true);
   });
 
@@ -113,20 +120,34 @@ export const diffReady = (news: Input<ReadyProps>, output: ReadyAttributes | und
     const refused = literalConnectionRefusal((news as { connection?: unknown }).connection);
     if (refused !== undefined) return yield* Effect.fail(refused);
     if (output === undefined || !isResolved(news)) return undefined;
+    // ⛔ `connection` is in `stables`: dependants read it off the saved row, so a changed one must
+    //   REPLACE (as upstream's HelmChart does, `HelmChart.ts:243-251`) or they would see the old
+    //   connection for one more deploy. `delete` is a no-op, so a replace touches nothing live.
+    //   A legacy row with no connection counts as changed.
+    if (!sameConnection(news.connection, output.connection)) return { action: 'replace' } as const;
     const live = yield* readReady(news);
-    return live.ready &&
-      sameConnection(live.connection, output.connection) &&
-      live.checks === output.checks
+    return live.ready && live.checks === output.checks
       ? ({ action: 'noop' } as const)
       : ({ action: 'update' } as const);
   });
+
+export const readHandler = ({
+  olds,
+  output,
+}: {
+  olds: ReadyProps;
+  output: ReadyAttributes | undefined;
+}) => (output === undefined ? Effect.succeed(undefined) : readReady(olds));
 
 const handlers = {
   delete: () => Effect.void,
   diff: ({ news, output }: { news: Input<ReadyProps>; output: ReadyAttributes | undefined }) =>
     diffReady(news, output),
   list: () => Effect.succeed([]),
-  read: ({ olds }: { olds: ReadyProps }) => readReady(olds),
+  // ⛔ No prior output means Alchemy's deferred adoption read on a first create: the row owns
+  //   nothing, so there is nothing to adopt, and a one-pass read would fail the install on the
+  //   first 5xx before `reconcile` could poll through it (round 1, finding 2).
+  read: readHandler,
   reconcile: ({ news }: { news: ReadyProps }) => reconcileReady(news),
   stables: ['connection'] as (keyof ReadyAttributes)[],
 };

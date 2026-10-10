@@ -11,7 +11,7 @@
  * ⚠️ A body that is missing or not an object is PENDING, never ready: an empty 200 must not open
  *   the gate.
  */
-import * as Data from 'effect/Data';
+import { type KeyState, KubernetesReadyBadCheck } from './ready-errors.ts';
 
 export type ReadyCheck =
   | {
@@ -42,64 +42,84 @@ export const checkKey = (check: ReadyCheck): string => {
 
 export const checksCsv = (checks: readonly ReadyCheck[]): string => checks.map(checkKey).join(',');
 
-/** What the poll recorded when a pass last tolerated a transient error: tag and status, no body. */
-export interface LastTransient {
-  readonly tag: string;
-  readonly status?: number;
-}
-
-/** The gate never opened within `waitTimeout`. `failing` holds check keys only. */
-export class KubernetesReadyTimeout extends Data.TaggedError('KubernetesReadyTimeout')<{
-  readonly failing: readonly string[];
-  readonly seconds: number;
-  readonly lastTransient?: LastTransient;
-}> {
-  override get message(): string {
-    const last =
-      this.lastTransient === undefined
-        ? ''
-        : `; last transient error ${this.lastTransient.tag}${
-            this.lastTransient.status === undefined ? '' : ` ${this.lastTransient.status}`
-          }`;
-    return `Kubernetes.Ready: not ready within ${this.seconds}s: ${this.failing.join(', ')}${last}`;
+/**
+ * Declaration-time validation (round 1, finding 3): a check that can never be satisfied is a typed
+ * refusal, not a 10 minute timeout. ⚠️ Upstream's path builder THROWS for a namespaced kind with an
+ * empty namespace (`objects.ts:189-192`), which would otherwise be read as a transport transient.
+ */
+export const validateChecks = (checks: unknown): KubernetesReadyBadCheck | undefined => {
+  if (!Array.isArray(checks) || checks.length === 0) {
+    return new KubernetesReadyBadCheck({ index: 0, problem: 'must list at least one check' });
   }
-}
-
-/** A Deployment reported `ProgressDeadlineExceeded`: a rollout that will not finish, not pending. */
-export class KubernetesRolloutFailed extends Data.TaggedError('KubernetesRolloutFailed')<{
-  readonly check: string;
-}> {
-  override get message(): string {
-    return `Kubernetes.Ready: ${this.check} exceeded its progress deadline (ProgressDeadlineExceeded)`;
+  for (const [index, raw] of checks.entries()) {
+    const check = obj(raw);
+    const bad = (problem: string) => new KubernetesReadyBadCheck({ index, problem });
+    const kind = check['kind'];
+    if (kind !== 'DaemonSet' && kind !== 'Deployment' && kind !== 'CustomResourceDefinition') {
+      return bad('has an unknown kind');
+    }
+    if (typeof check['name'] !== 'string' || check['name'] === '') {
+      return bad('needs a non-empty name');
+    }
+    if (kind !== 'CustomResourceDefinition') {
+      if (typeof check['namespace'] !== 'string' || check['namespace'] === '') {
+        return bad(`needs a non-empty namespace (${kind} is namespaced)`);
+      }
+    }
+    const min = check['minReady'];
+    if (min !== undefined && (kind !== 'DaemonSet' || !Number.isInteger(min) || Number(min) < 1)) {
+      return bad('minReady is an integer >= 1 and only applies to a DaemonSet');
+    }
   }
-}
+  return undefined;
+};
 
-/** A `waitTimeout`/`pollInterval` that is not a Go-style duration (`10m0s`, `90s`, `1h30m`). */
-export class KubernetesReadyBadDuration extends Data.TaggedError('KubernetesReadyBadDuration')<{
-  readonly field: string;
-  readonly value: string;
-}> {
-  override get message(): string {
-    return `Kubernetes.Ready: ${this.field} '${this.value}' is not a duration like 10m0s`;
-  }
-}
-
-type Json = Record<string, unknown>;
-const obj = (value: unknown): Json =>
+export type Json = Record<string, unknown>;
+export const obj = (value: unknown): Json =>
   typeof value === 'object' && value !== null ? (value as Json) : {};
-const num = (value: unknown): number => (typeof value === 'number' ? value : 0);
+export const num = (value: unknown): number => (typeof value === 'number' ? value : 0);
+
+/** The numbers a pass saw, for `KubernetesReadyTimeout.states`: counts and generations only. */
+export const countsOf = (check: ReadyCheck, body: unknown): KeyState => {
+  const status = obj(obj(body)['status']);
+  const names =
+    check.kind === 'DaemonSet'
+      ? [
+          'observedGeneration',
+          'desiredNumberScheduled',
+          'updatedNumberScheduled',
+          'numberAvailable',
+        ]
+      : check.kind === 'Deployment'
+        ? ['observedGeneration', 'replicas', 'updatedReplicas', 'availableReplicas']
+        : [];
+  const counts = Object.fromEntries(names.map((name) => [name, num(status[name])]));
+  return { counts: { generation: num(obj(obj(body)['metadata'])['generation']), ...counts } };
+};
 const conditions = (status: Json): Json[] =>
   Array.isArray(status['conditions']) ? status['conditions'].map(obj) : [];
 
 /** kubectl `rollout_status.go:107-114`; `minReady` defaults to `desiredNumberScheduled`. */
 const daemonSet = (body: Json, minReady: number | undefined): Verdict => {
   const status = obj(body['status']);
+  // ⛔ kubectl checks the strategy first (`:104-106`). The apiserver defaults the type, so an
+  //   absent one is RollingUpdate; `OnDelete` never rolls by itself, so waiting cannot end.
+  const strategy = obj(obj(body['spec'])['updateStrategy'])['type'];
+  if (strategy !== undefined && strategy !== 'RollingUpdate') return 'failed';
   const generation = num(obj(body['metadata'])['generation']);
   if (num(status['observedGeneration']) < generation) return 'pending';
-  const need = minReady ?? num(status['desiredNumberScheduled']);
+  const desired = num(status['desiredNumberScheduled']);
+  const need = minReady ?? desired;
   // ⚠️ A DaemonSet that wants zero pods (no node matched yet) has rolled out nothing.
   if (need < 1) return 'pending';
-  return num(status['updatedNumberScheduled']) >= need && num(status['numberAvailable']) >= need
+  const updated = num(status['updatedNumberScheduled']);
+  // ⛔ `numberAvailable` also counts AVAILABLE OLD-TEMPLATE pods, so comparing it to `minReady`
+  //   alone passes a broken upgrade: minReady 2 of 4 with two crashlooping new pods and two healthy
+  //   old ones reads as 2 updated and 2 available. At most `desired - updated` of the available
+  //   pods are old, so the difference is a LOWER BOUND on pods both updated and available (round 1,
+  //   finding 1; kubectl gets there by demanding updated == desired).
+  const oldAtMost = Math.max(desired - updated, 0);
+  return updated >= need && num(status['numberAvailable']) - oldAtMost >= need
     ? 'ready'
     : 'pending';
 };
