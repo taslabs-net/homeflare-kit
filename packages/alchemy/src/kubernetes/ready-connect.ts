@@ -23,6 +23,19 @@ type Connection = Parameters<typeof connectCluster>[0];
 export const connectOnce = (connection: Connection) =>
   connectCluster(connection).pipe(Effect.mapError(scrubbed));
 
+/**
+ * Connect once for `diff`: a transient is `undefined` (the plan says `update`, `reconcile` waits);
+ * everything else fails scrubbed. ⚠️ Classified BEFORE scrubbing: the scrubbed 5xx loses its tag.
+ */
+export const connectForDiff = (connection: Connection) =>
+  Effect.gen(function* () {
+    const attempt = yield* Effect.result(connectCluster(connection));
+    if (attempt._tag === 'Success') return attempt.success as ClusterTransport;
+    return transientOf(attempt.failure) === undefined
+      ? yield* Effect.fail(scrubbed(attempt.failure))
+      : undefined;
+  });
+
 /** Connect, retrying transients until the caller's deadline interrupts. */
 export const connectTolerant =
   (connection: Connection, pollInterval: Duration.Duration) =>

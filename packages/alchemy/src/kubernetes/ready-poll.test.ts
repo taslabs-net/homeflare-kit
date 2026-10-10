@@ -87,7 +87,12 @@ for (const [name, entry, expected] of [
     objects[get(DEP_PATH)] = entry;
     const outcome = (await pollOutcome(objects)) as { error: Record<string, unknown> };
     expect(outcome.error['_tag']).toBe('KubernetesReadyTimeout');
-    expect(outcome.error['failing']).toEqual(['Deployment/kube-system/cilium-operator']);
+    // ⚠️ after a timed-out GET the rest of the pass is pending unread (socket rationing)
+    const unread = 'tag' in expected && expected.tag === 'KubernetesReadyGetTimeout';
+    expect(outcome.error['failing']).toEqual([
+      'Deployment/kube-system/cilium-operator',
+      ...(unread ? ['CustomResourceDefinition/x.cilium.io'] : []),
+    ]);
     expect(outcome.error['lastTransient']).toEqual(expected);
     expect(JSON.stringify(outcome.error)).not.toContain('ECONNREFUSED');
     expect(JSON.stringify(outcome.error)).not.toContain('secret');

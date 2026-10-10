@@ -7,8 +7,16 @@
  *   everything else propagates). A single pass (`tolerant: false`, used by `read`/`diff`)
  *   tolerates ONLY 404. The poll covers the CONNECT too (`ready-connect.ts`): the identity GET of
  *   a cluster whose apiserver is restarting under a CNI rollout is the same transient.
- * ⚠️ upstream `readObject` takes no signal: a timed-out GET abandons its socket rather than
- *   aborting it (`client.ts:71-74`). The pass moves on; the process exit reaps it.
+ * ⚠️ upstream `readObject` takes no signal: a timed-out GET ABANDONS its socket rather than
+ *   aborting it (`client.ts:71-74`); nothing here can close it, and process exit is NOT a bound
+ *   for a long apply. So a timeout is rationed: once one GET of a pass times out the rest of that
+ *   pass is pending without a GET, and the poll doubles its pause per consecutive timeout (cap
+ *   30 s), resetting on a clean pass. A hung apiserver then abandons a few dozen sockets in a 10 m
+ *   wait, not ~120. ★ STANDING WATCH: drop this rationing when upstream's `readObject` takes an
+ *   AbortSignal (alchemy PR 1948, per-attempt deadlines).
+ * ⚠️ upstream also retries a transport error itself, for about 40 s (`Schedule.max([spaced 5 s,
+ *   recurs(8)])`, `client.ts:158-161`): longer than `GET_TIMEOUT`, so a dead socket surfaces here
+ *   as the GET timeout, not as the transport error.
  */
 import type { ClusterTransport } from 'alchemy/Kubernetes/ClusterAdapter';
 import { readObject } from 'alchemy/Kubernetes/internal/client';
@@ -55,6 +63,9 @@ const refOf = (check: ReadyCheck) => ({
   ...('namespace' in check ? { namespace: check.namespace } : {}),
 });
 
+/** Longest pause the poll backs off to after consecutive GET timeouts. */
+export const BACKOFF_CAP = Duration.seconds(30);
+
 export interface PassResult {
   /** Keys of checks that are not ready yet. */
   readonly pending: readonly string[];
@@ -63,6 +74,8 @@ export interface PassResult {
   /** What this pass saw per key it reached; a key that hit a transient has none. */
   readonly states: Readonly<Record<string, KeyState>>;
   readonly lastTransient?: LastTransient;
+  /** A GET timed out (its socket is abandoned): the poll backs off. */
+  readonly timedOut: boolean;
 }
 
 const getOne = (transport: ClusterTransport, check: ReadyCheck) =>
@@ -90,8 +103,14 @@ export const pass = (
     const failed: string[] = [];
     const states: Record<string, KeyState> = {};
     let lastTransient: LastTransient | undefined;
+    let timedOut = false;
     for (const check of checks) {
       const key = checkKey(check);
+      // ⛔ After a timeout its socket is abandoned: issue no further GET this pass.
+      if (timedOut) {
+        pending.push(key);
+        continue;
+      }
       const outcome = yield* getOne(transport, check).pipe(
         Effect.map((body) => {
           states[key] = countsOf(check, body);
@@ -105,13 +124,20 @@ export const pass = (
           const transient = tolerant ? transientOf(error) : undefined;
           if (transient === undefined) return Effect.fail(scrubbed(error));
           lastTransient = transient;
+          timedOut = timedOut || transient.tag === 'KubernetesReadyGetTimeout';
           return Effect.succeed('pending' as const);
         }),
       );
       if (outcome === 'pending') pending.push(key);
       if (outcome === 'failed') failed.push(key);
     }
-    return { failed, pending, states, ...(lastTransient === undefined ? {} : { lastTransient }) };
+    return {
+      failed,
+      pending,
+      states,
+      timedOut,
+      ...(lastTransient === undefined ? {} : { lastTransient }),
+    };
   });
 
 /**
@@ -137,6 +163,7 @@ export const poll = <R>(
     const transient = yield* Ref.make<LastTransient | undefined>(undefined);
     const loop = Effect.gen(function* () {
       const transport = yield* connect((t) => Ref.set(transient, t));
+      let pause = pollInterval;
       while (true) {
         const result = yield* pass(transport, checks, true);
         yield* Ref.update(last, (prior) => ({
@@ -157,7 +184,11 @@ export const poll = <R>(
           );
         }
         if (result.pending.length === 0) return;
-        yield* Effect.sleep(pollInterval);
+        // ★ Double per consecutive timeout (cap 30 s, or the interval if longer); a clean pass resets.
+        pause = result.timedOut
+          ? Duration.min(Duration.times(pause, 2), Duration.max(BACKOFF_CAP, pollInterval))
+          : pollInterval;
+        yield* Effect.sleep(pause);
       }
     });
     return yield* loop.pipe(

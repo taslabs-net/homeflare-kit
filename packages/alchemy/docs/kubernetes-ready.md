@@ -66,7 +66,7 @@ generation the controller has observed), and a DaemonSet whose `updateStrategy` 
 | outcome                                                        | `read` / `diff` (one pass) | `reconcile` (poll)                                        |
 | -------------------------------------------------------------- | -------------------------- | --------------------------------------------------------- |
 | 404 (`_tag` `KubernetesNotFound`, or `KubernetesApiError` 404) | pending                    | pending                                                   |
-| per-GET timeout (5 s), 5xx, 429, upstream transport `Error`    | propagates                 | pending, recorded as `lastTransient` (tag + status)       |
+| per-GET timeout (5 s), 5xx, 429, upstream transport `Error`    | read: throws; diff: update | pending, recorded as `lastTransient` (tag + status)       |
 | the same on the connect's identity GET (incl. its 5 s timeout) | propagates                 | connect retried every `pollInterval`, inside the deadline |
 | 401, 403, other 4xx                                            | propagates                 | propagates                                                |
 | uid mismatch, vault (`bao`) failure                            | propagates                 | propagates                                                |
@@ -89,8 +89,12 @@ generation the controller has observed), and a DaemonSet whose `updateStrategy` 
 statusCode }`: upstream's `KubernetesApiError` message quotes up to 1000 bytes of the response
   body, which this row does not republish.
 - Upstream `readObject` takes no signal, so a timed-out GET abandons its socket rather than
-  aborting it; the process exit reaps it. Upstream also retries a transport error for 5 s, which
-  equals the per-GET bound, so a dead socket usually surfaces as the GET timeout.
+  aborting it, and process exit is not a bound for a long apply. The poll therefore rations
+  timeouts: after one GET times out the rest of that pass is pending with no GET, and the pause
+  doubles per consecutive timeout (cap 30 s), resetting on a clean pass. Standing watch: drop this
+  when upstream's `readObject` takes an AbortSignal (alchemy PR 1948, per-attempt deadlines).
+- Upstream also retries a transport error itself, for about 40 s (a `spaced` 5 s schedule capped
+  by `recurs(8)`), longer than the per-GET bound, so a dead socket surfaces as the GET timeout.
 
 ## Lifecycle
 
@@ -99,7 +103,9 @@ statusCode }`: upstream's `KubernetesApiError` message quotes up to 1000 bytes o
   `undefined` when unresolved; `replace` when the connection differs (it is in `stables`, so
   dependants would otherwise see the old one for a deploy; `delete` is a no-op, so nothing live
   is touched); `noop` when the live pass is ready and the check keys are unchanged; otherwise
-  `update`. It is live on every plan, like `Talos.ClusterHealth`.
+  `update`. It is live on every plan, like `Talos.ClusterHealth`, but a transient (5xx, 429, a
+  timeout, on the connect or a GET) is `update`, never a failed plan: `reconcile` does the
+  waiting. 401/403 and vault failures still propagate.
 - `reconcile`: polls until every check passes or fails typed.
 - `delete` is a no-op and `list` is empty: the row owns nothing in the cluster. `connection` is
   `stables`, and is copied onto the attributes so the row is `ClusterLike`.

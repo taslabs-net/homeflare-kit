@@ -28,7 +28,7 @@ import type { TalosOpenBaoConnection } from '../talos/cluster-adapter.ts';
 import { literalConnectionRefusal, withLiteralConnection } from '../talos/literal-connection.ts';
 import type { TalosRequirements } from '../talos/resource.ts';
 import { type ReadyCheck, checksCsv } from './ready-checks.ts';
-import { connectOnce, connectTolerant } from './ready-connect.ts';
+import { connectForDiff, connectOnce, connectTolerant } from './ready-connect.ts';
 import { declaredReady } from './ready-declare.ts';
 import { KubernetesReadyBadDuration } from './ready-errors.ts';
 import { pass, poll } from './ready-poll.ts';
@@ -105,6 +105,20 @@ export const readReady = (props: ReadyProps) =>
     return attributes(props, result.pending.length === 0 && result.failed.length === 0);
   });
 
+/**
+ * ⛔ The `diff` pass: a transient (connect or GET) yields `undefined`, which diff turns into
+ * `update`, so a CNI rollout never fails a plan and `reconcile` does the waiting. 401/403, vault
+ * failures and a uid mismatch still propagate.
+ */
+const readReadyForDiff = (props: ReadyProps) =>
+  Effect.gen(function* () {
+    const transport = yield* connectForDiff(props.connection);
+    if (transport === undefined) return undefined;
+    const result = yield* pass(transport, props.checks, true);
+    const settled = result.pending.length === 0 && result.failed.length === 0;
+    return settled ? attributes(props, true) : undefined;
+  });
+
 export const reconcileReady = (props: ReadyProps) =>
   Effect.gen(function* () {
     const waitTimeout = yield* parseGoDuration('waitTimeout', props.waitTimeout ?? '10m0s');
@@ -125,8 +139,8 @@ export const diffReady = (news: Input<ReadyProps>, output: ReadyAttributes | und
     //   connection for one more deploy. `delete` is a no-op, so a replace touches nothing live.
     //   A legacy row with no connection counts as changed.
     if (!sameConnection(news.connection, output.connection)) return { action: 'replace' } as const;
-    const live = yield* readReady(news);
-    return live.ready && live.checks === output.checks
+    const live = yield* readReadyForDiff(news);
+    return live !== undefined && live.checks === output.checks
       ? ({ action: 'noop' } as const)
       : ({ action: 'update' } as const);
   });
