@@ -172,7 +172,7 @@ test('durations: Go style accepted, anything else typed-refused', async () => {
   const ms = (v: string) => Effect.runPromise(parseGoDuration('waitTimeout', v));
   expect(Duration.toMillis(await ms('10m0s'))).toBe(600_000);
   expect(Duration.toMillis(await ms('1h30m'))).toBe(5_400_000);
-  for (const bad of ['', '10', 'ten minutes', '10m0', '1.5s']) {
+  for (const bad of ['', '10', 'ten minutes', '10m0', '1.5s', '0s', '0m0s', '0h']) {
     const e = await Effect.runPromise(Effect.flip(parseGoDuration('waitTimeout', bad)));
     expect(e._tag).toBe('KubernetesReadyBadDuration');
   }

@@ -82,6 +82,9 @@ export const parseGoDuration = (field: string, value: string) =>
       (sum, [, n, unit]) => sum + Number(n) * (UNITS[unit as string] ?? 0),
       0,
     );
+    // A zero poll interval would spin a full pass of GETs per scheduler tick against the apiserver,
+    // and a zero wait fails before a single pass: both are refused (DeepSeek read of PR 373).
+    if (ms <= 0) return yield* Effect.fail(new KubernetesReadyBadDuration({ field, value }));
     return Duration.millis(ms);
   });
 
