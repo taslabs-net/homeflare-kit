@@ -55,6 +55,15 @@ const PINS = {
   '@effect/platform-node': '4.0.1',
   '@effect/platform-node-shared': '4.0.1',
   '@effect/platform-bun': '4.0.1',
+  // ⛔ Alchemy beta.81 depends on both at `^4.0.0` (measured 2026-10-09, ledger row
+  //   kit-contract-effect-402: `npm view alchemy@2.0.0-beta.81 dependencies`). A fresh
+  //   lockless install resolves them to 4.0.2, whose peer is `effect ^4.0.2` — unmet
+  //   against the contract's effect 4.0.1 on EVERY fresh consumer install. 4.0.1 peers
+  //   on `effect ^4.0.1`, so the exact pin holds the D1/Durable-Object SQL stack on the
+  //   version the kit is tested on. This repo's own bun.lock holds 4.0.1 only because it
+  //   was locked earlier — the override, not the lock, is what a consumer gets.
+  '@effect/sql-d1': '4.0.1',
+  '@effect/sql-sqlite-do': '4.0.1',
   // ⛔ Exact, not `~1.2.6`. Measured 2026-09-16: vite's tilde resolved to rolldown
   //   1.2.9 and npm 404'd the tarball. 1.2.8 is the last version a green consumer
   //   install actually fetched (#37, five minutes earlier).

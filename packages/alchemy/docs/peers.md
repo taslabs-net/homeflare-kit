@@ -29,6 +29,8 @@ asserted against that field; change the field first, then copy its `overrides` b
     "@effect/platform-node": "4.0.1",
     "@effect/platform-node-shared": "4.0.1",
     "@effect/platform-bun": "4.0.1",
+    "@effect/sql-d1": "4.0.1",
+    "@effect/sql-sqlite-do": "4.0.1",
     "rolldown": "1.2.8",
     "redis": "6.3.0"
   }
@@ -50,6 +52,7 @@ next rc and breaks at import. Pin the whole set.
 | `rolldown` → 1.2.9 via vite's `~1.2.6` (measured 2026-09-16)                                | `GET …/rolldown-1.2.9.tgz - 404` at `bun add`                                                            |
 | no `mime` (measured 2026-09-17 against Alchemy 78)                                          | `Cannot find package 'mime'` from cloudflare-runtime                                                     |
 | `redis` → 6.3.0 via the `>=5.0.0 <7.0.0` peer of platform-node/sql-pg (measured 2026-09-30) | `No version matching "6.3.0" found for specifier "@redis/time-series" (but package exists)` at `bun add` |
+| `@effect/sql-d1`/`-sqlite-do` → 4.0.2 via alchemy's `^4.0.0` (measured 2026-10-09)          | unmet peer: 4.0.2 wants `effect ^4.0.2`, the contract pins 4.0.1                                         |
 
 Alchemy 78 adapted to rc.115 — that first row is why we used to pin 112, not a reason to
 stay there. The override is still the only thing that holds the set together.
@@ -61,6 +64,16 @@ stay there. The override is still the only thing that holds the set together.
 failed outright for that window. The line completed the same hour — every `@redis/*`
 sub-package published at 6.3.0 (measured 11:12:19Z) — and the pin moved onto that complete
 set. The pin stays exact because the same class of gap can recur with any future redis minor.
+
+⛔ **`@effect/sql-d1` and `@effect/sql-sqlite-do` (added 2026-10-09, ledger row
+kit-contract-effect-402) are exact in `overrides` because alchemy beta.81 itself depends on
+both at `^4.0.0`** (`npm view alchemy@2.0.0-beta.81 dependencies`). A fresh, lockless install
+resolves `^4.0.0` to 4.0.2, whose peer is `effect ^4.0.2` — an **unmet peer against the
+contract's effect 4.0.1 on every fresh consumer install**; only an already-locked tree hid it
+(the kit's own `bun.lock` said 4.0.1 because it was locked earlier). 4.0.1 peers on
+`effect ^4.0.1`, so the pin holds the D1 / Durable-Object SQL resources on the version the
+kit is tested on — the runtime path is unverified, as no stack uses those resources yet. They
+are overrides, not install-line pins: they arrive transitively through `alchemy`.
 
 ⚠️ `@effect/platform-node` is **required, not optional**: Alchemy's module graph reaches
 `Cloudflare/Workers/WorkerBridge → @effect/platform-node/NodeServices` even when you only
