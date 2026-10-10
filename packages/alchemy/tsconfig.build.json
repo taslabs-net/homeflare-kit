@@ -29,6 +29,7 @@
     "**/talos/cluster-adapter.fixtures.ts",
     "**/talos/kubeconfig.fixtures.ts",
     "**/talos/machine-config-fixtures.ts",
-    "**/talos/node-connect.harness.ts"
+    "**/talos/node-connect.harness.ts",
+    "**/kubernetes/ready.fixtures.ts"
   ]
 }
