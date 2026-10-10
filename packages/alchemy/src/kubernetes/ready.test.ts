@@ -3,6 +3,7 @@
  * failures that must propagate. Fake `bao` and fake apiserver only; time is TestClock's.
  */
 import { expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Exit from 'effect/Exit';
@@ -173,6 +174,31 @@ test('durations: Go style accepted, anything else typed-refused', async () => {
   expect(Duration.toMillis(await ms('10m0s'))).toBe(600_000);
   expect(Duration.toMillis(await ms('1h30m'))).toBe(5_400_000);
   for (const bad of ['', '10', 'ten minutes', '10m0', '1.5s', '0s', '0m0s', '0h']) {
+    const e = await Effect.runPromise(Effect.flip(parseGoDuration('waitTimeout', bad)));
+    expect(e._tag).toBe('KubernetesReadyBadDuration');
+  }
+});
+
+test('a long adversarial duration is refused fast (no polynomial backtracking)', async () => {
+  const hostiles = [`${'1'.repeat(10_000)}x`, `${'1h'.repeat(5_000)}x`, `${'9'.repeat(30)}s`];
+  for (const hostile of hostiles) {
+    const started = performance.now();
+    const e = await Effect.runPromise(Effect.flip(parseGoDuration('waitTimeout', hostile)));
+    // A generous sanity bound only (a loaded CI runner must not flake it); the regression guard is
+    // the deterministic source check below.
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(e._tag).toBe('KubernetesReadyBadDuration');
+    // The message quotes a bounded prefix, never the whole hostile value.
+    expect(e.message.length).toBeLessThan(120);
+  }
+  // ⛔ Deterministic guard for CodeQL js/polynomial-redos #18: the parser is the anchored, bounded
+  //   regex with a length cap, never the old unanchored `(\d+)([hms])` with `g`.
+  const source = readFileSync(new URL('./ready.ts', import.meta.url), 'utf8');
+  expect(source).toContain('/^(?:(\\d{1,4})h)?(?:(\\d{1,4})m)?(?:(\\d{1,6})s)?$/');
+  expect(source).toContain('MAX_DURATION_LENGTH = 20');
+  expect(source).not.toContain('(\\d+)([hms])/g');
+  // The anchored form takes h, m, s once each and in that order only.
+  for (const bad of ['5s1m', '1m1m', '1h 1m']) {
     const e = await Effect.runPromise(Effect.flip(parseGoDuration('waitTimeout', bad)));
     expect(e._tag).toBe('KubernetesReadyBadDuration');
   }

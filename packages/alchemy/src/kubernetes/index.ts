@@ -5,6 +5,13 @@
  *   props and the typed errors a stack can `catchTag`. The evaluators and the poll stay internal.
  */
 export {
+  HELM_READ_TIMEOUT,
+  HELM_RECONCILE_TIMEOUT,
+  KubernetesReconcileTimeout,
+  boundedHelmChartProvider,
+  isBoundedHelmChartProvider,
+} from './helm-chart-bounded.ts';
+export {
   KubernetesReady,
   KubernetesReadyProvider,
   type ReadyAttributes,

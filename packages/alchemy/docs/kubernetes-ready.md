@@ -115,3 +115,32 @@ statusCode }`: upstream's `KubernetesApiError` message quotes up to 1000 bytes o
 Attributes are `{ connection, ready, checks }`; the connection is `{ kind, uid }`. No kubeconfig,
 PEM, token or response body reaches an attribute, an error, a log or a file
 (`ready-secrecy.test.ts`).
+
+## Bounded HelmChart (`boundedHelmChartProvider`, ledger row `t10-k1b`)
+
+Upstream's `Kubernetes.HelmChart` has no deadline: alchemy 2.0.0-beta.81's `requestJson` sets no
+timeout and no signal, so a hung apiserver blocks `reconcile`/`read` forever and would hold a 1h
+platform token across a stuck deploy. `boundedHelmChartProvider()` wraps upstream's provider (never
+re-implements it) in `Effect.timeoutOrElse`, failing typed `KubernetesReconcileTimeout { id,
+operation, seconds }`: `HELM_RECONCILE_TIMEOUT = '5m0s'` (render, discovery, ~60 SSA PATCHes) and
+`HELM_READ_TIMEOUT = '1m0s'`.
+
+- Merge it beside `Kubernetes.providers()`: `Layer.mergeAll(Kubernetes.providers(),
+boundedHelmChartProvider())`. A direct `Provider(HelmChart)` service beats the collection
+  (`Provider.ts` `tryFindProviderRegistrationByType`), so the wrapper is the one the engine resolves.
+- `diff`, `delete`, `stables` and `aliases` are upstream's by spread: state identity and replace
+  semantics do not change.
+- The interrupted fiber abandons its socket (upstream takes no signal); the run fails typed and the
+  process exits once main completes. Standing watch: upstream puts no `AbortSignal` on its
+  requests; drop the wrapper when it ships request deadlines (alchemy PR 1948).
+- A malformed override dies at layer build rather than leaving the call unbounded, as
+  `KubernetesReadyBadDuration` naming `Kubernetes.HelmChart` and the field
+  (`reconcileTimeout`/`readTimeout`). The timeout message names the row and seconds only.
+- Errors that pass through (an upstream `KubernetesApiError` quotes up to 1000 bytes of the
+  apiserver body, `client.ts:39-41`) are scrubbed to the body-free `KubernetesReadyApiError`.
+- The read bound rarely fires with the `talos-openbao` adapter: upstream's read only connects, and
+  the kit already caps connect at 10 s and the uid read at 5 s. It is a backstop.
+- `delete` stays unbounded on purpose: every platform row is `retain`, replace cleanup skips
+  deletion of retained rows (alchemy `Apply.ts:1111-1112`), and design §8 only drops state.
+- `isBoundedHelmChartProvider(service)` is true for a service this layer built, so a consuming
+  stack can assert its real `providers` layer resolves the wrapper and not upstream's.

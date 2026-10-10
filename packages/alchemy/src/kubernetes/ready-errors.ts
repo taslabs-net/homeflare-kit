@@ -67,9 +67,13 @@ export class KubernetesRolloutFailed extends Data.TaggedError('KubernetesRollout
 export class KubernetesReadyBadDuration extends Data.TaggedError('KubernetesReadyBadDuration')<{
   readonly field: string;
   readonly value: string;
+  /** The resource whose prop it is; `Kubernetes.Ready` unless the HelmChart bound says otherwise. */
+  readonly resource?: string;
 }> {
   override get message(): string {
-    return `Kubernetes.Ready: ${this.field} '${this.value}' is not a duration like 10m0s`;
+    // A hostile or typo'd value can be long: the message quotes a bounded prefix only.
+    const shown = this.value.length > 40 ? `${this.value.slice(0, 40)}...` : this.value;
+    return `${this.resource ?? 'Kubernetes.Ready'}: ${this.field} '${shown}' is not a duration like 10m0s`;
   }
 }
 
