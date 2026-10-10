@@ -38,19 +38,30 @@ test('an empty list, an empty name, a missing namespace and a bad minReady are t
   }
 });
 
-// A stable of a resource (`chart.connection`) is a plain value at plan time, a lazy Output
-// (`chart.objects`) is not; `Output.literal` is the lazy shape without needing a stack.
-const lazy = Output.literal([{ kind: 'Deployment' }]);
+// REAL property expressions of a chart (round 2: a plain-object stand-in hid that `chart.connection`
+// passed). Only `chart.objects` stays lazy while the chart updates; every other property is a stable.
+const chart = Output.of({ LogicalId: 'chart', Type: 'Kubernetes.HelmChart' } as never);
+const prop = (name: string) => new Output.PropExpr(chart as never, name as never);
+const lazy = prop('objects');
 const stableLike = { auth: { kind: 'talos-openbao', uid: 'uid-c1' } };
 
-test('`after` accepts lazy Outputs and refuses plain values (a chart stable resolves at plan time)', () => {
+test('`after` accepts only chart.objects and refuses every other shape (a chart stable resolves at plan time)', () => {
   expect(refusal({ after: [lazy] })).toBeUndefined();
+  for (const stable of ['connection', 'releaseName', 'namespace']) {
+    expect(refusal({ after: [prop(stable)] })).toMatchObject({
+      _tag: 'KubernetesReadyBadAfter',
+      index: 0,
+    });
+  }
+  expect(refusal({ after: [Output.literal([{ kind: 'Deployment' }])] })).toMatchObject({
+    _tag: 'KubernetesReadyBadAfter',
+    index: 0,
+  });
   expect(refusal({ after: [stableLike] })).toMatchObject({
     _tag: 'KubernetesReadyBadAfter',
     index: 0,
   });
   // a bare `chart` is a ResourceExpr whose stables resolve at plan time: also refused
-  const chart = Output.of({ LogicalId: 'chart', Type: 'Kubernetes.HelmChart' } as never);
   expect(refusal({ after: [chart] })).toMatchObject({ _tag: 'KubernetesReadyBadAfter', index: 0 });
   expect(refusal({ after: [lazy, 'chart'] })).toMatchObject({
     _tag: 'KubernetesReadyBadAfter',

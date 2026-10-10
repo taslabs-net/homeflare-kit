@@ -93,6 +93,6 @@ export class KubernetesReadyBadAfter extends Data.TaggedError('KubernetesReadyBa
   readonly index: number;
 }> {
   override get message(): string {
-    return `Kubernetes.Ready: after[${this.index}] is not a lazy Output of the chart (use chart.objects)`;
+    return `Kubernetes.Ready: after[${this.index}] is not chart.objects (the only shape that waits for the chart's update)`;
   }
 }

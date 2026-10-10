@@ -7,12 +7,15 @@
  * ⛔ `checks`: a check that can never be satisfied (empty name, a namespaced kind with no
  *   namespace, `minReady` below 1) is a typed `KubernetesReadyBadCheck`, not a 10 minute timeout
  *   (`validateChecks`, round 1 finding 3).
- * ⛔ `after`: only a LAZY Output of the chart (`chart.objects`) orders the row after the chart's
- *   UPDATE. `chart.connection` (a stable) resolves to a plain value at plan time, and a bare
- *   `chart` resolves to its stables, so Ready would plan `noop` before the chart updates and the
- *   gate would be silently skipped (round 1 finding 5). Both are `KubernetesReadyBadAfter`.
+ * ⛔ `after`: ONLY `chart.objects` (a `PropExpr` whose identifier is `objects`) orders the row after
+ *   the chart's UPDATE. Any other property of the chart (`chart.connection`, `chart.releaseName`)
+ *   is a stable that Alchemy fills from state while the chart updates, so it resolves to a plain
+ *   value at plan time, Ready plans `noop` and the gate is silently skipped; a bare `chart`
+ *   resolves to its stables the same way (round 1 finding 5; round 2: a property-expression test,
+ *   not a plain-object stand-in, proved `chart.connection` slipped through). Every other shape is
+ *   `KubernetesReadyBadAfter`.
  */
-import { isExpr, isRefExpr, isResourceExpr } from 'alchemy/Output';
+import { isPropExpr } from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import { validateChecks } from './ready-checks.ts';
 import { KubernetesReadyBadAfter } from './ready-errors.ts';
@@ -24,7 +27,7 @@ export const declarationRefusal = (props: unknown) => {
   if (badCheck !== undefined) return badCheck;
   if (after === undefined) return undefined;
   const list = Array.isArray(after) ? after : [after];
-  const index = list.findIndex((item) => !isExpr(item) || isResourceExpr(item) || isRefExpr(item));
+  const index = list.findIndex((item) => !(isPropExpr(item) && item.identifier === 'objects'));
   return index === -1 ? undefined : new KubernetesReadyBadAfter({ index });
 };
 
