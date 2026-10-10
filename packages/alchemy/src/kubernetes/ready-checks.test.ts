@@ -65,6 +65,10 @@ test('Deployment: ready only on the full rollout counts', () => {
   // scaled up to 2 but the controller has made only 1 (status is self-consistent at 1)
   const one = { availableReplicas: 1, replicas: 1, updatedReplicas: 1 };
   expect(evaluate(dep, depBody(one))).toBe('pending');
+  // scaled DOWN 3 -> 2, all three on the new template and available: kubectl reports this rolled
+  // out (it waits only while updated < desired), so Ready does too
+  const down = { availableReplicas: 3, replicas: 3, updatedReplicas: 3 };
+  expect(evaluate(dep, depBody(down))).toBe('ready');
 });
 
 test('Deployment: ProgressDeadlineExceeded is failed, but only for the generation the controller saw', () => {
