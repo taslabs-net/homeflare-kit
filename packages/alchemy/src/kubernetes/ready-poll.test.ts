@@ -77,9 +77,10 @@ for (const [name, entry, expected] of [
   ['5xx', { status: 503, body: { secret: 'x' } }, { status: 503, tag: 'KubernetesApiError' }],
   ['429', { status: 429 }, { status: 429, tag: 'KubernetesApiError' }],
   ['a per-GET timeout', { hang: true }, { tag: 'KubernetesReadyGetTimeout' }],
-  // ★ upstream retries a transport error for 5 s (`client.ts:158-161`), which equals the per-GET
-  //   bound, so through the fake socket it surfaces as the GET timeout; the classifier below is
-  //   what a plain Error from a later upstream (no retry) would reach.
+  // ★ upstream retries a transport error every 5 s up to 8 times, about 40 s
+  //   (`client.ts:158-161,166-172`), longer than the 5 s per-GET bound, so through the fake socket it
+  //   surfaces as the GET timeout; the classifier below is what a plain Error from a later upstream
+  //   (no retry) would reach.
   ['a transport error', { error: 'ECONNREFUSED 10.0.0.1' }, { tag: 'KubernetesReadyGetTimeout' }],
 ] as const) {
   test(`${name} is pending in a poll and named as lastTransient (tag + status, no body)`, async () => {
