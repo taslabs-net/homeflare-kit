@@ -11,12 +11,11 @@
  *   `FirewallZone`; `FirewallPolicy`'s several discriminated filter variants and its
  *   list-replacing ordering endpoint are a bigger, separate PR).
  *
- * ⛔ THE WHOLE-OBJECT-PUT TRAP (`docs/unifi-api-notes.md`) NEVER FIRES HERE, BY CONSTRUCTION.
- *   `updateNetwork` is a `PUT` that disables `dhcpGuarding`/`ipv4Configuration`/`ipv6Configuration`
- *   outright when the caller omits them — the exact failure mode a read-only family cannot cause,
- *   because `resource.ts`'s `reconcile` never calls `updateNetwork` at all. Recorded here for
- *   whoever adds the write path this docs note anticipates: read-merge-write the WHOLE object,
- *   never a props-only body.
+ * ⛔ THE WHOLE-OBJECT-PUT TRAP (`docs/unifi-api-notes.md`) FIRES HERE, THROUGH `network-update.ts`;
+ *   see its header. `updateNetwork` is a `PUT` that disables `dhcpGuarding`/`ipv4Configuration`/
+ *   `ipv6Configuration` outright when the caller omits them, so the body is the raw live object
+ *   plus only the fields the declaration changed since the last deploy — never props alone.
+ *   This is the ONE family with a write path (Tim 2026-10-10, `policy.ts`); create/delete refuse.
  */
 import { Resource } from 'alchemy';
 import { adopt } from 'alchemy/AdoptPolicy';
@@ -24,9 +23,14 @@ import * as Provider from 'alchemy/Provider';
 import * as networks from '@distilled.cloud/unifi-network/networks';
 import * as Effect from 'effect/Effect';
 import { type NetworkAttributes, type NetworkProps, attributesOf } from './network-form.ts';
-import { matches } from './network-drift.ts';
+import { driftOf, matches } from './network-drift.ts';
+import { writeNetwork } from './network-update.ts';
+import type { UnifiUpdateWouldBeNoop } from './policy.ts';
 import type { UnifiRequirements, UnifiSpec } from './resource.ts';
 import { unifiHandlers } from './resource.ts';
+import type { AllowedWrite } from './wire-guard.ts';
+
+type UpdateError = networks.UpdateNetworkError | UnifiUpdateWouldBeNoop;
 
 export type { NetworkAttributes, NetworkProps } from './network-form.ts';
 export { declareNetwork } from './network-form.ts';
@@ -61,11 +65,42 @@ export const network = (id: string, props: NetworkProps) =>
  *   seam `netbox/prefix.ts`'s `spec` and `discord/application-command.ts`'s `spec` use — `handlers`
  *   bakes in `CredentialsFromEnv`, which resolves environment variables a test cannot repoint.
  */
+/**
+ * Every declarable key: `NetworkProps` minus the two identity ids. A test pins this against a
+ * fully-populated `NetworkProps` literal so a new prop cannot be silently unpatchable.
+ */
+export const NETWORK_PATCH_KEYS: ReadonlyArray<keyof NetworkProps> = [
+  'name',
+  'enabled',
+  'management',
+  'vlanId',
+  'dhcpGuarding',
+  'cellularBackupEnabled',
+  'internetAccessEnabled',
+  'ipv4Configuration',
+  'ipv6Configuration',
+  'isolationEnabled',
+  'mdnsForwardingEnabled',
+  'zoneId',
+  'deviceId',
+];
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** The only PUT that may pass for this row: its own `/v1/sites/<siteId>/networks/<networkId>`. */
+export const networkAllowedWrite = (props: NetworkProps): AllowedWrite => ({
+  method: 'PUT',
+  path: new RegExp(
+    `/v1/sites/${escapeRegExp(props.siteId)}/networks/${escapeRegExp(props.networkId)}$`,
+  ),
+});
+
 export const spec: UnifiSpec<
   NetworkProps,
   networks.NetworkDetails,
   NetworkAttributes,
-  networks.GetNetworkDetailsError
+  networks.GetNetworkDetailsError,
+  UpdateError
 > = {
   type: 'Unifi.Network',
   describe: (props) => `sites/${props.siteId}/networks/${props.networkId}`,
@@ -75,6 +110,12 @@ export const spec: UnifiSpec<
       .pipe(Effect.catchTag('NotFound', () => Effect.succeed(undefined))),
   attributes: attributesOf,
   matches,
+  update: {
+    allowedWrite: networkAllowedWrite,
+    patchKeys: NETWORK_PATCH_KEYS,
+    driftOf,
+    write: writeNetwork,
+  },
 };
 
 export const handlers = unifiHandlers(spec);

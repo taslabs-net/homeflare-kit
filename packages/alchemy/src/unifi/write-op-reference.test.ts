@@ -25,7 +25,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripComments, walk } from './scan-source.ts';
 
@@ -54,17 +54,34 @@ const sdkWriteOpNames = (): ReadonlySet<string> => {
 
 const REAL_WRITE_OP_NAMES = sdkWriteOpNames();
 
+/**
+ * ⛔ THE ONE FILE ALLOWED TO NAME ONE WRITE OP (Tim 2026-10-10: `Unifi.Network` update). Keyed by
+ * path relative to `src/unifi`. Widening this object is a policy change — `policy.ts` — and a
+ * test below pins it to exactly this entry so it cannot grow unnoticed. Everything else the SDK
+ * exports (`createNetwork`, `deleteNetwork`, `patchFirewallPolicy`, …) stays an offense even
+ * inside the allowlisted file.
+ */
+const WRITE_OP_ALLOWLIST: Record<string, ReadonlyArray<string>> = {
+  'network-update.ts': ['updateNetwork'],
+};
+
 /** Recursive by construction (IMPORTANT-2): a future `src/unifi/<subdir>/*.ts` is walked too. */
 const sourceFiles = () => walk(DIR).filter((path) => path !== SELF);
 
 /** Every offense in one file: any real SDK write-op name appearing as a token anywhere in its
  *  comment-stripped text, GATED on the file mentioning the SDK's package specifier at all (a file
  *  that never imports it — by any syntax — cannot meaningfully reference one of its exports). */
-const offensesIn = (path: string, rawSrc: string): string[] => {
+const offensesIn = (
+  path: string,
+  rawSrc: string,
+  allowlist: Record<string, ReadonlyArray<string>> = WRITE_OP_ALLOWLIST,
+): string[] => {
   if (!rawSrc.includes(SDK_MARKER)) return [];
   const codeSrc = stripComments(rawSrc);
+  const allowed = allowlist[relative(DIR, path)] ?? [];
   const offenses: string[] = [];
   for (const name of REAL_WRITE_OP_NAMES) {
+    if (allowed.includes(name)) continue;
     if (new RegExp(`\\b${name}\\b`).test(codeSrc)) {
       offenses.push(`${path}: references SDK write op '${name}'`);
     }
@@ -167,6 +184,25 @@ describe('src/unifi never references an SDK write operation (T12)', () => {
     for (const [path, src] of Object.entries(cases)) {
       expect(offensesIn(path, src)).toEqual([`${path}: references SDK write op 'deleteNetwork'`]);
     }
+  });
+
+  test('the allowlist is exactly network-update.ts -> updateNetwork, nothing else', () => {
+    expect(WRITE_OP_ALLOWLIST).toEqual({ 'network-update.ts': ['updateNetwork'] });
+  });
+
+  test('network-update.ts may name updateNetwork but still not create/delete/patch ops', () => {
+    const path = join(DIR, 'network-update.ts');
+    const src = (op: string) => `import * as n from '${SDK_MARKER}/networks';\nn.${op}({});\n`;
+    expect(offensesIn(path, src('updateNetwork'))).toEqual([]);
+    for (const op of ['createNetwork', 'deleteNetwork', 'patchFirewallPolicy']) {
+      expect(offensesIn(path, src(op))).toEqual([`${path}: references SDK write op '${op}'`]);
+    }
+  });
+
+  test('any other file naming updateNetwork is an offense', () => {
+    const path = join(DIR, 'network.ts');
+    const src = `import * as n from '${SDK_MARKER}/networks';\nn.updateNetwork({});\n`;
+    expect(offensesIn(path, src)).toEqual([`${path}: references SDK write op 'updateNetwork'`]);
   });
 
   test('the walk is recursive -- a future src/unifi/<subdir>/*.ts is not silently unscanned', () => {

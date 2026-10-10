@@ -17,7 +17,14 @@ import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 export const FAKE_BASE = 'https://unifi.example.com/proxy/network/integration';
 export const FAKE_KEY = 'placeholder-unifi-key';
 
-export type Seen = { readonly method: string; readonly path: string };
+export type Seen = {
+  readonly method: string;
+  readonly path: string;
+  /** Parsed JSON request body, when one was sent. */
+  readonly body?: unknown;
+  /** The `redirect` mode fetch was handed (`FetchHttpClient.RequestInit`), when set. */
+  readonly redirect?: NonNullable<RequestInit['redirect']>;
+};
 
 /**
  * Plain-text failure. `protocol.ts`'s `errorEnvelope` also decodes a documented JSON shape
@@ -42,7 +49,13 @@ export const fakeUnifi = (route: (method: string, url: URL) => Response) => {
     const request =
       input instanceof Request ? new Request(input, init) : new Request(String(input), init);
     const url = new URL(request.url);
-    seen.push({ method: request.method, path: `${url.pathname}${url.search}` });
+    const text = request.method === 'GET' ? '' : await request.clone().text();
+    seen.push({
+      method: request.method,
+      path: `${url.pathname}${url.search}`,
+      ...(text === '' ? {} : { body: JSON.parse(text) as unknown }),
+      ...(init?.redirect === undefined ? {} : { redirect: init.redirect }),
+    });
     return route(request.method, url);
   }) as typeof globalThis.fetch;
   return { fetch, seen };

@@ -1,10 +1,9 @@
 # UniFi Network — `@homeflare/alchemy/unifi`
 
-⛔ **READ-ONLY, BY TIM'S RULE (2026-09-24).** `Unifi.Network` and `Unifi.FirewallZone` read and
-adopt; neither has a create, an update body or a working delete. `reconcile`/`delete` both fail
-with a typed `UnifiWriteRefused` naming the policy rather than calling any SDK write operation.
-Lifting the rule is a kit change — a PR that adds a write path, reviewed as one — not a flag a
-stack can pass. See `packages/alchemy/src/unifi/policy.ts`.
+⛔ **ADOPT-ONLY, EXCEPT ONE WRITE (Tim 2026-09-24, lifted for one case 2026-10-10).** Every UniFi
+family reads and adopts; `Unifi.Network` alone may UPDATE (a three-way whole-object PUT, below).
+Create and delete, and every other family's update, fail with a typed `UnifiWriteRefused`. Widening
+the rule is a kit change, not a flag a stack can pass. See `packages/alchemy/src/unifi/policy.ts`.
 
 This page covers `Unifi.Network`/`Unifi.FirewallZone` only. Every other read-only family has its
 own doc, per family (`docs/unifi.md` would breach the 200-line cap otherwise): [`Unifi.DnsPolicy`](./unifi-dns-policy.md), [`Unifi.AclRule`/`Unifi.AclRuleOrdering`](./unifi-acl-rule.md),
@@ -59,7 +58,7 @@ credential, untouched by this family. Only reads were probed, by hand, outside t
 test suite — nothing in this PR's code exercises the vendor API live, and a write path would still
 need its own verification.
 
-## Adopt is the default posture, and it never writes
+## Adopt is the default posture, and the one write is a three-way Network update
 
 `adopt(true)` is piped onto every resource by its convenience constructor (`network(...)`,
 `firewallZone(...)`) — H5. A cold read of a live match answers `Unowned(attrs)` (H1, the
@@ -70,34 +69,36 @@ a silent bind instead of an `OwnedBySomeoneElse` refusal — the deploy never ne
 ⚠️ **A forced post-adoption reconcile still runs once (H6), and it still makes no write.**
 Beta.79 forces one `reconcile` call after every cold adoption whether or not `diff` said noop.
 `resource.ts`'s `reconcile` handles this the same way `discord/resource.ts` does: it reads the
-live object again and only refuses when it is missing (would need a create) or drifted (would
-need a write); an exact match returns the live attributes and calls nothing.
+live object again; an exact match returns the live attributes and calls nothing, a missing object
+refuses `create`, and drift refuses `update` unless the row has prior state (`olds` AND `output`)
+and a `Unifi.Network` spec: then `update-reconcile.ts` refuses if live differs from `olds` (a hand
+edit), else PUTs live-plus-the-`news≠olds`-patch (`network-update.ts`; a dropped key is removed).
 
 ## `list` answers `[]`
 
 `GET /v1/sites/{siteId}/networks` answers every network on the site. Adoption stays explicit —
 the same reasoning `Proxmox.User`'s and NetBox's own `list` give.
 
-## Defense in depth: GET-only at the wire (2026-09-26)
+## Defense in depth: GET-only at the wire, one per-row exception (2026-09-26, 2026-10-10)
 
-`policy.ts`'s `UnifiWriteRefused` stops write INTENT at `reconcile`/`delete` — this family calls
-no SDK write op anywhere today. `GetOnlyHttpClient` (`resource.ts`, barrel-exported so
-`homeflare-network`'s own import-layer guard can reuse it instead of re-implementing the same
-wrap), installed in `unifiHandlers`'s `withCredentials`, stops the same thing one layer lower, AT
-THE WIRE: it wraps whatever `HttpClient` the caller provides so ANY non-`GET` method dies with
-`UnifiNonGetRequest` (its message carries the request PATH only, never the host — a cloud
-connector's base URL embeds the account's Console ID) before the request reaches the transport —
-a backstop for a future resource file that, by mistake, called an SDK write operation directly.
+`policy.ts`'s `UnifiWriteRefused` stops write INTENT at `reconcile`/`delete`. `wire-guard.ts`'s
+`guardedHttpClient(allow)` (`GetOnlyHttpClient` = empty list; barrel-exported so `homeflare-network`'s
+import-layer guard can reuse it), installed in `unifiHandlers`, stops it one layer lower, AT THE
+WIRE: any non-`GET` dies with `UnifiRefusedRequest` (alias `UnifiNonGetRequest`; PATH only, never
+the host — a cloud base URL embeds the Console ID) unless `(method, path)` matches the row's own
+allow entry, `PUT /v1/sites/<siteId>/networks/<networkId>`, supplied only to `reconcile` and only
+by a spec with `update`. A non-empty list also sets fetch `redirect: 'manual'` and dies on any 3xx
+to a non-GET (fetch would re-send a PUT body to a URL the guard never saw).
 `write-op-reference.test.ts` is the matching static check: it harvests the SDK's real write-op
 export names straight from its own service modules (every name starting
 `create`/`update`/`delete`/`patch`/`execute`/`remove`/`adopt`) and fails any file that mentions
 the SDK's package specifier and contains one of those names as a token anywhere — an identifier, a
 bracket key, a destructured binding, a re-export or a dynamic-import property access all read the
-same way, so one scan catches every syntax form without parsing which one it is.
-`get-only-guard.test.ts` proves the wire guard's mechanism directly against a fake `HttpClient`,
-AND that `unifiHandlers` actually installs it (a handler-level probe, not just the mechanism in
-isolation — `network.test.ts`/`firewall-zone.test.ts` call the lower-level `unifiOperations(spec)`
-directly and never exercise `withCredentials` at all).
+same way, so one scan catches every syntax form without parsing which one it is. Its
+`WRITE_OP_ALLOWLIST` is exactly `network-update.ts` → `updateNetwork`; any other file naming that
+op, or that file naming `createNetwork`/`deleteNetwork`, is an offense. `wire-guard.test.ts`
+proves the guard directly against a fake `HttpClient`, AND that `unifiHandlers` installs it (the
+family tests call `unifiOperations(spec)` and never exercise `withCredentials`).
 
 ## Pagination helper
 
@@ -193,7 +194,7 @@ attributed, declared or compared. Both declaration renderers and both `matches` 
 own header. No departure found — nothing in this family needed changing.
 
 ⚠️ **Correction (2026-09-26):** the line above is no longer true as written. `resource.ts` now
-has exactly one `Effect.die` — `GetOnlyHttpClient`'s guard (see "Defense in depth" above) —
+has exactly one `Effect.die` — `wire-guard.ts`'s guard (see "Defense in depth" above) —
 classified in its own comment per distilled-doctrine's "classify every die/orDie": it raises a
 NEW defect for a failure mode outside every generated SDK operation's declared error union, never
 converts an existing typed failure the way `orDie` would. Still no `Effect.orDie` anywhere.
