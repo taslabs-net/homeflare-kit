@@ -166,6 +166,19 @@ describe('peer contract', () => {
     expect(peerDocOverrides()).toHaveProperty('redis', '6.3.0');
   });
 
+  test('overrides pin the alchemy SQL packages to the effect-tested 4.0.1', () => {
+    // 🔴 Measured 2026-10-09 (ledger row kit-contract-effect-402): alchemy beta.81
+    //   depends on both at `^4.0.0`, and a fresh lockless install resolves 4.0.2, whose
+    //   peer is `effect ^4.0.2` — unmet against the contract's effect 4.0.1. 4.0.1
+    //   peers on `effect ^4.0.1`, so the pin holds the D1/DO SQL stack on the tested
+    //   version. The kit's own bun.lock holds 4.0.1 only because it was locked earlier;
+    //   a consumer's fresh lock does not.
+    expect(consumer.overrides['@effect/sql-d1'] ?? '').toBe('4.0.1');
+    expect(consumer.overrides['@effect/sql-sqlite-do'] ?? '').toBe('4.0.1');
+    expect(peerDocOverrides()).toHaveProperty('@effect/sql-d1', '4.0.1');
+    expect(peerDocOverrides()).toHaveProperty('@effect/sql-sqlite-do', '4.0.1');
+  });
+
   test('consumer pins are exact and track the kit catalog or overrides', () => {
     // ★ The contract is curated: some pins come from the root catalog (effect, alchemy, mime),
     //   platform-* from root overrides, and the distilled packages from the version this repo's
