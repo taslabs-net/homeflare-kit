@@ -22,6 +22,7 @@ import * as Data from 'effect/Data';
 import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import { scrubbed } from './ready-classify.ts';
 import { parseGoDuration } from './ready.ts';
 
 /** A render + discovery + ~60 server-side-apply PATCHes fit well inside this. */
@@ -47,6 +48,9 @@ const bound = <A, E, R>(
   operation: 'reconcile' | 'read',
 ): Effect.Effect<A, E | KubernetesReconcileTimeout, R> =>
   effect.pipe(
+    // ⛔ Upstream's `KubernetesApiError` quotes up to 1000 bytes of the apiserver body
+    //   (`client.ts:39-41`): scrub it to a body-free error, as `Kubernetes.Ready` does.
+    Effect.mapError((error) => scrubbed(error) as E),
     Effect.timeoutOrElse({
       duration: deadline,
       orElse: () =>
@@ -62,6 +66,14 @@ const HelmChartKey = Provider.Provider<HelmChart>(HelmChart.Type) as unknown as 
   Provider.ProviderService<HelmChart>
 >;
 
+const BOUNDED = Symbol.for('@homeflare/alchemy/kubernetes/boundedHelmChartProvider');
+
+/** True for a service built by `boundedHelmChartProvider`: lets a stack test its real layer. */
+export const isBoundedHelmChartProvider = (service: unknown): boolean =>
+  typeof service === 'object' &&
+  service !== null &&
+  (service as Record<symbol, unknown>)[BOUNDED] === true;
+
 /**
  * ⛔ A malformed duration dies at layer build (`Effect.orDie`), never becomes a silent unbounded
  *   call: a bad override cannot quietly drop the deadline.
@@ -74,10 +86,18 @@ export const boundedHelmChartProvider = (
     HelmChartKey,
     Effect.gen(function* () {
       const inner = yield* HelmChartKey;
-      const reconcileDeadline = yield* parseGoDuration('reconcileTimeout', reconcileTimeout);
+      const reconcileDeadline = yield* parseGoDuration(
+        'reconcileTimeout',
+        reconcileTimeout,
+        'Kubernetes.HelmChart',
+      );
       const innerRead = inner.read?.bind(inner);
-      const readDeadline = yield* parseGoDuration('readTimeout', readTimeout);
-      return {
+      const readDeadline = yield* parseGoDuration(
+        'readTimeout',
+        readTimeout,
+        'Kubernetes.HelmChart',
+      );
+      const service = {
         ...inner,
         reconcile: (input) =>
           bound(inner.reconcile(input), reconcileDeadline, input.id, 'reconcile'),
@@ -85,5 +105,6 @@ export const boundedHelmChartProvider = (
           ? {}
           : { read: (input) => bound(innerRead(input), readDeadline, input.id, 'read') }),
       } satisfies Provider.ProviderService<HelmChart>;
+      return Object.defineProperty(service, BOUNDED, { value: true });
     }).pipe(Effect.orDie),
   ).pipe(Layer.provide(HelmChartProvider()));

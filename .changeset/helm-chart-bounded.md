@@ -8,4 +8,7 @@ Add `boundedHelmChartProvider` to `@homeflare/alchemy/kubernetes` (ledger row `t
 provider in a wall-clock deadline (`HELM_RECONCILE_TIMEOUT` 5m0s, `HELM_READ_TIMEOUT` 1m0s) and
 fails typed `KubernetesReconcileTimeout`. Register it as a direct `Provider(HelmChart)` beside
 `Kubernetes.providers()`; `diff`, `delete`, `stables` and `aliases` stay upstream's. Walked against
-alchemy@2.0.0-beta.81; proven only against a fake apiserver.
+alchemy@2.0.0-beta.81; proven only against a fake apiserver. Upstream errors that pass through are
+scrubbed of the apiserver body, `isBoundedHelmChartProvider(service)` marks the wrapper, a malformed
+deadline names `Kubernetes.HelmChart`, and `parseGoDuration` is an anchored, length-capped match
+(no polynomial backtracking).

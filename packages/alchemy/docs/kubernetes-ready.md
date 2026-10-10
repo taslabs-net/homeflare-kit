@@ -131,7 +131,16 @@ boundedHelmChartProvider())`. A direct `Provider(HelmChart)` service beats the c
 - `diff`, `delete`, `stables` and `aliases` are upstream's by spread: state identity and replace
   semantics do not change.
 - The interrupted fiber abandons its socket (upstream takes no signal); the run fails typed and the
-  process exits once main completes. Standing watch: drop the wrapper when upstream ships request
-  deadlines (alchemy PR 1948).
-- A malformed override dies at layer build rather than leaving the call unbounded. The error
-  message names the row and seconds only.
+  process exits once main completes. Standing watch: upstream puts no `AbortSignal` on its
+  requests; drop the wrapper when it ships request deadlines (alchemy PR 1948).
+- A malformed override dies at layer build rather than leaving the call unbounded, as
+  `KubernetesReadyBadDuration` naming `Kubernetes.HelmChart` and the field
+  (`reconcileTimeout`/`readTimeout`). The timeout message names the row and seconds only.
+- Errors that pass through (an upstream `KubernetesApiError` quotes up to 1000 bytes of the
+  apiserver body, `client.ts:39-41`) are scrubbed to the body-free `KubernetesReadyApiError`.
+- The read bound rarely fires with the `talos-openbao` adapter: upstream's read only connects, and
+  the kit already caps connect at 10 s and the uid read at 5 s. It is a backstop.
+- `delete` stays unbounded on purpose: every platform row is `retain`, replace cleanup skips
+  deletion of retained rows (alchemy `Apply.ts:1111-1112`), and design §8 only drops state.
+- `isBoundedHelmChartProvider(service)` is true for a service this layer built, so a consuming
+  stack can assert its real `providers` layer resolves the wrapper and not upstream's.

@@ -14,7 +14,10 @@ import * as Kubernetes from 'alchemy/Kubernetes';
 import * as Provider from 'alchemy/Provider';
 import { AlchemyContext } from 'alchemy/AlchemyContext';
 import { Stack } from 'alchemy/Stack';
+import * as Cause from 'effect/Cause';
+import * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
+import * as Exit from 'effect/Exit';
 import * as Layer from 'effect/Layer';
 import * as Option from 'effect/Option';
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner';
@@ -22,7 +25,14 @@ import { TalosOpenBaoAdapter, talosOpenBaoConnection } from '../talos/cluster-ad
 import { UIDS, config, helmRow, session, vault } from '../talos/cluster-adapter.fixtures.ts';
 import { fakeApiServer } from '../talos/fake-apiserver.ts';
 import { type FakeHandler, fakeSpawner } from '../talos/fake-process.ts';
-import { HELM_READ_TIMEOUT, HELM_RECONCILE_TIMEOUT, boundedHelmChartProvider } from './index.ts';
+import {
+  HELM_READ_TIMEOUT,
+  HELM_RECONCILE_TIMEOUT,
+  KubernetesReadyBadDuration,
+  boundedHelmChartProvider,
+  isBoundedHelmChartProvider,
+} from './index.ts';
+import { parseGoDuration } from './ready.ts';
 import { KubernetesReconcileTimeout } from './helm-chart-bounded.ts';
 
 const HOST = 'c1.cluster.invalid';
@@ -145,36 +155,88 @@ test('stables, aliases, diff and delete are upstream by spread', async () => {
   expect(typeof bounded.delete).toBe('function');
 });
 
-test('the deadlines are pinned: reconcile 5m0s, read 1m', () => {
+test('the deadlines are pinned: reconcile 5m0s, read 1m, and they parse as such', async () => {
   expect(HELM_RECONCILE_TIMEOUT).toBe('5m0s');
   expect(HELM_READ_TIMEOUT).toBe('1m0s');
+  const ms = (v: string) =>
+    Effect.runPromise(parseGoDuration('x', v)).then((d) => Duration.toMillis(d));
+  expect(await ms(HELM_RECONCILE_TIMEOUT)).toBe(300_000);
+  expect(await ms(HELM_READ_TIMEOUT)).toBe(60_000);
 });
 
-test('a malformed deadline dies at layer build instead of dropping the bound', async () => {
-  await expect(run(boundedHelmChartProvider('soon'), (s) => Effect.succeed(s))).rejects.toThrow();
-});
-
-test('merged beside Kubernetes.providers() the wrapper is the registered Provider(HelmChart)', async () => {
-  const layer = Layer.mergeAll(Kubernetes.providers(), boundedHelmChartProvider());
-  const found = await Effect.runPromise(
-    Effect.gen(function* () {
-      const direct = yield* Provider.Provider<HelmChart>(HelmChart.Type);
-      const registered = yield* Provider.tryFindProviderRegistrationByType<HelmChart>(
-        HelmChart.Type,
-      );
-      const collection = yield* Kubernetes.Providers;
-      return { collection: collection.get(HelmChart.Type), direct, registered };
-    }).pipe(
-      Effect.provide(Layer.provideMerge(layer, Layer.merge(services, stack))),
-    ) as Effect.Effect<{
-      collection: unknown;
-      direct: unknown;
-      registered: Option.Option<unknown>;
-    }>,
+test('a malformed deadline dies at layer build naming Kubernetes.HelmChart and the field', async () => {
+  const dies = async (reconcileTimeout: string, readTimeout: string) => {
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* () {
+        return yield* Provider.Provider<HelmChart>(HelmChart.Type);
+      }).pipe(
+        Effect.provide(
+          Layer.provideMerge(boundedHelmChartProvider(reconcileTimeout, readTimeout), services),
+        ),
+      ) as Effect.Effect<unknown>,
+    );
+    return Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+  };
+  const reconcileBad = await dies('soon', '1m0s');
+  expect(reconcileBad).toBeInstanceOf(KubernetesReadyBadDuration);
+  expect((reconcileBad as Error).message).toBe(
+    "Kubernetes.HelmChart: reconcileTimeout 'soon' is not a duration like 10m0s",
   );
-  expect(Option.isSome(found.registered)).toBe(true);
-  expect(Option.getOrUndefined(found.registered)).toBe(found.direct);
-  // ★ Upstream's own registration is still in the collection, and is NOT the one that resolves.
-  expect(found.collection).toBeDefined();
-  expect(found.collection).not.toBe(found.direct);
+  const readBad = await dies('5m0s', '0s');
+  expect((readBad as Error).message).toBe(
+    "Kubernetes.HelmChart: readTimeout '0s' is not a duration like 10m0s",
+  );
+});
+
+test('an apiserver refusal passes through body-free (the needle never leaves)', async () => {
+  const needle = 'NEEDLE-secret-body-9f3a';
+  const api = fakeApiServer(UIDS, [], {
+    [`PATCH ${HOST}${NS_PATH}`]: { body: { message: needle }, status: 422 },
+  });
+  try {
+    const failure = await run(boundedHelmChartProvider(), (s) => reconcile(s).pipe(Effect.flip));
+    expect(failure).toMatchObject({ _tag: 'KubernetesReadyApiError', statusCode: 422 });
+    expect(String(failure)).not.toContain(needle);
+    expect(JSON.stringify(failure)).not.toContain(needle);
+    expect((failure as Error).message).toBe(
+      `Kubernetes.Ready: PATCH ${NS_PATH}?fieldManager=alchemy&force=true responded 422`,
+    );
+  } finally {
+    api.restore();
+  }
+});
+
+test('isBoundedHelmChartProvider is true for the wrapper and false for upstream', async () => {
+  const [bounded, upstream] = await Promise.all([
+    run(boundedHelmChartProvider(), (s) => Effect.succeed(s)),
+    run(HelmChartProvider(), (s) => Effect.succeed(s)),
+  ]);
+  expect(isBoundedHelmChartProvider(bounded)).toBe(true);
+  expect(isBoundedHelmChartProvider(upstream)).toBe(false);
+  expect(isBoundedHelmChartProvider(undefined)).toBe(false);
+  expect(isBoundedHelmChartProvider({ ...bounded })).toBe(false);
+});
+
+test('merged beside Kubernetes.providers() the engine-resolved service enforces the deadline', async () => {
+  const layer = Layer.mergeAll(Kubernetes.providers(), boundedHelmChartProvider('1s', '1h'));
+  const api = fakeApiServer(UIDS, [], { [`PATCH ${HOST}${NS_PATH}`]: { hang: true } });
+  try {
+    const found = await Effect.runPromise(
+      Effect.gen(function* () {
+        const registered = yield* Provider.tryFindProviderRegistrationByType<HelmChart>(
+          HelmChart.Type,
+        );
+        if (Option.isNone(registered)) return yield* Effect.die('no registration');
+        const service = registered.value as unknown as Service;
+        const failure = yield* reconcile(service).pipe(Effect.flip);
+        return { failure, marked: isBoundedHelmChartProvider(service) };
+      }).pipe(
+        Effect.provide(Layer.provideMerge(layer, Layer.merge(services, stack))),
+      ) as Effect.Effect<{ failure: unknown; marked: boolean }>,
+    );
+    expect(found.marked).toBe(true);
+    expect(found.failure).toBeInstanceOf(KubernetesReconcileTimeout);
+  } finally {
+    api.restore();
+  }
 });

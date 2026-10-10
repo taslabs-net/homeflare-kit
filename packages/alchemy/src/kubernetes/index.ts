@@ -9,6 +9,7 @@ export {
   HELM_RECONCILE_TIMEOUT,
   KubernetesReconcileTimeout,
   boundedHelmChartProvider,
+  isBoundedHelmChartProvider,
 } from './helm-chart-bounded.ts';
 export {
   KubernetesReady,

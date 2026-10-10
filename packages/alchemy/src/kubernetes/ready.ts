@@ -69,22 +69,37 @@ export const KubernetesReady = declaredReady(
   withLiteralConnection(Resource<KubernetesReady>('HomeFlare.Kubernetes.Ready')),
 );
 
-const UNITS: Record<string, number> = { h: 3_600_000, m: 60_000, s: 1000 };
+const HOUR_MS = 3_600_000;
+const MINUTE_MS = 60_000;
+const SECOND_MS = 1000;
 
-/** `10m0s`, `90s`, `1h30m`: whole-number Go durations in h/m/s. Anything else is typed-refused. */
-export const parseGoDuration = (field: string, value: string) =>
+// ⛔ Anchored with bounded repeats, in h-m-s order: the former unanchored `(\d+)([hms])` with `g` was
+//   CodeQL js/polynomial-redos #18 once `boundedHelmChartProvider` made it reachable from exported
+//   parameters. Length is capped first, so no input can make the match slow.
+const GO_DURATION = /^(?:(\d{1,4})h)?(?:(\d{1,4})m)?(?:(\d{1,6})s)?$/;
+const MAX_DURATION_LENGTH = 20;
+
+/**
+ * `10m0s`, `90s`, `1h30m`: whole-number Go durations in h/m/s. Anything else is typed-refused.
+ * `resource` names the row in the refusal (`Kubernetes.Ready` unless the caller is another one).
+ */
+export const parseGoDuration = (field: string, value: string, resource?: string) =>
   Effect.gen(function* () {
-    const parts = [...value.matchAll(/(\d+)([hms])/g)];
-    if (parts.length === 0 || parts.map((p) => p[0]).join('') !== value) {
-      return yield* Effect.fail(new KubernetesReadyBadDuration({ field, value }));
-    }
-    const ms = parts.reduce(
-      (sum, [, n, unit]) => sum + Number(n) * (UNITS[unit as string] ?? 0),
-      0,
-    );
+    const refuse = () =>
+      Effect.fail(
+        new KubernetesReadyBadDuration({
+          field,
+          value,
+          ...(resource === undefined ? {} : { resource }),
+        }),
+      );
+    const match = value.length > MAX_DURATION_LENGTH ? null : GO_DURATION.exec(value);
+    if (match === null || value === '') return yield* refuse();
+    const [, h, m, s] = match;
+    const ms = Number(h ?? 0) * HOUR_MS + Number(m ?? 0) * MINUTE_MS + Number(s ?? 0) * SECOND_MS;
     // A zero poll interval would spin a full pass of GETs per scheduler tick against the apiserver,
     // and a zero wait fails before a single pass: both are refused (DeepSeek read of PR 373).
-    if (ms <= 0) return yield* Effect.fail(new KubernetesReadyBadDuration({ field, value }));
+    if (ms <= 0) return yield* refuse();
     return Duration.millis(ms);
   });
 
