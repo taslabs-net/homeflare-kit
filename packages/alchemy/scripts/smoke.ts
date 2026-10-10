@@ -156,6 +156,7 @@ import { ForgejoOrgLabel } from '@homeflare/alchemy/forgejo';
 import { declareRepoPolicy, repoPolicy } from '@homeflare/alchemy/github';
 import { BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles } from '@homeflare/alchemy/openbao';
 import { TalosKubeconfigProvider } from '@homeflare/alchemy/talos';
+import { KubernetesReady, KubernetesReadyApiError, KubernetesReadyBadDuration, KubernetesReadyProvider, KubernetesReadyTimeout, KubernetesRolloutFailed } from '@homeflare/alchemy/kubernetes';
 import { PROVISION_PRIVILEGES, PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, ProxmoxNotificationMatcher, alertmanagerAlertBody, declareProvisionBaseline, provisionBootstrap } from '@homeflare/alchemy/proxmox';
 import { NETBOX_CONSTRAINTS_DIGEST, NetboxPrefix, bodyViolations, constraintsFor } from '@homeflare/alchemy/netbox';
 import {
@@ -183,7 +184,7 @@ import { ArgocdCluster, ArgocdRepoCreds, ArgocdRepository, providers as argocdPr
 
 for (const [name, value] of Object.entries({
   MeshNode, MeshNodeProvider, fetchMeshNodeToken, providers, CloudflaredTunnel, CloudflaredTunnelProvider,
-  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, declareRepoPolicy, repoPolicy, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, declareProvisionBaseline,
+  R2BucketLock, astroWebsite, viteWebsite, ForgejoOrgLabel, declareRepoPolicy, repoPolicy, BaoAuthMethod, BaoAuthRoleProvider, BaoJwtRole, BaoMfaLoginEnforcement, BaoPlugin, appRoleLogin, assertBaoIdentity, hostAppRoles, TalosKubeconfigProvider, KubernetesReady, KubernetesReadyProvider, ProxmoxAclProvider, ProxmoxLxc, ProxmoxLxcProvider, declareProvisionBaseline,
   PbsNotificationMatcher, PbsNotificationTarget, PbsNotificationTargetProvider, ProxmoxNotificationMatcher,
   HostFile, LaunchdJob, launchdProviders, sudoRunner, CaddyConfig, caddyProviders, caddyWithFile,
   NetboxPrefix, bodyViolations, constraintsFor, NETBOX_CONSTRAINTS_DIGEST,
@@ -246,6 +247,20 @@ for (const [name, ctor] of Object.entries({ ArgocdCluster, ArgocdRepoCreds, Argo
 }
 if (typeof argocdProviders !== 'function') {
   throw new Error('argocd providers() from dist is not callable');
+}
+
+// ★ THE KUBERNETES READINESS GATE THROUGH THE PUBLISHED FILE (exports['./kubernetes']): its typed
+//   errors construct and carry the check keys, and nothing here reaches a cluster.
+const readyTimeout = new KubernetesReadyTimeout({ failing: ['DaemonSet/kube-system/cilium'], seconds: 1 });
+if (!readyTimeout.message.includes('DaemonSet/kube-system/cilium')) {
+  throw new Error('KubernetesReadyTimeout from dist lost its check keys');
+}
+for (const [name, error] of Object.entries({
+  KubernetesReadyApiError: new KubernetesReadyApiError({ method: 'GET', path: '/', statusCode: 403 }),
+  KubernetesReadyBadDuration: new KubernetesReadyBadDuration({ field: 'waitTimeout', value: 'x' }),
+  KubernetesRolloutFailed: new KubernetesRolloutFailed({ check: 'Deployment/a/b' }),
+})) {
+  if (error._tag !== name) throw new Error(name + ' from dist lost its tag');
 }
 
 // ★ Render once through the PUBLISHED file, so a launchd subpath that imports but cannot run

@@ -18,11 +18,22 @@ type FakeResponse = EventEmitter & { statusCode?: number };
 
 /**
  * `uids` maps an apiserver hostname to the kube-system uid it reports; `hang` lists hostnames that
- * accept the request and never answer.
+ * accept the request and never answer. `objects` (K1, `HomeFlare.Kubernetes.Ready`) answers a
+ * `'GET host /path'` key with its `status` and JSON `body`; `hang: true` accepts and never
+ * answers, `error` fails the request like a socket error. The table is read per request, so a
+ * test may mutate it between polls.
  */
+export type FakeObject = {
+  readonly status?: number;
+  readonly body?: unknown;
+  readonly hang?: boolean;
+  readonly error?: string;
+};
+
 export const fakeApiServer = (
   uids: Readonly<Record<string, string>>,
   hang: readonly string[] = [],
+  objects: Record<string, FakeObject> = {},
 ) => {
   const seen: string[] = [];
   const fake = ((
@@ -35,13 +46,20 @@ export const fakeApiServer = (
     request.write = () => undefined;
     request.end = () => {
       if (hang.includes(options.hostname)) return;
+      const object = objects[`${options.method} ${options.hostname}${path}`];
+      if (object?.hang === true) return;
+      if (object?.error !== undefined) {
+        request.emit('error', new Error(object.error));
+        return;
+      }
       const response = new EventEmitter() as FakeResponse;
-      response.statusCode = 200;
+      response.statusCode = object?.status ?? 200;
       callback(response);
       const isIdentity = options.method === 'GET' && path === '/api/v1/namespaces/kube-system';
       const uid = isIdentity ? uids[options.hostname] : 'u1';
       const metadata = uid === undefined ? {} : { uid };
-      response.emit('data', Buffer.from(JSON.stringify({ metadata })));
+      const payload = object === undefined ? { metadata } : (object.body ?? {});
+      response.emit('data', Buffer.from(JSON.stringify(payload)));
       response.emit('end');
     };
     return request;
