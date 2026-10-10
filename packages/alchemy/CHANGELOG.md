@@ -2,6 +2,60 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.50.0
+
+### Minor Changes
+
+- [#375](https://github.com/taslabs-net/homeflare-kit/pull/375) [`c5faf3a`](https://github.com/taslabs-net/homeflare-kit/commit/c5faf3ad9b101323276ffd13b1d5d467e9e041b7) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `boundedHelmChartProvider` to `@homeflare/alchemy/kubernetes` (ledger row `t10-k1b`). Upstream's
+  `Kubernetes.HelmChart` sets no timeout and no signal on any apiserver request (alchemy
+  2.0.0-beta.81), so a hung apiserver blocks reconcile and read forever. The layer wraps upstream's
+  provider in a wall-clock deadline (`HELM_RECONCILE_TIMEOUT` 5m0s, `HELM_READ_TIMEOUT` 1m0s) and
+  fails typed `KubernetesReconcileTimeout`. Register it as a direct `Provider(HelmChart)` beside
+  `Kubernetes.providers()`; `diff`, `delete`, `stables` and `aliases` stay upstream's. Walked against
+  alchemy@2.0.0-beta.81; proven only against a fake apiserver. Upstream errors that pass through are
+  scrubbed of the apiserver body, `isBoundedHelmChartProvider(service)` marks the wrapper, a malformed
+  deadline names `Kubernetes.HelmChart`, and `parseGoDuration` is an anchored, length-capped match
+  (no polynomial backtracking).
+
+- [#373](https://github.com/taslabs-net/homeflare-kit/pull/373) [`f43d9e4`](https://github.com/taslabs-net/homeflare-kit/commit/f43d9e4cf6b6c305707201be3b8ad23db2055422) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Add `HomeFlare.Kubernetes.Ready` and a new `@homeflare/alchemy/kubernetes` subpath (ledger row
+  `t10-k1`). A readiness gate for a cluster reached through `talos-openbao`: upstream's
+  `Kubernetes.HelmChart` releases downstream rows when server-side apply returns, so nothing waits
+  for a CNI to run. Walked against alchemy@2.0.0-beta.81; proven only against a fake apiserver.
+
+  - Readiness follows `kubectl rollout status`: `observedGeneration >= generation` first, then the
+    updated and available counts (DaemonSet `minReady`, Deployment `updatedReplicas == spec.replicas`).
+    `ProgressDeadlineExceeded` is a typed failure (`KubernetesRolloutFailed`); a CRD is ready when
+    `Established`.
+  - 404 is pending whether alchemy raises `KubernetesApiError` 404 or `KubernetesNotFound`. Inside
+    `reconcile` a per-GET timeout, 5xx, 429 or a transport error is pending and named as
+    `lastTransient` in `KubernetesReadyTimeout`; `read` propagates them. 401/403, uid mismatch and
+    vault failures propagate everywhere, as `KubernetesReadyApiError` (the response body is dropped).
+  - A DaemonSet's `numberAvailable` also counts available old-template pods, so readiness requires
+    `numberAvailable - (desired - updated) >= minReady`: a broken upgrade cannot pass on old pods. A
+    non-`RollingUpdate` DaemonSet is `KubernetesRolloutFailed`.
+  - The poll covers connect: a 5xx, 429 or timeout on the identity GET is retried inside the
+    deadline. `read` with no prior output adopts nothing. Only upstream's `Failed Kubernetes ...`
+    errors count as transport; any other untagged error propagates. The timeout reports `states`
+    per key (not found, or counts).
+  - Declaration refuses unsatisfiable `checks` (`KubernetesReadyBadCheck`) and an `after` that is
+    not a lazy Output (`KubernetesReadyBadAfter`). A changed connection plans `replace`.
+  - The `talos-openbao` connection must be a literal uid, refused at declaration and in `diff`.
+  - The offline fake apiserver (`talos/fake-apiserver.ts`) gains an `objects` table.
+
+### Patch Changes
+
+- [#373](https://github.com/taslabs-net/homeflare-kit/pull/373) [`f43d9e4`](https://github.com/taslabs-net/homeflare-kit/commit/f43d9e4cf6b6c305707201be3b8ad23db2055422) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Kubernetes.Ready: `diff` plans `update` on a transient instead of failing the plan, and a hung apiserver is polled with back-off and no further GETs after a timeout (upstream `readObject` cannot abort a socket).
+
+- [#376](https://github.com/taslabs-net/homeflare-kit/pull/376) [`39e1700`](https://github.com/taslabs-net/homeflare-kit/commit/39e1700f7169f532ac76c69bcd791f9f131ba678) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Pin `@effect/sql-d1` and `@effect/sql-sqlite-do` to 4.0.1 in the consumer contract's
+  `overrides` (ledger row `kit-contract-effect-402`). Measured 2026-10-09: alchemy
+  2.0.0-beta.81 depends on both at `^4.0.0`, and a fresh lockless install resolves 4.0.2,
+  whose peer is `effect ^4.0.2` — an unmet peer against the contract's effect 4.0.1 on every
+  fresh consumer install. The kit's own `bun.lock` held 4.0.1 only because it was locked
+  earlier, so the drift was invisible here. 4.0.1 peers on `effect ^4.0.1` (`npm view`), so the
+  exact pin holds the D1 / Durable-Object SQL resources on the version the kit is tested on;
+  effect stays at 4.0.1. The root `overrides` mirror the same two pins so the kit tests the
+  tree consumers get, and `docs/peers.md` + the smoke `PINS` carry the updated block.
+
 ## 0.49.0
 
 ### Minor Changes
