@@ -98,6 +98,13 @@ already ships is a finding, even when it works.
   `Redacted` values in plaintext, and only one state store encrypts them.
 - **Bounded waits (S26).** A retry stops after at most 8 to 10 attempts and under about a
   minute. A poll never runs past about 90 seconds.
+  - **The one exception: readiness gates** (`Talos.ClusterHealth`, `Kubernetes.Ready`). For these,
+    waiting IS the resource's job: a CNI or control-plane rollout takes minutes. So the wait may
+    run to a declared `waitTimeout` (default minutes, never unbounded) when ALL of these hold:
+    the timeout is a typed, declared prop; every single request inside it is bounded (a per-call
+    deadline); transient errors are pending, never a retry storm; and the timeout is a typed error
+    naming what was still pending. Any other resource keeps the 90-second rule. (Added
+    2026-10-10 with `Kubernetes.Ready`, PR 373; `Talos.ClusterHealth` already waited 20m.)
 
 ## The Bun line for this package (S42–S45)
 

@@ -138,7 +138,9 @@ const deployment = (body: Json): Verdict => {
   const desired =
     obj(body['spec'])['replicas'] === undefined ? 1 : num(obj(body['spec'])['replicas']);
   const updated = num(status['updatedReplicas']);
-  return updated === desired &&
+  // kubectl rollout_status.go waits only while updated < desired, so updated >= desired is the
+  // same rule (a scale-down can briefly report more updated replicas than spec.replicas).
+  return updated >= desired &&
     num(status['replicas']) === updated &&
     num(status['availableReplicas']) >= updated
     ? 'ready'

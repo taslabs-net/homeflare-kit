@@ -39,7 +39,7 @@ The rules are `kubectl rollout status` (kubectl v0.34.0 `rollout_status.go`), no
 | kind                     | ready when                                                                                                                                                                                       |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | DaemonSet                | `updateStrategy` is `RollingUpdate`, `observedGeneration >= generation`, `updatedNumberScheduled >= minReady`, `numberAvailable - (desiredNumberScheduled - updatedNumberScheduled) >= minReady` |
-| Deployment               | `observedGeneration >= generation`, `updatedReplicas == spec.replicas`, `replicas == updatedReplicas`, `availableReplicas >= updatedReplicas`                                                    |
+| Deployment               | `observedGeneration >= generation`, `updatedReplicas >= spec.replicas`, `replicas == updatedReplicas`, `availableReplicas >= updatedReplicas`                                                    |
 | CustomResourceDefinition | condition `Established` is `True`                                                                                                                                                                |
 
 `minReady` defaults to `desiredNumberScheduled`, and a DaemonSet that wants zero pods is never ready.
