@@ -2,6 +2,12 @@
 
 Earlier releases: [changelog archive](./docs/changelog/README.md).
 
+## 0.51.0
+
+### Minor Changes
+
+- [#377](https://github.com/taslabs-net/homeflare-kit/pull/377) [`53dda71`](https://github.com/taslabs-net/homeflare-kit/commit/53dda71d6f92e2dff7e4e6a194cbd805c5e7b97a) Thanks [@taslabs-net](https://github.com/taslabs-net)! - Unifi.Network reconciles a declared change with one whole-object PUT (live object plus only the fields the declaration changed since the last deploy), only on a row with prior state and only when live matches that state; create/delete and every other UniFi family still refuse. The write is scoped to one VLAN's `ipv6Configuration`: only that block may be set (any other changed key, e.g. `enabled`, `internetAccessEnabled`, `ipv4Configuration`, `dhcpGuarding`, is refused with `UnifiFieldNotSettable`) and only that block may be removed, the default (management) network and changes to `zoneId`/`vlanId`/`management`/`deviceId` are refused, the PUT is not retried, and the wire guard anchors the allowed path to the configured base URL. `AllowedWrite` now carries `tail` (an exact route) instead of a `path` RegExp, and `guardedHttpClient` takes the base URL as its second argument. Every guarded request, GETs included, now runs under fetch `redirect: 'manual'` and any 3xx answer is refused with `UnifiRefusedRequest` — a redirect is never followed (it would re-send the request, API-key header included, to a URL the guard never vetted), and `read`/`diff` now behave exactly like `reconcile` on a GET redirect. The guard also reads the request URL with its query parameters and dies when a response URL differs from the request's. New typed errors: `UnifiFieldNotSettable`, `UnifiFieldNotRemovable`, `UnifiManagementNetworkRefused`, `UnifiImmutableFieldChanged`, `UnifiIdentityChanged`.
+
 ## 0.50.0
 
 ### Minor Changes
