@@ -89,7 +89,7 @@ export class UnifiUpdateDidNotConverge extends Data.TaggedError('UnifiUpdateDidN
   }
 }
 
-// ⛔ THE FOUR ERRORS BELOW BOUND THE WRITE SCOPE (`network-scope.ts`, `update-reconcile.ts`): the
+// ⛔ THE FIVE ERRORS BELOW BOUND THE WRITE SCOPE (`network-scope.ts`, `update-reconcile.ts`): the
 //   one intended consumer is a single VLAN's `ipv6Configuration`. Field names only, as above.
 
 /** A patch would remove a key outside the removable allowlist (an omitted block is turned off). */
@@ -102,6 +102,20 @@ export class UnifiFieldNotRemovable extends Data.TaggedError('UnifiFieldNotRemov
     return (
       `${this.type} ${this.identity}: refusing to remove ${fieldList(this.fields)}; a whole-object ` +
       'PUT turns an omitted block off, and only the removable allowlist may be dropped.'
+    );
+  }
+}
+
+/** A patch would SET a key outside the settable allowlist (only `ipv6Configuration` may be written). */
+export class UnifiFieldNotSettable extends Data.TaggedError('UnifiFieldNotSettable')<{
+  readonly type: string;
+  readonly identity: string;
+  readonly fields: ReadonlyArray<string>;
+}> {
+  override get message(): string {
+    return (
+      `${this.type} ${this.identity}: refusing to set ${fieldList(this.fields)}; this write path ` +
+      'only sets the settable allowlist (ipv6Configuration).'
     );
   }
 }

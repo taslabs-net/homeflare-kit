@@ -108,16 +108,21 @@ describe('Unifi.Network update', () => {
     const nested = { ...IPV6, futureNestedKey: 'keep' };
     const liveBody = live({ ipv6Configuration: nested });
     // olds mirrors live (as an import of the live object would), so there is no drift; news
-    // changes only `name`.
+    // changes only `ipv6Configuration` (the one settable key) and keeps the unknown nested key.
     const olds = { ...BASE, ipv6Configuration: nested } as NetworkProps;
-    const { fake, exit } = reconcile(answering(liveBody), { ...olds, name: 'Compute2' }, olds);
+    const news = {
+      ...olds,
+      ipv6Configuration: { ...nested, routerAdvertisement: { priority: 'LOW' } },
+    } as NetworkProps;
+    const { fake, exit } = reconcile(answering(liveBody), news, olds);
     await exit;
     const body = putBody(fake.seen)[0] as {
       ipv6Configuration: Record<string, unknown>;
-      name: string;
+      futureTopLevelKey: string;
     };
     expect(body.ipv6Configuration.futureNestedKey).toBe('keep');
-    expect(body.name).toBe('Compute2');
+    expect(body.ipv6Configuration.routerAdvertisement).toEqual({ priority: 'LOW' });
+    expect(body.futureTopLevelKey).toBe('x');
   });
 
   test('(3) revert: olds has ipv6Configuration, news omits it => PUT body has no such key', async () => {
@@ -197,9 +202,10 @@ describe('SERVER_FIELDS: one list drives the strip', () => {
 
   test('the PUT body omits exactly those keys from live — every one of them, no other live key', async () => {
     const liveBody = live();
-    const news = { ...BASE, name: 'Compute2' } as NetworkProps;
+    // Only `ipv6Configuration` may be set (network-scope.ts SETTABLE_KEYS), so the change is that.
+    const news = WITH_V6;
     const { fake, exit } = reconcile(
-      answering(liveBody, () => Response.json({ ...liveBody, name: 'Compute2' })),
+      answering(liveBody, () => Response.json({ ...liveBody, ipv6Configuration: IPV6 })),
       news,
       BASE,
     );

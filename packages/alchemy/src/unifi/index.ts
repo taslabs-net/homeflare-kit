@@ -10,6 +10,7 @@ export {
   UNIFI_READ_ONLY_POLICY,
   UNIFI_WRITE_POLICY,
   UnifiFieldNotRemovable,
+  UnifiFieldNotSettable,
   UnifiIdentityChanged,
   UnifiImmutableFieldChanged,
   UnifiLiveDriftedSinceDeploy,

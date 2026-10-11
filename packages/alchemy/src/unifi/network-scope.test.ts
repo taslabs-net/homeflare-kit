@@ -98,6 +98,40 @@ describe('removable-field allowlist (omission would turn the block off)', () => 
   });
 });
 
+describe('settable-field allowlist (only ipv6Configuration may be written)', () => {
+  // ⛔ Round-2 BLOCKING finding: the PR claimed this scope but sent these PUTs. Each case is a real
+  //   change to a non-ipv6 key, with live matching the prior state, so only the allowlist stops it.
+  test.each([
+    ['enabled', { enabled: false }, {}],
+    ['internetAccessEnabled', { internetAccessEnabled: false }, { internetAccessEnabled: true }],
+    [
+      'ipv4Configuration',
+      { ipv4Configuration: { dhcpConfiguration: { mode: 'NONE' }, hostIpAddress: '10.9.9.1' } },
+      {},
+    ],
+    ['dhcpGuarding', { dhcpGuarding: { trustedDhcpServerIpAddresses: ['10.0.0.9'] } }, {}],
+  ])('a patch that sets %s => UnifiFieldNotSettable, zero PUTs', async (field, change, olds) => {
+    const oldProps = { ...WITH_V6, ...olds } as NetworkProps;
+    const { fake, exit } = run(
+      live({ ipv6Configuration: IPV6, ...olds }),
+      { ...oldProps, ...change } as NetworkProps,
+      oldProps,
+    );
+    const result = await exit;
+    expect(tagOf(result)).toBe('UnifiFieldNotSettable');
+    expect(JSON.stringify(result)).toContain(field);
+    expect(puts(fake)).toHaveLength(0);
+  });
+
+  test('setting ipv6Configuration is still allowed', async () => {
+    const { fake, exit } = run(live(), WITH_V6, BASE, () =>
+      Response.json(live({ ipv6Configuration: IPV6 })),
+    );
+    expect(tagOf(await exit)).toBe('Success');
+    expect(puts(fake)).toHaveLength(1);
+  });
+});
+
 describe('write scope', () => {
   test('a live default (management) network is refused, zero PUTs', async () => {
     const { fake, exit } = run(live({ default: true }), WITH_V6, BASE);

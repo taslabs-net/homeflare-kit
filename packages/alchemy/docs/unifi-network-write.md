@@ -1,17 +1,19 @@
 # `Unifi.Network` write scope — what the one PUT may and may not do
 
 `docs/unifi.md` describes the three-way update. This page records the limits placed on it after
-the round-1 red team of PR 377. The only intended consumer is ONE VLAN's `ipv6Configuration`;
-everything a whole-object `PUT` could reach beyond that is refused with a typed error that carries
-field names only, never values.
+the red team rounds 1 and 2 of PR 377. The only intended consumer is ONE VLAN's
+`ipv6Configuration`: a patch may SET only `ipv6Configuration` and REMOVE only `ipv6Configuration`;
+everything else a whole-object `PUT` could reach is refused with a typed error that carries field
+names only, never values.
 
-| refusal                         | when                                                               |
-| ------------------------------- | ------------------------------------------------------------------ |
-| `UnifiFieldNotRemovable`        | a patch drops any key but `ipv6Configuration`                      |
-| `UnifiManagementNetworkRefused` | the live object has `default: true` (the management LAN)           |
-| `UnifiImmutableFieldChanged`    | a patch sets or drops `zoneId`, `vlanId`, `management`, `deviceId` |
-| `UnifiIdentityChanged`          | `olds` names another `siteId`/`networkId` than `news`              |
-| `UnifiUpdateWouldBeNoop`        | the merged body equals live                                        |
+| refusal                         | when                                                                        |
+| ------------------------------- | --------------------------------------------------------------------------- |
+| `UnifiFieldNotSettable`         | a patch sets any key but `ipv6Configuration` (`enabled`, `dhcpGuarding`, …) |
+| `UnifiFieldNotRemovable`        | a patch drops any key but `ipv6Configuration`                               |
+| `UnifiManagementNetworkRefused` | the live object has `default: true` (the management LAN)                    |
+| `UnifiImmutableFieldChanged`    | a patch sets or drops `zoneId`, `vlanId`, `management`, `deviceId`          |
+| `UnifiIdentityChanged`          | `olds` names another `siteId`/`networkId` than `news`                       |
+| `UnifiUpdateWouldBeNoop`        | the merged body equals live                                                 |
 
 Every one of them fires after the live GET and before any PUT.
 
@@ -19,7 +21,11 @@ Every one of them fires after the live GET and before any PUT.
 controller reads an omitted `dhcpGuarding`/`ipv4Configuration`/`ipv6Configuration` as "off". So
 leaving a field out of a declaration would turn it off on the console. Only `ipv6Configuration`
 (the block this path exists for, and the revert target) may be removed. `network-scope.ts` holds
-the lists; widening them is a kit change.
+the lists (`SETTABLE_KEYS`, `REMOVABLE_KEYS`, `IMMUTABLE_KEYS`); widening them is a kit change.
+
+⚠️ **No version check: a hand edit between the read and the write is overwritten.** The PUT is the
+live GET plus the patch, sent whole; the API offers no ETag or revision, so a change made on the
+console between that GET and the PUT is replaced by the GET's copy. The window is one reconcile.
 
 Non-USER `metadata.origin` is deliberately not handled: there is no rule for it yet.
 
@@ -44,6 +50,18 @@ A GET's redirect is refused for the same reason a PUT's is, under both postures:
 follow it and re-send the request — still carrying the API-key header — to a URL the guard never
 vetted. Before the 2026-10-10 fix only reconcile's GETs ran `manual` (a 3xx surfaced raw and failed
 the SDK decode) while `read`/`diff` followed it silently; one rule everywhere now, fail closed.
+
+⛔ **Where a TLS `RequestInit` must live: on the CALLING FIBER**, provided around the program with
+`Effect.provideService(FetchHttpClient.RequestInit, { tls: … })`, not inside the fetch layer's
+build context (`FetchHttpClient.layer.pipe(Layer.provide(…))`). The guard re-provides `RequestInit` per
+request, merged over the fiber's value, so an option set only inside the layer is overridden on every
+guarded request, GETs included, and a consumer wired that way silently loses its TLS option (it
+fails closed: the handshake is refused, nothing is sent insecurely).
+
+⛔ **Backstop: the response URL must equal the request URL.** If a consumer's own transform provides
+`RequestInit` WITHOUT merging, `manual` is lost and fetch follows a redirect. The guard dies when
+`res.url` differs from `HttpClientRequest.toUrl(res.request)`. The allowed-path check likewise reads
+`toUrl`, so a `setUrlParam` query is seen and refused. Tests: `wire-guard-round2.test.ts`.
 
 ⛔ **Refusal messages redact the cloud connector Console ID**: the path segment after `/consoles/`
 becomes `<redacted>`.

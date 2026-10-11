@@ -3,6 +3,10 @@
  * `ipv6Configuration`, so everything else a whole-object PUT could reach is refused BEFORE any
  * request, with a typed error that carries field names only.
  *
+ * ⛔ SETTABLE ALLOWLIST. A key in `patch.set` is written into the PUT body, so only
+ *   `ipv6Configuration` may be set: `enabled`, `internetAccessEnabled`, `ipv4Configuration`,
+ *   `dhcpGuarding` and every other declared key are refused with `UnifiFieldNotSettable` (a touched
+ *   immutable key gets `UnifiImmutableFieldChanged` first). Widening it is a kit change.
  * ⛔ REMOVABLE ALLOWLIST. A key in `patch.unset` is deleted from the PUT body, and the controller
  *   reads an omitted `dhcpGuarding`/`ipv4Configuration`/`ipv6Configuration` as "off". Dropping a
  *   declaration key therefore must not silently turn a live block off: only `ipv6Configuration`
@@ -19,11 +23,13 @@ import * as Effect from 'effect/Effect';
 import type { NetworkProps } from './network-form.ts';
 import {
   UnifiFieldNotRemovable,
+  UnifiFieldNotSettable,
   UnifiImmutableFieldChanged,
   UnifiManagementNetworkRefused,
 } from './policy.ts';
 import type { Patch } from './update-reconcile.ts';
 
+export const SETTABLE_KEYS: ReadonlyArray<keyof NetworkProps> = ['ipv6Configuration'];
 export const REMOVABLE_KEYS: ReadonlyArray<keyof NetworkProps> = ['ipv6Configuration'];
 export const IMMUTABLE_KEYS: ReadonlyArray<keyof NetworkProps> = [
   'zoneId',
@@ -34,6 +40,7 @@ export const IMMUTABLE_KEYS: ReadonlyArray<keyof NetworkProps> = [
 
 export type ScopeError =
   | UnifiFieldNotRemovable
+  | UnifiFieldNotSettable
   | UnifiImmutableFieldChanged
   | UnifiManagementNetworkRefused;
 
@@ -58,6 +65,11 @@ export const checkNetworkWriteScope = (
   const notRemovable = patch.unset.map(String).filter((k) => !removable(k));
   if (notRemovable.length > 0) {
     return Effect.fail(new UnifiFieldNotRemovable({ type, identity, fields: notRemovable }));
+  }
+  const settable = isIn(SETTABLE_KEYS as ReadonlyArray<string>);
+  const notSettable = Object.keys(patch.set).filter((k) => !settable(k));
+  if (notSettable.length > 0) {
+    return Effect.fail(new UnifiFieldNotSettable({ type, identity, fields: notSettable }));
   }
   return Effect.void;
 };

@@ -33,6 +33,7 @@ import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
 import * as FetchHttpClient from 'effect/http/FetchHttpClient';
 import * as HttpClient from 'effect/http/HttpClient';
+import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import type * as HttpClientResponse from 'effect/http/HttpClientResponse';
 import { UNIFI_WRITE_POLICY } from './policy.ts';
 
@@ -89,12 +90,16 @@ const isAllowed = (
   allow: ReadonlyArray<AllowedWrite>,
   baseUrl: string | undefined,
   method: string,
-  url: string,
+  request: HttpClientRequest.HttpClientRequest,
 ) => {
   if (baseUrl === undefined) return false;
   try {
     const base = new URL(baseUrl);
-    const target = new URL(url);
+    // ⛔ `toUrl`, NOT `request.url`: `setUrlParam` keeps its parameters OUTSIDE `request.url`, so
+    //   the bare string looked query-free while the wire request carried `?force=true` (round 2, F5).
+    const resolved = HttpClientRequest.toUrl(request);
+    if (Option.isNone(resolved)) return false;
+    const target = resolved.value;
     if (target.origin !== base.origin || target.search !== '' || target.hash !== '') return false;
     const basePath = base.pathname.replace(/\/+$/, '');
     return allow.some(
@@ -105,6 +110,12 @@ const isAllowed = (
   }
 };
 
+/** True when the response says it came from a different URL than the request named. */
+const followedElsewhere = (res: HttpClientResponse.HttpClientResponse): boolean => {
+  const sent = HttpClientRequest.toUrl(res.request);
+  return res.url !== '' && Option.isSome(sent) && res.url !== sent.value.href.split('#')[0];
+};
+
 const guard = (
   client: HttpClient.HttpClient,
   allow: ReadonlyArray<AllowedWrite>,
@@ -112,7 +123,7 @@ const guard = (
 ) =>
   client.pipe(
     HttpClient.mapRequestEffect((request) =>
-      request.method === 'GET' || isAllowed(allow, baseUrl, request.method, request.url)
+      request.method === 'GET' || isAllowed(allow, baseUrl, request.method, request)
         ? Effect.succeed(request)
         : Effect.die(new UnifiRefusedRequest(request.method, requestPath(request.url))),
     ),
@@ -127,7 +138,17 @@ const guard = (
                 `answered a ${res.status} redirect`,
               ),
             )
-          : Effect.succeed(res),
+          : // ⛔ BACKSTOP (round 2, F3): if a consumer's own transform replaced `manual` and fetch
+            //   followed a redirect, the response URL is no longer the request's. Die on that.
+            followedElsewhere(res)
+            ? Effect.die(
+                new UnifiRefusedRequest(
+                  res.request.method,
+                  requestPath(res.request.url),
+                  'the response URL differs from the request URL (a redirect was followed)',
+                ),
+              )
+            : Effect.succeed(res),
       ),
     ),
   );
