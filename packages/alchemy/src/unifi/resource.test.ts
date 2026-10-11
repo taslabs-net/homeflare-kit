@@ -13,7 +13,12 @@ import { Unowned } from 'alchemy/AdoptPolicy';
 import type { UnifiNetworkOpContext } from '@distilled.cloud/unifi-network/Protocol';
 import * as Effect from 'effect/Effect';
 import { fakeUnifiLayer } from './fake-unifi.ts';
-import { UnifiWriteRefused } from './policy.ts';
+import {
+  type UnifiIdentityChanged,
+  type UnifiLiveDriftedSinceDeploy,
+  type UnifiUpdateDidNotConverge,
+  UnifiWriteRefused,
+} from './policy.ts';
 import { type UnifiSpec, unifiOperations } from './resource.ts';
 
 interface WidgetProps {
@@ -52,11 +57,18 @@ const run = <A, E>(effect: Effect.Effect<A, E, UnifiNetworkOpContext>) =>
   Effect.runPromise(effect.pipe(Effect.provide(fakeUnifiLayer(unreachableFetch))));
 
 const refusal = async (
-  effect: Effect.Effect<unknown, UnifiWriteRefused, UnifiNetworkOpContext>,
+  effect: Effect.Effect<
+    unknown,
+    | UnifiWriteRefused
+    | UnifiLiveDriftedSinceDeploy
+    | UnifiUpdateDidNotConverge
+    | UnifiIdentityChanged,
+    UnifiNetworkOpContext
+  >,
 ) => {
   const failure = await run(Effect.flip(effect));
   expect(failure).toBeInstanceOf(UnifiWriteRefused);
-  return failure;
+  return failure as UnifiWriteRefused;
 };
 
 describe('unifiOperations.readHandler', () => {

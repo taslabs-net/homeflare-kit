@@ -1,20 +1,36 @@
 /**
- * UniFi Network providers for Alchemy — READ-ONLY, by Tim's rule (2026-09-24; `policy.ts`).
+ * UniFi Network providers for Alchemy — ADOPT-ONLY, except `Unifi.Network` update (Tim's rule of
+ * 2026-09-24 lifted for that one case on 2026-10-10; `policy.ts`).
  *
  * ⛔ THIS BARREL IS THE PUBLIC API, SMALLER THAN THE DIRECTORY. `resource.ts`'s generic engine
  *   and each `*-form.ts`'s wire helpers are internals a provider needs but a consumer should
  *   not depend on — mirrors `../netbox/index.ts`.
  */
-export { UNIFI_READ_ONLY_POLICY, UnifiWriteRefused, type UnifiWriteAction } from './policy.ts';
+export {
+  UNIFI_READ_ONLY_POLICY,
+  UNIFI_WRITE_POLICY,
+  UnifiFieldNotRemovable,
+  UnifiFieldNotSettable,
+  UnifiIdentityChanged,
+  UnifiImmutableFieldChanged,
+  UnifiLiveDriftedSinceDeploy,
+  UnifiManagementNetworkRefused,
+  UnifiUpdateDidNotConverge,
+  UnifiUpdateWouldBeNoop,
+  UnifiWriteRefused,
+  type UnifiWriteAction,
+} from './policy.ts';
 export {
   // Barrel-exported (not just internal to `unifiHandlers`) so `homeflare-network`'s own
   // import-layer guard (plan item C0) can reuse this instead of re-implementing the same
   // `HttpClient` wrap against a second copy of the SDK's `HttpClient.HttpClient` service.
+  type AllowedWrite,
   GetOnlyHttpClient,
   UnifiNonGetRequest,
-  type UnifiRequirements,
-  type UnifiSpec,
-} from './resource.ts';
+  UnifiRefusedRequest,
+  guardedHttpClient,
+} from './wire-guard.ts';
+export { type UnifiRequirements, type UnifiSpec } from './resource.ts';
 export type { FieldDrift } from './drift.ts';
 export {
   UnifiNetwork,

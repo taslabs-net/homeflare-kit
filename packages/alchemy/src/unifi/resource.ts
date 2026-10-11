@@ -1,28 +1,27 @@
 /**
- * One shape for every UniFi Network read-only object — `Unifi.Network`, `Unifi.FirewallZone`,
- * and whatever import adds next.
+ * One shape for every UniFi Network object — `Unifi.Network`, `Unifi.FirewallZone`, and whatever
+ * import adds next. ADOPT-ONLY, except the one `update` a spec may opt into (`Unifi.Network`).
  *
  * ★ MIRRORS `../discord/resource.ts` (S7-S10, H1, H5), NOT `../netbox/resource.ts`. Both are
  *   "marker-less API" families (S8): UniFi Network objects carry no tag or metadata field this
  *   stack could stamp as ownership, so a cold read of a match is `Unowned(attrs)` exactly like
- *   `Cloudflare/Snippets/Snippet.ts@v2.0.0-beta.79#read`, the reference implementation S8 and H1
+ *   `Cloudflare/Snippets/Snippet.ts@v2.0.0-beta.81#read`, the reference implementation S8 and H1
  *   both cite. `adopt(true)`, piped on by each resource's convenience constructor (H5), turns
  *   that into a silent one-time bind instead of an `OwnedBySomeoneElse` refusal.
  *
- * ⛔ THE DIFFERENCE FROM EVERY OTHER FAMILY HERE: THERE IS NO `create`, `update` OR `destroy` IN
- *   THIS SPEC AT ALL. Tim's rule, 2026-09-24 (`policy.ts`): UniFi and OPNsense are read-only. So
- *   `reconcile` below can only ever refuse or report an exact match — it has no write path to
- *   fall into by accident, and no resource file wired through this engine can reach one either.
+ * ⛔ THE POSTURE (`policy.ts`, Tim 2026-09-24, lifted for ONE case 2026-10-10): there is no
+ *   `create` and no `destroy` in this spec at all, and `update` exists only when a spec carries an
+ *   `update` block (`update-reconcile.ts`). `reconcile` is `updateReconcile`: refuse a create,
+ *   report an exact match with zero writes, and otherwise either refuse or run the three-way PUT.
+ *   A spec without `update` (every family but Network) can only ever refuse or report a match.
  *
  * ⚠️ RECONCILE STILL HAS TO SUCCEED ON AN EXACT-MATCH ADOPTION, NOT JUST REFUSE UNCONDITIONALLY.
- *   Measured against `Plan.ts@v2.0.0-beta.79` (`forceUpdateAfterAdoption`, H6): beta.79 forces
+ *   Measured against `Plan.ts@v2.0.0-beta.81` (`forceUpdateAfterAdoption`, H6): beta.81 forces
  *   ONE reconcile call after every cold adoption, whether or not the diff said noop — so a
  *   resource whose `reconcile` always failed would break the ordinary "adopt an unchanged
  *   object" deploy, not just a real write. The fix, exactly like `discordOperations.reconcile`:
- *   read the live object again, and refuse ONLY when it is missing (would need a create) or
- *   drifted (would need a write to converge). An exact match returns the live attributes and
- *   calls nothing — S10's "zero write calls when there is no drift" holds even under the forced
- *   post-adoption call.
+ *   read the live object again and return it on a match. S10's "zero write calls when there is
+ *   no drift" holds even under the forced post-adoption call.
  *
  * ⚠️ `NotFound` IS FOLDED TO "ABSENT" INSIDE EACH RESOURCE FILE'S OWN `fetchLive`, NOT HERE —
  *   same split netbox's `resource.ts` uses and for the same reason: `Effect.catchTag`'s
@@ -30,15 +29,21 @@
  *   spec's `E` is only concrete at each resource file's own call site. Every OTHER failure (a
  *   real 5xx, a network error, `Forbidden`) is NOT folded anywhere — it fails the plan loudly,
  *   per the task's own rule: only a genuine not-found may mean absent.
+ *
+ * ★ The wire guard (`wire-guard.ts`) and the three-way reconcile (`update-reconcile.ts`) live in
+ *   their own files; `read`/`diff`/`delete` run under `GetOnlyHttpClient`, only `reconcile` gets
+ *   the per-row allow entry of a spec that declares `update`.
  */
 import { Unowned } from 'alchemy/AdoptPolicy';
 import { isResolved } from 'alchemy/Diff';
 import type { Input } from 'alchemy/Input';
-import { CredentialsFromEnv } from '@distilled.cloud/unifi-network/Credentials';
+import { Credentials, CredentialsFromEnv } from '@distilled.cloud/unifi-network/Credentials';
 import type { UnifiNetworkOpContext } from '@distilled.cloud/unifi-network/Protocol';
 import * as Effect from 'effect/Effect';
-import * as HttpClient from 'effect/http/HttpClient';
-import { UNIFI_READ_ONLY_POLICY, refuseWrite } from './policy.ts';
+import type * as HttpClient from 'effect/http/HttpClient';
+import { refuseWrite } from './policy.ts';
+import { type ReconcileArgs, type UnifiUpdate, updateReconcile } from './update-reconcile.ts';
+import { type AllowedWrite, guardedHttpClient } from './wire-guard.ts';
 
 /** What every handler needs from the caller's runtime once `CredentialsFromEnv` is baked in. */
 export type UnifiRequirements = HttpClient.HttpClient;
@@ -47,9 +52,9 @@ export type UnifiRequirements = HttpClient.HttpClient;
  * One UniFi Network object's read. `Live` is whatever the SDK decodes (a `NetworkDetails`, a
  * `FirewallZone`, …); `E` is left to each resource file to declare (its own `fetchLive`'s error
  * union, with `NotFound` already folded away) so the precise per-operation error union flows
- * through instead of being widened by hand here.
+ * through instead of being widened by hand here. `E2` is the error union of the optional write.
  */
-export type UnifiSpec<Props extends object, Live, Attributes extends object, E> = {
+export type UnifiSpec<Props extends object, Live, Attributes extends object, E, E2 = never> = {
   /** The vendor type string, e.g. `Unifi.Network` — for the refusal message only. */
   readonly type: string;
   /** Already folds a genuine not-found to `undefined`; nothing else is folded (see header). */
@@ -58,10 +63,12 @@ export type UnifiSpec<Props extends object, Live, Attributes extends object, E> 
   readonly matches: (attributes: Attributes, props: Props) => boolean;
   /** For the refusal message and read-back failures. */
   readonly describe: (props: Props) => string;
+  /** Present only on a family allowed to write (`Unifi.Network`); see `update-reconcile.ts`. */
+  readonly update?: UnifiUpdate<Props, Live, E2>;
 };
 
-export const unifiOperations = <Props extends object, Live, Attributes extends object, E>(
-  spec: UnifiSpec<Props, Live, Attributes, E>,
+export const unifiOperations = <Props extends object, Live, Attributes extends object, E, E2>(
+  spec: UnifiSpec<Props, Live, Attributes, E, E2>,
 ) => {
   const read = (props: Props) =>
     spec
@@ -91,16 +98,13 @@ export const unifiOperations = <Props extends object, Live, Attributes extends o
           : ({ action: 'update' } as const);
       }),
 
-    reconcile: (news: Props) =>
-      Effect.gen(function* () {
-        const live = yield* read(news);
-        if (live === undefined) return yield* refuseWrite(spec.type, spec.describe(news), 'create');
-        if (!spec.matches(live, news)) {
-          return yield* refuseWrite(spec.type, spec.describe(news), 'update');
-        }
-        // Exact match: the object already is what is declared. Zero write calls (S10), correct
-        // whether this is a routine deploy or beta.79's forced post-adoption reconcile (H6).
-        return live;
+    /** Pre-state callers (tests, adopt-only probes) pass just `news`: `olds`/`output` unset. */
+    reconcile: (news: Props, rest: Partial<Omit<ReconcileArgs<Props>, 'news'>> = {}) =>
+      updateReconcile(spec, {
+        news,
+        olds: rest.olds,
+        output: rest.output,
+        note: rest.note ?? (() => Effect.void),
       }),
 
     destroy: (olds: Props) => refuseWrite(spec.type, spec.describe(olds), 'delete'),
@@ -108,94 +112,49 @@ export const unifiOperations = <Props extends object, Live, Attributes extends o
 };
 
 /**
- * B0a / T12 DEFENSE IN DEPTH. `policy.ts`'s `UnifiWriteRefused` stops write INTENT at
- * `reconcile`/`destroy` — every path this engine exposes already returns that refusal instead of
- * calling an SDK write op. This guard stops the same thing one layer lower, AT THE WIRE: it wraps
- * whatever `HttpClient` the caller already provides (the stack's `FetchHttpClient.layer` in
- * production, `fakeUnifiLayer` in tests — `openbao/bao-http.ts`'s header names this same
- * "wrap, don't replace" seam) so a future resource file that, by mistake, called an SDK write
- * operation directly — bypassing `unifiOperations` entirely — would still never reach the vendor
- * API. `write-op-reference.test.ts` proves no such call exists today; this is what stops one from
- * ever taking effect if one is ever added.
- *
- * ⚠️ `Effect.die`, NOT A TYPED FAILURE — classified per distilled-doctrine's "classify every
- *   die/orDie". Every generated SDK operation (`networks.getNetworkDetails`, …) declares its OWN
- *   closed error union from the pinned OpenAPI spec, and generated files are never hand-edited to
- *   add a member to it. A typed `Effect.fail` here would be a failure mode absent from every op's
- *   declared type the moment it occurred — a type-system lie. A defect is the sound way to add a
- *   NEW "this must be structurally impossible" failure underneath types this package does not
- *   own, exactly like `openbao`'s `refuse()` helpers' `Effect.die(new Error(...))` for a
- *   configuration move that should never be reachable.
- */
-export class UnifiNonGetRequest extends Error {
-  constructor(
-    readonly method: string,
-    /** PATH ONLY, never the full URL — see `requestPath` below. */
-    readonly path: string,
-  ) {
-    super(
-      `UniFi HttpClient guard: refused ${method} ${path} -- ${UNIFI_READ_ONLY_POLICY}. This is a ` +
-        'defect, not a recoverable condition: something under src/unifi tried to send a non-GET ' +
-        "request, which policy.ts's per-operation refusal should already have made impossible. " +
-        'Fix the kit code that produced this request.',
-    );
-    this.name = 'UnifiNonGetRequest';
-  }
-}
-
-/**
- * ⛔ PATH ONLY, NEVER THE HOST. A cloud connector's base URL embeds the account's Console ID
- *   (`docs/unifi.md`'s Credentials section, T3) — a defect message is still a message that can
- *   reach a log, a CI failure body or a pasted error report, so it gets the same treatment as
- *   `redactUrls` gives the import layer's own error text. Falls back to a fixed placeholder rather
- *   than the raw string on a parse failure, so a malformed URL can never leak through unredacted.
- */
-const requestPath = (url: string): string => {
-  try {
-    return new URL(url).pathname;
-  } catch {
-    return '<unparseable request url>';
-  }
-};
-
-const guardGetOnly = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
-  client.pipe(
-    HttpClient.mapRequestEffect((request) =>
-      request.method === 'GET'
-        ? Effect.succeed(request)
-        : Effect.die(new UnifiNonGetRequest(request.method, requestPath(request.url))),
-    ),
-  );
-
-/**
- * A `Layer` that reads whatever `HttpClient` is already in the calling context and replaces it,
- * for everything downstream, with `guardGetOnly`'s wrapped version (`HttpClient.layerMergedContext`
- * — see the guard above). Exported so `get-only-guard.test.ts` can prove the mechanism directly,
- * against a bare `HttpClient` service, without needing `CredentialsFromEnv` or any env var at all.
- */
-export const GetOnlyHttpClient = HttpClient.layerMergedContext(
-  Effect.map(HttpClient.HttpClient, guardGetOnly),
-);
-
-/**
- * The four provider handlers for a spec'd read-only UniFi object, wired once.
+ * The four provider handlers for a spec'd UniFi object, wired once.
  *
  * ⛔ `list` ANSWERS EMPTY. `GET /v1/sites/{siteId}/networks` answers every network on the site;
  *   adoption stays explicit, the same reasoning `Proxmox.User`'s and NetBox's `list` give.
  */
-export const unifiHandlers = <Props extends object, Live, Attributes extends object, E>(
-  spec: UnifiSpec<Props, Live, Attributes, E>,
+export const unifiHandlers = <Props extends object, Live, Attributes extends object, E, E2>(
+  spec: UnifiSpec<Props, Live, Attributes, E, E2>,
 ) => {
   const ops = unifiOperations(spec);
-  const withCredentials = <A, Err>(effect: Effect.Effect<A, Err, UnifiNetworkOpContext>) =>
-    effect.pipe(Effect.provide(GetOnlyHttpClient), Effect.provide(CredentialsFromEnv));
+  const withCredentials = <A, Err>(
+    effect: Effect.Effect<A, Err, UnifiNetworkOpContext>,
+    allow: ReadonlyArray<AllowedWrite> = [],
+  ) =>
+    Effect.gen(function* () {
+      // ⛔ The guard anchors the allowed PUT to the CONFIGURED base URL (`wire-guard.ts`), so it is
+      //   read from the same credentials the SDK uses.
+      const { apiBaseUrl } = yield* yield* Credentials;
+      return yield* effect.pipe(Effect.provide(guardedHttpClient(allow, apiBaseUrl)));
+    }).pipe(Effect.provide(CredentialsFromEnv)) as Effect.Effect<A, Err, HttpClient.HttpClient>;
+
   return {
     list: () => Effect.succeed([]),
     read: (args: { olds: Props; output: Attributes | undefined }) =>
       withCredentials(ops.readHandler(args)),
     diff: (args: { news: Input<Props>; output: Attributes | undefined }) =>
       withCredentials(ops.diff(args.news, args.output)),
-    reconcile: (args: { news: Props }) => withCredentials(ops.reconcile(args.news)),
+    // ⛔ ONLY `reconcile` gets the per-row allow entry, and only when the spec declares `update`.
+    reconcile: (args: {
+      news: Props;
+      olds: Props | undefined;
+      output: Attributes | undefined;
+      session: { note: (message: string) => Effect.Effect<void, never, never> };
+    }) =>
+      withCredentials(
+        ops.reconcile(args.news, {
+          olds: args.olds,
+          output: args.output,
+          note: (message) => args.session.note(message),
+        }),
+        // ⛔ From `news` (the ids the write will use), never `olds`; reconcile also refuses when
+        //   `olds` names another object (`update-reconcile.ts`).
+        spec.update ? [spec.update.allowedWrite(args.news)] : [],
+      ),
     delete: (args: { olds: Props }) => withCredentials(ops.destroy(args.olds)),
   };
 };

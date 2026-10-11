@@ -90,7 +90,7 @@ describe('declareNetwork -- the declaration renderer', () => {
   });
 });
 
-describe('Unifi.Network write paths never reach the vendor API', () => {
+describe('Unifi.Network: only the one allowed PUT ever reaches the vendor API', () => {
   const ops = unifiOperations(spec);
 
   test('reconcile on an exact-match adoption (H6) makes no request but the one read', async () => {
@@ -116,6 +116,32 @@ describe('Unifi.Network write paths never reach the vendor API', () => {
       ops.reconcile(PROPS).pipe(Effect.provide(fakeUnifiLayer(fake.fetch))),
     );
     expect(exit._tag).toBe('Failure');
+    expect(fake.seen.every((s) => s.method === 'GET')).toBe(true);
+  });
+
+  test('a missing network still refuses create -- nothing is ever POSTed', async () => {
+    const fake = fakeUnifi(() => fakeFailure(404, 'not found'));
+    const failure = await Effect.runPromise(
+      Effect.flip(ops.reconcile(PROPS).pipe(Effect.provide(fakeUnifiLayer(fake.fetch)))),
+    );
+    expect(failure).toMatchObject({ _tag: 'UnifiWriteRefused', action: 'create' });
+    expect(fake.seen.every((s) => s.method === 'GET')).toBe(true);
+  });
+
+  test('drift with olds undefined (first deploy) refuses update, all-GET', async () => {
+    const fake = fakeUnifi((method, url) =>
+      method === 'GET' && url.pathname === NETWORK_PATH
+        ? Response.json(liveNetwork({ vlanId: 999 }))
+        : fakeFailure(400, 'unexpected request'),
+    );
+    const failure = await Effect.runPromise(
+      Effect.flip(
+        ops
+          .reconcile(PROPS, { olds: undefined, output: undefined })
+          .pipe(Effect.provide(fakeUnifiLayer(fake.fetch))),
+      ),
+    );
+    expect(failure).toMatchObject({ _tag: 'UnifiWriteRefused', action: 'update' });
     expect(fake.seen.every((s) => s.method === 'GET')).toBe(true);
   });
 
